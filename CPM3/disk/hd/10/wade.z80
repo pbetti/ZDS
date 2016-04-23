@@ -1,0 +1,364 @@
+	title	Starter for WADE
+	name	('WADE')
+;
+;	Last Edited	85-04-27	Wagner
+;
+;	Copyright (c) 1984, 1985 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, July 1993
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+	maclib	monopt.lib
+;
+monstart:
+	sub	a		; Verify Z80
+	ld	de,illCPU
+	jp	pe,err..
+	ld	sp,stack
+IF	NOT CPM3
+	call	prlmove		; Load .PRL file
+ENDIF;NOT CPM3
+	ld	c,.version
+	call	BDOS		; get OS version
+	ld	de,illOS
+	ld	a,h
+	or	a		; Verify CP/M
+	jr	nz,err..
+	ld	de,illver
+	ld	a,l
+	cp	OSver
+	jr	c,err..
+	call	prep.files	; Set up files
+	ld	de,signon
+	ld	c,.string
+	call	BDOS
+	ld	hl,(TPAtop)	; start location
+	ld	a,h
+	rrca
+	rrca
+	rrca
+	rrca
+	call	hexdig		; .. print it
+	ld	(protadr),a
+	ld	a,h
+	call	hexdig
+	ld	(protadr+1),a
+	ld	de,initpar
+	ld	c,.RSX
+	call	BDOS		; Execute RSX
+;
+; Never come back here
+;
+nomonerr:
+	ld	de,monerr
+err..:
+	ld	c,.string
+	call	BDOS
+	jp	OS
+;
+; Convert nibble in Accu to hex character
+;
+hexdig:
+	and	LOmask
+	add	a,90h
+	daa
+	adc	a,40h
+	daa
+	ret
+;
+signon:
+	db	'WADE 1.51 - Wagner 90-10-04  '
+IF	CPM3
+	db	'(CP/M 3 Version'
+ELSE
+	db	'(TurboDos & CP/M 2 Version'
+ENDIF;CPM3
+IF	EXTENDED
+	db	', Extended Adressing'
+ IF	MEGA
+	db	' [Mega]'
+ ENDIF;MEGA
+ENDIF;EXTENDED
+	db	')',cr,lf,eot
+monerr:
+	db	'ERROR, WADE-RSX not present',cr,lf,eot
+illOS:
+	db	'ERROR, Illegal system - requires CP/M'
+	db	cr,lf,eot
+illCPU:
+	db	'ERROR, Illegal CPU - requires Z80'
+	db	cr,lf,eot
+illver:
+	db	'ERROR, Requires '
+IF	CPM3
+	db	'CP/M 3'
+ELSE
+	db	'TurboDos & CP/M 2'
+ENDIF;CPM3
+	db	cr,lf,eot
+initpar:
+	db	0,0
+	dw	protstr
+protstr:
+	db	'RPC >= '
+protadr:
+	db	'0000',0
+;
+IF	NOT CPM3
+;
+monname:db	'MONIT   '
+;
+prlmove:
+	ld	hl,pgmend+TPA+16; end of this program + PRL-header
+	ld	bc,300h		; max number of bytes to search
+prlsearch:
+	push	hl
+	push	bc
+	ld	de,monname
+	ld	b,8
+prlcomp:
+	ld	a,(de)
+	cp	(hl)
+	jr	nz,notfound
+	inc	de
+	inc	hl
+	djnz	prlcomp
+	pop	bc
+	pop	hl		; we have the address
+	jr	moveprl
+notfound:
+	pop	bc
+	pop	hl
+	inc	hl
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,prlsearch
+	jp	nomonerr
+moveprl:
+	ld	de,TPA+16
+	or	a
+	sbc	hl,de		; PRL header starts at RSX-name field - 110h
+	push	hl
+	inc	hl
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; program size
+	inc	hl
+	inc	hl
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; additional memory
+	ex	de,hl
+	add	hl,bc		; program size + addtl mem
+	ld	a,(BDOS+2)	; high byte of bdos-addr
+	dec	a		; 100h less to be safe
+	sub	h		; subtract total program length
+	ld	d,a
+	ld	e,0
+	pop	hl		; PRL-file start
+	push	bc		; save program size
+	push	de		; start of program
+	ld	de,TPA
+	add	hl,de		; point after PRL-header
+	pop	de
+	push	de
+	ldir			; move program into correct location
+	pop	de		; start of program
+	pop	bc		; program size
+	push	de		; save program start again
+	push	hl		; save bitmap addr
+	ld	h,d		; high byte of prog start = offset
+	dec	h		; - 100h
+relocloop:
+	ld	a,b
+	or	c
+	jr	z,reldone	; ready if all bytes relocated
+	dec	bc
+	ld	a,e
+	and	NibMASK		; new byte ?
+	jr	nz,samebyte
+	ex	(sp),hl
+	ld	a,(hl)		; get next reloc byte
+	inc	hl
+	ex	(sp),hl
+	ld	l,a
+samebyte:
+	rl	l
+	jr	nc,nooff	; no offset if bit clear
+	ld	a,(de)
+	add	a,h		; else add offset
+	ld	(de),a
+nooff:
+	inc	de
+	jr	relocloop
+reldone:
+	pop	de
+	pop	hl		; program start
+	ld	l,6
+	ld	de,(TPAtop)	; get old BDOS entry
+	ld	(TPAtop),hl	; set new BDOS entry
+	ld	bc,4
+	add	hl,bc		; point to "next" address in RSX-Header
+	ld	(hl),e		; store old BDOS addr at "next" in RSX-Header
+	inc	hl
+	ld	(hl),d
+	ret
+ENDIF;NOT CPM3
+
+;
+; Prepare files for load
+;
+prep.files:
+	call	GetParams	; Sample parameters
+	ld	hl,(Param1)
+	ld	a,(ParamLen1)
+	ld	bc,COM
+	ld	de,FCB+9
+	call	checkext	; Set default .COM
+	ld	de,FCB2+1
+	ld	a,(de)		; Test wild card
+	cp	'?'
+	jr	nz,.prep
+	ld	hl,FCB+1
+	ld	bc,8
+	ldir			; Copy name
+.prep:
+	ld	hl,(Param2)
+	ld	a,(ParamLen2)
+	ld	bc,SYM
+	ld	de,FCB2+9
+	call	checkext	; Set default .SYM
+	ret
+;
+; Check extension, set default if none
+; ENTRY	: Reg HL points to substring defining file
+;	  Reg DE points to extension field of FCB
+;	  Reg BC points to default extension
+;	  Accu holds length of substring defining file
+;
+checkext:
+	or	a		; Test any file name
+	ret	z		; .. no, skip
+	push	bc
+	ld	c,a
+	ld	a,(de)		; Test extension defined
+	cp	' '
+	jr	nz,no.ext
+	ld	b,0
+	ld	a,'.'		; Test extension suppressed
+	cpir
+	pop	hl
+	ret	z
+	ld	bc,ext.len
+	ldir			; Set extension
+	ret
+no.ext:
+	pop	bc
+	ret
+;
+; Sample parameters from CCP line
+;
+GetParams:
+	ld	hl,CCPbuf
+	ld	a,(hl)		; Test any in line
+	or	a
+	ret	z		; .. no
+	ld	b,a
+	call	ParamStr	; Get 1st
+	ret	z
+	ld	(Param1),hl	; Save
+	call	ParamLen	; Get length
+	ld	a,c
+	ld	(ParamLen1),a
+	call	ParamStr	; Get 2nd
+	ret	z
+	ld	(Param2),hl	; Save
+	call	ParamLen	; Get length
+	ld	a,c
+	ld	(ParamLen2),a
+	ret
+;
+; Get length of parameter
+; ENTRY	: Reg HL points to string length searched for
+;	  Reg B  holds remaining length
+; EXIT	: Reg C  holds length of substring
+;
+ParamLen:
+	ld	c,0		; Clear count
+	ld	a,b		; Test any remainder
+	or	a
+	ret	z
+..Len:
+	call	ParamDelim	; Find delimiter
+	ret	z
+	inc	c		; .. bump
+	inc	hl
+	djnz	..Len
+	ret
+;
+; Get pointer to substring
+; ENTRY	: Reg HL points to string
+;	  Reg B  holds remaining length
+; EXIT	: Reg HL points to start of string
+;	  Zero flag set if end of parameter
+;
+ParamStr:
+	inc	b
+..Str:
+	dec	b		; Test end
+	ret	z
+	inc	hl		; Bump pointer
+	call	ParamDelim	; Skip any delimiter
+	jr	z,..Str
+	ret
+;
+; Skip delimiter
+; ENTRY	: Reg HL holds pointer
+; EXIT	: Zero flag set on delimiter
+;
+ParamDelim:
+	ld	a,(hl)		; Get character
+	cp	tab		; Test TAB
+	ret	z
+	cp	' '		; .. or BLANK
+	ret	z
+	or	a		; .. or end
+	ret
+;
+Param1:
+	ds	2		; First parameter pointer
+ParamLen1:
+	ds	1
+Param2:
+	ds	2		; Second parameter pointer
+ParamLen2:
+	ds	1
+COM:
+	db	'COM'
+ext.len	equ	$-COM
+SYM:
+	db	'SYM'
+pgmend:
+;
+stack	equ	pgmend+2*128
+
+	end	monstart
+
+ParamLen2:
+	ds	1
+COM:
+	db	'COM'
+ext.len	equ	$-COM
+SYM:
+	db	'SYM'
+pgmen

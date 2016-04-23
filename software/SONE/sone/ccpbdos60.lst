@@ -1,0 +1,4078 @@
+   1:			;**************************************************************
+   2:			;*
+   3:			;*             C P / M   version   2 . 2
+   4:			;*
+   5:			;*   Reconstructed from memory image on February 27, 1981
+   6:			;*
+   7:			;*                by Clark A. Calkins
+   8:			;*
+   9:			;**************************************************************
+  10:			;
+  11:			;   Set memory limit here. This is the amount of contigeous
+  12:			; ram starting from 0000. CP/M will reside at the end of this space.
+  13:			;
+  14:			; MEM	EQU	62		;for a 62k system (TS802 TEST - WORKS OK).
+  15:				include sysent.asm
+sysent.asm
+**** sysent.asm ****
+   1:			;
+   2:			;********************************************************
+   3:			;*							*
+   4:			;*	    UNIVERSAL BASIC I/O SYSTEM (BIOS)		*
+   5:			;*							*
+   6:			;*           memory size and SONE allocation		*
+   7:			;*							*
+   8:			;********************************************************
+   9:			;
+  10:			;	Programmers: Martino Stefano & Gallarani Paolo
+  11:				; Disassembly/retype Pino Giaquinto & Piergiorgio Betti 2015/04/25
+  12:			;
+  13:			;********************************************************
+  14:			;*		MEMORY SIZING				*
+  15:			;********************************************************
+  16:			;
+  17:			; msize	equ	56			; CP/M memory size in kilobyte
+  18:				include	msize.asm		; read in ram size
+msize.asm
+**** msize.asm ****
+   1:	003C          	msize	equ	60
+**** sysent.asm ****
+  19:	0001          	mres	equ	1			; reserved mem in kilobyte
+  20:			;
+  21:			;********************************************************
+  22:			;*		SYSTEM CONSTANTS			*
+  23:			;********************************************************
+  24:			;
+  25:	003B          	cmsize	equ	msize-mres		; cp/m size in kbyte
+  26:			;
+  27:			;	bias is address offset from 3400h for memory system
+  28:			;	than 16k (referred to as "b" throughout the next)
+  29:			;
+  30:	9C00          	bias	equ	(cmsize-20)*1024;
+  31:	D000          	ccp	equ	3400h+bias		; base of ccp
+  32:	D800          	bdose	equ	ccp+800h		; start of bdos
+  33:	D806          	bdos	equ	ccp+806h		; base of bdos
+  34:	E600          	bios	equ	ccp+1600h		; base of bios
+  35:	1000          	ipl	equ	1000h			; ipl origin
+  36:			;
+  37:			; EOF
+**** ccpbdos.asm ****
+  16:	003B          	MEM	EQU	cmsize
+  17:			;
+  18:			;**************************************************************
+  19:			;*
+  20:			;*        B I O S   J U M P   T A B L E
+  21:			;*
+  22:			;**************************************************************
+  23:			;
+  24:	E600          	BOOT	equ	bios
+  25:	E603          	WBOOT	equ	bios+3
+  26:	E606          	CONST	equ	bios+6
+  27:	E609          	CONIN	equ	bios+9
+  28:	E60C          	CONOUT	equ	bios+12
+  29:	E60F          	LISTD	equ	bios+15
+  30:	E612          	PUNCH	equ	bios+18
+  31:	E615          	READER	equ	bios+21
+  32:	E618          	HOME	equ	bios+24
+  33:	E61B          	SELDSK	equ	bios+27
+  34:	E61E          	SETTRK	equ	bios+30
+  35:	E621          	SETSEC	equ	bios+33
+  36:	E624          	SETDMA	equ	bios+36
+  37:	E627          	READ	equ	bios+39
+  38:	E62A          	WRITE	equ	bios+42
+  39:	E62D          	PRSTAT	equ	bios+45
+  40:	E630          	SECTRAN	equ	bios+48
+  41:			;
+  42:			
+  43:			;
+  44:	0003          	IOBYTE	EQU	3		;i/o definition byte.
+  45:	0004          	TDRIVE	EQU	4		;current drive name and user number.
+  46:	0005          	ENTRYP	EQU	5		;entry point for the cp/m bdos.
+  47:	005C          	TFCB	EQU	5CH		;default file control block.
+  48:	0080          	TBUFF	EQU	80H		;i/o buffer and command line storage.
+  49:	0100          	TBASE	EQU	100H		;transiant program storage area.
+  50:			;
+  51:			;   Set control character equates.
+  52:			;
+  53:	0003          	CNTRLC	EQU	3		;control-c
+  54:	0005          	CNTRLE	EQU	05H		;control-e
+  55:	0008          	BS	EQU	08H		;backspace
+  56:	0009          	TAB	EQU	09H		;tab
+  57:	000A          	LF	EQU	0AH		;line feed
+  58:	000C          	FF	EQU	0CH		;form feed
+  59:	000D          	CR	EQU	0DH		;carriage return
+  60:	0010          	CNTRLP	EQU	10H		;control-p
+  61:	0012          	CNTRLR	EQU	12H		;control-r
+  62:	0013          	CNTRLS	EQU	13H		;control-s
+  63:	0015          	CNTRLU	EQU	15H		;control-u
+  64:	0018          	CNTRLX	EQU	18H		;control-x
+  65:	001A          	CNTRLZ	EQU	1AH		;control-z (end-of-file mark)
+  66:	007F          	DEL	EQU	7FH		;rubout
+  67:			;
+  68:			;   Set origin for CP/M
+  69:			;
+  70:			; 	ORG	(MEM-7)*1024
+  71:	D000          		.phase ccp
+  72:			;
+  73:	D000  C35CD3  	CBASE:	JP	COMMAND		;execute command processor (ccp).
+  74:	D003  C358D3  		JP	CLEARBUF	;entry to empty input buffer before starting ccp.
+  75:			
+  76:			;
+  77:			;   Standard cp/m ccp input buffer. Format is (max length),
+  78:			; (actual length), (char #1), (char #2), (char #3), etc.
+  79:			;
+  80:	D006  7F      	INBUFF:	DEFB	127		;length of input buffer.
+  81:	D007  00      		DEFB	0		;current length of contents.
+  82:	D008  436F7079		DEFB	'Copyright'
+	      72696768
+	      74
+  83:	D011  20313937		DEFB	' 1979 (c) by Digital Research      '
+	      39202863
+	      29206279
+	      20446967
+	      6974616C
+	      20526573
+	      65617263
+	      68202020
+	      202020
+  84:	D034  00000000		DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      00000000
+	      00000000
+	      000000
+  85:	D04B  00000000		DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      00000000
+	      00000000
+	      000000
+  86:	D062  00000000		DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      00000000
+	      00000000
+	      000000
+  87:	D079  00000000		DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      000000
+  88:	D088  08D0    	INPOINT:DEFW	INBUFF+2	;input line pointer
+  89:	D08A  0000    	NAMEPNT:DEFW	0		;input line pointer used for error message. Points to
+  90:			;			;start of name in error.
+  91:			;
+  92:			;   Routine to print (A) on the console. All registers used.
+  93:			;
+  94:	D08C  5F      	PRINT:	LD	E,A		;setup bdos call.
+  95:	D08D  0E02    		LD	C,2
+  96:	D08F  C30500  		JP	ENTRYP
+  97:			;
+  98:			;   Routine to print (A) on the console and to save (BC).
+  99:			;
+ 100:	D092  C5      	PRINTB:	PUSH	BC
+ 101:	D093  CD8CD0  		CALL	PRINT
+ 102:	D096  C1      		POP	BC
+ 103:	D097  C9      		RET
+ 104:			;
+ 105:			;   Routine to send a carriage return, line feed combination
+ 106:			; to the console.
+ 107:			;
+ 108:	D098  3E0D    	CRLF:	LD	A,CR
+ 109:	D09A  CD92D0  		CALL	PRINTB
+ 110:	D09D  3E0A    		LD	A,LF
+ 111:	D09F  C392D0  		JP	PRINTB
+ 112:			;
+ 113:			;   Routine to send one space to the console and save (BC).
+ 114:			;
+ 115:	D0A2  3E20    	PSPACE:	LD	A,' '
+ 116:	D0A4  C392D0  		JP	PRINTB
+ 117:			;
+ 118:			;   Routine to print character string pointed to be (BC) on the
+ 119:			; console. It must terminate with a null byte.
+ 120:			;
+ 121:	D0A7  C5      	PLINE:	PUSH	BC
+ 122:	D0A8  CD98D0  		CALL	CRLF
+ 123:	D0AB  E1      		POP	HL
+ 124:	D0AC  7E      	PLINE2:	LD	A,(HL)
+ 125:	D0AD  B7      		OR	A
+ 126:	D0AE  C8      		RET	Z
+ 127:	D0AF  23      		INC	HL
+ 128:	D0B0  E5      		PUSH	HL
+ 129:	D0B1  CD8CD0  		CALL	PRINT
+ 130:	D0B4  E1      		POP	HL
+ 131:	D0B5  C3ACD0  		JP	PLINE2
+ 132:			;
+ 133:			;   Routine to reset the disk system.
+ 134:			;
+ 135:	D0B8  0E0D    	RESDSK:	LD	C,13
+ 136:	D0BA  C30500  		JP	ENTRYP
+ 137:			;
+ 138:			;   Routine to select disk (A).
+ 139:			;
+ 140:	D0BD  5F      	DSKSEL:	LD	E,A
+ 141:	D0BE  0E0E    		LD	C,14
+ 142:	D0C0  C30500  		JP	ENTRYP
+ 143:			;
+ 144:			;   Routine to call bdos and save the return code. The zero
+ 145:			; flag is set on a return of 0ffh.
+ 146:			;
+ 147:	D0C3  CD0500  	ENTRY1:	CALL	ENTRYP
+ 148:	D0C6  32EED7  		LD	(RTNCODE),A	;save return code.
+ 149:	D0C9  3C      		INC	A		;set zero if 0ffh returned.
+ 150:	D0CA  C9      		RET
+ 151:			;
+ 152:			;   Routine to open a file. (DE) must point to the FCB.
+ 153:			;
+ 154:	D0CB  0E0F    	OPEN:	LD	C,15
+ 155:	D0CD  C3C3D0  		JP	ENTRY1
+ 156:			;
+ 157:			;   Routine to open file at (FCB).
+ 158:			;
+ 159:	D0D0  AF      	OPENFCB:XOR	A		;clear the record number byte at fcb+32
+ 160:	D0D1  32EDD7  		LD	(FCB+32),A
+ 161:	D0D4  11CDD7  		LD	DE,FCB
+ 162:	D0D7  C3CBD0  		JP	OPEN
+ 163:			;
+ 164:			;   Routine to close a file. (DE) points to FCB.
+ 165:			;
+ 166:	D0DA  0E10    	CLOSE:	LD	C,16
+ 167:	D0DC  C3C3D0  		JP	ENTRY1
+ 168:			;
+ 169:			;   Routine to search for the first file with ambigueous name
+ 170:			; (DE).
+ 171:			;
+ 172:	D0DF  0E11    	SRCHFST:LD	C,17
+ 173:	D0E1  C3C3D0  		JP	ENTRY1
+ 174:			;
+ 175:			;   Search for the next ambigeous file name.
+ 176:			;
+ 177:	D0E4  0E12    	SRCHNXT:LD	C,18
+ 178:	D0E6  C3C3D0  		JP	ENTRY1
+ 179:			;
+ 180:			;   Search for file at (FCB).
+ 181:			;
+ 182:	D0E9  11CDD7  	SRCHFCB:LD	DE,FCB
+ 183:	D0EC  C3DFD0  		JP	SRCHFST
+ 184:			;
+ 185:			;   Routine to delete a file pointed to by (DE).
+ 186:			;
+ 187:	D0EF  0E13    	DELETE:	LD	C,19
+ 188:	D0F1  C30500  		JP	ENTRYP
+ 189:			;
+ 190:			;   Routine to call the bdos and set the zero flag if a zero
+ 191:			; status is returned.
+ 192:			;
+ 193:	D0F4  CD0500  	ENTRY2:	CALL	ENTRYP
+ 194:	D0F7  B7      		OR	A		;set zero flag if appropriate.
+ 195:	D0F8  C9      		RET
+ 196:			;
+ 197:			;   Routine to read the next record from a sequential file.
+ 198:			; (DE) points to the FCB.
+ 199:			;
+ 200:	D0F9  0E14    	RDREC:	LD	C,20
+ 201:	D0FB  C3F4D0  		JP	ENTRY2
+ 202:			;
+ 203:			;   Routine to read file at (FCB).
+ 204:			;
+ 205:	D0FE  11CDD7  	READFCB:LD	DE,FCB
+ 206:	D101  C3F9D0  		JP	RDREC
+ 207:			;
+ 208:			;   Routine to write the next record of a sequential file.
+ 209:			; (DE) points to the FCB.
+ 210:			;
+ 211:	D104  0E15    	WRTREC:	LD	C,21
+ 212:	D106  C3F4D0  		JP	ENTRY2
+ 213:			;
+ 214:			;   Routine to create the file pointed to by (DE).
+ 215:			;
+ 216:	D109  0E16    	CREATE:	LD	C,22
+ 217:	D10B  C3C3D0  		JP	ENTRY1
+ 218:			;
+ 219:			;   Routine to rename the file pointed to by (DE). Note that
+ 220:			; the new name starts at (DE+16).
+ 221:			;
+ 222:	D10E  0E17    	RENAM:	LD	C,23
+ 223:	D110  C30500  		JP	ENTRYP
+ 224:			;
+ 225:			;   Get the current user code.
+ 226:			;
+ 227:	D113  1EFF    	GETUSR:	LD	E,0FFH
+ 228:			;
+ 229:			;   Routne to get or set the current user code.
+ 230:			; If (E) is FF then this is a GET, else it is a SET.
+ 231:			;
+ 232:	D115  0E20    	GETSETUC: LD	C,32
+ 233:	D117  C30500  		JP	ENTRYP
+ 234:			;
+ 235:			;   Routine to set the current drive byte at (TDRIVE).
+ 236:			;
+ 237:	D11A  CD13D1  	SETCDRV:CALL	GETUSR		;get user number
+ 238:	D11D  87      		ADD	A,A		;and shift into the upper 4 bits.
+ 239:	D11E  87      		ADD	A,A
+ 240:	D11F  87      		ADD	A,A
+ 241:	D120  87      		ADD	A,A
+ 242:	D121  21EFD7  		LD	HL,CDRIVE	;now add in the current drive number.
+ 243:	D124  B6      		OR	(HL)
+ 244:	D125  320400  		LD	(TDRIVE),A	;and save.
+ 245:	D128  C9      		RET
+ 246:			;
+ 247:			;   Move currently active drive down to (TDRIVE).
+ 248:			;
+ 249:	D129  3AEFD7  	MOVECD:	LD	A,(CDRIVE)
+ 250:	D12C  320400  		LD	(TDRIVE),A
+ 251:	D12F  C9      		RET
+ 252:			;
+ 253:			;   Routine to convert (A) into upper case ascii. Only letters
+ 254:			; are affected.
+ 255:			;
+ 256:	D130  FE61    	UPPER:	CP	'a'		;check for letters in the range of 'a' to 'z'.
+ 257:	D132  D8      		RET	C
+ 258:	D133  FE7B    		CP	'{'
+ 259:	D135  D0      		RET	NC
+ 260:	D136  E65F    		AND	5FH		;convert it if found.
+ 261:	D138  C9      		RET
+ 262:			;
+ 263:			;   Routine to get a line of input. We must check to see if the
+ 264:			; user is in (BATCH) mode. If so, then read the input from file
+ 265:			; ($$$.SUB). At the end, reset to console input.
+ 266:			;
+ 267:	D139  3AABD7  	GETINP:	LD	A,(BATCH)	;if =0, then use console input.
+ 268:	D13C  B7      		OR	A
+ 269:	D13D  CA96D1  		JP	Z,GETINP1
+ 270:			;
+ 271:			;   Use the submit file ($$$.sub) which is prepared by a
+ 272:			; SUBMIT run. It must be on drive (A) and it will be deleted
+ 273:			; if and error occures (like eof).
+ 274:			;
+ 275:	D140  3AEFD7  		LD	A,(CDRIVE)	;select drive 0 if need be.
+ 276:	D143  B7      		OR	A
+ 277:	D144  3E00    		LD	A,0		;always use drive A for submit.
+ 278:	D146  C4BDD0  		CALL	NZ,DSKSEL	;select it if required.
+ 279:	D149  11ACD7  		LD	DE,BATCHFCB
+ 280:	D14C  CDCBD0  		CALL	OPEN		;look for it.
+ 281:	D14F  CA96D1  		JP	Z,GETINP1	;if not there, use normal input.
+ 282:	D152  3ABBD7  		LD	A,(BATCHFCB+15)	;get last record number+1.
+ 283:	D155  3D      		DEC	A
+ 284:	D156  32CCD7  		LD	(BATCHFCB+32),A
+ 285:	D159  11ACD7  		LD	DE,BATCHFCB
+ 286:	D15C  CDF9D0  		CALL	RDREC		;read last record.
+ 287:	D15F  C296D1  		JP	NZ,GETINP1	;quit on end of file.
+ 288:			;
+ 289:			;   Move this record into input buffer.
+ 290:			;
+ 291:	D162  1107D0  		LD	DE,INBUFF+1
+ 292:	D165  218000  		LD	HL,TBUFF	;data was read into buffer here.
+ 293:	D168  0680    		LD	B,128		;all 128 characters may be used.
+ 294:	D16A  CD42D4  		CALL	HL2DE		;(HL) to (DE), (B) bytes.
+ 295:	D16D  21BAD7  		LD	HL,BATCHFCB+14
+ 296:	D170  3600    		LD	(HL),0		;zero out the 's2' byte.
+ 297:	D172  23      		INC	HL		;and decrement the record count.
+ 298:	D173  35      		DEC	(HL)
+ 299:	D174  11ACD7  		LD	DE,BATCHFCB	;close the batch file now.
+ 300:	D177  CDDAD0  		CALL	CLOSE
+ 301:	D17A  CA96D1  		JP	Z,GETINP1	;quit on an error.
+ 302:	D17D  3AEFD7  		LD	A,(CDRIVE)	;re-select previous drive if need be.
+ 303:	D180  B7      		OR	A
+ 304:	D181  C4BDD0  		CALL	NZ,DSKSEL	;don't do needless selects.
+ 305:			;
+ 306:			;   Print line just read on console.
+ 307:			;
+ 308:	D184  2108D0  		LD	HL,INBUFF+2
+ 309:	D187  CDACD0  		CALL	PLINE2
+ 310:	D18A  CDC2D1  		CALL	CHKCON		;check console, quit on a key.
+ 311:	D18D  CAA7D1  		JP	Z,GETINP2	;jump if no key is pressed.
+ 312:			;
+ 313:			;   Terminate the submit job on any keyboard input. Delete this
+ 314:			; file such that it is not re-started and jump to normal keyboard
+ 315:			; input section.
+ 316:			;
+ 317:	D190  CDDDD1  		CALL	DELBATCH	;delete the batch file.
+ 318:	D193  C382D3  		JP	CMMND1		;and restart command input.
+ 319:			;
+ 320:			;   Get here for normal keyboard input. Delete the submit file
+ 321:			; incase there was one.
+ 322:			;
+ 323:	D196  CDDDD1  	GETINP1:CALL	DELBATCH	;delete file ($$$.sub).
+ 324:	D199  CD1AD1  		CALL	SETCDRV		;reset active disk.
+ 325:	D19C  0E0A    		LD	C,10		;get line from console device.
+ 326:	D19E  1106D0  		LD	DE,INBUFF
+ 327:	D1A1  CD0500  		CALL	ENTRYP
+ 328:	D1A4  CD29D1  		CALL	MOVECD		;reset current drive (again).
+ 329:			;
+ 330:			;   Convert input line to upper case.
+ 331:			;
+ 332:	D1A7  2107D0  	GETINP2:LD	HL,INBUFF+1
+ 333:	D1AA  46      		LD	B,(HL)		;(B)=character counter.
+ 334:	D1AB  23      	GETINP3:INC	HL
+ 335:	D1AC  78      		LD	A,B		;end of the line?
+ 336:	D1AD  B7      		OR	A
+ 337:	D1AE  CABAD1  		JP	Z,GETINP4
+ 338:	D1B1  7E      		LD	A,(HL)		;convert to upper case.
+ 339:	D1B2  CD30D1  		CALL	UPPER
+ 340:	D1B5  77      		LD	(HL),A
+ 341:	D1B6  05      		DEC	B		;adjust character count.
+ 342:	D1B7  C3ABD1  		JP	GETINP3
+ 343:	D1BA  77      	GETINP4:LD	(HL),A		;add trailing null.
+ 344:	D1BB  2108D0  		LD	HL,INBUFF+2
+ 345:	D1BE  2288D0  		LD	(INPOINT),HL	;reset input line pointer.
+ 346:	D1C1  C9      		RET
+ 347:			;
+ 348:			;   Routine to check the console for a key pressed. The zero
+ 349:			; flag is set is none, else the character is returned in (A).
+ 350:			;
+ 351:	D1C2  0E0B    	CHKCON:	LD	C,11		;check console.
+ 352:	D1C4  CD0500  		CALL	ENTRYP
+ 353:	D1C7  B7      		OR	A
+ 354:	D1C8  C8      		RET	Z		;return if nothing.
+ 355:	D1C9  0E01    		LD	C,1		;else get character.
+ 356:	D1CB  CD0500  		CALL	ENTRYP
+ 357:	D1CE  B7      		OR	A		;clear zero flag and return.
+ 358:	D1CF  C9      		RET
+ 359:			;
+ 360:			;   Routine to get the currently active drive number.
+ 361:			;
+ 362:	D1D0  0E19    	GETDSK:	LD	C,25
+ 363:	D1D2  C30500  		JP	ENTRYP
+ 364:			;
+ 365:			;   Set the stabdard dma address.
+ 366:			;
+ 367:	D1D5  118000  	STDDMA:	LD	DE,TBUFF
+ 368:			;
+ 369:			;   Routine to set the dma address to (DE).
+ 370:			;
+ 371:	D1D8  0E1A    	DMASET:	LD	C,26
+ 372:	D1DA  C30500  		JP	ENTRYP
+ 373:			;
+ 374:			;  Delete the batch file created by SUBMIT.
+ 375:			;
+ 376:	D1DD  21ABD7  	DELBATCH: LD	HL,BATCH	;is batch active?
+ 377:	D1E0  7E      		LD	A,(HL)
+ 378:	D1E1  B7      		OR	A
+ 379:	D1E2  C8      		RET	Z
+ 380:	D1E3  3600    		LD	(HL),0		;yes, de-activate it.
+ 381:	D1E5  AF      		XOR	A
+ 382:	D1E6  CDBDD0  		CALL	DSKSEL		;select drive 0 for sure.
+ 383:	D1E9  11ACD7  		LD	DE,BATCHFCB	;and delete this file.
+ 384:	D1EC  CDEFD0  		CALL	DELETE
+ 385:	D1EF  3AEFD7  		LD	A,(CDRIVE)	;reset current drive.
+ 386:	D1F2  C3BDD0  		JP	DSKSEL
+ 387:			;
+ 388:			;   Check to two strings at (PATTRN1) and (PATTRN2). They must be
+ 389:			; the same or we halt....
+ 390:			;
+ 391:	D1F5  1128D3  	VERIFY:	LD	DE,PATTRN1	;these are the serial number bytes.
+ 392:	D1F8  2100D8  		LD	HL,PATTRN2	;ditto, but how could they be different?
+ 393:	D1FB  0606    		LD	B,6		;6 bytes each.
+ 394:	D1FD  1A      	VERIFY1:LD	A,(DE)
+ 395:	D1FE  BE      		CP	(HL)
+ 396:	D1FF  C2CFD3  		JP	NZ,SYSHALT	;jump to halt routine.
+ 397:	D202  13      		INC	DE
+ 398:	D203  23      		INC	HL
+ 399:	D204  05      		DEC	B
+ 400:	D205  C2FDD1  		JP	NZ,VERIFY1
+ 401:	D208  C9      		RET
+ 402:			;
+ 403:			;   Print back file name with a '?' to indicate a syntax error.
+ 404:			;
+ 405:	D209  CD98D0  	SYNERR:	CALL	CRLF		;end current line.
+ 406:	D20C  2A8AD0  		LD	HL,(NAMEPNT)	;this points to name in error.
+ 407:	D20F  7E      	SYNERR1:LD	A,(HL)		;print it until a space or null is found.
+ 408:	D210  FE20    		CP	' '
+ 409:	D212  CA22D2  		JP	Z,SYNERR2
+ 410:	D215  B7      		OR	A
+ 411:	D216  CA22D2  		JP	Z,SYNERR2
+ 412:	D219  E5      		PUSH	HL
+ 413:	D21A  CD8CD0  		CALL	PRINT
+ 414:	D21D  E1      		POP	HL
+ 415:	D21E  23      		INC	HL
+ 416:	D21F  C30FD2  		JP	SYNERR1
+ 417:	D222  3E3F    	SYNERR2:LD	A,'?'		;add trailing '?'.
+ 418:	D224  CD8CD0  		CALL	PRINT
+ 419:	D227  CD98D0  		CALL	CRLF
+ 420:	D22A  CDDDD1  		CALL	DELBATCH	;delete any batch file.
+ 421:	D22D  C382D3  		JP	CMMND1		;and restart from console input.
+ 422:			;
+ 423:			;   Check character at (DE) for legal command input. Note that the
+ 424:			; zero flag is set if the character is a delimiter.
+ 425:			;
+ 426:	D230  1A      	CHECK:	LD	A,(DE)
+ 427:	D231  B7      		OR	A
+ 428:	D232  C8      		RET	Z
+ 429:	D233  FE20    		CP	' '		;control characters are not legal here.
+ 430:	D235  DA09D2  		JP	C,SYNERR
+ 431:	D238  C8      		RET	Z		;check for valid delimiter.
+ 432:	D239  FE3D    		CP	'='
+ 433:	D23B  C8      		RET	Z
+ 434:	D23C  FE5F    		CP	'_'
+ 435:	D23E  C8      		RET	Z
+ 436:	D23F  FE2E    		CP	'.'
+ 437:	D241  C8      		RET	Z
+ 438:	D242  FE3A    		CP	':'
+ 439:	D244  C8      		RET	Z
+ 440:	D245  FE3B    		CP	';'
+ 441:	D247  C8      		RET	Z
+ 442:	D248  FE3C    		CP	'<'
+ 443:	D24A  C8      		RET	Z
+ 444:	D24B  FE3E    		CP	'>'
+ 445:	D24D  C8      		RET	Z
+ 446:	D24E  C9      		RET
+ 447:			;
+ 448:			;   Get the next non-blank character from (DE).
+ 449:			;
+ 450:	D24F  1A      	NONBLANK: LD	A,(DE)
+ 451:	D250  B7      		OR	A		;string ends with a null.
+ 452:	D251  C8      		RET	Z
+ 453:	D252  FE20    		CP	' '
+ 454:	D254  C0      		RET	NZ
+ 455:	D255  13      		INC	DE
+ 456:	D256  C34FD2  		JP	NONBLANK
+ 457:			;
+ 458:			;   Add (HL)=(HL)+(A)
+ 459:			;
+ 460:	D259  85      	ADDHL:	ADD	A,L
+ 461:	D25A  6F      		LD	L,A
+ 462:	D25B  D0      		RET	NC		;take care of any carry.
+ 463:	D25C  24      		INC	H
+ 464:	D25D  C9      		RET
+ 465:			;
+ 466:			;   Convert the first name in (FCB).
+ 467:			;
+ 468:	D25E  3E00    	CONVFST:LD	A,0
+ 469:			;
+ 470:			;   Format a file name (convert * to '?', etc.). On return,
+ 471:			; (A)=0 is an unambigeous name was specified. Enter with (A) equal to
+ 472:			; the position within the fcb for the name (either 0 or 16).
+ 473:			;
+ 474:	D260  21CDD7  	CONVERT:LD	HL,FCB
+ 475:	D263  CD59D2  		CALL	ADDHL
+ 476:	D266  E5      		PUSH	HL
+ 477:	D267  E5      		PUSH	HL
+ 478:	D268  AF      		XOR	A
+ 479:	D269  32F0D7  		LD	(CHGDRV),A	;initialize drive change flag.
+ 480:	D26C  2A88D0  		LD	HL,(INPOINT)	;set (HL) as pointer into input line.
+ 481:	D26F  EB      		EX	DE,HL
+ 482:	D270  CD4FD2  		CALL	NONBLANK	;get next non-blank character.
+ 483:	D273  EB      		EX	DE,HL
+ 484:	D274  228AD0  		LD	(NAMEPNT),HL	;save pointer here for any error message.
+ 485:	D277  EB      		EX	DE,HL
+ 486:	D278  E1      		POP	HL
+ 487:	D279  1A      		LD	A,(DE)		;get first character.
+ 488:	D27A  B7      		OR	A
+ 489:	D27B  CA89D2  		JP	Z,CONVRT1
+ 490:	D27E  DE40    		SBC	A,'A'-1		;might be a drive name, convert to binary.
+ 491:	D280  47      		LD	B,A		;and save.
+ 492:	D281  13      		INC	DE		;check next character for a ':'.
+ 493:	D282  1A      		LD	A,(DE)
+ 494:	D283  FE3A    		CP	':'
+ 495:	D285  CA90D2  		JP	Z,CONVRT2
+ 496:	D288  1B      		DEC	DE		;nope, move pointer back to the start of the line.
+ 497:	D289  3AEFD7  	CONVRT1:LD	A,(CDRIVE)
+ 498:	D28C  77      		LD	(HL),A
+ 499:	D28D  C396D2  		JP	CONVRT3
+ 500:	D290  78      	CONVRT2:LD	A,B
+ 501:	D291  32F0D7  		LD	(CHGDRV),A	;set change in drives flag.
+ 502:	D294  70      		LD	(HL),B
+ 503:	D295  13      		INC	DE
+ 504:			;
+ 505:			;   Convert the basic file name.
+ 506:			;
+ 507:	D296  0608    	CONVRT3:LD	B,08H
+ 508:	D298  CD30D2  	CONVRT4:CALL	CHECK
+ 509:	D29B  CAB9D2  		JP	Z,CONVRT8
+ 510:	D29E  23      		INC	HL
+ 511:	D29F  FE2A    		CP	'*'		;note that an '*' will fill the remaining
+ 512:	D2A1  C2A9D2  		JP	NZ,CONVRT5	;field with '?'.
+ 513:	D2A4  363F    		LD	(HL),'?'
+ 514:	D2A6  C3ABD2  		JP	CONVRT6
+ 515:	D2A9  77      	CONVRT5:LD	(HL),A
+ 516:	D2AA  13      		INC	DE
+ 517:	D2AB  05      	CONVRT6:DEC	B
+ 518:	D2AC  C298D2  		JP	NZ,CONVRT4
+ 519:	D2AF  CD30D2  	CONVRT7:CALL	CHECK		;get next delimiter.
+ 520:	D2B2  CAC0D2  		JP	Z,GETEXT
+ 521:	D2B5  13      		INC	DE
+ 522:	D2B6  C3AFD2  		JP	CONVRT7
+ 523:	D2B9  23      	CONVRT8:INC	HL		;blank fill the file name.
+ 524:	D2BA  3620    		LD	(HL),' '
+ 525:	D2BC  05      		DEC	B
+ 526:	D2BD  C2B9D2  		JP	NZ,CONVRT8
+ 527:			;
+ 528:			;   Get the extension and convert it.
+ 529:			;
+ 530:	D2C0  0603    	GETEXT:	LD	B,03H
+ 531:	D2C2  FE2E    		CP	'.'
+ 532:	D2C4  C2E9D2  		JP	NZ,GETEXT5
+ 533:	D2C7  13      		INC	DE
+ 534:	D2C8  CD30D2  	GETEXT1:CALL	CHECK
+ 535:	D2CB  CAE9D2  		JP	Z,GETEXT5
+ 536:	D2CE  23      		INC	HL
+ 537:	D2CF  FE2A    		CP	'*'
+ 538:	D2D1  C2D9D2  		JP	NZ,GETEXT2
+ 539:	D2D4  363F    		LD	(HL),'?'
+ 540:	D2D6  C3DBD2  		JP	GETEXT3
+ 541:	D2D9  77      	GETEXT2:LD	(HL),A
+ 542:	D2DA  13      		INC	DE
+ 543:	D2DB  05      	GETEXT3:DEC	B
+ 544:	D2DC  C2C8D2  		JP	NZ,GETEXT1
+ 545:	D2DF  CD30D2  	GETEXT4:CALL	CHECK
+ 546:	D2E2  CAF0D2  		JP	Z,GETEXT6
+ 547:	D2E5  13      		INC	DE
+ 548:	D2E6  C3DFD2  		JP	GETEXT4
+ 549:	D2E9  23      	GETEXT5:INC	HL
+ 550:	D2EA  3620    		LD	(HL),' '
+ 551:	D2EC  05      		DEC	B
+ 552:	D2ED  C2E9D2  		JP	NZ,GETEXT5
+ 553:	D2F0  0603    	GETEXT6:LD	B,3
+ 554:	D2F2  23      	GETEXT7:INC	HL
+ 555:	D2F3  3600    		LD	(HL),0
+ 556:	D2F5  05      		DEC	B
+ 557:	D2F6  C2F2D2  		JP	NZ,GETEXT7
+ 558:	D2F9  EB      		EX	DE,HL
+ 559:	D2FA  2288D0  		LD	(INPOINT),HL	;save input line pointer.
+ 560:	D2FD  E1      		POP	HL
+ 561:			;
+ 562:			;   Check to see if this is an ambigeous file name specification.
+ 563:			; Set the (A) register to non zero if it is.
+ 564:			;
+ 565:	D2FE  010B00  		LD	BC,11		;set name length.
+ 566:	D301  23      	GETEXT8:INC	HL
+ 567:	D302  7E      		LD	A,(HL)
+ 568:	D303  FE3F    		CP	'?'		;any question marks?
+ 569:	D305  C209D3  		JP	NZ,GETEXT9
+ 570:	D308  04      		INC	B		;count them.
+ 571:	D309  0D      	GETEXT9:DEC	C
+ 572:	D30A  C201D3  		JP	NZ,GETEXT8
+ 573:	D30D  78      		LD	A,B
+ 574:	D30E  B7      		OR	A
+ 575:	D30F  C9      		RET
+ 576:			;
+ 577:			;   CP/M command table. Note commands can be either 3 or 4 characters long.
+ 578:			;
+ 579:	0006          	NUMCMDS EQU	6		;number of commands
+ 580:	D310  44495220	CMDTBL:	DEFB	'DIR '
+ 581:	D314  45524120		DEFB	'ERA '
+ 582:	D318  54595045		DEFB	'TYPE'
+ 583:	D31C  53415645		DEFB	'SAVE'
+ 584:	D320  52454E20		DEFB	'REN '
+ 585:	D324  55534552		DEFB	'USER'
+ 586:			;
+ 587:			;   The following six bytes must agree with those at (PATTRN2)
+ 588:			; or cp/m will SYSHALT. Why?
+ 589:			;
+ 590:	D328  00160000	PATTRN1:DEFB	0,22,0,0,0,0	;(* serial number bytes *).
+	      0000
+ 591:			;
+ 592:			;   Search the command table for a match with what has just
+ 593:			; been entered. If a match is found, then we jump to the
+ 594:			; proper section. Else jump to (UNKNOWN).
+ 595:			; On return, the (C) register is set to the command number
+ 596:			; that matched (or NUMCMDS+1 if no match).
+ 597:			;
+ 598:	D32E  2110D3  	SEARCH:	LD	HL,CMDTBL
+ 599:	D331  0E00    		LD	C,0
+ 600:	D333  79      	SEARCH1:LD	A,C
+ 601:	D334  FE06    		CP	NUMCMDS		;this commands exists.
+ 602:	D336  D0      		RET	NC
+ 603:	D337  11CED7  		LD	DE,FCB+1	;check this one.
+ 604:	D33A  0604    		LD	B,4		;max command length.
+ 605:	D33C  1A      	SEARCH2:LD	A,(DE)
+ 606:	D33D  BE      		CP	(HL)
+ 607:	D33E  C24FD3  		JP	NZ,SEARCH3	;not a match.
+ 608:	D341  13      		INC	DE
+ 609:	D342  23      		INC	HL
+ 610:	D343  05      		DEC	B
+ 611:	D344  C23CD3  		JP	NZ,SEARCH2
+ 612:	D347  1A      		LD	A,(DE)		;allow a 3 character command to match.
+ 613:	D348  FE20    		CP	' '
+ 614:	D34A  C254D3  		JP	NZ,SEARCH4
+ 615:	D34D  79      		LD	A,C		;set return register for this command.
+ 616:	D34E  C9      		RET
+ 617:	D34F  23      	SEARCH3:INC	HL
+ 618:	D350  05      		DEC	B
+ 619:	D351  C24FD3  		JP	NZ,SEARCH3
+ 620:	D354  0C      	SEARCH4:INC	C
+ 621:	D355  C333D3  		JP	SEARCH1
+ 622:			;
+ 623:			;   Set the input buffer to empty and then start the command
+ 624:			; processor (ccp).
+ 625:			;
+ 626:	D358  AF      	CLEARBUF: XOR	A
+ 627:	D359  3207D0  		LD	(INBUFF+1),A	;second byte is actual length.
+ 628:			;
+ 629:			;**************************************************************
+ 630:			;*
+ 631:			;*
+ 632:			;* C C P  -   C o n s o l e   C o m m a n d   P r o c e s s o r
+ 633:			;*
+ 634:			;**************************************************************
+ 635:			;*
+ 636:	D35C  31ABD7  	COMMAND:LD	SP,CCPSTACK	;setup stack area.
+ 637:	D35F  C5      		PUSH	BC		;note that (C) should be equal to:
+ 638:	D360  79      		LD	A,C		;(uuuudddd) where 'uuuu' is the user number
+ 639:	D361  1F      		RRA			;and 'dddd' is the drive number.
+ 640:	D362  1F      		RRA
+ 641:	D363  1F      		RRA
+ 642:	D364  1F      		RRA
+ 643:	D365  E60F    		AND	0FH		;isolate the user number.
+ 644:	D367  5F      		LD	E,A
+ 645:	D368  CD15D1  		CALL	GETSETUC	;and set it.
+ 646:	D36B  CDB8D0  		CALL	RESDSK		;reset the disk system.
+ 647:	D36E  32ABD7  		LD	(BATCH),A	;clear batch mode flag.
+ 648:	D371  C1      		POP	BC
+ 649:	D372  79      		LD	A,C
+ 650:	D373  E60F    		AND	0FH		;isolate the drive number.
+ 651:	D375  32EFD7  		LD	(CDRIVE),A	;and save.
+ 652:	D378  CDBDD0  		CALL	DSKSEL		;...and select.
+ 653:	D37B  3A07D0  		LD	A,(INBUFF+1)
+ 654:	D37E  B7      		OR	A		;anything in input buffer already?
+ 655:	D37F  C298D3  		JP	NZ,CMMND2	;yes, we just process it.
+ 656:			;
+ 657:			;   Entry point to get a command line from the console.
+ 658:			;
+ 659:	D382  31ABD7  	CMMND1:	LD	SP,CCPSTACK	;set stack straight.
+ 660:	D385  CD98D0  		CALL	CRLF		;start a new line on the screen.
+ 661:	D388  CDD0D1  		CALL	GETDSK		;get current drive.
+ 662:	D38B  C661    		ADD	A,'a'
+ 663:	D38D  CD8CD0  		CALL	PRINT		;print current drive.
+ 664:	D390  3E3E    		LD	A,'>'
+ 665:	D392  CD8CD0  		CALL	PRINT		;and add prompt.
+ 666:	D395  CD39D1  		CALL	GETINP		;get line from user.
+ 667:			;
+ 668:			;   Process command line here.
+ 669:			;
+ 670:	D398  118000  	CMMND2:	LD	DE,TBUFF
+ 671:	D39B  CDD8D1  		CALL	DMASET		;set standard dma address.
+ 672:	D39E  CDD0D1  		CALL	GETDSK
+ 673:	D3A1  32EFD7  		LD	(CDRIVE),A	;set current drive.
+ 674:	D3A4  CD5ED2  		CALL	CONVFST		;convert name typed in.
+ 675:	D3A7  C409D2  		CALL	NZ,SYNERR	;wild cards are not allowed.
+ 676:	D3AA  3AF0D7  		LD	A,(CHGDRV)	;if a change in drives was indicated,
+ 677:	D3AD  B7      		OR	A		;then treat this as an unknown command
+ 678:	D3AE  C2A5D6  		JP	NZ,UNKNOWN	;which gets executed.
+ 679:	D3B1  CD2ED3  		CALL	SEARCH		;else search command table for a match.
+ 680:			;
+ 681:			;   Note that an unknown command returns
+ 682:			; with (A) pointing to the last address
+ 683:			; in our table which is (UNKNOWN).
+ 684:			;
+ 685:	D3B4  21C1D3  		LD	HL,CMDADR	;now, look thru our address table for command (A).
+ 686:	D3B7  5F      		LD	E,A		;set (DE) to command number.
+ 687:	D3B8  1600    		LD	D,0
+ 688:	D3BA  19      		ADD	HL,DE
+ 689:	D3BB  19      		ADD	HL,DE		;(HL)=(CMDADR)+2*(command number).
+ 690:	D3BC  7E      		LD	A,(HL)		;now pick out this address.
+ 691:	D3BD  23      		INC	HL
+ 692:	D3BE  66      		LD	H,(HL)
+ 693:	D3BF  6F      		LD	L,A
+ 694:	D3C0  E9      		JP	(HL)		;now execute it.
+ 695:			;
+ 696:			;   CP/M command address table.
+ 697:			;
+ 698:	D3C1  77D41FD5	CMDADR:	DEFW	DIRECT,ERASE,TYPE,SAVE
+	      5DD5ADD5
+ 699:	D3C9  10D68ED6		DEFW	RENAME,USER,UNKNOWN
+	      A5D6
+ 700:			;
+ 701:			;   Halt the system. Reason for this is unknown at present.
+ 702:			;
+ 703:	D3CF          	SYSHALT:
+ 704:	D3CF  21F376  		LD	HL,76F3H	;'DI HLT' instructions.
+ 705:	D3D2  2200D0  		LD	(CBASE),HL
+ 706:	D3D5  2100D0  		LD	HL,CBASE
+ 707:	D3D8  E9      		JP	(HL)
+ 708:			;
+ 709:			;   Read error while TYPEing a file.
+ 710:			;
+ 711:	D3D9  01DFD3  	RDERROR:LD	BC,RDERR
+ 712:	D3DC  C3A7D0  		JP	PLINE
+ 713:	D3DF  52656164	RDERR:	DEFB	'Read error',0
+	      20657272
+	      6F7200
+ 714:			;
+ 715:			;   Required file was not located.
+ 716:			;
+ 717:	D3EA  01F0D3  	NONE:	LD	BC,NOFILE
+ 718:	D3ED  C3A7D0  		JP	PLINE
+ 719:	D3F0  4E6F2066	NOFILE:	DEFB	'No file',0
+	      696C6500
+ 720:			;
+ 721:			;   Decode a command of the form 'A>filename number{ filename}.
+ 722:			; Note that a drive specifier is not allowed on the first file
+ 723:			; name. On return, the number is in register (A). Any error
+ 724:			; causes 'filename?' to be printed and the command is aborted.
+ 725:			;
+ 726:	D3F8  CD5ED2  	DECODE:	CALL	CONVFST		;convert filename.
+ 727:	D3FB  3AF0D7  		LD	A,(CHGDRV)	;do not allow a drive to be specified.
+ 728:	D3FE  B7      		OR	A
+ 729:	D3FF  C209D2  		JP	NZ,SYNERR
+ 730:	D402  21CED7  		LD	HL,FCB+1	;convert number now.
+ 731:	D405  010B00  		LD	BC,11		;(B)=sum register, (C)=max digit count.
+ 732:	D408  7E      	DECODE1:LD	A,(HL)
+ 733:	D409  FE20    		CP	' '		;a space terminates the numeral.
+ 734:	D40B  CA33D4  		JP	Z,DECODE3
+ 735:	D40E  23      		INC	HL
+ 736:	D40F  D630    		SUB	'0'		;make binary from ascii.
+ 737:	D411  FE0A    		CP	10		;legal digit?
+ 738:	D413  D209D2  		JP	NC,SYNERR
+ 739:	D416  57      		LD	D,A		;yes, save it in (D).
+ 740:	D417  78      		LD	A,B		;compute (B)=(B)*10 and check for overflow.
+ 741:	D418  E6E0    		AND	0E0H
+ 742:	D41A  C209D2  		JP	NZ,SYNERR
+ 743:	D41D  78      		LD	A,B
+ 744:	D41E  07      		RLCA
+ 745:	D41F  07      		RLCA
+ 746:	D420  07      		RLCA			;(A)=(B)*8
+ 747:	D421  80      		ADD	A,B		;.......*9
+ 748:	D422  DA09D2  		JP	C,SYNERR
+ 749:	D425  80      		ADD	A,B		;.......*10
+ 750:	D426  DA09D2  		JP	C,SYNERR
+ 751:	D429  82      		ADD	A,D		;add in new digit now.
+ 752:	D42A  DA09D2  	DECODE2:JP	C,SYNERR
+ 753:	D42D  47      		LD	B,A		;and save result.
+ 754:	D42E  0D      		DEC	C		;only look at 11 digits.
+ 755:	D42F  C208D4  		JP	NZ,DECODE1
+ 756:	D432  C9      		RET
+ 757:	D433  7E      	DECODE3:LD	A,(HL)		;spaces must follow (why?).
+ 758:	D434  FE20    		CP	' '
+ 759:	D436  C209D2  		JP	NZ,SYNERR
+ 760:	D439  23      		INC	HL
+ 761:	D43A  0D      	DECODE4:DEC	C
+ 762:	D43B  C233D4  		JP	NZ,DECODE3
+ 763:	D43E  78      		LD	A,B		;set (A)=the numeric value entered.
+ 764:	D43F  C9      		RET
+ 765:			;
+ 766:			;   Move 3 bytes from (HL) to (DE). Note that there is only
+ 767:			; one reference to this at (A2D5h).
+ 768:			;
+ 769:	D440  0603    	MOVE3:	LD	B,3
+ 770:			;
+ 771:			;   Move (B) bytes from (HL) to (DE).
+ 772:			;
+ 773:	D442  7E      	HL2DE:	LD	A,(HL)
+ 774:	D443  12      		LD	(DE),A
+ 775:	D444  23      		INC	HL
+ 776:	D445  13      		INC	DE
+ 777:	D446  05      		DEC	B
+ 778:	D447  C242D4  		JP	NZ,HL2DE
+ 779:	D44A  C9      		RET
+ 780:			;
+ 781:			;   Compute (HL)=(TBUFF)+(A)+(C) and get the byte that's here.
+ 782:			;
+ 783:	D44B  218000  	EXTRACT:LD	HL,TBUFF
+ 784:	D44E  81      		ADD	A,C
+ 785:	D44F  CD59D2  		CALL	ADDHL
+ 786:	D452  7E      		LD	A,(HL)
+ 787:	D453  C9      		RET
+ 788:			;
+ 789:			;  Check drive specified. If it means a change, then the new
+ 790:			; drive will be selected. In any case, the drive byte of the
+ 791:			; fcb will be set to null (means use current drive).
+ 792:			;
+ 793:	D454  AF      	DSELECT:XOR	A		;null out first byte of fcb.
+ 794:	D455  32CDD7  		LD	(FCB),A
+ 795:	D458  3AF0D7  		LD	A,(CHGDRV)	;a drive change indicated?
+ 796:	D45B  B7      		OR	A
+ 797:	D45C  C8      		RET	Z
+ 798:	D45D  3D      		DEC	A		;yes, is it the same as the current drive?
+ 799:	D45E  21EFD7  		LD	HL,CDRIVE
+ 800:	D461  BE      		CP	(HL)
+ 801:	D462  C8      		RET	Z
+ 802:	D463  C3BDD0  		JP	DSKSEL		;no. Select it then.
+ 803:			;
+ 804:			;   Check the drive selection and reset it to the previous
+ 805:			; drive if it was changed for the preceeding command.
+ 806:			;
+ 807:	D466  3AF0D7  	RESETDR:LD	A,(CHGDRV)	;drive change indicated?
+ 808:	D469  B7      		OR	A
+ 809:	D46A  C8      		RET	Z
+ 810:	D46B  3D      		DEC	A		;yes, was it a different drive?
+ 811:	D46C  21EFD7  		LD	HL,CDRIVE
+ 812:	D46F  BE      		CP	(HL)
+ 813:	D470  C8      		RET	Z
+ 814:	D471  3AEFD7  		LD	A,(CDRIVE)	;yes, re-select our old drive.
+ 815:	D474  C3BDD0  		JP	DSKSEL
+ 816:			;
+ 817:			;**************************************************************
+ 818:			;*
+ 819:			;*           D I R E C T O R Y   C O M M A N D
+ 820:			;*
+ 821:			;**************************************************************
+ 822:			;
+ 823:	D477  CD5ED2  	DIRECT:	CALL	CONVFST		;convert file name.
+ 824:	D47A  CD54D4  		CALL	DSELECT		;select indicated drive.
+ 825:	D47D  21CED7  		LD	HL,FCB+1	;was any file indicated?
+ 826:	D480  7E      		LD	A,(HL)
+ 827:	D481  FE20    		CP	' '
+ 828:	D483  C28FD4  		JP	NZ,DIRECT2
+ 829:	D486  060B    		LD	B,11		;no. Fill field with '?' - same as *.*.
+ 830:	D488  363F    	DIRECT1:LD	(HL),'?'
+ 831:	D48A  23      		INC	HL
+ 832:	D48B  05      		DEC	B
+ 833:	D48C  C288D4  		JP	NZ,DIRECT1
+ 834:	D48F  1E00    	DIRECT2:LD	E,0		;set initial cursor position.
+ 835:	D491  D5      		PUSH	DE
+ 836:	D492  CDE9D0  		CALL	SRCHFCB		;get first file name.
+ 837:	D495  CCEAD3  		CALL	Z,NONE		;none found at all?
+ 838:	D498  CA1BD5  	DIRECT3:JP	Z,DIRECT9	;terminate if no more names.
+ 839:	D49B  3AEED7  		LD	A,(RTNCODE)	;get file's position in segment (0-3).
+ 840:	D49E  0F      		RRCA
+ 841:	D49F  0F      		RRCA
+ 842:	D4A0  0F      		RRCA
+ 843:	D4A1  E660    		AND	60H		;(A)=position*32
+ 844:	D4A3  4F      		LD	C,A
+ 845:	D4A4  3E0A    		LD	A,10
+ 846:	D4A6  CD4BD4  		CALL	EXTRACT		;extract the tenth entry in fcb.
+ 847:	D4A9  17      		RLA			;check system file status bit.
+ 848:	D4AA  DA0FD5  		JP	C,DIRECT8	;we don't list them.
+ 849:	D4AD  D1      		POP	DE
+ 850:	D4AE  7B      		LD	A,E		;bump name count.
+ 851:	D4AF  1C      		INC	E
+ 852:	D4B0  D5      		PUSH	DE
+ 853:	D4B1  E603    		AND	03H		;at end of line?
+ 854:	D4B3  F5      		PUSH	AF
+ 855:	D4B4  C2CCD4  		JP	NZ,DIRECT4
+ 856:	D4B7  CD98D0  		CALL	CRLF		;yes, end this line and start another.
+ 857:	D4BA  C5      		PUSH	BC
+ 858:	D4BB  CDD0D1  		CALL	GETDSK		;start line with ('A:').
+ 859:	D4BE  C1      		POP	BC
+ 860:	D4BF  C641    		ADD	A,'A'
+ 861:	D4C1  CD92D0  		CALL	PRINTB
+ 862:	D4C4  3E3A    		LD	A,':'
+ 863:	D4C6  CD92D0  		CALL	PRINTB
+ 864:	D4C9  C3D4D4  		JP	DIRECT5
+ 865:	D4CC  CDA2D0  	DIRECT4:CALL	PSPACE		;add seperator between file names.
+ 866:	D4CF  3E3A    		LD	A,':'
+ 867:	D4D1  CD92D0  		CALL	PRINTB
+ 868:	D4D4  CDA2D0  	DIRECT5:CALL	PSPACE
+ 869:	D4D7  0601    		LD	B,1		;'extract' each file name character at a time.
+ 870:	D4D9  78      	DIRECT6:LD	A,B
+ 871:	D4DA  CD4BD4  		CALL	EXTRACT
+ 872:	D4DD  E67F    		AND	7FH		;strip bit 7 (status bit).
+ 873:	D4DF  FE20    		CP	' '		;are we at the end of the name?
+ 874:	D4E1  C2F9D4  		JP	NZ,DRECT65
+ 875:	D4E4  F1      		POP	AF		;yes, don't print spaces at the end of a line.
+ 876:	D4E5  F5      		PUSH	AF
+ 877:	D4E6  FE03    		CP	3
+ 878:	D4E8  C2F7D4  		JP	NZ,DRECT63
+ 879:	D4EB  3E09    		LD	A,9		;first check for no extension.
+ 880:	D4ED  CD4BD4  		CALL	EXTRACT
+ 881:	D4F0  E67F    		AND	7FH
+ 882:	D4F2  FE20    		CP	' '
+ 883:	D4F4  CA0ED5  		JP	Z,DIRECT7	;don't print spaces.
+ 884:	D4F7  3E20    	DRECT63:LD	A,' '		;else print them.
+ 885:	D4F9  CD92D0  	DRECT65:CALL	PRINTB
+ 886:	D4FC  04      		INC	B		;bump to next character psoition.
+ 887:	D4FD  78      		LD	A,B
+ 888:	D4FE  FE0C    		CP	12		;end of the name?
+ 889:	D500  D20ED5  		JP	NC,DIRECT7
+ 890:	D503  FE09    		CP	9		;nope, starting extension?
+ 891:	D505  C2D9D4  		JP	NZ,DIRECT6
+ 892:	D508  CDA2D0  		CALL	PSPACE		;yes, add seperating space.
+ 893:	D50B  C3D9D4  		JP	DIRECT6
+ 894:	D50E  F1      	DIRECT7:POP	AF		;get the next file name.
+ 895:	D50F  CDC2D1  	DIRECT8:CALL	CHKCON		;first check console, quit on anything.
+ 896:	D512  C21BD5  		JP	NZ,DIRECT9
+ 897:	D515  CDE4D0  		CALL	SRCHNXT		;get next name.
+ 898:	D518  C398D4  		JP	DIRECT3		;and continue with our list.
+ 899:	D51B  D1      	DIRECT9:POP	DE		;restore the stack and return to command level.
+ 900:	D51C  C386D7  		JP	GETBACK
+ 901:			;
+ 902:			;**************************************************************
+ 903:			;*
+ 904:			;*                E R A S E   C O M M A N D
+ 905:			;*
+ 906:			;**************************************************************
+ 907:			;
+ 908:	D51F  CD5ED2  	ERASE:	CALL	CONVFST		;convert file name.
+ 909:	D522  FE0B    		CP	11		;was '*.*' entered?
+ 910:	D524  C242D5  		JP	NZ,ERASE1
+ 911:	D527  0152D5  		LD	BC,YESNO	;yes, ask for confirmation.
+ 912:	D52A  CDA7D0  		CALL	PLINE
+ 913:	D52D  CD39D1  		CALL	GETINP
+ 914:	D530  2107D0  		LD	HL,INBUFF+1
+ 915:	D533  35      		DEC	(HL)		;must be exactly 'y'.
+ 916:	D534  C282D3  		JP	NZ,CMMND1
+ 917:	D537  23      		INC	HL
+ 918:	D538  7E      		LD	A,(HL)
+ 919:	D539  FE59    		CP	'Y'
+ 920:	D53B  C282D3  		JP	NZ,CMMND1
+ 921:	D53E  23      		INC	HL
+ 922:	D53F  2288D0  		LD	(INPOINT),HL	;save input line pointer.
+ 923:	D542  CD54D4  	ERASE1:	CALL	DSELECT		;select desired disk.
+ 924:	D545  11CDD7  		LD	DE,FCB
+ 925:	D548  CDEFD0  		CALL	DELETE		;delete the file.
+ 926:	D54B  3C      		INC	A
+ 927:	D54C  CCEAD3  		CALL	Z,NONE		;not there?
+ 928:	D54F  C386D7  		JP	GETBACK		;return to command level now.
+ 929:	D552  416C6C20	YESNO:	DEFB	'All (y/n)?',0
+	      28792F6E
+	      293F00
+ 930:			;
+ 931:			;**************************************************************
+ 932:			;*
+ 933:			;*            T Y P E   C O M M A N D
+ 934:			;*
+ 935:			;**************************************************************
+ 936:			;
+ 937:	D55D  CD5ED2  	TYPE:	CALL	CONVFST		;convert file name.
+ 938:	D560  C209D2  		JP	NZ,SYNERR	;wild cards not allowed.
+ 939:	D563  CD54D4  		CALL	DSELECT		;select indicated drive.
+ 940:	D566  CDD0D0  		CALL	OPENFCB		;open the file.
+ 941:	D569  CAA7D5  		JP	Z,TYPE5		;not there?
+ 942:	D56C  CD98D0  		CALL	CRLF		;ok, start a new line on the screen.
+ 943:	D56F  21F1D7  		LD	HL,NBYTES	;initialize byte counter.
+ 944:	D572  36FF    		LD	(HL),0FFH	;set to read first sector.
+ 945:	D574  21F1D7  	TYPE1:	LD	HL,NBYTES
+ 946:	D577  7E      	TYPE2:	LD	A,(HL)		;have we written the entire sector?
+ 947:	D578  FE80    		CP	128
+ 948:	D57A  DA87D5  		JP	C,TYPE3
+ 949:	D57D  E5      		PUSH	HL		;yes, read in the next one.
+ 950:	D57E  CDFED0  		CALL	READFCB
+ 951:	D581  E1      		POP	HL
+ 952:	D582  C2A0D5  		JP	NZ,TYPE4	;end or error?
+ 953:	D585  AF      		XOR	A		;ok, clear byte counter.
+ 954:	D586  77      		LD	(HL),A
+ 955:	D587  34      	TYPE3:	INC	(HL)		;count this byte.
+ 956:	D588  218000  		LD	HL,TBUFF	;and get the (A)th one from the buffer (TBUFF).
+ 957:	D58B  CD59D2  		CALL	ADDHL
+ 958:	D58E  7E      		LD	A,(HL)
+ 959:	D58F  FE1A    		CP	CNTRLZ		;end of file mark?
+ 960:	D591  CA86D7  		JP	Z,GETBACK
+ 961:	D594  CD8CD0  		CALL	PRINT		;no, print it.
+ 962:	D597  CDC2D1  		CALL	CHKCON		;check console, quit if anything ready.
+ 963:	D59A  C286D7  		JP	NZ,GETBACK
+ 964:	D59D  C374D5  		JP	TYPE1
+ 965:			;
+ 966:			;   Get here on an end of file or read error.
+ 967:			;
+ 968:	D5A0  3D      	TYPE4:	DEC	A		;read error?
+ 969:	D5A1  CA86D7  		JP	Z,GETBACK
+ 970:	D5A4  CDD9D3  		CALL	RDERROR		;yes, print message.
+ 971:	D5A7  CD66D4  	TYPE5:	CALL	RESETDR		;and reset proper drive
+ 972:	D5AA  C309D2  		JP	SYNERR		;now print file name with problem.
+ 973:			;
+ 974:			;**************************************************************
+ 975:			;*
+ 976:			;*            S A V E   C O M M A N D
+ 977:			;*
+ 978:			;**************************************************************
+ 979:			;
+ 980:	D5AD  CDF8D3  	SAVE:	CALL	DECODE		;get numeric number that follows SAVE.
+ 981:	D5B0  F5      		PUSH	AF		;save number of pages to write.
+ 982:	D5B1  CD5ED2  		CALL	CONVFST		;convert file name.
+ 983:	D5B4  C209D2  		JP	NZ,SYNERR	;wild cards not allowed.
+ 984:	D5B7  CD54D4  		CALL	DSELECT		;select specified drive.
+ 985:	D5BA  11CDD7  		LD	DE,FCB		;now delete this file.
+ 986:	D5BD  D5      		PUSH	DE
+ 987:	D5BE  CDEFD0  		CALL	DELETE
+ 988:	D5C1  D1      		POP	DE
+ 989:	D5C2  CD09D1  		CALL	CREATE		;and create it again.
+ 990:	D5C5  CAFBD5  		JP	Z,SAVE3		;can't create?
+ 991:	D5C8  AF      		XOR	A		;clear record number byte.
+ 992:	D5C9  32EDD7  		LD	(FCB+32),A
+ 993:	D5CC  F1      		POP	AF		;convert pages to sectors.
+ 994:	D5CD  6F      		LD	L,A
+ 995:	D5CE  2600    		LD	H,0
+ 996:	D5D0  29      		ADD	HL,HL		;(HL)=number of sectors to write.
+ 997:	D5D1  110001  		LD	DE,TBASE	;and we start from here.
+ 998:	D5D4  7C      	SAVE1:	LD	A,H		;done yet?
+ 999:	D5D5  B5      		OR	L
+1000:	D5D6  CAF1D5  		JP	Z,SAVE2
+1001:	D5D9  2B      		DEC	HL		;nope, count this and compute the start
+1002:	D5DA  E5      		PUSH	HL		;of the next 128 byte sector.
+1003:	D5DB  218000  		LD	HL,128
+1004:	D5DE  19      		ADD	HL,DE
+1005:	D5DF  E5      		PUSH	HL		;save it and set the transfer address.
+1006:	D5E0  CDD8D1  		CALL	DMASET
+1007:	D5E3  11CDD7  		LD	DE,FCB		;write out this sector now.
+1008:	D5E6  CD04D1  		CALL	WRTREC
+1009:	D5E9  D1      		POP	DE		;reset (DE) to the start of the last sector.
+1010:	D5EA  E1      		POP	HL		;restore sector count.
+1011:	D5EB  C2FBD5  		JP	NZ,SAVE3	;write error?
+1012:	D5EE  C3D4D5  		JP	SAVE1
+1013:			;
+1014:			;   Get here after writing all of the file.
+1015:			;
+1016:	D5F1  11CDD7  	SAVE2:	LD	DE,FCB		;now close the file.
+1017:	D5F4  CDDAD0  		CALL	CLOSE
+1018:	D5F7  3C      		INC	A		;did it close ok?
+1019:	D5F8  C201D6  		JP	NZ,SAVE4
+1020:			;
+1021:			;   Print out error message (no space).
+1022:			;
+1023:	D5FB  0107D6  	SAVE3:	LD	BC,NOSPACE
+1024:	D5FE  CDA7D0  		CALL	PLINE
+1025:	D601  CDD5D1  	SAVE4:	CALL	STDDMA		;reset the standard dma address.
+1026:	D604  C386D7  		JP	GETBACK
+1027:	D607  4E6F2073	NOSPACE:DEFB	'No space',0
+	      70616365
+	      00
+1028:			;
+1029:			;**************************************************************
+1030:			;*
+1031:			;*           R E N A M E   C O M M A N D
+1032:			;*
+1033:			;**************************************************************
+1034:			;
+1035:	D610  CD5ED2  	RENAME:	CALL	CONVFST		;convert first file name.
+1036:	D613  C209D2  		JP	NZ,SYNERR	;wild cards not allowed.
+1037:	D616  3AF0D7  		LD	A,(CHGDRV)	;remember any change in drives specified.
+1038:	D619  F5      		PUSH	AF
+1039:	D61A  CD54D4  		CALL	DSELECT		;and select this drive.
+1040:	D61D  CDE9D0  		CALL	SRCHFCB		;is this file present?
+1041:	D620  C279D6  		JP	NZ,RENAME6	;yes, print error message.
+1042:	D623  21CDD7  		LD	HL,FCB		;yes, move this name into second slot.
+1043:	D626  11DDD7  		LD	DE,FCB+16
+1044:	D629  0610    		LD	B,16
+1045:	D62B  CD42D4  		CALL	HL2DE
+1046:	D62E  2A88D0  		LD	HL,(INPOINT)	;get input pointer.
+1047:	D631  EB      		EX	DE,HL
+1048:	D632  CD4FD2  		CALL	NONBLANK	;get next non blank character.
+1049:	D635  FE3D    		CP	'='		;only allow an '=' or '_' seperator.
+1050:	D637  CA3FD6  		JP	Z,RENAME1
+1051:	D63A  FE5F    		CP	'_'
+1052:	D63C  C273D6  		JP	NZ,RENAME5
+1053:	D63F  EB      	RENAME1:EX	DE,HL
+1054:	D640  23      		INC	HL		;ok, skip seperator.
+1055:	D641  2288D0  		LD	(INPOINT),HL	;save input line pointer.
+1056:	D644  CD5ED2  		CALL	CONVFST		;convert this second file name now.
+1057:	D647  C273D6  		JP	NZ,RENAME5	;again, no wild cards.
+1058:	D64A  F1      		POP	AF		;if a drive was specified, then it
+1059:	D64B  47      		LD	B,A		;must be the same as before.
+1060:	D64C  21F0D7  		LD	HL,CHGDRV
+1061:	D64F  7E      		LD	A,(HL)
+1062:	D650  B7      		OR	A
+1063:	D651  CA59D6  		JP	Z,RENAME2
+1064:	D654  B8      		CP	B
+1065:	D655  70      		LD	(HL),B
+1066:	D656  C273D6  		JP	NZ,RENAME5	;they were different, error.
+1067:	D659  70      	RENAME2:LD	(HL),B		;	reset as per the first file specification.
+1068:	D65A  AF      		XOR	A
+1069:	D65B  32CDD7  		LD	(FCB),A		;clear the drive byte of the fcb.
+1070:	D65E  CDE9D0  	RENAME3:CALL	SRCHFCB		;and go look for second file.
+1071:	D661  CA6DD6  		JP	Z,RENAME4	;doesn't exist?
+1072:	D664  11CDD7  		LD	DE,FCB
+1073:	D667  CD0ED1  		CALL	RENAM		;ok, rename the file.
+1074:	D66A  C386D7  		JP	GETBACK
+1075:			;
+1076:			;   Process rename errors here.
+1077:			;
+1078:	D66D  CDEAD3  	RENAME4:CALL	NONE		;file not there.
+1079:	D670  C386D7  		JP	GETBACK
+1080:	D673  CD66D4  	RENAME5:CALL	RESETDR		;bad command format.
+1081:	D676  C309D2  		JP	SYNERR
+1082:	D679  0182D6  	RENAME6:LD	BC,EXISTS	;destination file already exists.
+1083:	D67C  CDA7D0  		CALL	PLINE
+1084:	D67F  C386D7  		JP	GETBACK
+1085:	D682  46696C65	EXISTS:	DEFB	'File exists',0
+	      20657869
+	      73747300
+1086:			;
+1087:			;**************************************************************
+1088:			;*
+1089:			;*             U S E R   C O M M A N D
+1090:			;*
+1091:			;**************************************************************
+1092:			;
+1093:	D68E  CDF8D3  	USER:	CALL	DECODE		;get numeric value following command.
+1094:	D691  FE10    		CP	16		;legal user number?
+1095:	D693  D209D2  		JP	NC,SYNERR
+1096:	D696  5F      		LD	E,A		;yes but is there anything else?
+1097:	D697  3ACED7  		LD	A,(FCB+1)
+1098:	D69A  FE20    		CP	' '
+1099:	D69C  CA09D2  		JP	Z,SYNERR	;yes, that is not allowed.
+1100:	D69F  CD15D1  		CALL	GETSETUC	;ok, set user code.
+1101:	D6A2  C389D7  		JP	GETBACK1
+1102:			;
+1103:			;**************************************************************
+1104:			;*
+1105:			;*        T R A N S I A N T   P R O G R A M   C O M M A N D
+1106:			;*
+1107:			;**************************************************************
+1108:			;
+1109:	D6A5  CDF5D1  	UNKNOWN:CALL	VERIFY		;check for valid system (why?).
+1110:	D6A8  3ACED7  		LD	A,(FCB+1)	;anything to execute?
+1111:	D6AB  FE20    		CP	' '
+1112:	D6AD  C2C4D6  		JP	NZ,UNKWN1
+1113:	D6B0  3AF0D7  		LD	A,(CHGDRV)	;nope, only a drive change?
+1114:	D6B3  B7      		OR	A
+1115:	D6B4  CA89D7  		JP	Z,GETBACK1	;neither???
+1116:	D6B7  3D      		DEC	A
+1117:	D6B8  32EFD7  		LD	(CDRIVE),A	;ok, store new drive.
+1118:	D6BB  CD29D1  		CALL	MOVECD		;set (TDRIVE) also.
+1119:	D6BE  CDBDD0  		CALL	DSKSEL		;and select this drive.
+1120:	D6C1  C389D7  		JP	GETBACK1	;then return.
+1121:			;
+1122:			;   Here a file name was typed. Prepare to execute it.
+1123:			;
+1124:	D6C4  11D6D7  	UNKWN1:	LD	DE,FCB+9	;an extension specified?
+1125:	D6C7  1A      		LD	A,(DE)
+1126:	D6C8  FE20    		CP	' '
+1127:	D6CA  C209D2  		JP	NZ,SYNERR	;yes, not allowed.
+1128:	D6CD  D5      	UNKWN2:	PUSH	DE
+1129:	D6CE  CD54D4  		CALL	DSELECT		;select specified drive.
+1130:	D6D1  D1      		POP	DE
+1131:	D6D2  2183D7  		LD	HL,COMFILE	;set the extension to 'COM'.
+1132:	D6D5  CD40D4  		CALL	MOVE3
+1133:	D6D8  CDD0D0  		CALL	OPENFCB		;and open this file.
+1134:	D6DB  CA6BD7  		JP	Z,UNKWN9	;not present?
+1135:			;
+1136:			;   Load in the program.
+1137:			;
+1138:	D6DE  210001  		LD	HL,TBASE	;store the program starting here.
+1139:	D6E1  E5      	UNKWN3:	PUSH	HL
+1140:	D6E2  EB      		EX	DE,HL
+1141:	D6E3  CDD8D1  		CALL	DMASET		;set transfer address.
+1142:	D6E6  11CDD7  		LD	DE,FCB		;and read the next record.
+1143:	D6E9  CDF9D0  		CALL	RDREC
+1144:	D6EC  C201D7  		JP	NZ,UNKWN4	;end of file or read error?
+1145:	D6EF  E1      		POP	HL		;nope, bump pointer for next sector.
+1146:	D6F0  118000  		LD	DE,128
+1147:	D6F3  19      		ADD	HL,DE
+1148:	D6F4  1100D0  		LD	DE,CBASE	;enough room for the whole file?
+1149:	D6F7  7D      		LD	A,L
+1150:	D6F8  93      		SUB	E
+1151:	D6F9  7C      		LD	A,H
+1152:	D6FA  9A      		SBC	A,D
+1153:	D6FB  D271D7  		JP	NC,UNKWN0	;no, it can't fit.
+1154:	D6FE  C3E1D6  		JP	UNKWN3
+1155:			;
+1156:			;   Get here after finished reading.
+1157:			;
+1158:	D701  E1      	UNKWN4:	POP	HL
+1159:	D702  3D      		DEC	A		;normal end of file?
+1160:	D703  C271D7  		JP	NZ,UNKWN0
+1161:	D706  CD66D4  		CALL	RESETDR		;yes, reset previous drive.
+1162:	D709  CD5ED2  		CALL	CONVFST		;convert the first file name that follows
+1163:	D70C  21F0D7  		LD	HL,CHGDRV	;command name.
+1164:	D70F  E5      		PUSH	HL
+1165:	D710  7E      		LD	A,(HL)		;set drive code in default fcb.
+1166:	D711  32CDD7  		LD	(FCB),A
+1167:	D714  3E10    		LD	A,16		;put second name 16 bytes later.
+1168:	D716  CD60D2  		CALL	CONVERT		;convert second file name.
+1169:	D719  E1      		POP	HL
+1170:	D71A  7E      		LD	A,(HL)		;and set the drive for this second file.
+1171:	D71B  32DDD7  		LD	(FCB+16),A
+1172:	D71E  AF      		XOR	A		;clear record byte in fcb.
+1173:	D71F  32EDD7  		LD	(FCB+32),A
+1174:	D722  115C00  		LD	DE,TFCB		;move it into place at(005Ch).
+1175:	D725  21CDD7  		LD	HL,FCB
+1176:	D728  0621    		LD	B,33
+1177:	D72A  CD42D4  		CALL	HL2DE
+1178:	D72D  2108D0  		LD	HL,INBUFF+2	;now move the remainder of the input
+1179:	D730  7E      	UNKWN5:	LD	A,(HL)		;line down to (0080h). Look for a non blank.
+1180:	D731  B7      		OR	A		;or a null.
+1181:	D732  CA3ED7  		JP	Z,UNKWN6
+1182:	D735  FE20    		CP	' '
+1183:	D737  CA3ED7  		JP	Z,UNKWN6
+1184:	D73A  23      		INC	HL
+1185:	D73B  C330D7  		JP	UNKWN5
+1186:			;
+1187:			;   Do the line move now. It ends in a null byte.
+1188:			;
+1189:	D73E  0600    	UNKWN6:	LD	B,0		;keep a character count.
+1190:	D740  118100  		LD	DE,TBUFF+1	;data gets put here.
+1191:	D743  7E      	UNKWN7:	LD	A,(HL)		;move it now.
+1192:	D744  12      		LD	(DE),A
+1193:	D745  B7      		OR	A
+1194:	D746  CA4FD7  		JP	Z,UNKWN8
+1195:	D749  04      		INC	B
+1196:	D74A  23      		INC	HL
+1197:	D74B  13      		INC	DE
+1198:	D74C  C343D7  		JP	UNKWN7
+1199:	D74F  78      	UNKWN8:	LD	A,B		;now store the character count.
+1200:	D750  328000  		LD	(TBUFF),A
+1201:	D753  CD98D0  		CALL	CRLF		;clean up the screen.
+1202:	D756  CDD5D1  		CALL	STDDMA		;set standard transfer address.
+1203:	D759  CD1AD1  		CALL	SETCDRV		;reset current drive.
+1204:	D75C  CD0001  		CALL	TBASE		;and execute the program.
+1205:			;
+1206:			;   Transiant programs return here (or reboot).
+1207:			;
+1208:	D75F  31ABD7  		LD	SP,BATCH	;set stack first off.
+1209:	D762  CD29D1  		CALL	MOVECD		;move current drive into place (TDRIVE).
+1210:	D765  CDBDD0  		CALL	DSKSEL		;and reselect it.
+1211:	D768  C382D3  		JP	CMMND1		;back to comand mode.
+1212:			;
+1213:			;   Get here if some error occured.
+1214:			;
+1215:	D76B  CD66D4  	UNKWN9:	CALL	RESETDR		;inproper format.
+1216:	D76E  C309D2  		JP	SYNERR
+1217:	D771  017AD7  	UNKWN0:	LD	BC,BADLOAD	;read error or won't fit.
+1218:	D774  CDA7D0  		CALL	PLINE
+1219:	D777  C386D7  		JP	GETBACK
+1220:	D77A  42616420	BADLOAD:DEFB	'Bad load',0
+	      6C6F6164
+	      00
+1221:	D783  434F4D  	COMFILE:DEFB	'COM'		;command file extension.
+1222:			;
+1223:			;   Get here to return to command level. We will reset the
+1224:			; previous active drive and then either return to command
+1225:			; level directly or print error message and then return.
+1226:			;
+1227:	D786  CD66D4  	GETBACK:CALL	RESETDR		;reset previous drive.
+1228:	D789  CD5ED2  	GETBACK1: CALL	CONVFST		;convert first name in (FCB).
+1229:	D78C  3ACED7  		LD	A,(FCB+1)	;if this was just a drive change request,
+1230:	D78F  D620    		SUB	' '		;make sure it was valid.
+1231:	D791  21F0D7  		LD	HL,CHGDRV
+1232:	D794  B6      		OR	(HL)
+1233:	D795  C209D2  		JP	NZ,SYNERR
+1234:	D798  C382D3  		JP	CMMND1		;ok, return to command level.
+1235:			;
+1236:			;   ccp stack area.
+1237:			;
+1238:	D79B  00000000		DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      00000000
+1239:	D7AB          	CCPSTACK EQU	$	;end of ccp stack area.
+1240:			;
+1241:			;   Batch (or SUBMIT) processing information storage.
+1242:			;
+1243:	D7AB  00      	BATCH:	DEFB	0		;batch mode flag (0=not active).
+1244:	D7AC  00242424	BATCHFCB: DEFB	0,'$$$     SUB',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	      20202020
+	      20535542
+	      00000000
+	      00000000
+	      00000000
+	      00000000
+	      00000000
+	      00
+1245:			;
+1246:			;   File control block setup by the CCP.
+1247:			;
+1248:	D7CD  00202020	FCB:	DEFB	0,'           ',0,0,0,0,0,'           ',0,0,0,0,0
+	      20202020
+	      20202020
+	      00000000
+	      00202020
+	      20202020
+	      20202020
+	      00000000
+	      00
+1249:	D7EE  00      	RTNCODE:DEFB	0		;status returned from bdos call.
+1250:	D7EF  00      	CDRIVE:	DEFB	0		;currently active drive.
+1251:	D7F0  00      	CHGDRV:	DEFB	0		;change in drives flag (0=no change).
+1252:	D7F1  0000    	NBYTES:	DEFW	0		;byte counter used by TYPE.
+1253:			;
+1254:			;   Room for expansion?
+1255:			;
+1256:	D7F3  00000000		DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      00
+1257:			;
+1258:	0800          		.dephase
+1259:			;
+1260:			; BDOS CODE START HERE
+1261:			;
+1262:	D800          		.phase bdose
+1263:			;   Note that the following six bytes must match those at
+1264:			; (PATTRN1) or cp/m will HALT. Why?
+1265:			;
+1266:	D800  00160000	PATTRN2:DEFB	0,22,0,0,0,0	;(* serial number bytes *).
+	      0000
+1267:			;
+1268:			;**************************************************************
+1269:			;*
+1270:			;*                    B D O S   E N T R Y
+1271:			;*
+1272:			;**************************************************************
+1273:			;
+1274:	D806  C311D8  	FBASE:	JP	FBASE1
+1275:			;
+1276:			;   Bdos error table.
+1277:			;
+1278:	D809  99D8    	BADSCTR:DEFW	ERROR1		;bad sector on read or write.
+1279:	D80B  A5D8    	BADSLCT:DEFW	ERROR2		;bad disk select.
+1280:	D80D  ABD8    	RODISK:	DEFW	ERROR3		;disk is read only.
+1281:	D80F  B1D8    	ROFILE:	DEFW	ERROR4		;file is read only.
+1282:			;
+1283:			;   Entry into bdos. (DE) or (E) are the parameters passed. The
+1284:			; function number desired is in register (C).
+1285:			;
+1286:	D811  EB      	FBASE1:	EX	DE,HL		;save the (DE) parameters.
+1287:	D812  2243DB  		LD	(PARAMS),HL
+1288:	D815  EB      		EX	DE,HL
+1289:	D816  7B      		LD	A,E		;and save register (E) in particular.
+1290:	D817  32D6E5  		LD	(EPARAM),A
+1291:	D81A  210000  		LD	HL,0
+1292:	D81D  2245DB  		LD	(STATUS),HL	;clear return status.
+1293:	D820  39      		ADD	HL,SP
+1294:	D821  220FDB  		LD	(USRSTACK),HL	;save users stack pointer.
+1295:	D824  3141DB  		LD	SP,STKAREA	;and set our own.
+1296:	D827  AF      		XOR	A		;clear auto select storage space.
+1297:	D828  32E0E5  		LD	(AUTOFLAG),A
+1298:	D82B  32DEE5  		LD	(AUTO),A
+1299:	D82E  2174E5  		LD	HL,GOBACK	;set return address.
+1300:	D831  E5      		PUSH	HL
+1301:	D832  79      		LD	A,C		;get function number.
+1302:	D833  FE29    		CP	NFUNCTS		;valid function number?
+1303:	D835  D0      		RET	NC
+1304:	D836  4B      		LD	C,E		;keep single register function here.
+1305:	D837  2147D8  		LD	HL,FUNCTNS	;now look thru the function table.
+1306:	D83A  5F      		LD	E,A
+1307:	D83B  1600    		LD	D,0		;(DE)=function number.
+1308:	D83D  19      		ADD	HL,DE
+1309:	D83E  19      		ADD	HL,DE		;(HL)=(start of table)+2*(function number).
+1310:	D83F  5E      		LD	E,(HL)
+1311:	D840  23      		INC	HL
+1312:	D841  56      		LD	D,(HL)		;now (DE)=address for this function.
+1313:	D842  2A43DB  		LD	HL,(PARAMS)	;retrieve parameters.
+1314:	D845  EB      		EX	DE,HL		;now (DE) has the original parameters.
+1315:	D846  E9      		JP	(HL)		;execute desired function.
+1316:			;
+1317:			;   BDOS function jump table.
+1318:			;
+1319:	0029          	NFUNCTS EQU	41		;number of functions in followin table.
+1320:			;
+1321:	D847  03E6C8DA	FUNCTNS:DEFW	WBOOT,GETCON,OUTCON,GETRDR,PUNCH,LISTD,DIRCIO,GETIOB
+	      90D9CEDA
+	      12E60FE6
+	      D4DAEDDA
+1322:	D857  F3DAF8DA		DEFW	SETIOB,PRTSTR,RDBUFF,GETCSTS,GETVER,RSTDSK,SETDSK,OPENFIL
+	      E1D9FEDA
+	      7EE483E4
+	      45E49CE4
+1323:	D867  A5E4ABE4		DEFW	CLOSEFIL,GETFST,GETNXT,DELFILE,READSEQ,WRTSEQ,FCREATE
+	      C8E4D7E4
+	      E0E4E6E4
+	      ECE4
+1324:	D875  F5E4FEE4		DEFW	RENFILE,GETLOG,GETCRNT,PUTDMA,GETALOC,WRTPRTD,GETROV,SETATTR
+	      04E50AE5
+	      11E52CDD
+	      17E51DE5
+1325:	D885  26E52DE5		DEFW	GETPARM,GETUSER,RDRANDOM,WTRANDOM,FILESIZE,SETRAN,LOGOFF,RTN
+	      41E547E5
+	      4DE50EE4
+	      53E504DB
+1326:	D895  04DB9BE5		DEFW	RTN,WTSPECL
+1327:			;
+1328:			;   Bdos error message section.
+1329:			;
+1330:	D899  21CAD8  	ERROR1:	LD	HL,BADSEC	;bad sector message.
+1331:	D89C  CDE5D8  		CALL	PRTERR		;print it and get a 1 char responce.
+1332:	D89F  FE03    		CP	CNTRLC		;re-boot request (control-c)?
+1333:	D8A1  CA0000  		JP	Z,0		;yes.
+1334:	D8A4  C9      		RET			;no, return to retry i/o function.
+1335:			;
+1336:	D8A5  21D5D8  	ERROR2:	LD	HL,BADSEL	;bad drive selected.
+1337:	D8A8  C3B4D8  		JP	ERROR5
+1338:			;
+1339:	D8AB  21E1D8  	ERROR3:	LD	HL,DISKRO	;disk is read only.
+1340:	D8AE  C3B4D8  		JP	ERROR5
+1341:			;
+1342:	D8B1  21DCD8  	ERROR4:	LD	HL,FILERO	;file is read only.
+1343:			;
+1344:	D8B4  CDE5D8  	ERROR5:	CALL	PRTERR
+1345:	D8B7  C30000  		JP	0		;always reboot on these errors.
+1346:			;
+1347:	D8BA  42646F73	BDOSERR:DEFB	'Bdos Err On '
+	      20457272
+	      204F6E20
+1348:	D8C6  203A2024	BDOSDRV:DEFB	' : $'
+1349:	D8CA  42616420	BADSEC:	DEFB	'Bad Sector$'
+	      53656374
+	      6F7224
+1350:	D8D5  53656C65	BADSEL:	DEFB	'Select$'
+	      637424
+1351:	D8DC  46696C65	FILERO:	DEFB	'File '
+	      20
+1352:	D8E1  522F4F24	DISKRO:	DEFB	'R/O$'
+1353:			;
+1354:			;   Print bdos error message.
+1355:			;
+1356:	D8E5  E5      	PRTERR:	PUSH	HL		;save second message pointer.
+1357:	D8E6  CDC9D9  		CALL	OUTCRLF		;send (cr)(lf).
+1358:	D8E9  3A42DB  		LD	A,(ACTIVE)	;get active drive.
+1359:	D8EC  C641    		ADD	A,'A'		;make ascii.
+1360:	D8EE  32C6D8  		LD	(BDOSDRV),A	;and put in message.
+1361:	D8F1  01BAD8  		LD	BC,BDOSERR	;and print it.
+1362:	D8F4  CDD3D9  		CALL	PRTMESG
+1363:	D8F7  C1      		POP	BC		;print second message line now.
+1364:	D8F8  CDD3D9  		CALL	PRTMESG
+1365:			;
+1366:			;   Get an input character. We will check our 1 character
+1367:			; buffer first. This may be set by the console status routine.
+1368:			;
+1369:	D8FB  210EDB  	GETCHAR:LD	HL,CHARBUF	;check character buffer.
+1370:	D8FE  7E      		LD	A,(HL)		;anything present already?
+1371:	D8FF  3600    		LD	(HL),0		;...either case clear it.
+1372:	D901  B7      		OR	A
+1373:	D902  C0      		RET	NZ		;yes, use it.
+1374:	D903  C309E6  		JP	CONIN		;nope, go get a character responce.
+1375:			;
+1376:			;   Input and echo a character.
+1377:			;
+1378:	D906  CDFBD8  	GETECHO:CALL	GETCHAR		;input a character.
+1379:	D909  CD14D9  		CALL	CHKCHAR		;carriage control?
+1380:	D90C  D8      		RET	C		;no, a regular control char so don't echo.
+1381:	D90D  F5      		PUSH	AF		;ok, save character now.
+1382:	D90E  4F      		LD	C,A
+1383:	D90F  CD90D9  		CALL	OUTCON		;and echo it.
+1384:	D912  F1      		POP	AF		;get character and return.
+1385:	D913  C9      		RET
+1386:			;
+1387:			;   Check character in (A). Set the zero flag on a carriage
+1388:			; control character and the carry flag on any other control
+1389:			; character.
+1390:			;
+1391:	D914  FE0D    	CHKCHAR:CP	CR		;check for carriage return, line feed, backspace,
+1392:	D916  C8      		RET	Z		;or a tab.
+1393:	D917  FE0A    		CP	LF
+1394:	D919  C8      		RET	Z
+1395:	D91A  FE09    		CP	TAB
+1396:	D91C  C8      		RET	Z
+1397:	D91D  FE08    		CP	BS
+1398:	D91F  C8      		RET	Z
+1399:	D920  FE20    		CP	' '		;other control char? Set carry flag.
+1400:	D922  C9      		RET
+1401:			;
+1402:			;   Check the console during output. Halt on a control-s, then
+1403:			; reboot on a control-c. If anything else is ready, clear the
+1404:			; zero flag and return (the calling routine may want to do
+1405:			; something).
+1406:			;
+1407:	D923  3A0EDB  	CKCONSOL: LD	A,(CHARBUF)	;check buffer.
+1408:	D926  B7      		OR	A		;if anything, just return without checking.
+1409:	D927  C245D9  		JP	NZ,CKCON2
+1410:	D92A  CD06E6  		CALL	CONST		;nothing in buffer. Check console.
+1411:	D92D  E601    		AND	01H		;look at bit 0.
+1412:	D92F  C8      		RET	Z		;return if nothing.
+1413:	D930  CD09E6  		CALL	CONIN		;ok, get it.
+1414:	D933  FE13    		CP	CNTRLS		;if not control-s, return with zero cleared.
+1415:	D935  C242D9  		JP	NZ,CKCON1
+1416:	D938  CD09E6  		CALL	CONIN		;halt processing until another char
+1417:	D93B  FE03    		CP	CNTRLC		;is typed. Control-c?
+1418:	D93D  CA0000  		JP	Z,0		;yes, reboot now.
+1419:	D940  AF      		XOR	A		;no, just pretend nothing was ever ready.
+1420:	D941  C9      		RET
+1421:	D942  320EDB  	CKCON1:	LD	(CHARBUF),A	;save character in buffer for later processing.
+1422:	D945  3E01    	CKCON2:	LD	A,1		;set (A) to non zero to mean something is ready.
+1423:	D947  C9      		RET
+1424:			;
+1425:			;   Output (C) to the screen. If the printer flip-flop flag
+1426:			; is set, we will send character to printer also. The console
+1427:			; will be checked in the process.
+1428:			;
+1429:	D948  3A0ADB  	OUTCHAR:LD	A,(OUTFLAG)	;check output flag.
+1430:	D94B  B7      		OR	A		;anything and we won't generate output.
+1431:	D94C  C262D9  		JP	NZ,OUTCHR1
+1432:	D94F  C5      		PUSH	BC
+1433:	D950  CD23D9  		CALL	CKCONSOL	;check console (we don't care whats there).
+1434:	D953  C1      		POP	BC
+1435:	D954  C5      		PUSH	BC
+1436:	D955  CD0CE6  		CALL	CONOUT		;output (C) to the screen.
+1437:	D958  C1      		POP	BC
+1438:	D959  C5      		PUSH	BC
+1439:	D95A  3A0DDB  		LD	A,(PRTFLAG)	;check printer flip-flop flag.
+1440:	D95D  B7      		OR	A
+1441:	D95E  C40FE6  		CALL	NZ,LISTD	;print it also if non-zero.
+1442:	D961  C1      		POP	BC
+1443:	D962  79      	OUTCHR1:LD	A,C		;update cursors position.
+1444:	D963  210CDB  		LD	HL,CURPOS
+1445:	D966  FE7F    		CP	DEL		;rubouts don't do anything here.
+1446:	D968  C8      		RET	Z
+1447:	D969  34      		INC	(HL)		;bump line pointer.
+1448:	D96A  FE20    		CP	' '		;and return if a normal character.
+1449:	D96C  D0      		RET	NC
+1450:	D96D  35      		DEC	(HL)		;restore and check for the start of the line.
+1451:	D96E  7E      		LD	A,(HL)
+1452:	D96F  B7      		OR	A
+1453:	D970  C8      		RET	Z		;ingnore control characters at the start of the line.
+1454:	D971  79      		LD	A,C
+1455:	D972  FE08    		CP	BS		;is it a backspace?
+1456:	D974  C279D9  		JP	NZ,OUTCHR2
+1457:	D977  35      		DEC	(HL)		;yes, backup pointer.
+1458:	D978  C9      		RET
+1459:	D979  FE0A    	OUTCHR2:CP	LF		;is it a line feed?
+1460:	D97B  C0      		RET	NZ		;ignore anything else.
+1461:	D97C  3600    		LD	(HL),0		;reset pointer to start of line.
+1462:	D97E  C9      		RET
+1463:			;
+1464:			;   Output (A) to the screen. If it is a control character
+1465:			; (other than carriage control), use ^x format.
+1466:			;
+1467:	D97F  79      	SHOWIT:	LD	A,C
+1468:	D980  CD14D9  		CALL	CHKCHAR		;check character.
+1469:	D983  D290D9  		JP	NC,OUTCON	;not a control, use normal output.
+1470:	D986  F5      		PUSH	AF
+1471:	D987  0E5E    		LD	C,'^'		;for a control character, preceed it with '^'.
+1472:	D989  CD48D9  		CALL	OUTCHAR
+1473:	D98C  F1      		POP	AF
+1474:	D98D  F640    		OR	'@'		;and then use the letter equivelant.
+1475:	D98F  4F      		LD	C,A
+1476:			;
+1477:			;   Function to output (C) to the console device and expand tabs
+1478:			; if necessary.
+1479:			;
+1480:	D990  79      	OUTCON:	LD	A,C
+1481:	D991  FE09    		CP	TAB		;is it a tab?
+1482:	D993  C248D9  		JP	NZ,OUTCHAR	;use regular output.
+1483:	D996  0E20    	OUTCON1:LD	C,' '		;yes it is, use spaces instead.
+1484:	D998  CD48D9  		CALL	OUTCHAR
+1485:	D99B  3A0CDB  		LD	A,(CURPOS)	;go until the cursor is at a multiple of 8
+1486:			
+1487:	D99E  E607    		AND	07H		;position.
+1488:	D9A0  C296D9  		JP	NZ,OUTCON1
+1489:	D9A3  C9      		RET
+1490:			;
+1491:			;   Echo a backspace character. Erase the prevoius character
+1492:			; on the screen.
+1493:			;
+1494:	D9A4  CDACD9  	BACKUP:	CALL	BACKUP1		;backup the screen 1 place.
+1495:	D9A7  0E20    		LD	C,' '		;then blank that character.
+1496:	D9A9  CD0CE6  		CALL	CONOUT
+1497:	D9AC  0E08    	BACKUP1:LD	C,BS		;then back space once more.
+1498:	D9AE  C30CE6  		JP	CONOUT
+1499:			;
+1500:			;   Signal a deleted line. Print a '#' at the end and start
+1501:			; over.
+1502:			;
+1503:	D9B1  0E23    	NEWLINE:LD	C,'#'
+1504:	D9B3  CD48D9  		CALL	OUTCHAR		;print this.
+1505:	D9B6  CDC9D9  		CALL	OUTCRLF		;start new line.
+1506:	D9B9  3A0CDB  	NEWLN1:	LD	A,(CURPOS)	;move the cursor to the starting position.
+1507:	D9BC  210BDB  		LD	HL,STARTING
+1508:	D9BF  BE      		CP	(HL)
+1509:	D9C0  D0      		RET	NC		;there yet?
+1510:	D9C1  0E20    		LD	C,' '
+1511:	D9C3  CD48D9  		CALL	OUTCHAR		;nope, keep going.
+1512:	D9C6  C3B9D9  		JP	NEWLN1
+1513:			;
+1514:			;   Output a (cr) (lf) to the console device (screen).
+1515:			;
+1516:	D9C9  0E0D    	OUTCRLF:LD	C,CR
+1517:	D9CB  CD48D9  		CALL	OUTCHAR
+1518:	D9CE  0E0A    		LD	C,LF
+1519:	D9D0  C348D9  		JP	OUTCHAR
+1520:			;
+1521:			;   Print message pointed to by (BC). It will end with a '$'.
+1522:			;
+1523:	D9D3  0A      	PRTMESG:LD	A,(BC)		;check for terminating character.
+1524:	D9D4  FE24    		CP	'$'
+1525:	D9D6  C8      		RET	Z
+1526:	D9D7  03      		INC	BC
+1527:	D9D8  C5      		PUSH	BC		;otherwise, bump pointer and print it.
+1528:	D9D9  4F      		LD	C,A
+1529:	D9DA  CD90D9  		CALL	OUTCON
+1530:	D9DD  C1      		POP	BC
+1531:	D9DE  C3D3D9  		JP	PRTMESG
+1532:			;
+1533:			;   Function to execute a buffered read.
+1534:			;
+1535:	D9E1  3A0CDB  	RDBUFF:	LD	A,(CURPOS)	;use present location as starting one.
+1536:	D9E4  320BDB  		LD	(STARTING),A
+1537:	D9E7  2A43DB  		LD	HL,(PARAMS)	;get the maximum buffer space.
+1538:	D9EA  4E      		LD	C,(HL)
+1539:	D9EB  23      		INC	HL		;point to first available space.
+1540:	D9EC  E5      		PUSH	HL		;and save.
+1541:	D9ED  0600    		LD	B,0		;keep a character count.
+1542:	D9EF  C5      	RDBUF1:	PUSH	BC
+1543:	D9F0  E5      		PUSH	HL
+1544:	D9F1  CDFBD8  	RDBUF2:	CALL	GETCHAR		;get the next input character.
+1545:	D9F4  E67F    		AND	7FH		;strip bit 7.
+1546:	D9F6  E1      		POP	HL		;reset registers.
+1547:	D9F7  C1      		POP	BC
+1548:	D9F8  FE0D    		CP	CR		;en of the line?
+1549:	D9FA  CAC1DA  		JP	Z,RDBUF17
+1550:	D9FD  FE0A    		CP	LF
+1551:	D9FF  CAC1DA  		JP	Z,RDBUF17
+1552:	DA02  FE08    		CP	BS		;how about a backspace?
+1553:	DA04  C216DA  		JP	NZ,RDBUF3
+1554:	DA07  78      		LD	A,B		;yes, but ignore at the beginning of the line.
+1555:	DA08  B7      		OR	A
+1556:	DA09  CAEFD9  		JP	Z,RDBUF1
+1557:	DA0C  05      		DEC	B		;ok, update counter.
+1558:	DA0D  3A0CDB  		LD	A,(CURPOS)	;if we backspace to the start of the line,
+1559:	DA10  320ADB  		LD	(OUTFLAG),A	;treat as a cancel (control-x).
+1560:	DA13  C370DA  		JP	RDBUF10
+1561:	DA16  FE7F    	RDBUF3:	CP	DEL		;user typed a rubout?
+1562:	DA18  C226DA  		JP	NZ,RDBUF4
+1563:	DA1B  78      		LD	A,B		;ignore at the start of the line.
+1564:	DA1C  B7      		OR	A
+1565:	DA1D  CAEFD9  		JP	Z,RDBUF1
+1566:	DA20  7E      		LD	A,(HL)		;ok, echo the prevoius character.
+1567:	DA21  05      		DEC	B		;and reset pointers (counters).
+1568:	DA22  2B      		DEC	HL
+1569:	DA23  C3A9DA  		JP	RDBUF15
+1570:	DA26  FE05    	RDBUF4:	CP	CNTRLE		;physical end of line?
+1571:	DA28  C237DA  		JP	NZ,RDBUF5
+1572:	DA2B  C5      		PUSH	BC		;yes, do it.
+1573:	DA2C  E5      		PUSH	HL
+1574:	DA2D  CDC9D9  		CALL	OUTCRLF
+1575:	DA30  AF      		XOR	A		;and update starting position.
+1576:	DA31  320BDB  		LD	(STARTING),A
+1577:	DA34  C3F1D9  		JP	RDBUF2
+1578:	DA37  FE10    	RDBUF5:	CP	CNTRLP		;control-p?
+1579:	DA39  C248DA  		JP	NZ,RDBUF6
+1580:	DA3C  E5      		PUSH	HL		;yes, flip the print flag filp-flop byte.
+1581:	DA3D  210DDB  		LD	HL,PRTFLAG
+1582:	DA40  3E01    		LD	A,1		;PRTFLAG=1-PRTFLAG
+1583:	DA42  96      		SUB	(HL)
+1584:	DA43  77      		LD	(HL),A
+1585:	DA44  E1      		POP	HL
+1586:	DA45  C3EFD9  		JP	RDBUF1
+1587:	DA48  FE18    	RDBUF6:	CP	CNTRLX		;control-x (cancel)?
+1588:	DA4A  C25FDA  		JP	NZ,RDBUF8
+1589:	DA4D  E1      		POP	HL
+1590:	DA4E  3A0BDB  	RDBUF7:	LD	A,(STARTING)	;yes, backup the cursor to here.
+1591:	DA51  210CDB  		LD	HL,CURPOS
+1592:	DA54  BE      		CP	(HL)
+1593:	DA55  D2E1D9  		JP	NC,RDBUFF	;done yet?
+1594:	DA58  35      		DEC	(HL)		;no, decrement pointer and output back up one space.
+1595:	DA59  CDA4D9  		CALL	BACKUP
+1596:	DA5C  C34EDA  		JP	RDBUF7
+1597:	DA5F  FE15    	RDBUF8:	CP	CNTRLU		;cntrol-u (cancel line)?
+1598:	DA61  C26BDA  		JP	NZ,RDBUF9
+1599:	DA64  CDB1D9  		CALL	NEWLINE		;start a new line.
+1600:	DA67  E1      		POP	HL
+1601:	DA68  C3E1D9  		JP	RDBUFF
+1602:	DA6B  FE12    	RDBUF9:	CP	CNTRLR		;control-r?
+1603:	DA6D  C2A6DA  		JP	NZ,RDBUF14
+1604:	DA70  C5      	RDBUF10:PUSH	BC		;yes, start a new line and retype the old one.
+1605:	DA71  CDB1D9  		CALL	NEWLINE
+1606:	DA74  C1      		POP	BC
+1607:	DA75  E1      		POP	HL
+1608:	DA76  E5      		PUSH	HL
+1609:	DA77  C5      		PUSH	BC
+1610:	DA78  78      	RDBUF11:LD	A,B		;done whole line yet?
+1611:	DA79  B7      		OR	A
+1612:	DA7A  CA8ADA  		JP	Z,RDBUF12
+1613:	DA7D  23      		INC	HL		;nope, get next character.
+1614:	DA7E  4E      		LD	C,(HL)
+1615:	DA7F  05      		DEC	B		;count it.
+1616:	DA80  C5      		PUSH	BC
+1617:	DA81  E5      		PUSH	HL
+1618:	DA82  CD7FD9  		CALL	SHOWIT		;and display it.
+1619:	DA85  E1      		POP	HL
+1620:	DA86  C1      		POP	BC
+1621:	DA87  C378DA  		JP	RDBUF11
+1622:	DA8A  E5      	RDBUF12:PUSH	HL		;done with line. If we were displaying
+1623:	DA8B  3A0ADB  		LD	A,(OUTFLAG)	;then update cursor position.
+1624:	DA8E  B7      		OR	A
+1625:	DA8F  CAF1D9  		JP	Z,RDBUF2
+1626:	DA92  210CDB  		LD	HL,CURPOS	;because this line is shorter, we must
+1627:	DA95  96      		SUB	(HL)		;back up the cursor (not the screen however)
+1628:	DA96  320ADB  		LD	(OUTFLAG),A	;some number of positions.
+1629:	DA99  CDA4D9  	RDBUF13:CALL	BACKUP		;note that as long as (OUTFLAG) is non
+1630:	DA9C  210ADB  		LD	HL,OUTFLAG	;zero, the screen will not be changed.
+1631:	DA9F  35      		DEC	(HL)
+1632:	DAA0  C299DA  		JP	NZ,RDBUF13
+1633:	DAA3  C3F1D9  		JP	RDBUF2		;now just get the next character.
+1634:			;
+1635:			;   Just a normal character, put this in our buffer and echo.
+1636:			;
+1637:	DAA6  23      	RDBUF14:INC	HL
+1638:	DAA7  77      		LD	(HL),A		;store character.
+1639:	DAA8  04      		INC	B		;and count it.
+1640:	DAA9  C5      	RDBUF15:PUSH	BC
+1641:	DAAA  E5      		PUSH	HL
+1642:	DAAB  4F      		LD	C,A		;echo it now.
+1643:	DAAC  CD7FD9  		CALL	SHOWIT
+1644:	DAAF  E1      		POP	HL
+1645:	DAB0  C1      		POP	BC
+1646:	DAB1  7E      		LD	A,(HL)		;was it an abort request?
+1647:	DAB2  FE03    		CP	CNTRLC		;control-c abort?
+1648:	DAB4  78      		LD	A,B
+1649:	DAB5  C2BDDA  		JP	NZ,RDBUF16
+1650:	DAB8  FE01    		CP	1		;only if at start of line.
+1651:	DABA  CA0000  		JP	Z,0
+1652:	DABD  B9      	RDBUF16:CP	C		;nope, have we filled the buffer?
+1653:	DABE  DAEFD9  		JP	C,RDBUF1
+1654:	DAC1  E1      	RDBUF17:POP	HL		;yes end the line and return.
+1655:	DAC2  70      		LD	(HL),B
+1656:	DAC3  0E0D    		LD	C,CR
+1657:	DAC5  C348D9  		JP	OUTCHAR		;output (cr) and return.
+1658:			;
+1659:			;   Function to get a character from the console device.
+1660:			;
+1661:	DAC8  CD06D9  	GETCON:	CALL	GETECHO		;get and echo.
+1662:	DACB  C301DB  		JP	SETSTAT		;save status and return.
+1663:			;
+1664:			;   Function to get a character from the tape reader device.
+1665:			;
+1666:	DACE  CD15E6  	GETRDR:	CALL	READER		;get a character from reader, set status and return.
+1667:	DAD1  C301DB  		JP	SETSTAT
+1668:			;
+1669:			;  Function to perform direct console i/o. If (C) contains (FF)
+1670:			; then this is an input request. If (C) contains (FE) then
+1671:			; this is a status request. Otherwise we are to output (C).
+1672:			;
+1673:	DAD4  79      	DIRCIO:	LD	A,C		;test for (FF).
+1674:	DAD5  3C      		INC	A
+1675:	DAD6  CAE0DA  		JP	Z,DIRC1
+1676:	DAD9  3C      		INC	A		;test for (FE).
+1677:	DADA  CA06E6  		JP	Z,CONST
+1678:	DADD  C30CE6  		JP	CONOUT		;just output (C).
+1679:	DAE0  CD06E6  	DIRC1:	CALL	CONST		;this is an input request.
+1680:	DAE3  B7      		OR	A
+1681:	DAE4  CA91E5  		JP	Z,GOBACK1	;not ready? Just return (directly).
+1682:	DAE7  CD09E6  		CALL	CONIN		;yes, get character.
+1683:	DAEA  C301DB  		JP	SETSTAT		;set status and return.
+1684:			;
+1685:			;   Function to return the i/o byte.
+1686:			;
+1687:	DAED  3A0300  	GETIOB:	LD	A,(IOBYTE)
+1688:	DAF0  C301DB  		JP	SETSTAT
+1689:			;
+1690:			;   Function to set the i/o byte.
+1691:			;
+1692:	DAF3  210300  	SETIOB:	LD	HL,IOBYTE
+1693:	DAF6  71      		LD	(HL),C
+1694:	DAF7  C9      		RET
+1695:			;
+1696:			;   Function to print the character string pointed to by (DE)
+1697:			; on the console device. The string ends with a '$'.
+1698:			;
+1699:	DAF8  EB      	PRTSTR:	EX	DE,HL
+1700:	DAF9  4D      		LD	C,L
+1701:	DAFA  44      		LD	B,H		;now (BC) points to it.
+1702:	DAFB  C3D3D9  		JP	PRTMESG
+1703:			;
+1704:			;   Function to interigate the console device.
+1705:			;
+1706:	DAFE  CD23D9  	GETCSTS:CALL	CKCONSOL
+1707:			;
+1708:			;   Get here to set the status and return to the cleanup
+1709:			; section. Then back to the user.
+1710:			;
+1711:	DB01  3245DB  	SETSTAT:LD	(STATUS),A
+1712:	DB04  C9      	RTN:	RET
+1713:			;
+1714:			;   Set the status to 1 (read or write error code).
+1715:			;
+1716:	DB05  3E01    	IOERR1:	LD	A,1
+1717:	DB07  C301DB  		JP	SETSTAT
+1718:			;
+1719:	DB0A  00      	OUTFLAG:DEFB	0		;output flag (non zero means no output).
+1720:	DB0B  02      	STARTING: DEFB	2		;starting position for cursor.
+1721:	DB0C  00      	CURPOS:	DEFB	0		;cursor position (0=start of line).
+1722:	DB0D  00      	PRTFLAG:DEFB	0		;printer flag (control-p toggle). List if non zero.
+1723:	DB0E  00      	CHARBUF:DEFB	0		;single input character buffer.
+1724:			;
+1725:			;   Stack area for BDOS calls.
+1726:			;
+1727:	DB0F  0000    	USRSTACK: DEFW	0		;save users stack pointer here.
+1728:			;
+1729:	DB11  00000000		DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      00000000
+	      00000000
+	      00000000
+1730:	DB29  00000000		DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      00000000
+	      00000000
+	      00000000
+1731:	DB41          	STKAREA EQU	$		;end of stack area.
+1732:			;
+1733:	DB41  00      	USERNO:	DEFB	0		;current user number.
+1734:	DB42  00      	ACTIVE:	DEFB	0		;currently active drive.
+1735:	DB43  0000    	PARAMS:	DEFW	0		;save (DE) parameters here on entry.
+1736:	DB45  0000    	STATUS:	DEFW	0		;status returned from bdos function.
+1737:			;
+1738:			;   Select error occured, jump to error routine.
+1739:			;
+1740:	DB47  210BD8  	SLCTERR:LD	HL,BADSLCT
+1741:			;
+1742:			;   Jump to (HL) indirectly.
+1743:			;
+1744:	DB4A  5E      	JUMPHL:	LD	E,(HL)
+1745:	DB4B  23      		INC	HL
+1746:	DB4C  56      		LD	D,(HL)		;now (DE) contain the desired address.
+1747:	DB4D  EB      		EX	DE,HL
+1748:	DB4E  E9      		JP	(HL)
+1749:			;
+1750:			;   Block move. (DE) to (HL), (C) bytes total.
+1751:			;
+1752:	DB4F  0C      	DE2HL:	INC	C		;is count down to zero?
+1753:	DB50  0D      	DE2HL1:	DEC	C
+1754:	DB51  C8      		RET	Z		;yes, we are done.
+1755:	DB52  1A      		LD	A,(DE)		;no, move one more byte.
+1756:	DB53  77      		LD	(HL),A
+1757:	DB54  13      		INC	DE
+1758:	DB55  23      		INC	HL
+1759:	DB56  C350DB  		JP	DE2HL1		;and repeat.
+1760:			;
+1761:			;   Select the desired drive.
+1762:			;
+1763:	DB59  3A42DB  	SELECT:	LD	A,(ACTIVE)	;get active disk.
+1764:	DB5C  4F      		LD	C,A
+1765:	DB5D  CD1BE6  		CALL	SELDSK		;select it.
+1766:	DB60  7C      		LD	A,H		;valid drive?
+1767:	DB61  B5      		OR	L		;valid drive?
+1768:	DB62  C8      		RET	Z		;return if not.
+1769:			;
+1770:			;   Here, the BIOS returned the address of the parameter block
+1771:			; in (HL). We will extract the necessary pointers and save them.
+1772:			;
+1773:	DB63  5E      		LD	E,(HL)		;yes, get address of translation table into (DE).
+1774:	DB64  23      		INC	HL
+1775:	DB65  56      		LD	D,(HL)
+1776:	DB66  23      		INC	HL
+1777:	DB67  22B3E5  		LD	(SCRATCH1),HL	;save pointers to scratch areas.
+1778:	DB6A  23      		INC	HL
+1779:	DB6B  23      		INC	HL
+1780:	DB6C  22B5E5  		LD	(SCRATCH2),HL	;ditto.
+1781:	DB6F  23      		INC	HL
+1782:	DB70  23      		INC	HL
+1783:	DB71  22B7E5  		LD	(SCRATCH3),HL	;ditto.
+1784:	DB74  23      		INC	HL
+1785:	DB75  23      		INC	HL
+1786:	DB76  EB      		EX	DE,HL		;now save the translation table address.
+1787:	DB77  22D0E5  		LD	(XLATE),HL
+1788:	DB7A  21B9E5  		LD	HL,DIRBUF	;put the next 8 bytes here.
+1789:	DB7D  0E08    		LD	C,8		;they consist of the directory buffer
+1790:	DB7F  CD4FDB  		CALL	DE2HL		;pointer, parameter block pointer,
+1791:	DB82  2ABBE5  		LD	HL,(DISKPB)	;check and allocation vectors.
+1792:	DB85  EB      		EX	DE,HL
+1793:	DB86  21C1E5  		LD	HL,SECTORS	;move parameter block into our ram.
+1794:	DB89  0E0F    		LD	C,15		;it is 15 bytes long.
+1795:	DB8B  CD4FDB  		CALL	DE2HL
+1796:	DB8E  2AC6E5  		LD	HL,(DSKSIZE)	;check disk size.
+1797:	DB91  7C      		LD	A,H		;more than 256 blocks on this?
+1798:	DB92  21DDE5  		LD	HL,BIGDISK
+1799:	DB95  36FF    		LD	(HL),0FFH	;set to samll.
+1800:	DB97  B7      		OR	A
+1801:	DB98  CA9DDB  		JP	Z,SELECT1
+1802:	DB9B  3600    		LD	(HL),0		;wrong, set to large.
+1803:	DB9D  3EFF    	SELECT1:LD	A,0FFH		;clear the zero flag.
+1804:	DB9F  B7      		OR	A
+1805:	DBA0  C9      		RET
+1806:			;
+1807:			;   Routine to home the disk track head and clear pointers.
+1808:			;
+1809:	DBA1  CD18E6  	HOMEDRV:CALL	HOME		;home the head.
+1810:	DBA4  AF      		XOR	A
+1811:	DBA5  2AB5E5  		LD	HL,(SCRATCH2)	;set our track pointer also.
+1812:	DBA8  77      		LD	(HL),A
+1813:	DBA9  23      		INC	HL
+1814:	DBAA  77      		LD	(HL),A
+1815:	DBAB  2AB7E5  		LD	HL,(SCRATCH3)	;and our sector pointer.
+1816:	DBAE  77      		LD	(HL),A
+1817:	DBAF  23      		INC	HL
+1818:	DBB0  77      		LD	(HL),A
+1819:	DBB1  C9      		RET
+1820:			;
+1821:			;   Do the actual disk read and check the error return status.
+1822:			;
+1823:	DBB2  CD27E6  	DOREAD:	CALL	READ
+1824:	DBB5  C3BBDB  		JP	IORET
+1825:			;
+1826:			;   Do the actual disk write and handle any bios error.
+1827:			;
+1828:	DBB8  CD2AE6  	DOWRITE:CALL	WRITE
+1829:	DBBB  B7      	IORET:	OR	A
+1830:	DBBC  C8      		RET	Z		;return unless an error occured.
+1831:	DBBD  2109D8  		LD	HL,BADSCTR	;bad read/write on this sector.
+1832:	DBC0  C34ADB  		JP	JUMPHL
+1833:			;
+1834:			;   Routine to select the track and sector that the desired
+1835:			; block number falls in.
+1836:			;
+1837:	DBC3  2AEAE5  	TRKSEC:	LD	HL,(FILEPOS)	;get position of last accessed file
+1838:	DBC6  0E02    		LD	C,2		;in directory and compute sector #.
+1839:	DBC8  CDEADC  		CALL	SHIFTR		;sector #=file-position/4.
+1840:	DBCB  22E5E5  		LD	(BLKNMBR),HL	;save this as the block number of interest.
+1841:	DBCE  22ECE5  		LD	(CKSUMTBL),HL	;what's it doing here too?
+1842:			;
+1843:			;   if the sector number has already been set (BLKNMBR), enter
+1844:			; at this point.
+1845:			;
+1846:	DBD1  21E5E5  	TRKSEC1:LD	HL,BLKNMBR
+1847:	DBD4  4E      		LD	C,(HL)		;move sector number into (BC).
+1848:	DBD5  23      		INC	HL
+1849:	DBD6  46      		LD	B,(HL)
+1850:	DBD7  2AB7E5  		LD	HL,(SCRATCH3)	;get current sector number and
+1851:	DBDA  5E      		LD	E,(HL)		;move this into (DE).
+1852:	DBDB  23      		INC	HL
+1853:	DBDC  56      		LD	D,(HL)
+1854:	DBDD  2AB5E5  		LD	HL,(SCRATCH2)	;get current track number.
+1855:	DBE0  7E      		LD	A,(HL)		;and this into (HL).
+1856:	DBE1  23      		INC	HL
+1857:	DBE2  66      		LD	H,(HL)
+1858:	DBE3  6F      		LD	L,A
+1859:	DBE4  79      	TRKSEC2:LD	A,C		;is desired sector before current one?
+1860:	DBE5  93      		SUB	E
+1861:	DBE6  78      		LD	A,B
+1862:	DBE7  9A      		SBC	A,D
+1863:	DBE8  D2FADB  		JP	NC,TRKSEC3
+1864:	DBEB  E5      		PUSH	HL		;yes, decrement sectors by one track.
+1865:	DBEC  2AC1E5  		LD	HL,(SECTORS)	;get sectors per track.
+1866:	DBEF  7B      		LD	A,E
+1867:	DBF0  95      		SUB	L
+1868:	DBF1  5F      		LD	E,A
+1869:	DBF2  7A      		LD	A,D
+1870:	DBF3  9C      		SBC	A,H
+1871:	DBF4  57      		LD	D,A		;now we have backed up one full track.
+1872:	DBF5  E1      		POP	HL
+1873:	DBF6  2B      		DEC	HL		;adjust track counter.
+1874:	DBF7  C3E4DB  		JP	TRKSEC2
+1875:	DBFA  E5      	TRKSEC3:PUSH	HL		;desired sector is after current one.
+1876:	DBFB  2AC1E5  		LD	HL,(SECTORS)	;get sectors per track.
+1877:	DBFE  19      		ADD	HL,DE		;bump sector pointer to next track.
+1878:	DBFF  DA0FDC  		JP	C,TRKSEC4
+1879:	DC02  79      		LD	A,C		;is desired sector now before current one?
+1880:	DC03  95      		SUB	L
+1881:	DC04  78      		LD	A,B
+1882:	DC05  9C      		SBC	A,H
+1883:	DC06  DA0FDC  		JP	C,TRKSEC4
+1884:	DC09  EB      		EX	DE,HL		;not yes, increment track counter
+1885:	DC0A  E1      		POP	HL		;and continue until it is.
+1886:	DC0B  23      		INC	HL
+1887:	DC0C  C3FADB  		JP	TRKSEC3
+1888:			;
+1889:			;   here we have determined the track number that contains the
+1890:			; desired sector.
+1891:			;
+1892:	DC0F  E1      	TRKSEC4:POP	HL		;get track number (HL).
+1893:	DC10  C5      		PUSH	BC
+1894:	DC11  D5      		PUSH	DE
+1895:	DC12  E5      		PUSH	HL
+1896:	DC13  EB      		EX	DE,HL
+1897:	DC14  2ACEE5  		LD	HL,(OFFSET)	;adjust for first track offset.
+1898:	DC17  19      		ADD	HL,DE
+1899:	DC18  44      		LD	B,H
+1900:	DC19  4D      		LD	C,L
+1901:	DC1A  CD1EE6  		CALL	SETTRK		;select this track.
+1902:	DC1D  D1      		POP	DE		;reset current track pointer.
+1903:	DC1E  2AB5E5  		LD	HL,(SCRATCH2)
+1904:	DC21  73      		LD	(HL),E
+1905:	DC22  23      		INC	HL
+1906:	DC23  72      		LD	(HL),D
+1907:	DC24  D1      		POP	DE
+1908:	DC25  2AB7E5  		LD	HL,(SCRATCH3)	;reset the first sector on this track.
+1909:	DC28  73      		LD	(HL),E
+1910:	DC29  23      		INC	HL
+1911:	DC2A  72      		LD	(HL),D
+1912:	DC2B  C1      		POP	BC
+1913:	DC2C  79      		LD	A,C		;now subtract the desired one.
+1914:	DC2D  93      		SUB	E		;to make it relative (1-# sectors/track).
+1915:	DC2E  4F      		LD	C,A
+1916:	DC2F  78      		LD	A,B
+1917:	DC30  9A      		SBC	A,D
+1918:	DC31  47      		LD	B,A
+1919:	DC32  2AD0E5  		LD	HL,(XLATE)	;translate this sector according to this table.
+1920:	DC35  EB      		EX	DE,HL
+1921:	DC36  CD30E6  		CALL	SECTRAN		;let the bios translate it.
+1922:	DC39  4D      		LD	C,L
+1923:	DC3A  44      		LD	B,H
+1924:	DC3B  C321E6  		JP	SETSEC		;and select it.
+1925:			;
+1926:			;   Compute block number from record number (SAVNREC) and
+1927:			; extent number (SAVEXT).
+1928:			;
+1929:	DC3E  21C3E5  	GETBLOCK: LD	HL,BLKSHFT	;get logical to physical conversion.
+1930:	DC41  4E      		LD	C,(HL)		;note that this is base 2 log of ratio.
+1931:	DC42  3AE3E5  		LD	A,(SAVNREC)	;get record number.
+1932:	DC45  B7      	GETBLK1:OR	A		;compute (A)=(A)/2^BLKSHFT.
+1933:	DC46  1F      		RRA
+1934:	DC47  0D      		DEC	C
+1935:	DC48  C245DC  		JP	NZ,GETBLK1
+1936:	DC4B  47      		LD	B,A		;save result in (B).
+1937:	DC4C  3E08    		LD	A,8
+1938:	DC4E  96      		SUB	(HL)
+1939:	DC4F  4F      		LD	C,A		;compute (C)=8-BLKSHFT.
+1940:	DC50  3AE2E5  		LD	A,(SAVEXT)
+1941:	DC53  0D      	GETBLK2:DEC	C		;compute (A)=SAVEXT*2^(8-BLKSHFT).
+1942:	DC54  CA5CDC  		JP	Z,GETBLK3
+1943:	DC57  B7      		OR	A
+1944:	DC58  17      		RLA
+1945:	DC59  C353DC  		JP	GETBLK2
+1946:	DC5C  80      	GETBLK3:ADD	A,B
+1947:	DC5D  C9      		RET
+1948:			;
+1949:			;   Routine to extract the (BC) block byte from the fcb pointed
+1950:			; to by (PARAMS). If this is a big-disk, then these are 16 bit
+1951:			; block numbers, else they are 8 bit numbers.
+1952:			; Number is returned in (HL).
+1953:			;
+1954:	DC5E  2A43DB  	EXTBLK:	LD	HL,(PARAMS)	;get fcb address.
+1955:	DC61  111000  		LD	DE,16		;block numbers start 16 bytes into fcb.
+1956:	DC64  19      		ADD	HL,DE
+1957:	DC65  09      		ADD	HL,BC
+1958:	DC66  3ADDE5  		LD	A,(BIGDISK)	;are we using a big-disk?
+1959:	DC69  B7      		OR	A
+1960:	DC6A  CA71DC  		JP	Z,EXTBLK1
+1961:	DC6D  6E      		LD	L,(HL)		;no, extract an 8 bit number from the fcb.
+1962:	DC6E  2600    		LD	H,0
+1963:	DC70  C9      		RET
+1964:	DC71  09      	EXTBLK1:ADD	HL,BC		;yes, extract a 16 bit number.
+1965:	DC72  5E      		LD	E,(HL)
+1966:	DC73  23      		INC	HL
+1967:	DC74  56      		LD	D,(HL)
+1968:	DC75  EB      		EX	DE,HL		;return in (HL).
+1969:	DC76  C9      		RET
+1970:			;
+1971:			;   Compute block number.
+1972:			;
+1973:	DC77  CD3EDC  	COMBLK:	CALL	GETBLOCK
+1974:	DC7A  4F      		LD	C,A
+1975:	DC7B  0600    		LD	B,0
+1976:	DC7D  CD5EDC  		CALL	EXTBLK
+1977:	DC80  22E5E5  		LD	(BLKNMBR),HL
+1978:	DC83  C9      		RET
+1979:			;
+1980:			;   Check for a zero block number (unused).
+1981:			;
+1982:	DC84  2AE5E5  	CHKBLK:	LD	HL,(BLKNMBR)
+1983:	DC87  7D      		LD	A,L		;is it zero?
+1984:	DC88  B4      		OR	H
+1985:	DC89  C9      		RET
+1986:			;
+1987:			;   Adjust physical block (BLKNMBR) and convert to logical
+1988:			; sector (LOGSECT). This is the starting sector of this block.
+1989:			; The actual sector of interest is then added to this and the
+1990:			; resulting sector number is stored back in (BLKNMBR). This
+1991:			; will still have to be adjusted for the track number.
+1992:			;
+1993:	DC8A  3AC3E5  	LOGICAL:LD	A,(BLKSHFT)	;get log2(physical/logical sectors).
+1994:	DC8D  2AE5E5  		LD	HL,(BLKNMBR)	;get physical sector desired.
+1995:	DC90  29      	LOGICL1:ADD	HL,HL		;compute logical sector number.
+1996:	DC91  3D      		DEC	A		;note logical sectors are 128 bytes long.
+1997:	DC92  C290DC  		JP	NZ,LOGICL1
+1998:	DC95  22E7E5  		LD	(LOGSECT),HL	;save logical sector.
+1999:	DC98  3AC4E5  		LD	A,(BLKMASK)	;get block mask.
+2000:	DC9B  4F      		LD	C,A
+2001:	DC9C  3AE3E5  		LD	A,(SAVNREC)	;get next sector to access.
+2002:	DC9F  A1      		AND	C		;extract the relative position within physical block.
+2003:	DCA0  B5      		OR	L		;and add it too logical sector.
+2004:	DCA1  6F      		LD	L,A
+2005:	DCA2  22E5E5  		LD	(BLKNMBR),HL	;and store.
+2006:	DCA5  C9      		RET
+2007:			;
+2008:			;   Set (HL) to point to extent byte in fcb.
+2009:			;
+2010:	DCA6  2A43DB  	SETEXT:	LD	HL,(PARAMS)
+2011:	DCA9  110C00  		LD	DE,12		;it is the twelth byte.
+2012:	DCAC  19      		ADD	HL,DE
+2013:	DCAD  C9      		RET
+2014:			;
+2015:			;   Set (HL) to point to record count byte in fcb and (DE) to
+2016:			; next record number byte.
+2017:			;
+2018:	DCAE  2A43DB  	SETHLDE:LD	HL,(PARAMS)
+2019:	DCB1  110F00  		LD	DE,15		;record count byte (#15).
+2020:	DCB4  19      		ADD	HL,DE
+2021:	DCB5  EB      		EX	DE,HL
+2022:	DCB6  211100  		LD	HL,17		;next record number (#32).
+2023:	DCB9  19      		ADD	HL,DE
+2024:	DCBA  C9      		RET
+2025:			;
+2026:			;   Save current file data from fcb.
+2027:			;
+2028:	DCBB  CDAEDC  	STRDATA:CALL	SETHLDE
+2029:	DCBE  7E      		LD	A,(HL)		;get and store record count byte.
+2030:	DCBF  32E3E5  		LD	(SAVNREC),A
+2031:	DCC2  EB      		EX	DE,HL
+2032:	DCC3  7E      		LD	A,(HL)		;get and store next record number byte.
+2033:	DCC4  32E1E5  		LD	(SAVNXT),A
+2034:	DCC7  CDA6DC  		CALL	SETEXT		;point to extent byte.
+2035:	DCCA  3AC5E5  		LD	A,(EXTMASK)	;get extent mask.
+2036:	DCCD  A6      		AND	(HL)
+2037:	DCCE  32E2E5  		LD	(SAVEXT),A	;and save extent here.
+2038:	DCD1  C9      		RET
+2039:			;
+2040:			;   Set the next record to access. If (MODE) is set to 2, then
+2041:			; the last record byte (SAVNREC) has the correct number to access.
+2042:			; For sequential access, (MODE) will be equal to 1.
+2043:			;
+2044:	DCD2  CDAEDC  	SETNREC:CALL	SETHLDE
+2045:	DCD5  3AD5E5  		LD	A,(MODE)	;get sequential flag (=1).
+2046:	DCD8  FE02    		CP	2		;a 2 indicates that no adder is needed.
+2047:	DCDA  C2DEDC  		JP	NZ,STNREC1
+2048:	DCDD  AF      		XOR	A		;clear adder (random access?).
+2049:	DCDE  4F      	STNREC1:LD	C,A
+2050:	DCDF  3AE3E5  		LD	A,(SAVNREC)	;get last record number.
+2051:	DCE2  81      		ADD	A,C		;increment record count.
+2052:	DCE3  77      		LD	(HL),A		;and set fcb's next record byte.
+2053:	DCE4  EB      		EX	DE,HL
+2054:	DCE5  3AE1E5  		LD	A,(SAVNXT)	;get next record byte from storage.
+2055:	DCE8  77      		LD	(HL),A		;and put this into fcb as number of records used.
+2056:	DCE9  C9      		RET
+2057:			;
+2058:			;   Shift (HL) right (C) bits.
+2059:			;
+2060:	DCEA  0C      	SHIFTR:	INC	C
+2061:	DCEB  0D      	SHIFTR1:DEC	C
+2062:	DCEC  C8      		RET	Z
+2063:	DCED  7C      		LD	A,H
+2064:	DCEE  B7      		OR	A
+2065:	DCEF  1F      		RRA
+2066:	DCF0  67      		LD	H,A
+2067:	DCF1  7D      		LD	A,L
+2068:	DCF2  1F      		RRA
+2069:	DCF3  6F      		LD	L,A
+2070:	DCF4  C3EBDC  		JP	SHIFTR1
+2071:			;
+2072:			;   Compute the check-sum for the directory buffer. Return
+2073:			; integer sum in (A).
+2074:			;
+2075:	DCF7  0E80    	CHECKSUM: LD	C,128		;length of buffer.
+2076:	DCF9  2AB9E5  		LD	HL,(DIRBUF)	;get its location.
+2077:	DCFC  AF      		XOR	A		;clear summation byte.
+2078:	DCFD  86      	CHKSUM1:ADD	A,(HL)		;and compute sum ignoring carries.
+2079:	DCFE  23      		INC	HL
+2080:	DCFF  0D      		DEC	C
+2081:	DD00  C2FDDC  		JP	NZ,CHKSUM1
+2082:	DD03  C9      		RET
+2083:			;
+2084:			;   Shift (HL) left (C) bits.
+2085:			;
+2086:	DD04  0C      	SHIFTL:	INC	C
+2087:	DD05  0D      	SHIFTL1:DEC	C
+2088:	DD06  C8      		RET	Z
+2089:	DD07  29      		ADD	HL,HL		;shift left 1 bit.
+2090:	DD08  C305DD  		JP	SHIFTL1
+2091:			;
+2092:			;   Routine to set a bit in a 16 bit value contained in (BC).
+2093:			; The bit set depends on the current drive selection.
+2094:			;
+2095:	DD0B  C5      	SETBIT:	PUSH	BC		;save 16 bit word.
+2096:	DD0C  3A42DB  		LD	A,(ACTIVE)	;get active drive.
+2097:	DD0F  4F      		LD	C,A
+2098:	DD10  210100  		LD	HL,1
+2099:	DD13  CD04DD  		CALL	SHIFTL		;shift bit 0 into place.
+2100:	DD16  C1      		POP	BC		;now 'or' this with the original word.
+2101:	DD17  79      		LD	A,C
+2102:	DD18  B5      		OR	L
+2103:	DD19  6F      		LD	L,A		;low byte done, do high byte.
+2104:	DD1A  78      		LD	A,B
+2105:	DD1B  B4      		OR	H
+2106:	DD1C  67      		LD	H,A
+2107:	DD1D  C9      		RET
+2108:			;
+2109:			;   Extract the write protect status bit for the current drive.
+2110:			; The result is returned in (A), bit 0.
+2111:			;
+2112:	DD1E  2AADE5  	GETWPRT:LD	HL,(WRTPRT)	;get status bytes.
+2113:	DD21  3A42DB  		LD	A,(ACTIVE)	;which drive is current?
+2114:	DD24  4F      		LD	C,A
+2115:	DD25  CDEADC  		CALL	SHIFTR		;shift status such that bit 0 is the
+2116:	DD28  7D      		LD	A,L		;one of interest for this drive.
+2117:	DD29  E601    		AND	01H		;and isolate it.
+2118:	DD2B  C9      		RET
+2119:			;
+2120:			;   Function to write protect the current disk.
+2121:			;
+2122:	DD2C  21ADE5  	WRTPRTD:LD	HL,WRTPRT	;point to status word.
+2123:	DD2F  4E      		LD	C,(HL)		;set (BC) equal to the status.
+2124:	DD30  23      		INC	HL
+2125:	DD31  46      		LD	B,(HL)
+2126:	DD32  CD0BDD  		CALL	SETBIT		;and set this bit according to current drive.
+2127:	DD35  22ADE5  		LD	(WRTPRT),HL	;then save.
+2128:	DD38  2AC8E5  		LD	HL,(DIRSIZE)	;now save directory size limit.
+2129:	DD3B  23      		INC	HL		;remember the last one.
+2130:	DD3C  EB      		EX	DE,HL
+2131:	DD3D  2AB3E5  		LD	HL,(SCRATCH1)	;and store it here.
+2132:	DD40  73      		LD	(HL),E		;put low byte.
+2133:	DD41  23      		INC	HL
+2134:	DD42  72      		LD	(HL),D		;then high byte.
+2135:	DD43  C9      		RET
+2136:			;
+2137:			;   Check for a read only file.
+2138:			;
+2139:	DD44  CD5EDD  	CHKROFL:CALL	FCB2HL		;set (HL) to file entry in directory buffer.
+2140:	DD47  110900  	CKROF1:	LD	DE,9		;look at bit 7 of the ninth byte.
+2141:	DD4A  19      		ADD	HL,DE
+2142:	DD4B  7E      		LD	A,(HL)
+2143:	DD4C  17      		RLA
+2144:	DD4D  D0      		RET	NC		;return if ok.
+2145:	DD4E  210FD8  		LD	HL,ROFILE	;else, print error message and terminate.
+2146:	DD51  C34ADB  		JP	JUMPHL
+2147:			;
+2148:			;   Check the write protect status of the active disk.
+2149:			;
+2150:	DD54  CD1EDD  	CHKWPRT:CALL	GETWPRT
+2151:	DD57  C8      		RET	Z		;return if ok.
+2152:	DD58  210DD8  		LD	HL,RODISK	;else print message and terminate.
+2153:	DD5B  C34ADB  		JP	JUMPHL
+2154:			;
+2155:			;   Routine to set (HL) pointing to the proper entry in the
+2156:			; directory buffer.
+2157:			;
+2158:	DD5E  2AB9E5  	FCB2HL:	LD	HL,(DIRBUF)	;get address of buffer.
+2159:	DD61  3AE9E5  		LD	A,(FCBPOS)	;relative position of file.
+2160:			;
+2161:			;   Routine to add (A) to (HL).
+2162:			;
+2163:	DD64  85      	ADDA2HL:ADD	A,L
+2164:	DD65  6F      		LD	L,A
+2165:	DD66  D0      		RET	NC
+2166:	DD67  24      		INC	H		;take care of any carry.
+2167:	DD68  C9      		RET
+2168:			;
+2169:			;   Routine to get the 's2' byte from the fcb supplied in
+2170:			; the initial parameter specification.
+2171:			;
+2172:	DD69  2A43DB  	GETS2:	LD	HL,(PARAMS)	;get address of fcb.
+2173:	DD6C  110E00  		LD	DE,14		;relative position of 's2'.
+2174:	DD6F  19      		ADD	HL,DE
+2175:	DD70  7E      		LD	A,(HL)		;extract this byte.
+2176:	DD71  C9      		RET
+2177:			;
+2178:			;   Clear the 's2' byte in the fcb.
+2179:			;
+2180:	DD72  CD69DD  	CLEARS2:CALL	GETS2		;this sets (HL) pointing to it.
+2181:	DD75  3600    		LD	(HL),0		;now clear it.
+2182:	DD77  C9      		RET
+2183:			;
+2184:			;   Set bit 7 in the 's2' byte of the fcb.
+2185:			;
+2186:	DD78  CD69DD  	SETS2B7:CALL	GETS2		;get the byte.
+2187:	DD7B  F680    		OR	80H		;and set bit 7.
+2188:	DD7D  77      		LD	(HL),A		;then store.
+2189:	DD7E  C9      		RET
+2190:			;
+2191:			;   Compare (FILEPOS) with (SCRATCH1) and set flags based on
+2192:			; the difference. This checks to see if there are more file
+2193:			; names in the directory. We are at (FILEPOS) and there are
+2194:			; (SCRATCH1) of them to check.
+2195:			;
+2196:	DD7F  2AEAE5  	MOREFLS:LD	HL,(FILEPOS)	;we are here.
+2197:	DD82  EB      		EX	DE,HL
+2198:	DD83  2AB3E5  		LD	HL,(SCRATCH1)	;and don't go past here.
+2199:	DD86  7B      		LD	A,E		;compute difference but don't keep.
+2200:	DD87  96      		SUB	(HL)
+2201:	DD88  23      		INC	HL
+2202:	DD89  7A      		LD	A,D
+2203:	DD8A  9E      		SBC	A,(HL)		;set carry if no more names.
+2204:	DD8B  C9      		RET
+2205:			;
+2206:			;   Call this routine to prevent (SCRATCH1) from being greater
+2207:			; than (FILEPOS).
+2208:			;
+2209:	DD8C  CD7FDD  	CHKNMBR:CALL	MOREFLS		;SCRATCH1 too big?
+2210:	DD8F  D8      		RET	C
+2211:	DD90  13      		INC	DE		;yes, reset it to (FILEPOS).
+2212:	DD91  72      		LD	(HL),D
+2213:	DD92  2B      		DEC	HL
+2214:	DD93  73      		LD	(HL),E
+2215:	DD94  C9      		RET
+2216:			;
+2217:			;   Compute (HL)=(DE)-(HL)
+2218:			;
+2219:	DD95  7B      	SUBHL:	LD	A,E		;compute difference.
+2220:	DD96  95      		SUB	L
+2221:	DD97  6F      		LD	L,A		;store low byte.
+2222:	DD98  7A      		LD	A,D
+2223:	DD99  9C      		SBC	A,H
+2224:	DD9A  67      		LD	H,A		;and then high byte.
+2225:	DD9B  C9      		RET
+2226:			;
+2227:			;   Set the directory checksum byte.
+2228:			;
+2229:	DD9C  0EFF    	SETDIR:	LD	C,0FFH
+2230:			;
+2231:			;   Routine to set or compare the directory checksum byte. If
+2232:			; (C)=0ffh, then this will set the checksum byte. Else the byte
+2233:			; will be checked. If the check fails (the disk has been changed),
+2234:			; then this disk will be write protected.
+2235:			;
+2236:	DD9E  2AECE5  	CHECKDIR: LD	HL,(CKSUMTBL)
+2237:	DDA1  EB      		EX	DE,HL
+2238:	DDA2  2ACCE5  		LD	HL,(ALLOC1)
+2239:	DDA5  CD95DD  		CALL	SUBHL
+2240:	DDA8  D0      		RET	NC		;ok if (CKSUMTBL) > (ALLOC1), so return.
+2241:	DDA9  C5      		PUSH	BC
+2242:	DDAA  CDF7DC  		CALL	CHECKSUM	;else compute checksum.
+2243:	DDAD  2ABDE5  		LD	HL,(CHKVECT)	;get address of checksum table.
+2244:	DDB0  EB      		EX	DE,HL
+2245:	DDB1  2AECE5  		LD	HL,(CKSUMTBL)
+2246:	DDB4  19      		ADD	HL,DE		;set (HL) to point to byte for this drive.
+2247:	DDB5  C1      		POP	BC
+2248:	DDB6  0C      		INC	C		;set or check ?
+2249:	DDB7  CAC4DD  		JP	Z,CHKDIR1
+2250:	DDBA  BE      		CP	(HL)		;check them.
+2251:	DDBB  C8      		RET	Z		;return if they are the same.
+2252:	DDBC  CD7FDD  		CALL	MOREFLS		;not the same, do we care?
+2253:	DDBF  D0      		RET	NC
+2254:	DDC0  CD2CDD  		CALL	WRTPRTD		;yes, mark this as write protected.
+2255:	DDC3  C9      		RET
+2256:	DDC4  77      	CHKDIR1:LD	(HL),A		;just set the byte.
+2257:	DDC5  C9      		RET
+2258:			;
+2259:			;   Do a write to the directory of the current disk.
+2260:			;
+2261:	DDC6  CD9CDD  	DIRWRITE: CALL	SETDIR		;set checksum byte.
+2262:	DDC9  CDE0DD  		CALL	DIRDMA		;set directory dma address.
+2263:	DDCC  0E01    		LD	C,1		;tell the bios to actually write.
+2264:	DDCE  CDB8DB  		CALL	DOWRITE		;then do the write.
+2265:	DDD1  C3DADD  		JP	DEFDMA
+2266:			;
+2267:			;   Read from the directory.
+2268:			;
+2269:	DDD4  CDE0DD  	DIRREAD:CALL	DIRDMA		;set the directory dma address.
+2270:	DDD7  CDB2DB  		CALL	DOREAD		;and read it.
+2271:			;
+2272:			;   Routine to set the dma address to the users choice.
+2273:			;
+2274:	DDDA  21B1E5  	DEFDMA:	LD	HL,USERDMA	;reset the default dma address and return.
+2275:	DDDD  C3E3DD  		JP	DIRDMA1
+2276:			;
+2277:			;   Routine to set the dma address for directory work.
+2278:			;
+2279:	DDE0  21B9E5  	DIRDMA:	LD	HL,DIRBUF
+2280:			;
+2281:			;   Set the dma address. On entry, (HL) points to
+2282:			; word containing the desired dma address.
+2283:			;
+2284:	DDE3  4E      	DIRDMA1:LD	C,(HL)
+2285:	DDE4  23      		INC	HL
+2286:	DDE5  46      		LD	B,(HL)		;setup (BC) and go to the bios to set it.
+2287:	DDE6  C324E6  		JP	SETDMA
+2288:			;
+2289:			;   Move the directory buffer into user's dma space.
+2290:			;
+2291:	DDE9  2AB9E5  	MOVEDIR:LD	HL,(DIRBUF)	;buffer is located here, and
+2292:	DDEC  EB      		EX	DE,HL
+2293:	DDED  2AB1E5  		LD	HL,(USERDMA)	; put it here.
+2294:	DDF0  0E80    		LD	C,128		;this is its length.
+2295:	DDF2  C34FDB  		JP	DE2HL		;move it now and return.
+2296:			;
+2297:			;   Check (FILEPOS) and set the zero flag if it equals 0ffffh.
+2298:			;
+2299:	DDF5  21EAE5  	CKFILPOS: LD	HL,FILEPOS
+2300:	DDF8  7E      		LD	A,(HL)
+2301:	DDF9  23      		INC	HL
+2302:	DDFA  BE      		CP	(HL)		;are both bytes the same?
+2303:	DDFB  C0      		RET	NZ
+2304:	DDFC  3C      		INC	A		;yes, but are they each 0ffh?
+2305:	DDFD  C9      		RET
+2306:			;
+2307:			;   Set location (FILEPOS) to 0ffffh.
+2308:			;
+2309:	DDFE  21FFFF  	STFILPOS: LD	HL,0FFFFH
+2310:	DE01  22EAE5  		LD	(FILEPOS),HL
+2311:	DE04  C9      		RET
+2312:			;
+2313:			;   Move on to the next file position within the current
+2314:			; directory buffer. If no more exist, set pointer to 0ffffh
+2315:			; and the calling routine will check for this. Enter with (C)
+2316:			; equal to 0ffh to cause the checksum byte to be set, else we
+2317:			; will check this disk and set write protect if checksums are
+2318:			; not the same (applies only if another directory sector must
+2319:			; be read).
+2320:			;
+2321:	DE05  2AC8E5  	NXENTRY:LD	HL,(DIRSIZE)	;get directory entry size limit.
+2322:	DE08  EB      		EX	DE,HL
+2323:	DE09  2AEAE5  		LD	HL,(FILEPOS)	;get current count.
+2324:	DE0C  23      		INC	HL		;go on to the next one.
+2325:	DE0D  22EAE5  		LD	(FILEPOS),HL
+2326:	DE10  CD95DD  		CALL	SUBHL		;(HL)=(DIRSIZE)-(FILEPOS)
+2327:	DE13  D219DE  		JP	NC,NXENT1	;is there more room left?
+2328:	DE16  C3FEDD  		JP	STFILPOS	;no. Set this flag and return.
+2329:	DE19  3AEAE5  	NXENT1:	LD	A,(FILEPOS)	;get file position within directory.
+2330:	DE1C  E603    		AND	03H		;only look within this sector (only 4 entries fit).
+2331:	DE1E  0605    		LD	B,5		;convert to relative position (32 bytes each).
+2332:	DE20  87      	NXENT2:	ADD	A,A		;note that this is not efficient code.
+2333:	DE21  05      		DEC	B		;5 'ADD A's would be better.
+2334:	DE22  C220DE  		JP	NZ,NXENT2
+2335:	DE25  32E9E5  		LD	(FCBPOS),A	;save it as position of fcb.
+2336:	DE28  B7      		OR	A
+2337:	DE29  C0      		RET	NZ		;return if we are within buffer.
+2338:	DE2A  C5      		PUSH	BC
+2339:	DE2B  CDC3DB  		CALL	TRKSEC		;we need the next directory sector.
+2340:	DE2E  CDD4DD  		CALL	DIRREAD
+2341:	DE31  C1      		POP	BC
+2342:	DE32  C39EDD  		JP	CHECKDIR
+2343:			;
+2344:			;   Routine to to get a bit from the disk space allocation
+2345:			; map. It is returned in (A), bit position 0. On entry to here,
+2346:			; set (BC) to the block number on the disk to check.
+2347:			; On return, (D) will contain the original bit position for
+2348:			; this block number and (HL) will point to the address for it.
+2349:			;
+2350:	DE35  79      	CKBITMAP: LD	A,C		;determine bit number of interest.
+2351:	DE36  E607    		AND	07H		;compute (D)=(E)=(C and 7)+1.
+2352:	DE38  3C      		INC	A
+2353:	DE39  5F      		LD	E,A		;save particular bit number.
+2354:	DE3A  57      		LD	D,A
+2355:			;
+2356:			;   compute (BC)=(BC)/8.
+2357:			;
+2358:	DE3B  79      		LD	A,C
+2359:	DE3C  0F      		RRCA			;now shift right 3 bits.
+2360:	DE3D  0F      		RRCA
+2361:	DE3E  0F      		RRCA
+2362:	DE3F  E61F    		AND	1FH		;and clear bits 7,6,5.
+2363:	DE41  4F      		LD	C,A
+2364:	DE42  78      		LD	A,B
+2365:	DE43  87      		ADD	A,A		;now shift (B) into bits 7,6,5.
+2366:	DE44  87      		ADD	A,A
+2367:	DE45  87      		ADD	A,A
+2368:	DE46  87      		ADD	A,A
+2369:	DE47  87      		ADD	A,A
+2370:	DE48  B1      		OR	C		;and add in (C).
+2371:	DE49  4F      		LD	C,A		;ok, (C) ha been completed.
+2372:	DE4A  78      		LD	A,B		;is there a better way of doing this?
+2373:	DE4B  0F      		RRCA
+2374:	DE4C  0F      		RRCA
+2375:	DE4D  0F      		RRCA
+2376:	DE4E  E61F    		AND	1FH
+2377:	DE50  47      		LD	B,A		;and now (B) is completed.
+2378:			;
+2379:			;   use this as an offset into the disk space allocation
+2380:			; table.
+2381:			;
+2382:	DE51  2ABFE5  		LD	HL,(ALOCVECT)
+2383:	DE54  09      		ADD	HL,BC
+2384:	DE55  7E      		LD	A,(HL)		;now get correct byte.
+2385:	DE56  07      	CKBMAP1:RLCA			;get correct bit into position 0.
+2386:	DE57  1D      		DEC	E
+2387:	DE58  C256DE  		JP	NZ,CKBMAP1
+2388:	DE5B  C9      		RET
+2389:			;
+2390:			;   Set or clear the bit map such that block number (BC) will be marked
+2391:			; as used. On entry, if (E)=0 then this bit will be cleared, if it equals
+2392:			; 1 then it will be set (don't use anyother values).
+2393:			;
+2394:	DE5C  D5      	STBITMAP: PUSH	DE
+2395:	DE5D  CD35DE  		CALL	CKBITMAP	;get the byte of interest.
+2396:	DE60  E6FE    		AND	0FEH		;clear the affected bit.
+2397:	DE62  C1      		POP	BC
+2398:	DE63  B1      		OR	C		;and now set it acording to (C).
+2399:			;
+2400:			;  entry to restore the original bit position and then store
+2401:			; in table. (A) contains the value, (D) contains the bit
+2402:			; position (1-8), and (HL) points to the address within the
+2403:			; space allocation table for this byte.
+2404:			;
+2405:	DE64  0F      	STBMAP1:RRCA			;restore original bit position.
+2406:	DE65  15      		DEC	D
+2407:	DE66  C264DE  		JP	NZ,STBMAP1
+2408:	DE69  77      		LD	(HL),A		;and stor byte in table.
+2409:	DE6A  C9      		RET
+2410:			;
+2411:			;   Set/clear space used bits in allocation map for this file.
+2412:			; On entry, (C)=1 to set the map and (C)=0 to clear it.
+2413:			;
+2414:	DE6B  CD5EDD  	SETFILE:CALL	FCB2HL		;get address of fcb
+2415:	DE6E  111000  		LD	DE,16
+2416:	DE71  19      		ADD	HL,DE		;get to block number bytes.
+2417:	DE72  C5      		PUSH	BC
+2418:	DE73  0E11    		LD	C,17		;check all 17 bytes (max) of table.
+2419:	DE75  D1      	SETFL1:	POP	DE
+2420:	DE76  0D      		DEC	C		;done all bytes yet?
+2421:	DE77  C8      		RET	Z
+2422:	DE78  D5      		PUSH	DE
+2423:	DE79  3ADDE5  		LD	A,(BIGDISK)	;check disk size for 16 bit block numbers.
+2424:	DE7C  B7      		OR	A
+2425:	DE7D  CA88DE  		JP	Z,SETFL2
+2426:	DE80  C5      		PUSH	BC		;only 8 bit numbers. set (BC) to this one.
+2427:	DE81  E5      		PUSH	HL
+2428:	DE82  4E      		LD	C,(HL)		;get low byte from table, always
+2429:	DE83  0600    		LD	B,0		;set high byte to zero.
+2430:	DE85  C38EDE  		JP	SETFL3
+2431:	DE88  0D      	SETFL2:	DEC	C		;for 16 bit block numbers, adjust counter.
+2432:	DE89  C5      		PUSH	BC
+2433:	DE8A  4E      		LD	C,(HL)		;now get both the low and high bytes.
+2434:	DE8B  23      		INC	HL
+2435:	DE8C  46      		LD	B,(HL)
+2436:	DE8D  E5      		PUSH	HL
+2437:	DE8E  79      	SETFL3:	LD	A,C		;block used?
+2438:	DE8F  B0      		OR	B
+2439:	DE90  CA9DDE  		JP	Z,SETFL4
+2440:	DE93  2AC6E5  		LD	HL,(DSKSIZE)	;is this block number within the
+2441:	DE96  7D      		LD	A,L		;space on the disk?
+2442:	DE97  91      		SUB	C
+2443:	DE98  7C      		LD	A,H
+2444:	DE99  98      		SBC	A,B
+2445:	DE9A  D45CDE  		CALL	NC,STBITMAP	;yes, set the proper bit.
+2446:	DE9D  E1      	SETFL4:	POP	HL		;point to next block number in fcb.
+2447:	DE9E  23      		INC	HL
+2448:	DE9F  C1      		POP	BC
+2449:	DEA0  C375DE  		JP	SETFL1
+2450:			;
+2451:			;   Construct the space used allocation bit map for the active
+2452:			; drive. If a file name starts with '$' and it is under the
+2453:			; current user number, then (STATUS) is set to minus 1. Otherwise
+2454:			; it is not set at all.
+2455:			;
+2456:	DEA3  2AC6E5  	BITMAP:	LD	HL,(DSKSIZE)	;compute size of allocation table.
+2457:	DEA6  0E03    		LD	C,3
+2458:	DEA8  CDEADC  		CALL	SHIFTR		;(HL)=(HL)/8.
+2459:	DEAB  23      		INC	HL		;at lease 1 byte.
+2460:	DEAC  44      		LD	B,H
+2461:	DEAD  4D      		LD	C,L		;set (BC) to the allocation table length.
+2462:			;
+2463:			;   Initialize the bitmap for this drive. Right now, the first
+2464:			; two bytes are specified by the disk parameter block. However
+2465:			; a patch could be entered here if it were necessary to setup
+2466:			; this table in a special mannor. For example, the bios could
+2467:			; determine locations of 'bad blocks' and set them as already
+2468:			; 'used' in the map.
+2469:			;
+2470:	DEAE  2ABFE5  		LD	HL,(ALOCVECT)	;now zero out the table now.
+2471:	DEB1  3600    	BITMAP1:LD	(HL),0
+2472:	DEB3  23      		INC	HL
+2473:	DEB4  0B      		DEC	BC
+2474:	DEB5  78      		LD	A,B
+2475:	DEB6  B1      		OR	C
+2476:	DEB7  C2B1DE  		JP	NZ,BITMAP1
+2477:	DEBA  2ACAE5  		LD	HL,(ALLOC0)	;get initial space used by directory.
+2478:	DEBD  EB      		EX	DE,HL
+2479:	DEBE  2ABFE5  		LD	HL,(ALOCVECT)	;and put this into map.
+2480:	DEC1  73      		LD	(HL),E
+2481:	DEC2  23      		INC	HL
+2482:	DEC3  72      		LD	(HL),D
+2483:			;
+2484:			;   End of initialization portion.
+2485:			;
+2486:	DEC4  CDA1DB  		CALL	HOMEDRV		;now home the drive.
+2487:	DEC7  2AB3E5  		LD	HL,(SCRATCH1)
+2488:	DECA  3603    		LD	(HL),3		;force next directory request to read
+2489:	DECC  23      		INC	HL		;in a sector.
+2490:	DECD  3600    		LD	(HL),0
+2491:	DECF  CDFEDD  		CALL	STFILPOS	;clear initial file position also.
+2492:	DED2  0EFF    	BITMAP2:LD	C,0FFH		;read next file name in directory
+2493:	DED4  CD05DE  		CALL	NXENTRY		;and set checksum byte.
+2494:	DED7  CDF5DD  		CALL	CKFILPOS	;is there another file?
+2495:	DEDA  C8      		RET	Z
+2496:	DEDB  CD5EDD  		CALL	FCB2HL		;yes, get its address.
+2497:	DEDE  3EE5    		LD	A,0E5H
+2498:	DEE0  BE      		CP	(HL)		;empty file entry?
+2499:	DEE1  CAD2DE  		JP	Z,BITMAP2
+2500:	DEE4  3A41DB  		LD	A,(USERNO)	;no, correct user number?
+2501:	DEE7  BE      		CP	(HL)
+2502:	DEE8  C2F6DE  		JP	NZ,BITMAP3
+2503:	DEEB  23      		INC	HL
+2504:	DEEC  7E      		LD	A,(HL)		;yes, does name start with a '$'?
+2505:	DEED  D624    		SUB	'$'
+2506:	DEEF  C2F6DE  		JP	NZ,BITMAP3
+2507:	DEF2  3D      		DEC	A		;yes, set atatus to minus one.
+2508:	DEF3  3245DB  		LD	(STATUS),A
+2509:	DEF6  0E01    	BITMAP3:LD	C,1		;now set this file's space as used in bit map.
+2510:	DEF8  CD6BDE  		CALL	SETFILE
+2511:	DEFB  CD8CDD  		CALL	CHKNMBR		;keep (SCRATCH1) in bounds.
+2512:	DEFE  C3D2DE  		JP	BITMAP2
+2513:			;
+2514:			;   Set the status (STATUS) and return.
+2515:			;
+2516:	DF01  3AD4E5  	STSTATUS: LD	A,(FNDSTAT)
+2517:	DF04  C301DB  		JP	SETSTAT
+2518:			;
+2519:			;   Check extents in (A) and (C). Set the zero flag if they
+2520:			; are the same. The number of 16k chunks of disk space that
+2521:			; the directory extent covers is expressad is (EXTMASK+1).
+2522:			; No registers are modified.
+2523:			;
+2524:	DF07  C5      	SAMEXT:	PUSH	BC
+2525:	DF08  F5      		PUSH	AF
+2526:	DF09  3AC5E5  		LD	A,(EXTMASK)	;get extent mask and use it to
+2527:	DF0C  2F      		CPL			;to compare both extent numbers.
+2528:	DF0D  47      		LD	B,A		;save resulting mask here.
+2529:	DF0E  79      		LD	A,C		;mask first extent and save in (C).
+2530:	DF0F  A0      		AND	B
+2531:	DF10  4F      		LD	C,A
+2532:	DF11  F1      		POP	AF		;now mask second extent and compare
+2533:	DF12  A0      		AND	B		;with the first one.
+2534:	DF13  91      		SUB	C
+2535:	DF14  E61F    		AND	1FH		;(* only check buts 0-4 *)
+2536:	DF16  C1      		POP	BC		;the zero flag is set if they are the same.
+2537:	DF17  C9      		RET			;restore (BC) and return.
+2538:			;
+2539:			;   Search for the first occurence of a file name. On entry,
+2540:			; register (C) should contain the number of bytes of the fcb
+2541:			; that must match.
+2542:			;
+2543:	DF18  3EFF    	FINDFST:LD	A,0FFH
+2544:	DF1A  32D4E5  		LD	(FNDSTAT),A
+2545:	DF1D  21D8E5  		LD	HL,COUNTER	;save character count.
+2546:	DF20  71      		LD	(HL),C
+2547:	DF21  2A43DB  		LD	HL,(PARAMS)	;get filename to match.
+2548:	DF24  22D9E5  		LD	(SAVEFCB),HL	;and save.
+2549:	DF27  CDFEDD  		CALL	STFILPOS	;clear initial file position (set to 0ffffh).
+2550:	DF2A  CDA1DB  		CALL	HOMEDRV		;home the drive.
+2551:			;
+2552:			;   Entry to locate the next occurence of a filename within the
+2553:			; directory. The disk is not expected to have been changed. If
+2554:			; it was, then it will be write protected.
+2555:			;
+2556:	DF2D  0E00    	FINDNXT:LD	C,0		;write protect the disk if changed.
+2557:	DF2F  CD05DE  		CALL	NXENTRY		;get next filename entry in directory.
+2558:	DF32  CDF5DD  		CALL	CKFILPOS	;is file position = 0ffffh?
+2559:	DF35  CA94DF  		JP	Z,FNDNXT6	;yes, exit now then.
+2560:	DF38  2AD9E5  		LD	HL,(SAVEFCB)	;set (DE) pointing to filename to match.
+2561:	DF3B  EB      		EX	DE,HL
+2562:	DF3C  1A      		LD	A,(DE)
+2563:	DF3D  FEE5    		CP	0E5H		;empty directory entry?
+2564:	DF3F  CA4ADF  		JP	Z,FNDNXT1	;(* are we trying to reserect erased entries? *)
+2565:	DF42  D5      		PUSH	DE
+2566:	DF43  CD7FDD  		CALL	MOREFLS		;more files in directory?
+2567:	DF46  D1      		POP	DE
+2568:	DF47  D294DF  		JP	NC,FNDNXT6	;no more. Exit now.
+2569:	DF4A  CD5EDD  	FNDNXT1:CALL	FCB2HL		;get address of this fcb in directory.
+2570:	DF4D  3AD8E5  		LD	A,(COUNTER)	;get number of bytes (characters) to check.
+2571:	DF50  4F      		LD	C,A
+2572:	DF51  0600    		LD	B,0		;initialize byte position counter.
+2573:	DF53  79      	FNDNXT2:LD	A,C		;are we done with the compare?
+2574:	DF54  B7      		OR	A
+2575:	DF55  CA83DF  		JP	Z,FNDNXT5
+2576:	DF58  1A      		LD	A,(DE)		;no, check next byte.
+2577:	DF59  FE3F    		CP	'?'		;don't care about this character?
+2578:	DF5B  CA7CDF  		JP	Z,FNDNXT4
+2579:	DF5E  78      		LD	A,B		;get bytes position in fcb.
+2580:	DF5F  FE0D    		CP	13		;don't care about the thirteenth byte either.
+2581:	DF61  CA7CDF  		JP	Z,FNDNXT4
+2582:	DF64  FE0C    		CP	12		;extent byte?
+2583:	DF66  1A      		LD	A,(DE)
+2584:	DF67  CA73DF  		JP	Z,FNDNXT3
+2585:	DF6A  96      		SUB	(HL)		;otherwise compare characters.
+2586:	DF6B  E67F    		AND	7FH
+2587:	DF6D  C22DDF  		JP	NZ,FINDNXT	;not the same, check next entry.
+2588:	DF70  C37CDF  		JP	FNDNXT4		;so far so good, keep checking.
+2589:	DF73  C5      	FNDNXT3:PUSH	BC		;check the extent byte here.
+2590:	DF74  4E      		LD	C,(HL)
+2591:	DF75  CD07DF  		CALL	SAMEXT
+2592:	DF78  C1      		POP	BC
+2593:	DF79  C22DDF  		JP	NZ,FINDNXT	;not the same, look some more.
+2594:			;
+2595:			;   So far the names compare. Bump pointers to the next byte
+2596:			; and continue until all (C) characters have been checked.
+2597:			;
+2598:	DF7C  13      	FNDNXT4:INC	DE		;bump pointers.
+2599:	DF7D  23      		INC	HL
+2600:	DF7E  04      		INC	B
+2601:	DF7F  0D      		DEC	C		;adjust character counter.
+2602:	DF80  C353DF  		JP	FNDNXT2
+2603:	DF83  3AEAE5  	FNDNXT5:LD	A,(FILEPOS)	;return the position of this entry.
+2604:	DF86  E603    		AND	03H
+2605:	DF88  3245DB  		LD	(STATUS),A
+2606:	DF8B  21D4E5  		LD	HL,FNDSTAT
+2607:	DF8E  7E      		LD	A,(HL)
+2608:	DF8F  17      		RLA
+2609:	DF90  D0      		RET	NC
+2610:	DF91  AF      		XOR	A
+2611:	DF92  77      		LD	(HL),A
+2612:	DF93  C9      		RET
+2613:			;
+2614:			;   Filename was not found. Set appropriate status.
+2615:			;
+2616:	DF94  CDFEDD  	FNDNXT6:CALL	STFILPOS	;set (FILEPOS) to 0ffffh.
+2617:	DF97  3EFF    		LD	A,0FFH		;say not located.
+2618:	DF99  C301DB  		JP	SETSTAT
+2619:			;
+2620:			;   Erase files from the directory. Only the first byte of the
+2621:			; fcb will be affected. It is set to (E5).
+2622:			;
+2623:	DF9C  CD54DD  	ERAFILE:CALL	CHKWPRT		;is disk write protected?
+2624:	DF9F  0E0C    		LD	C,12		;only compare file names.
+2625:	DFA1  CD18DF  		CALL	FINDFST		;get first file name.
+2626:	DFA4  CDF5DD  	ERAFIL1:CALL	CKFILPOS	;any found?
+2627:	DFA7  C8      		RET	Z		;nope, we must be done.
+2628:	DFA8  CD44DD  		CALL	CHKROFL		;is file read only?
+2629:	DFAB  CD5EDD  		CALL	FCB2HL		;nope, get address of fcb and
+2630:	DFAE  36E5    		LD	(HL),0E5H	;set first byte to 'empty'.
+2631:	DFB0  0E00    		LD	C,0		;clear the space from the bit map.
+2632:	DFB2  CD6BDE  		CALL	SETFILE
+2633:	DFB5  CDC6DD  		CALL	DIRWRITE	;now write the directory sector back out.
+2634:	DFB8  CD2DDF  		CALL	FINDNXT		;find the next file name.
+2635:	DFBB  C3A4DF  		JP	ERAFIL1		;and repeat process.
+2636:			;
+2637:			;   Look through the space allocation map (bit map) for the
+2638:			; next available block. Start searching at block number (BC-1).
+2639:			; The search procedure is to look for an empty block that is
+2640:			; before the starting block. If not empty, look at a later
+2641:			; block number. In this way, we return the closest empty block
+2642:			; on either side of the 'target' block number. This will speed
+2643:			; access on random devices. For serial devices, this should be
+2644:			; changed to look in the forward direction first and then start
+2645:			; at the front and search some more.
+2646:			;
+2647:			;   On return, (DE)= block number that is empty and (HL) =0
+2648:			; if no empry block was found.
+2649:			;
+2650:	DFBE  50      	FNDSPACE: LD	D,B		;set (DE) as the block that is checked.
+2651:	DFBF  59      		LD	E,C
+2652:			;
+2653:			;   Look before target block. Registers (BC) are used as the lower
+2654:			; pointer and (DE) as the upper pointer.
+2655:			;
+2656:	DFC0  79      	FNDSPA1:LD	A,C		;is block 0 specified?
+2657:	DFC1  B0      		OR	B
+2658:	DFC2  CAD1DF  		JP	Z,FNDSPA2
+2659:	DFC5  0B      		DEC	BC		;nope, check previous block.
+2660:	DFC6  D5      		PUSH	DE
+2661:	DFC7  C5      		PUSH	BC
+2662:	DFC8  CD35DE  		CALL	CKBITMAP
+2663:	DFCB  1F      		RRA			;is this block empty?
+2664:	DFCC  D2ECDF  		JP	NC,FNDSPA3	;yes. use this.
+2665:			;
+2666:			;   Note that the above logic gets the first block that it finds
+2667:			; that is empty. Thus a file could be written 'backward' making
+2668:			; it very slow to access. This could be changed to look for the
+2669:			; first empty block and then continue until the start of this
+2670:			; empty space is located and then used that starting block.
+2671:			; This should help speed up access to some files especially on
+2672:			; a well used disk with lots of fairly small 'holes'.
+2673:			;
+2674:	DFCF  C1      		POP	BC		;nope, check some more.
+2675:	DFD0  D1      		POP	DE
+2676:			;
+2677:			;   Now look after target block.
+2678:			;
+2679:	DFD1  2AC6E5  	FNDSPA2:LD	HL,(DSKSIZE)	;is block (DE) within disk limits?
+2680:	DFD4  7B      		LD	A,E
+2681:	DFD5  95      		SUB	L
+2682:	DFD6  7A      		LD	A,D
+2683:	DFD7  9C      		SBC	A,H
+2684:	DFD8  D2F4DF  		JP	NC,FNDSPA4
+2685:	DFDB  13      		INC	DE		;yes, move on to next one.
+2686:	DFDC  C5      		PUSH	BC
+2687:	DFDD  D5      		PUSH	DE
+2688:	DFDE  42      		LD	B,D
+2689:	DFDF  4B      		LD	C,E
+2690:	DFE0  CD35DE  		CALL	CKBITMAP	;check it.
+2691:	DFE3  1F      		RRA			;empty?
+2692:	DFE4  D2ECDF  		JP	NC,FNDSPA3
+2693:	DFE7  D1      		POP	DE		;nope, continue searching.
+2694:	DFE8  C1      		POP	BC
+2695:	DFE9  C3C0DF  		JP	FNDSPA1
+2696:			;
+2697:			;   Empty block found. Set it as used and return with (HL)
+2698:			; pointing to it (true?).
+2699:			;
+2700:	DFEC  17      	FNDSPA3:RLA			;reset byte.
+2701:	DFED  3C      		INC	A		;and set bit 0.
+2702:	DFEE  CD64DE  		CALL	STBMAP1		;update bit map.
+2703:	DFF1  E1      		POP	HL		;set return registers.
+2704:	DFF2  D1      		POP	DE
+2705:	DFF3  C9      		RET
+2706:			;
+2707:			;   Free block was not found. If (BC) is not zero, then we have
+2708:			; not checked all of the disk space.
+2709:			;
+2710:	DFF4  79      	FNDSPA4:LD	A,C
+2711:	DFF5  B0      		OR	B
+2712:	DFF6  C2C0DF  		JP	NZ,FNDSPA1
+2713:	DFF9  210000  		LD	HL,0		;set 'not found' status.
+2714:	DFFC  C9      		RET
+2715:			;
+2716:			;   Move a complete fcb entry into the directory and write it.
+2717:			;
+2718:	DFFD  0E00    	FCBSET:	LD	C,0
+2719:	DFFF  1E20    		LD	E,32		;length of each entry.
+2720:			;
+2721:			;   Move (E) bytes from the fcb pointed to by (PARAMS) into
+2722:			; fcb in directory starting at relative byte (C). This updated
+2723:			; directory buffer is then written to the disk.
+2724:			;
+2725:	E001  D5      	UPDATE:	PUSH	DE
+2726:	E002  0600    		LD	B,0		;set (BC) to relative byte position.
+2727:	E004  2A43DB  		LD	HL,(PARAMS)	;get address of fcb.
+2728:	E007  09      		ADD	HL,BC		;compute starting byte.
+2729:	E008  EB      		EX	DE,HL
+2730:	E009  CD5EDD  		CALL	FCB2HL		;get address of fcb to update in directory.
+2731:	E00C  C1      		POP	BC		;set (C) to number of bytes to change.
+2732:	E00D  CD4FDB  		CALL	DE2HL
+2733:	E010  CDC3DB  	UPDATE1:CALL	TRKSEC		;determine the track and sector affected.
+2734:	E013  C3C6DD  		JP	DIRWRITE	;then write this sector out.
+2735:			;
+2736:			;   Routine to change the name of all files on the disk with a
+2737:			; specified name. The fcb contains the current name as the
+2738:			; first 12 characters and the new name 16 bytes into the fcb.
+2739:			;
+2740:	E016  CD54DD  	CHGNAMES: CALL	CHKWPRT		;check for a write protected disk.
+2741:	E019  0E0C    		LD	C,12		;match first 12 bytes of fcb only.
+2742:	E01B  CD18DF  		CALL	FINDFST		;get first name.
+2743:	E01E  2A43DB  		LD	HL,(PARAMS)	;get address of fcb.
+2744:	E021  7E      		LD	A,(HL)		;get user number.
+2745:	E022  111000  		LD	DE,16		;move over to desired name.
+2746:	E025  19      		ADD	HL,DE
+2747:	E026  77      		LD	(HL),A		;keep same user number.
+2748:	E027  CDF5DD  	CHGNAM1:CALL	CKFILPOS	;any matching file found?
+2749:	E02A  C8      		RET	Z		;no, we must be done.
+2750:	E02B  CD44DD  		CALL	CHKROFL		;check for read only file.
+2751:	E02E  0E10    		LD	C,16		;start 16 bytes into fcb.
+2752:	E030  1E0C    		LD	E,12		;and update the first 12 bytes of directory.
+2753:	E032  CD01E0  		CALL	UPDATE
+2754:	E035  CD2DDF  		CALL	FINDNXT		;get te next file name.
+2755:	E038  C327E0  		JP	CHGNAM1		;and continue.
+2756:			;
+2757:			;   Update a files attributes. The procedure is to search for
+2758:			; every file with the same name as shown in fcb (ignoring bit 7)
+2759:			; and then to update it (which includes bit 7). No other changes
+2760:			; are made.
+2761:			;
+2762:	E03B  0E0C    	SAVEATTR: LD	C,12		;match first 12 bytes.
+2763:	E03D  CD18DF  		CALL	FINDFST		;look for first filename.
+2764:	E040  CDF5DD  	SAVATR1:CALL	CKFILPOS	;was one found?
+2765:	E043  C8      		RET	Z		;nope, we must be done.
+2766:	E044  0E00    		LD	C,0		;yes, update the first 12 bytes now.
+2767:	E046  1E0C    		LD	E,12
+2768:	E048  CD01E0  		CALL	UPDATE		;update filename and write directory.
+2769:	E04B  CD2DDF  		CALL	FINDNXT		;and get the next file.
+2770:	E04E  C340E0  		JP	SAVATR1		;then continue until done.
+2771:			;
+2772:			;  Open a file (name specified in fcb).
+2773:			;
+2774:	E051  0E0F    	OPENIT:	LD	C,15		;compare the first 15 bytes.
+2775:	E053  CD18DF  		CALL	FINDFST		;get the first one in directory.
+2776:	E056  CDF5DD  		CALL	CKFILPOS	;any at all?
+2777:	E059  C8      		RET	Z
+2778:	E05A  CDA6DC  	OPENIT1:CALL	SETEXT		;point to extent byte within users fcb.
+2779:	E05D  7E      		LD	A,(HL)		;and get it.
+2780:	E05E  F5      		PUSH	AF		;save it and address.
+2781:	E05F  E5      		PUSH	HL
+2782:	E060  CD5EDD  		CALL	FCB2HL		;point to fcb in directory.
+2783:	E063  EB      		EX	DE,HL
+2784:	E064  2A43DB  		LD	HL,(PARAMS)	;this is the users copy.
+2785:	E067  0E20    		LD	C,32		;move it into users space.
+2786:	E069  D5      		PUSH	DE
+2787:	E06A  CD4FDB  		CALL	DE2HL
+2788:	E06D  CD78DD  		CALL	SETS2B7		;set bit 7 in 's2' byte (unmodified).
+2789:	E070  D1      		POP	DE		;now get the extent byte from this fcb.
+2790:	E071  210C00  		LD	HL,12
+2791:	E074  19      		ADD	HL,DE
+2792:	E075  4E      		LD	C,(HL)		;into (C).
+2793:	E076  210F00  		LD	HL,15		;now get the record count byte into (B).
+2794:	E079  19      		ADD	HL,DE
+2795:	E07A  46      		LD	B,(HL)
+2796:	E07B  E1      		POP	HL		;keep the same extent as the user had originally.
+2797:	E07C  F1      		POP	AF
+2798:	E07D  77      		LD	(HL),A
+2799:	E07E  79      		LD	A,C		;is it the same as in the directory fcb?
+2800:	E07F  BE      		CP	(HL)
+2801:	E080  78      		LD	A,B		;if yes, then use the same record count.
+2802:	E081  CA8BE0  		JP	Z,OPENIT2
+2803:	E084  3E00    		LD	A,0		;if the user specified an extent greater than
+2804:	E086  DA8BE0  		JP	C,OPENIT2	;the one in the directory, then set record count to 0.
+2805:	E089  3E80    		LD	A,128		;otherwise set to maximum.
+2806:	E08B  2A43DB  	OPENIT2:LD	HL,(PARAMS)	;set record count in users fcb to (A).
+2807:	E08E  110F00  		LD	DE,15
+2808:	E091  19      		ADD	HL,DE		;compute relative position.
+2809:	E092  77      		LD	(HL),A		;and set the record count.
+2810:	E093  C9      		RET
+2811:			;
+2812:			;   Move two bytes from (DE) to (HL) if (and only if) (HL)
+2813:			; point to a zero value (16 bit).
+2814:			;   Return with zero flag set it (DE) was moved. Registers (DE)
+2815:			; and (HL) are not changed. However (A) is.
+2816:			;
+2817:	E094  7E      	MOVEWORD: LD	A,(HL)		;check for a zero word.
+2818:	E095  23      		INC	HL
+2819:	E096  B6      		OR	(HL)		;both bytes zero?
+2820:	E097  2B      		DEC	HL
+2821:	E098  C0      		RET	NZ		;nope, just return.
+2822:	E099  1A      		LD	A,(DE)		;yes, move two bytes from (DE) into
+2823:	E09A  77      		LD	(HL),A		;this zero space.
+2824:	E09B  13      		INC	DE
+2825:	E09C  23      		INC	HL
+2826:	E09D  1A      		LD	A,(DE)
+2827:	E09E  77      		LD	(HL),A
+2828:	E09F  1B      		DEC	DE		;don't disturb these registers.
+2829:	E0A0  2B      		DEC	HL
+2830:	E0A1  C9      		RET
+2831:			;
+2832:			;   Get here to close a file specified by (fcb).
+2833:			;
+2834:	E0A2  AF      	CLOSEIT:XOR	A		;clear status and file position bytes.
+2835:	E0A3  3245DB  		LD	(STATUS),A
+2836:	E0A6  32EAE5  		LD	(FILEPOS),A
+2837:	E0A9  32EBE5  		LD	(FILEPOS+1),A
+2838:	E0AC  CD1EDD  		CALL	GETWPRT		;get write protect bit for this drive.
+2839:	E0AF  C0      		RET	NZ		;just return if it is set.
+2840:	E0B0  CD69DD  		CALL	GETS2		;else get the 's2' byte.
+2841:	E0B3  E680    		AND	80H		;and look at bit 7 (file unmodified?).
+2842:	E0B5  C0      		RET	NZ		;just return if set.
+2843:	E0B6  0E0F    		LD	C,15		;else look up this file in directory.
+2844:	E0B8  CD18DF  		CALL	FINDFST
+2845:	E0BB  CDF5DD  		CALL	CKFILPOS	;was it found?
+2846:	E0BE  C8      		RET	Z		;just return if not.
+2847:	E0BF  011000  		LD	BC,16		;set (HL) pointing to records used section.
+2848:	E0C2  CD5EDD  		CALL	FCB2HL
+2849:	E0C5  09      		ADD	HL,BC
+2850:	E0C6  EB      		EX	DE,HL
+2851:	E0C7  2A43DB  		LD	HL,(PARAMS)	;do the same for users specified fcb.
+2852:	E0CA  09      		ADD	HL,BC
+2853:	E0CB  0E10    		LD	C,16		;this many bytes are present in this extent.
+2854:	E0CD  3ADDE5  	CLOSEIT1: LD	A,(BIGDISK)	;8 or 16 bit record numbers?
+2855:	E0D0  B7      		OR	A
+2856:	E0D1  CAE8E0  		JP	Z,CLOSEIT4
+2857:	E0D4  7E      		LD	A,(HL)		;just 8 bit. Get one from users fcb.
+2858:	E0D5  B7      		OR	A
+2859:	E0D6  1A      		LD	A,(DE)		;now get one from directory fcb.
+2860:	E0D7  C2DBE0  		JP	NZ,CLOSEIT2
+2861:	E0DA  77      		LD	(HL),A		;users byte was zero. Update from directory.
+2862:	E0DB  B7      	CLOSEIT2: OR	A
+2863:	E0DC  C2E1E0  		JP	NZ,CLOSEIT3
+2864:	E0DF  7E      		LD	A,(HL)		;directories byte was zero, update from users fcb.
+2865:	E0E0  12      		LD	(DE),A
+2866:	E0E1  BE      	CLOSEIT3: CP	(HL)		;if neither one of these bytes were zero,
+2867:	E0E2  C21FE1  		JP	NZ,CLOSEIT7	;then close error if they are not the same.
+2868:	E0E5  C3FDE0  		JP	CLOSEIT5	;ok so far, get to next byte in fcbs.
+2869:	E0E8  CD94E0  	CLOSEIT4: CALL	MOVEWORD	;update users fcb if it is zero.
+2870:	E0EB  EB      		EX	DE,HL
+2871:	E0EC  CD94E0  		CALL	MOVEWORD	;update directories fcb if it is zero.
+2872:	E0EF  EB      		EX	DE,HL
+2873:	E0F0  1A      		LD	A,(DE)		;if these two values are no different,
+2874:	E0F1  BE      		CP	(HL)		;then a close error occured.
+2875:	E0F2  C21FE1  		JP	NZ,CLOSEIT7
+2876:	E0F5  13      		INC	DE		;check second byte.
+2877:	E0F6  23      		INC	HL
+2878:	E0F7  1A      		LD	A,(DE)
+2879:	E0F8  BE      		CP	(HL)
+2880:	E0F9  C21FE1  		JP	NZ,CLOSEIT7
+2881:	E0FC  0D      		DEC	C		;remember 16 bit values.
+2882:	E0FD  13      	CLOSEIT5: INC	DE		;bump to next item in table.
+2883:	E0FE  23      		INC	HL
+2884:	E0FF  0D      		DEC	C		;there are 16 entries only.
+2885:	E100  C2CDE0  		JP	NZ,CLOSEIT1	;continue if more to do.
+2886:	E103  01ECFF  		LD	BC,0FFECH	;backup 20 places (extent byte).
+2887:	E106  09      		ADD	HL,BC
+2888:	E107  EB      		EX	DE,HL
+2889:	E108  09      		ADD	HL,BC
+2890:	E109  1A      		LD	A,(DE)
+2891:	E10A  BE      		CP	(HL)		;directory's extent already greater than the
+2892:	E10B  DA17E1  		JP	C,CLOSEIT6	;users extent?
+2893:	E10E  77      		LD	(HL),A		;no, update directory extent.
+2894:	E10F  010300  		LD	BC,3		;and update the record count byte in
+2895:	E112  09      		ADD	HL,BC		;directories fcb.
+2896:	E113  EB      		EX	DE,HL
+2897:	E114  09      		ADD	HL,BC
+2898:	E115  7E      		LD	A,(HL)		;get from user.
+2899:	E116  12      		LD	(DE),A		;and put in directory.
+2900:	E117  3EFF    	CLOSEIT6: LD	A,0FFH		;set 'was open and is now closed' byte.
+2901:	E119  32D2E5  		LD	(CLOSEFLG),A
+2902:	E11C  C310E0  		JP	UPDATE1		;update the directory now.
+2903:	E11F  2145DB  	CLOSEIT7: LD	HL,STATUS	;set return status and then return.
+2904:	E122  35      		DEC	(HL)
+2905:	E123  C9      		RET
+2906:			;
+2907:			;   Routine to get the next empty space in the directory. It
+2908:			; will then be cleared for use.
+2909:			;
+2910:	E124  CD54DD  	GETEMPTY: CALL	CHKWPRT		;make sure disk is not write protected.
+2911:	E127  2A43DB  		LD	HL,(PARAMS)	;save current parameters (fcb).
+2912:	E12A  E5      		PUSH	HL
+2913:	E12B  21ACE5  		LD	HL,EMPTYFCB	;use special one for empty space.
+2914:	E12E  2243DB  		LD	(PARAMS),HL
+2915:	E131  0E01    		LD	C,1		;search for first empty spot in directory.
+2916:	E133  CD18DF  		CALL	FINDFST		;(* only check first byte *)
+2917:	E136  CDF5DD  		CALL	CKFILPOS	;none?
+2918:	E139  E1      		POP	HL
+2919:	E13A  2243DB  		LD	(PARAMS),HL	;restore original fcb address.
+2920:	E13D  C8      		RET	Z		;return if no more space.
+2921:	E13E  EB      		EX	DE,HL
+2922:	E13F  210F00  		LD	HL,15		;point to number of records for this file.
+2923:	E142  19      		ADD	HL,DE
+2924:	E143  0E11    		LD	C,17		;and clear all of this space.
+2925:	E145  AF      		XOR	A
+2926:	E146  77      	GETMT1:	LD	(HL),A
+2927:	E147  23      		INC	HL
+2928:	E148  0D      		DEC	C
+2929:	E149  C246E1  		JP	NZ,GETMT1
+2930:	E14C  210D00  		LD	HL,13		;clear the 's1' byte also.
+2931:	E14F  19      		ADD	HL,DE
+2932:	E150  77      		LD	(HL),A
+2933:	E151  CD8CDD  		CALL	CHKNMBR		;keep (SCRATCH1) within bounds.
+2934:	E154  CDFDDF  		CALL	FCBSET		;write out this fcb entry to directory.
+2935:	E157  C378DD  		JP	SETS2B7		;set 's2' byte bit 7 (unmodified at present).
+2936:			;
+2937:			;   Routine to close the current extent and open the next one
+2938:			; for reading.
+2939:			;
+2940:	E15A  AF      	GETNEXT:XOR	A
+2941:	E15B  32D2E5  		LD	(CLOSEFLG),A	;clear close flag.
+2942:	E15E  CDA2E0  		CALL	CLOSEIT		;close this extent.
+2943:	E161  CDF5DD  		CALL	CKFILPOS
+2944:	E164  C8      		RET	Z		;not there???
+2945:	E165  2A43DB  		LD	HL,(PARAMS)	;get extent byte.
+2946:	E168  010C00  		LD	BC,12
+2947:	E16B  09      		ADD	HL,BC
+2948:	E16C  7E      		LD	A,(HL)		;and increment it.
+2949:	E16D  3C      		INC	A
+2950:	E16E  E61F    		AND	1FH		;keep within range 0-31.
+2951:	E170  77      		LD	(HL),A
+2952:	E171  CA83E1  		JP	Z,GTNEXT1	;overflow?
+2953:	E174  47      		LD	B,A		;mask extent byte.
+2954:	E175  3AC5E5  		LD	A,(EXTMASK)
+2955:	E178  A0      		AND	B
+2956:	E179  21D2E5  		LD	HL,CLOSEFLG	;check close flag (0ffh is ok).
+2957:	E17C  A6      		AND	(HL)
+2958:	E17D  CA8EE1  		JP	Z,GTNEXT2	;if zero, we must read in next extent.
+2959:	E180  C3ACE1  		JP	GTNEXT3		;else, it is already in memory.
+2960:	E183  010200  	GTNEXT1:LD	BC,2		;Point to the 's2' byte.
+2961:	E186  09      		ADD	HL,BC
+2962:	E187  34      		INC	(HL)		;and bump it.
+2963:	E188  7E      		LD	A,(HL)		;too many extents?
+2964:	E189  E60F    		AND	0FH
+2965:	E18B  CAB6E1  		JP	Z,GTNEXT5	;yes, set error code.
+2966:			;
+2967:			;   Get here to open the next extent.
+2968:			;
+2969:	E18E  0E0F    	GTNEXT2:LD	C,15		;set to check first 15 bytes of fcb.
+2970:	E190  CD18DF  		CALL	FINDFST		;find the first one.
+2971:	E193  CDF5DD  		CALL	CKFILPOS	;none available?
+2972:	E196  C2ACE1  		JP	NZ,GTNEXT3
+2973:	E199  3AD3E5  		LD	A,(RDWRTFLG)	;no extent present. Can we open an empty one?
+2974:	E19C  3C      		INC	A		;0ffh means reading (so not possible).
+2975:	E19D  CAB6E1  		JP	Z,GTNEXT5	;or an error.
+2976:	E1A0  CD24E1  		CALL	GETEMPTY	;we are writing, get an empty entry.
+2977:	E1A3  CDF5DD  		CALL	CKFILPOS	;none?
+2978:	E1A6  CAB6E1  		JP	Z,GTNEXT5	;error if true.
+2979:	E1A9  C3AFE1  		JP	GTNEXT4		;else we are almost done.
+2980:	E1AC  CD5AE0  	GTNEXT3:CALL	OPENIT1		;open this extent.
+2981:	E1AF  CDBBDC  	GTNEXT4:CALL	STRDATA		;move in updated data (rec #, extent #, etc.)
+2982:	E1B2  AF      		XOR	A		;clear status and return.
+2983:	E1B3  C301DB  		JP	SETSTAT
+2984:			;
+2985:			;   Error in extending the file. Too many extents were needed
+2986:			; or not enough space on the disk.
+2987:			;
+2988:	E1B6  CD05DB  	GTNEXT5:CALL	IOERR1		;set error code, clear bit 7 of 's2'
+2989:	E1B9  C378DD  		JP	SETS2B7		;so this is not written on a close.
+2990:			;
+2991:			;   Read a sequential file.
+2992:			;
+2993:	E1BC  3E01    	RDSEQ:	LD	A,1		;set sequential access mode.
+2994:	E1BE  32D5E5  		LD	(MODE),A
+2995:	E1C1  3EFF    	RDSEQ1:	LD	A,0FFH		;don't allow reading unwritten space.
+2996:	E1C3  32D3E5  		LD	(RDWRTFLG),A
+2997:	E1C6  CDBBDC  		CALL	STRDATA		;put rec# and ext# into fcb.
+2998:	E1C9  3AE3E5  		LD	A,(SAVNREC)	;get next record to read.
+2999:	E1CC  21E1E5  		LD	HL,SAVNXT	;get number of records in extent.
+3000:	E1CF  BE      		CP	(HL)		;within this extent?
+3001:	E1D0  DAE6E1  		JP	C,RDSEQ2
+3002:	E1D3  FE80    		CP	128		;no. Is this extent fully used?
+3003:	E1D5  C2FBE1  		JP	NZ,RDSEQ3	;no. End-of-file.
+3004:	E1D8  CD5AE1  		CALL	GETNEXT		;yes, open the next one.
+3005:	E1DB  AF      		XOR	A		;reset next record to read.
+3006:	E1DC  32E3E5  		LD	(SAVNREC),A
+3007:	E1DF  3A45DB  		LD	A,(STATUS)	;check on open, successful?
+3008:	E1E2  B7      		OR	A
+3009:	E1E3  C2FBE1  		JP	NZ,RDSEQ3	;no, error.
+3010:	E1E6  CD77DC  	RDSEQ2:	CALL	COMBLK		;ok. compute block number to read.
+3011:	E1E9  CD84DC  		CALL	CHKBLK		;check it. Within bounds?
+3012:	E1EC  CAFBE1  		JP	Z,RDSEQ3	;no, error.
+3013:	E1EF  CD8ADC  		CALL	LOGICAL		;convert (BLKNMBR) to logical sector (128 byte).
+3014:	E1F2  CDD1DB  		CALL	TRKSEC1		;set the track and sector for this block #.
+3015:	E1F5  CDB2DB  		CALL	DOREAD		;and read it.
+3016:	E1F8  C3D2DC  		JP	SETNREC		;and set the next record to be accessed.
+3017:			;
+3018:			;   Read error occured. Set status and return.
+3019:			;
+3020:	E1FB  C305DB  	RDSEQ3:	JP	IOERR1
+3021:			;
+3022:			;   Write the next sequential record.
+3023:			;
+3024:	E1FE  3E01    	WTSEQ:	LD	A,1		;set sequential access mode.
+3025:	E200  32D5E5  		LD	(MODE),A
+3026:	E203  3E00    	WTSEQ1:	LD	A,0		;allow an addition empty extent to be opened.
+3027:	E205  32D3E5  		LD	(RDWRTFLG),A
+3028:	E208  CD54DD  		CALL	CHKWPRT		;check write protect status.
+3029:	E20B  2A43DB  		LD	HL,(PARAMS)
+3030:	E20E  CD47DD  		CALL	CKROF1		;check for read only file, (HL) already set to fcb.
+3031:	E211  CDBBDC  		CALL	STRDATA		;put updated data into fcb.
+3032:	E214  3AE3E5  		LD	A,(SAVNREC)	;get record number to write.
+3033:	E217  FE80    		CP	128		;within range?
+3034:	E219  D205DB  		JP	NC,IOERR1	;no, error(?).
+3035:	E21C  CD77DC  		CALL	COMBLK		;compute block number.
+3036:	E21F  CD84DC  		CALL	CHKBLK		;check number.
+3037:	E222  0E00    		LD	C,0		;is there one to write to?
+3038:	E224  C26EE2  		JP	NZ,WTSEQ6	;yes, go do it.
+3039:	E227  CD3EDC  		CALL	GETBLOCK	;get next block number within fcb to use.
+3040:	E22A  32D7E5  		LD	(RELBLOCK),A	;and save.
+3041:	E22D  010000  		LD	BC,0		;start looking for space from the start
+3042:	E230  B7      		OR	A		;if none allocated as yet.
+3043:	E231  CA3BE2  		JP	Z,WTSEQ2
+3044:	E234  4F      		LD	C,A		;extract previous block number from fcb
+3045:	E235  0B      		DEC	BC		;so we can be closest to it.
+3046:	E236  CD5EDC  		CALL	EXTBLK
+3047:	E239  44      		LD	B,H
+3048:	E23A  4D      		LD	C,L
+3049:	E23B  CDBEDF  	WTSEQ2:	CALL	FNDSPACE	;find the next empty block nearest number (BC).
+3050:	E23E  7D      		LD	A,L		;check for a zero number.
+3051:	E23F  B4      		OR	H
+3052:	E240  C248E2  		JP	NZ,WTSEQ3
+3053:	E243  3E02    		LD	A,2		;no more space?
+3054:	E245  C301DB  		JP	SETSTAT
+3055:	E248  22E5E5  	WTSEQ3:	LD	(BLKNMBR),HL	;save block number to access.
+3056:	E24B  EB      		EX	DE,HL		;put block number into (DE).
+3057:	E24C  2A43DB  		LD	HL,(PARAMS)	;now we must update the fcb for this
+3058:	E24F  011000  		LD	BC,16		;newly allocated block.
+3059:	E252  09      		ADD	HL,BC
+3060:	E253  3ADDE5  		LD	A,(BIGDISK)	;8 or 16 bit block numbers?
+3061:	E256  B7      		OR	A
+3062:	E257  3AD7E5  		LD	A,(RELBLOCK)	;(* update this entry *)
+3063:	E25A  CA64E2  		JP	Z,WTSEQ4	;zero means 16 bit ones.
+3064:	E25D  CD64DD  		CALL	ADDA2HL		;(HL)=(HL)+(A)
+3065:	E260  73      		LD	(HL),E		;store new block number.
+3066:	E261  C36CE2  		JP	WTSEQ5
+3067:	E264  4F      	WTSEQ4:	LD	C,A		;compute spot in this 16 bit table.
+3068:	E265  0600    		LD	B,0
+3069:	E267  09      		ADD	HL,BC
+3070:	E268  09      		ADD	HL,BC
+3071:	E269  73      		LD	(HL),E		;stuff block number (DE) there.
+3072:	E26A  23      		INC	HL
+3073:	E26B  72      		LD	(HL),D
+3074:	E26C  0E02    	WTSEQ5:	LD	C,2		;set (C) to indicate writing to un-used disk space.
+3075:	E26E  3A45DB  	WTSEQ6:	LD	A,(STATUS)	;are we ok so far?
+3076:	E271  B7      		OR	A
+3077:	E272  C0      		RET	NZ
+3078:	E273  C5      		PUSH	BC		;yes, save write flag for bios (register C).
+3079:	E274  CD8ADC  		CALL	LOGICAL		;convert (BLKNMBR) over to loical sectors.
+3080:	E277  3AD5E5  		LD	A,(MODE)	;get access mode flag (1=sequential,
+3081:	E27A  3D      		DEC	A		;0=random, 2=special?).
+3082:	E27B  3D      		DEC	A
+3083:	E27C  C2BBE2  		JP	NZ,WTSEQ9
+3084:			;
+3085:			;   Special random i/o from function #40. Maybe for M/PM, but the
+3086:			; current block, if it has not been written to, will be zeroed
+3087:			; out and then written (reason?).
+3088:			;
+3089:	E27F  C1      		POP	BC
+3090:	E280  C5      		PUSH	BC
+3091:	E281  79      		LD	A,C		;get write status flag (2=writing unused space).
+3092:	E282  3D      		DEC	A
+3093:	E283  3D      		DEC	A
+3094:	E284  C2BBE2  		JP	NZ,WTSEQ9
+3095:	E287  E5      		PUSH	HL
+3096:	E288  2AB9E5  		LD	HL,(DIRBUF)	;zero out the directory buffer.
+3097:	E28B  57      		LD	D,A		;note that (A) is zero here.
+3098:	E28C  77      	WTSEQ7:	LD	(HL),A
+3099:	E28D  23      		INC	HL
+3100:	E28E  14      		INC	D		;do 128 bytes.
+3101:	E28F  F28CE2  		JP	P,WTSEQ7
+3102:	E292  CDE0DD  		CALL	DIRDMA		;tell the bios the dma address for directory access.
+3103:	E295  2AE7E5  		LD	HL,(LOGSECT)	;get sector that starts current block.
+3104:	E298  0E02    		LD	C,2		;set 'writing to unused space' flag.
+3105:	E29A  22E5E5  	WTSEQ8:	LD	(BLKNMBR),HL	;save sector to write.
+3106:	E29D  C5      		PUSH	BC
+3107:	E29E  CDD1DB  		CALL	TRKSEC1		;determine its track and sector numbers.
+3108:	E2A1  C1      		POP	BC
+3109:	E2A2  CDB8DB  		CALL	DOWRITE		;now write out 128 bytes of zeros.
+3110:	E2A5  2AE5E5  		LD	HL,(BLKNMBR)	;get sector number.
+3111:	E2A8  0E00    		LD	C,0		;set normal write flag.
+3112:	E2AA  3AC4E5  		LD	A,(BLKMASK)	;determine if we have written the entire
+3113:	E2AD  47      		LD	B,A		;physical block.
+3114:	E2AE  A5      		AND	L
+3115:	E2AF  B8      		CP	B
+3116:	E2B0  23      		INC	HL		;prepare for the next one.
+3117:	E2B1  C29AE2  		JP	NZ,WTSEQ8	;continue until (BLKMASK+1) sectors written.
+3118:	E2B4  E1      		POP	HL		;reset next sector number.
+3119:	E2B5  22E5E5  		LD	(BLKNMBR),HL
+3120:	E2B8  CDDADD  		CALL	DEFDMA		;and reset dma address.
+3121:			;
+3122:			;   Normal disk write. Set the desired track and sector then
+3123:			; do the actual write.
+3124:			;
+3125:	E2BB  CDD1DB  	WTSEQ9:	CALL	TRKSEC1		;determine track and sector for this write.
+3126:	E2BE  C1      		POP	BC		;get write status flag.
+3127:	E2BF  C5      		PUSH	BC
+3128:	E2C0  CDB8DB  		CALL	DOWRITE		;and write this out.
+3129:	E2C3  C1      		POP	BC
+3130:	E2C4  3AE3E5  		LD	A,(SAVNREC)	;get number of records in file.
+3131:	E2C7  21E1E5  		LD	HL,SAVNXT	;get last record written.
+3132:	E2CA  BE      		CP	(HL)
+3133:	E2CB  DAD2E2  		JP	C,WTSEQ10
+3134:	E2CE  77      		LD	(HL),A		;we have to update record count.
+3135:	E2CF  34      		INC	(HL)
+3136:	E2D0  0E02    		LD	C,2
+3137:			;
+3138:			;*   This area has been patched to correct disk update problem
+3139:			;* when using blocking and de-blocking in the BIOS.
+3140:			;
+3141:	E2D2  00      	WTSEQ10:NOP			;was 'dcr c'
+3142:	E2D3  00      		NOP			;was 'dcr c'
+3143:	E2D4  210000  		LD	HL,0		;was 'jnz wtseq99'
+3144:			;
+3145:			; *   End of patch.
+3146:			;
+3147:	E2D7  F5      		PUSH	AF
+3148:	E2D8  CD69DD  		CALL	GETS2		;set 'extent written to' flag.
+3149:	E2DB  E67F    		AND	7FH		;(* clear bit 7 *)
+3150:	E2DD  77      		LD	(HL),A
+3151:	E2DE  F1      		POP	AF		;get record count for this extent.
+3152:	E2DF  FE7F    	WTSEQ99:CP	127		;is it full?
+3153:	E2E1  C200E3  		JP	NZ,WTSEQ12
+3154:	E2E4  3AD5E5  		LD	A,(MODE)	;yes, are we in sequential mode?
+3155:	E2E7  FE01    		CP	1
+3156:	E2E9  C200E3  		JP	NZ,WTSEQ12
+3157:	E2EC  CDD2DC  		CALL	SETNREC		;yes, set next record number.
+3158:	E2EF  CD5AE1  		CALL	GETNEXT		;and get next empty space in directory.
+3159:	E2F2  2145DB  		LD	HL,STATUS	;ok?
+3160:	E2F5  7E      		LD	A,(HL)
+3161:	E2F6  B7      		OR	A
+3162:	E2F7  C2FEE2  		JP	NZ,WTSEQ11
+3163:	E2FA  3D      		DEC	A		;yes, set record count to -1.
+3164:	E2FB  32E3E5  		LD	(SAVNREC),A
+3165:	E2FE  3600    	WTSEQ11:LD	(HL),0		;clear status.
+3166:	E300  C3D2DC  	WTSEQ12:JP	SETNREC		;set next record to access.
+3167:			;
+3168:			;   For random i/o, set the fcb for the desired record number
+3169:			; based on the 'r0,r1,r2' bytes. These bytes in the fcb are
+3170:			; used as follows:
+3171:			;
+3172:			;       fcb+35            fcb+34            fcb+33
+3173:			;  |     'r-2'      |      'r-1'      |      'r-0'     |
+3174:			;  |7             0 | 7             0 | 7             0|
+3175:			;  |0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0|
+3176:			;  |    overflow   | | extra |  extent   |   record #  |
+3177:			;  | ______________| |_extent|__number___|_____________|
+3178:			;                     also 's2'
+3179:			;
+3180:			;   On entry, register (C) contains 0ffh if this is a read
+3181:			; and thus we can not access unwritten disk space. Otherwise,
+3182:			; another extent will be opened (for writing) if required.
+3183:			;
+3184:	E303  AF      	POSITION: XOR	A		;set random i/o flag.
+3185:	E304  32D5E5  		LD	(MODE),A
+3186:			;
+3187:			;   Special entry (function #40). M/PM ?
+3188:			;
+3189:	E307  C5      	POSITN1:PUSH	BC		;save read/write flag.
+3190:	E308  2A43DB  		LD	HL,(PARAMS)	;get address of fcb.
+3191:	E30B  EB      		EX	DE,HL
+3192:	E30C  212100  		LD	HL,33		;now get byte 'r0'.
+3193:	E30F  19      		ADD	HL,DE
+3194:	E310  7E      		LD	A,(HL)
+3195:	E311  E67F    		AND	7FH		;keep bits 0-6 for the record number to access.
+3196:	E313  F5      		PUSH	AF
+3197:	E314  7E      		LD	A,(HL)		;now get bit 7 of 'r0' and bits 0-3 of 'r1'.
+3198:	E315  17      		RLA
+3199:	E316  23      		INC	HL
+3200:	E317  7E      		LD	A,(HL)
+3201:	E318  17      		RLA
+3202:	E319  E61F    		AND	1FH		;and save this in bits 0-4 of (C).
+3203:	E31B  4F      		LD	C,A		;this is the extent byte.
+3204:	E31C  7E      		LD	A,(HL)		;now get the extra extent byte.
+3205:	E31D  1F      		RRA
+3206:	E31E  1F      		RRA
+3207:	E31F  1F      		RRA
+3208:	E320  1F      		RRA
+3209:	E321  E60F    		AND	0FH
+3210:	E323  47      		LD	B,A		;and save it in (B).
+3211:	E324  F1      		POP	AF		;get record number back to (A).
+3212:	E325  23      		INC	HL		;check overflow byte 'r2'.
+3213:	E326  6E      		LD	L,(HL)
+3214:	E327  2C      		INC	L
+3215:	E328  2D      		DEC	L
+3216:	E329  2E06    		LD	L,6		;prepare for error.
+3217:	E32B  C28BE3  		JP	NZ,POSITN5	;out of disk space error.
+3218:	E32E  212000  		LD	HL,32		;store record number into fcb.
+3219:	E331  19      		ADD	HL,DE
+3220:	E332  77      		LD	(HL),A
+3221:	E333  210C00  		LD	HL,12		;and now check the extent byte.
+3222:	E336  19      		ADD	HL,DE
+3223:	E337  79      		LD	A,C
+3224:	E338  96      		SUB	(HL)		;same extent as before?
+3225:	E339  C247E3  		JP	NZ,POSITN2
+3226:	E33C  210E00  		LD	HL,14		;yes, check extra extent byte 's2' also.
+3227:	E33F  19      		ADD	HL,DE
+3228:	E340  78      		LD	A,B
+3229:	E341  96      		SUB	(HL)
+3230:	E342  E67F    		AND	7FH
+3231:	E344  CA7FE3  		JP	Z,POSITN3	;same, we are almost done then.
+3232:			;
+3233:			;  Get here when another extent is required.
+3234:			;
+3235:	E347  C5      	POSITN2:PUSH	BC
+3236:	E348  D5      		PUSH	DE
+3237:	E349  CDA2E0  		CALL	CLOSEIT		;close current extent.
+3238:	E34C  D1      		POP	DE
+3239:	E34D  C1      		POP	BC
+3240:	E34E  2E03    		LD	L,3		;prepare for error.
+3241:	E350  3A45DB  		LD	A,(STATUS)
+3242:	E353  3C      		INC	A
+3243:	E354  CA84E3  		JP	Z,POSITN4	;close error.
+3244:	E357  210C00  		LD	HL,12		;put desired extent into fcb now.
+3245:	E35A  19      		ADD	HL,DE
+3246:	E35B  71      		LD	(HL),C
+3247:	E35C  210E00  		LD	HL,14		;and store extra extent byte 's2'.
+3248:	E35F  19      		ADD	HL,DE
+3249:	E360  70      		LD	(HL),B
+3250:	E361  CD51E0  		CALL	OPENIT		;try and get this extent.
+3251:	E364  3A45DB  		LD	A,(STATUS)	;was it there?
+3252:	E367  3C      		INC	A
+3253:	E368  C27FE3  		JP	NZ,POSITN3
+3254:	E36B  C1      		POP	BC		;no. can we create a new one (writing?).
+3255:	E36C  C5      		PUSH	BC
+3256:	E36D  2E04    		LD	L,4		;prepare for error.
+3257:	E36F  0C      		INC	C
+3258:	E370  CA84E3  		JP	Z,POSITN4	;nope, reading unwritten space error.
+3259:	E373  CD24E1  		CALL	GETEMPTY	;yes we can, try to find space.
+3260:	E376  2E05    		LD	L,5		;prepare for error.
+3261:	E378  3A45DB  		LD	A,(STATUS)
+3262:	E37B  3C      		INC	A
+3263:	E37C  CA84E3  		JP	Z,POSITN4	;out of space?
+3264:			;
+3265:			;   Normal return location. Clear error code and return.
+3266:			;
+3267:	E37F  C1      	POSITN3:POP	BC		;restore stack.
+3268:	E380  AF      		XOR	A		;and clear error code byte.
+3269:	E381  C301DB  		JP	SETSTAT
+3270:			;
+3271:			;   Error. Set the 's2' byte to indicate this (why?).
+3272:			;
+3273:	E384  E5      	POSITN4:PUSH	HL
+3274:	E385  CD69DD  		CALL	GETS2
+3275:	E388  36C0    		LD	(HL),0C0H
+3276:	E38A  E1      		POP	HL
+3277:			;
+3278:			;   Return with error code (presently in L).
+3279:			;
+3280:	E38B  C1      	POSITN5:POP	BC
+3281:	E38C  7D      		LD	A,L		;get error code.
+3282:	E38D  3245DB  		LD	(STATUS),A
+3283:	E390  C378DD  		JP	SETS2B7
+3284:			;
+3285:			;   Read a random record.
+3286:			;
+3287:	E393  0EFF    	READRAN:LD	C,0FFH		;set 'read' status.
+3288:	E395  CD03E3  		CALL	POSITION	;position the file to proper record.
+3289:	E398  CCC1E1  		CALL	Z,RDSEQ1	;and read it as usual (if no errors).
+3290:	E39B  C9      		RET
+3291:			;
+3292:			;   Write to a random record.
+3293:			;
+3294:	E39C  0E00    	WRITERAN: LD	C,0		;set 'writing' flag.
+3295:	E39E  CD03E3  		CALL	POSITION	;position the file to proper record.
+3296:	E3A1  CC03E2  		CALL	Z,WTSEQ1	;and write as usual (if no errors).
+3297:	E3A4  C9      		RET
+3298:			;
+3299:			;   Compute the random record number. Enter with (HL) pointing
+3300:			; to a fcb an (DE) contains a relative location of a record
+3301:			; number. On exit, (C) contains the 'r0' byte, (B) the 'r1'
+3302:			; byte, and (A) the 'r2' byte.
+3303:			;
+3304:			;   On return, the zero flag is set if the record is within
+3305:			; bounds. Otherwise, an overflow occured.
+3306:			;
+3307:	E3A5  EB      	COMPRAND: EX	DE,HL		;save fcb pointer in (DE).
+3308:	E3A6  19      		ADD	HL,DE		;compute relative position of record #.
+3309:	E3A7  4E      		LD	C,(HL)		;get record number into (BC).
+3310:	E3A8  0600    		LD	B,0
+3311:	E3AA  210C00  		LD	HL,12		;now get extent.
+3312:	E3AD  19      		ADD	HL,DE
+3313:	E3AE  7E      		LD	A,(HL)		;compute (BC)=(record #)+(extent)*128.
+3314:	E3AF  0F      		RRCA			;move lower bit into bit 7.
+3315:	E3B0  E680    		AND	80H		;and ignore all other bits.
+3316:	E3B2  81      		ADD	A,C		;add to our record number.
+3317:	E3B3  4F      		LD	C,A
+3318:	E3B4  3E00    		LD	A,0		;take care of any carry.
+3319:	E3B6  88      		ADC	A,B
+3320:	E3B7  47      		LD	B,A
+3321:	E3B8  7E      		LD	A,(HL)		;now get the upper bits of extent into
+3322:	E3B9  0F      		RRCA			;bit positions 0-3.
+3323:	E3BA  E60F    		AND	0FH		;and ignore all others.
+3324:	E3BC  80      		ADD	A,B		;add this in to 'r1' byte.
+3325:	E3BD  47      		LD	B,A
+3326:	E3BE  210E00  		LD	HL,14		;get the 's2' byte (extra extent).
+3327:	E3C1  19      		ADD	HL,DE
+3328:	E3C2  7E      		LD	A,(HL)
+3329:	E3C3  87      		ADD	A,A		;and shift it left 4 bits (bits 4-7).
+3330:	E3C4  87      		ADD	A,A
+3331:	E3C5  87      		ADD	A,A
+3332:	E3C6  87      		ADD	A,A
+3333:	E3C7  F5      		PUSH	AF		;save carry flag (bit 0 of flag byte).
+3334:	E3C8  80      		ADD	A,B		;now add extra extent into 'r1'.
+3335:	E3C9  47      		LD	B,A
+3336:	E3CA  F5      		PUSH	AF		;and save carry (overflow byte 'r2').
+3337:	E3CB  E1      		POP	HL		;bit 0 of (L) is the overflow indicator.
+3338:	E3CC  7D      		LD	A,L
+3339:	E3CD  E1      		POP	HL		;and same for first carry flag.
+3340:	E3CE  B5      		OR	L		;either one of these set?
+3341:	E3CF  E601    		AND	01H		;only check the carry flags.
+3342:	E3D1  C9      		RET
+3343:			;
+3344:			;   Routine to setup the fcb (bytes 'r0', 'r1', 'r2') to
+3345:			; reflect the last record used for a random (or other) file.
+3346:			; This reads the directory and looks at all extents computing
+3347:			; the largerst record number for each and keeping the maximum
+3348:			; value only. Then 'r0', 'r1', and 'r2' will reflect this
+3349:			; maximum record number. This is used to compute the space used
+3350:			; by a random file.
+3351:			;
+3352:	E3D2  0E0C    	RANSIZE:LD	C,12		;look thru directory for first entry with
+3353:	E3D4  CD18DF  		CALL	FINDFST		;this name.
+3354:	E3D7  2A43DB  		LD	HL,(PARAMS)	;zero out the 'r0, r1, r2' bytes.
+3355:	E3DA  112100  		LD	DE,33
+3356:	E3DD  19      		ADD	HL,DE
+3357:	E3DE  E5      		PUSH	HL
+3358:	E3DF  72      		LD	(HL),D		;note that (D)=0.
+3359:	E3E0  23      		INC	HL
+3360:	E3E1  72      		LD	(HL),D
+3361:	E3E2  23      		INC	HL
+3362:	E3E3  72      		LD	(HL),D
+3363:	E3E4  CDF5DD  	RANSIZ1:CALL	CKFILPOS	;is there an extent to process?
+3364:	E3E7  CA0CE4  		JP	Z,RANSIZ3	;no, we are done.
+3365:	E3EA  CD5EDD  		CALL	FCB2HL		;set (HL) pointing to proper fcb in dir.
+3366:	E3ED  110F00  		LD	DE,15		;point to last record in extent.
+3367:	E3F0  CDA5E3  		CALL	COMPRAND	;and compute random parameters.
+3368:	E3F3  E1      		POP	HL
+3369:	E3F4  E5      		PUSH	HL		;now check these values against those
+3370:	E3F5  5F      		LD	E,A		;already in fcb.
+3371:	E3F6  79      		LD	A,C		;the carry flag will be set if those
+3372:	E3F7  96      		SUB	(HL)		;in the fcb represent a larger size than
+3373:	E3F8  23      		INC	HL		;this extent does.
+3374:	E3F9  78      		LD	A,B
+3375:	E3FA  9E      		SBC	A,(HL)
+3376:	E3FB  23      		INC	HL
+3377:	E3FC  7B      		LD	A,E
+3378:	E3FD  9E      		SBC	A,(HL)
+3379:	E3FE  DA06E4  		JP	C,RANSIZ2
+3380:	E401  73      		LD	(HL),E		;we found a larger (in size) extent.
+3381:	E402  2B      		DEC	HL		;stuff these values into fcb.
+3382:	E403  70      		LD	(HL),B
+3383:	E404  2B      		DEC	HL
+3384:	E405  71      		LD	(HL),C
+3385:	E406  CD2DDF  	RANSIZ2:CALL	FINDNXT		;now get the next extent.
+3386:	E409  C3E4E3  		JP	RANSIZ1		;continue til all done.
+3387:	E40C  E1      	RANSIZ3:POP	HL		;we are done, restore the stack and
+3388:	E40D  C9      		RET			;return.
+3389:			;
+3390:			;   Function to return the random record position of a given
+3391:			; file which has been read in sequential mode up to now.
+3392:			;
+3393:	E40E  2A43DB  	SETRAN:	LD	HL,(PARAMS)	;point to fcb.
+3394:	E411  112000  		LD	DE,32		;and to last used record.
+3395:	E414  CDA5E3  		CALL	COMPRAND	;compute random position.
+3396:	E417  212100  		LD	HL,33		;now stuff these values into fcb.
+3397:	E41A  19      		ADD	HL,DE
+3398:	E41B  71      		LD	(HL),C		;move 'r0'.
+3399:	E41C  23      		INC	HL
+3400:	E41D  70      		LD	(HL),B		;and 'r1'.
+3401:	E41E  23      		INC	HL
+3402:	E41F  77      		LD	(HL),A		;and lastly 'r2'.
+3403:	E420  C9      		RET
+3404:			;
+3405:			;   This routine select the drive specified in (ACTIVE) and
+3406:			; update the login vector and bitmap table if this drive was
+3407:			; not already active.
+3408:			;
+3409:	E421  2AAFE5  	LOGINDRV: LD	HL,(LOGIN)	;get the login vector.
+3410:	E424  3A42DB  		LD	A,(ACTIVE)	;get the default drive.
+3411:	E427  4F      		LD	C,A
+3412:	E428  CDEADC  		CALL	SHIFTR		;position active bit for this drive
+3413:	E42B  E5      		PUSH	HL		;into bit 0.
+3414:	E42C  EB      		EX	DE,HL
+3415:	E42D  CD59DB  		CALL	SELECT		;select this drive.
+3416:	E430  E1      		POP	HL
+3417:	E431  CC47DB  		CALL	Z,SLCTERR	;valid drive?
+3418:	E434  7D      		LD	A,L		;is this a newly activated drive?
+3419:	E435  1F      		RRA
+3420:	E436  D8      		RET	C
+3421:	E437  2AAFE5  		LD	HL,(LOGIN)	;yes, update the login vector.
+3422:	E43A  4D      		LD	C,L
+3423:	E43B  44      		LD	B,H
+3424:	E43C  CD0BDD  		CALL	SETBIT
+3425:	E43F  22AFE5  		LD	(LOGIN),HL	;and save.
+3426:	E442  C3A3DE  		JP	BITMAP		;now update the bitmap.
+3427:			;
+3428:			;   Function to set the active disk number.
+3429:			;
+3430:	E445  3AD6E5  	SETDSK:	LD	A,(EPARAM)	;get parameter passed and see if this
+3431:	E448  2142DB  		LD	HL,ACTIVE	;represents a change in drives.
+3432:	E44B  BE      		CP	(HL)
+3433:	E44C  C8      		RET	Z
+3434:	E44D  77      		LD	(HL),A		;yes it does, log it in.
+3435:	E44E  C321E4  		JP	LOGINDRV
+3436:			;
+3437:			;   This is the 'auto disk select' routine. The firsst byte
+3438:			; of the fcb is examined for a drive specification. If non
+3439:			; zero then the drive will be selected and loged in.
+3440:			;
+3441:	E451  3EFF    	AUTOSEL:LD	A,0FFH		;say 'auto-select activated'.
+3442:	E453  32DEE5  		LD	(AUTO),A
+3443:	E456  2A43DB  		LD	HL,(PARAMS)	;get drive specified.
+3444:	E459  7E      		LD	A,(HL)
+3445:	E45A  E61F    		AND	1FH		;look at lower 5 bits.
+3446:	E45C  3D      		DEC	A		;adjust for (1=A, 2=B) etc.
+3447:	E45D  32D6E5  		LD	(EPARAM),A	;and save for the select routine.
+3448:	E460  FE1E    		CP	1EH		;check for 'no change' condition.
+3449:	E462  D275E4  		JP	NC,AUTOSL1	;yes, don't change.
+3450:	E465  3A42DB  		LD	A,(ACTIVE)	;we must change, save currently active
+3451:	E468  32DFE5  		LD	(OLDDRV),A	;drive.
+3452:	E46B  7E      		LD	A,(HL)		;and save first byte of fcb also.
+3453:	E46C  32E0E5  		LD	(AUTOFLAG),A	;this must be non-zero.
+3454:	E46F  E6E0    		AND	0E0H		;whats this for (bits 6,7 are used for
+3455:	E471  77      		LD	(HL),A		;something)?
+3456:	E472  CD45E4  		CALL	SETDSK		;select and log in this drive.
+3457:	E475  3A41DB  	AUTOSL1:LD	A,(USERNO)	;move user number into fcb.
+3458:	E478  2A43DB  		LD	HL,(PARAMS)	;(* upper half of first byte *)
+3459:	E47B  B6      		OR	(HL)
+3460:	E47C  77      		LD	(HL),A
+3461:	E47D  C9      		RET			;and return (all done).
+3462:			;
+3463:			;   Function to return the current cp/m version number.
+3464:			;
+3465:	E47E  3E22    	GETVER:	LD	A,022H		;version 2.2
+3466:	E480  C301DB  		JP	SETSTAT
+3467:			;
+3468:			;   Function to reset the disk system.
+3469:			;
+3470:	E483  210000  	RSTDSK:	LD	HL,0		;clear write protect status and log
+3471:	E486  22ADE5  		LD	(WRTPRT),HL	;in vector.
+3472:	E489  22AFE5  		LD	(LOGIN),HL
+3473:	E48C  AF      		XOR	A		;select drive 'A'.
+3474:	E48D  3242DB  		LD	(ACTIVE),A
+3475:	E490  218000  		LD	HL,TBUFF	;setup default dma address.
+3476:	E493  22B1E5  		LD	(USERDMA),HL
+3477:	E496  CDDADD  		CALL	DEFDMA
+3478:	E499  C321E4  		JP	LOGINDRV	;now log in drive 'A'.
+3479:			;
+3480:			;   Function to open a specified file.
+3481:			;
+3482:	E49C  CD72DD  	OPENFIL:CALL	CLEARS2		;clear 's2' byte.
+3483:	E49F  CD51E4  		CALL	AUTOSEL		;select proper disk.
+3484:	E4A2  C351E0  		JP	OPENIT		;and open the file.
+3485:			;
+3486:			;   Function to close a specified file.
+3487:			;
+3488:	E4A5  CD51E4  	CLOSEFIL: CALL	AUTOSEL		;select proper disk.
+3489:	E4A8  C3A2E0  		JP	CLOSEIT		;and close the file.
+3490:			;
+3491:			;   Function to return the first occurence of a specified file
+3492:			; name. If the first byte of the fcb is '?' then the name will
+3493:			; not be checked (get the first entry no matter what).
+3494:			;
+3495:	E4AB  0E00    	GETFST:	LD	C,0		;prepare for special search.
+3496:	E4AD  EB      		EX	DE,HL
+3497:	E4AE  7E      		LD	A,(HL)		;is first byte a '?'?
+3498:	E4AF  FE3F    		CP	'?'
+3499:	E4B1  CAC2E4  		JP	Z,GETFST1	;yes, just get very first entry (zero length match).
+3500:	E4B4  CDA6DC  		CALL	SETEXT		;get the extension byte from fcb.
+3501:	E4B7  7E      		LD	A,(HL)		;is it '?'? if yes, then we want
+3502:	E4B8  FE3F    		CP	'?'		;an entry with a specific 's2' byte.
+3503:	E4BA  C472DD  		CALL	NZ,CLEARS2	;otherwise, look for a zero 's2' byte.
+3504:	E4BD  CD51E4  		CALL	AUTOSEL		;select proper drive.
+3505:	E4C0  0E0F    		LD	C,15		;compare bytes 0-14 in fcb (12&13 excluded).
+3506:	E4C2  CD18DF  	GETFST1:CALL	FINDFST		;find an entry and then move it into
+3507:	E4C5  C3E9DD  		JP	MOVEDIR		;the users dma space.
+3508:			;
+3509:			;   Function to return the next occurence of a file name.
+3510:			;
+3511:	E4C8  2AD9E5  	GETNXT:	LD	HL,(SAVEFCB)	;restore pointers. note that no
+3512:	E4CB  2243DB  		LD	(PARAMS),HL	;other dbos calls are allowed.
+3513:	E4CE  CD51E4  		CALL	AUTOSEL		;no error will be returned, but the
+3514:	E4D1  CD2DDF  		CALL	FINDNXT		;results will be wrong.
+3515:	E4D4  C3E9DD  		JP	MOVEDIR
+3516:			;
+3517:			;   Function to delete a file by name.
+3518:			;
+3519:	E4D7  CD51E4  	DELFILE:CALL	AUTOSEL		;select proper drive.
+3520:	E4DA  CD9CDF  		CALL	ERAFILE		;erase the file.
+3521:	E4DD  C301DF  		JP	STSTATUS	;set status and return.
+3522:			;
+3523:			;   Function to execute a sequential read of the specified
+3524:			; record number.
+3525:			;
+3526:	E4E0  CD51E4  	READSEQ:CALL	AUTOSEL		;select proper drive then read.
+3527:	E4E3  C3BCE1  		JP	RDSEQ
+3528:			;
+3529:			;   Function to write the net sequential record.
+3530:			;
+3531:	E4E6  CD51E4  	WRTSEQ:	CALL	AUTOSEL		;select proper drive then write.
+3532:	E4E9  C3FEE1  		JP	WTSEQ
+3533:			;
+3534:			;   Create a file function.
+3535:			;
+3536:	E4EC  CD72DD  	FCREATE:CALL	CLEARS2		;clear the 's2' byte on all creates.
+3537:	E4EF  CD51E4  		CALL	AUTOSEL		;select proper drive and get the next
+3538:	E4F2  C324E1  		JP	GETEMPTY	;empty directory space.
+3539:			;
+3540:			;   Function to rename a file.
+3541:			;
+3542:	E4F5  CD51E4  	RENFILE:CALL	AUTOSEL		;select proper drive and then switch
+3543:	E4F8  CD16E0  		CALL	CHGNAMES	;file names.
+3544:	E4FB  C301DF  		JP	STSTATUS
+3545:			;
+3546:			;   Function to return the login vector.
+3547:			;
+3548:	E4FE  2AAFE5  	GETLOG:	LD	HL,(LOGIN)
+3549:	E501  C329E5  		JP	GETPRM1
+3550:			;
+3551:			;   Function to return the current disk assignment.
+3552:			;
+3553:	E504  3A42DB  	GETCRNT:LD	A,(ACTIVE)
+3554:	E507  C301DB  		JP	SETSTAT
+3555:			;
+3556:			;   Function to set the dma address.
+3557:			;
+3558:	E50A  EB      	PUTDMA:	EX	DE,HL
+3559:	E50B  22B1E5  		LD	(USERDMA),HL	;save in our space and then get to
+3560:	E50E  C3DADD  		JP	DEFDMA		;the bios with this also.
+3561:			;
+3562:			;   Function to return the allocation vector.
+3563:			;
+3564:	E511  2ABFE5  	GETALOC:LD	HL,(ALOCVECT)
+3565:	E514  C329E5  		JP	GETPRM1
+3566:			;
+3567:			;   Function to return the read-only status vector.
+3568:			;
+3569:	E517  2AADE5  	GETROV:	LD	HL,(WRTPRT)
+3570:	E51A  C329E5  		JP	GETPRM1
+3571:			;
+3572:			;   Function to set the file attributes (read-only, system).
+3573:			;
+3574:	E51D  CD51E4  	SETATTR:CALL	AUTOSEL		;select proper drive then save attributes.
+3575:	E520  CD3BE0  		CALL	SAVEATTR
+3576:	E523  C301DF  		JP	STSTATUS
+3577:			;
+3578:			;   Function to return the address of the disk parameter block
+3579:			; for the current drive.
+3580:			;
+3581:	E526  2ABBE5  	GETPARM:LD	HL,(DISKPB)
+3582:	E529  2245DB  	GETPRM1:LD	(STATUS),HL
+3583:	E52C  C9      		RET
+3584:			;
+3585:			;   Function to get or set the user number. If (E) was (FF)
+3586:			; then this is a request to return the current user number.
+3587:			; Else set the user number from (E).
+3588:			;
+3589:	E52D  3AD6E5  	GETUSER:LD	A,(EPARAM)	;get parameter.
+3590:	E530  FEFF    		CP	0FFH		;get user number?
+3591:	E532  C23BE5  		JP	NZ,SETUSER
+3592:	E535  3A41DB  		LD	A,(USERNO)	;yes, just do it.
+3593:	E538  C301DB  		JP	SETSTAT
+3594:	E53B  E61F    	SETUSER:AND	1FH		;no, we should set it instead. keep low
+3595:	E53D  3241DB  		LD	(USERNO),A	;bits (0-4) only.
+3596:	E540  C9      		RET
+3597:			;
+3598:			;   Function to read a random record from a file.
+3599:			;
+3600:	E541  CD51E4  	RDRANDOM: CALL	AUTOSEL		;select proper drive and read.
+3601:	E544  C393E3  		JP	READRAN
+3602:			;
+3603:			;   Function to compute the file size for random files.
+3604:			;
+3605:	E547  CD51E4  	WTRANDOM: CALL	AUTOSEL		;select proper drive and write.
+3606:	E54A  C39CE3  		JP	WRITERAN
+3607:			;
+3608:			;   Function to compute the size of a random file.
+3609:			;
+3610:	E54D  CD51E4  	FILESIZE: CALL	AUTOSEL		;select proper drive and check file length
+3611:	E550  C3D2E3  		JP	RANSIZE
+3612:			;
+3613:			;   Function #37. This allows a program to log off any drives.
+3614:			; On entry, set (DE) to contain a word with bits set for those
+3615:			; drives that are to be logged off. The log-in vector and the
+3616:			; write protect vector will be updated. This must be a M/PM
+3617:			; special function.
+3618:			;
+3619:	E553  2A43DB  	LOGOFF:	LD	HL,(PARAMS)	;get drives to log off.
+3620:	E556  7D      		LD	A,L		;for each bit that is set, we want
+3621:	E557  2F      		CPL			;to clear that bit in (LOGIN)
+3622:	E558  5F      		LD	E,A		;and (WRTPRT).
+3623:	E559  7C      		LD	A,H
+3624:	E55A  2F      		CPL
+3625:	E55B  2AAFE5  		LD	HL,(LOGIN)	;reset the login vector.
+3626:	E55E  A4      		AND	H
+3627:	E55F  57      		LD	D,A
+3628:	E560  7D      		LD	A,L
+3629:	E561  A3      		AND	E
+3630:	E562  5F      		LD	E,A
+3631:	E563  2AADE5  		LD	HL,(WRTPRT)
+3632:	E566  EB      		EX	DE,HL
+3633:	E567  22AFE5  		LD	(LOGIN),HL	;and save.
+3634:	E56A  7D      		LD	A,L		;now do the write protect vector.
+3635:	E56B  A3      		AND	E
+3636:	E56C  6F      		LD	L,A
+3637:	E56D  7C      		LD	A,H
+3638:	E56E  A2      		AND	D
+3639:	E56F  67      		LD	H,A
+3640:	E570  22ADE5  		LD	(WRTPRT),HL	;and save. all done.
+3641:	E573  C9      		RET
+3642:			;
+3643:			;   Get here to return to the user.
+3644:			;
+3645:	E574  3ADEE5  	GOBACK:	LD	A,(AUTO)	;was auto select activated?
+3646:	E577  B7      		OR	A
+3647:	E578  CA91E5  		JP	Z,GOBACK1
+3648:	E57B  2A43DB  		LD	HL,(PARAMS)	;yes, but was a change made?
+3649:	E57E  3600    		LD	(HL),0		;(* reset first byte of fcb *)
+3650:	E580  3AE0E5  		LD	A,(AUTOFLAG)
+3651:	E583  B7      		OR	A
+3652:	E584  CA91E5  		JP	Z,GOBACK1
+3653:	E587  77      		LD	(HL),A		;yes, reset first byte properly.
+3654:	E588  3ADFE5  		LD	A,(OLDDRV)	;and get the old drive and select it.
+3655:	E58B  32D6E5  		LD	(EPARAM),A
+3656:	E58E  CD45E4  		CALL	SETDSK
+3657:	E591  2A0FDB  	GOBACK1:LD	HL,(USRSTACK)	;reset the users stack pointer.
+3658:	E594  F9      		LD	SP,HL
+3659:	E595  2A45DB  		LD	HL,(STATUS)	;get return status.
+3660:	E598  7D      		LD	A,L		;force version 1.4 compatability.
+3661:	E599  44      		LD	B,H
+3662:	E59A  C9      		RET			;and go back to user.
+3663:			;
+3664:			;   Function #40. This is a special entry to do random i/o.
+3665:			; For the case where we are writing to unused disk space, this
+3666:			; space will be zeroed out first. This must be a M/PM special
+3667:			; purpose function, because why would any normal program even
+3668:			; care about the previous contents of a sector about to be
+3669:			; written over.
+3670:			;
+3671:	E59B  CD51E4  	WTSPECL:CALL	AUTOSEL		;select proper drive.
+3672:	E59E  3E02    		LD	A,2		;use special write mode.
+3673:	E5A0  32D5E5  		LD	(MODE),A
+3674:	E5A3  0E00    		LD	C,0		;set write indicator.
+3675:	E5A5  CD07E3  		CALL	POSITN1		;position the file.
+3676:	E5A8  CC03E2  		CALL	Z,WTSEQ1	;and write (if no errors).
+3677:	E5AB  C9      		RET
+3678:			;
+3679:			;**************************************************************
+3680:			;*
+3681:			;*     BDOS data storage pool.
+3682:			;*
+3683:			;**************************************************************
+3684:			;
+3685:	E5AC  E5      	EMPTYFCB: DEFB	0E5H		;empty directory segment indicator.
+3686:	E5AD  0000    	WRTPRT:	DEFW	0		;write protect status for all 16 drives.
+3687:	E5AF  0000    	LOGIN:	DEFW	0		;drive active word (1 bit per drive).
+3688:	E5B1  8000    	USERDMA:DEFW	080H		;user's dma address (defaults to 80h).
+3689:			;
+3690:			;   Scratch areas from parameter block.
+3691:			;
+3692:	E5B3  0000    	SCRATCH1: DEFW	0		;relative position within dir segment for file (0-3).
+3693:	E5B5  0000    	SCRATCH2: DEFW	0		;last selected track number.
+3694:	E5B7  0000    	SCRATCH3: DEFW	0		;last selected sector number.
+3695:			;
+3696:			;   Disk storage areas from parameter block.
+3697:			;
+3698:	E5B9  0000    	DIRBUF:	DEFW	0		;address of directory buffer to use.
+3699:	E5BB  0000    	DISKPB:	DEFW	0		;contains address of disk parameter block.
+3700:	E5BD  0000    	CHKVECT:DEFW	0		;address of check vector.
+3701:	E5BF  0000    	ALOCVECT: DEFW	0		;address of allocation vector (bit map).
+3702:			;
+3703:			;   Parameter block returned from the bios.
+3704:			;
+3705:	E5C1  0000    	SECTORS:DEFW	0		;sectors per track from bios.
+3706:	E5C3  00      	BLKSHFT:DEFB	0		;block shift.
+3707:	E5C4  00      	BLKMASK:DEFB	0		;block mask.
+3708:	E5C5  00      	EXTMASK:DEFB	0		;extent mask.
+3709:	E5C6  0000    	DSKSIZE:DEFW	0		;disk size from bios (number of blocks-1).
+3710:	E5C8  0000    	DIRSIZE:DEFW	0		;directory size.
+3711:	E5CA  0000    	ALLOC0:	DEFW	0		;storage for first bytes of bit map (dir space used).
+3712:	E5CC  0000    	ALLOC1:	DEFW	0
+3713:	E5CE  0000    	OFFSET:	DEFW	0		;first usable track number.
+3714:	E5D0  0000    	XLATE:	DEFW	0		;sector translation table address.
+3715:			;
+3716:			;
+3717:	E5D2  00      	CLOSEFLG: DEFB	0		;close flag (=0ffh is extent written ok).
+3718:	E5D3  00      	RDWRTFLG: DEFB	0		;read/write flag (0ffh=read, 0=write).
+3719:	E5D4  00      	FNDSTAT:DEFB	0		;filename found status (0=found first entry).
+3720:	E5D5  00      	MODE:	DEFB	0		;I/o mode select (0=random, 1=sequential, 2=special random).
+3721:	E5D6  00      	EPARAM:	DEFB	0		;storage for register (E) on entry to bdos.
+3722:	E5D7  00      	RELBLOCK: DEFB	0		;relative position within fcb of block number written.
+3723:	E5D8  00      	COUNTER:DEFB	0		;byte counter for directory name searches.
+3724:	E5D9  00000000	SAVEFCB:DEFW	0,0		;save space for address of fcb (for directory searches).
+3725:	E5DD  00      	BIGDISK:DEFB	0		;if =0 then disk is > 256 blocks long.
+3726:	E5DE  00      	AUTO:	DEFB	0		;if non-zero, then auto select activated.
+3727:	E5DF  00      	OLDDRV:	DEFB	0		;on auto select, storage for previous drive.
+3728:	E5E0  00      	AUTOFLAG: DEFB	0		;if non-zero, then auto select changed drives.
+3729:	E5E1  00      	SAVNXT:	DEFB	0		;storage for next record number to access.
+3730:	E5E2  00      	SAVEXT:	DEFB	0		;storage for extent number of file.
+3731:	E5E3  0000    	SAVNREC:DEFW	0		;storage for number of records in file.
+3732:	E5E5  0000    	BLKNMBR:DEFW	0		;block number (physical sector) used within a file or logical sect
+3733:	E5E7  0000    	LOGSECT:DEFW	0		;starting logical (128 byte) sector of block (physical sector).
+3734:	E5E9  00      	FCBPOS:	DEFB	0		;relative position within buffer for fcb of file of interest.
+3735:	E5EA  0000    	FILEPOS:DEFW	0		;files position within directory (0 to max entries -1).
+3736:			;
+3737:			;   Disk directory buffer checksum bytes. One for each of the
+3738:			; 16 possible drives.
+3739:			;
+3740:	E5EC  00000000	CKSUMTBL: DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      00000000
+3741:			;
+3742:			;   Extra space ?
+3743:			;
+3744:	E5FC  00000000		DEFB	0,0,0,0
+3745:			;
+3746:	1600          		.dephase
+3747:			;
+3748:			;*
+3749:			;******************   E N D   O F   C P / M   *****************
+3750:			;*
+3751:			
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   509	symbols
+     0	bytes
+
+
+
+Symbol Table:
+
+active          db42     fbase           d806+    rdbuf4          da26     
+adda2hl         dd64     fbase1          d811     rdbuf5          da37     
+addhl           d259     fcb             d7cd     rdbuf6          da48     
+alloc0          e5ca     fcb2hl          dd5e     rdbuf7          da4e     
+alloc1          e5cc     fcbpos          e5e9     rdbuf8          da5f     
+alocvect        e5bf     fcbset          dffd     rdbuf9          da6b     
+auto            e5de     fcreate         e4ec     rdbuff          d9e1     
+autoflag        e5e0     ff             =   c+    rderr           d3df     
+autosel         e451     filepos         e5ea     rderror         d3d9     
+autosl1         e475     filero          d8dc     rdrandom        e541     
+backup          d9a4     filesize        e54d     rdrec           d0f9     
+backup1         d9ac     findfst         df18     rdseq           e1bc     
+badload         d77a     findnxt         df2d     rdseq1          e1c1     
+badsctr         d809     fndnxt1         df4a     rdseq2          e1e6     
+badsec          d8ca     fndnxt2         df53     rdseq3          e1fb     
+badsel          d8d5     fndnxt3         df73     rdwrtflg        e5d3     
+badslct         d80b     fndnxt4         df7c     read           =e627+    
+batch           d7ab     fndnxt5         df83     reader         =e615+    
+batchfcb        d7ac     fndnxt6         df94     readfcb         d0fe     
+bdos           =d806+    fndspa1         dfc0     readran         e393     
+bdosdrv         d8c6     fndspa2         dfd1     readseq         e4e0     
+bdose          =d800+    fndspa3         dfec     relblock        e5d7     
+bdoserr         d8ba     fndspa4         dff4     renam           d10e     
+bias           =9c00+    fndspace        dfbe     rename          d610     
+bigdisk         e5dd     fndstat         e5d4     rename1         d63f     
+bios           =e600+    functns         d847     rename2         d659     
+bitmap          dea3     getaloc         e511     rename3         d65e+    
+bitmap1         deb1     getback         d786     rename4         d66d     
+bitmap2         ded2     getback1        d789     rename5         d673     
+bitmap3         def6     getblk1         dc45     rename6         d679     
+blkmask         e5c4     getblk2         dc53     renfile         e4f5     
+blknmbr         e5e5     getblk3         dc5c     resdsk          d0b8     
+blkshft         e5c3     getblock        dc3e     resetdr         d466     
+boot           =e600+    getchar         d8fb     rodisk          d80d     
+bs             =   8+    getcon          dac8     rofile          d80f     
+cbase           d000     getcrnt         e504     rstdsk          e483     
+ccp            =d000+    getcsts         dafe     rtn             db04     
+ccpstack       =d7ab+    getdsk          d1d0     rtncode         d7ee     
+cdrive          d7ef     getecho         d906     samext          df07     
+charbuf         db0e     getempty        e124     savatr1         e040     
+check           d230     getext          d2c0     save            d5ad     
+checkdir        dd9e     getext1         d2c8     save1           d5d4     
+checksum        dcf7     getext2         d2d9     save2           d5f1     
+chgdrv          d7f0     getext3         d2db     save3           d5fb     
+chgnam1         e027     getext4         d2df     save4           d601     
+chgnames        e016     getext5         d2e9     saveattr        e03b     
+chkblk          dc84     getext6         d2f0     savefcb         e5d9     
+chkchar         d914     getext7         d2f2     savext          e5e2     
+chkcon          d1c2     getext8         d301     savnrec         e5e3     
+chkdir1         ddc4     getext9         d309     savnxt          e5e1     
+chknmbr         dd8c     getfst          e4ab     scratch1        e5b3     
+chkrofl         dd44     getfst1         e4c2     scratch2        e5b5     
+chksum1         dcfd     getinp          d139     scratch3        e5b7     
+chkvect         e5bd     getinp1         d196     search          d32e     
+chkwprt         dd54     getinp2         d1a7     search1         d333     
+ckbitmap        de35     getinp3         d1ab     search2         d33c     
+ckbmap1         de56     getinp4         d1ba     search3         d34f     
+ckcon1          d942     getiob          daed     search4         d354     
+ckcon2          d945     getlog          e4fe     sectors         e5c1     
+ckconsol        d923     getmt1          e146     sectran        =e630+    
+ckfilpos        ddf5     getnext         e15a     seldsk         =e61b+    
+ckrof1          dd47     getnxt          e4c8     select          db59     
+cksumtbl        e5ec     getparm         e526     select1         db9d     
+clearbuf        d358     getprm1         e529     setattr         e51d     
+clears2         dd72     getrdr          dace     setbit          dd0b     
+close           d0da     getrov          e517     setcdrv         d11a     
+closefil        e4a5     gets2           dd69     setdir          dd9c     
+closeflg        e5d2     getsetuc        d115     setdma         =e624+    
+closeit         e0a2     getuser         e52d     setdsk          e445     
+closeit1        e0cd     getusr          d113     setext          dca6     
+closeit2        e0db     getver          e47e     setfile         de6b     
+closeit3        e0e1     getwprt         dd1e     setfl1          de75     
+closeit4        e0e8     goback          e574     setfl2          de88     
+closeit5        e0fd     goback1         e591     setfl3          de8e     
+closeit6        e117     gtnext1         e183     setfl4          de9d     
+closeit7        e11f     gtnext2         e18e     sethlde         dcae     
+cmdadr          d3c1     gtnext3         e1ac     setiob          daf3     
+cmdtbl          d310     gtnext4         e1af     setnrec         dcd2     
+cmmnd1          d382     gtnext5         e1b6     setran          e40e     
+cmmnd2          d398     hl2de           d442     sets2b7         dd78     
+cmsize         =  3b+    home           =e618+    setsec         =e621+    
+cntrlc         =   3+    homedrv         dba1     setstat         db01     
+cntrle         =   5+    inbuff          d006     settrk         =e61e+    
+cntrlp         =  10+    inpoint         d088     setuser         e53b     
+cntrlr         =  12+    iobyte         =   3+    shiftl          dd04     
+cntrls         =  13+    ioerr1          db05     shiftl1         dd05     
+cntrlu         =  15+    ioret           dbbb     shiftr          dcea     
+cntrlx         =  18+    ipl            =1000+    shiftr1         dceb     
+cntrlz         =  1a+    jumphl          db4a     showit          d97f     
+comblk          dc77     lf             =   a+    slcterr         db47     
+comfile         d783     listd          =e60f+    srchfcb         d0e9     
+command         d35c     logical         dc8a     srchfst         d0df     
+comprand        e3a5     logicl1         dc90     srchnxt         d0e4     
+conin          =e609+    login           e5af     starting        db0b     
+conout         =e60c+    logindrv        e421     status          db45     
+const          =e606+    logoff          e553     stbitmap        de5c     
+convert         d260     logsect         e5e7     stbmap1         de64     
+convfst         d25e     mem            =  3b+    stddma          d1d5     
+convrt1         d289     mode            e5d5     stfilpos        ddfe     
+convrt2         d290     morefls         dd7f     stkarea        =db41+    
+convrt3         d296     move3           d440     stnrec1         dcde     
+convrt4         d298     movecd          d129     strdata         dcbb     
+convrt5         d2a9     movedir         dde9     ststatus        df01     
+convrt6         d2ab     moveword        e094     subhl           dd95     
+convrt7         d2af     mres           =   1+    synerr          d209     
+convrt8         d2b9     msize          =  3c+    synerr1         d20f     
+counter         e5d8     namepnt         d08a     synerr2         d222     
+cr             =   d+    nbytes          d7f1     syshalt         d3cf     
+create          d109     newline         d9b1     tab            =   9+    
+crlf            d098     newln1          d9b9     tbase          = 100+    
+curpos          db0c     nfuncts        =  29+    tbuff          =  80+    
+de2hl           db4f     nofile          d3f0     tdrive         =   4+    
+de2hl1          db50     nonblank        d24f     tfcb           =  5c+    
+decode          d3f8     none            d3ea     trksec          dbc3     
+decode1         d408     nospace         d607     trksec1         dbd1     
+decode2         d42a+    numcmds        =   6+    trksec2         dbe4     
+decode3         d433     nxent1          de19     trksec3         dbfa     
+decode4         d43a+    nxent2          de20     trksec4         dc0f     
+defdma          ddda     nxentry         de05     type            d55d     
+del            =  7f+    offset          e5ce     type1           d574     
+delbatch        d1dd     olddrv          e5df     type2           d577+    
+delete          d0ef     open            d0cb     type3           d587     
+delfile         e4d7     openfcb         d0d0     type4           d5a0     
+dirbuf          e5b9     openfil         e49c     type5           d5a7     
+dirc1           dae0     openit          e051     unknown         d6a5     
+dircio          dad4     openit1         e05a     unkwn0          d771     
+dirdma          dde0     openit2         e08b     unkwn1          d6c4     
+dirdma1         dde3     outchar         d948     unkwn2          d6cd+    
+direct          d477     outchr1         d962     unkwn3          d6e1     
+direct1         d488     outchr2         d979     unkwn4          d701     
+direct2         d48f     outcon          d990     unkwn5          d730     
+direct3         d498     outcon1         d996     unkwn6          d73e     
+direct4         d4cc     outcrlf         d9c9     unkwn7          d743     
+direct5         d4d4     outflag         db0a     unkwn8          d74f     
+direct6         d4d9     params          db43     unkwn9          d76b     
+direct7         d50e     pattrn1         d328     update          e001     
+direct8         d50f     pattrn2         d800     update1         e010     
+direct9         d51b     pline           d0a7     upper           d130     
+dirread         ddd4     pline2          d0ac     user            d68e     
+dirsize         e5c8     position        e303     userdma         e5b1     
+dirwrite        ddc6     positn1         e307     userno          db41     
+diskpb          e5bb     positn2         e347     usrstack        db0f     
+diskro          d8e1     positn3         e37f     verify          d1f5     
+dmaset          d1d8     positn4         e384     verify1         d1fd     
+doread          dbb2     positn5         e38b     wboot          =e603+    
+dowrite         dbb8     print           d08c     write          =e62a+    
+drect63         d4f7     printb          d092     writeran        e39c     
+drect65         d4f9     prstat         =e62d+    wrtprt          e5ad     
+dselect         d454     prterr          d8e5     wrtprtd         dd2c     
+dsksel          d0bd     prtflag         db0d     wrtrec          d104     
+dsksize         e5c6     prtmesg         d9d3     wrtseq          e4e6     
+emptyfcb        e5ac     prtstr          daf8     wtrandom        e547     
+entry1          d0c3     pspace          d0a2     wtseq           e1fe     
+entry2          d0f4     punch          =e612+    wtseq1          e203     
+entryp         =   5+    putdma          e50a     wtseq10         e2d2     
+eparam          e5d6     ransiz1         e3e4     wtseq11         e2fe     
+erafil1         dfa4     ransiz2         e406     wtseq12         e300     
+erafile         df9c     ransiz3         e40c     wtseq2          e23b     
+erase           d51f     ransize         e3d2     wtseq3          e248     
+erase1          d542     rdbuf1          d9ef     wtseq4          e264     
+error1          d899     rdbuf10         da70     wtseq5          e26c     
+error2          d8a5     rdbuf11         da78     wtseq6          e26e     
+error3          d8ab     rdbuf12         da8a     wtseq7          e28c     
+error4          d8b1     rdbuf13         da99     wtseq8          e29a     
+error5          d8b4     rdbuf14         daa6     wtseq9          e2bb     
+exists          d682     rdbuf15         daa9     wtseq99         e2df+    
+extblk          dc5e     rdbuf16         dabd     wtspecl         e59b     
+extblk1         dc71     rdbuf17         dac1     xlate           e5d0     
+extmask         e5c5     rdbuf2          d9f1     yesno           d552     
+extract         d44b     rdbuf3          da16     

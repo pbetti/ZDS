@@ -1,0 +1,793 @@
+CP/M RMAC ASSEM 1.1
+
+CP/M RMAC ASSEM 1.1	#001	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+                	title	'CP/M 3 Banked BDOS Resident Module, Dec 1982'
+                ;***************************************************************
+                ;***************************************************************
+                ;**                                                           **
+                ;**   B a s i c    D i s k   O p e r a t i n g   S y s t e m  **
+                ;**                                                           **
+                ;**   R e s i d e n t   M o d u l e  -  B a n k e d  B D O S  **
+                ;**                                                           **
+                ;***************************************************************
+                ;***************************************************************
+                
+                ;/*
+                ;  Copyright (C) 1978,1979,1980,1981,1982
+                ;  Digital Research
+                ;  P.O. Box 579
+                ;  Pacific Grove, CA 93950
+                ;
+                ;  December, 1982
+                ;
+                ;*/
+                ;
+ 001E =         ssize		equ	30
+ 000C =         diskfx		equ	12
+ 0002 =         conoutfxx	equ	2
+ 0009 =         printfx		equ	9
+ 000B =         constatfx	equ	11
+ 001A =         setdmafx	equ	26
+ 002F =         chainfx		equ	47
+ 0003 =         ioloc		equ	3
+                
+ 0000           		org	0000h
+ 0000 =         base		equ	$
+                
+ FC00 =         bnkbdos$pg	equ	base+0fc00h
+ FD00 =         resbdos$pg	equ	base+0fd00h
+ FE00 =         scb$pg		equ	base+0fe00h
+ FF00 =         bios$pg		equ	base+0ff00h
+                
+ FC06 =         bnkbdos		equ	bnkbdos$pg+6
+ FC7C =         error$jmp 	equ	bnkbdos$pg+7ch
+                
+ FF00 =         bios		equ	bios$pg
+ FF00 =         bootf		equ	bios$pg 	; 00. cold boot function
+ FF03 =         wbootf		equ	bios$pg+3	; 01. warm boot function
+ FF06 =         constf		equ	bios$pg+6	; 02. console status function
+ FF09 =         coninf		equ	bios$pg+9	; 03. console input function
+ FF0C =         conoutf		equ	bios$pg+12	; 04. console output function
+ FF0F =         listf		equ	bios$pg+15	; 05. list output function
+ FF12 =         punchf		equ	bios$pg+18	; 06. punch output function
+ FF15 =         readerf		equ	bios$pg+21	; 07. reader input function
+ FF18 =         homef		equ	bios$pg+24	; 08. disk home function
+ FF1B =         seldskf		equ	bios$pg+27	; 09. select disk function
+ FF1E =         settrkf		equ	bios$pg+30	; 10. set track function
+ FF21 =         setsecf		equ	bios$pg+33	; 11. set sector function
+ FF24 =         setdmaf		equ	bios$pg+36	; 12. set dma function
+ FF27 =         readf		equ	bios$pg+39	; 13. read disk function
+CP/M RMAC ASSEM 1.1	#002	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+ FF2A =         writef		equ	bios$pg+42	; 14. write disk function
+ FF2D =         liststf		equ	bios$pg+45	; 15. list status function
+ FF30 =         sectran		equ	bios$pg+48	; 16. sector translate
+ FF33 =         conoutstf	equ	bios$pg+51	; 17. console output status function
+ FF36 =         auxinstf	equ	bios$pg+54	; 18. aux input status function
+ FF39 =         auxoutstf	equ	bios$pg+57	; 19. aux output status function
+ FF3C =         devtblf		equ	bios$pg+60	; 20. return device table address fx
+ FF3F =         devinitf	equ	bios$pg+63	; 21. initialize device function
+ FF42 =         drvtblf		equ	bios$pg+66	; 22. return drive table address
+ FF45 =         multiof		equ	bios$pg+69	; 23. multiple i/o function
+ FF48 =         flushf		equ	bios$pg+72	; 24. flush function
+ FF4B =         movef		equ	bios$pg+75	; 25. memory move function
+ FF4E =         timef		equ	bios$pg+78	; 26. get/set system time function
+ FF51 =         selmemf		equ	bios$pg+81	; 27. select memory function
+ FF54 =         setbnkf		equ	bios$pg+84	; 28. set dma bank function
+ FF4E =         xmovef		equ	bios$pg+78	; 29. extended move function
+                
+ FF0C =         sconoutf	equ	conoutf		; 31. escape sequence decoded conout
+ FFFF =         screenf		equ	0ffffh		; 32. screen function
+                
+ 0000 3635343332serial:	db	'654321'
+                
+ 0006 C32400    	jmp	bdos
+ 0009 C3E402    	jmp	move$out	;A = bank #
+                				;HL = dest, DE = srce
+ 000C C3F202    	jmp	move$tpa	;A = bank #
+                				;HL = dest, DE = srce
+ 000F C3FA02    	jmp 	search$hash	;A = bank #
+                				;HL = hash table address
+                
+                	; on return, Z flag set for eligible DCNTs
+                	;	     Z flag reset implies unsuccessful search
+                
+                	; Additional variables referenced directly by bnkbdos
+                
+ 0012 0000      hashmx:		dw	0	;max hash search dcnt
+ 0014 00        rd$dir:		db	0	;read directory flag
+ 0015 00        make$xfcb:	db	0	;Make XFCB flag
+ 0016 00        find$xfcb:	db	0	;Search XFCB flag
+ 0017 0000      xdcnt:		dw	0	;current xdcnt
+                
+ 0019 4E04      xdmaadd:	dw	common$dma
+ 001B 0000      curdma:		dw	0
+ 001D 00        copy$cr$only:	db	0
+ 001E 0000      user$info:	dw	0
+ 0020 00        kbchar:		db	0
+ 0021 C37701    		jmp	qconinx
+                
+                bdos:	;arrive here from user programs
+ 0024 79        	mov a,c ; c = BDOS function #
+                
+                	;switch to local stack
+                
+ 0025 2100002228	lxi h,0! shld aret
+ 002B 39226605  	dad sp! shld entsp ; save stack pointer
+ 002F 31660521CB	lxi sp,lstack! lxi h,goback! push h
+CP/M RMAC ASSEM 1.1	#003	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+                
+ 0036 FE0CD29401	cpi diskfx! jnc disk$func
+                
+ 003B 32DF05    	sta fx			;[JCE] DRI patch 1
+                
+ 003E 2186000600	lxi h,functab! mvi b,0
+ 0043 09097E    	dad b! dad b! mov a,m
+ 0046 23666FE9  	inx h! mov h,m! mov l,a! pchl
+                
+                	maclib	makedate	;[JCE] Dates all go in one file
+                	@LCOPY
+ 004A+434F505952	DB	'COPYRIGHT 1998, '
+ 005A+43414C4445	DB	'CALDERA, INC.   '
+     +          	ENDM
+                	@BDATE
+ 006A+3130313139	DB	'101198'
+     +          	ENDM
+ 0070 0000000000	dw	0,0,0,0,0,0,0,0,0,0,0
+                
+                functab:
+ 0086 03FFD502D5	dw	wbootf, bank$bdos, bank$bdos, func3
+ 008E A400A800AC	dw	func4, func5, func6, func7
+ 0096 E900EF0001	dw	func8, func9, func10, bank$bdos
+                
+                func3:
+ 009E CD15FFC3C8	call readerf! jmp sta$ret
+                
+                func4:
+ 00A4 4BC312FF  	mov c,e! jmp punchf
+                
+                func5:
+ 00A8 4BC30FFF  	mov c,e! jmp listf
+                
+                func6:
+ 00AC 7B3CCAC300	mov a,e! inr a! jz dirinp	;0ffh -> cond. input
+ 00B1 3CCABD00  	inr a! jz dirstat		;0feh -> status
+ 00B5 3CCAC800  	inr a! jz dirinp1		;0fdh -> input
+ 00B9 4BC30CFF  	mov c,e! jmp conoutf		;	 output
+                dirstat:
+ 00BD CDCE00C3C8	call constx! jmp sta$ret
+                dirinp:
+ 00C3 CDCE00B7C8	call constx! ora a! rz
+                dirinp1:
+ 00C8 CDD800C3C8	call conin! jmp sta$ret
+                
+                constx:
+ 00CE 3A2000B73E	lda kbchar! ora a! mvi a,0ffh! rnz
+ 00D5 C306FF    	jmp constf
+                
+                conin:
+ 00D8 2120007E36	lxi h,kbchar! mov a,m! mvi m,0! ora a! rnz
+ 00E0 C309FF    	jmp coninf
+                
+                func7:
+ 00E3 CD36FFC3C8	call auxinstf! jmp sta$ret
+                
+CP/M RMAC ASSEM 1.1	#004	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+                func8:
+ 00E9 CD39FFC3C8	call auxoutstf! jmp sta$ret
+                
+                func9:
+ 00EF 424B      	mov b,d! mov c,e
+                print:
+ 00F1 21D305    	lxi h,outdelim
+ 00F4 0ABEC8    	ldax b! cmp m! rz
+ 00F7 03C54F    	inx b! push b! mov c,a
+ 00FA CD5301    	call blk$out0
+ 00FD C1C3F100  	pop b! jmp print
+                
+                func10:
+ 0101 EB        	xchg
+ 0102 7DB4C21001	mov a,l! ora h! jnz func10a
+ 0107 212C0422BA	lxi h,buffer+2! shld conbuffadd
+ 010D 2AD805    	lhld dmaad
+                func10a:
+ 0110 E5112A04D5	push h! lxi d,buffer! push d
+ 0115 06004E0303	mvi b,0! mov c,m! inx b! inx b! inx b
+ 011B EBCD4BFF36	xchg! call movef! mvi m,0
+ 0121 D1D50E0A  	pop d! push d! mvi c,10
+ 0125 CDD502    	call bank$bdos
+ 0128 3A2B044F06	lda buffer+1! mov c,a! mvi b,0
+ 012E 0303      	inx b! inx b
+ 0130 D1E1C34BFF	pop d! pop h! jmp movef
+                
+                func111:
+                func112:
+ 0135 322404    	sta res$fx
+ 0138 EB5E235623	xchg! mov e,m! inx h! mov d,m! inx h
+ 013D 4E2346EB  	mov c,m! inx h! mov b,m! xchg
+                	; hl = addr of string
+                	; bc = length of string
+                blk$out:
+ 0141 78B1C8    	mov a,b! ora c! rz
+ 0144 C5E54E    	push b! push h! mov c,m
+ 0147 117001D5  	lxi d,blk$out2! push d
+ 014B 3A2404FE70	lda res$fx! cpi 112! jz listf
+                
+                blk$out0:
+ 0153 3ACF0547E6	lda conmode! mov b,a! ani 2! jz blk$out1
+ 015C 78E614CA6A	mov a,b! ani 14h! jz blk$out1
+ 0162 E610C20CFF	ani 10h! jnz sconoutf
+ 0167 C30CFF    	jmp conoutf
+                
+                blk$out1:
+ 016A 590E02C3D5	mov e,c! mvi c,conoutfxx! jmp bank$bdos
+                
+                blk$out2:
+ 0170 E123C10B  	pop h! inx h! pop b! dcx b
+ 0174 C34101    	jmp blk$out
+                
+                qconinx:
+                	; switch to bank 1
+ 0177 3E01CD51FF	mvi a,1! call selmemf
+CP/M RMAC ASSEM 1.1	#005	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+                	; get character
+ 017C 46        	mov b,m
+                	; return to bank zero
+ 017D AFCD51FF  	xra a! call selmemf
+                	; return with character in A
+ 0181 78C9      	mov a,b! ret
+                
+                switch1:
+ 0183 118D01D5  	lxi d,switch0! push d
+ 0187 3E01CD51FF	mvi a,1! call selmemf! pchl
+                switch0:
+ 018D 47AFCD51FF	mov b,a! xra a! call selmemf
+ 0192 78C9      	mov a,b! ret
+                
+                disk$func:
+ 0194 FE33DAB001	cpi ndf! jc OKdf ;func < ndf
+ 0199 FE62DABC02	cpi 98! jc badfunc ;ndf < func < 98
+ 019E FE71D2BC02	cpi nxdf! jnc badfunc ;func >= nxdf
+ 01A3 FE6FCA3501	cpi 111! jz func111
+ 01A8 FE70CA3501	cpi 112! jz func112
+ 01AD C3CF01    	jmp disk$function
+                
+                    OKdf:
+ 01B0 FE11CAC701	cpi 17! jz search
+ 01B5 FE12CACB01	cpi 18! jz searchn
+ 01BA FE1AC2CF01	cpi setdmafx! jnz disk$function
+                
+                	; Set dma addr
+ 01BF EB22D80522	xchg! shld dmaad! shld curdma! ret
+                
+                    search:
+ 01C7 EB22E305  	xchg! shld searcha
+                
+                    searchn:
+ 01CB 2AE305EB  	lhld searcha! xchg
+                
+                disk$function:
+                
+                ;
+                ;	Perform the required buffer tranfers from
+                ;	the user bank to common memory
+                ;
+                
+ 01CF 21E203    	lxi h,dfctbl-12
+ 01D2 79FE62DADB	mov a,c! cpi 98! jc normalCPM
+ 01D8 21B303    	lxi h,xdfctbl-98
+                    normalCPM:
+ 01DB 0600097E  	mvi b,0! dad b! mov a,m
+                
+                ; ****  SAVE DFTBL ITEM, INFO, & FUNCTION *****
+                
+ 01DF 47C5D5    	mov b,a! push b! push d
+                
+ 01E2 1FDAED01  	rar! jc cpycdmain			;cdmain test
+ 01E6 1FDAFC01  	rar! jc cpyfcbin			;fcbin test
+ 01EA C31302    	jmp nocpyin
+CP/M RMAC ASSEM 1.1	#006	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+                
+                    cpycdmain:
+ 01ED 2AD805EB  	lhld dmaad! xchg
+ 01F1 214E040110	lxi h,common$dma! lxi b,16
+ 01F7 CD4BFF    	call movef
+ 01FA D1D5      	pop d! push d
+                
+                    cpyfcbin:
+ 01FC AF321D00  	xra a! sta copy$cr$only
+ 0200 212A040124	lxi h,commonfcb! lxi b,36
+ 0206 CD4BFF    	call movef
+ 0209 112A04    	lxi d,commonfcb
+ 020C E1C1C5E5  	pop h! pop b! push b! push h
+ 0210 221E00    	shld user$info
+                
+                    nocpyin:
+                
+ 0213 CDD502    	call bank$bdos
+                
+ 0216 D1        	pop d ;restore FCB address
+ 0217 C178      	pop b! mov a,b ;restore fcbtbl byte & function #
+ 0219 E6FCC8    	ani 0fch! rz	;[JCE] DRI Patch 13: F8 -> FC
+ 021C 212A04EB01	lxi h,commonfcb! xchg! lxi b,33
+ 0223 17DA4002  	ral! jc copy$fcb$back			;fcbout test
+ 0227 0E2417DA40	mvi c,36! ral! jc copy$fcb$back		;pfcbout test
+ 022D 17DA6802  	ral! jc cdmacpyout128			;cdmaout128 test
+ 0231 0E0417DA4B	mvi c,4! ral! jc movef			;timeout test
+ 0237 17DA5C02  	ral! jc cdmacpyout003			;cdmaout003 test
+ 023B 0E06C34BFF	mvi c,6! jmp movef			;seriout
+                
+                    copy$fcb$back:
+ 0240 3A1D00B7CA	lda copy$cr$only! ora a! jz movef
+ 0247 010E0009EB	lxi b,14! dad b! xchg! dad b
+ 024D 7E12      	mov a,m! stax d
+ 024F 2313      	inx h! inx d
+ 0251 7E12      	mov a,m! stax d
+ 0253 03030309EB	inx b! inx b! inx b! dad b! xchg! dad b
+ 0259 1A77C9    	ldax d! mov m,a! ret
+                
+                    cdmacpyout003:
+ 025C 2AD8050103	lhld dmaad! lxi b,3! lxi d,common$dma
+ 0265 C34BFF    	jmp movef
+                
+                    cdmacpyout128:
+ 0268 2AD8050180	lhld dmaad! lxi b,128! lxi d,common$dma
+ 0271 C34BFF    	jmp movef
+                
+                parse:
+ 0274 EB5E2356  	xchg! mov e,m! inx h! mov d,m
+ 0278 234E2346  	inx h! mov c,m! inx h! mov b,m
+ 027C 21AF04E5C5	lxi h,buffer+133! push h! push b! push d
+ 0282 222C04212E	shld buffer+2! lxi h,buffer+4! shld buffer
+ 028B 018000CD4B	lxi b,128! call movef! mvi m,0
+ 0293 0E98112A04	mvi c,152! lxi d,buffer! call bank$bdos
+ 029B C17DB4CAB4	pop b! mov a,l! ora h! jz parse1
+ 02A1 7DA43CCAB4	mov a,l! ana h! inr a! jz parse1
+CP/M RMAC ASSEM 1.1	#007	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+ 02A7 112E04    	lxi d,buffer+4
+ 02AA 7D936F    	mov a,l! sub e! mov l,a
+ 02AD 7C9A67    	mov a,h! sbb d! mov h,a
+ 02B0 09222804  	dad b! shld aret
+                parse1:
+ 02B4 E1D1012400	pop h! pop d! lxi b,36! jmp movef
+                
+                bad$func:
+ 02BC FE98CA7402	cpi 152! jz parse
+                
+                	; A = 0 if fx >= 128, 0ffh otherwise
+ 02C1 173E00DAC8	ral! mvi a,0! jc sta$ret
+                
+ 02C7 3D        	dcr a
+                
+                sta$ret:
+ 02C8 322804    	sta aret
+                
+                goback:
+ 02CB 2A6605F9  	lhld entsp! sphl ;user stack restored
+ 02CF 2A28047D44	lhld aret! mov a,l! mov b,h ;BA = HL = aret
+ 02D4 C9        	ret
+                
+                BANK$BDOS:
+                
+ 02D5 AFCD51FF  	xra a! call selmemf
+                
+ 02D9 CD06FC    	call bnkbdos
+                
+ 02DC 222804    	shld aret
+ 02DF 3E01C351FF	mvi a,1! jmp selmemf ;ret
+                
+                
+                move$out:
+ 02E4 B7CA4BFF  	ora a! jz movef
+ 02E8 CD51FF    	call selmemf
+                move$ret:
+ 02EB CD4BFF    	call movef
+ 02EE AFC351FF  	xra a! jmp selmemf
+                
+                move$tpa:
+ 02F2 3E01CD51FF	mvi a,1! call selmemf
+ 02F7 C3EB02    	jmp move$ret
+                
+                search$hash: ; A = bank # , HL = hash table addr
+                
+                	; Hash format
+                	; xxsuuuuu xxxxxxxx xxxxxxxx ssssssss
+                	; x = hash code of fcb name field
+                	; u = low 5 bits of fcb user field
+                	;     1st bit is on for XFCB's
+                	; s = shiftr(mod || ext,extshf)
+                
+ 02FA 222504CD51	shld hash$tbla! call selmemf
+                	; Push return address
+ 0300 21D603E5  	lxi h,search$h7! push h
+CP/M RMAC ASSEM 1.1	#008	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+                	; Reset read directory record flag
+ 0304 AF321400  	xra a! sta rd$dir
+                
+ 0308 2A2504444D	lhld hash$tbla! mov b,h! mov c,l
+ 030D 2A1200EB  	lhld hashmx! xchg
+                	; Return with Z flag set if dcnt = hash$mx
+ 0311 2AE105E5CD	lhld dcnt! push h! call subdh! pop d! ora l! rz
+                	; Push hash$mx-dcnt (# of hash$tbl entries to search)
+                	; Push dcnt+1
+ 031B E513EBE5  	push h! inx d! xchg! push h
+                	; Compute .hash$tbl(dcnt-1)
+ 031F 2B292909  	dcx h! dad h! dad h! dad b
+                search$h1:
+                	; Advance hl to address of next hash$tbl entry
+ 0323 1104001911	lxi d,4! dad d! lxi d,hash
+                	; Do hash u fields match?
+ 032A 1AAEE61FC2	ldax d! xra m! ani 1fh! jnz search$h3 ; no
+                	; Do hash's match?
+ 0331 CDC003CA7E	call search$h6! jz search$h4 ; yes
+                search$h2:
+ 0337 EBE1      	xchg! pop h
+                search$h25:
+                	; de = .hash$tbl(dcnt), hl = dcnt
+                	; dcnt = dcnt + 1
+ 0339 23E3      	inx h! xthl
+                	; hl = # of hash$tbl entries to search
+                	; decrement & test for zero
+                	; Restore stack & hl to .hash$tbl(dcnt)
+ 033B 2B7DB4E3E5	dcx h! mov a,l! ora h! xthl! push h
+                	; Are we done?
+ 0340 EBC22303  	xchg! jnz search$h1 ; no - keep searching
+                	; Search unsuccessful - return with Z flag reset
+ 0344 3CE1E1C9  	inr a! pop h! pop h! ret
+                search$h3:
+                	; Does xdcnt+1 = 0ffh?
+ 0348 3A18003CCA	lda xdcnt+1! inr a! jz search$h5 ; yes
+                	; Does xdcnt+1 = 0feh?
+ 034F 3CC23703  	inr a! jnz search$h2 ; no - continue searching
+                	; Do hash's match?
+ 0353 D5CDC003D1	push d! call search$h6! pop d! jnz search$h2 ; no
+                	; Does find$xfcb = 0ffh?
+ 035B 3A16003CCA	lda find$xfcb! inr a! jz search$h45 ; yes
+                	; Does find$xfcb = 0feh?
+ 0362 3CCA6F03  	inr a! jz search$h35 ; yes
+                	; xdcnt+1 = 0feh & find$xfcb < 0feh
+                	; Open user 0 search
+                	; Does hash u field = 0?
+ 0366 7EE61FC237	mov a,m! ani 1fh! jnz search$h2 ; no
+                	; Search successful
+ 036C C37E03    	jmp search$h4
+                search$h35:
+                	; xdcnt+1 = 0feh & find$xfcb = 0feh
+                	; Delete search to return matching fcb's & xfcbs
+                	; Do hash user fields match?
+ 036F 1AAEE60FC2	ldax d! xra m! ani 0fh! jnz search$h2 ; no
+                	; Exclude empty fcbs, sfcbs, and dir lbls
+CP/M RMAC ASSEM 1.1	#009	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+ 0376 7EE630FE30	mov a,m! ani 30h! cpi 30h! jz search$h2
+                search$h4:
+                	; successful search
+                	; Set dcnt to search$hash dcnt-1
+                	; dcnt gets incremented by read$dir
+                	; Also discard search$hash loop count
+ 037E 2AE105EB  	lhld dcnt! xchg
+ 0382 E12B22E105	pop h! dcx h! shld dcnt! pop b
+                	; Does dcnt&3 = 3?
+ 0388 7DE603FE03	mov a,l! ani 03h! cpi 03h! rz ; yes
+                	; Does old dcnt & new dcnt reside in same sector?
+ 038E 7BE6FC5F  	mov a,e! ani 0fch! mov e,a
+ 0392 7DE6FC6F  	mov a,l! ani 0fch! mov l,a
+ 0396 CDDD03B5C8	call subdh! ora l! rz ; yes
+                	; Set directory read flag
+ 039B 3EFF321400	mvi a,0ffh! sta rd$dir
+ 03A0 AFC9      	xra a! ret
+                search$h45:
+                	; xdcnt+1 = 0feh, find$xfcb = 0ffh
+                	; Rename search to save dcnt of xfcb in xdcnt
+                	; Is hash entry an xfcb?
+ 03A2 7EE610CA37	mov a,m! ani 10h! jz search$h2 ; no
+                	; Do hash user fields agree?
+ 03A8 1AAEE60FC2	ldax d! xra m! ani 0fh! jnz search$h2 ; no
+                	; set xdcnt
+ 03AF C3B803    	jmp search$h55
+                search$h5:
+                	; xdcnt+1 = 0ffh
+                	; Make search to save dcnt of empty fcb
+                	; is hash$tbl entry empty?
+ 03B2 7EFEF5C237	mov a,m! cpi 0f5h! jnz search$h2 ; no
+                search$h55:
+                	; xdcnt = dcnt
+ 03B8 EBE1221700	xchg! pop h! shld xdcnt! jmp search$h25
+                search$h6:
+                	; hash compare routine
+                	; Is hashl = 0?
+ 03C0 3A9C05B7C8	lda hashl! ora a! rz ; yes - hash compare successful
+                	; hash$mask = 0e0h if hashl = 3
+                	;           = 0c0h if hashl = 2
+ 03C5 4F0F0F1F47	mov c,a! rrc! rrc! rar! mov b,a
+                	; hash s field does not pertain if hashl ~= 3
+                	; Does hash(0) fields match?
+ 03CA 1AAEA0C0  	ldax d! xra m! ana b! rnz ; no
+                	; Compare remainder of hash fields for hashl bytes
+ 03CE E52313CDE4	push h! inx h! inx d! call compare
+ 03D4 E1C9      	pop h! ret
+                search$h7:
+                	; Return to bnkbdos
+ 03D6 F5AFCD51FF	push a! xra a! call selmemf! pop a! ret
+                
+                subdh:
+                	;compute HL = DE - HL
+ 03DD 7B956F    	mov a,e! sub l! mov l,a
+ 03E0 7A9C67    	mov a,d! sbb h! mov h,a
+ 03E3 C9        	ret
+CP/M RMAC ASSEM 1.1	#010	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+                
+                compare:
+ 03E4 1ABEC0    	ldax d! cmp m! rnz
+ 03E7 23130DC8  	inx h! inx d! dcr c! rz
+ 03EB C3E403    	jmp compare
+                
+                ;	Disk Function Copy Table
+                
+ 0001 =         cdmain	equ	00000001B	;copy 1ST 16 bytes of DMA to
+                				;common$dma on entry
+ 0002 =         fcbin	equ	00000010b	;fcb copy on entry
+ 0080 =         fcbout	equ	10000000b	;fcb copy on exit
+ 0040 =         pfcbout	equ	01000000b	;random fcb copy on exit
+ 0020 =         cdma128	equ	00100000b	;copy 1st 128 bytes of common$dma
+                				;to DMA on exit
+ 0010 =         timeout equ	00010000b	;copy date & time on exit
+ 0008 =         cdma003 equ	00001000B	;copy 1ST 3 bytes of common$dma
+                				;to DMA on exit
+ 0004 =         serout  equ	00000100b	;copy serial # on exit
+                
+                dfctbl:
+ 03EE 00        	db 0			; 12=return version #
+ 03EF 00        	db 0			; 13=reset disk system
+ 03F0 00        	db 0			; 14=select disk
+ 03F1 83        	db fcbin+fcbout+cdmain  ; 15=open file
+ 03F2 82        	db fcbin+fcbout		; 16=close file
+ 03F3 22        	db fcbin+cdma128        ; 17=search first
+ 03F4 22        	db fcbin+cdma128      	; 18=search next
+ 03F5 03        	db fcbin+cdmain		; 19=delete file
+ 03F6 82        	db fcbin+fcbout		; 20=read sequential
+ 03F7 82        	db fcbin+fcbout		; 21=write sequential
+ 03F8 83        	db fcbin+fcbout+cdmain	; 22=make file
+ 03F9 03        	db fcbin+cdmain		; 23=rename file
+ 03FA 00        	db 0			; 24=return login vector
+ 03FB 00        	db 0			; 25=return current disk
+ 03FC 00        	db 0			; 26=set DMA address
+ 03FD 00        	db 0			; 27=get alloc address
+ 03FE 00        	db 0			; 28=write protect disk
+ 03FF 00        	db 0			; 29=get R/O vector
+ 0400 83        	db fcbin+fcbout+cdmain	; 30=set file attributes
+ 0401 00        	db 0			; 31=get disk param addr
+ 0402 00        	db 0			; 32=get/set user code
+ 0403 82        	db fcbin+fcbout		; 33=read random
+ 0404 82        	db fcbin+fcbout		; 34=write random
+ 0405 42        	db fcbin+pfcbout	; 35=compute file size
+ 0406 42        	db fcbin+pfcbout	; 36=set random record
+ 0407 00        	db 0			; 37=drive reset
+ 0408 00        	db 0			; 38=access drive
+ 0409 00         	db 0			; 39=free drive
+ 040A 82        	db fcbin+fcbout		; 40=write random w/ zero fill
+                
+ 040B 82        	db fcbin+fcbout		; 41=test & write record
+ 040C 00        	db 0			; 42=record lock
+ 040D 00        	db 0			; 43=record unlock
+ 040E 00        	db 0			; 44=set multi-sector count
+ 040F 00        	db 0			; 45=set BDOS error mode
+CP/M RMAC ASSEM 1.1	#011	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+ 0410 08        	db cdma003		; 46=get disk free space
+ 0411 00        	db 0     		; 47=chain to program
+ 0412 00        	db 0			; 48=flush buffers
+ 0413 02        	db fcbin		; 49=Get/Set system control block
+ 0414 02        	db fcbin		; 50=direct BIOS call (CP/M)
+ 0033 =         ndf equ ($-dfctbl)+12
+                
+                xdfctbl:
+ 0415 00        	db 0			; 98=reset allocation vectors
+ 0416 03        	db fcbin+cdmain		; 99=truncate file
+ 0417 03        	db fcbin+cdmain		; 100=set directory label
+ 0418 00        	db 0     		; 101=return directory label data
+ 0419 83        	db fcbin+fcbout+cdmain	; 102=read file xfcb
+ 041A 03        	db fcbin+cdmain		; 103=write or update file xfcb
+ 041B 02        	db fcbin		; 104=set current date and time
+ 041C 12        	db fcbin+timeout	; 105=get current date and time
+ 041D 02        	db fcbin		; 106=set default password
+ 041E 06        	db fcbin+serout	 	; 107=return serial number
+ 041F 00        	db 0			; 108=get/set program return code
+ 0420 00        	db 0			; 109=get/set console mode
+ 0421 00        	db 0			; 110=get/set output delimiter
+ 0422 00        	db 0			; 111=print block
+ 0423 00        	db 0			; 112=list block
+                
+ 0071 =         nxdf equ ($-xdfctbl)+98
+                
+ 0424           res$fx:	ds	1
+                hash$tbla:
+ 0425           	ds	2
+ 0427           bank:	ds	1
+ 0428           aret:	ds	2	;address value to return
+                
+                buffer:			;function 10 256 byte buffer
+                
+                commonfcb:
+ 042A           	ds	36	;fcb copy in common memory
+                
+                common$dma:
+ 044E                   ds	220	;function 10 buffer cont.
+                
+ 052A           	ds	ssize*2
+                lstack:
+ 0566           entsp:	ds	2
+                
+                ; BIOS intercept vector
+                
+ 0568 C303FF    wbootfx:	jmp	wbootf
+ 056B C38301    		jmp	switch1
+ 056E C306FF    constfx:	jmp	constf
+ 0571 C38301    		jmp	switch1
+ 0574 C309FF    coninfx:	jmp	coninf
+ 0577 C38301    		jmp	switch1
+ 057A C30CFF    conoutfx:	jmp	conoutf
+ 057D C38301    		jmp	switch1
+ 0580 C30FFF    listfx:		jmp	listf
+ 0583 C38301    		jmp	switch1
+CP/M RMAC ASSEM 1.1	#012	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+                
+ 0586 0000000000		dw	0,0,0
+ 058C 0000      		dw	0
+ 058E 0000      		dw	0
+                
+ 0590 0000      olog:		dw	0
+ 0592 0000      rlog:		dw	0
+                
+ 0594 00000007  patch$flgs:	db	0,0,0,7	;[JCE] Patchlevel 7
+                
+                ; Base of RESBDOS
+                
+ 0598 0600      	dw	base+6
+                
+                ; Reserved for use by non-banked BDOS
+                
+ 059A           	ds	2
+                
+                ; System Control Block
+                
+                SCB:
+                
+                ; Expansion Area - 6 bytes
+                
+ 059C 00        hashl:		db	0	;hash length (0,2,3)
+ 059D 00000000  hash:		dw	0,0	;hash entry
+ 05A1 31        version:	db	31h	;version 3.1
+                
+                ; Utilities Section - 8 bytes
+                
+ 05A2 00000000  util$flgs:	dw	0,0
+ 05A6 0000      dspl$flgs:	dw	0
+ 05A8 0000      		dw	0
+                
+                ; CLP Section - 4 bytes
+                
+ 05AA 0000      clp$flgs:	dw	0
+ 05AC 0000      clp$errcde:	dw	0
+                
+                ; CCP Section - 8 bytes
+                
+ 05AE 00        ccp$comlen:	db	0
+ 05AF 00        ccp$curdrv:	db	0
+ 05B0 00        ccp$curusr:	db	0
+ 05B1 0000      ccp$conbuff:	dw	0
+ 05B3 0000      ccp$flgs:	dw	0
+ 05B5 00        		db	0
+                
+                ; Device I/O Section - 32 bytes
+                
+ 05B6 00        conwidth:	db	0
+ 05B7 00        column:		db	0
+ 05B8 00        conpage:	db	0
+ 05B9 00        conline:	db	0
+ 05BA 0000      conbuffadd:	dw	0
+ 05BC 0000      conbufflen:	dw	0
+CP/M RMAC ASSEM 1.1	#013	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+ 05BE 0000      conin$rflg:	dw	0
+ 05C0 0000      conout$rflg:	dw	0
+ 05C2 0000      auxin$rflg:	dw	0
+ 05C4 0000      auxout$rflg:	dw	0
+ 05C6 0000      lstout$rflg:	dw	0
+ 05C8 00        page$mode:	db	0
+ 05C9 00        pm$default:	db	0
+ 05CA 00        ctlh$act:	db	0
+ 05CB 00        rubout$act:	db	0
+ 05CC 00        type$ahead:	db	0
+ 05CD 0000      contran:	dw	0
+ 05CF 0000      conmode:	dw	0
+ 05D1 6A04      		dw	buffer+64
+ 05D3 24        outdelim:	db	'$'
+ 05D4 00        listcp:		db	0
+ 05D5 00        qflag:		db	0
+                
+                ; BDOS Section - 42 bytes
+                
+ 05D6 9C05      scbadd:		dw	scb
+ 05D8 8000      dmaad:		dw	0080h
+ 05DA 00        seldsk:		db	0
+ 05DB 0000      info:		dw	0
+ 05DD 00        resel:		db	0
+ 05DE 00        relog: 		db	0
+ 05DF 00        fx:		db	0
+ 05E0 00        usrcode:	db	0
+ 05E1 0000      dcnt:		dw	0
+ 05E3 0000      searcha:	dw	0
+ 05E5 00        searchl:	db	0
+ 05E6 01        multcnt:	db	1
+ 05E7 00        errormode:	db	0
+ 05E8 00FFFFFF  searchchain:	db	0,0ffh,0ffh,0ffh
+ 05EC 00        temp$drive:	db	0
+ 05ED 00        errdrv:      	db	0
+ 05EE 0000      		dw	0
+ 05F0 00        media$flag:	db	0
+ 05F1 0000            		dw	0
+ 05F3 80        bdos$flags:	db	80h
+ 05F4 FFFFFFFFFFstamp:		db	0ffh,0ffh,0ffh,0ffh,0ffh
+ 05F9 0000      commonbase:	dw	0
+ 05FB C37CFC    error: 		jmp	error$jmp
+ 05FE 0600      bdosadd:	dw	base+6
+ 0600           		end
+0600
+CP/M RMAC ASSEM 1.1	#014	CP/M 3 BANKED BDOS RESIDENT MODULE, DEC 1982
+
+0428 ARET	05C2 AUXINRFLG	FF36 AUXINSTF	05C4 AUXOUTRFLG	FF39 AUXOUTSTF
+02BC BADFUNC	0427 BANK	02D5 BANKBDOS	0000 BASE	0024 BDOS
+05FE BDOSADD	05F3 BDOSFLAGS	FF00 BIOS	FF00 BIOSPG	0141 BLKOUT
+0153 BLKOUT0	016A BLKOUT1	0170 BLKOUT2	FC06 BNKBDOS	FC00 BNKBDOSPG
+FF00 BOOTF	042A BUFFER	05AE CCPCOMLEN	05B1 CCPCONBUFF	05AF CCPCURDRV
+05B0 CCPCURUSR	05B3 CCPFLGS	0008 CDMA003	0020 CDMA128
+025C CDMACPYOUT003		0268 CDMACPYOUT128		0001 CDMAIN
+002F CHAINFX	05AC CLPERRCDE	05AA CLPFLGS	05B7 COLUMN	05F9 COMMONBASE
+044E COMMONDMA	042A COMMONFCB	03E4 COMPARE	05BA CONBUFFADD	05BC CONBUFFLEN
+00D8 CONIN	FF09 CONINF	0574 CONINFX	05BE CONINRFLG	05B9 CONLINE
+05CF CONMODE	FF0C CONOUTF	057A CONOUTFX	0002 CONOUTFXX	05C0 CONOUTRFLG
+FF33 CONOUTSTF	05B8 CONPAGE	000B CONSTATFX	FF06 CONSTF	056E CONSTFX
+00CE CONSTX	05CD CONTRAN	05B6 CONWIDTH	001D COPYCRONLY
+0240 COPYFCBBACK		01ED CPYCDMAIN	01FC CPYFCBIN	05CA CTLHACT
+001B CURDMA	05E1 DCNT	FF3F DEVINITF	FF3C DEVTBLF	03EE DFCTBL
+00C3 DIRINP	00C8 DIRINP1	00BD DIRSTAT	0194 DISKFUNC
+01CF DISKFUNCTION		000C DISKFX	05D8 DMAAD	FF42 DRVTBLF
+05A6 DSPLFLGS	0566 ENTSP	05ED ERRDRV	05FB ERROR	FC7C ERRORJMP
+05E7 ERRORMODE	0002 FCBIN	0080 FCBOUT	0016 FINDXFCB	FF48 FLUSHF
+0101 FUNC10	0110 FUNC10A	0135 FUNC111	0135 FUNC112	009E FUNC3
+00A4 FUNC4	00A8 FUNC5	00AC FUNC6	00E3 FUNC7	00E9 FUNC8
+00EF FUNC9	0086 FUNCTAB	05DF FX		02CB GOBACK	059D HASH
+059C HASHL	0012 HASHMX	0425 HASHTBLA	FF18 HOMEF	05DB INFO
+0003 IOLOC	0020 KBCHAR	05D4 LISTCP	FF0F LISTF	0580 LISTFX
+FF2D LISTSTF	0566 LSTACK	05C6 LSTOUTRFLG	0015 MAKEXFCB	05F0 MEDIAFLAG
+FF4B MOVEF	02E4 MOVEOUT	02EB MOVERET	02F2 MOVETPA	05E6 MULTCNT
+FF45 MULTIOF	0033 NDF	0213 NOCPYIN	01DB NORMALCPM	0071 NXDF
+01B0 OKDF	0590 OLOG	05D3 OUTDELIM	05C8 PAGEMODE	0274 PARSE
+02B4 PARSE1	0594 PATCHFLGS	0040 PFCBOUT	05C9 PMDEFAULT	00F1 PRINT
+0009 PRINTFX	FF12 PUNCHF	0177 QCONINX	05D5 QFLAG	0014 RDDIR
+FF15 READERF	FF27 READF	05DE RELOG	FD00 RESBDOSPG	05DD RESEL
+0424 RESFX	0592 RLOG	05CB RUBOUTACT	059C SCB	05D6 SCBADD
+FE00 SCBPG	FF0C SCONOUTF	FFFF SCREENF	01C7 SEARCH	05E3 SEARCHA
+05E8 SEARCHCHAIN		0323 SEARCHH1	0337 SEARCHH2	0339 SEARCHH25
+0348 SEARCHH3	036F SEARCHH35	037E SEARCHH4	03A2 SEARCHH45	03B2 SEARCHH5
+03B8 SEARCHH55	03C0 SEARCHH6	03D6 SEARCHH7	02FA SEARCHHASH	05E5 SEARCHL
+01CB SEARCHN	FF30 SECTRAN	05DA SELDSK	FF1B SELDSKF	FF51 SELMEMF
+0000 SERIAL	0004 SEROUT	FF54 SETBNKF	FF24 SETDMAF	001A SETDMAFX
+FF21 SETSECF	FF1E SETTRKF	001E SSIZE	05F4 STAMP	02C8 STARET
+03DD SUBDH	018D SWITCH0	0183 SWITCH1	05EC TEMPDRIVE	FF4E TIMEF
+0010 TIMEOUT	05CC TYPEAHEAD	001E USERINFO	05E0 USRCODE	05A2 UTILFLGS
+05A1 VERSION	FF03 WBOOTF	0568 WBOOTFX	FF2A WRITEF	0017 XDCNT
+0415 XDFCTBL	0019 XDMAADD	FF4E XMOVEF
+00EH USE FACTOR
+END OF ASSEMBLY
+

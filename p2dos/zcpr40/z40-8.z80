@@ -1,0 +1,313 @@
+;------------------------------ Z40-8 ----------------------------------------
+; Extended Command Processor routines (C) Copyright 1992 by Harold F. Bower
+;=============================================================================
+;		D A T E    D i s p l a y    F u n c t i o n
+;=============================================================================
+	  IF  dateon
+DATE:
+	   IF  BANKED		;4.0E
+	LD	HL,BDATE	;4.0E .point to banked routine
+	JR	DOMV8		;4.0E ..and vector to execute after copying Pg 0
+	COMMON	/BANK2/		;4.0E
+BDATE:				;4.0E
+	   ENDIF		;4.0E
+	LD	A,(TFCB+1)	; Get first parsed char
+	CP	' '		; Any args passed?
+	JR	Z,BDATEX	; ..simply display and exit if Not
+
+	CALL	WHLCHK		; Are we a Wheel?
+	JR	Z,BDATEX	; ..Only Display if Not
+
+; Gather D=Day, E=Month, C=Year
+
+	CALL	SETLN		; Point to first Non-blank char or Error
+	LD	DE,0		; Initialize Date regs
+	LD	C,E		; ..for DMY
+	CALL	GETHDG		; Extract date info
+	LD	D,B		; Assume European format, set Day Reg
+	PUSH	HL		; Save Delim Ptr for later test
+	JR	Z,BDATES	; ..jump if invalid number
+	LD	A,(HL)		; Is this End?
+	OR	A
+	JR	Z,BDATES	; .exit w/Err if so
+	INC	HL		; ..advance to next
+	CALL	GETHDG		; Get next field
+	LD	E,B		; Set Month (if European)
+	JR	Z,BDATES	; ..jump if zero 'cause invalid
+	LD	A,(HL)		; Get Delim
+	OR	A		; Is this End?
+	JR	Z,BDATES	; .exit w/Err if so
+	INC	HL		; ..advance to next
+	CALL	GETHDG		; Get final digit
+	LD	C,B		; .store as Year
+	POP	HL		; Restore first delim
+	LD	A,(HL)		; ..and fetch
+	CP	'/'		; Is it US format?
+	JR	NZ,BDATE0	; ..jump if Not to Set
+	LD	A,D		; Swap Mo/Da for US Format
+	LD	D,E
+	LD	E,A
+BDATE0:	PUSH	BC		; Save Year
+	PUSH	DE		; .Month and Day
+	CALL	RDCLOK		; Read Current Clock setting
+	POP	DE		; Restore Mo & Da
+	POP	BC		; .& Yr
+	LD	A,C		; Get Year
+	LD	(TBUFF),A	; .save in Date/Time String
+	LD	(TBUFF+1),DE	; ..save Month & Day
+	CALL	STCLOK		; .set the Date
+	JR	BDATEX		; ..jump to display new Date and Exit
+
+BDATES:	POP	HL		; Clear Stack
+	CALL	PRINT		; This is invalid Entry point
+	DEFC	CR,LF,' Bad!'
+BDATEX:	CALL	RDCLOK		; Read the current clock setting
+	RET	NZ		; ..quitting here if Bad
+	CALL	PRINT		; Move to new line and indent
+	DEFC	CR,LF,'  '
+	   IF  usdat
+	LD	HL,TBUFF+1	; Point to Month digit
+	LD	A,(HL)		; .fetch
+	CALL	PRMON		; ..and print string
+	CALL	PRINT		; Give a space
+	DEFC	' '
+	INC	HL		; Point to Day
+	LD	A,(HL)		; .fetch
+	DEC	HL		; ..back down to year
+	DEC	HL
+	CALL	PAHC		; ...and print Day
+	CALL	PRINT		; Separate
+	DEFC	','
+	   ELSE			; Not USdat
+	LD	HL,TBUFF+2	; Set to print Day, Mon, Year
+	LD	A,(HL)		; Get Day
+	DEC	HL		; .back down to Month
+	CALL	PAHC		; ..print Day
+	CALL	PRINT
+	DEFC	' '		; Give a space
+	LD	A,(HL)		; Get Month
+	DEC	HL		; .backing to Year
+	CALL	PRMON		; ..and print
+	   ENDIF	; not usdat
+	CALL	PRINT		; Give a space
+	DEFC	' '
+	LD	A,(HL)		; Get Year
+	CP	78H		; Which Century is it?
+	LD	A,19H		; .(assume 20th century)
+	JR	NC,CEN20	; ..jump if 20th
+	LD	A,20H		; Else set to 21st century
+CEN20:	CALL	PAHC		; Print leading two digits
+	LD	A,(HL)		; .get current year again
+	JP	PAHC		; ..print and exit
+
+; Print the current Month from BCD byte in A
+
+PRMON:	PUSH	HL		; Save regs
+	CP	10H		; Is it one of the last three months?
+	JR	C,PRMON1	; ..jump if Not
+	AND	0FH		; Else mask off hi nybble
+	ADD	A,10		; .and offset to decimal
+PRMON1:	LD	E,A		; Copy digit for calcs
+	ADD	A,A		; * 2
+	ADD	A,E		;  * 3 for table entry lengths
+	LD	E,A		; Set for indexing
+	LD	D,0
+	LD	HL,MONTBL-3	; Point to start of Table (offset)
+	ADD	HL,DE		; ..and index to desired month
+	LD	B,3		; Set entry length
+PRMON2:	LD	A,(HL)		; Get char
+	INC	HL		; .advance ptr
+	CALL	CONOUT		; ..print
+	DJNZ	PRMON2		; ...loop til done
+	POP	HL		; Restore regs
+	RET			; ..and return
+
+MONTBL:	DEFB	'JanFebMarAprMayJunJulAugSepOctNovDec'
+
+;.....
+; Extract a BCD digit from number strings
+
+GETHDG:	LD	B,0		; Initialize accum
+GETHDL:	LD	A,(HL)		; Get a char from input buffer
+	OR	A		; Is this End-of-Input?
+	JR	Z,GETHDX	; ..quit here if so
+	CALL	DIGCNV		; Else convert to binary
+	JR	C,GETHDX	; ..exit if not digit
+	PUSH	AF		; Save accum
+	LD	A,B
+	ADD	A,A		; Shift existing nybble to high
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	LD	B,A		; .move back
+	POP	AF		; Restore new digit
+	ADD	A,B		; .add to old
+	LD	B,A		; ..save new value
+	INC	HL		; Advance to next candidate digit
+	JR	GETHDL		; ..and loop
+
+GETHDX:	LD	A,B		; Get result
+	OR	A		; .set flags
+	RET			; ..and back to caller
+
+DIGCNV:	SUB	'0'		; Subtract Ascii Number bias
+	RET	C		; ..return Carry set if < "0"
+	CP	9+1		; Is it > "9"?
+	CCF			; .(flip Carry)
+	RET			; ..return Carry Set if > "9"
+
+	   IF  BANKED		;4.0E
+	CSEG			;4.0E
+	   ENDIF		;4.0E
+	  ENDIF		; dateon
+
+;=============================================================================
+;		T I M E    D i s p l a y    F u n c t i o n
+;=============================================================================
+	  IF  timeon
+TIME:
+	   IF  BANKED		;4.0E
+	LD	HL,BTIME	;4.0E .point to banked routine
+DOMV8:	JP	DOITMV		;4.0E ..and execute after moving Pg 0
+	COMMON	/BANK2/		;4.0E
+BTIME:				;4.0E
+	   ENDIF		;4.0E
+	LD	A,(TFCB+1)	; Get first parsed char
+	CP	' '		; Any args passed?
+	JR	Z,BTIMEX	; ..simply display and exit if Not
+
+	CALL	WHLCHK		; Are we a Wheel?
+	JR	Z,BTIMEX	; ..Only Display Time if Not
+
+; Gather D = Seconds, E = Minutes, C = Hours
+
+	CALL	SETLN		; Point to first Non-blank char or Error
+	LD	DE,0		; Initialize regs
+	LD	C,E		; ..for HMS
+	CALL	GETHDG		; Get Hours
+	LD	C,B		; .save
+	JR	Z,BTIME0	; ..jump to Set if EOL
+	INC	HL		; Advance to next
+	LD	A,(HL)		; EOL?
+	OR	A
+	JR	Z,BTIME0	; ..exit if End
+	CALL	GETHDG		; Get Mins
+	LD	E,B		; .save
+	JR	Z,BTIME0	; ..jump to Set if EOL
+	INC	HL		; Advance to next
+	LD	A,(HL)		; EOL?
+	OR	A
+	JR	Z,BTIME0	; ..exit if End
+	CALL	GETHDG		; Get Secs
+	LD	D,B		; .save
+BTIME0:	PUSH	BC		; Save Hours
+	PUSH	DE		; .Minutes and Seconds
+	CALL	RDCLOK		; Read Current Clock setting
+	POP	DE		; Restore Mins & Secs
+	POP	BC		; .& Hrs
+	LD	A,C		; Get Hrs
+	LD	(TBUFF+3),A	; .save in Date/Time String
+	LD	(TBUFF+4),DE	; ..save Minutes & Seconds
+	CALL	STCLOK		; .set the DateTime
+			;..fall thru to display new Time and Exit
+BTIMEX:	CALL	RDCLOK		; Read the current clock setting
+	RET	NZ		; ..quitting here if bad
+	CALL	PRINT
+	DEFC	CR,LF,'  '	; Move to a new line and indent
+	LD	HL,TBUFF+3	; Point to Hours byte
+	LD	B,3		; .set for three bytes of real time
+	JP	PRHMS		; ..jump to print then return
+	   IF  BANKED		;4.0E
+	CSEG			;4.0E
+	   ENDIF		;4.0E
+	  ENDIF		; timeon
+
+;=============================================================================
+;	V E R S I O N    N u m b e r    D i s p l a y    F u n c t i o n
+;=============================================================================
+	  IF  verson
+VER:
+	   IF  BANKED		;4.0E
+	LD	HL,BVER		;4.0E Point to banked routine
+	JR	DOMV8		;4.0E ..execute after copying Pg 0
+	COMMON	/BANK2/		;4.0E
+BVER:				;4.0E
+	   ENDIF		;4.0E
+	CALL	PRINT		; Print the ZCPR leadin
+	DEFC	CR,LF,'  ZCPR '
+	LD	A,(VERSION)	; Get the version Number
+	CALL	PRVRS		; ..and print as decimalized number
+	CALL	PRINT		; Print ZSDOS leadin
+	DEFC	', ZSDOS '
+	LD	C,48		; Read Extended Dos version
+	CALL	BDOSSAVE	; .via call
+	CALL	PRVRS		; ..and print
+	CALL	PRINT		; Print B/P Bios leadin
+	DEFC	', B/P Bios '
+	CALL	BIOS+3*30	; Get B/P Bios Version Number
+			;..fall thru to print and return..
+; Print Hex number in A as "n.n"
+
+PRVRS:	PUSH	AF		; Save for low nibble print
+	RRCA
+	RRCA
+	RRCA
+	RRCA			; .place high nybble in low
+	CALL	PAH		; ..print digit
+	CALL	PRINT		; Separate
+	DEFC	'.'
+	POP	AF		; Restore Number
+	JP	PAH		; ..and print low digit returning via stack
+
+	   IF  BANKED		;4.0E
+	CSEG			;4.0E
+	   ENDIF		;4.0E
+	  ENDIF		; verson
+
+;=============================================================================
+;	I N P U T    O R    O U T P U T    From/To    I / O    P O R T
+;=============================================================================
+; This Function is used to Display or Set I/O Port Data.  It takes the Form:
+
+;	PORT addr		- read port and display value
+;	PORT addr value 	- output value to port
+
+	  IF  porton
+PORT:
+	   IF  BANKED		;4.0E
+	LD	HL,BPORT	;4.0E .point to banked routine
+	JR	DOMV8		;4.0E ..and vector to execute after copying Pg 0
+	COMMON	/BANK2/		;4.0E
+BPORT:				;4.0E
+	   ENDIF		;4.0E
+	CALL	SETLN		; Find the first Non-Blank Arg char or Error
+	CALL	HEXNUM1		; Get port address into DE
+	LD	B,D		; Copy it into BC
+	LD	C,E		; ..for I/O operation later
+	CALL	PRINT		; Print header
+	DEFC	CR,LF,' Port'
+	EX	DE,HL		; Put Port addr in HL
+	CALL	PHL4HC		; ..and print 16-bit Port Address
+	EX	DE,HL
+	CALL	SKSP		; Skip to possible second value
+	JR	Z,PORTIN	; Proceed with port input
+
+	CALL	PRINT		; Print header
+	DEFC	': Out'
+	PUSH	BC		; Preserve port number
+	CALL	HEXNUM1		; Get 2nd number in DE
+	POP	BC
+	LD	A,E
+	OUT	(C),A
+	JR	PEXIT
+
+PORTIN:	CALL	PRINT
+	DEFC	': In'
+	IN	A,(C)
+PEXIT:	JR	PASHC		; ..jump to print byte and return
+	   IF  BANKED		;4.0E
+	CSEG			;4.0E
+	   ENDIF		;4.0E
+	  ENDIF		; Porton
+
+;------------------- End of Z40-8 ---------------------

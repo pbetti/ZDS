@@ -1,0 +1,56 @@
+;Patch:	T3MSTPAT
+;Author:Bruce Morgen
+;Date:	April 12, 1988
+;Purpose:
+; To improve the reliability of T3MASTER on its initial invocation of
+; T3SERVER.  The original code spit the "T3SERVER<cr>" string onto the
+; remote's command line too fast for some systems to digest.  This
+; patch replaces three hard-coded calls to WAIT1MS with a loop that
+; allows the user to set the number of WAIT1MS calls by putting byte
+; values into a newly-liberated (by replacing the program's leading
+; JP with a JR) data byte at 102H.  Slowest transmission of the string
+; is when 102H is 0, 0FFH is a tince faster, then 0FEH, etc.  A value
+; of 3 will result in the same rather risky behavior as the original
+; T3MASTER code, a value of about 50H should do the trick on most
+; systems, just tweak as required.  As data rates increase beyond 38.4
+; Kbps, I suspect that higher values will become necessary -- the raw
+; rate of input is likely to overwhelm the BDOS line editor's ability
+; absorb characters, even with the most efficient BIOS imaginable!
+
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+T3MASTR1 EQU	TRUE		; If smaller version of T3MASTER,
+				; TRUE, otherwise FALSE
+
+TPA	EQU	100H		; T3MASTER is a Type 1 tool
+START	EQU	10BH		; Initial jump lands here
+DELAY	EQU	50H		; Delay length, 0* is longest, 1 shortest
+
+	 IF	T3MASTR1	; "small" version, 17K
+PATCH	EQU	287AH		; Iffy code here is replaced
+PATCH2	EQU	288EH		; Same here for final <cr>
+WAIT1MS	EQU	34EBH		; Z3LIB routine address in T3MASTER.COM
+	 ELSE			; "bigger" version, 25K
+PATCH	EQU	2893H
+PATCH2	EQU	28A7H
+WAIT1MS	EQU	5028H
+	 ENDIF
+
+	ORG	TPA		; Replace "JP START" with this:
+	JR	START
+DELAYB:	DB	DELAY
+;
+	ORG	PATCH		; Replace "CALL WAIT1MS" x 3 with this:
+	LD	A,(DELAYB)	; Set counter for desired delay.
+LOOP:	CALL	WAIT1MS		; Call Z3LIB code
+	DEC	A		; Countdown
+	JR	NZ,LOOP		; Do it until A = 0 (*again)
+
+	ORG	PATCH2		; Replace "CALL WAIT1MS" x 3 with this:
+	LD	A,(DELAYB)	; Set counter for desired delay.
+LOOP2:	CALL	WAIT1MS		; Call Z3LIB code
+	DEC	A		; Countdown
+	JR	NZ,LOOP2	; Do it until A = 0 (*again)
+
+	END
+

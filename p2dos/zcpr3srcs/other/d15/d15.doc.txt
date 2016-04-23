@@ -1,0 +1,299 @@
+
+                                D
+                    A ZCPR3 Directory Program
+                           Version 1.5
+
+         Version 1.5 and Documentation by Gene Pizzetta
+                         October 6, 1989
+                 Original Program by Hank Blake
+
+
+D has long been my favorite directory program.  It provides a 
+number of features not provided by other directory utilities.  
+The display is in lowercase, which makes it more readable to most 
+people.  In addition, it shows total disk capacity, the total 
+number of bytes used by the displayed files, the number of bytes 
+remaining on the disk, and the number of remaining directory 
+entries.  It also shows SYS, ARC, R/O, and other file attributes, 
+and displays files from all user areas in a single listing.  
+Originally written for CP/M 2.2 and above, it is designed to give 
+most of the information a user requires, while remaining under 4K 
+in size.  This version of D runs only under ZCPR3 and Z3PLUS.
+
+Give D a little time and the value of the various features will 
+become obvious.
+
+USAGE:
+
+     D {dir:}{<{afn}.aft>} {{/}<options>}
+
+If a drive and user or named directory is omitted, the current 
+drive and user is assumed.  If a filename is omitted then all 
+files (*.*) is assumed.  If a filetype is given without a 
+filename, DA wildcards the filename.  If no option is given then 
+all non-system files are displayed.
+
+Options must be preceded by a space and slash (/), unless a DU or 
+DIR specification and/or a filename or filetype is given.  
+Several options may be included without intervening spaces.  A 
+filename mask may include slashes, but if it begins with a slash 
+then the mask must be preceded by a DIR or DU specification, or 
+simply a colon.
+
+D is re-entrant and may be used with the GO command.
+
+The number of columns used for the display varies, depending on 
+the number of files, the options chosen, and the width of your 
+screen.
+
+OPTIONS:  All options are specified after a space and slash.  If 
+two successive slashes are used, then a brief usage message is 
+displayed.
+
+     A    archived files only
+     B    include both non-system and system files
+     C    comprehensive, complete file control block information
+     F    suppress file sizes
+     N    no formfeeds to printer
+     O    read-only files only
+     P    send to printer
+     R    reset disk system
+     S    only system files
+     U    include files from all user areas
+     W    only read/write files
+     X    do not sort
+     Z    only non-archived files
+
+EXAMPLES:
+
+     A0>d b: /a     displays all the archived files from the
+                    current user area (0) on drive B.
+
+     A0>d e4:       displays all non-system files from user 4 on
+                    drive E.
+
+     A0>d /so       displays all the read-only system files from
+                    the current user area and drive (A0).
+
+     M0>d edit:foo.*  displays all non-system files named FOO
+                    from the named directory EDIT.
+
+     A0>d c23:.bar b  displays all files, both system and non-
+                    system, from user 23 on drive C with a file-
+                    type of .BAR.
+
+     B1>d :/*.* u   displays all filenames beginning with a
+                    slash in all user areas of drive B (the
+                    default drive).
+
+EXPLANATIONS OF OPTIONS:  Some options, particularly those that 
+regulate the display, are mutually exclusive.  If two or more 
+such options are given in the command line, generally the more 
+comprehensive options take precedence.  Unknown options are 
+ignored.
+
+     A    Archived files only.  This filters for files with the 
+          Archive bit set and only those files are displayed.  
+          (The Archive attribute is a CP/M 3.0 feature that has 
+          also been implemented by ZRDOS, ZSDOS, and other 2.2 
+          replacements).  See also Z option.
+
+     B    Both system and non-system files included.  This option 
+          turns off the system file filter and displays all files 
+          on the disk, both system and non-system.  System files 
+          are highlighted, however.  See also S option.
+
+     C    Comprehensive file information.  Displays the complete 
+          directory entry for the selected files.  The files are 
+          unsorted but the filters work normally (the default is 
+          all non-system files.  All file attributes, including 
+          F1 through F8, are shown using highlighting on the 
+          corresponding characters of the filename.
+
+     F    File sizes suppressed.  Displays files without file 
+          size information, resulting in a more compact display, 
+          with one additional column of filenames.
+
+     N    No formfeeds.  If the P option is specified, this 
+          option causes formfeeds to be suppressed.  Without the 
+          P option, N has no effect.
+
+     0    Read-only files only.  This filters for files that have 
+          the RO attribute set, and only those files are 
+          displayed.  See also W option.
+
+     P    Printer echo.  Sends the directory to the printer, as 
+          well as to the screen (but there is no page pause if 
+          the screen fills).  Normally the printer listing is 
+          paged (every 4 lines less than your page length), and a 
+          final formfeed is sent when the listing is completed, 
+          but see also N option.
+
+     R    Reset disk system.  The disk system is reset before the 
+          directory is read, so that the correct disk space is 
+          given under CP/M 2.2 compatible systems if the disk is 
+          changed.  This option should not be necessary under 
+          CP/M Plus.
+
+     S    System files only.  This filters out non-system files 
+          and displays only system files.  See also B option.
+
+     U    All users included.  Displays files from all user areas 
+          of a disk in a single listing.  
+
+     W    Read/write files only.  This option displays only 
+          files that are not read-only.  See also R option.
+
+     X    Cancel sort.  The directory files is not sorted in the 
+          display.  This is handy to find out the order that the 
+          filenames appear in the directory.  Some files with 
+          multiple directory entries that are not sequential will 
+          be listed more than once.
+
+     Z    Non-archived files only.  This filters for files that 
+          do not have the Archive bit set and allows you to 
+          determine how many files need to be backed up.  See 
+          also A option.
+
+DISPLAY FEATURES:  The directory display is fairly obvious, but a 
+few items might need clarification.
+
+The default filter excludes system files.
+
+Sorting the file entries alphabetically by filename is also a 
+default.  Files, sorted or unsorted, are displayed in a columnar 
+format.
+
+System files are displayed in alternate video (dim or reverse), 
+when the B or S option is used, if alternate video is supported 
+by your TCAP.
+
+Following the file size is either a k (for kilobytes) or an r 
+(for a read-only file).  The size is always in kilobytes, 
+regardless of the letter.  If the letters are uppercase (K or R) 
+then the corresponding file has the Archive bit set.
+
+The characters in the filename display are reverse-cased.  Most 
+filenames will be in lowercase, but a filename in lowercase 
+(it's easy to do with MBASIC) is displayed in uppercase.
+
+If a directory entry has a non-printable character in it, the 
+character is replaced by a question mark (?).
+
+If the C option is used, any space characters with an attribute 
+bit set are replaced with an asterisk (*), so the attribute can 
+be displayed using dim video.
+
+SPECIAL CONSIDERATIONS:  Be cautious when the disk in question is 
+read-only.  Incredibly spurious results can occur, especially 
+under CP/M 3.0.  For that reason D will display a "Disk is Read 
+Only" message, so you can treat the results with a grain of salt.  
+You can also use the R option (reset disk system) to eliminate 
+the problem.
+
+If you use CP/M 3.0, you may have noticed that single-letter 
+program names followed by the name of a file on another disk 
+confuses the CCP.  That is, if you type (from the prompt)
+     A>d b:*.bar
+the CCP can't find D and reports an error.  This is a bug in the 
+CCP and there are public domain patches available to fix it.  If 
+your CCP isn't patched, I recommend renaming single-letter 
+programs like D to something else under CP/M 3.0.  Try something 
+like DD.COM.  Or you can use any single character name above P.
+
+CP/M 3.0 supports disk labels, which are a directory entry under 
+user 32.  If D is assembled with the DSKLBL label TRUE, the D 
+looks for a user 32 entry and, if it finds one, lists it as the 
+disk name just after the user/drive callout.  User 32 is not 
+available to D under any other circumstances.  I left this 
+feature in as an assembly-time option because it is probably more 
+useful for users of floppy drives under CP/M Plus than named 
+directories.  If users of CP/M 2.2 desire such labels on their 
+disks, they must find a way to install a directory label entry in 
+user 32.  Any disk utility, such as DU, could be used to do this 
+by modifying a null (0K) directory entry to user 32.  Only 
+experienced users should try this.  The regular version of D 
+display ZCPR3 named directories instead of disk labels.
+
+INSTALLATION:  Installation is no longer required.  The alternate 
+video string is determined from your TCAP.  The width and length 
+of your screen and the page length of your printer are determined 
+from your environment descriptor.
+
+There are two assembly-time options that may be set in the source 
+file, however.  Set DSKLBL to True if you'd rather display CP/M 
+Plus disk labels, than ZCPR3 directory names.  Set REVVID to True 
+if you use reverse video for highlighting.
+
+HISTORY:  The source code began as a disassembly of NEW-D.COM 
+using DASM 1.6 by Richard Conn and Joe Wright.
+
+Version 1.0 -- Hank Blake -- 1984
+     For CP/M 2 and 3.  Source code not released.
+
+Version 1.1 -- Gene Pizzetta -- June 25, 1989
+     For ZCPR3.  Source code derived from disassembly of original
+     COM file.  Added DU and DIR support under ZCPR3.  Added "//"
+     help screen.  Option delimiter changed from "[" to "/".  "G"
+     (specific user area) option eliminated.  Several other
+     cosmetic changes.
+
+Version 1.2 -- Gene Pizzetta -- July 29, 1989
+     Now searches for filenames containing slashes, but not
+     filenames beginning with a slash unless it is preceded by a
+     DU or DIR specification (actually, a single colon will do).
+     Added R option to reset disk system.  Renamed old R option
+     to O option (to include only read-only files).  Added TCAP
+     support for dim or reverse video; no installation required.
+
+Version 1.3 -- Gene Pizzetta -- August 21, 1989
+     No longer sends initial formfeed to printer; instead sends
+     formfeed after every 62 lines and a final formfeed after
+     printing directory, unless "N" option is used.  Changed
+     "Ext" to "Typ" in display.  Now prints ZCPR3 named directory
+     following DU specification, if the DSKLBL label below is set
+     to FALSE, otherwise looks for CP/M Plus disk label.
+
+Version 1.4 -- Gene Pizzetta -- September 8, 1989
+     Horizontal lines in dim video.  Added equate for reverse
+     video version.  Revamped command line parser:  slash (/)
+     no longer required before options, if option list is second
+     token on the command line; and if a filetype is given, but
+     not a filename, the filename is automatically wildcarded.
+
+Version 1.5 -- Gene Pizzetta -- October 6, 1989
+     Corrected problem with file mask, DU, and option selection
+     that only occurred under Backgrounder ii.  Now reads
+     environment to determine the number of lines on the screen,
+     number of screen columns, and number of lines on printer
+     page.  Now re-entrant for use with the "GO" command.
+
+COPYRIGHT:  The original version of D.COM is copyright (c) 1984 
+by Hank Blake, Source Maverick, San Diego, California.  According 
+to that copyright, you may use D.COM for your own purposes other 
+than selling it.  You may distribute it as you wish, as long as 
+you do not charge for the program.  D.COM may be distributed on a 
+disk with other programs, for which there is a copy charge only 
+associated with the disk.  The copy charge may not exceed US 
+$2.00 in 1984 dollars, however.  The author assumes no liability 
+whatsoever with respect to another party's usage of D.COM, your 
+acceptance of this statement being a prerequisite to said party's 
+use of the program.
+
+The changes made in this version are numerous and are not 
+copyright, but they would be of little use by themselves.
+
+I hope to more improvements in this program in future releases, 
+including support of re-entrancy for use with the GO command.
+
+If you have any suggestions, complaints, or bug reports, please 
+let me know.
+
+     Gene Pizzetta
+     481 Revere St.
+     Revere, MA 02151
+
+     Voice:  (617) 284-0891
+     Newton Centre Z-Node:  (617) 965-7259
+     Lilliput Z-Node:  (312) 649-1730
+

@@ -1,0 +1,1663 @@
+;
+; DU314-01.Z80
+;
+;Beginning of Program
+;
+;
+; Environment Definition
+;
+	if	z3env ne 0
+;
+; External ZCPR3 Environment Descriptor
+;
+	jp	start
+	db	'Z3ENV'		;This is a ZCPR3 Utility
+	db	1		;External Environment Descriptor
+z3eadr:
+	dw	z3env
+
+;
+; Space Added for Initial Macro Definitions
+;
+	;label to help locate when patching
+
+	db	'INITIAL MACROS:'
+
+imac0:	db	'G0,D',cr	;macro 0 - display first directory sector
+	db	'-D',cr		;macro 1 - back up one sector and display
+	db	'+D',cr		;macro 2 - forward one sector and display
+	db	'-8D',cr	;macro 3 - back 8 sectors and display
+	db	'+8D',cr	;macro 4 - forward 8 sectors and display
+	db	'T0,S1,D',cr	;macro 5 - display first disk sector
+	db	'+D,*',cr	;macro 6 - forward, display, repeat
+	db	'D,<B,+,*',cr	;macro 7 - display, put in queue, forward, rpt.
+	db	cr		;macro 8
+	db	cr		;macro 9
+
+				;fill rest of 128 bytes with carriage returns
+
+	if	imac0 + 128 - $ gt 0
+	rept	imac0 + 128 - $
+	db	cr
+	endm
+	endif
+
+start:
+	ld	hl,(z3eadr)	;pt to ZCPR3 environment
+;
+	else
+;
+; Internal ZCPR3 Environment Descriptor
+;
+	maclib	z3base.lib
+	maclib	sysenv.lib
+z3eadr:
+	jp	start
+	sysenv
+start:
+	ld	hl,z3eadr	;pt to ZCPR3 environment
+	endif
+
+;
+; Start of Program -- Initialize ZCPR3 Environment
+;
+	call	z3vinit		;initialize the ZCPR3 Env and the VLIB Env
+	call	tinit		;init terminal
+	ld	hl,0		;GET PTR TO CP/M STACK
+	add	hl,sp		;HL=SP
+	ld	(dutstk),hl	;SAVE IT
+;
+	call	codend		;get free space
+	ld	de,100h		;open area
+	add	hl,de		;large stack area
+	ld	(savbuf),hl
+	add	hl,de		;100H for SAVBUF
+	push	hl		;save ptr
+	ld	(hl),126	;allow 126-char input line
+	inc	hl
+	inc	hl		;ptr to INBUF
+	ld	(inbuf),hl
+	pop	hl		;pt to beginning
+	ld	de,400h		;large area for expansion
+	add	hl,de
+	ld	(pinbuf),hl	;ptr to PINBUF
+	add	hl,de
+	ld	(ctemp),hl	;ptr to CTEMP
+	add	hl,de
+	ld	(ctempx),hl	;ptr to CTEMPX
+	ld	(mtabl),hl	;ptr to MACRO TABLE
+	ld	de,100h*10	;10 macros
+	add	hl,de
+	ld	(gbuff),hl	;group save buffer
+	ld	(direct),hl	;directory load buffer
+;
+	ld	hl,(savbuf)	;top of stack
+	ld	sp,hl		; SET STACK
+;
+	call	getspeed
+	ld	(clock),a	;set clock speed
+	call	getcrt		;get CRT data
+	inc	hl		;pt to screen size
+	ld	a,(hl)		;get it
+	ld	(pagsiz),a	;set page size
+	call	getmdisk	;get max disk
+	ld	(mdisk),a	;and set it
+	call	getmuser	;get max user
+	ld	(muser),a	;and set it
+;
+;Set up local jumps to BIOS
+;
+start1:
+	ld	hl,(base+1)	;WARM BOOT POINTER
+	ld	de,3		;READY FOR ADD
+	add	hl,de
+	ld	(vconst+1),hl	;CON: Status
+	add	hl,de
+	ld	(vconin+1),hl	;CON: Input
+	add	hl,de
+	ld	(vconot+1),hl	;CON: Output
+	add	hl,de
+	ld	(vlist+1),hl	;LST: Output
+	add	hl,de		;Skip PUNCH
+	add	hl,de		;Skip RDR
+	add	hl,de
+	ld	(vhome+1),hl	;Home Disk
+	add	hl,de
+	ld	(vseldk+1),hl	;Select Disk
+	add	hl,de
+	ld	(vsetrk+1),hl	;Set Track
+	add	hl,de
+	ld	(vstsec+1),hl	;Set Sector
+	add	hl,de
+	ld	(setdma+1),hl	;Set DMA Address
+	add	hl,de
+	ld	(vread+1),hl	;Read Block From Disk
+	add	hl,de
+	ld	(vwrite+1),hl	;Write Block To Disk
+	add	hl,de		;Skip LISTST
+	add	hl,de
+	ld	(vsctrn+1),hl	;CP/M 2.x Sector Translation Table
+;	JMP	HELLO
+;
+;Initialization Complete -- Print Signon Message and Begin Command Processing
+;
+hello:
+	call	getstp		;SET UP CP/M PARAMETERS
+	call	initp		;INITIALIZE BUFFER PARAMETERS
+	call	ilprt
+	db	'DU3 - Disk Utility III, Version '
+	db	vers/10+'0','.',(vers mod 10)+'0'
+	db	cr,lf,cr,lf
+	db	dim,'Type ? for Help',bright
+	db	cr,lf,0
+;
+;Clear Editor Reference
+;
+	xor	a
+	ld	(edrun),a	;EDITOR NOT RUNNING
+;
+;Save initial command line in INBUF
+;
+	ld	hl,tbuff	;PT TO COMMAND LINE BUFFER
+	ld	a,(hl)		;GET CHAR COUNTER
+	inc	hl		;PT TO FIRST CHAR
+	add	a,l		;COMPUTE LOCATION OF AFTER LAST CHAR
+	ld	l,a
+	ld	a,h
+	adc	a,0
+	ld	h,a
+	ld	(hl),cr		;SET ENDING CR
+	ld	hl,(inbuf)	;PT TO BUFFER
+	ex	de,hl		;... IN DE
+	ld	hl,tbuff+1	;PT TO INPUT LINE
+	ld	b,128		;COPY BUFFER
+	call	move
+;
+;Establish Initial Position
+;
+	ld	de,0		;GROUP 0
+	call	degroup		;POSITION TO GROUP
+	call	inqsub		;PRINT POSITION
+;
+;Check for initial command
+;
+	ld	hl,(inbuf)	;INPUT BUFFER
+	ld	a,(hl)
+	cp	cr
+	jp	z,prmptr	;NO INITIAL COMMAND FROM COMMAND LINE
+	inc	hl		;PT TO FIRST CHAR
+;
+;Got initial command, set it up
+;
+	ld	a,(hl)		;GET FIRST CHAR
+	cp	'/'		;IF SLASH, PRINT INITIAL HELP (TOOLSET CONVENTION)
+	jp	z,ihelp		;PRINT INITIAL HELP INFO
+	xor	a
+	ld	(ihflg),a	;SET NO INITIAL HELP
+	ld	(inbuf),hl	;SET UP POINTER TO INPUT LINE
+	jp	prmpte1		;PROCESS AS THOUGH COMMAND LINE WAS TYPED
+;
+;Input Command Line From User at Console
+;
+prmptr:
+	xor	a		;A=0
+	ld	(ihflg),a	;Set No Initial Help
+	ld	a,(edrun)	;Check for Editor Running
+	or	a
+	jp	nz,edit0	;Reenter Editor
+	call	sinbuf		;Save old INBUF into PINBUF
+prmpte:
+	call	rdbuf		;Read Input Line
+prmpte1:
+	call	exmac		;Expand Macros
+;
+;Begin Processing Command Line in INBUF
+;  At this point, HL points to next character to process
+;
+prmpti:
+	ld	a,0ffh		;SET INFINITE LOOP COUNT
+	ld	(togo),a	;LOOP COUNT FOR MULTIPLE LOOPS
+	ld	(togo+1),a
+;
+;Minor Command Loop; This is the entry point for each individual command in
+;  a Command Line; Commands may be separated by semicolons in this manner
+;
+prompt	equ	$
+setstk:
+	ld	(stksav),hl	;SAVE HL FOR STACK LOAD
+	ld	hl,(savbuf)	;RESET STACK
+	ld	sp,hl
+	ld	hl,(stksav)	;RESTORE HL
+	xor	a		;ZERO 2-UP PRINT FOR DUAL-COLUMN PRINT
+	ld	(twoup),a	;..SWITCH
+	ld	a,1
+	ld	(ftsw),a	;TELL SEARCH NOT TO INCR
+	push	hl
+	ld	hl,tbuff	;SET NO-READ INPUT BUFFER ADDRESS
+	ld	(bufad),hl	;FOR RDBYTE
+	pop	hl
+	call	ctlcs		;ABORT?
+	jp	z,prmptr	;..YES, READ BUFFER
+;
+;Do we have to position in directory after find?
+;
+	ld	a,(findfl)
+	or	a
+	jp	nz,posdir	;POSITION IN DIRECTORY
+;
+;Begin Command Evaluation -- Check for EOL and Capitalize
+;
+	ld	a,(hl)		;GET NEXT CHAR IN COMMAND LINE
+	inc	hl		;POINT TO FOLLOWING CHAR
+	cp	cr		;END OF LINE PHYSICALLY?
+	jp	z,prmptr	;INPUT NEW COMMAND LINE IF SO
+	cp	eolch		;END OF LINE LOGICALLY?
+	jp	z,prompt	;PROCESS NEXT ELEMENT IF SO
+	call	upcase		;CAPITALIZE COMMAND
+	ld	(dumtyp),a	;TYPE OF DUMP (A,D,H)
+	ld	de,cmdtbl	;PT TO COMMAND TABLE
+	call	cmd		;PROCESS
+	jp	what		;ERROR RETURN
+;
+;Command dispatcher
+;  If command not found, abort with error message
+;  If command file, process command with HL pting to next command char and
+;    A containing command letter
+;
+cmd:
+	push	hl		;SAVE HL
+	ld	b,a		;COMMAND IN B
+	ex	de,hl		;HL PTS TO COMMAND TABLE
+cmdlp:
+	ld	a,(hl)		;GET COMMAND
+	or	a		;0=END OF TABLE
+	jp	z,cmder
+	cp	b		;COMPARE COMMAND
+	jp	z,cmdgo
+	inc	hl		;PT TO ADR
+	inc	hl
+	inc	hl		;PT TO NEXT CMND
+	jp	cmdlp
+cmdgo:
+	inc	hl		;PT TO ADDRESS LOW
+	ld	e,(hl)
+	inc	hl		;PT TO ADDRESS HIGH
+	ld	d,(hl)
+	pop	hl		;RESTORE HL
+	pop	af		;CLEAR RETURN ADDRESS
+	ld	a,b		;COMMAND BACK INTO A
+	push	de		;PLACE ADDRESS ON STACK
+	ret			;"RUN COMMAND"
+cmder:
+	pop	hl		;RESTORE HL
+	ld	a,b		;RESTORE COMMAND CHAR IN CASE CMD RUN
+	ret			;... IMMEDIATELY AGAIN ON A NEW TABLE
+;
+;Macro Expansion Routine -- Expand Macros
+;
+exmac:
+	ld	hl,(ctemp)	;BUILD INTO TEMPORARY BUFFER
+	ex	de,hl
+	ld	hl,(inbuf)	;PT TO INPUT LINE
+exmac1:
+	ld	a,(hl)		;GET CHAR
+	cp	'0'		;SKIP IF LESS THAN '0'
+	jp	c,exmac2
+	cp	'9'+1		;CHECK FOR RANGE
+	jp	nc,exmac2
+	inc	hl		;PT TO NEXT CHAR
+	push	hl		;SAVE PTR TO NEXT CHAR IN LINE
+	sub	'0'		;CONVERT TO BINARY (0-9)
+	ld	b,a		;RESULT IN B
+	ld	c,0
+	ld	hl,(mtabl)	;PT TO BASE OF MACROS
+	add	hl,bc		;PT TO MACRO
+	call	copym		;COPY MACRO INTO LINE
+	dec	de		;BACK UP OVER <CR>
+	pop	hl		;GET PTR TO NEXT CHAR IN COMMAND LINE
+exmac2:
+	ld	a,(hl)		;GET CHAR
+	ld	(de),a		;PUT CHAR
+	inc	hl		;PT TO NEXT
+	inc	de
+	call	mtest		;TEST FOR END OF BUFFER
+	cp	cr		;DONE?
+	jp	z,exmac3
+	cp	eolch		;LOGICAL EOL?
+	jp	nz,exmac2
+	jp	exmac1		;PROCESS NEXT COMMAND
+exmac3:
+	ld	hl,(ctemp)	;COPY COMMAND LINE BACK
+	ex	de,hl
+	ld	hl,(inbuf)	;INTO INBUF
+	ex	de,hl
+	call	copycr		;COPY TO <CR>
+	ld	hl,(inbuf)	;PT TO INBUF
+	ret			;EXPANSION COMPLETE
+;
+;Copy Macro Into Command Line Buffer
+;
+copym:
+	ld	a,(hl)		;GET CHAR
+	ld	(de),a		;PUT CHAR
+	inc	hl		;PT TO NEXT
+	inc	de
+	call	mtest		;CHECK FOR LIMIT
+	cp	cr		;END OF MACRO?
+	jp	nz,copym
+	ret
+;
+;Test for Buffer Full
+;
+mtest:
+	push	hl		;SAVE HL
+	push	af		;SAVE A
+	ld	hl,(ctempx)	;CHECK FOR END OF BUFFER
+	ld	a,h		;GET PAGE
+	cp	d		;CHECK PAGE
+	jp	z,macerr
+	pop	af		;GET A
+	pop	hl		;GET HL
+	ret
+;
+;Macro Command Expansion Error
+;
+macerr:
+	call	ilprt
+	db	cr,lf,'Error -- Macro Expanded Command Line too Long',0
+	jp	prmptr		;NEW COMMAND
+;
+;Save INBUF into PINBUF for later processing by '@' command
+;
+sinbuf:
+	ld	hl,(pinbuf)	;PT TO PINBUF (PREVIOUS INBUF)
+	ex	de,hl
+	ld	hl,(inbuf)	;PT TO INBUF
+;
+;Copy (HL) to (DE) until <CR> Encountered
+;
+copycr:
+	ld	a,(hl)		;GET CHAR
+	ld	(de),a		;PUT CHAR
+	inc	hl		;PT TO NEXT
+	inc	de
+	cp	cr		;DONE?
+	jp	nz,copycr
+	ret
+
+;
+;Command Not Found Error
+;
+what:
+	pop	hl		; RESTORE HL
+	call	ilprt
+	db	dim,'Invalid Command at or after ',bright,0
+	ld	a,b		;GET COMMAND LETTER
+	call	type		;PRINT IT
+	jp	prmptr
+;
+;Memory full error
+;
+memful:
+	call	ilprt
+	db	'+++ Out of memory +++'
+	db	cr,lf,0
+	jp	prmptr
+;
+;COMMAND:  E
+;Edit Current Block
+;
+erow	equ	6		;FIRST ROW OF EDITOR DISPLAY
+ecol	equ	4		;FIRST COL OF EDITOR DISPLAY
+ecolc	equ	ecol+16*3+2	;FIRST COL OF EDITOR CHAR DISPLAY
+ecurs	equ	'>'		;EDITOR CURSOR
+;
+edit:
+	call	sinbuf		;SAVE COMMAND LINE AS PREVIOUS
+	ld	a,0ffh
+	ld	(edrun),a	;EDITOR IS RUNNING
+;
+; SET UP ARROW KEYS
+;
+	ld	hl,(envptr)	;PT TO ENVIRONMENT DESCRIPTOR
+	ld	de,80h+10h	;PT TO ARROW KEY INFO
+	add	hl,de
+	ld	de,edcurt	;PT TO CURSOR TABLE
+	ld	b,4		;4 ARROW KEYS
+edita:
+	ld	a,(hl)		;GET CHAR
+	ld	(de),a		;STORE CHAR
+	inc	hl		;PT TO NEXT
+	inc	de		;PT TO NEXT ENTRY
+	inc	de
+	inc	de
+	djnz	edita		;COUNT DOWN
+;
+; REENTER EDIT WITH PTRS RESET
+; REFRESH EDIT SCREEN
+;
+edit0:
+	call	cls		;NEW SCREEN
+	call	at
+;	db	2,32		;ROW 2, COL 32
+	db	2,ecol		; <crw>
+	call	ilprt		;BANNER
+	db	'DU3 Block Editor',0
+	ld	h,erow+9	;POSITION FOR COMMAND DISPLAY
+;	ld	l,1
+	ld	l,9		; <crw>
+	call	gotoxy		;POSITION CURSOR
+	call	ilprt		;PRINT COMMAND SUMMARY
+; added tabs to shift help over <crw>
+	db	' -- Movement --'
+	db	'  -------------- Operation ---------------',cr,lf
+	db	tab,'      ^E          '
+	db	dim,'Enter: ',bright,'A',dim,' ASCII Chars',bright
+	db	'      .',dim,' Next Sector',bright,cr,lf	; <crw>
+	db	tab,'       ^          '
+	db	dim,'       ',bright,'H',dim,' Hex Numbers',bright
+	db	'      ,',dim,' Last Sector',bright,cr,lf	; <crw>
+	db	tab,'  ^S <-+-> ^D    '
+	db	'                     '
+	db	'     ^C',dim,' Exit DU3   ',bright
+	db	cr,lf
+	db	tab,'       v          '
+	db	'C',dim,' DU3 Command Line  ',bright
+	db	'     ^R',dim,' Rescreen   ',bright,cr,lf
+	db	tab,'      ^X          '
+	db	'X',dim,' Exit Editor to DU3',bright
+	db	'     ^W',dim,' Write Block',bright
+	db	0
+	call	at
+;	db	2,65		; <crw>
+	db	2,54
+	call	ilprt
+	db	dim,'Position:',bright,0
+;	JMP	EDITCMD
+;
+; REFRESH SCREEN DISPLAY DATA ONLY
+;
+editr:
+	xor	a		;A=0
+	ld	(eindex),a	;SET INDEX TO 0 (FIRST ELEMENT)
+	ld	(ederr),a	;SET NO PREVIOUS ERROR
+	call	at		;POSITION CURSOR
+	db	erow-2,ecol
+	call	inqsub		;PRINT POSITION DATA
+	call	edplot		;PLOT BUFFER DATA
+;
+; INPUT EDITOR COMMAND
+;
+editcmd:
+	call	edercl		;CLEAR EDITOR INVALID COMMAND MESSAGE
+editcmd1:
+	call	at		;POSITION FOR COMMAND LINE
+	db	22,10
+	call	ilprt
+	db	dim,'Edit Command?  ',bright,bs,0
+	call	conin		;GET CHAR
+	call	upcase		;CAPITALIZE
+	ld	b,a		;COMMAND IN B
+	ld	de,edcurt	;PROCESS CURSOR COMMANDS FIRST
+	call	cmd		;PROCESS COMMAND
+	ld	de,ecmdtbl	;EDITOR COMMAND TABLE
+	call	cmd		;PROCESS COMMAND
+	ld	a,0ffh		;SET ERROR FLAG
+	ld	(ederr),a
+	call	at		;CLEAR ERROR MESSAGE
+	db	23,15
+	call	ilprt
+	db	'Invalid Command',0
+	jp	editcmd1
+;
+;Clear Editor Invalid Command Message
+;
+edercl:
+	ld	a,(ederr)	;PREVIOUS ERROR?
+	or	a		;0=NO
+	ret	z
+	xor	a		;CLEAR FLAG
+	ld	(ederr),a
+	call	at		;CLEAR ERROR MESSAGE
+	db	23,15
+	call	ilprt
+	db	'                         ',0
+	ret
+;
+;PLOT BUFFER DATA
+;
+edplot:
+	ld	h,erow		;SET ROW
+	ld	l,ecol-1	;SET COLUMN (ONE BEFORE FOR LEADING SPACE)
+	call	gotoxy		;POSITION CURSOR
+	ex	de,hl		;POSITION IN DE
+	ld	hl,tbuff	;PT TO DATA
+	ld	b,8		;8 LINES
+edit00:
+	ld	c,16		;16 ELEMENTS
+edit01:
+	call	space		;PRINT LEADING SPACE (1ST SPACE WIPES CURSOR)
+	ld	a,(hl)		;GET BYTE
+	call	hex		;PRINT AS HEX
+	inc	hl		;PT TO NEXT
+	dec	c		;COUNT DOWN
+	jp	nz,edit01
+	ex	de,hl		;POSITION AGAIN
+	inc	h		;NEXT ROW
+	call	gotoxy
+	ex	de,hl
+	dec	b		;COUNT DOWN
+	jp	nz,edit00
+	ld	h,erow		;RESET ROW
+	ld	l,ecolc		;RESET COL
+	call	gotoxy		;POSITION CURSOR
+	ex	de,hl		;POSITION IN DE
+	ld	hl,tbuff	;PT TO DATA
+	ld	b,8		;8 LINES
+edit02:
+	call	aster		;PRINT BAR
+	ld	c,16		;16 ELEMENTS
+edit03:
+	ld	a,(hl)		;GET BYTE
+	and	7fh		;MASK MSB
+	cp	7fh		;7FH IS DOT
+	jp	z,edit7f
+	cp	' '		;SPACE OR MORE?
+	jp	nc,edit04
+edit7f:
+	ld	a,'.'		;PRINT DOT
+edit04:
+	call	type		;PRINT BYTE
+	inc	hl		;PT TO NEXT
+	dec	c		;COUNT DOWN
+	jp	nz,edit03
+	call	aster		;PRINT ENDING BAR
+	ex	de,hl		;POSITION AGAIN
+	inc	h		;NEXT ROW
+	call	gotoxy
+	ex	de,hl
+	dec	b		;COUNT DOWN
+	jp	nz,edit02
+	call	edcur		;POSITION CURSOR
+	ret
+;
+;EDITOR COMMAND TABLE
+;
+ecmdtbl:
+	db	cr		;NOP
+	dw	editcmd
+	db	'C'-'@'		;^C = EXIT DU3
+	dw	edcc
+	db	'R'-'@'		;^R = REFRESH
+	dw	edit0
+	db	'E'-'@'		;^E=UP
+	dw	edup
+	db	'X'-'@'		;^X=DOWN
+	dw	eddown
+	db	'D'-'@'		;^D=RIGHT
+	dw	edright
+	db	'S'-'@'		;^S=LEFT
+	dw	edleft
+	db	'W'-'@'		;WRITE BLOCK
+	dw	editwr
+	db	' '		;NOP
+	dw	editcmd
+	db	'+'		;ADVANCE
+	dw	editplus
+	db	'.'		; <crw>
+	dw	editplus
+	db	','		; <crw>
+	dw	editminus
+	db	'-'		;BACKUP
+	dw	editminus
+	db	'A'		;CHANGE ALPHA
+	dw	editalp
+	db	'C'		;COMMAND LINE
+	dw	editcl
+	db	'H'		;CHANGE HEX
+	dw	edithex
+	db	'X'		;EXIT
+	dw	editx
+	db	0		;END OF TABLE
+;
+;  ARROW KEY DEFINITONS FROM TCAP
+;
+edcurt:
+	db	0		;0 INDICATES NO ARROW KEYS
+	dw	edup
+	db	0
+	dw	eddown
+	db	0
+	dw	edright
+	db	0
+	dw	edleft
+	db	0		;END OF TABLE
+;
+;EDITOR BUFFERS
+;
+eindex:
+	ds	1		;INDEX ENTRY
+ederr:
+	ds	1		;ERROR FLAG
+edrun:
+	ds	1		;FLAG SAYING THAT EDITOR IS RUNNING
+;
+;Write Block to Disk
+;
+editwr:
+	call	edercl		;CLEAR ERROR LINE
+	call	write		;WRITE BLOCK
+	call	at
+	db	23,15		;MESSAGE
+	call	ilprt
+	db	'Block Written',0
+	ld	a,0ffh		;SET ERROR
+	ld	(ederr),a
+	jp	editcmd1
+;
+;Enter ASCII Chars
+;
+editalp:
+	call	edercl		;CLEAR ERROR LINE
+	call	at
+	db	22,35
+	call	ilprt
+	db	dim,'Enter Text (<hh> for Hex)',bright
+	db	cr,lf,' --> ',0
+	call	rdbuf1		;INPUT TEXT WITHOUT PROMPT
+	call	edprcl		;CLEAR PROMPT LINE
+	ld	a,(eindex)	;PT TO POSITION
+	ld	de,tbuff	;COMPUTE OFFSET
+	add	a,e
+	ld	e,a
+	ld	a,d
+	adc	a,0
+	ld	d,a		;DE PTS TO BYTE, HL PTS TO TEXT
+edita1:
+	ld	a,(hl)		;GET CHAR
+	cp	cr		;EOL?
+	jp	z,edita2	;REFRESH SCREEN
+	call	getval		;GET ASCII OR <HEX> VALUE
+	ld	(de),a		;UPDATE BYTE
+	inc	hl		;PT TO NEXT INPUT CHAR
+	inc	e		;PT TO NEXT BUFFER BYTE
+	jp	nz,edita1
+edita2:
+	call	edplot		;REPLOT
+	jp	editcmd1	;DONE-REFRESH SCREEN
+;
+;Enter Numbers
+;
+edithex:
+	call	edercl		;CLEAR ERROR LINE
+	call	at
+	db	22,35
+	call	ilprt
+	db	dim,'Enter Hex Numbers (#nn for Dec)'
+	db	bright
+	db	cr,lf,' --> ',0
+	call	rdbuf1		;INPUT TEXT WITHOUT PROMPT
+	call	edprcl		;CLEAR PROMPT LINE
+	ld	a,(eindex)	;PT TO POSITION
+	ld	de,tbuff	;COMPUTE OFFSET
+	add	a,e
+	ld	e,a
+	ld	a,d
+	adc	a,0
+	ld	d,a		;DE PTS TO BYTE, HL PTS TO TEXT
+edith1:
+	ld	a,(hl)		;GET HEX DIGIT
+	cp	cr		;EOL?
+	jp	z,edita2	;REFRESH SCREEN
+	cp	' '		;SKIP SPACES
+	jp	nz,edith2
+	inc	hl		;SKIP SPACE
+	jp	edith1
+edith2:
+	push	de		;SAVE PTR
+	call	hexin		;GET VALUE AND POSITION HL
+	ld	a,e		;... IN A
+	pop	de		;GET PTR
+	ld	(de),a		;PUT BYTE
+	inc	e		;ADVANCE TO NEXT BYTE
+	jp	nz,edith1
+	jp	edita2		;DONE-REFRESH
+;
+;CLEAR PROMPT LINE
+;
+edprcl:
+	call	at		;PROMPT LINE
+	db	22,35
+	ld	b,40		;40 POSITIONS
+	call	edpcl
+	call	at		;USER INPUT
+	db	23,1
+	ld	b,79		;79 POSITIONS
+edpcl:
+	call	space		;CLEAR PROMPT LINE WITH SPACES
+	dec	b
+	jp	nz,edpcl
+	ret
+;
+;Enter Command Line from Editor
+;
+editcl:
+	call	edercl		;CLEAR ERROR LINE
+	call	crlf		;NEW LINE
+	jp	prmpte		;GET COMMAND LINE FROM USER
+;
+;Advance to Next Block
+;
+editplus:
+	call	nxtsec		;ADVANCE SECTORS
+editp1:
+	push	hl
+	ld	hl,(cursec)
+	ex	de,hl
+	call	setsec		;SET SECTOR
+	ld	hl,(curtrk)
+	ex	de,hl
+	call	settrk		;SET TRACK
+	pop	hl
+	call	read		;READ IN BLOCK
+	call	clcsub		;CALCULATE GROUP DATA
+	jp	editr		;REFRESH DATA ONLY
+;
+;Backup to Last Block
+;
+editminus:
+	call	lstsec		;BACKUP BLOCK
+	jp	editp1
+;
+;Exit EDIT Mode
+;
+editx:
+	xor	a
+	ld	(edrun),a	;EDITOR IS NOT RUNNING NOW
+	call	edercl		;CLEAR ERROR LINE
+	jp	prmptr
+;
+;Exit DU3
+;
+edcc:
+	call	edercl		;CLEAR ERROR LINE
+	jp	exit
+;
+;EDIT MOVE: UP
+;
+edup:
+	call	edccur		;CLEAR CURSOR
+	ld	a,(eindex)	;BACKUP INDEX BY 16
+	sub	16
+;
+;Common EDIT MOVE Routine - on input, A=new index
+;
+edmove:
+	and	7fh		;MOD 128
+	ld	(eindex),a
+	call	edcur		;SET CURSOR
+	jp	editcmd
+;
+;EDIT MOVE: DOWN
+;
+eddown:
+	call	edccur		;CLEAR CURSOR
+	ld	a,(eindex)	;INCREMENT INDEX BY 16
+	add	a,16
+	jp	edmove		;COMMON ROUTINE
+;
+;EDIT MOVE: RIGHT
+;
+edright:
+	call	edccur		;CLEAR CURSOR
+	ld	a,(eindex)	;INCREMENT INDEX BY 1
+	inc	a
+	jp	edmove		;COMMON ROUTINE
+;
+;EDIT MOVE: LEFT
+;
+edleft:
+	call	edccur		;CLEAR CURSOR
+	ld	a,(eindex)	;DECREMENT INDEX BY 1
+	dec	a
+	jp	edmove		;COMMON ROUTINE
+;
+;EDIT SUBROUTINE: EDCUR
+; Position Editor Cursor at EINDEX
+;EDIT SUBROUTINE: EDCCUR
+; Clear Editor Cursor at EINDEX
+;
+edcur:
+	push	hl		;SAVE HL
+	ld	c,ecurs		;CURSOR CHAR
+	call	edsetcur
+	call	at		;UPDATE DATA
+;	db	2,75
+	db	2,64		; <crw>
+	ld	a,(eindex)	;PT TO BYTE AT CURSOR
+	ld	hl,tbuff
+	add	a,l
+	ld	l,a
+	ld	a,h
+	adc	a,0
+	ld	h,a		;HL PTS TO BYTE AT CURSOR
+	ld	a,(hl)		;GET BYTE
+	call	hex		;PRINT AS HEX
+	call	space
+	ld	a,(hl)		;GET BYTE
+	pop	hl		;RESTORE HL
+	and	7fh		;MASK
+	cp	7fh		;7FH IS DOT
+	jp	z,edc7f
+	cp	' '		;OUTPUT CHAR OR DOT
+	jp	nc,type
+edc7f:
+	ld	a,'.'		;DOT
+	jp	type
+edccur:
+	ld	c,' '		;CLEAR CURSOR
+edsetcur:
+	call	edrow		;COMPUTE ROW
+	and	0fh		;COMPUTE COL MOD 16
+	ld	b,a		;RESULT IN B
+	add	a,a		;*2
+	add	a,b		;*3
+	add	a,ecol		;ADD IN COL
+	dec	a		;SUBTRACT 1
+	ld	l,a		;COL POSITION SET
+	call	gotoxy		;POSITION CURSOR
+	ld	a,c		;OUTPUT CHAR
+	jp	type
+;
+;Compute Row from EINDEX
+;
+edrow:
+	ld	a,(eindex)	;GET INDEX
+	ld	b,a		;SAVE IN B
+	rrca			;DIVIDE BY 16
+	rrca
+	rrca
+	rrca
+	and	0fh		;MASK FOR LSB ONLY
+	add	a,erow		;COMPUTE ROW
+	ld	h,a		;ROW SET
+	ld	a,b		;GET INDEX
+	ret
+;
+;COMMAND:  @
+;Repeat Previous Command Line
+;
+pcmd:
+	ld	a,(hl)		;GET NEXT CHAR
+	cp	cr		;SHOULD BE <CR>
+	jp	z,pcmd1
+	call	ilprt
+	db	cr,lf,'Warning:  Remainder of Command Line after "@" Deleted',0
+pcmd1:
+	call	ilprt
+	db	cr,lf,dim,'Command --',bright,cr,lf,0
+	ld	hl,(inbuf)	;COPY INTO INBUF
+	ex	de,hl
+	ld	hl,(pinbuf)	;GET PREVIOUS COMMAND
+pcmd2:
+	ld	a,(hl)		;GET CHAR
+	ld	(de),a		;PUT CHAR
+	inc	hl		;PT TO NEXT
+	inc	de
+	cp	cr		;END OF LINE?
+	push	af		;SAVE FLAG
+	call	type		;PRINT CHAR
+	pop	af		;GET FLAG
+	jp	nz,pcmd2
+	ld	a,lf		;<LF>
+	call	type
+	ld	hl,(inbuf)	;RESTART COMMAND PROCESSING
+	jp	prmpti		;INCLUDE LOOP CAPABILITY
+;
+;COMMAND:  :
+;Define or Print Macro
+;:n<text> Defines Macro n, 0<=n<=9; ::n Prints Macro n, 0<=n<=9
+;
+mac:
+	ld	a,(hl)		;GET NEXT CHAR
+	call	upcase		;CAPITALIZE
+	cp	'P'		;PRINT MACRO?
+	jp	nz,macrod	;IF NOT, DEFINE MACRO
+	inc	hl		;PT TO MACRO NUMBER
+	ld	a,(hl)		;GET IT
+	call	upcase		;CAPITALIZE
+	cp	'@'		;PRINT PREVIOUS COMMAND?
+	jp	z,pcpr
+	push	af		;SAVE A
+	call	cls
+	call	z,crlf
+	call	ilprt
+	db	dim,'Macro Definitions --',bright,0
+	pop	af		;GET A
+	cp	'A'		;PRINT ALL MACROS?
+	jp	z,amacpr
+	call	mnum		;CHECK FOR VALID NUMBER AND RETURN # IN D
+	inc	hl		;PT TO CHAR AFTER MACRO NUMBER
+	call	macpr		;PRINT MACRO WHOSE NUMBER IS IN D
+	jp	prompt
+;
+;Print Previous Command
+;
+pcpr:
+	inc	hl		;PT TO CHAR AFTER '@'
+	ld	de,prompt	;SET UP RET ADR
+	push	de		;RETURN ADR ON STACK
+	push	hl		;SAVE PTR
+	call	ilprt
+	db	dim,'Previous Command Line Definition --',bright
+	db	cr,lf,'@: ',0
+	ld	hl,(pinbuf)	;PT TO PREVIOUS COMMAND
+	jp	mprint		;USE MACRO PRINT FACILITY
+;
+;Print All Macros
+;
+amacpr:
+	inc	hl		;PT TO CHAR AFTER 'A'
+	ld	d,0		;SET FOR FIRST MACRO
+amprl:
+	call	macpr		;PRINT MACRO WHOSE NUMBER IS IN D
+	inc	d		;INCREMENT MACRO NUMBER
+	ld	a,d		;GET VALUE
+	cp	10		;DONE?
+	jp	nz,amprl
+	jp	prompt		;CONTINUE PROCESSING
+;
+;Print Macro Whose Number (0-9) is in D
+;
+macpr:
+	push	hl		;SAVE PTR
+	call	ilprt		;PRINT HEADER
+	db	cr,lf,dim,0
+	ld	a,d		;GET NUMBER
+	add	a,'0'		;CONVERT TO ASCII
+	call	type		;PRINT
+	call	ilprt
+	db	': ',bright,0
+	ld	hl,(mtabl)	;PT TO TABLE OF MACROS
+	ld	e,0		;PAGE OFFSET OF ZERO; MACRO NUMBER ALREADY IN D
+	add	hl,de		;PT TO MACRO
+mprint:
+	ld	a,(hl)		;GET CHAR
+	inc	hl		;PT TO NEXT
+	cp	cr		;END OF MACRO?
+	push	af		;SAVE FLAG
+	call	type		;PRINT CHAR
+	pop	af		;GET FLAG
+	jp	nz,mprint
+	ld	a,lf		;<LF>
+	call	type
+	pop	hl		;GET PTR TO NEXT CHAR
+	ret
+;
+;Check char in A for valid Macro Number (0-9), print error message if
+; not, return number in D if so
+;
+mnum:
+	sub	'0'		;CONVERT TO 0-9
+	jp	c,mnerr		;ERROR IF LESS
+	cp	10		;RANGE?
+	jp	nc,mnerr
+	ld	d,a		;RESULT IN D
+	ret
+mnerr:
+	call	ilprt
+	db	cr,lf,'Invalid Macro Number Specified in Command',0
+	jp	prmptr		;NEW COMMAND
+;
+;Define Macro
+;
+macrod:
+	call	mnum		;CHECK NUMBER AND RETURN IN D
+	inc	hl		;PT TO CHAR AFTER MACRO NUMBER
+	push	hl		;SAVE PTR
+	ld	hl,(mtabl)	;PT TO MACRO TABLE
+	ld	e,0		;SET EVEN PAGE
+	add	hl,de		;PT TO MACRO ENTRY IN HL
+	ex	de,hl		;... IN DE
+	pop	hl		;PT TO MACRO TEXT
+	call	copycr		;COPY TO <CR>
+	jp	prmptr		;NEW COMMAND
+;
+;COMMAND:  !
+
+;Delay for user input
+;
+uwait:
+	call	wait		; USE WAIT ROUTINE
+	jp	prompt
+;
+;COMMAND:  #
+;Print disk statistics
+;
+stats:
+	push	hl		;SAVE POINTER TO NEXT COMMAND
+	call	cls
+	call	z,crlf
+	call	ilprt
+	db	dim
+	db	'    -- Queue Information --    ',bright,cr,lf
+	db	cr,lf
+	db	0
+	call	qstats		;PRINT STATUS INFO
+	call	ilprt
+	db	cr,lf
+	db	dim
+	db	'    -- Disk  Information --    ',bright,cr,lf
+	db	cr,lf
+	db	dim,'Disk Drive:',tab,tab,bright,' ',0
+	ld	a,(drive)
+	add	a,'A'		;CONVERT TO ASCII
+	call	type		;PRINT DRIVE LETTER
+
+	call	ilprt
+	db	cr,lf,dim,'Tracks: ',tab,tab,bright,' ',0
+	ld	hl,(maxtrk)	;PRINT NUMBER OF TRACKS
+	inc	hl
+	call	dec
+
+	call	ilprt
+	db	cr,lf,dim,'Sectors/Track:',tab,tab,bright,' ',0
+	ld	hl,(spt)	;PRINT NUMBER OF SECTORS/TRACK
+	call	dec
+
+	call	ilprt
+	db	cr,lf,dim,'Blocks/Group:',tab,tab,bright,' ',0
+	ld	a,(blm)		;PRINT SIZE OF A GROUP
+	inc	a
+	ld	l,a
+	ld	h,0
+	call	dec
+
+	call	ilprt
+	db	cr,lf,dim,'Total Groups:',tab,tab,bright,' ',0
+	ld	hl,(dsm)	;PRINT TOTAL NUMBER OF GROUPS ON A DISK
+	call	dec
+
+	call	ilprt
+	db	cr,lf,dim,'Directory Entries:',tab,bright,' ',0
+	ld	hl,(drm)	;PRINT NUMBER OF DIRECTORY ENTRIES
+	inc	hl
+	call	dec
+
+	call	ilprt
+	db	cr,lf,dim,'System Tracks:',tab,tab,bright,' ',0
+	ld	hl,(systrk)	;PRINT NUMBER OF SYSTEM TRACKS
+	call	dec
+;	call	swait
+	call	crlf		; <crw>
+	call	crlf		; <crw>
+	pop	hl		;RESTORE POINTER TO NEXT COMMAND
+	jp	prompt
+
+;
+;COMMAND:  N
+;The following command resets the disk
+;system thru CP/M, and may be usable for
+;changing the disk density or format.
+;This can only be done if your BIOS resets
+;the auto-density select parameters at
+;every track-zero access.
+;
+newdsk:
+	push	hl		;SAVE POINTER TO NEXT LETTER
+	ld	c,resetdk	;BDOS RESET DISK FUNCTION
+	call	bdos
+	ld	a,(drive)	;RESELECT CURRENT DRIVE
+	ld	c,a
+	pop	hl
+	call	select
+	jp	prompt
+;
+;COMMAND:  Q
+;Queue Control
+;
+queuer:
+	ld	a,(hl)		;GET 2ND ARGUMENT
+	call	upcase		;CAPITALIZE
+	cp	eolch		;END OF LINE?
+	jp	z,qstat		;STATUS REPORT
+	cp	cr		;END OF LINE?
+	jp	z,qstat
+	inc	hl		;PT TO AFTER KEY CHAR
+	push	hl		;SAVE PTR
+	cp	'Z'		;ZERO QUEUE?
+	jp	z,qzero
+	cp	'S'		;SAVE QUEUE?
+	jp	z,qfsave
+	pop	hl		;GET PTR
+	call	ilprt
+	db	'Invalid Queue Command',cr,lf,0
+	jp	prmptr		;ABORT LINE ON ERROR
+;
+;  Zero the Queue
+;
+qzero:
+	ld	hl,(direct)	;ZERO QUEUE
+	ld	(qnxt),hl	;SET NEXT
+	ld	(qlst),hl	;SET LAST
+	ld	hl,0		;ZERO COUNT
+	ld	(qcnt),hl
+	pop	hl		;GET PTR AND FALL THRU TO QSTAT
+;
+;  Print Status of Queue
+;
+qstat:
+	push	hl		;SAVE PTR TO NEXT CHAR
+;	call	cls		; <crw>
+	call	z,crlf
+	call	ilprt
+	db	dim,'    -- Queue Information --    ',bright,cr,lf,cr,lf,0
+	call	qstats		;PRINT STATUS
+	pop	hl		;RESTORE PTR
+	jp	prompt
+qstats:
+	ld	hl,(qcnt)	;GET SIZE OF QUEUE
+	call	prqcnt		;PRINT DATA
+	call	prqspac		;PRINT SPACE AVAILABLE INFO
+	call	ilprt
+	db	dim,tab,tab,tab,'  ',bright,cr,lf
+	db	dim,'Group Save Buffer Address:',bright,' ',0
+	push	hl
+	ld	hl,(gbuff)	;BC=ADDRESS
+	ld	b,h
+	ld	c,l
+	pop	hl
+	call	hexb1		;PRINT AS HEX
+	call	ilprt
+	db	' Hex',cr,lf
+	db	0
+	call	ilprt
+	db	dim,'Address of Head of Queue: ',bright,' ',0
+	ld	hl,(qnxt)	;PRINT ADDRESS OF HEAD OF QUEUE
+	ld	b,h		;... ADDRESS IN BC
+	ld	c,l
+	call	hexb1		;PRINT IN HEX
+	call	ilprt
+	db	' Hex',cr,lf
+	db	dim,'Address of Tail of Queue: ',bright,' ',0
+	ld	hl,(qlst)	;PRINT ADDRESS OF TAIL OF QUEUE
+	ld	b,h
+	ld	c,l
+	call	hexb1
+	call	ilprt
+	db	' Hex',cr,lf,0
+	ret
+;
+;  Print Amount of Space Left in Queue
+;
+prqspac:
+	call	ilprt
+	db	dim,'Blocks left in Queue:',tab,'  ',bright,' ',0	; <crw>
+	ld	bc,-1		;SET COUNT
+	ld	hl,(qlst)	;GET PTR TO QUEUE TAIL
+qstat1:
+	inc	bc		;INCREMENT COUNT
+	ld	de,80h		;PT TO NEXT QUEUE ELEMENT
+	add	hl,de
+	ex	de,hl		;WRAP AROUND
+	call	qwrap
+	ld	hl,(qnxt)	;GET PTR TO FIRST ELEMENT
+	ex	de,hl
+	ld	a,h		;COMPARE
+	cp	d
+	jp	nz,qstat1
+	ld	a,l
+	cp	e
+	jp	nz,qstat1
+	ld	h,b		;HL=BLOCK COUNT
+	ld	l,c
+	call	dec		;PRINT AS DECIMAL
+	call	crlf
+	ret
+;
+;  Save Queue as a File
+;
+qfsave:
+	ld	a,(hl)		;GET FIRST CHAR OF FILE NAME
+	cp	eolch		;EOL?
+	jp	z,what
+	cp	cr		;EOL?
+	jp	z,what
+	ld	de,fcb		;START TO FILL FCB
+	xor	a		;A=0
+	ld	(de),a		;SELECT DEFAULT DRIVE
+	inc	de		;PT TO FILE NAME
+	ld	b,8		;SAVE FILE NAME
+	call	mvname
+	ld	b,3		;SAVE FILE TYPE
+	call	mvname
+	push	hl		;SAVE PTR TO NEXT CHAR
+	ld	hl,(qcnt)	;ANY ELEMENTS IN QUEUE?
+	ld	a,h
+	or	l
+	jp	z,qempty
+	push	hl		;SAVE QUEUE COUNT
+	call	norite		;CAN'T WRITE NOW
+	ld	de,fcb		;PT TO FCB
+	call	fcbinit		;INIT FCB
+	ld	c,delf		;DELETE FILE
+	push	de		;SAVE DE
+	call	bdos
+	pop	de
+	call	fcbinit		;INIT FCB AGAIN
+	ld	c,makef		;CREATE FILE
+	call	bdos
+	pop	bc		;GET QUEUE COUNT IN BC
+	ld	hl,(qnxt)	;PT TO NEXT BLOCK IN QUEUE
+qfs1:
+	push	bc		;SAVE COUNT
+	ld	de,tbuff	;COPY INTO TBUFF
+	ld	b,128		;128 BYTES
+	call	move
+	ex	de,hl		;PT TO NEXT QUEUE BLOCK IN DE
+	call	qwrap		;WRAP AROUND
+	push	de		;SAVE PTRS
+	ld	de,fcb		;PT TO FCB
+	ld	c,writef	;WRITE BLOCK TO FILE
+	call	bdos
+	pop	hl		;GET PTR TO NEXT BLOCK
+	pop	bc		;GET COUNT
+	dec	bc		;COUNT DOWN
+	ld	a,b		;DONE?
+	or	c
+	jp	nz,qfs1
+	ld	de,fcb		;CLOSE FILE
+	ld	c,closef
+	call	bdos
+	call	ilprt
+	db	'Queue Saved in File',cr,lf,0
+	pop	hl		;PT TO NEXT CHAR
+	jp	prompt
+fcbinit:
+	push	de		;SAVE PTR
+	ld	hl,12		;SKIP TO EX FIELD
+	add	hl,de
+	ld	b,24		;ZERO 36 BYTES
+	xor	a		;A=0
+fcbin1:
+	ld	(hl),a		;STORE ZEROES
+	inc	hl
+	djnz	fcbin1
+	pop	de		;RESTORE PTR
+	ret
+;
+;COMMAND:  *
+;Repeat buffer contents
+;
+repeat:
+	call	decin		;NN SPECIFIED?
+	ld	a,d
+	or	e
+	jp	z,nnn		;NO -- SET FOR INFINITE LOOP OR SIMPLE REPEAT
+	ld	hl,(togo)	;LOAD LOOP FLAG
+	inc	hl		;TEST FOR FIRST TIME
+	ld	a,h
+	or	l		;WAS IT 0FFFFH?; IF SO, WE HAVE NEW VALUE
+	jp	nz,nnn		;NO: COUNTING
+	ex	de,hl		;GET COUNT
+	ld	(togo),hl	;SET COUNT
+;
+nnn:
+	ld	hl,(togo)	;GET CURRENT COUNT
+	ex	de,hl		;DE=CURRENT COUNT, HL=COUNT LIMIT
+	ld	hl,(inbuf)	;PT TO FIRST CHAR FOR REPEAT
+	inc	de		;TEST FOR 0FFFFH
+	ld	a,d		;IF 0FFFFH, INX D MADE DE=0
+	or	e
+	jp	z,prompt	;CONTINOUS LOOP IF 0FFFFH
+	dec	de		;COUNT DOWN
+	dec	de		;MAKE UP FOR PREV INX D
+	ex	de,hl
+	ld	(togo),hl	;SET NEW COUNT (1 LESS THAN BEFORE)
+	ld	a,h		;ALL DONE?
+	or	l
+	ex	de,hl		;GET BACK INBUF PTR IN HL
+	jp	nz,prompt	;KEEP GOING IF NOT YET ZERO
+	jp	prmptr		;ALL DONE
+;
+;COMMAND:  U
+;Set CP/M 2.x user number
+;
+user:
+	call	decin		;GET REQUESTED USER NO.
+	ld	a,(muser)	;GET MAX USER
+	inc	a		; to MAX USER+1 <crw>
+	ld	b,a		;... IN B
+	ld	a,e		; input # in E
+	cp	b		;VALID?
+	jp	nc,usrerr
+	ld	a,d		;HIGH-ORDER BYTE MUST BE ZERO FOR VALID NUMBER
+	or	a
+	jp	nz,usrerr
+	ld	a,e		;SAVE USER NUMBER
+	ld	(unum),a
+	ld	c,suser		;SET USER NUMBER
+	push	hl		;SAVE CHAR POINTER
+	call	bdos		;SET USER NO.
+	pop	hl
+	jp	prompt
+usrerr:
+	call	ilprt
+	db	'User Number Out of Range',cr,lf,0
+	jp	prmptr
+;
+;COMMAND:  P
+;Toggle print flag
+;
+prntff:
+	ld	a,(pflag)	;TOGGLE PRINT FLAG
+	xor	1
+	ld	(pflag),a
+	jp	prompt
+;
+;COMMAND:  Z
+;Sleep routine, in seconds
+;
+sleep:
+	call	decin		;GET COUNT IF ANY
+	ld	a,e		;ANY?
+	or	a
+	jp	nz,sleplp
+	ld	e,1		; 1 SEC DEFAULT
+;
+sleplp:
+	ld	a,(clock)	; GET CLOCK SPEED
+	ld	d,a
+;
+sleep1:
+	ld	bc,41700	; APPROX 1 SEC @ 1MHz
+;
+sleep2:
+	dec	bc		;COUNT DOWN FOR 1 MHz [5 CYCLES]
+	ld	a,b		;[5 CYCLES] <-- TOTAL TIME: 24 CYCLES
+	or	c		;[4 CYCLES] <-- (24 MU-SECS AT 1MHz)
+	jp	nz,sleep2	;[10 CYCLES]
+	push	de
+	call	ctlcs		;ABORT?
+	pop	de
+	jp	z,prmptr
+	dec	d		;COUNT DOWN FOR CLOCK SPEED
+	jp	nz,sleep1
+	dec	e		;COUNT DOWN NUMBER OF REQUESTED SECONDS
+	jp	nz,sleplp
+	jp	prompt
+;
+;Check for control-C or S
+;
+ctlcs:
+	call	const		;CHAR AVAILABLE?
+	or	a
+	jp	nz,getc
+	or	1		;NO CHAR, RETURN NZ
+	ret
+;
+getc:	call	conin		;INPUT CHAR
+	and	1fh		;ALLOW ASCII
+	cp	'S'-40h		;WAIT FOR NEXT CHAR IF ^S OR S OR s
+	call	z,conin
+	cp	'C'-40h		;CHECK FOR ^C OR C OR c
+	ret			;0 SET IF CTL-C
+;
+;Initialize Memory Buffers
+;
+initp:
+	xor	a		;A=0
+	ld	(hexad),a	;CLEAR ADDRESS
+	ld	(hexad+1),a
+	ld	(pflag),a	;SET NO PRINT
+	ld	(savefl),a	;SET NO SAVE DONE
+	ld	(wrflg),a	;MAY NOT WRITE
+	ld	(dirpos),a	;SET NO DIRECTORY POSITION
+	ld	(findfl),a	;SET NO POSITION
+	inc	a		;A=1
+	ld	(ftsw),a	;SET SEARCH WITHOUT INCREMENT
+	ld	(notpos),a	;NOT POSITIONED
+	ld	hl,0		;HL=0
+	ld	(qcnt),hl	;SET NO ELEMENTS IN QUEUE
+	ld	(mfptr),hl	;SET NO MULTI FILE PTR
+	ld	(curtrk),hl	;SET TRACK 0
+	inc	hl		;HL=1
+	ld	(cursec),hl	;SET LOGICAL SECTOR 1
+	ld	(physec),hl	;SET PHYSICAL SECTOR 1
+	ld	hl,(pinbuf)	;SET PREVIOUS COMMAND TO NIL
+	ld	(hl),cr		;CLEAR PREVIOUS COMMAND
+	ld	hl,(direct)	;SET FIRST AND LAST QUEUE ELEMENT PTRS
+	ld	(qnxt),hl
+	ld	(qlst),hl
+	ld	hl,(mtabl)	;CLEAR MACRO TABLE
+	ld	b,10		;10 ENTRIES
+	ld	de,imac0	;point to beginning of default macro table
+
+initp1:	push	hl		;save pointer to start of each macro
+
+initp2:	ld	a,(de)		;get next initial macro character
+	ld	(hl),a		;store it in macro table
+	inc	de
+	inc	hl
+	cp	cr		;end of macro?
+	jp	nz,initp2
+
+	pop	hl		;retrieve pointer to start of this macro
+	dec	b		;see if we've done all macros
+	ret	z		;if so, return
+	inc	h		;point to next macro
+	jp	initp1
+;
+;Set up flags, etc, at initialization
+;Find our way at initialization
+;
+getstp:
+	push	hl
+	ld	hl,(inbuf)	;PT TO INPUT BUFFER
+	ld	(hl),cr		;INITIALIZE INPUT BUFFER
+	pop	hl
+	ld	c,suser		;GET USER NUMBER
+	ld	e,0ffh		;GET USER
+	call	bdos
+	ld	(unum),a	;SET USER NUMBER
+	ld	c,getdsk
+	call	bdos		;GET CURRENT DISK
+	ld	c,a		;WE HAVE TO SELECT
+	jp	select		;TO GET THE DPH
+;
+;COMMAND:  L
+;Log in the selected disk
+;
+login:
+	call	dolog
+	jp	prompt
+;
+dolog:
+	ld	a,(hl)		;DISK REQUESTED?
+	ld	de,0
+	cp	cr		;NO REQUEST OF PHYSICAL EOL
+	jp	z,lgnodk
+	cp	eolch		;NO REQUEST IF LOGICAL EOL
+	jp	z,lgnodk
+	call	upcase		;CAPITALIZE
+	inc	hl		;POINT TO NEXT CHAR
+	sub	'A'		;CONVERT TO 0-15
+	ld	c,a		;DISK NUMBER IN C
+	ld	a,(mdisk)	;GET MAX DISK
+	ld	b,a		;... IN B
+	ld	a,c
+	cp	b
+	jp	c,select
+	call	ilprt
+	db	'Disk Letter Out of Range',cr,lf,0
+	jp	prmptr
+;
+;Select Disk Whose Number is in C (A=0, B=1, etc)
+;
+select:
+	push	hl		;SAVE PTR TO NEXT COMMAND LETTER
+	ld	a,c
+	ld	(drive),a	;REMEMBER LATER WHERE WE ARE
+;
+vseldk: call	$-$		;ADDR FILLED IN BY 'INIT'
+	ld	a,h
+	or	l
+	jp	z,what		;SELECT ERROR
+	ld	e,(hl)		;GET THE SECTOR TABLE PNTR
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ex	de,hl
+	ld	(sectbl),hl	;SET THE SECTOR TABLE PTR
+	ld	hl,8		;OFFSET TO DPBPTR
+	add	hl,de
+	ld	a,(hl)		;PICK UP DPB POINTER
+	inc	hl		;  TO USE
+	ld	h,(hl)		;  AS PARAMETER
+	ld	l,a		;  TO LOGIT
+	call	logit
+	ld	hl,(systrk)	;RESET TRACK AND SECTOR
+	ex	de,hl		;  TO DIRECTORY
+	call	settrk		;  ON EVERY
+	ld	de,1		;  LOGIN
+	call	setsec		;  CHANGE
+	ld	hl,(physec)	;THIS LOGIC WILL TELL
+	ld	a,h		;  IF FIRST SEC
+	or	l		;  IS PHYSICAL 0
+	ld	(first0),a
+	call	clcsub		;CALCULATE WHAT GROUP/GRPDISP WE ARE IN
+	pop	hl		;GET PTR TO NEXT LETTER
+;
+lgnodk:
+	call	norite		;SET NO DISK I/O DONE (NO POSITION)
+	ret
+;
+;COMMAND:  <
+;Save the current sector
+;	Special Form of <S saves current block onto queue
+;	Special Form of <G saves indicated group onto queue
+;
+save:
+	ld	a,(wrflg)	;READ DONE?
+	or	a
+	jp	z,badw		;NONE TO SAVE
+	ld	a,(hl)		;CHECK FOR 'S'
+	call	upcase		;CAPITALIZE
+	cp	'B'		;BLOCK SAVE
+	jp	z,qsav		;SAVE ON STACK
+	cp	'G'		;GROUP SAVE
+	jp	z,saveg
+	push	hl
+	ld	hl,(savbuf)	;PT TO SAVBUF
+	ex	de,hl		;COPY INTO SAVBUF
+	ld	hl,tbuff	;FROM TBUFF
+	ld	b,128		;128 BYTES
+	call	move
+	ld	a,1		;..SHOW
+	ld	(savefl),a	;..SAVED EXISTS
+	pop	hl		;GET PTR TO NEXT CHAR
+	jp	prompt
+;
+;  Save Block on Queue
+;
+qsav:
+	inc	hl		;SKIP OVER 2ND <
+	push	hl		;SAVE PTR TO NEXT CHAR
+	ld	hl,(qlst)	;SEE IF ANOTHER SAVE WILL FILL QUEUE
+	ld	de,128		;SET HL TO PT TO END OF NEXT SECTOR IN QUEUE
+	add	hl,de
+	ex	de,hl		;DE PTS TO END OF NEXT BLOCK
+qsav0:
+	ld	hl,(qnxt)	;SEE IF QUEUE IS FULL NOW
+	ld	a,h		;MAY BE SAME
+	cp	d
+	jp	nz,qsav1
+	ld	a,l		;MAY NOT BE SAME
+	cp	e
+	jp	z,qsav2		;QUEUE IS FULL, SO ABORT
+qsav1:
+	ld	hl,(qlst)	;GET PTR TO LAST QUEUE ELEMENT
+	ex	de,hl		;... IN DE
+	ld	hl,tbuff	;COPY FROM TBUFF
+	ld	b,128		;128 BYTES
+	call	move
+	call	qwrap		;CHECK FOR WRAP AROUND
+	ex	de,hl		;HL PTS TO NEW LAST QUEUE POSITION
+	ld	(qlst),hl	;SAVE HL
+	ld	hl,(qcnt)	;INCREMENT SECTOR COUNT
+	inc	hl
+	ld	(qcnt),hl
+	call	prqcnt		;PRINT QUEUE COUNT
+	pop	hl		;PT TO NEXT CHAR
+	jp	prompt
+qsav2:
+	call	ilprt
+	db	'Block Queue is Full -- Block Not Saved',cr,lf,0
+	ld	hl,(qcnt)	;GET COUNT
+	call	prqcnt		;PRINT COUNT
+	pop	hl		;PT TO NEXT CHAR
+	jp	prmptr
+;
+;  PRINT NUMBER OF ELEMENTS IN QUEUE
+;
+prqcnt:
+	call	ilprt
+	db	dim,'Blocks in Queue:',tab,'  ',bright,' ',0
+	call	dec		;PRINT AS DECIMAL
+	call	crlf
+	ret
+;
+;  CHECK TO SEE IF QUEUE ELEMENT PTED TO BY DE SHOULD BE WRAPPED AROUND
+;	ON EXIT, DE PTS TO QUEUE ELEMENT WITH WRAP AROUND
+;
+qwrap:
+	ld	hl,(bdos+1)	;CHECK FOR WRAP AROUND
+	ld	a,h
+	sub	10		;BELOW CCP
+	cp	d		;WRAP AROUND IF EQUAL
+	ret	nz
+	ex	de,hl
+	ld	hl,(direct)	;NEXT ELEMENT IS HERE
+	ex	de,hl		;... IN DE
+	ret
+;
+;This routine is common to Save Group (RG) and Write Group (WG); it is used
+;  to extract the group number, check it, and position DU3 to it
+;  On exit, GROUP = Group Number, GRPDIS = 0, and DU3 is positioned
+;
+comg:
+	inc	hl		;PT TO CHAR AFTER 'G' OF '<G' COMMAND
+	push	hl		;SAVE PTR TO NEXT CHAR
+	ld	a,(hl)		;GET CHAR AFTER 'G'
+	ld	hl,(group)	;GET CURRENT GROUP
+	call	upcase		;CAPITALIZE
+	cp	eolch		;CURRENT IF LOGICAL EOL
+	jp	z,comg1
+	cp	cr		;CURRENT IF PHYSICAL EOL
+	jp	z,comg1
+	pop	hl		;RESTORE PTR	-jgm
+	call	hexin		;GET GROUP NUMBER IN HEX
+	push	hl		;SAVE PTR AGAIN	-jgm
+	ld	hl,(dsm)	;CHECK FOR BOUNDS ERROR
+	call	subde		;SUBTRACT GROUP NUMBER FROM DSM
+;	POP	H	;RESTORE PTR
+	jp	c,outlim	;LIMIT ERROR IF CARRY
+;	PUSH	H	;SAVE PTR AGAIN
+	ex	de,hl		;SAVE GROUP NUMBER
+	ld	(group),hl
+comg1:
+	ld	(tgrp),hl	;TEMPORARY GROUP NUMBER
+	ex	de,hl		;GROUP NUMBER IN DE
+	xor	a		;A=0
+	ld	(grpdis),a	;SET GROUP DISPLACEMENT
+	call	gtksec		;CONVERT GROUP NUMBER TO TRACK AND SECTOR
+	call	settrk		;SET TRACK
+	ex	de,hl
+	call	setsec		;SET SECTOR
+	pop	hl		;GET PTR TO NEXT CHAR
+	ret
+
+
+; END DU314-01.Z80
+
+                                

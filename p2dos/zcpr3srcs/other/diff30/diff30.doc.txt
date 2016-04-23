@@ -1,0 +1,373 @@
+                 DIFF Version 3.0 Documentation
+                        February 19, 1989
+                          Carson Wilson
+
+
+                          - Contents -
+
+          1.  Overview.
+
+          2.  System Requirements.
+
+          3.  Purpose.
+
+          4.  Operation.
+
+          5.  Usage.
+
+              5.1.  Command Line Syntax.
+
+                  5.1.1.  File Specifications.
+
+                  5.1.2.  Options.
+
+                      5.1.2.1.  D - Test Datestamps Only.
+                      5.1.2.2.  I - Ignore Datestamps  
+                      5.1.2.3.  M - Perform Multiple Comparison.
+                      5.1.2.4.  Q - Perform Quiet Comparison.
+                      5.1.2.4.  V - Perform Verbose Comparison.
+                      5.1.2.6.  Combining Options.
+
+              5.2.  Advanced Use With Command Scripts.
+
+          6.  Customizing DIFF.
+
+          7.  Error Handling.
+
+          8.  Acknowledgements.
+
+          9.  Legal Use of These Files.
+
+
+
+1.  Overview.
+
+     DIFF version 3.0 is an extensively modified and improved 
+version of the original ZCPR 3.0 DIFF utility by Richard Conn.  
+The program's basic functions have been enhanced to take 
+advantage of ZCPR 3.3 and 3.4, and several additional functions 
+have been added.
+
+
+2.  System Requirements.
+
+     DIFF now requires ZCPR versions 3.3 and above to operate.  
+Additional features are available if DIFF is used under ZSDOS, 
+Z3PLUS, and/or DosDisk, but these system enhancements are not 
+required by DIFF.  DIFF100.COM loads at 100 hex and requires 
+memory from 100 hex to about 3200 hex.  DIFF6000.COM loads at 
+6000 hex and requires memory from 100 hex to about 9100 hex.  
+Insufficient memory causes DIFF to abort with an error message.
+
+
+3.  Purpose.
+
+     DIFF quickly compares two files and reports the results to 
+the screen and to the ZCPR environment.  This is useful in 
+verifying backup copies of files or eliminating duplicate copies. 
+Because DIFF reports its findings to the ZCPR environment, it may 
+be used with command scripts for automated file maintanence.
+
+     In fact, while DIFF can produce a byte-by-byte report of 
+file differences, other programs such as Rob Friefeld's BCOMP or 
+Malcom Kemp's CPA are more suited to making detailed file 
+comparisons.  DIFF's main strength is as a non-interactive, 
+command-line or script driven utility.
+
+
+4.  Operation.
+
+     By default, DIFF determines file equivalence using the most 
+efficient means available.  It first checks for matching file 
+names and datestamps and assumes that files with the same name 
+which were created or last modified during the same minute are 
+identical.  This is much faster in most cases than performing a 
+complete data test.  If file datestamps are not present, DIFF 
+falls back to a normal data comparison, stopping at the first 
+difference, user abort command, or end of file.  If a data test 
+is desired regardless of datestamp information, the /I option can 
+be used to tell DIFF to ignore datestamps and proceed directly to 
+a data comparison.
+
+     In comparing file datestamps, DIFF first tries to compare 
+the "last modified" stamps.  If a file's "last modified" stamp is 
+missing, that file's "create" stamp is used instead.  If either 
+file is missing both create and modify stamps, DIFF falls back on 
+file data to determine equivalence.
+
+     DIFF communicates its results both to the screen and to the 
+ZCPR environment.  The program error byte is set to true 
+("ERROR") by default for each file compare, and is only reset to 
+false when a matching pair of files is found.  Thus all of the 
+following conditions will set the program error byte to "true:"
+
+                   a. Either or both files missing
+                   b. User abort
+                   c. Files do not match
+
+     ZCPR register zero is set to reflect the results of 
+filestamp comparisons.  Register zero is set as follows:
+
+     Register
+     0 Value        Condition
+     -------        ---------------------------------------------
+          0         No stamp comparison was performed, either due 
+                    to the /I option or because one or both 
+                    stamps were not available.
+          1         Source 1 is more recent.
+          2         Source 2 is more recent.
+          3         Sources 1 and 2 have matching stamps.
+
+
+     Unless the /V Verbose option is given, DIFF simply reports 
+the results of file stamp comparisons (if any) and data 
+comparisons to the screen, telling which file was more recent and 
+whether files match or not.  The /V option may be used to 
+generate a more detailed report of file data differences (see 
+below).
+
+
+5.  Usage.
+
+5.1.  Command Line Syntax.
+
+     DIFF's command line consists of the command verb, followed 
+by one or two unambiguous file specifications, optionally 
+followed by one or more option characters:
+
+              DIFF [dir:]ufn [dir:][ufn] [/][options]
+
+A leading slash must introduce options if only one file 
+specification was given, to prevent DIFF from confusing options 
+with filespecs.
+
+
+5.1.1.  File Specifications.
+
+     The first file spec is given in the command and is referred 
+to as "Source 1."  The second file spec is either given in the 
+command or is filled in by DIFF and is referred to as "Source 2".
+
+     If only one file specification is given, Source 2 is assumed 
+to have the same name as Source 1 and to reside in the current 
+directory.  For example, the command
+
+WORK>diff root:myfile.txt
+
+compares ROOT:MYFILE.TXT with WORK:MYFILE.TXT.  If only a 
+directory is given for the second file, DIFF assumes a file of 
+the same name as the first, but in the specified directory.
+
+WORK>diff myfile.txt root:
+
+therefore compares WORK:MYFILE.TXT with ROOT:MYFILE.TXT.  This is 
+equivalent to the previous example with the exception that Source 
+1 and Source 2 are reversed.  This is an important difference 
+only when interpreting results stored by DIFF in ZCPR register 0 
+(see table above).
+
+     Since DIFF uses ZCPR's command line parser when interpreting 
+drive, user and directory specifications, directory security is 
+enforced to current system levels, and DIFF may safely be used 
+with secure systems.
+
+
+5.1.2.  Options.
+
+     One or more of the following option characters may be given 
+following the file specifications:
+
+                    D - test Datestamps only
+                    I - Ignore datestamps  
+                    M - perform Multiple comparison
+                    Q - perform Quiet comparison
+                    V - perform Verbose comparison
+
+As mentioned above, if only one filespec is given, option 
+characters must be introduced with the slash character ("/").
+
+
+5.1.2.1.  D - Test Datestamps Only.
+
+     Normally, unless matching filenames and datestamps are 
+detected DIFF falls back on a file data comparison.  The /D 
+option causes DIFF to exit as soon as the datestamp comparison 
+has been attempted.  This is useful in situations where only the 
+temporal relationships of files are of interest.
+
+
+5.1.2.2.  I - Ignore Datestamps.
+
+     The /I option is the complement of the /D option, and causes 
+DIFF to skip datestamp comparisons and go directly to a file data 
+comparison.  Register 0 is always set to 0 by this option. 
+
+
+5.1.2.3.  M - Perform Multiple Comparison.
+
+     If the /M option is given, DIFF repeatedly prompts the user 
+for new floppy disks, allowing a file to be compared with other 
+files on several floppy disks.
+
+
+5.1.2.4.  Q - Perform Quiet Comparison.
+
+     The /Q option causes DIFF to report only error messages to 
+the screen; all other screen output is suppressed.  This option 
+is designed for use with command scripts which must maintain 
+screen control.
+
+
+5.1.2.5.  V - Perform Verbose Comparison.
+
+     Normally, DIFF reports only the final results of a 
+comparison to the screen.  Selecting the /V option causes DIFF to 
+display the ASCII, Hex, and Decimal equivalents of all 
+non-matching bytes.
+
+
+5.1.2.6.  Combining Options.
+
+     From what we have said above, it should be obvious that 
+certain option combinations produce meaningless or contradictory 
+results.  For example, combining the /D and /I options causes 
+DIFF to do nothing at all.  The /Q option contradicts the /V and 
+/M options, and for this reason where /Q is used it takes 
+precedence over /M and /V, forcing a single, non-verbose 
+comparison.
+
+
+5.2.  Advanced Use With Command Scripts.
+
+     Where DIFF really excels is in its ability to pass file 
+comparison information to the ZCPR environment.  This capability 
+can be used in conjunction with ZCPR's Flow Control feature and 
+other programs to automate file maintenance in various ways.
+
+     The Flow Control Package (FCP) can be configured to detect 
+the status of ZCPR's program error byte and register byte zero 
+and set the flow state accordingly.  Here is a simple example 
+using DIFF, FCP, and ERA commands to erase file1 only if file1 
+equals file2:
+
+WORK>diff file1 file2;if ~er;era file1;fi
+
+     The following example uses DIFF, FCP, CP, and ECHO commands 
+to copy the most recent of file1 and file2 to the other file:
+
+WORK>diff file1 file2 /d;if 0 1;cp file1 file2;else;if 0 2;<<
+     cp file2 file1;else;echo error;fi;fi
+
+The above command is equivalent to the following pseudo-code:
+
+run DIFF
+if file1 was created/modified after file2
+   copy file1 to file2
+   else
+   if file2 was created/modified after file1
+      copy file2 to file1
+      else
+      echo error (files or datestamps missing, or files equal)
+   fi
+fi
+
+If one or both files are missing or have missing stamps, or if 
+the filestamps are equal, the word "ERROR" appears on the screen 
+and no copy operation is performed.
+
+     Many more complicated scripts are possible.  The two 
+preceding samples were issued from the command line, but command 
+scripts are most useful when issued from a script processing 
+program, such as ZEX or ZFILER.  For example, the following 
+command script can be used under ZFILER to update all 
+non-archived files at the current directory to the current user 
+area of drive C:.  To use the macro, I press G-T (group tag), 
+followed by G-A (group archive) and finally G-ESC-A (group macro 
+A):
+
+A $d$u:;$!diff c:$f /q;if er;copy $f c: /ae;else;fa $f a;fi
+
+If DIFF does not find a matching backup on drive C, the ZSDOS 
+COPY program makes a fresh archive from the current drive.  If a 
+matching backup was found, the ZSDOS FA command simply sets the 
+file's archive attribute.
+
+     Finally, DIFF can be used to select files by their temporal 
+relation to another file and process them accordingly.  For 
+instance, to append all files created before a particular file to 
+an archive file, I use the following ZFILER macro, invoked by 
+pressing GT, then G-ESC-N:
+
+N $d$u:;diff $p $"Newer file: " /dq;if 0 2;<<
+     append $f $"File to append to:";era $f;fi
+
+     These suggestions do not exhaust even the applications I 
+have found for DIFF.  I am sure there are many others, and that 
+you will discover ways of automating file and directory 
+maintenance with DIFF that I have not yet thought of.
+
+
+6.  Customizing DIFF.
+
+     As distributed, DIFF's Datestamp, Ignore, Multiple, Quiet, 
+and Verbose options are "off" by default, and are turned on when 
+the option character is given in the command line.  The sense of 
+any or all of the command line options may be reversed by 
+altering the five bytes following the ASCII label "[DIMQV>" at 
+address 10d hex in the program itself.
+
+     As distributed, the five bytes at 112 hex are 0,0,0,0,0.  To 
+change an option to "on" by default, set the corresponding byte 
+following the label to 0FF hex.  For example, to make DIFF 
+perform Verbose comparisons by default, change the byte at 116 
+hex from 00 to 0FFh.  Now DIFF will display all differences 
+between files UNLESS the /V option is given on the command line.
+
+
+7.  Error Handling.
+
+     If ZCPR 3.3 or above is not present or if available memory 
+is insufficient, DIFF aborts to the command line with an error 
+message.
+
+     If an ambiguous file name was used in the command or if an 
+illegal ZCPR directory or drive/user combination was given, DIFF 
+chains to the ZCPR error handler if present, or aborts to the 
+command line.
+
+     Missing files simply cause DIFF to set the program error 
+byte rather than chaining to the error handler.  This allows 
+command scripts to retain control in the event of missing files.  
+See the ZFILER command script in section 5.2 for an example of 
+this.
+
+
+8.  Acknowledgements.
+
+     The use of file datestamps to compare files was adapted from 
+Bridger Mitchell's DATSWEEP utility, which is part of 
+Plu*Perfect's DateStamper system and will be included with the 
+ZSDOS operating system.
+
+
+9.  Legal Use of These Files.
+
+     DIFF is an official ZCPR utility.  As such, it is released 
+to the public for personal use, but commercial use must be 
+licensed by Alpha Systems.
+
+     I encourage you to explore the source code, suggest 
+improvements, and document errors.  However, please obtain 
+permission before redistributing any of these files in altered 
+form.  This will prevent confusion by allowing your work to be 
+coordinated with the efforts of others.
+
+Carson Wilson may be reached via
+
+         Antelope Freeway Remote Access System, Chicago
+                          312-764-5162
+                  300-1200-2400 Baud, 24 Hours
+
+As I am sysop of this system, you may leave comments for me when 
+you apply for access.
+

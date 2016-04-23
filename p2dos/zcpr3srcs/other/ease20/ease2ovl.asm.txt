@@ -1,0 +1,162 @@
+;	The Easy way to patch EASE
+;	--------------------------
+;
+; 	This was an idea that Jay Sage put in an earlier version of the 
+; EASE library.
+
+; 	Use this file to make changes to EASE.  It will assemble with most 
+; assemblers--including LASM, which is public domain.
+; Overlay the resulting .HEX file onto EASE.COM using MLOAD.
+;
+; LASM EASE2OVL
+; MLOAD EASE.COM=EASE.COM,EASE2OVL
+;
+
+;=============================================================================
+;
+;		D E F I N I T I O N S    S E C T I O N
+;
+;=============================================================================
+
+	org	100h
+
+version	equ	20
+
+no	equ	0
+yes	equ	0ffh
+
+tab	equ	9
+
+;=============================================================================
+;
+;		S T A N D A R D    P R O G R A M    H E A D E R
+;
+;=============================================================================
+
+ENTRY:
+	ds	9
+ENVADDR:
+	ds	5
+
+;=============================================================================
+;
+;		C O N F I G U R A T I O N    A R E A
+;
+;=============================================================================
+
+NAME:	db	'EASE    VAR'			; Command history file name
+
+WIDTH:	dw	80				; Length of line on screen
+
+TOOSHORT:
+	dw	02				; Don't store in history 
+						;   if shorter than this many
+						;   characters.
+
+GOBEGFLG:					; If yes, go to beginning of
+	db	yes				;   the line on BSEARCH
+
+BEEPFLG:					; If yes, BEEP on entry to 
+	db	yes				;   error handler.
+
+SMARTSAV:					; If yes, save everything.
+	db	yes				;   If no, discard any lines
+						;   that are created by ^B
+						;   ^N or ^O.
+
+USEMEM:	db	no				; Use memory to save the
+						;    history file pointers.
+
+MEMLOC:	dw	47h				; Location to use for history
+						;    pointers.
+
+STARTREG:					; If USEMEM was no, then the
+	db	7				;    pointers will be stored
+						;    in the Z3 registers.
+						; This sets the first of the
+						;    three that are needed.
+
+USE6:	db	no				; If yes, use BDOS function
+						;    number 6 instead of
+						;    number 1.
+
+TABLE:	ds	1				; Number of cases
+	ds	2		;	BEEP	; DEFAULT CASE--ring bell
+
+VECTOR:	db	'Q'
+	ds	2		;	SHIFTED		; Meta Key
+	db	'D'
+	ds	2		;	FCHR		; Right Char
+	db	'S'
+	ds	2		;	BCHR		; Left Char
+	db	'E'
+	ds	2		;	UP		; Up line
+	db	'X'
+	ds	2		;	DOWN		; Down line
+	db	'A'
+	ds	2		;	MBWORD		; Left word
+	db	'F'
+	ds	2		;	MFWORD		; Right word
+	db	'S'+80h
+	ds	2		;	GOBOLN		; Start of line
+	db	'D'+80h
+	ds	2		;	GOEOLN		; End of line
+	db	'G'
+	ds	2		;	FDEL		; Del char right
+	db	'H'
+	ds	2		;	DELCHR		; Del char left
+	db	127
+	ds	2		;	DELCHR		; Del char left
+	db	'T'
+	ds	2		;	FDWORD		; Del word right
+	db	127 + 80h
+	ds	2		;	BDWORD		; Del word left
+	db	'R'
+	ds	2		;	CMDKILL		; Kill to semi-colon
+	db	'Y'+80h
+	ds	2		;	DELTOEND	; Delete to end of line
+	db	'Y'
+	ds	2		;	DELLIN		; Delete line
+	db	'U'
+	ds	2		;	UNDO		; Reinsert deleted text
+	db	'B'
+	ds	2		;	BACKLINE	; Back in history shell
+	db	'N'
+	ds	2		;	NEXTLINE	; Forward in history shell
+	db	'O'
+	ds	2		;	BSEARCH		; Search for first char
+	db	'V'
+	ds	2		;	TOGLIN		; Toggle insert
+CCOMP:	db	'I'
+	ds	2		;	COMPLETE	; Complete file name
+	db	'P'
+	ds	2		;	QINSERT		; Insert any char
+	db	'W'
+	ds	2		;	REPLOT		; Redraw line
+	db	'C'
+	ds	2		;	WARM		; Warm Boot
+	db	'M'
+	ds	2		;	DONE		; End edit
+	db	'_'+80h
+	ds	2		;	QUITSH		; End EASE
+LASTCASE:
+
+PUNC:	db	',.:!#%^&<>[]{}()_+-=`~/\|; ',tab	; Punctuation to
+PUNCLEN	equ	$ - PUNC				;   seperate words.
+							;   Used by word
+							;   functions.
+
+SEP:	db	' ,=/<>|',tab				; Punctuation to
+SEPLEN	equ	$ - SEP					;   seperate filenames.
+							;   Used by complete.
+
+;=============================================================================
+;
+;		M A I N    C O D E    S E C T I O N
+;
+;=============================================================================
+start:
+	end
+    C O D E    S E C T I O N
+;
+;===========

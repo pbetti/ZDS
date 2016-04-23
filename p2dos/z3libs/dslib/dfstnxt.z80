@@ -1,0 +1,67 @@
+	TITLE	"DFSTNXT - Dslib Ver 4.0"
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;	Derived from DSLIB3 routines by Bridger Mitchell
+; Date    : 06/27/87
+; Version : 1.0
+; Module  : DFSTNXT
+; Abstract: This module contains the routine FSTNXT which may be
+;	used as a general-purpose call to the BDOS for file search
+;	operations.  When DateStamper is installed, indices into
+;	the !!!TIME&.DAT file containing date and time information
+;	is returned and processed within this routine.  Values
+;	returned to the user allow direct access of the time and
+;	date information for the located file.
+; Revision :
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points :
+
+	PUBLIC		FSTNXT, @TDFCB
+
+;  Definitions :
+
+BDOS	EQU	0005H		; Bdos entry vector
+
+	CSEG
+	.Z80
+;===============================================================
+; Routine: FSTNXT.  Search for First/Next Occurance of filespec
+; Enter:  C - Search First or Search Next command
+;	 DE - Points to FCB containing the desired FN.FT
+; Exit :(-Match-)
+;	 DE - contains sector in T&D file
+;	  B - Index into T&D sector (0..7)
+;	  A = Director Index (0..3), Carry Flag reset (NC)
+;	(-No Match-)
+;	  F - Carry Flag Set (C).  Registers mean nothing
+; Requirements: Target drive must be logged on
+;===============================================================
+
+FSTNXT:	CALL	BDOS		; Execute the command
+	LD	C,A		; Save the returned index/status
+	RLA			; Check for MSB Set (for FF)
+	LD	A,C		; ..and restore contents
+	RET	C		; Error return if Carry
+
+	SRL	D		; DE = DE/2 (Sector number)
+	RR	E		; ..set carry to orig LSB in E
+	LD	B,A		; Put T&D index in B
+	RET	NC		; All is set if no carry
+
+	ADD	A,4		; ..else offset TD index to last half
+	LD	B,A		; Save new index
+	LD	A,C		; ..and restore Dir Index
+	RET			; Return with Carry Clear (NC)
+
+; Data Storage/Buffers.  Goes in Code Segment for initialization
+
+@TDFCB:	DEFB	0		; Time and Date FCB
+	DEFB	'!!!TIME&DAT'
+	DEFB	0,0,0,0
+	DEFW	0,0,0,0,0,0,0,0,0,0
+
+	END
+

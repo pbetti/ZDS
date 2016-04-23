@@ -1,0 +1,56 @@
+	This is an old program designed to return the soft error count for
+Heath/Zenith 89/90 computers with H17 or H37 drives. An increasing number of
+soft error counts indicates some drive maintenance may be necessary. This is
+particularly true with 96 tpi H37 drives.
+	The original program works fine with standard CPM and with ZCPRx.x but
+it fails under NZCOM,a self installing ZCPR3. NZCOM installs a small "virtual"
+BIOS just under the real BIOS and replaces the warm boot vector at 01H(in 
+page 0) with a vector to this NZCOM BIOS. ERR.COM uses the warm boot vector
+to find the correct address in the real BIOS where the error count is stored.
+The ERR source has been modified to recognize if the program is running under
+standard CPM or NZCOM [NZCOM can change on the fly between CPM and ZCPR3.4].
+
+	Most of you will just want to modify the ERR.COM file with DDT
+or better yet PATCH or ZPATCH. Change the values at the following addresses
+to match your needs:
+
+	112h	ffh = running NZCOM OR standard CPM    /either works for
+		00h = hard coded ZCPR3 OR standard CPM \ standard CPM
+
+
+	11Ah,11bh = NZCOM NZBIO size(00 09 =0900h)
+
+	121h	ffh = using h17 drives
+		00h = no h17 drives
+
+	127h	ffh = using h37 drives
+		00h = no h37 drives
+
+	130h	ffh = print CPM version message
+		00h = do not print CPM version message	
+
+
+	If you prefer you may reassemble the source file after changing the
+following four equates at the beginning of the program and then assemble
+ERR.Z80. Use MLOAD to convert the HEX file to a COM file.
+
+	NZCOM	EQU	FALSE	if you are a hard coded Z3 or CPM /either for
+			TRUE	if you have NZCOM or standard CPM \CPM!
+
+	H17	EQU	TRUE	if you use H17 drives
+			FALSE 	if you do not use H17 drives
+
+	H37	EQU	TRUE 	for H37 drives
+			FALSE	if no H37 drives
+
+	VERMSG	EQU	FALSE	for no CPM version message
+			TRUE 	to print CPM version message along with error
+				count
+
+**********************************NOTE*************************************
+*	If you have NZCOM and use other than the standard NZBIO.ZRL 	  *
+*	you will need to change the value of NZBIO to the correct	  *
+*	size of your virtual bios to obtain the proper offset to	  *
+*	your real BIOS.						 	  *
+***************************************************************************
+

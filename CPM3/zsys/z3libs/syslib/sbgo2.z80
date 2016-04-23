@@ -1,0 +1,72 @@
+;	TITLE	"SBGO2 - Syslib 4.0"
+	NAME	('BGOTO2')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SBGO2.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SBGO2
+; Abstract:  This module contains the routine BGOTO2 which is a
+;	computed GOTO based on an 8-bit value passed to it.  It
+;	differs from BGOTO1 in that the table is made up of JP xx
+;	entries instead of DEFW xx addresses.  An 8-bit control
+;	value is also passed which represents the maximum accep-
+;	table value for the Zero-based index value.  It is used as:
+;
+;	  LD	A,INDEX		; zero-relative
+;	  LD	B,2		; maximum index value
+;	  CALL	BGOTO2
+;	  JP	ADDR0		; IF A=0
+;	  JP	ADDR1		; IF A=1
+;	  JP	ADDR2		; IF A=2
+;	  <next instruction>	; IF A>B
+;	  ...
+;	ADDR0:			; COME HERE IF A=0
+;	  ...
+;	ADDR1:			; COME HERE IF A=1
+;	  ...
+;	ADDR2:			; COME HERE IF A=2
+;	  ...
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		BGOTO2
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - BGOTO2
+; Entry:  A - Zero-based index into the jump table
+;	  B - maximum legal value in A reg
+; Exit : - N/A
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+BGOTO2:	EX	(SP),HL		; get address of routines, save HL
+	PUSH	DE		; save regs
+	PUSH	AF
+	PUSH	HL		; save return address
+	CP	B		; test for range error
+	JR	C,GOTO		; OK if A < B
+	JR	Z,GOTO		; OK if A = B
+	LD	A,B		; set A = error offset (B+1)
+	INC	A
+GOTO:	LD	H,0
+	LD	L,A		; index in HL
+	LD	E,L
+	LD	D,H		; ..and DE
+	ADD	HL,HL		; HL = index * 2
+	ADD	HL,DE		; HL = index * 3
+	POP	DE		; get return address
+	ADD	HL,DE		; point to jump in HL
+	POP	AF		; get regs
+	POP	DE
+	EX	(SP),HL		; restore HL, set address of routine
+	RET
+
+	END
+

@@ -1,0 +1,143 @@
+; DATSTPCF.Z80
+;
+; ZCNFG configuration module for DATSTP.COM.  The assembled version of
+; this file must be named DATSTPxx.CFG, where xx is the version number
+; of DATSTP, to be automatically recognized by ZCNFG.
+;
+; Version 1.1 -- May 27, 1991 -- Gene Pizzetta
+;	For DATSTP 1.5.  Added case table macro.  Created text file
+;	for help screens.
+;
+; Version 1.0 -- September 3, 1990 -- Gene Pizzetta
+;	For DATSTP 1.0.
+;
+; Patch locations . . .
+;
+QtFlag	equ	015h		; quiet flag
+TimFmt	equ	016h		; civilian or military time
+DatFmt	equ	017h		; European or American date order
+;
+; ZCNFG function definitions . . .
+;
+Switch	equ	0		; toggle bit n in a byte (n is specified)
+Text	equ	1		; edit text with UC conversion
+DUSpec	equ	2		; replace a ZCPR style DU spec (NOT DIR:!)
+HexRad	equ	3		; edit byte/word using HEX radix
+DecRad	equ	4		; edit byte/word using DECIMAL radix
+TextLC	equ	5		; edit text, both UC and LC
+FileSp	equ	6		; edit a Z3 filespec or filespec fragment
+Togl3	equ	7		; toggle one of three options: 001B, 010B, 100B
+ToglTF	equ	8		; toggle a byte between 0ffh and 0
+;
+; ASCII characters . . .
+;
+HON	equ	1		; highlight on
+HOF	equ	2		; highlight off
+TAB	equ	9		; tab
+LF	equ	10		; linefeed
+CR	equ	13		; carriage return
+;
+; Macro definitions
+;	C	= character to identify menu item
+;	OFFSET	= offset in program's configuration block
+;	FUNC	= ZCNFG function
+;	SCRN	= screen location for data
+;	DATA	= function data address (if required)
+;
+CASE	macro	c,func,offset,bytes,scrn,data
+	db	'&C'
+	dw	func, offset
+	db	bytes
+	dw	scrn, data
+	endm
+;
+; Code . . .
+;
+	rst	0		; for safety, so .CFG file won't execute
+;
+	dw	MenuA		; for relocation of addresses, this
+				; ..points to the NEXT location.
+;
+; Menu list section . . .
+;
+ MenuA:	dw	MenuA, MenuA, ScrnA, CaseA, HelpA	; single menu
+;
+; Case table section . . .
+;
+CaseA:	db	(CaseAX-CaseA1)/(CaseA2-CaseA1)	; number of cases
+	db	CaseA2-CaseA1	; length of each record
+;
+;	Macro name
+;	|	Single char menu selector
+;	|	|	Function (see above)
+;	|	|	|	Offset in config block
+;	|	|	|	|	Number of bytes
+;	|	|	|	|	|	Screen location
+;	|	|	|	|	|	|
+;Case1:	CASE	0,	ToglTF,	Loc1,	1,	ScrnA1,	NoYes
+;							|
+;			 Address of data used by function
+;
+CaseA1:	CASE	Q,	ToglTF,	QtFlag,	1,	ScrnA1,	YesNo
+CaseA2:	CASE	T,	ToglTF,	TimFmt,	1,	ScrnA2,	MilCiv
+	CASE	D,	ToglTF,	DatFmt,	1,	ScrnA3,	EurAmr
+CaseAX:				; for calculation of list length
+;
+; Case table support . . .
+;
+YesNo:	db	'YES',0		; displayed if value is FFh (ToglTF)
+	db	' NO',0		; displayed if value is 00h (ToglTF)
+MilCiv:	db	'MILITARY',0	; displayed if value is FFh (ToglTF)
+	db	'CIVILIAN',0	; displayed if value is 00h (ToglTF)
+EurAmr:	db	'EUROPEAN',0	; displayed if value is FFh (ToglTF)
+	db	'AMERICAN',0	; displayed if value is 00h (ToglTF)
+;
+; Screen image section . . .
+;
+ScrnA:	db	cr,lf,lf,tab,tab,tab,'   DATSTP Installation Menu'
+	db	cr,lf,lf,lf
+;
+	db	tab,tab,'(Q) ',1,'Default to quiet mode? . . . . . . . . ',2
+ScrnA1:	db	'   '		; current value
+	db	cr,lf,lf
+;
+	db	tab,tab,'(T) ',1,'Civilian or Military time? . . .  ',2
+ScrnA2:	db	'        '	; current value
+	db	cr,lf,lf
+;
+	db	tab,tab,'(D) ',1,'American or European date order?  ',2
+ScrnA3:	db	'        '	; current value
+;
+	db	lf,lf,lf,lf,lf,lf,	; fill rest of screen
+;
+	db	0		; terminator
+;
+; Help screen section . . .
+;
+HelpA:	db	CR,LF,LF
+;
+	db	HON,'Option Q',HOF,' -- Quiet mode.  This  option  determines '
+	db	'whether DATSTP will be in',CR,LF
+	db	'verbose or quiet mode by default.  The default chosen here '
+	db	' may  be toggled',CR,LF
+	db	'by using the "Q" option on the command line.'
+	db	CR,LF,LF
+;
+	db	HON,'Option T',HOF,' -- Time format.  Select either civilian '
+	db	'(12-hour) time or military',CR,LF
+	db	'(24-hour) time for the  screen  display.  Command  line entry '
+	db	'is always 24-',CR,LF
+	db	'hour time.'
+	db	CR,LF,LF
+;
+	db	HON,'Option D',HOF,' -- Date format.  Select either American '
+	db	'or European date order for',CR,LF
+	db	'both display and  command  line  entry.  The  American order '
+	db	'is "mm/dd/yy".',CR,LF
+	db	'The European order is "dd/mm/yy".'
+	db	CR,LF
+;
+	db	0		; Terminator
+;
+	end
+

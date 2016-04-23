@@ -1,0 +1,53 @@
+	TITLE	"Z3MSGF - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		From Z3MSGF Ver 1.1 by Richard Conn
+; Date    : 2 May 92
+; Version : 1.2
+; Module  : Z3MSGF
+; Abstract: This module contains the routine PUTCST which sets
+;	the ZCPR3 command status message to a specified value.
+;	PUTCST is intended to be used by Shells to indicate that
+;	the command they are passing is a "normal" command or what-
+;	ever type of command (normal, shell, or error) is desired.
+; Revision:
+;   1.2 - 2 May 92 - Abort if No ENV/Message Buffer.		HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		PUTCST
+
+;  External References
+
+	EXT		GETMSG
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PUTCST
+; Entry:  A - Contains command status message to set
+; Exit : - None, the status message is set
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+PUTCST:	PUSH	HL		;save HL
+	PUSH	AF		;save A
+	CALL	GETMSG		;get ptr to messages
+	JR	Z,PUTCSX	;1.2 ..exit if No ENV/Message Buffer
+	INC	HL		;offset of 3
+	INC	HL
+	INC	HL
+	POP	AF		;get code
+	LD	(HL),A		;set command status message
+	POP	HL
+	RET
+
+PUTCSX:	POP	AF		;1.2 Restore Regs
+	POP	HL		;1.2
+	RET			;1.2 ..and return to caller
+
+	END
+

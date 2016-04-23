@@ -1,0 +1,243 @@
+	TITLE	"Ampro Little Board, BIOS 3.8 HeartBeat - (AMPRO-LB)"
+	SUBTTL	"Description of Clock Module"
+;**********************************************************
+; AMPRO CLOCK V1.5
+;
+; DS Clock Routine for AMPRO Little Board w/ V3.8 BIOS
+; Called w/: HL = Ptr to 6 Byte Data Buffer
+; Exit w/:   HL = Entry HL+5, E=(HL+5) at time of entry
+;   Caller's Buffer packed with: YR,MO,DA,HR,MI,SE in 
+;   Packed BCD, A=1 for ZSDOS/ZDDOS
+;   A=1 if successful, 0FFH if error
+; 
+; Author: Cameron W. Cotrill / Harold F. Bower
+;**********************************************************
+
+VERS	EQU	15
+	.Z80
+	NAME	AMPRO
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; not used
+
+CLKNAM:	DEFB	'Ampro BIOS Clock        '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10+'0',0
+DESCR:	DEFB	'Ampro Little Board BIOS Clock',CR,LF
+	DEFB	' for BIOS V. 3.X',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Hardware Clock Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		;No params to set		
+	DEFW	0		;..so no text pointer
+
+
+	PAGE
+	SUBTTL	"Clock Code - Ampro Little Board, BIOS HeartBeat"
+
+	CSEG
+;-------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	PUSH	HL		; +
+TODV	EQU	$+1
+	CALL	0000		; Call the BIOS TOD routine
+	POP	DE		; Get caller's buffer ptr
+	EX	DE,HL
+	LD	BC,5
+	ADD	HL,BC		; Point to end of caller's buffer
+	PUSH	HL		; +save exit HL on rstack
+	LD	A,(HL)
+	LD	(EVAL),A	; Save value to return in E
+	LD	B,3		; Hours,minutes,seconds
+RDCLK1:	LD	A,(DE)		; Fetch from BIOS
+	CALL	B2B		; ++convert
+	LD	(HL),A		; +place in caller's buffer
+	INC	DE		; Bump BIOS buffer pointer
+	DEC	HL		; Fill host buffer in reverse
+	DJNZ	RDCLK1		; And do next
+
+	PUSH	HL		; ++save host buffer pointer
+	EX	DE,HL
+	LD	E,(HL)		; Fetch low byte of BIOS day
+	INC	HL
+	LD	D,(HL)
+	INC	HL
+	PUSH	HL		; +++save BIOS buffer pointer
+	LD	HL,MOLEN	; Point to month length buffer
+	LD	B,0		; Clear counter
+	PUSH	DE		; Save days
+	LD	D,B		; For 16 bit subs
+RDCLK2:	INC	B		; Another month passes...
+	LD	E,(HL)		; Get length of month
+	EX	(SP),HL		; Days in HL, pointer on stack
+	AND	A
+	SBC	HL,DE		; Take month out
+	EX	(SP),HL
+	INC	HL		; Point to next month
+	JR	NC,RDCLK2	; If we haven't gone past it yet
+	POP	HL		; Else get result
+	ADD	HL,DE		; Add back last month
+	LD	A,L		; Get day
+	INC	A		; Humans use 1 based counts
+	POP	DE		; ++restore BIOS buffer pointer
+	POP	HL		; +and host buffer pointer
+	CALL	B2B		; ++convert day
+	LD	(HL),A		; Save day
+	DEC	HL
+	LD	A,B		; Get month
+	CALL	B2B
+	LD	(HL),A		; Save month
+	DEC	HL
+	LD	A,(DE)		; Get year
+	CALL	B2B		; ++convert
+	LD	(HL),A		; And save
+EVAL	EQU	$+1
+	LD	E,0		; Hand back in E
+	LD	A,1		; RETURN OK
+	POP	HL		; Points to caller BUF+5
+	RET			; And exit
+
+; Routine to convert a single binary digit to packed BCD.
+;  Binary value is assumed to be <99.
+; Call w/: A = Binary to convert
+; Exit:    A = BCD Digit
+
+B2B:	PUSH	BC
+	LD	BC,0A00H	; Set counter
+B2B1:	INC	C		; Else one more 10
+	SUB	B
+	JR	NC,B2B1		; If more than 10
+	ADD	A,B		; Restore
+	DEC	C		; Fix 10's count
+	LD	B,A		; Save units result
+	LD	A,C		; Fetch 10's
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A		; Place in high nibble
+	ADD	A,B		; Now units in also
+	POP	BC
+	RET
+
+MOLEN:	DEFB	31,29,31,30,31,30,31,31,30,31,30,31
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	RET			; Nothing to do here
+
+	DEFB	0,0,0		; Filler
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+; Enter: DE points to base of relocated Clock Module CSEG
+
+; Read Clock, wait 1.25 sec, read again
+
+	COMMON	/_PRE_/
+
+T0:	JR	TSTRD0
+
+	DEFW	T0		; Point to code start
+
+TSTRD0:	LD	(CKPTR),DE
+	LD	HL,(1)		; Get warm boot vector
+	LD	L,33H		; BIOS always on a page boundary
+	CALL	JPHL		; Returns nexttbl address in HL
+	LD	DE,0CH		; +offset to TOD jump vector
+	ADD	HL,DE
+	EX	DE,HL		; Put vector in DE
+	LD	HL,(CKPTR)
+	CP	30		; AMPRO returns BIOS Version in A
+	JR	C,BAD		; ..in decimal
+	LD	BC,TODV-GETTIM
+	ADD	HL,BC
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; Modify call address
+	CALL	CKCLK
+	LD	A,(HL)		; Get seconds
+	CP	60H		; Check for valid digit
+	JR	NC,BAD		; >= 60H
+	CALL	DELAY
+	CALL	CKCLK
+	LD	A,(HL)
+	SUB	E		; New - old
+	DAA
+	JR	Z,BAD
+	JR	NC,TST2		; New > old
+	ADD	A,60H		; Adjust for seconds rollover
+	DAA
+TST2:	SUB	5		; Allow 5 sec tolerance
+	DAA
+	RET	C		; Cy set is good
+BAD:	OR	A		; Cy clear is bad
+	RET
+
+LOCBUF:	DEFS	6
+
+; Set registers and read the clock
+
+CKCLK:	LD	HL,(1)
+	LD	L,6
+	CALL	JPHL		; Constat call updates clock...
+CKPTR	EQU	$+1
+	LD	HL,0000		; Set up in beginning
+	PUSH	HL		; Go to this address
+	LD	HL,LOCBUF
+	RET
+
+; Delay 1.25 Sec at configured CPU speed
+
+DELAY:	LD	B,6
+$$DY0:	LD	HL,40000+10000	; Constant + slop
+$$DY1:	DEC	HL		; 6
+	LD	A,H		; 4
+	OR	L		; 4
+	JR	NZ,$$DY1	; 12 = 26 cycles/loop
+	DJNZ	$$DY0
+	RET
+
+JPHL:	JP	(HL)		; BYTESAVER
+
+	END
+

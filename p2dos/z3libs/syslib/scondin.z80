@@ -1,0 +1,43 @@
+;	TITLE	"SCONDIN - Syslib 4.0"
+	NAME	('CONDIN')
+;================================================================
+; Author  : Harold F. Bower
+;		derived from SCONDIN.Z80 Ver 1.1 by Richard Conn
+; Date    : 28 Oct 89
+; Version : 1.3
+; Module  : SCONDIN
+; Abstract:  This module contains the routine CONDIN which is a
+;	conditional input routine for the CON: device.  The CON:
+;	status is first read, and flags are set.  If a character
+;	is ready, the character, and different flags are returned.
+;	This routine will NOT read a Binary 0 from the Console.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		CONDIN
+
+; From SYSLIB Get..
+
+	EXT		CST, CIN
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - CONDIN
+; Entry: - None
+; Exit : AF - Zero Flag Set (Z) If char Not available
+;		 A = Char and Zero Flag Reset (NZ) if char avail
+; Uses : AF
+; Special Requirements: This module MUST be linked immediately
+;	before SCIN.
+;===============================================================
+
+CONDIN:	CALL	CST		; Get Status
+	CPL			; Invert Status bit
+	AND	1		; ..and test	(Z = No Data Avail)
+	RET	Z		; Return if No char
+	JP	CIN		; ..else jump to get the char
+
+	END
+

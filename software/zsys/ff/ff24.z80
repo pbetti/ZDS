@@ -1,0 +1,1485 @@
+; PROGRAM:  FF (Find File)
+; AUTHOR:  Jay Sage
+; VERSION:  1.0
+; DATE:  March 14, 1987
+
+VERS	EQU	24		; 01/19/91 - Al Hawley
+
+EXPERIMENTAL	EQU	0
+XSUBVERS	EQU	3	; Experimental subversion #
+
+Z3LTYP		EQU	1	; Must be 1 or 3 (jww)
+
+; This program is copyrighted 1987 by NAOG/ZSIG.  It may be copied and
+; modified freely for personal use but may not be sold or distributed for a
+; fee.	Modified versions must be submitted to and approved by NAOG/ZSIG
+; before they may be distributed.  See the file ZSIGPOL1.DOC on Z-Nodes for
+; the ZSIG policy on signing out and modifying programs.
+
+; For revision history see accompanying documentation file.
+
+;======================================================
+
+;		D E F I N I T I O N S	 S E C T I O N
+
+;======================================================
+
+; System equates:
+
+BOOT	EQU	0000H		; CP/M warm boot jump vector
+BDOS	EQU	BOOT+05H	; CP/M bdos call jump vector
+TBUFF	EQU	BOOT+80H	; Disk I/O buffer
+FCB	EQU	BOOT+5CH	; Default file control block
+
+CR	EQU	'M'-'@'		; Carriage return
+LF	EQU	'J'-'@'		; Line feed
+TAB	EQU	'I'-'@'
+BELL	EQU	'G'-'@'		; Bell character
+CTRLC	EQU	'C'-'@'		; Abort
+CTRLX	EQU	'X'-'@'
+CTRLK	EQU	'K'-'@'
+CTRLS	EQU	'S'-'@'		; Pause
+
+ESIZE	EQU	12		; 12 bytes/dir entry
+
+; offsets in external environment
+
+ETYPOFF	EQU	08H		; Env type byte
+VDRVOFF	EQU	34H		; Valid drives vector
+
+MDOFF	EQU	2CH		; Max drive offset in Z3ENV
+MUOFF	EQU	2DH		; Max user offset in Z3ENV
+
+MSDOSID	EQU	0FDH		; Id byte for DosDisk fcb/directory entry
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+
+; SYSLIB and Z3LIB Routines
+
+	.REQUEST Z3LIB
+
+	EXT	WHRENV		; Locate Z3 external environment
+	EXT	PUTER2,PUTREG,GETWHL,GZMTOP
+	EXT	Z3INIT,GETCRT,DUNDR,ENVPTR
+	EXT	ZFNAME,GETNDR
+
+	.REQUEST SYSLIB		; VERSION 43C OR LATER!!
+
+	EXT	CST,CIN,COUT,CRLF,EPRINT,PAFDC,PFN1
+	EXT	EPSTR
+	EXT	CODEND,SKSP,ANDHD,ORHD
+	EXT	SSBINIT,SORT	; SORT Routines from SYSLIB
+
+;for debug
+	entry	start,hello,helpchk,optchk,mask,find,bye
+	entry	init,prfiles,printfcb,qkeybd,diralpha
+	entry	ffirst,fnrec,fsize,fcomp,forder,fpoint,fnorec
+	entry	tstusr,usendr,dodrive,getfn,tstndr
+	entry	ndisk,ndisk1,ndisk2,seldsk,dskndr,diskno
+
+;======================================================
+
+;		M A I N    C O D E    S E C T I O N
+
+;======================================================
+
+
+;---------- ZCPR33+ Program header -------------
+
+ENTRY:
+	 IF	Z3LTYP = 3
+	RST	0		; Warm boot if loaded by ZCPR3.0 or CP/M
+	DW	START
+	 ELSE			; Type 1
+	JP	START
+	 ENDIF
+
+	DB	'Z3ENV'
+	DB	Z3LTYP		; Program Type (1 or 3)
+Z3EADR:	DW	0FE00H		; Filled in by Z33+ or Z3INS
+	DW	ENTRY		; Reserved for Type 3 load address
+
+;======================================================
+
+	ORG	ENTRY +	0DH	; Standard address for configuration block
+; Configuration Parameters for program defaults
+CFGFN:	DB	'FF24'		; PROGRAM ID STRING for configuration data
+	DB	0		; Up to 8 char plus null terminator
+
+	ORG	CFGFN +	9
+
+DRVTBL:	      ; HGFEDCBA	; Drives A..H
+	DB	00001111B
+	      ; PONMLKJI	; Drives I..P
+	DB	00000000B
+
+Z3REG:				; User register in which to return the number
+	DB	0		; ..of files found (if > 9, disable)
+
+SYSFLG:	DB	0		; Non-zero: include system files as default
+
+RIGHTCH:
+	DB	'>'		; Character to right of directory name
+
+PAGEFL:	DB	TRUE		; Make FALSE to turn default paging off
+WILDFL:	DB	TRUE		; TRUE = Autowildcard, FALSE=exact
+LOGVFL:	DB	FALSE		; TRUE = use BDOS login vector
+HDRDEF:	DB	TRUE		; TRUE = include drive info before file list
+NDRFLG:	DB	TRUE		; TRUE = use NDR (not MAXUSR)
+USEWHL:	DB	TRUE		; TRUE = NDR use determined by wheel
+;if USEWHL is false, then WHLVAL is not used, and
+;use of NDR to limit access depends only on NDRFLG
+WHLVAL:	DB	FALSE		; TRUE = use NDR if user is a WHEEL
+				; FALSE = use NDR if user is not a WHEEL
+
+	DS	20		; room for more configuration options
+
+;end of configuration data structure
+;======================================================
+
+START:	SUB	A		; Test for z80 cpu
+	LD	DE,Z80MSG
+	JP	PE,DOSMSG
+
+	LD	HL,(Z3EADR)	; Point to default ZCPR3 environment
+	CALL	WHRENV		; Address, and verify it.
+	LD	A,H
+	OR	L
+	JR	Z,NOENV
+
+	CALL	Z3INIT		; Initialize the ZCPR3 ENV
+	CALL	GZMTOP		; ret hl -> last free byte of tpa
+	LD	(STACK),SP	; Save stack (so cleanup not needed at end)
+	LD	SP,HL		; set top of ff's local stack
+	CALL	INIT		; Initialize program
+	CALL	HELLO		; Sign on message
+	CALL	HELPCHK		; Check for and print help message
+	CALL	OPTCHK		; Build file name table and process options
+	CALL	MASK		; Mask against extended Env. drive vector
+	CALL	FIND		; Do the searches
+
+; SIGN OFF
+
+BYE:	LD	A,(NOFILFLAG)	; Get no-file-found flag
+	CALL	PUTER2		; Store in Z3 program error flag
+	OR	A		; If flag reset, files were found
+	JR	Z,BYE1		; ..so we return without message
+	CALL	EPRINT		; ..else we report to user
+	DB	CR,LF,' NO Files Found',0
+
+BYE1:	LD	A,(Z3REG)	; Get register to use for file count
+	CP	10		; If not in range 0..9, skip
+	JR	NC,QEXIT	; Disabled
+
+	LD	B,A		; Save register number in B
+	LD	HL,(TCOUNT)	; Get total file count
+	LD	A,H		; See if count is > 255
+	OR	A
+	LD	A,255		; Preset for maximum possible value
+	JR	NZ,BYE2
+	LD	A,L		; If < 256, use value in L
+BYE2:	CALL	PUTREG		; Save value in A in register in B
+
+QEXIT:	LD	SP,(STACK)	; Quiet return
+	RET
+
+;-----------------------------------
+
+NOENV:	LD	DE,NOENVMSG	; Exit when no z3env
+DOSMSG:	LD	C,9
+	JP	BDOS
+
+NOENVMSG:
+	DB	CR,LF
+	DB	'Requires ZCPR3$'
+Z80MSG:	DB	CR,LF
+	DB	'Requires Z80$'
+
+;======================================================
+
+INIT:
+; INITIALIZATION
+;entry:	HL -> highest useable mem = stack top
+;exit:	all registers used
+
+	LD	DE,40		; stack depth allocated
+	OR	A		; reset CY for SBC
+	SBC	HL,DE
+	LD	(MEMTOP),HL	; highest mem available to FF
+
+	LD	HL,DATABEG	; Zero out data area
+	LD	DE,DATABEG+1
+	LD	BC,DATAEND-DATABEG-1
+	LD	(HL),0		; Seed value
+	LDIR			; Fill 'em up
+
+	LD	C,12		; Get version of bdos
+	CALL	BDOS
+	CP	30H
+	LD	A,0		; 0 assumes vers < 3.0
+	JR	C,DOSV1		; jmp if correct assumption
+	LD	C,45
+	LD	E,0FEH		; set BDOS error ret & display
+	CALL	BDOS
+	OR	0FFH		; 0FFH = vers. >=3.0
+DOSV1:	LD	(CPM3FLG),A
+
+	CALL	CODEND		; Determine free space
+	LD	(FNTAB),HL	; File name table
+; Beginning of scratch area is assigned in OPTCK1:
+; after the list of filenames to search for has
+; been determined and entered at (FNTAB).
+
+	CALL	GETCRT		; Get data on current console
+	INC	HL		; Point to full number of lines on screen
+	LD	A,(HL)
+	DEC	A		; Reduce by one
+	LD	(LPS),A		; Save in lines-per-screen location
+
+	LD	A,0FFH
+	LD	(NOFILFLAG),A	; Set no-files-found flag
+
+	LD	A,(PAGEFL)	; Use configured value to
+	LD	(PAGEOPT),A	; Set Paging option
+
+	LD	A,1
+	LD	(LINECNT),A	; Set initial line count
+
+	CALL	PUTER2		; Set Z3 program error flag
+
+	CALL	GETWHL		; Check wheel
+	JR	Z,WHL0
+	OR	0FFH
+WHL0:	LD	(PRIVS),A
+	JR	Z,INIT1		; If Z (wheel false), use default
+	LD	A,(SYSFLG)	; Else use configured value to
+INIT1:	LD	(SYSTEM),A	; Set system file inclusion option
+
+	LD	A,(WILDFL)	; Default for Exact/Wildcard mode
+	OR	A		; If Zero, then Exact
+	LD	A,'?'		; Assume Exact
+	JR	Z,SETWC		; ..and set it if Exact is right
+	LD	A,' '		; ..else set Auto Wildcard
+SETWC:	LD	(WILDCHR),A	; "Auto" treats spaces as wildcards
+
+	LD	HL,(ENVPTR)
+	LD	DE,MDOFF	; Get maxdrv and maxusr from env.
+	ADD	HL,DE
+	LD	DE,ZMAXDRV
+	LD	A,(HL)		; MAX drive from env.(1...16)
+	LDI			; copy to local storage
+	LDI
+;Calculate a mask for MAX DRIVE
+	CALL	SETDRV		; (returns HL=0000 for A=16)
+	DEC	HL		; sets all lower bits in HL
+	LD	(MDRVEC),HL
+;AND all default drive vectors to get
+;the result vector which controls the
+;drives that FF will search if not 
+;superseded by a command line drive list.
+
+	CALL	GZ3VEC		; Copy Env drive vector if present
+	LD	(ENVVEC),DE
+	CALL	GETBLV		; Get BDOS Login Vector
+	LD	(LOGVEC),HL	; ..and save for later
+;the next 4 lines could be done in MASK: instead of here..
+	CALL	ANDHD		; ENVVEC AND LOGVEC
+	LD	DE,(MDRVEC)
+	CALL	ANDHD		; ..AND MDRVEC
+	LD	(DRVVEC),HL	; ..into working control vector
+	RET
+
+;======================================================
+
+; SAY WHO WE ARE
+
+HELLO:	CALL	EPRINT
+	DB	CR,LF
+	DB	'Find File (FF) v. '
+	DB	VERS/10+'0','.',VERS MOD 10+'0'
+
+	 IF	EXPERIMENTAL
+	DB	'x'
+	DB	XSUBVERS +'0'
+	 ENDIF
+
+	DB	'  (compatible with Z3PLUS & DosDisk)'
+	DB	'  [ZSIG]'
+	DB	CR,LF,0
+	RET
+
+;======================================================
+
+;  CHECK FOR HELP REQUEST
+
+HELPCHK:
+	LD	HL,TBUFF+1	; Look at command tail
+	CALL	SKSP		; Skip blanks
+	LD	A,(HL)		; Get first byte
+	OR	A
+	JR	Z,HCK1		; Help if no args.
+	CP	'/'		; Help?
+	RET	NZ		; no
+	INC	HL
+	LD	A,(HL)
+	CP	'/'		; Only exactly two slashes allowed
+	RET	NZ
+	INC	HL
+	INC	(HL)		; No trailing spaces allowed
+	DEC	(HL)
+	RET	NZ		; Only "FF" or "FF<spaces>//" (exactly) get 
+				; ..help, otherwise process as filename
+
+; Here with "FF" or "FF //". Show the HELP screen and quit.
+; The CCP has not been overwritten, so return quiet without
+; warm boot.
+
+HCK1:	CALL	EPRINT
+	DB	CR,LF
+	DB	'Find all files matching a list of file '
+	DB	'specs on all drives, a specific ',CR,LF
+	DB	'drive, or a list of drives.',CR,LF
+	DB	LF,'   Syntax:  FF [D: or DIR:]afn[,afn].. [d..][/o..]'
+	DB	CR,LF,LF
+	DB	'Options (d) before slash:',CR,LF
+	DB	TAB,'List of drives to scan',CR,LF,LF
+	DB	'Options (o) after slash:',CR,LF,0
+
+	LD	A,(WILDCHR)
+	CP	'?'
+	LD	HL,HLPM3
+	JR	Z,HCK1A
+	LD	HL,HLPM3A
+HCK1A:	CALL	EPSTR
+
+	DSEG
+HLPM3:	DB	TAB,'E - Exact (no auto wildcarding)',cr,lf,0
+HLPM3A:	DB	TAB,'E - Use auto wildcarding ("A.B" -> "A*.B*")',cr,lf,0
+	CSEG
+
+HCK1B:	LD	A,(PAGEOPT)
+	OR	A
+
+	LD	HL,HLPM4A
+	JR	Z,HCK1C
+	LD	HL,HLPM4
+HCK1C:	CALL	EPSTR
+
+	DSEG
+HLPM4:	DB	TAB,'P - No Paging',0
+HLPM4A:	DB	TAB,'P - Paging',0
+	CSEG
+
+HCK1D:	CALL	GETWHL
+	JR	Z,HCK2		; skip 'S' option if no wheel
+
+	CALL	EPRINT
+HLPM5:	DB	CR,LF,TAB,'S - ',0
+
+	LD	A,(SYSTEM)	; Check system files flag
+	OR	A
+	LD	HL,HLPM6B
+	JR	Z,INCSYS
+	LD	HL,HLPM6A
+
+INCSYS:	CALL	EPSTR
+
+	DSEG
+HLPM6A:	DB	'Ex',0
+HLPM6B:	DB	'In',0
+	CSEG
+
+HCK1E:	CALL	EPRINT
+	DB	'clude SYS Files',0
+
+HCK2:	CALL	EPRINT
+	DB	CR,LF,LF
+	DB	'Error flag set if no files found'
+	DB	0
+
+	LD	A,(Z3REG)	; See if register used to store file number
+	CP	10
+	JR	NC,HCK3
+	LD	B,A		; Save register number in B
+
+	CALL	EPRINT
+	DB	'.  Number of files put in REG ',0
+
+	LD	A,B
+	ADD	'0'		; convert to ASCII
+	CALL	COUT
+
+HCK3:	CALL	EPRINT
+	DB	'.',CR,LF
+	DB	'Auto-scanned drives are: ',0
+
+	CALL	MASK
+	LD	D,H
+	LD	E,L		; save vector in DE
+	LD	B,16		; quit after doing 16 bits
+HCK31:	ADD	HL,HL
+	JR	C,HCK32
+	DJNZ	HCK31
+	INC	B		; count must be >0, will show '_'
+HCK32:	EX	DE,HL		; recover drive vector
+	LD	C,'A'		; Initial drive letter
+
+HCK4:	SRL	H		; shift h right into carry
+	RR	L		; rotate into l, and lsb to CY
+
+	LD	A,'_'		; Underscore char for readability
+	JR	NC,HCK5		; No drive at this position
+	LD	A,C		; Get drive letter
+HCK5:	CALL	COUT		; Display drive letter if bit was set
+	INC	C		; Advance to next drive letter
+	DJNZ	HCK4		; Loop through drives
+
+HCK6:	CALL	EPRINT
+	DB	'.',CR,LF,0
+
+	LD	A,(WILDCHR)
+	CP	'?'		; If not auto-wildcarding,
+	JP	Z,QEXIT		; return to CCP, no warm boot
+
+	CALL	EPRINT
+	DB	'All file specs are automatically made '
+	DB	'wild ("A.B" -> "A*.B*").',CR,LF,0
+	JP	QEXIT		; return to CCP, no warm boot
+
+;======================================================
+
+OPTCHK:
+; CHECKS FOR OPTIONS IN COMMAND LINE AND EXTRACTS FILE NAMES INTO
+; TABLE
+;exit:	all registers used
+
+; Process list of file specifications
+	LD	HL,TBUFF+1	; Look at command tail
+	CALL	SKSP		; Skip blanks
+	LD	DE,(FNTAB)	; Pointer to file name table in DE
+FNLOOP:				; Scan thru tbuff, building a file name table
+
+	CALL	GETFN		; extract file name
+
+	LD	A,(FNCOUNT)	; Count file names
+	INC	A
+	LD	(FNCOUNT),A
+
+	LD	A,(HL)		; Get terminating char
+	INC	HL		; Pt to next
+	CP	','		; Another follows?
+	JR	NZ,OPTCK1	; If not, on to second command-line token
+
+	LD	A,(HL)		; Make sure list did not end with comma
+	CP	' '+1
+	JR	NC,FNLOOP	; If not, back for another file spec
+
+OPTCK1:
+; Initialize scratch area at end of FNTAB
+;entry: DE -> next free loc after FN list
+	LD	(SCRATCH),DE	; start of SORT, ORDER buffers
+
+; Process second command-line token
+	DEC	HL		; Point back to delim
+	CALL	SKSP		; Skip to non-blank
+	LD	A,(HL)		; Get option
+	CALL	DELCHK		; Done if delim
+	RET	Z
+
+	CP	'/'		; See if non-drive option leadin '/'
+	JR	Z,OPTCK3	; If so, branch now
+
+; Process drive options
+
+	XOR	A		; Initialize for drive list
+	LD	(FCB),A		; Nullify any drive from file spec list
+
+OPTCK2:	LD	A,(HL)		; Get drive letter
+	SUB	'A'		; Convert to number in range 0..15
+				; If less than 'A', or..
+	CP	16		; If not less than 16, it is an error
+	JR	NC,OPTER
+	PUSH	HL		; Save pointer to option list
+
+	CALL	SETDRV		; Set bit in HL corresponding to drive
+	LD	DE,(CMDVEC)	; Get the map so far
+	CALL	ORHD		; OR in the new bit
+	LD	(CMDVEC),HL	; Store new drive map
+
+	POP	HL		; Get pointer back
+	INC	HL		; Get next character
+	LD	A,(HL)
+	CP	'/'		; Non-drive option leadin?
+	JR	Z,OPTCK3	; If so, take care of non-drive options
+	CP	' '		; Allow space as list terminator
+	JR	Z,OPTCK3	; Look for non-drive options
+	CALL	DELCHK		; End of list?
+	RET	Z		; Return if so
+	JR	OPTCK2		; Else back for next drive
+
+; Process non-drive options
+
+OPTCK3:	INC	HL		; Point to next option character
+	CALL	SKSP		; Point to next character
+	LD	A,(HL)		; ..and get it
+
+	CP	'/'		; Optional field identifier?
+	JR	Z,OPTCK3	; Ignore it - we're already here
+
+	CALL	DELCHK		; Delimiter?
+	RET	Z		; If so, we are done
+	CP	'P'		; Paging Toggle?
+	JR	Z,POPT
+	CP	'E'		; Exact mode toggle?
+	JR	Z,EOPT
+	CP	'S'		; SYS files option?
+	JR	NZ,OPTER	; If not, it's an option error
+				; Else fall through to SOPT
+
+SOPT:	LD	A,(PRIVS)
+	LD	B,A
+	LD	A,(SYSTEM)	; Get default status
+	XOR	B		; toggle
+	LD	(SYSTEM),A
+	JR	OPTCK3
+
+EOPT:	LD	A,(WILDCHR)
+	CP	'?'		; Exact now?
+	LD	A,' '		; Toggle to Auto Wildcard..
+	JR	Z,EOPT1		; ..if yes
+	LD	A,'?'		; ..ELSE toggle to Exact
+EOPT1:	LD	(WILDCHR),A	; Set wildcard char
+	JR	OPTCK3
+
+POPT:	LD	A,(PAGEOPT)
+	CPL			; Toggle between page, no-page
+	LD	(PAGEOPT),A
+	JR	OPTCK3
+
+OPTER:	CALL	EPRINT
+	DB	BELL
+	DB	CR,LF
+	DB	'Invalid Option -- ',0
+	LD	A,(HL)
+	CALL	COUT
+	JP	HCK1
+
+;======================================================
+
+MASK:
+; Mask (DRVVEC) with the drive vector from
+; the command line. If there were no drives
+; specified on the command line, use the default
+; (configured) drive list vector.
+; DRVVEC already contains a mask derived from
+; the Z3environment MAXDRIVE & Drive Vector and
+; from the BDOS login vector.
+
+;entry: DRVVEC := ENVVEC AND MDRVEC AND LOGVEC
+;exit:	IF SDRVEC <> 0
+;	  DRVVEC := DRVVEC AND SDRVEC
+;	ELSE IF CMDVEC <> 0
+;	  DRVVEC := DRVVEC AND CMDVEC
+;	ELSE IF DRVTBL <> 0
+;	  DRVVEC := DRVVEC AND DRVTBL
+;	ELSE	/*no drives configured*/
+;	  DRVVEC := DRVVEC AND 0FFFFH
+;	ENDIF
+;uses:	AF,HL,DE
+
+	LD	HL,(SDRVEC)	; If single drive specified in
+	LD	A,H		; the file search list,
+	OR	L
+	JR	NZ,MASK1	; use it (NZ), else...
+
+	LD	HL,(CMDVEC)	; If drive list arg present from
+	LD	A,H		; from the command tail,
+	OR	L
+	JR	NZ,MASK1	; use it (NZ), else...
+
+	LD	HL,(DRVTBL)	; Configured default drive list
+;If the configured drive list is empty, we might
+;want NO drives to be searched. In that case, the
+;next four lines can be deleted.
+	LD	A,H		; If it is non-empty
+	OR	L
+	JR	NZ,MASK1	; use it (NZ), else...
+	LD	HL,0FFFFH	; ..ignore & use system defaults
+
+MASK1:	LD	DE,(DRVVEC)	; ENVVEC & MDRVEC & LOGVEC
+	CALL	ANDHD		; mask with highest priority vector
+	LD	(DRVVEC),HL	; Put it back
+	RET
+
+;======================================================
+
+FIND:
+; LOOK THROUGH DIRECTORY
+; Search with bdos searchfirst/search next.
+
+	LD	A,0FFH		; flag first call to ndisk
+	LD	(DISKNO),A
+FIND1:	CALL	NDISK		; Select, login next drive
+	RET	C		; Ret if no more to do.
+
+	LD	C,17		; Specify search first function
+FIND2:	CALL	NXTENT		; Get next entry
+	JR	Z,FIND3		; Sort & print if no more
+	CALL	CHKENT		; Add to buffer if selected
+	LD	C,18		; BDOS search next function
+	JR	FIND2
+
+FIND3:	CALL	DIRALPHA	; sort the FN records
+	CALL	PRFILES		; Print file names on console
+	JR	FIND1		; Go do the next drive
+
+;-----------------------------------
+
+NDISK:
+;  log in (next) disk
+;entry: none
+;	DISKNO has already been set/advanced by FIND.
+;exit:	uses all registers
+;	returns Z if bios error, CY if no more disks
+
+	LD	HL,(DRVVEC)	; drive select vector
+	LD	A,(DISKNO)	; current drive
+	INC	A		; 0FFH on first call
+	JR	Z,NDISK2	; Skip increment if first call
+	DEC	A		; recover diskno
+
+NDISK1:	INC	A		; increment drive number
+	SRL	H		; shift drive map so
+	RR	L		; LSB in L corresponds to drive
+	CP	16		; > last legal drive?
+	CCF			; invert CY so it is set when..
+	RET	C		; drive list exhausted.
+
+NDISK2:	BIT	0,L		; test bit for (diskno)
+	JR	Z,NDISK1	; try next if this one unselected
+
+	LD	(DISKNO),A	; current drive
+	LD	(DRVVEC),HL	; save for next time
+
+	CALL	DSKNDR		; check against NDR if so configured
+	JR	Z,NDISK		; no non-pw entires for this drive
+
+	CALL	SELDSK		; login current drive
+	JR	Z,NDISK		; Z=bios rejected the drive
+;Fall through to set up the SSB for the new drive
+
+;initialize sort data area pointer
+	LD	HL,(SCRATCH)	; Pt to scratch area
+	LD	(DSTART),HL	; Set loop ptr
+;initialize counters
+	LD	HL,0		; Set file count
+	LD	(FCOUNT),HL
+	XOR	A		; Set count
+	LD	(ECOUNT),A
+	DEC	A		; Ok to continue, NZ, CY clear
+	RET
+
+;--------------
+
+dskndr:
+;search the NDR for non-passworded entries
+;ignoring user area.
+;entry	A = drive to seek
+;exit	NZ = disk is present in NDR, else Z
+;	uses AF,DE,HL
+
+	LD	B,A		;save disk to seek
+	CALL	TSTNDR		;use NDR test?
+	JR	Z,NDR4		;Z = no. go & ret approval
+
+	CALL	GETNDR
+	RET	Z		;no NDR present
+
+NDR1:	LD	A,(HL)		; drive (1...16) or 0
+	OR	A
+	RET	Z		;empty NDR or end
+	DEC	A		;make 0...15
+	CP	B		;is this entry a candidate?
+	JR	Z,NDR3		;yes, if Z
+
+NDR2:	LD	DE,18		;length of NDR entry
+	ADD	HL,DE		;HL -> next NDR entry
+	JR	NDR1
+
+;the current entry is a candidate.
+;ret NZ if no PW is present, else
+;continue searching.
+NDR3:	PUSH	HL
+	LD	DE,10		;offset to PW field
+	ADD	HL,DE
+	LD	A,' '		;test for space char
+	SUB	(HL)		;if so, A=0 and flags set
+	POP	HL
+	JR	NZ,NDR2		;nz = PW present
+;A non-passworded entry for drive in B
+;has been found or this test is bypassed.
+NDR4:	OR	0FFH		;make..
+	RET			;NZ, A=0ffh
+
+;--------------
+
+SELDSK:
+;Select (DISKNO) and get dpb parameters
+; Uses BDOS bios-function call for cp/m3.
+;entry: none
+;exit:	return Z if select error, else NZ.
+
+	LD	A,(CPM3FLG)	; CP/M 3 requires a dos
+	OR	A		; Call to access bios functions
+	LD	A,(DISKNO)
+	JR	NZ,SELBDOS	; skip BIOS call for CP/M 3
+
+	LD	C,A		; CP/M 2 bios SELDSK call
+	LD	HL,(0001H)
+	LD	L,1BH		; -> BIOS SELDSK entry
+	LD	E,0		; Set new mount flag (bit 0=0)
+	CALL	GOHL
+	LD	A,H		; Good drive select?
+	OR	L
+	RET	Z		; ..no
+
+SELBDOS:
+	LD	A,(DISKNO)
+	LD	E,A		; Save drive
+	PUSH	DE
+	LD	C,14		; Do BDOS drive select
+	CALL	BDOS		; To stay in sync with bios
+	POP	DE
+	INC	A		; good drive select?
+	RET	Z		; ..NO if Z
+
+	LD	C,31		; Get dpb
+	CALL	BDOS
+	INC	HL
+	INC	HL
+	INC	HL
+	INC	HL
+	LD	A,(HL)		; Get exm
+	LD	(EXMASK),A
+	OR	0FFH		; Set NZ
+	RET
+
+;--------------
+; This handy one-liner is CALLED to execute
+; an INDIRECT CALL to the address in HL.
+
+GOHL:	JP	(HL)
+
+;-----------------------------------
+
+NXTENT:
+; Get next entry in directory, return hl-> entry
+; Use BDOS searchfirst/next function.
+;entry: FCB has been filled and is valid.
+;	C = 17 or 18 (BDOS search/search next)
+;exit:	HL -> entry
+;	return NZ if valid entry, else Z if no more entries
+;	uses A,C,DE
+
+	LD	DE,FCB
+	LD	A,'?'		; Get every entry in directory
+	LD	(DE),A
+	CALL	BDOS
+	INC	A
+	RET	Z		; No more entries
+
+	DEC	A		; Recover BDOS return
+	LD	HL,TBUFF
+	RRCA
+	RRCA
+	RRCA
+	ADD	L
+	LD	L,A		; HL -> dir entry
+	RET			; NZ, found
+
+;-----------------------------------
+
+CHKENT:
+; Checks the current directory entry against argument.
+; Stores matching names in table.
+; Check a single entry, because bdos emulators needn't
+; return a full directory sector with 4 entries to the dma.
+
+;Entry: HL -> entry in dma buffer
+
+	LD	A,(HL)
+	CP	0E5H		; Check for unused
+	RET	Z
+
+	CALL	TSTUSR		; see if OK to process
+	RET	NZ		; ignore this invalid entry
+;tstuser returns A=0 if this user area is OK.
+	LD	(CLPFLG),A	; Set flag for no entries found
+	LD	A,(FNCOUNT)	; Get number of file names to look thru
+	LD	B,A		; In b
+	LD	DE,(FNTAB)	; Pt to table
+
+CKLUP1:	PUSH	BC		; Save count
+	PUSH	HL		; Save beginning address
+	PUSH	DE
+	CALL	COMPAR		; Compare with argument and save if match
+	POP	DE
+	LD	HL,11		; Pt to next entry
+	ADD	HL,DE
+	EX	DE,HL
+	POP	HL
+	POP	BC
+	DJNZ	CKLUP1		; Count down
+	RET
+
+;--------------
+
+TSTUSR:
+; If wheel privileges are active, make no
+; restriction on user areas to search. If
+; not privileged, use MAXUSR from the ENV
+; or entries in the NDR to screen out user
+; areas to which access is forbidden. The
+; choice of criterion is based on the value
+; of the NDRFLG configuration option.
+
+;exit:	A=0, Z if this dir entry is OK to use,
+;	A=0ffh, NZ if this entry is forbidden.
+;	HL is preserved
+
+	PUSH	HL
+	CALL	TSTNDR		; NDR test configured?
+	JR	NZ,USENDR	; ..yes
+	POP	HL
+	LD	A,(ZMAXUSR)	; no, use maxusr from env
+	SUB	(HL)		; maxusr - (user from dir)
+	SBC	A,A		; make 0 if NC, 0ffh if CY set
+	RET			; ret 0 if =< maxusr, Z flag set
+
+USENDR:	LD	C,(HL)		; user from dir
+	LD	A,(DISKNO)	; current drive
+	INC	A		; use 1...16 range
+	LD	B,A		; bc = DU
+	CALL	DUNDR		; returns A=0 if not present in NDR
+
+	LD	BC,10		; offset to NDR password
+	ADD	HL,BC
+	LD	B,(HL)		; get first char of PW field
+
+	POP	HL
+	SUB	1		; 0 -> 0ffh, cy set. else nc,nz
+	RET	C		; ret 0ffh,NZ,C if not present
+	LD	A,(PRIVS)
+	INC	A		; if wheel, AF becomes 0,Z
+	RET	Z		; no password test for wheels
+	LD	A,' '		; test PW field for non-space
+	SUB	B		; ret 0,Z,NC if no PW (public entry)
+	RET			; returns 0,Z for public NDR entry
+
+;---
+
+TSTNDR:
+;exit	Z = NDR search not required
+;	NZ = use only D or DU in the NDR
+;	uses C
+
+	LD	A,(NDRFLG)
+	OR	A
+	RET	Z		; don't use NDR
+	LD	A,(USEWHL)
+	XOR	0FFH
+	RET	NZ		; use NDR unconditionally
+	LD	A,(PRIVS)	; get wheel byte
+	CPL			; invert for the XOR logic
+	LD	C,A
+	LD	A,(WHLVAL)	; 0=use NDR if wheel=0,
+				; 0ffh= use NDR if wheel=0ffh
+	XOR	C		; make 0ffh if either condition true
+	RET			; and 0 if false, with Zflag adjusted.
+
+;--------------
+
+COMPAR:
+; compare 11 bytes of directory entry against argument
+;entry: DE -> table entry to compare to
+;	HL -> dir entry in the DMA buffer
+;exit:	NZ = not matched, Z if argument matches the entry
+;	uses all registers
+
+	LD	A,(CLPFLG)	; Get found flag
+	OR	A		; 0=no
+	RET	NZ
+	LD	(TEMP),HL	; Hold pointer in case of match
+	INC	HL
+	EX	DE,HL
+	LD	B,11
+
+CMPR1:	LD	A,(DE)		; Get directory entry character
+	AND	7FH		; Strip any flags
+	CP	(HL)
+	JR	Z,CMPR2
+	LD	A,(WILDCHR)	; Get alternate wildcard char
+	CP	(HL)
+	JR	Z,CMPR2
+	LD	A,(HL)
+	CP	'?'
+	RET	NZ		; Exit, no match
+
+CMPR2:	INC	DE
+	INC	HL		; Bump to next character
+	DJNZ	CMPR1		; Loop for 11 characters
+
+	PUSH	DE		; Save entry ptr (EXT)
+	INC	DE		; S1
+	INC	DE		; S2
+	INC	DE		; RC
+	INC	DE		; Fcb[16]
+	INC	DE		; Fcb[17]
+	LD	A,(DE)		; Check for DosDisk entry
+	CP	MSDOSID
+	JR	NZ,CMPREXT
+	DEC	DE
+	LD	A,(DE)
+	CP	MSDOSID
+	JR	Z,CMPRSYS	; ..DosDisk entry, skip extent check
+CMPREXT:
+	POP	DE		; Check for 1st extent
+	LD	A,(DE)		; Get extent in b
+	LD	B,A
+	LD	A,(EXMASK)	; Get extent mask
+	CP	B
+	JR	C,CMPR4		; Not first extent
+	PUSH	DE
+	INC	DE		; S1
+	INC	DE		; S2
+	LD	A,(DE)
+	OR	A		; Check S2
+	POP	DE
+	JR	Z,CMPRSY1
+	RET			; Not first extent
+
+CMPRSYS:POP	DE
+CMPRSY1:LD	A,(SYSTEM)	; Include system files?
+	OR	A		; 0=no
+	JR	NZ,CMPR3
+	DEC	DE		; Back up 2 bytes
+	DEC	DE
+	LD	A,(DE)		; Get t2
+	AND	80H		; Check for sys
+	RET	NZ
+
+CMPR3:	LD	HL,(TEMP)	; Check for user limit
+	LD	A,31		; Max user
+	CP	(HL)		; Beyond max?
+	JR	C,CMPR4
+
+;count the entry and move to sort buffer
+	LD	HL,(FCOUNT)	; Increment count
+	INC	HL
+	LD	(FCOUNT),HL
+	LD	HL,(DSTART)	; Get ptr to next entry
+	EX	DE,HL
+	LD	HL,(TEMP)
+	LD	BC,ESIZE
+	LDIR
+
+	LD	(DSTART),DE	; Ptr to next entry
+	LD	HL,(MEMTOP)
+	XOR	A
+	SBC	HL,DE
+	JR	C,MOVFL
+
+	XOR	A
+	LD	(NOFILFLAG),A	; Reset no-files-found flag
+	RET			; Returns 'zero' flag set for match
+
+CMPR4:	OR	0FFH		; no match
+	RET
+
+MOVFL:	CALL	EPRINT
+	DB	CR,LF,'ABORT -- Not Enough Memory for Buffers',0
+	JP	QEXIT
+
+;-----------------------------------
+
+DIRALPHA:
+; alphabetizes directory data using SYSLIB
+; sort routines.
+
+	LD	HL,(FCOUNT)	; Get file count
+	LD	A,H		; Any files?
+	OR	L
+	RET	Z		; Ret A=0, flags Z,NC
+
+; set up sort parameters
+	LD	(FNREC),HL	; Set number of records to sort
+	LD	HL,(SCRATCH)	; Pt to scratch area
+	LD	(FFIRST),HL	; Start of data to sort
+	LD	HL,(DSTART)
+	LD	(FORDER),HL	; Start of sort order table
+	LD	DE,FFIRST	; -> Sort specification block
+	CALL	SSBINIT		; Initialize sort
+	JR	Z,MOVFL		; SSBINIT "out of memory" error
+	JP	SORT		; Ret a=0, flags z,nc for good sort
+
+;--------------
+
+ENTCMP:
+; Routine used by SORT - referenced via the SSB at FFIRST.
+; compare dir entry pted to by hl with that pted to by de;
+; compare by file name, file type, and user num (in that order)
+
+;entry:	HL -> record1
+;	DE -> record2
+;exit:	Z means record1 = record2 (they match)
+;	CY means record1 > record2
+;	HL, DE preserved
+;	A, BC used
+
+	PUSH	HL
+	PUSH	DE
+	INC	HL		; Pt to fn
+	INC	DE
+	LD	B,11		; Compare fn, ft
+	CALL	COMP
+	POP	DE
+	POP	HL
+	RET	NZ
+	LD	A,(DE)		; Compare user number
+	CP	(HL)
+	RET
+
+;--------------
+
+COMP:
+; compares de w/hl for b bytes; ret w/carry if de<hl.
+; msb is disregarded.
+
+	LD	C,(HL)		; Get (hl)
+	RES	7,C		; Mask msb
+	LD	A,(DE)		; Compare
+	AND	7FH		; Mask msb
+	CP	C
+	RET	NZ
+	INC	HL		; Pt to next
+	INC	DE
+	DJNZ	COMP		; Count down
+	RET
+
+;-----------------------------------
+
+PRFILES:
+; Print files in dirbuf, using pointers
+; in the SORT ORDER table.
+;exit:	uses all registers
+
+	CALL	CHKPAGE
+	CALL	FILHDR		; print file list header
+				; ..if configured
+	LD	BC,(FCOUNT)	; Get count
+	LD	A,B		; Any?
+	OR	C
+	LD	(LFCNT),A	; save as Z/NZ checksum
+	RET	Z
+
+	LD	HL,(FORDER)	; ->pointer list
+PRFLOOP:
+	PUSH	BC		; Save count
+	PUSH	HL		; Save ptr
+	LD	A,(ECOUNT)
+	RRCA			; if nc, then line done
+	CALL	NC,CHKPAGE	; ..so do pageing
+	CALL	PRINTFCB	; Print fcb
+	CALL	QKEYBD		; Allow operator abort
+
+	POP	HL		; Get regs back
+	POP	BC
+	INC	HL
+	CPI			; Inc hl, dec bc
+	JP	PE,PRFLOOP	; do another if not finished
+	LD	A,(ECOUNT)	; Check count of files listed
+	RRCA			; if even (NC), then done
+	RET	NC
+	JP	NEWLINE		; ..else terminate last line
+
+;--------------
+
+CHKPAGE:
+; Check for end of page of display if paging is active
+	LD	A,(PAGEOPT)	; See if paging in effect
+	OR	A
+	RET	Z		; Return if option not set
+	LD	A,(LPS)		; Get lines-per-screen value
+	LD	B,A		; ..into B
+	LD	A,(LINECNT)	; Get count of lines on page
+	CP	B
+	RET	C		; Return if less than full page
+
+; Pause for page break
+	CALL	EPRINT
+BEG1:	DB	' [SP=line ^C=abort RETURN=page] '
+END1:	DB	0
+	CALL	CIN
+	LD	C,A		; Save user character
+
+	LD	A,CR		; Back to beginning of line
+	CALL	COUT
+	LD	A,' '		; Overwrite message with spaces
+	LD	B,END1-BEG1
+CHKP1:	CALL	COUT
+	DJNZ	CHKP1
+
+	LD	A,C		; Retrieve user response
+	CALL	CKABORT		; ^C?
+
+	CP	' '		; See if space
+	JR	NZ,CHKP2
+	LD	A,(LINECNT)	; ..decrement line count
+	DEC	A
+	JR	CHKP3
+
+CHKP2:	XOR	A		; Reset line count
+
+CHKP3:	LD	(LINECNT),A
+	LD	A,CR
+	JP	COUT
+
+;------
+
+CKABORT:
+; Test character in A for ^c, c, C, ^x, x, X, ^k, k, K, and
+; abort if true.  All registers preserved.
+
+	PUSH	AF
+	AND	00011111B	; Mask c, C --> ^c, etc.
+	CP	CTRLC		; (side effect: allows '#', '+', and '8')
+	JR	Z,CKEXIT	; Abort
+	CP	CTRLX
+	JR	Z,CKEXIT
+	CP	CTRLK
+	JR	Z,CKEXIT
+	POP	AF
+	RET
+
+CKEXIT:	JP	BYE1		; wrap up and quit
+
+;--------------
+
+FILHDR:
+;Display single line header for list of
+;files found on one drive.
+
+	LD	A,(LFCNT)	; Were files displayed for last disk?
+	OR	A		; ..IF so (NZ),
+	CALL	NZ,NEWLINE	; skip one extra line between disks
+				; and page if necessary
+	LD	A,(HDRDEF)	; configuration byte
+	OR	A		; print header?
+	RET	Z		; return if not
+
+	LD	A,(DISKNO)
+	ADD	'A'
+	LD	(CURDRV),A
+	CALL	EPRINT		; Print header for current drive
+	DB	'Disk '
+CURDRV:	DB	' '
+	DB	' --',0
+	JR	NEWLINE		; Check for paging
+
+;--------------
+
+PRINTFCB:
+; fcb printing routine - prints a single entry
+;entry	HL -> address of the dir entry
+
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		; HL -> dir entry
+
+	CALL	EPRINT		; 4 spaces
+	DB	'   ',0
+	LD	A,(DISKNO)	; Get drive
+	LD	B,A		; Save in B
+	INC	B		; ..offset to A = 1
+	ADD	A,'A'		; Convert to character
+	CALL	COUT
+	LD	A,(HL)		; Get user number
+	PUSH	HL		; Save pointer
+	LD	C,A		; Save in C
+	CALL	PAFDC		; Print it
+	CALL	DUNDR		; Convert DU to NDR
+	LD	B,9		; Spaces to skip if no NDR
+	JR	Z,PRFCB2	; Jump if no named directory
+
+; Named directory display
+	LD	A,':'		; Print the colon separator
+	CALL	COUT
+	INC	HL		; Skip over disk in NDR
+	INC	HL		; Skip over user in NDR
+	LD	B,8		; Length of name
+
+PRFCB1:	LD	A,(HL)		; Get character
+	CP	' '		; Look for space
+	JR	Z,PRFCB2	; Don't print spaces
+	CALL	COUT
+	INC	HL
+	DJNZ	PRFCB1
+
+PRFCB2:	LD	A,(RIGHTCH)	; Print DIR|DU terminator
+	CALL	COUT
+	POP	HL		; Restore pointed to file buffer
+	LD	A,(HL)		; Get user number again
+	CP	10		; Set carry of only one digit
+	LD	A,0		; Increment B if carry set
+	ADC	A,B
+	INC	A		; One extra space in any case
+	LD	B,A		; Save count in B
+	LD	A,' '		; Pad with spaces for alignment
+
+PRFCB3:	CALL	COUT
+	DJNZ	PRFCB3
+
+	INC	HL		; Point to name of file
+	EX	DE,HL		; ..in DE for PFN1
+	CALL	PFN1		; print FN, FT
+
+	LD	HL,(TCOUNT)	; Get total file count
+	INC	HL		; Increment it
+	LD	(TCOUNT),HL	; Save new value
+	LD	A,(ECOUNT)	; Increment count of files
+	INC	A		; ..found on this drive
+	LD	(ECOUNT),A
+	RRCA			; If even (every 2nd one),
+	JR	NC,NEWLINE	; make a new line
+	CALL	EPRINT		; ..else space to second column
+	DB	'      ',0
+	RET
+
+;--------------
+
+QKEYBD:
+;Query KEYBoarD - check for a key pressed,
+;and return if none. If a key has been pressed
+;then test it for an abort, and perform the abort
+;function if appropriate. Else return the ASCII
+;key value in A.
+
+	CALL	CST
+	RET	NZ
+	CALL	CIN
+	JP	CKABORT
+
+;--------------
+
+NEWLINE:
+; print a crlf and keep count of lines on page,
+; stopping when page is full
+
+	CALL	CRLF
+	LD	A,(LINECNT)	; Get count of lines on page
+	INC	A
+	LD	(LINECNT),A
+	RET
+
+;======================================================
+;	GENERAL SUBROUTINES
+;======================================================
+
+DELCHK:	OR	A		; End of line?
+	RET	Z
+	CP	'.'		; End of field?
+	RET	Z
+	CP	','		; End of entry?
+	RET	Z
+	CP	' '
+	RET
+
+;-----------------------------------
+
+; Set bit in HL corresponding to drive number in A
+
+SETDRV:	LD	HL,1		; Seed value (drive A)
+	OR	A
+	RET	Z		; If zero, seed value is what we want
+	LD	B,A		; Get count into B
+SETDR1:	ADD	HL,HL		; Shift bit left
+	DJNZ	SETDR1		; ..number of times in B
+	RET
+
+;-----------------------------------
+
+GZ3VEC:
+;Get valid drive vector from a Z33/Z34
+;extended environment. If not an ext. env,
+;return a vector with all bits set (0ffffh).
+;exit:	DE = returned vector
+;	all registers used
+
+	LD	DE,0FFFFH	; default value..
+	LD	BC,(ENVPTR)	; Get env address
+	LD	HL,ETYPOFF
+	ADD	HL,BC		; If extended external environment type
+	BIT	7,(HL)
+	RET	Z		; Done if no extended environment
+
+	LD	HL,VDRVOFF	; ..get valid-drive bits from environment
+	ADD	HL,BC
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)		; ..in DE
+	RET
+
+;-----------------------------------
+
+GETBLV:
+;Get BDOS login vector if so configured and
+;if wheel is set. Else return 0ffffh (all
+;drives allowed)
+;exit:	HL = 0ffffh or BDOS login vector
+
+	LD	HL,0FFFFH	; default allows all drives
+	LD	A,(LOGVFL)	; Get BDOS login vector flag
+	LD	C,A
+	LD	A,(PRIVS)	; wheel byte
+	AND	C
+	RET	Z		; If not Wheel
+	LD	C,24		; Return Login Vector
+	JP	BDOS
+
+;-----------------------------------
+
+GETFN:
+; Extract file specification which may include
+; wild cards. Leading DU: or DIR: is ignored.
+;entry:	HL -> string to parse
+;	DE -> destination for FNFT (11 char)
+;exit:	HL -> terminating string delimiter
+;	DE -> next available destination location
+;	uses AF,BC
+
+	PUSH	DE		; save destination pointer
+	LD	A,-1		; DU before DIR
+	CALL	zFNAME		; parse token to dest
+	POP	DE		; destination
+	CALL	DODRIVE		; extract drive if present
+	PUSH	HL		; -> token terminator
+	LD	H,D
+	LD	L,E
+	INC	HL		; ->fn & ft fields	
+	LD	BC,11		; copy only fn,ft
+	LDIR			; to start of destination
+	POP	HL		; recover -> token terminator
+	RET
+
+;-----------------------------------
+
+DODRIVE:
+; extract the drive from the FCB if this
+; is the first one and if a drive is there.
+	LD	BC,(SDRVEC)	; single-drive vector from
+	LD	A,B		; search argument list
+	OR	C		; If NZ, then it has already
+	RET	NZ		; been set so ignore the current one
+
+	LD	A,(DE)		; drive byte from the FCB
+	OR	A		; 0 if no drive specified,
+	RET	Z		; so do nothing
+;first occurrence of a drive spec in the
+;list of files to seek. Enter it in SDRVEC.
+	PUSH	HL
+	DEC	A		; A...P = 0...15
+	CALL	SETDRV
+	LD	(SDRVEC),HL	; specify the single drive
+	POP	HL		; recover token terminator ptr.
+	RET
+
+;======================================================
+
+	DSEG
+
+;Sort Specification Block
+
+FFIRST:	DS	2		; Pointer to directory
+FNREC:	DS	2		; Number of records to sort
+FSIZE:	DW	ESIZE		; Size of each record
+FCOMP:	DW	ENTCMP		; Compare routine,(hl)cmp(de)
+FORDER:	DS	2		; Ptr to order table
+FPOINT:	DB	0FFH		; Flags pointer sort (0=no pointers)
+FNOREC:	DB	0FFH		; 0=sort records, 1=pointers only sorted
+;end SSB structure
+
+;======================================================
+
+; Uninitialized data area
+
+STACK:	DS	2		; Location of callers stack
+
+MEMTOP:	DS	2		; Highest mem avail to FF below stack
+				; (top of scratch area)
+
+DATABEG:			; Marker for data area initialization
+FNTAB:	DS	2		; File name table
+
+SCRATCH:
+	DS	2		; Scratch area, where SORT is done
+
+DSTART:	DS	2		; Pointer to first directory entry
+FCOUNT:	DS	2		; Current number of selected files
+LFCNT:	DS	1		; cksum on PREVIOUS number of files found
+
+FNCOUNT:
+	DS	1		; Number of file names found
+CLPFLG:	DS	1		; 0 for no match locally
+SYSTEM:	DS	1		; 0 if no system files
+
+				; Next two must be in this order
+TCOUNT:	DS	2		; Total count of files (2 bytes)
+ECOUNT:	DS	1		; Count of entries printed - 1
+
+NOFILFLAG:
+	DS	1		; No-file-found flag
+TEMP:	DS	2		; Temp storage for fcb print
+
+DISK:	DS	1		; Disk to search, Zero for all disks.
+EXMASK:	DS	1		; Extent mask from current DPB
+
+LPS:	DS	1		; Lines-per-screen value
+LINECNT:
+	DS	1		; Current line count
+PAGEOPT:
+	DS	1
+WILDCHR:
+	DS	1		; Alternate wildcard char (<sp> or "?")
+
+DRVVEC::	DS	2		; Working copy of drive map
+LOGVEC::	DS	2		; BDOS currently logged drive vector
+ENVVEC::	DS	2		; Extended Env drive vector or 0ffh
+MDRVEC::	DS	2		; Drive vector calculated from ZMAXDRV
+CMDVEC::	DS	2		; Drive vector from cmd tail or 0ffh
+SDRVEC::	DS	2		; Single Drive vector (cmd tail FSpec)
+
+ZMAXDRV:DS	1		; } maxdrv, copy from env.
+ZMAXUSR:DS	1		; } maxusr
+PRIVS::	DS	1		; wheel byte, adjusted to 0 or 0ffh
+
+DISKNO:	DS	1
+
+CPM3FLG:DS	1		; NZ if CP/M 3
+
+;-----------------------------------
+
+;SCBPB:				; CP/M 3 system control block
+;				; Parameter block
+;SCBFN:	DS	1		; Bios function #
+;AREG:	DS	1		; A register
+;BCREG:	DS	2		; BC register
+;DEREG:	DS	2		; DE register
+;HLREG:	DS	2		; HL register
+
+;-----------------------------------
+
+DATAEND:			; Marker for end of data
+
+	END
+                                            

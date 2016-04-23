@@ -1,0 +1,76 @@
+	page
+
+; Library:	RCPR for Z34RCP
+; Author:	Carson Wilson
+; Version:	1.0
+; Date:		June 15, 1988
+;
+; Command:	RESET
+; Function:	Reset the disk system
+; Forms:	R [d: or dir:]	- ZSDOS
+;		R		- CP/M or ZRDOS
+; Comments:	ZRDOS does not require a disk system reset when disks are
+;		changed, but directory programs will not show the correct
+;		size if this is not done.  It is also good practice.  Since
+;		no warm boot is performed, the disk in drive A need not have 
+;		the operating system on it.
+;
+;		Under ZSDOS or ZDDOS, individual drives may be reset, and
+;		if RESETSP is true, space remaining is also given.  If
+;		the fast hard disk reset capability is enabled under ZSDOS, 
+;		any "fast" fixed disks are also reset at this time.
+
+reset:
+	call	print		; Report action
+	db	' Rese','t'+80h
+;
+	ld	c,48
+	call	bdos		; ZSDOS?
+	or	a	
+	jr	nz,zsdos	; Yes
+;
+	ld	c,13		; No, do regular reset
+	jp	bdos
+;
+; Reset individual drive(s)
+;
+zsdos:
+	call	dirchek		; Abort with error if illegal drivespec
+	ld	a,(fcb1)	; Use default drive?	
+	or	a
+	jr	nz,reset0	; No, use drive from FCB1
+	ld	a,(cdrv)	; Yes, get ZCPR 3.3 current drive byte
+	inc	a		; Shift range to 1..16
+reset0:
+	ld	hl,1		; Map drive "A:"	
+reset1:
+	dec	a		; Done yet?
+	jr	z,reset2	; Yes
+	add	hl,hl		; No, shift vector to next drive
+	jr	reset1
+;
+; Check for fixed disks
+;
+reset2:
+	push	hl		; Save current or specified vector
+	ld	c,39
+	call	bdos		; ZSDOS return fixed disks in HL
+	pop	de		; Restore vector
+	ld	a,d
+	or	h		; Add any fixed disks
+	ld	d,a
+	ld	a,e
+	or	l
+	ld	e,a
+	ld	c,37		; Reset individual drive(s)
+
+	 if spaceon and resetsp
+	call	bdos
+	jp	crspace		; Show space remaining
+	 else
+	jp	bdos		; Do reset and return
+	 endif
+
+; End RCPR.LIB
+
+

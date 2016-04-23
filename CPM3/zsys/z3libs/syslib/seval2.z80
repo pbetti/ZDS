@@ -1,0 +1,86 @@
+	TITLE	"SEVAL2 - Syslib 4.3"
+	NAME	('EVAL16')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SEVAL2.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SEVAL2
+; Abstract:  This module contains the routine EVAL16 which scans
+;	an ASCII character string of Hexidecimal digits and con-
+;	verts them to a binary number.  The converted number is
+;	returned along with a pointer to the first invalid char
+;	in the string.
+; Revision:
+; 1.3 - 28 May 90 - Return Carry Set (C) if Overflow Error.  HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		EVAL16
+
+; From SYSLIB Get..
+
+	EXT		CAPS
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - EVAL16
+; Entry: HL - Points to a char string of Hex digits
+; Exit : HL - Points to first invalid Hex digit encountered
+;	 DE - Contains the accumulated binary number
+;	  A = E, Carry Set (C) if exit due to Overflow Error.
+; Uses : AF,DE,HL
+; Special Requirements: None
+;===============================================================
+
+EVAL16:	PUSH	BC		; Save BC
+	LD	DE,0		; Set DE = 0 initially
+	LD	B,D		; ..and null B for 16-bit math
+
+; Get next digit and check for '0' - '9'
+
+E16L:	LD	A,(HL)		; Get byte
+	CALL	CAPS		; Capitalize
+	SUB	'0'		; Check for range making binary
+	JR	C,DONE0		; ..exit if < 0
+	CP	'F'-'0'+1	; Check for range
+	JR	NC,DONE		; ..exitting if >F
+	CP	9+1		; Check for 0-9
+	JR	C,PROC		; ..proceed if in 0..9
+	CP	'A'-'0'		; Check for out of range
+	JR	C,DONE0		; ..exit if illegal char
+	SUB	7		; Else Adjust for 'A'-'F'
+
+; Proceed with processing
+
+PROC:	EX	DE,HL		; Swap binary value to HL
+	LD	C,A		; ..place this digit for 16-bit math
+
+; Multiply DE by 16
+
+	ADD	HL,HL		; * 2
+	JR	C,DONE		; ..abort if overflow
+	ADD	HL,HL		; * 4
+	JR	C,DONE
+	ADD	HL,HL		; * 8
+	JR	C,DONE
+	ADD	HL,HL		; * 16
+	JR	C,DONE
+	ADD	HL,BC		; ..and add in new digit
+
+	EX	DE,HL		; Swap registers back
+	INC	HL		; Pt to next character
+	JR	E16L		; ..and continue
+
+; Done -- Result already in DE; Set A=E.  Carry Set if abort due to Overflow.
+
+DONE0:	CCF			; Reverse sense of Carry if entered here
+DONE:	LD	A,E		; A = E
+	POP	BC		; Restore BC
+	RET
+
+	END
+

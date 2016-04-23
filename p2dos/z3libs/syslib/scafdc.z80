@@ -1,0 +1,76 @@
+;	TITLE	"SCAFDC - Syslib 4.0"
+	NAME	('PAFDC')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;	 	Derived from SPAFDC.Z80 by Richard Conn
+; Date    : 6 Jul 89
+; Version : 1.3
+; Module  : SCAFDC
+; Abstract: This module contains the routine PAFDC which prints
+;	the byte in the A register as one to three decimal char-
+;	acters on the CON: device.  Only the necessary characters
+;	are printed, giving the effect of printing in a left-
+;	justified one-to-three character field.  It also furnishes
+;	the routine @ADC1 to module SCADC
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		PAFDC, @ADC1
+
+; From SYSLIB Get..
+
+	EXT		COUT
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PAFDC
+; Entry:  A = Byte to print
+; Exit : - No values are returned.  The byte is printed on the
+;	    CON: device as one to three characters.
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+PAFDC:	PUSH	BC		; Save BC
+	LD	B,-1		; Set for "No chars printed"
+@ADC1:	PUSH	HL		; Save the rest of the Regs
+	PUSH	AF
+	LD	H,100		; Print Hundreds
+	CALL	PAC		; Print a char
+	LD	H,10		; Print Tens
+	CALL	PAC
+	CALL	DIV0		; Print
+	POP	AF		; Restore the registers
+	POP	HL
+	POP	BC
+	RET
+
+;  Print result of Division of A by H w/Var width sensing (Integer Division)
+
+PAC:	LD	L,-1		; Set initial result count
+PAC0:	SUB	H		; Divide by iterative subtraction
+	INC	L		; .bump count
+	JR	NC,PAC0		; ..and loop til we go too far
+	ADD	A,H		; Then correct for underflow
+	LD	H,A		; ..and store
+	LD	A,L		; Get result
+	OR	A
+	JR	NZ,DIV0		; ..jump if Not zero digit
+	OR	B		; Do we print anything?
+	LD	A,H		; .(restore digit in case)
+	RET	M		; ..quit here if not
+	LD	A,' '		; Else prepare for leading space
+	JR	Z,CO		; ..jump if we are printing a space
+	XOR	A		; Else we print a real Zero
+DIV0:	ADD	A,'0'		; Convert to decimal
+	LD	B,A		; ..save as flag for next digit
+CO:	CALL	COUT		; Print it
+	LD	A,H		; Restore A from Temp store in H
+	RET
+
+	END
+

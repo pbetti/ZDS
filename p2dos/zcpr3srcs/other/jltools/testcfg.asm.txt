@@ -1,0 +1,74 @@
+title	testcfg.asm 3/5/88
+
+; this is a dummy CFG module, to show the
+; structure.  When run, it tells the console
+; where it gets called by JetLDR.  The function number
+; printout is just ascii, to keep it very simple.
+; 
+; e.g. try:
+;
+;  A>JetLDR testcfg.zrl rcpsampl.zrl 
+;
+
+name	CFGtst		;CFG required
+
+com	/_CFG_/
+
+	jp	start
+	db	'Z3CFG'
+;
+start:	add	'0'		; make parameter printable
+	ld	(altr),a
+	ld	a,c
+	add	'0'
+	ld	(cltr),a	; ditto	
+	ld	hl,msg
+	call	sayit
+	ld	hl,envadr	; we could reference the z3env
+				; directly, for example
+	xor	a		; a = 0, PROCEED WITH NORMAL LOAD
+	ret
+;
+pstraddr equ $+1
+sayit:	call	$-$		; print nul-term. string
+	ret
+;
+msg:	db	0dh,0ah
+	db	'cfg: a = pktype = '
+altr:	db	'    c = fn = '
+cltr:	db	'  ',0
+
+com	/_ID_/
+	db	0dh,0ah
+	db	'testcfg 3/5/88',0
+
+; example of a named common reference
+; (or, include Z3COMMON.LIB)
+;
+com	/_ENV_/
+envadr	equ	$
+	
+com	/_INIT_/
+;
+; Example of initialization code for the CFG module
+; and an inter-segment reference to the cfg base,
+; which will use the print-string addr again.
+;
+; Note that this routine is called only once.
+; The code is OVERLAYED after that with a dummy routine.
+;
+
+	ld	(pstraddr),hl	; set up string-print address
+	ld	hl,initmsg
+	call	sayit
+	ret
+
+initmsg:
+	db	0dh,0ah
+	db	'testinit: I''m here!',0
+;	
+	end	;testcfg
+art
+	db	'Z3CFG'
+;
+start:	add	'0'		; make p

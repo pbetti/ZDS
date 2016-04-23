@@ -1,0 +1,119 @@
+
+; Z33MAC.LIB : Macros for use with ZCPR33
+
+; General purpose macros
+
+PUTREG	  MACRO
+	PUSH	HL		; Save registers in order
+	PUSH	DE
+	PUSH	BC
+	  ENDM
+
+GETREG	  MACRO
+	POP	BC		; Restore registers in order
+	POP	DE
+	POP	HL
+	  ENDM
+
+SWAP	  MACRO
+	RRCA			; Exchange nibbles
+	RRCA
+	RRCA
+	RRCA
+	  ENDM
+
+;----------------------------------------
+; Macro for forming option bytes
+
+; This macro generates a byte with bits corresponding to up to 8 option
+; flags.  The bits are filled in the order of the parameters and are right
+; justified in the byte.
+
+OPTFLAG  MACRO	F1,F2,F3,F4,F5,F6,F7,F8
+
+FLAG	DEFL	0		;; initial value
+
+	IRP	TEMP,<F1,F2,F3,F4,F5,F6,F7,F8>
+
+	  IF  NOT NUL TEMP
+FLAG	DEFL	FLAG SHL 1
+	  IF  TEMP
+FLAG	DEFL	FLAG OR 1
+	  ENDIF	;;temp
+	  ENDIF	;;not nul temp
+
+	  ENDM		;; irp
+
+	DEFB	LOW FLAG
+
+	  ENDM		;; optflag
+
+;-----------------------------------------------------------------------------
+; Command table entry definition macro
+
+; Macro to form an entry for one command in the table.  The first parameter is
+; the name to be used for the command (no quotes); the second parameter is the
+; flag that indicates whether or not the command is to be enabled; the third
+; parameter is the wheel control flag; and the last parameter is the jump
+; address to the code that carries out the command.  The command names are
+; automatically padded out to the correct length (they will be truncated and
+; an error message will result if a command name is too long).  The characters
+; in the command name are automatically converted to upper case.
+
+COMMAND	  macro  CMDNAME,ENABLEFLAG,WHEELFLAG,ADDRESS
+
+	  IF  ENABLEFLAG	;; Generate command only if enabled
+
+WHLMASK	DEFL	WHEELFLAG	;; Initialize variables
+COUNT	DEFL	CMDSIZE		;; Initialize to size of each command name
+
+	IRPC	CHAR,CMDNAME	;; Repeat over letters in command name
+
+COUNT	DEFL	COUNT - 1	;; Count down characters in name
+
+	  IF  [ COUNT LT CMDSIZE ]
+
+		;; If character is lower case, convert to upper case
+
+	  IF  [ '&CHAR' GE 'a' ] AND [ '&CHAR' LE 'z' ]
+
+	  IF  WHLMASK
+	DEFB	[ '&CHAR' AND 5FH ] + 80H
+	  ELSE	;;not whlmask
+	DEFB	[ '&CHAR' AND 5FH ]
+	  ENDIF	;;whlmask
+
+	  ELSE	;;not lower case
+
+	  IF  WHLMASK
+	DEFB	'&CHAR' + 80H	;; If controlled by wheel, set high bit
+	  ELSE	;;not whlmask
+	DEFB	'&CHAR'		;; If not restricted, leave high bit clear
+	  ENDIF	;;whlmask
+
+	  ENDIF	;;lower case
+
+	  ENDIF	;;[ count lt cmdsize ]
+
+WHLMASK	DEFL	FALSE		;; Turn off high-bit setting after first char
+
+	  ENDM	;irpc
+
+		;; Pad command name with blanks
+
+	  IF  [ COUNT GT CMDSIZE ]	;; If we underflowed
+	*** Command name "&cmdname" is too long / truncated ***
+	  ELSE
+	  REPT  COUNT
+	DEFB	' '
+	  ENDM
+	  ENDIF	;[ count gt cmdsize ]
+
+	DEFW	ADDRESS		;; Dispatch address for command
+
+	  ENDIF	;enable
+
+	  ENDM	;command
+
+; End Z33MAC.LIB
+

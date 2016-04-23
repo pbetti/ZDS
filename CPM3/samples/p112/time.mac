@@ -1,0 +1,522 @@
+	title	'Time module for the Modular CP/M 3 BIOS'
+
+;	CP/M-80 Version 3	-- Modular BIOS
+;       Dallas DS-1202 clock interface on the D-X Designs Pty Ltd P112.
+;	Initial version 1.0
+;	Use M80 to compile
+
+	public	?time
+
+	extrn	?bank
+
+	extrn	@date,@hour,@min,@sec
+	extrn	@cbnk
+	extrn	@bios$stack
+
+	.Z80
+z80182	equ	1
+	include	Z180.INC
+	include	P112EQU.INC
+
+	; Definitions for the P112 Clock Interface
+
+DDRA	equ	0EDh		; Z80182 Data Definition Register A
+DRA	equ	0EEh		; Z80182 Data Register A
+
+RTCRst	equ	2		; DS-1202 Reset\ Bit
+RTCClk	equ	1		; DS-1202 Clock Bit
+RTCDat	equ	0		; DS-1202 Data IO Bit
+
+
+	cseg	; time must be done from resident memory
+
+	; DS1202 clock support
+
+?time:
+	if	banked
+
+	ld	(sp$temp),sp
+	ld	sp,@bios$stack	; switch to a local stack
+	ld	a,(@cbnk)
+	push	af		; save current bank number
+	ld	a,0
+	call	?bank
+	call	do$time
+	pop	af
+	call	?bank		; restore caller's bank
+	ld	sp,(sp$temp)
+	ret
+
+sp$temp: dw	0
+
+	dseg	; following goes to banked memory
+
+	endif
+
+do$time:
+	ld	a,c		; set time ?
+	or	a
+        jp	nz,set$time
+
+	push	hl
+	push	de
+	ld	hl,tim$str	; point to the destination time string
+	call	rdtime		; read clock
+	ld	a,(ds$mon)	; fetch month
+	call	bcd2bin
+	dec	a		; month = 0...11
+	add	a,a
+	ld	e,a
+	ld	d,0
+	ld	hl,mdays
+	add	hl,de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; month_days[month]
+	ld	a,(ds$year)	; fetch year
+	call	bcd2bin
+	sub	78		; 1978
+	jr	nc,t1
+	add	a,100
+t1:	ld	de,365
+	ld	l,a
+	ld	h,d
+	mlt	hl
+	ld	h,l
+	ld	l,0
+	ld	d,a
+	mlt	de
+	add	hl,de		; HL = A * 365
+	add	hl,bc		; + month_days[month]
+	ld	a,(ds$day)	; fetch day
+	call	bcd2bin
+	ld	c,a		; day = 1...29,30, or 31
+	ld	b,0
+	add	hl,bc		; + day
+	push	hl
+	ld	hl,78		; 1978
+	ld	de,0
+	call	leapdays
+	ex	de,hl
+	pop	hl
+	or	a
+	sbc	hl,de		; - leap_days(78, 0)
+	push	hl
+	ld	a,(ds$year)	; year
+	call	bcd2bin
+	cp	78
+	jr	nc,t2
+	add	a,100
+t2:	ld	l,a
+	ld	h,0
+	ld	a,(ds$mon)	; month
+	call	bcd2bin
+	dec	a		; month = 0...11
+	ld	e,a
+	ld	d,0
+	call	leapdays
+	pop	de
+	add	hl,de		; + leap_days(year, month)
+	di
+	ld	(@date),hl
+	ld	a,(ds$hour)
+	call	cvt$hour	; convert hour to 24-hours format
+	ld	(@hour),a
+	ld	a,(ds$min)
+	ld	(@min),a
+	ld	a,(ds$sec)
+	ld	(@sec),a
+	ei
+	pop	de
+	pop	hl
+	ret
+
+set$time:
+	push	hl
+	push	de
+	di
+	ld	hl,(@date)
+	call	conv$date
+	ld	a,(@hour)
+	ld	(ds$hour),a
+	ld	a,(@min)
+	ld	(ds$min),a
+	ld	a,(@sec)
+	ld	(ds$sec),a
+	ei
+	ld	hl,tim$str
+	call	sttime
+	pop	de
+	pop	hl
+	ret
+
+	; Support routines
+
+leapdays:
+	ld	h,0		; just in case...
+	ld	a,l
+	rrca
+	rrca
+	and	3Fh
+	ld	l,a		; HL = year / 4
+	and	3
+	ret	nz
+	push	hl
+	ld	hl,mdays
+	add	hl,de
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; month_days[month]
+	pop	hl
+	ld	a,d
+	or	a
+	ret	nz
+	ld	a,59
+	cp	d
+	ret	nc
+	dec	hl
+	ret
+
+bcd2bin:
+	push	de
+	ld	d,a
+	and	0F0h
+	ld	e,a
+	ld	a,d
+	and	0Fh
+	srl	e
+	add	a,e
+	srl	e
+	srl	e
+	add	a,e
+	pop	de
+	ret
+
+bin2bcd:
+	push	bc
+	ld	b,10
+	ld	c,-1
+sb1:	inc	c
+	sub	b
+	jr	nc,sb1
+	add	a,b
+	sla	c
+	sla	c
+	sla	c
+	sla	c
+	or	c
+	pop	bc
+	ret
+
+; convert DS1202 hour to 24-hour format
+
+cvt$hour:
+	bit	7,a		; already in 24-hour format?
+	ret	z		; return if yes
+	and	7Fh
+	bit	5,a		; check AM/PM bit
+	ret	z		; return if AM
+	and	1Fh
+	add	a,12h		; correct if PM
+	cp	24h		; hour >= 24?
+	ret	c		; return if not
+	sub	24h		; otherwise correct it
+	ret
+
+; compute day of week from number of days
+
+compute$dow:
+	push	hl
+	dec	hl
+	ld	e,7
+	call	div		; day of week = (num days - 1) mod 7
+	pop	hl
+	ret
+
+; compute year from number of days, returns year in BC and
+; remaining number of days in HL
+
+compute$year:
+	ld	bc,78		; base year
+cy1:	ld	de,365		; year length
+	ld	a,c
+	and	3		; leap year?
+	jr	nz,cy2
+	inc	de		; 366
+cy2:	push	hl
+	dec	de
+	or	a
+	sbc	hl,de		; rem days - year length
+	jr	c,cy3		; return if <= 0
+	pop	af
+	dec	hl
+	inc	bc		; ++year
+	jr	cy1
+cy3:	pop	hl
+	ret
+
+; compute month from remaining number of days
+; on entry, C = leap bias, HL = rem days
+; returns month in DE, rem days in HL
+
+compute$month:
+	push	hl
+	ld	de,11		; E = month, D = 0
+	ld	b,d		; B = 0
+cm1:	ld	a,e
+	cp	2		; jan or feb?
+	jr	nc,cm2
+	ld	c,b		; leap bias = 0
+cm2:	ld	hl,mdays
+	add	hl,de
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		; HL = month_days[month]
+	add	hl,bc		;      + leap bias
+	ex	de,hl
+	ex	(sp),hl		; HL = rem days
+	ld	a,e
+	sub	l
+	ld	a,d
+	sbc	a,h
+	ex	(sp),hl
+	ex	de,hl		; mdays[month] + leap_bias < rem days?
+	jr	c,cm3		; return if yes
+	dec	e
+	jp	p,cm1
+cm3:	pop	hl
+	ret
+
+; convert CP/M date (num of days) to dd mm yy
+; HL - number of days (1 = Jan 1, 1978)
+
+conv$date:
+	call	compute$dow	; compute day of week
+	inc	a		; base 1
+	ld	(ds$dow),a
+	call	compute$year	; compute year, return remaining days
+	ld	a,c
+	cp	100		; above year 2000?
+	jr	c,cvd0
+	sub	100		; correct if yes
+cvd0:	call	bin2bcd
+	ld	(ds$year),a
+	ld	e,0		; leap bias
+	ld	a,c
+	and	3		; (year & 3) == 0 ?
+	jr	nz,cvd1
+	ld	a,l
+	sub	59+1		; ..and (rem days > 59) ?
+	ld	a,h		;   (after feb 29 on leap year)
+	sbc	a,0
+	jr	c,cvd1
+	inc	e		; ..then leap bias = 1
+cvd1:	ld	c,e
+	call	compute$month
+	push	de
+	push	hl
+	ld	hl,mdays
+	add	hl,de
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		; HL = month_days[month]
+	ld	b,0
+	add	hl,bc		;      + leap bias
+	ex	de,hl
+	pop	hl
+	or	a
+	sbc	hl,de		; day = rem days - HL
+	ld	a,l
+	call	bin2bcd
+	ld	(ds$day),a
+	pop	de
+	inc	de		; ++month (conver to base 1)
+	ld	a,e
+	call	bin2bcd
+	ld	(ds$mon),a
+	ret
+
+; HL = HL / E, remainder in A
+
+div:	ld	b,16+1		; 17 times thru loop
+	xor	a		; clear remainder and carry
+div1:	adc	a,a		; shift accum left + carry
+	sbc	a,e		;  subtract divisor
+	jr	nc,div0		;   jump if it worked
+	add	a,e		; else restore accum and carry
+div0:	ccf			; flip carry bit
+	adc	hl,hl		;  shift and carry into divident/quotient
+	djnz	div1		; loop until done
+	ret
+
+;-------------------------------------------------------------------------
+; Activate the Clock chip and set Date/Time from the string passed in HL.
+
+sttime:	di
+	call	copen		; Open the Clock
+	ld	a,8Eh
+	call	wrbyte		; Write-Protect Off
+	ld	a,0
+	call	wrbyte
+	call	cclosw
+	call	copen
+	ld	a,0BEh		; Burst Write
+	ld	e,8		;  8 bytes
+	call	wrbyte
+stloop:	ld	a,(hl)
+	call	wrbyte
+	inc	hl
+	dec	e
+	jr	nz,stloop
+	call	cclosw
+	ei
+	ret
+
+;-------------------------------------------------------------------------
+; Read the clock to a buffer area in memory. Seven bytes are read in burst
+; mode from the clock chip, one bit at a time via three bits from one of the
+; Z-182 parallel ports. The clock is accessed serially (LSB first) one byte
+; at a time with a command byte being written to begin the Read/Write. 
+; Burst mode is used with a 0BFH byte for reading, 0BEH for writing as the
+; command. Clock setting clears the Write Protect bit before setting, and
+; resets the chip to Read-Only when finished.
+;
+; The entire Date/Time string is eight bytes read as:
+;
+;	Sec   Min   Hour   Day   Mon   DOW   Year   WProt
+;                  (12/24)                          (MSB)
+;
+; In this implementation, the 12/24 hour bit is always set to 24-hour mode
+; by clearing the MSB to 1.
+
+rdtime:
+	di
+	call	copen		; set clock to read, returning BC->DRA port
+	push	de
+	push	hl		; preserve ptr
+
+; Command the DS-1202 for burst read of clock
+
+	ld	a,0BFh		; load the Burst Clock Read Command
+	call	wrbyte		;  and send it
+
+; Read the clock data, use D as byte index
+
+	ld	d,7		; 7 Bytes to Read
+rdtim0:	push	hl		; Save Ptr
+	ld	e,8		; Gather 8 bit for a byte
+rdtim1:	in	a,(c)		; Read Port
+	res	RTCClk,a	;  Clock LO
+	out	(c),a		;   Set
+	nop			;    (settle)
+	in	a,(c)		;     Read Bit to LSB
+	rrca			; Data Bit to Carry
+	rr	l		;  to MSB of Accum
+	rlca			;   restore Parallel Port bits
+	set	RTCClk,a	; Clock HI
+	out	(c),a		;  Set
+	dec	e		; Byte Done?
+	jr	nz,rdtim1	; ..jump if Not
+
+	ld	e,l		; Else Get Byte
+	pop	hl		; Restore Ptr to Dest
+	ld	(hl),e		; Save value in output string
+	inc	hl		;  go to next byte in output
+	dec	d		;   decrement counter
+	jr	nz,rdtim0	; ..get another byte if not done
+	call	cclose		; Else Deselect Clock
+	pop	hl		; Restore Ptr
+	pop	de
+	ei
+	ret
+
+;--------------------------------------------------------------------
+; Set up DS-1202 interface from Z80182 Parallel port
+; Entry: None
+; Exit : BC -> Data Port w/Clk at bits 0-2
+; Uses : AF,BC,DE
+
+copen:	ld	bc,DDRA		; Address Parallel Port A Control
+	in	a,(c)		; Read Settings
+	set	RTCDat,a	;  Data Line to Input
+	out	(c),a		;   and Set
+	inc	bc		; Address Parallel Port A (DRA)
+	in	a,(c)		; Fetch settings
+	res	RTCClk,a	;  Clk LO to Start
+	out	(c),a		;   (set)
+	set	RTCRst,a	;    Clear Reset to HI
+	out	(c),a		;     (set)
+	ret
+
+;--------------------------------------------------------------------
+; Write the Byte in A to the clock (used for Command)
+; Entry: BC -> Data Port (DRA)
+; Exit : None
+; Uses : AF,E
+
+wrbyte:	push	hl		; Save Regs
+	push	de
+	ld	l,a		;  Store byte
+	ld	e,8		;   set bit count
+	in0	a,(DDRA)	; Fetch Def'n Reg contents
+	res	RTCDat,a	;  Data Line to Output
+	out0	(DDRA),a	;   (set)
+wrloop:	in	a,(c)		; Read Parallel Port
+	res	RTCClk,a	;  Clk LO
+	out	(c),a		;   (set)
+	srl	a		; (clear LSB)
+	rr	l		; Data Byte LSB to Carry
+	rla			;  then to Parallel Port LSB
+	out	(c),a		;   (set)
+	set	RTCClk,a	; Clk HI
+	out	(c),a		;  (set)
+	dec	e		; Eight Bits Sent?
+	jr	nz,wrloop	; ..loop if Not
+
+	in0	a,(DDRA)
+	set	RTCDat,a	; Set Port to Data IN
+	out0	(DDRA),a
+	pop	de
+	pop	hl		;  Restore Regs
+	ret
+
+;--------------------------------------------------------------------
+; Deselect the Clock for Exit
+; Enter: BC -> Z80182 Parallel Port A
+; Exit : None
+; Uses : AF
+
+cclosw:	in0	a,(DDRA)
+	set	RTCDat,a	; Data Line IN
+	out0	(DDRA),a
+cclose:	in	a,(c)		; Fetch Parallel Port
+	set	RTCClk,a	;  Clk to HI
+	out	(c),a
+	res	RTCRst,a	;   Reset Active LO
+	out	(c),a
+	ret
+
+
+mdays:
+;		jan feb mar apr may jun jul aug sep oct nov dec
+	dw	000,031,059,090,120,151,181,212,243,273,304,334
+
+tim$str:
+	ds	8		; string for reading/setting date/time
+ds$sec	equ	tim$str+0
+ds$min	equ	tim$str+1
+ds$hour	equ	tim$str+2
+ds$day	equ	tim$str+3
+ds$mon	equ	tim$str+4
+ds$dow	equ	tim$str+5
+ds$year	equ	tim$str+6
+
+	db	0
+
+	end
+

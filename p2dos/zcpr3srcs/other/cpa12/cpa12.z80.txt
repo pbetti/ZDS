@@ -1,0 +1,1304 @@
+	title	ComPare Ascii utility 
+
+; Program:	CPA
+; Author:	Carson Wilson <crw>
+; Date:		February 20, 1989
+; Version:	1.2
+
+vers	equ	12
+
+; Changes:	Added Z3PLUS datestamp support.
+;		Separated code from data segments.
+;		Used SFXIO routines and 4k I/O buffers for better performance.
+;		Fixed bug at GETNXTLN which caused read past end of file.
+;		Added datestamp display to DISP_SCREEN.
+;		For faster operation, CPA will not refresh the whole screen if 
+;		 keyboard input is available (G, ^E, ^X commands).
+;		Allow user interrupt during long compares.
+;		Use defaults for missing parts of command line (e.g., if 
+;		 second filename is missing, use first filename for both).
+;		Added built-in help.
+;		Added ZCPR environment detection (aborts unless ZCPR present).
+;		Added comments to clarify code (hint: study the data 
+;		 structures at the end CPA.Z80 before tackling the code).
+;		Commented .NEW's and renamed labels for Z80ASM.
+
+; Assembly:	VLIB, Z3LIB, ZSLIB, S0FILEIO, S1FILEIO, SYSLIB, Z80ASM, SLRNK
+
+;
+; PREVIOUS VERSIONS
+;
+; Author:   Malcom Kemp
+; Date:     January 7, 1987
+; Version:  1.0
+;
+
+ctrl_c	equ	3
+ctrl_e	equ	5
+bs	equ	8
+tab	equ	9
+lf	equ	10
+cr	equ	13
+ctrl_x	equ	24
+ctrl_z	equ	26
+del	equ	7Fh		; Delete character
+
+no	equ	0
+yes	equ	not no
+
+wboot	equ	0		; Warm boot
+bdos	equ	5		; BDOS entry 
+dfcb	equ	5Ch		; Default FCB
+dfcb2	equ	6Ch		; Second file
+fcb_length equ	36		; Length of file control block
+dbuf	equ	80h		; Default buffer
+llrec	equ	128		; Length of logical record
+
+iobufs	equ	32		; Length of IO block in records
+
+	public	$memry
+
+	extrn	pa2hc,phl4hc
+	extrn	print,pstr,cout,pfn2,pafdc,phlfdc,phldc
+	extrn	retud,logud
+	extrn	z3vinit,tinit
+	extrn	capin
+	extrn	cls,ereol,gxymsg,at,gotoxy,vprint
+	extrn	fxi$open,fx$get,fxi$close
+
+	extrn	cst,condin			; SYSLIB
+
+	extrn	prdat2,ptimm2,getstp,gstpcp	; ZSLIB
+
+test	equ	no			; Include debugging routines
+
+; Start of routine
+;
+; External ZCPR3 Environment Descriptor
+;
+	jp	start
+	db	'Z3ENV'		; This is a zcpr3 utility
+	db	1		; External environment descriptor
+z3eadr:
+	dw	0		; Filled in by Z33 or installer
+start:	
+	call	print
+	db	cr,lf
+	db	'CPA, Version ',vers / 10 + '0','.',vers mod 10 + '0'
+	db	' - Compare ASCII files.',cr,lf,0
+
+; Check for help
+
+	ld	a,(dfcb+1)
+	cp	' '
+	jr	z,help
+	cp	'/'
+	jr	nz,testz3
+help:
+	call	print
+	db	'  Syntax:',cr,lf
+	db	tab,'CPA [dir:]ufn [dir:][ufn]',cr,lf,0
+	ret
+testz3:
+	ld	hl,(z3eadr)	; Hl -> zcpr3 environment
+	ld	a,h		; Test ZCPR <crw>
+	or	l
+	jr	nz,gotz3
+	call	print
+	db	'Need ZCPR3',cr,lf,0
+	ret
+gotz3:
+	call	z3vinit
+	call	tinit
+
+; Get our home user/disk
+
+	call	retud
+	ld	(home_ud),bc
+
+	ld	hl,fm1		; File 1 management
+	ld	(cur_file),hl
+	ld	hl,fm2
+	ld	(bak_file),hl	; Initialize file pointers
+
+; Set up needed buffers:
+;	line_buf	(lb_length bytes)
+;	fm1.fm_b1	(b_length bytes)
+;	fm1.fm_b2	(b_length bytes)
+;	fm2.fm_b1	(b_length bytes)
+;	fm2.fm_b2	(b_length bytes)
+;
+	xor	a,a
+	ld	hl,fm1
+	ld	de,fm1+1
+	ld	bc,fm_ctl-1
+	ld	(hl),a
+	ldir			; Clear Structure
+	inc	hl
+	ld	(hl),iobufs	; Initialize SYSLIB IO block
+	ld	bc,fm_ptr-fm_ctl
+	add	hl,bc		; Point to buffer ptr.
+	ld	e,l
+	ld	d,h		; DE --> buffer ptr.
+	ld	bc,fm_buf-fm_ptr
+	add	hl,bc		; HL --> buffer
+	ex	de,hl
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d		; Buffer ptr. --> buffer
+
+	ld	hl,fm2
+	ld	de,fm2+1
+	ld	bc,fm_ctl-1
+	ld	(hl),a
+	ldir			; Clear Structure
+	inc	hl
+	ld	(hl),iobufs
+	ld	bc,fm_ptr-fm_ctl
+	add	hl,bc		; Point to buffer ptr.
+	ld	e,l
+	ld	d,h
+	ld	bc,fm_buf-fm_ptr
+	add	hl,bc
+	ex	de,hl
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+
+	ld	hl,(bdos+1)	; Get protect address
+	ld	l,0		; Make page aligned
+	dec	h		; Leave room for stack
+	ld	sp,(bdos+1)	; Set stack
+$memry	equ	$+1		; <crw>
+	ld	de,0		; HL = Ceil, DE = floor
+	or	a,a		; Reset carry
+	sbc	hl,de		; Available space
+	ld	de,lb_length	; Space for line assembly buffer
+	sbc	hl,de		; Space for line buffers
+	srl	h
+	rr	l		; Divide by two
+	srl	h
+	rr	l		; Divide by four
+	ld	(b_length),hl	; Save buffer length
+
+	ld	hl,($memry)
+	ld	(line_buf),hl	; Set line assembly buffer
+
+	ld	de,lb_length	; Length of line assembly bufer
+	add	hl,de
+	ld	(fm1+fm_b1),hl	; Set buffer 1
+	ld	de,(b_length)	; Length of buffer 1
+	add	hl,de
+	ld	(fm1+fm_b2),hl	; Set buffer 2
+
+	ld	de,(b_length)	; Length of buffer 2
+	add	hl,de
+	ld	(fm2+fm_b1),hl	; Set buffer 1
+	ld	de,(b_length)	; Length of buffer 1
+	add	hl,de
+	ld	(fm2+fm_b2),hl	; Set buffer 2
+
+; Open files, set fm_ areas
+
+fixf1:
+	ld	iy,fm1		; IY -> current file structure
+
+	ld	hl,dfcb		; @5ch
+	ld	de,fm1+fm_fcb
+	ld	bc,16
+	ldir			; Move fcb1 into place
+
+	ld	hl,(fm1+fm_b1)
+	ld	(fm1+fm_empptr),hl
+	ld	hl,(b_length)
+	ld	(fm1+fm_empcnt),hl ; Set empty pointer
+	ld	a,1
+	ld	(fm1+fm_scrn),a	; Set screen position
+
+	ld	a,(fm1+fm_fcb+13) ; Get user
+	ld	c,a		; Into C
+	ld	a,(fm1+fm_fcb)	; Get disk
+	or	a,a		; Is it default
+	jr	nz,a0$		; No
+	ld	a,(home_ud+1)	; Get default
+	jr	a1$		; Use default
+a0$:
+	dec	a		; Make into disk number
+a1$:
+	ld	b,a		; Put in B
+	ld	(fm1+fm_ud),bc	; And save in structure
+	xor	a,a		; Get a zero
+	ld	(fm1+fm_fcb),a	; And fix fcb disk
+
+	ld	bc,(fm1+fm_ud)	; Get our user/disk
+	call	logud
+	ld	de,fm1+fm_fcb	; Get file control block
+;
+; Get stamp to STPBUF1 <crw>
+;
+	ld	hl,stpbuf1
+	call	getstp		; Got stamp? 
+	jr	z,save1
+	call	gstpcp		; Try for CP/M Plus
+save1:	ld	(gots1),a	; Save status
+;
+	ld	de,fm1+fm_ctl	; Get I/O control block
+	call	fxi$open
+	jp	z,openerr	; No good, report error
+
+fixfl2:
+	ld	iy,fm2		; IY -> current file structure
+
+;	ld	hl,dfcb2
+
+; If filename2 missing, copy default to filename 1
+
+	ld	de,dfcb2+1	; Point to filename2 
+	push	de
+	ld	a,(de)
+	cp	' '		; DFCB2's name blank?
+	jr	nz,gotfn2	; No
+	ld	hl,dfcb+1	; Yes, default to DFCB's name
+	ld	bc,11
+	ldir
+gotfn2:
+	pop	hl		; Point to filename2
+	dec	hl
+
+	ld	de,fm2+fm_fcb
+	ld	bc,16
+	ldir			; Put fcb in place
+
+	ld	hl,(fm2+fm_b1)
+	ld	(fm2+fm_empptr),hl
+	ld	hl,(b_length)
+	ld	(fm2+fm_empcnt),hl ; Set empty pointer
+	ld	a,12
+	ld	(fm2+fm_scrn),a	; Set screen position
+
+	ld	a,(fm2+fm_fcb+13) ; Get user
+	ld	c,a		; Into C
+	ld	a,(fm2+fm_fcb)	; Get disk
+	or	a,a		; Is it default
+	jr	nz,b0$		; No
+	ld	a,(home_ud+1)	; Get default
+	jr	b1$		; Use default
+b0$:
+	dec	a		; Make into disk number
+b1$:
+	ld	b,a		; Put in B
+	ld	(fm2+fm_ud),bc	; And save in structure
+	xor	a,a		; Get a zero
+	ld	(fm2+fm_fcb),a	; And fix fcb disk
+
+	ld	bc,(fm2+fm_ud)	; Get our user/disk
+	call	logud
+	ld	de,fm2+fm_fcb	; Get file control block
+;
+; Get stamp to STPBUF2
+;
+	ld	hl,stpbuf2
+	call	getstp		; Got stamp? 
+	jr	z,save2
+	call	gstpcp		; Try for CP/M Plus
+save2:	ld	(gots2),a
+;
+	ld	de,fm2+fm_ctl	; Get I/O control block
+	call	fxi$open
+	jp	z,openerr
+
+	call	print
+	db	'  Working.. ',0
+
+;
+; MAINLOOP
+;
+mainloop:
+
+; Allow user to interrupt compare
+
+	call	condin		; User interrupt?
+	jr	nz,c2$		; Yes
+;
+	ld	a,(fm1+fm_eof)
+	ld	b,a
+	ld	a,(fm2+fm_eof)
+	or	a,b		; Do we have an EOF?
+	jp	nz,c5$		; Yes, quit
+	ld	iy,fm1
+	call	getnxtln	; Get next line
+	ld	iy,fm2
+	call	getnxtln	; In both files
+	ld	hl,(fm1+fm_curptr)
+	ld	(ptr1),hl
+	ld	hl,(fm2+fm_curptr)
+	ld	(ptr2),hl	; Set pointers for compare
+	call	compare
+	jr	z,mainloop	; Keep going
+c2$:
+	call	disp_screen
+	jr	z,c3$		; Interrupted--process input
+
+;Command? (<sp>=Switch, ^e=Up, ^x=Down, g=Go): _
+
+c2a$:
+	call	gxymsg
+	db	24,1
+	db	1,'Command? ('
+	db	2,'<sp>',1,'=Switch, ',2,'^e',1,'=Up, '
+	db	2,'^x',1,'=Down, ',2,'g',1,'=Go):     ',bs,bs,bs,bs,2,0
+c3$:
+	call	cin_e
+c4$:
+	cp	a,'G'
+	jp	z,do_g
+
+	cp	a,'S'
+	jp	z,do_s
+	cp	' '
+	jp	z,do_s
+
+	cp	a,ctrl_e
+	jp	z,do_e
+	cp	a,'E'
+	jp	z,do_e
+
+	cp	a,ctrl_x
+	jp	z,do_x
+	cp	a,'X'
+	jp	z,do_x
+
+	call	gxymsg
+	db	24,47
+	db	2,'Huh? ',0
+	call	cin_e
+	push	af
+	call	gxymsg
+	db	24,47
+	db	'    ',0
+	pop	af
+	jr	c4$
+
+do_g:
+	call	gxymsg
+	db	24,47
+	db	2,'Wait ',0
+	jp	mainloop
+do_s:
+	ld	hl,(cur_file)
+	ld	iy,(bak_file)
+	ld	(cur_file),iy
+	ld	(bak_file),hl
+	call	set_file_ptr
+;	call	set_cur
+;	jp	c3$
+	jp	c2a$
+do_e:
+	ld	iy,(cur_file)
+	ld	d,(iy+fm_curptr+1)
+	ld	e,(iy+fm_curptr)	; Point to current line
+	ld	hl,lc_pptr
+	add	hl,de		; HL -> previous line pointer
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		; HL -> previous line
+	or	a,h
+	jp	z,c2$		; No previous, just return
+	ld	(iy+fm_curptr+1),h
+	ld	(iy+fm_curptr),l	; Set to current
+	jp	c2$
+
+do_x:
+	ld	iy,(cur_file)
+	call	getnxtln	; Get next line
+	jp	c2$
+c5$:
+	call	disp_screen
+	call	gxymsg
+	db	24,1
+	db	2,'Type any key to return to system.',0
+	call	capin
+	call	exit
+
+;
+; COMPARE - Compare lines pointed to by PTR1 and PTR2
+;
+compare:
+	ld	hl,(ptr1)
+	ld	de,lc_cnt
+	add	hl,de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; BC = length of line 1
+	ld	hl,(ptr2)
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; DE = length of line 2
+	push	de
+	pop	hl
+	xor	a,a		; Clear carry, set flag to equal
+	sbc	hl,bc		; Length 2 - length 1
+	jr	z,d2$		; Equal, don't flag on length
+	jr	nc,d1$
+	push	de
+	pop	bc
+d1$:				; BC = count of shorter
+	or	a,0FFh		; Show lengths different
+d2$:
+	ld	(mismatch),a	; Set mismatch flag
+	ld	de,lc_string	; Offset
+	ld	hl,(ptr1)
+	add	hl,de		; Pointer
+	push	hl		; Save
+	ld	hl,(ptr2)
+	add	hl,de
+	ex	de,hl
+	pop	hl		; HL -> line 1, DE -> line 2 (string)
+	call	cpl		; Compare strings
+	ld	(mism_off),bc	; First byte of mismatch
+	jr	z,d4$		; We have compare, leave mismatch flag alone
+	or	a,0FFh		; Get true
+	ld	(mismatch),a	; And set flag
+d4$:
+	ld	a,(mismatch)
+	or	a,a		; Show mismatch
+	ret
+
+; Compare long--Compares strings -> by HL and DE, up to length in BC
+;	Returns point of mismatch in BC (on match, BC unchanged)
+cpl:
+	ld	a,b
+	or	a,c
+	ret	z		; Show they are the same
+
+	push	bc		; Save original count
+e1$:
+	ld	a,(de)
+	cp	a,(hl)
+	jr	nz,e2$
+	inc	hl
+	inc	de
+	dec	bc
+	ld	a,b
+	or	a,c
+	jr	nz,e1$
+e2$:
+	pop	hl		; Get original count
+	push	af		; Save psw
+	or	a,a		; Reset carry
+	sbc	hl,bc		; Set residual
+	push	hl
+	pop	bc		; Count to difference
+	pop	af		; Get psw
+
+	ret
+
+;
+; GETNXTLN - Get next line--Will point to next line in file at IY.
+;
+getnxtln:
+	ld	d,(iy+fm_curptr+1)
+	ld	e,(iy+fm_curptr)	; Point to current line
+	ld	a,d
+	or	a,e
+	jr	z,f1$		; None, get first line
+	ld	hl,lc_nptr
+	add	hl,de		; HL -> current line pointer
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	and	a,h
+	inc	a		; Is this EOF
+	ret	z		; Yes, just leave it
+
+	ld	a,h
+	or	a,l		; Do we already have one
+	jr	z,f1$		; No, go read one
+	ld	(iy+fm_curptr+1),h
+	ld	(iy+fm_curptr),l	; Use the one we have
+	ret
+f1$:
+	push	de		; Save curptr
+	call	getline
+	ld	b,(ix+lc_cnt+1)
+	ld	c,(ix+lc_cnt)	; Get string length
+	ld	hl,lc_string	; Get header length
+	add	hl,bc
+	push	hl
+	pop	bc		; Length of line
+	ld	h,(iy+fm_empcnt+1)
+	ld	l,(iy+fm_empcnt) ; Get our space
+	or	a,a		; Reset carry
+	sbc	hl,bc		; Is there room
+	call	c,bufrev	; No, get new buffer
+	ld	h,(iy+fm_empcnt+1)
+	ld	l,(iy+fm_empcnt) ; Get our space
+	or	a,a		; Reset carry
+	sbc	hl,bc		; Space left
+	ld	(iy+fm_empcnt+1),h
+	ld	(iy+fm_empcnt),l	; Show it in structure
+	ld	hl,(line_buf)	; HL -> source
+	ld	d,(iy+fm_empptr+1)
+	ld	e,(iy+fm_empptr)	; DE -> destination
+	ld	(iy+fm_curptr+1),d
+	ld	(iy+fm_curptr),e	; Set current ptr
+	push	de
+	pop	ix		; IX -> line
+	ldir			; BC = length from above
+	ld	(ix+lc_num+1),0
+	ld	(ix+lc_num),1	; Set to one in case it is first
+	ld	(iy+fm_empptr+1),d
+	ld	(iy+fm_empptr),e	; Post new empty pointer
+	pop	hl		; Get old curptr
+	ld	(ix+lc_pptr+1),h
+	ld	(ix+lc_pptr),l	; Set previous pointer
+
+; Preserve EOF flag <crw>. .
+;	ld	(ix+lc_nptr+1),0
+;	ld	(ix+lc_nptr),0	; Set next pointer to zero
+; . .<crw>
+
+	ld	a,h
+	or	a,l
+	ret	z		; No previous
+	push	hl		; Save previous pointer
+	ld	de,lc_nptr
+	add	hl,de		; HL -> nptr in previous
+	ld	a,(iy+fm_curptr)
+	ld	(hl),a
+	inc	hl
+	ld	a,(iy+fm_curptr+1)
+	ld	(hl),a		; Put next pointer in place
+	pop	hl		; Get pointer back
+	ld	de,lc_num
+	add	hl,de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; Get old line number
+	inc	bc
+	ld	(ix+lc_num+1),b
+	ld	(ix+lc_num),c	; Put in our line number
+	ret
+
+; Reverse buffers
+
+bufrev:
+	push	de
+	push	hl			; Save registers
+
+	ld	h,(iy+fm_b1+1)
+	ld	l,(iy+fm_b1)
+	ld	de,lc_pptr
+	add	hl,de
+	ld	(hl),0
+	inc	hl
+	ld	(hl),0			; Zero previos pointer for first entry
+	ld	h,(iy+fm_b1+1)
+	ld	l,(iy+fm_b1)
+	push	hl
+	ld	h,(iy+fm_b2+1)
+	ld	l,(iy+fm_b2)
+	ld	(iy+fm_b1+1),h
+	ld	(iy+fm_b1),l
+	ld	(iy+fm_empptr+1),h
+	ld	(iy+fm_empptr),l	; Save new empty pointer
+	pop	hl
+	ld	(iy+fm_b2+1),h
+	ld	(iy+fm_b2),l		; Reverse buffer ptrs
+	ld	hl,(b_length)
+	ld	(iy+fm_empcnt+1),h
+	ld	(iy+fm_empcnt),l	; Set count
+
+	pop	hl
+	pop	de			; Restore registers
+	ret
+
+	ret
+
+;
+; GETLINE - Will get next line for file -> by IY
+;
+;	Will assemble the printable image in line_buf, with pointer and count
+;	fields set (ptr will be zero).  CR LF pair will not be appended.
+;
+;  Destroys all registers
+;
+getline:
+	ld	ix,(line_buf)	; Set IX to assembly line
+	ld	b,(iy+fm_ud+1)
+	ld	c,(iy+fm_ud)	; Get user/disk
+	call	logud		; And go there
+	ld	(ix+lc_nptr+1),0
+	ld	(ix+lc_nptr),0
+	ld	(ix+lc_pptr+1),0
+	ld	(ix+lc_pptr),0	; Zero pointers
+	ld	(ix+lc_cnt+1),0
+	ld	(ix+lc_cnt),0	; Zero count
+	ld	hl,lc_string	; Offset to string
+	ld	de,(line_buf)	; Get buffer
+	add	hl,de
+	ex	de,hl		; DE -> string data
+g1$:
+	call	getch		; Get next character from file
+
+	cp	a,cr
+	jr	z,pr_cr		; Process return
+	cp	a,tab
+	jr	z,pr_tab	; Process tab
+	cp	a,ctrl_z
+	jr	z,pr_eof	; Process end of file
+	cp	a,del
+	jr	z,pr_del
+	cp	a,' '		; Is it printable
+	jr	c,pr_ctr	; No, go fix it
+ 	call	ass_char	; Put in output line
+	jr	g1$
+pr_ctr:
+	push	af		; Save character
+	ld	a,'^'
+	call	ass_char
+	pop	af		; Get it back
+	or	a,40h		; Make into printable char 
+	call	ass_char
+	jr	g1$
+pr_del:
+	ld	a,'D'
+	call	ass_char
+	jr	g1$
+
+pr_tab:
+	ld	a,(ix+lc_cnt) ; Get count (lower byte)
+	and	a,7		; Get lower bits (mod 8)
+	ld	b,a		; Save
+	ld	a,8
+	sub	a,b		; Get number to fill
+	ld	b,a		; And put in counter
+pr_tab1:
+	ld	a,' '		; Get filler
+	push	bc
+	call	ass_char
+	pop	bc
+	djnz	pr_tab1
+	jp	g1$
+
+pr_eof:
+	ld	a,(ix+lc_cnt+1)
+	or	a,(ix+lc_cnt)		; Do we have a line
+	jr	nz,pr_eol		; Yes, get it next time
+	ld	(iy+fm_eof),0FFh	; Show eof
+	ld	(ix+lc_nptr+1),0FFh
+	ld	(ix+lc_nptr),0FFh	; And show last line
+	jr	pr_eol
+
+pr_cr:
+	call	getch
+	cp	a,lf		; Is it line feed
+	jr	z,pr_eol	; Yes, process end of line
+	call	ungetch		; Put character back
+	ld	a,cr		; Get our character
+	jr	pr_ctr		; And process as control character
+
+pr_eol:
+; Calculate number of lines for display
+	ld	h,(ix+lc_cnt+1)
+	ld	l,(ix+lc_cnt)	; Get character count
+	ld	bc,lnm_length
+	add	hl,bc		; Add what we need for line number
+	ld	a,1		; Needs at least one
+	ld	bc,line_length	; Number of characters per line on screen
+pr_eol1:
+	or	a,a		; Reset carry
+	sbc	hl,bc
+	jr	c,pr_eol2	; All done
+	jr	z,pr_eol2	; Use what we have
+	inc	a
+	jr	pr_eol1
+pr_eol2:
+	ld	(ix+lc_lncnt),a ; Set line count
+;set count, etc
+	ret
+ass_char:
+	ld	h,(ix+lc_cnt+1)
+	ld	l,(ix+lc_cnt)	; HL = count
+
+	ld	bc,max_line+1
+	or	a,a		; Clear carry
+	push	hl		; Save count
+	sbc	hl,bc
+	pop	hl		; Get count
+	jr	nc,ac_err
+	inc	hl
+	ld	(ix+lc_cnt+1),h
+	ld	(ix+lc_cnt),l	; Bump up
+	ld	(de),a		; Save character
+	inc	de		; Bump up
+	xor	a,a
+	ld	(de),a		; Show end
+	ret
+ac_err:
+	call	print
+	db	cr,lf,'Line too long.',0
+
+	call	exit
+
+;
+; GETCH - Get character
+;
+getch:
+	ld	a,(iy+fm_eof)
+	or	a,a		; Do we have end of file
+	jr	z,getch1	; No, go on
+	ld	a,ctrl_z	; Show eof
+	ret
+getch1:
+	ld	a,(iy+fm_uf)	; Do we already have one
+	or	a,a
+	jr	z,getch2	; No, read file
+	ld	(iy+fm_uf),0	; Reset switch
+	ld	a,(iy+fm_uc)	; Get character
+	ret
+getch2:
+	push	de		; Preserve line_buf ptr.
+	push	iy
+	pop	hl		; Get FM
+	ld	bc,fm_ctl
+	add	hl,bc		; Calculate IOCTL for FM at IY
+	ex	de,hl		; Point with DE
+	call	fx$get		; SYSLIB get char.
+	pop	de
+
+	jr	z,getch3
+	and	a,07Fh		; Get rid of high bit
+	ret
+getch3:
+	ld	(iy+fm_eof),0FFh ; Show eof
+	ld	a,ctrl_z
+	ret
+
+ungetch:
+	ld	(iy+fm_uc),a	; Save character
+	ld	(iy+fm_uf),0FFh	; Set switch
+	ret
+
+;
+; Character input with exit on ^C
+;
+cin_e:
+	call	capin		; <crw>
+	cp	a,ctrl_c
+	jp	z,exit
+	ret
+
+;
+; DISP_SCREEN - Refresh full or partial screen.
+;
+;	Exit:	NZ - screen refreshed
+;		Z  - interrupted by keyboard input <crw>
+
+disp_screen:
+	call	cls
+
+	ld	iy,fm1		; Set structure pointer
+	call	gxymsg
+	db	1,10
+	db	1,'File 1: ',2,0
+	call	pr_file
+
+; Display Stamps as follows:
+;
+; Valid modify or create stamp found:
+;        File 1: ALIAS.CMD - 12 Oct 88 12:09 - Line # 27
+;
+; Stamps found, but invalid (day not in 1..31):
+;        File 1: ALIAS.CMD -  - Line # 27
+;
+; No stamps on disk:
+;        File 1: ALIAS.CMD - Line # 27
+
+	ld	a,(gots1)
+	or	a		; Got stamp 1?
+	jr	nz,line1	; No
+	call	prdash		; Spacer
+	ld	hl,stpbuf1+10	; Modified date
+	call	prdat2		; Valid?
+	jr	z,prtim1	; Yes
+	ld	hl,stpbuf1	; No, fall back on create
+	call	prdat2
+	jr	nz,line1	; No create, don't show
+	ld	a,'c'		; Indicate create stamp
+	call	cout
+prtim1:
+	call	space
+	call	ptimm2		; 24-hour time
+line1:
+	call	prlabl
+	ld	hl,(fm1+fm_curptr)
+	ld	de,lc_num
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		; Get line number
+	call	phlfdc		; And print it
+
+	ld	iy,fm2		; Set structure pointer
+	call	gxymsg
+	db	12,10
+	db	1,'File 2: ',2,0
+	call	pr_file
+
+	ld	a,(gots2)
+	or	a		; Got stamp 2?
+	jr	nz,line2	; No
+	call	prdash
+	ld	hl,stpbuf2+10	; Modified date
+	call	prdat2		; Valid?
+	jr	z,prtim2	; Yes
+	ld	hl,stpbuf2	; No, fall back on create
+	call	prdat2
+	jr	nz,line2	; No create, don't show
+	ld	a,'c'		; Indicate create stamp
+	call	cout
+prtim2:
+	call	space
+	call	ptimm2
+line2:
+	call	prlabl
+	ld	hl,(fm2+fm_curptr)
+	ld	de,lc_num
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		; Get line number
+	call	phlfdc		; And print it
+
+; Check keyboard after displaying headers <crw>
+
+	call	cst		; Keyboard busy?
+	ret	z		; Yes, quit now
+;
+; Display rest of screen
+;
+	ld	iy,(cur_file)
+	call	set_file_ptr
+	ld	ix,disp_stru
+	ld	hl,(fm1+fm_curptr)
+	ld	(ptr1),hl
+	ld	(disp_stru+ds_ptr1),hl
+	ld	de,lc_lncnt
+	add	hl,de
+	ld	b,(hl)		; Get lines needed
+	ld	hl,(fm2+fm_curptr)
+	ld	(ptr2),hl
+	ld	(disp_stru+ds_ptr2),hl	; Set up our line pointers
+	ld	de,lc_lncnt
+	add	hl,de
+	ld	a,(hl)		; Get lines needed
+	cp	a,b
+	jr	c,h1$
+	ld	b,a
+h1$:				; B = larger
+	ld	a,wind_len	; Get last line number
+	sub	a,b		; Get out line
+	ld	(disp_stru+ds_ln),a	; And save
+	or	a,0FFh
+	ld	(disp_stru+ds_last),a ; Show this is end
+h2$:
+	ld	hl,(ptr1)	; Get our line
+	ld	de,lc_pptr
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	(ptr1),hl	; Update pointer
+	or	a,h		; See if it is valid
+	jr	z,h4$		; Get out, we are finished
+	ld	de,lc_lncnt
+	add	hl,de
+	ld	b,(hl)		; Get lines needed
+
+	ld	hl,(ptr2)	; Get our line
+	ld	de,lc_pptr
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	(ptr2),hl	; Update pointer
+	or	a,h		; See if it is valid
+	jr	z,h4$		; Get out, we are finished
+	ld	de,lc_lncnt
+	add	hl,de
+	ld	a,(hl)		; Get lines needed
+	cp	a,b
+	jr	c,h3$
+	ld	b,a
+h3$:				; B = larger
+	ld	a,(ix+ds_ln)	; Get previous line
+	sub	a,b		; Get our new line
+	jr	c,h4$		; No room, get out
+	ld	de,ds_length
+	add	ix,de		; Bump up to next one
+	ld	(ix+ds_ln),a
+	xor	a,a
+	ld	(ix+ds_last),a	; Show this is not end
+	ld	hl,(ptr1)
+	ld	(ix+ds_ptr1+1),h
+	ld	(ix+ds_ptr1),l	; Set pointer
+	ld	hl,(ptr2)
+	ld	(ix+ds_ptr2+1),h
+	ld	(ix+ds_ptr2),l	; Set pointer
+	jr	h2$
+h4$:
+	ld	h,(ix+ds_ptr1+1)
+	ld	l,(ix+ds_ptr1)
+	ld	(ptr1),hl
+	ld	h,(ix+ds_ptr2+1)
+	ld	l,(ix+ds_ptr2)
+	ld	(ptr2),hl	; Set pointers for compare
+	call	compare
+	ld	hl,wind1	; Get base
+	ld	a,(ix+ds_ln)
+	add	a,h
+	ld	h,a		; Set location
+	call	gotoxy		; Position cursor
+	ld	hl,(ptr1)
+	call	pr_line
+	ld	hl,wind2	; Get base
+	ld	a,(ix+ds_ln)
+	add	a,h
+	ld	h,a		; Set location
+	call	gotoxy		; Position cursor
+	ld	hl,(ptr2)
+	call	pr_line
+
+	ld	a,(ix+ds_last)
+	or	a,a		; Check for end
+	ret	nz		; All done
+	push	ix
+	pop	hl
+	ld	de,ds_length
+	or	a,a		; Reset carry
+	sbc	hl,de		; Back up pointer
+	push	hl
+	pop	ix
+
+; Also check keyboard after every line <crw>
+
+	call	cst		; Input detected?
+	ret	z		; Yes, quit
+
+	jr	h4$		; Print next pair of lines
+
+; DISP_SCREEN subroutines
+
+prdash:
+	call	vprint
+	db	1,' - ',2,0
+	ret
+
+prlabl:
+	call	vprint
+	db	1,' - Line # ',2,0
+ 	ret
+
+; -------------------------------------------------------
+;
+; PR_LINE - Print line--mismatch flag and mism_off are set.
+;	Entry:	HL -> line to print
+;
+pr_line:
+	push	hl
+	pop	bc		; BC -> line
+	ld	hl,line_length-lnm_length
+	ld	(work_ll),hl	; Set max line length for first
+	call	vprint
+	db	2,0
+	ld	hl,lc_num
+	add	hl,bc		; HL -> line number
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	call	phldc
+	call	vprint
+	db	1,'>',2,0
+;
+	ld	hl,lc_nptr
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	and	a,(hl)
+	inc	a
+	jr	z,i5$		; We have an end of file
+
+	ld	hl,lc_cnt	; Offset to count
+	add	hl,bc
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; Get count in BC
+	ld	a,d
+	or	a,e
+	ret	z		; No string to print
+	ld	(work_line),de	; Save length
+
+	ld	hl,lc_string
+	add	hl,bc
+	push	hl
+	pop	bc		; BC -> string
+
+	ld	hl,(mism_off)
+	ld	a,(mismatch)
+	or	a,a		; Test for mismatch
+	jr	nz,i1$		; Mismatch, go on
+	ld	hl,0FFFFh	; No mismatch, move offset beyond line
+i1$:
+	ld	(work_mism),hl	; Set our current mismatch
+i2$:
+	ld	de,(work_line)	; Get our residual count
+	ld	hl,0
+	ld	(work_line),hl	; Set residual count to zero
+	ld	hl,(work_ll)	; Get maximum line length
+	or	a,a		; Clear carry
+	sbc	hl,de		; Test for longer than a line
+	jr	nc,i3$		; It will all fit on this line
+	ld	hl,(work_ll)
+	ex	de,hl		; Count in HL, max in DE
+	or	a,a		; Reset carry
+	sbc	hl,de		; Line length in DE, residual in HL
+	ld	(work_line),hl	; Save residual
+i3$:
+	ld	hl,line_length
+	ld	(work_ll),hl	; Set max line for other than first
+	ld	hl,(work_mism)
+	ld	a,h
+	or	a,l
+	dec	hl
+	ld	(work_mism),hl
+	jr	nz,i4$		; Still matching (or not matching, as case)
+	call	vprint
+	db	1,0		; Show mismatch
+i4$:
+	ld	a,(bc)
+	call	cout
+	inc	bc
+	dec	de
+	ld	a,d
+	or	a,e
+	jr	nz,i3$
+	call	print
+	db	cr,lf,' ',0
+	ld	hl,(work_line)
+	ld	a,h
+	or	a,l		; Check residual
+	jr	nz,i2$
+	ret
+i5$:
+	call	vprint
+	db	1,' <<<',2,'end of file',1,'>>>',0
+	ret
+
+
+; Print du:name of file whose FM block is pointed to by IY
+
+pr_file:
+	push	de
+	push	hl
+
+	ld	a,(iy+fm_ud+1)		; Get disk
+	add	a,'A'			; Make printable
+	call	cout
+	ld	a,(iy+fm_ud)		; Get user
+	call	pafdc			; Print it
+	ld	a,':'
+	call	cout
+	push	iy
+	pop	hl			; Structure pointer
+	ld	de,fm_fcb+1		; Offset to file name
+	add	hl,de
+	ex	de,hl			; Put in DE
+	call	pfn2
+
+	pop	hl
+	pop	de
+	ret
+
+; Display arrow indicating current file
+
+set_file_ptr:
+	call	gxymsg
+	db	1,5
+	db	'    ',0
+	call	gxymsg
+	db	12,5
+	db	'    ',0
+	ld	a,(iy+fm_scrn)
+	ld	h,a
+	ld	l,5
+	call	gotoxy
+	call	vprint
+	db	2,'===>',0
+	ret
+
+;set_cur:
+;	call	at
+;	db	24,47
+;	ret
+
+;
+; SPACE - print a space.  All registers preserved <crw>.
+;
+space:
+	push	af
+	ld	a,' '
+	call	cout
+	pop	af
+	ret
+;
+; File Open Error
+;
+openerr:
+	call	pr_file
+	call	print
+	db	' not found',cr,lf,0
+
+;	fall	thru
+
+;
+; EXIT
+;
+exit:
+	ld	bc,(fm1+fm_ud)
+	call	logud
+;ld	de,fm1+fm_fcb
+	ld	de,fm1+fm_ctl
+	call	fxi$close
+
+	ld	bc,(fm2+fm_ud)
+	call	logud
+;ld	de,fm2+fm_fcb
+	ld	de,fm2+fm_ctl
+	call	fxi$close
+
+	ld	bc,(home_ud)
+	call	logud
+	jp	wboot
+
+
+; --------------------------------------------------------
+
+
+; Program parameters and data area
+
+	DSEG			; <crw>
+
+; Datestamp buffers <crw>
+
+gots1:	ds	1		; Status
+stpbuf1:
+	ds	128		; Stamp
+
+gots2:	ds	1
+stpbuf2:
+	ds	128
+
+wind1	equ	2*256+1		; Row 2 Column 1
+wind2	equ	13*256+1	; Row 13 Column 1
+
+home_ud	   ds	2		; Home user/disk
+mismatch   ds	1		; Mismatch flag
+mism_off   ds	2		; Location of mismatch
+ptr1	   ds	2		; Pointer for line 1
+ptr2	   ds	2		; Pointer for line 2
+cur_file   ds	2		; Current file
+bak_file   ds	2		; File which is not current
+work_line  ds	2		; Residual line count for pr_line
+work_mism  ds	2		; Residual mism_off for pr_line
+work_ll	   ds	2		; Length of current line
+
+; Structure for line
+
+lb_length  equ	1024		; 1k line assembley buffer
+line_buf   ds	2		; Pointer to line assembly buffer
+
+lc_nptr	   equ	0		; Pointer to next line
+lc_pptr	   equ	2		; Pointer to previous line
+lc_num	   equ	4		; Line number
+lc_cnt	   equ	6		; Number of characters in line
+lc_lncnt   equ	8		; Number of lines on screen for string
+lc_string  equ	9		; String
+max_line   equ	lb_length-lc_string	; Maximum line length
+
+; ----------------------------------------------------------------
+;
+; FM - File Management Structure
+;
+
+fm_curptr  equ	0		; Pointer to current line in buffer
+fm_b1	   equ	2		; Pointer to line buffer 1 (current filling)
+fm_b2	   equ	4		; Pointer to line buffer 2 (next to be filled)
+fm_empptr  equ	6		; Pointer to empty space in current buffer
+fm_empcnt  equ	8		; Count of bytes available in empty space
+
+fm_ud	   equ	10		; File user/disk
+fm_uf	   equ	12		; Unget flag
+fm_uc      equ	13		; Unget character
+;fm_get	   equ	14		; Get routine
+fm_eof	   equ	14		; End of file indicator
+fm_scrn    equ	15		; Screen position for pointer
+fm_ctl     equ	16		; Begin SYSLIB FX I/O control block
+fm_ptr	   equ	22
+fm_fcb     equ	24		; File control block
+fm_buf	   equ	60
+
+FM1:	ds	fm_ctl		; File 1 management
+				; SYSLIB IOctl1
+	ds	1		; Buffer size
+	ds	5		; Filled by FXIO
+	ds	2		; Buffer pointer
+				; SYSLIB IOFCB1
+	ds	1		; Set to 0 by FXIO 
+	ds	35		; Rest of FCB
+	ds	128*iobufs	; SYSLIB working buffer
+
+
+FM2:	ds	fm_ctl		; File 2 management
+				; SYSLIB IOctl2
+	ds	1		; Buffer size
+	ds	5		; Filled by FXIO
+	ds	2		; Buffer pointer
+				; SYSLIB IOFCB2
+	ds	1		; Set to 0 by FXIO 
+	ds	35		; Rest of FCB
+	ds	128*iobufs	; SYSLIB working buffer
+
+
+b_length  ds	2		; CPA buffer length
+
+; --------------------------------------------------------
+; 
+; DS - Display Structure
+;
+
+ds_last	   equ	0		; Flag for last (first) entry
+ds_ptr1	   equ	1		; Pointer file 1
+ds_ptr2	   equ	3		; Pointer file 2
+ds_ln	   equ	5		; Line number (screen, relative)
+ds_length  equ	6		; Length of structure
+
+wind_len    equ	10		; Length of window
+line_length equ	78		; Length of line (leave one at beginning and end)
+lnm_length  equ	5		; Length of line number field
+
+disp_stru:
+	ds	wind_len*ds_length
+
+	end
+
+; End of CPA.Z80
+

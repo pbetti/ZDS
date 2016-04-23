@@ -1,0 +1,49 @@
+;	TITLE	"SLOUT - Syslib 4.0"
+	NAME	('LOUT')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SLOUT.Z80 by Richard Conn
+; Date    : 11 Jun 89
+; Version : 1.3
+; Module  : SLOUT
+; Abstract: This module contains the routine LOUT which prints
+;	the character in register A to the currently logged LST:
+;	device with a BIOS call.  No registers are affected.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		LOUT
+
+; External References
+
+	EXT		@BIOSA
+
+; Definitions
+
+L$OFF	EQU	5		; List Output Offset
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - LOUT
+; Entry: A - Contains the character to output to LST:
+; Exit : - None.  Character is passed to the BIOS List routine
+; Uses : - None
+; Special Requirements: The system BIOS MUST start on an even
+;	page boundary.
+;===============================================================
+
+LOUT:	PUSH	BC		; Save some regs
+	PUSH	AF
+	LD	C,A		; Move the char to C
+	LD	A,L$OFF		; Set BIOS Function # for List Output
+	CALL	@BIOSA		; ..do the work
+	POP	AF		; Restore the regs
+	POP	BC
+	RET
+
+	END
+

@@ -1,0 +1,84 @@
+	TITLE	"Associate Specified Stamp Data with File"
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author   : Harold F. Bower
+; Date     : 8 Jan 1989
+; Version  : 1.0
+; Module   : PUTSTAMP
+; Abstract : This module contains the routine PSTAMP which writes
+;	specified File Time/Date information in Universal format
+;	to the currently logged disk in the method of Stamping
+;	supported on that disk/OS.
+; Revisions:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+
+	PUBLIC		PSTAMP
+
+; External References:
+
+; ..from DSLIB Get..
+
+	EXT		DOSTYP, TIMTYP, FSTNXT, SETTD
+
+; ..from SYSLIB Get..
+
+	EXT		INITFCB, SETDMA
+
+; Definitions:
+
+BDOS	EQU	5		; Dos Entry vector address
+FPSTMP	EQU	103		; ZSDOS Put Stamp command
+
+	.Z80
+	CSEG
+;==================================================================
+; PSTAMP - Put Stamp addressed by HL to file addressed by FCB in DE
+; Enter: DE --> FCB for file of interest
+;	 HL --> points to 15-byte stamp to set
+; Exit : AF <> 0, Zero Flag clear (NZ) if Ok,
+;	      A=0, Zero Flag Set (Z) if Error
+; Uses : AF,BC,HL
+; Side Effects : The Dos DMA address will be altered if DateStamper
+;		 or ZSDOS/ZDDOS Time Stamp methods are used
+; NOTE: Drive and User for the subject file must be logged before
+;	calling this routine
+;==================================================================
+
+PSTAMP:	PUSH	DE		; Preserve FCB addr
+	CALL	INITFCB		; Be sure we use first extent
+	LD	A,(TIMTYP)	; Get type of stamping in effect
+	CP	'S'		; Is it ZSDOS/ZDDOS?
+	JR	Z,USEZS1	; ..jump if so to use Function 103
+	CP	'D'		; Is it DateStamper?
+	JR	NZ,DSGERR	; ..jump to error exit if not
+
+; This portion writes DateStamper type Stamp data
+
+	PUSH	HL		; Else save source addr for DS routine
+	LD	HL,0080H	; Set DMA addr to default buffer
+	CALL	SETDMA		; ..with SYSLIB routine
+	LD	C,17
+	CALL	FSTNXT		; Locate 1st occurrance of file
+	POP	HL
+	JR	C,DSGERR	; ..jump if error
+	LD	A,B		; Else move relative index to A
+	CALL	SETTD		; ..and set Stamp record on disk
+	POP	DE		; Restore FCB addr
+	RET			; ..and return with correct error code
+
+; This section Writes Stamp data with ZSDOS/ZDDOS internal routines
+
+USEZS1:	CALL	SETDMA		; Set DMA to Stamp addr in HL
+	LD	C,FPSTMP	; ..and write the info w/Function 103
+	CALL	BDOS
+	INC	A		; Do we have stamps? (FF-->0 if error)
+	JR	NZ,DSGDON
+DSGERR:	XOR	A		; Show no stamping here
+DSGDON:	POP	DE
+	RET
+
+	END
+	

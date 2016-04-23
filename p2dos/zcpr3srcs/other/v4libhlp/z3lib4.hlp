@@ -1,0 +1,475 @@
+ Introduction - ZCPR3 Messages
+ Command Status Message      - GETCST, PUTCST, QERROR, QSHELL
+ Error Flag & Error Command  - ERRADR, GETER1, PUTER1, GETERC, PUTERC
+ Inter-Transient Error Code  - GETER2, PUTER2
+ Command Error Flag & Hndlr  - GETER3, PUTER3, INVERROR
+ Command Status Flag         - SETEPB, RESEPB, RETCST
+ Register Access             - GETREG, PUTREG
+ ZCPR 3.3 Default DU Buffer  - GDEFDU, PDEFDU
+:           Introduction to ZCPR3 Messages 
+
+ZCPR3 offers many features not found in CP/M, ZCPR1, or ZCPR2.
+One very special feature is that of Command Processor Messages.
+
+ZCPR3 supports a Message Buffer which contains a number of
+messages which can be passed from one transient program to
+another or between ZCPR3 itself and all transient programs
+which run under it.  Commands can be given directly to ZCPR3,
+status information can be passed from ZCPR3 to the transients,
+and both status and commands can be passed from one transient
+to another through these messages.
+
+ These message can be divided into six basic classes:
+
+	o  Messages which command ZCPR3
+	o  Status messages sent by ZCPR3
+	o  ZEX command messages
+	o  Status and command messages sent by one program
+		to another which are ignored by ZCPR3
+	o  User-defined messages
+	o  Reserved messages
+
+Before using any Z3LIB routines to access these messages, your
+program should ensure that the Message Buffer is available to
+it.  This can easily be done by calling the GETMSG routine (see
+the screen on the  ZCPR3 environment).  GETMSG returns with the
+Zero Flag Set (Z) if no ZCPR3 Message Buffer exists.  Hence:
+
+	EXT	GETMSG		; Declare the routine
+	...
+	CALL	GETMSG		; Get message buffer status
+	JR	Z,NOZ3MSGS	; ..jump if No Msgs to read
+	...
+
+The following screens summarize facilities available through
+the ZCPR3 Message Buffer.
+
+              Messages which Command ZCPR3 
+
+Some of the messages in the ZCPR3 Message Buffer are set by
+external programs (transients or command packages) and are
+read and interpreted by ZCPR3.  These messages are:
+
+	o  Current IF level and active (T/F) status of
+		all IF levels
+	o  Whether an error handler is available and what
+		the command line to invoke it is
+
+              Status Messages Sent by ZCPR3 
+
+Some of the messages in the ZCPR3 Message Buffer are set only
+by ZCPR3 or a ZCPR3 Shell and are intended to be used as R/O
+messages by transients.  These messages are:
+
+	o  ZCPR3 Command Status
+	    - the transient loaded is/is not a shell
+	    - the transient loaded is/is not an error handler
+	o  Error Address
+	    - if the transient loaded is an error handler,
+		this is the address of the first character of
+		the command line which was in error
+
+                   ZEX Command Messages 
+
+One message in the ZCPR3 Message Buffers is intended to
+directly send commands to the ZEX memory-based command file
+processor.  This message byte tells ZEX three different things:
+
+	o  Run normally - ZEX is to intercept Input calls and
+		provide characters in place of console input
+	o  ZCPR3 is prompting - ZEX is providing input directly
+		to the Command Processor ZCPR3
+	o  Suspend intercept - ZEX is to stop intercepting
+		console input and allow input from the console
+		until normal execution or the ZCPR3 prompt
+		appears
+
+                Messages Ignored by ZCPR3 
+
+Two pre-defined messages are ignored by ZCPR3.  The first is
+the Program Error Code.  This byte can be set by any program
+under ZCPR3 to indicate a return status to the next program.
+The convention has been adopted that if this byte is 0, then
+the program completed successfully.  If it is non-zero, the
+program failed for some reason and the value of this code
+indicates that reason to a following program.
+
+The second message is the register buffer.  Ten 1-byte
+registers are available and can be tested by the Flow Command
+Package.  Conditions like "IF 0 5" (IF Register 0 = 5) can be
+tested and processed by the Flow Command Package, and other
+Transient programs or Resident Command Packages can manipulate
+these register values.
+
+                 User-Defined Messages 
+
+A set of 16 messages are available for user definition.  Each
+message is one byte long, and Z3LIB routines are provided to
+place values into these messages and query them.
+
+
+                    Reserved Messages 
+
+A set of 16 one-byte messages is reserved for future use in the
+ZCPR3 system and should not be used by applications programmers.
+Z3LIB does not provide access to these messages.
+
+:Command Status Message    GETCST, PUTCST, QERROR, QSHELL 
+
+These messages return the status of the current transient
+as set by ZCPR3.  Any transient has been invoked in one of
+three possible states:
+
+   - As a "normal" transient, executed at the request of the
+       user or another program
+   - As a "shell", invoked by ZCPR3 itself
+   - As an "error handler", invoked by ZCPR3 itself when it
+       cannot process the current command line (cannot find a
+       matching COM file or CMDRUN facility)
+
+GETCST - Return the ZCPR3 Command Status Message
+
+  ENTER: None
+  EXIT : A = Message Code (Zero Flag set accordingly)
+  USES : AF
+
+ Usage:  This routine returns the ZCPR3 Command Status Message
+  which is always set by ZCPR3 and not intended to be set by
+  any program.  It can have one of three values:
+
+          0 - this is a "Normal" transient
+          1 - this is a "Shell"
+          2 - this is an "Error Handler"
+
+PUTCST - Set the ZCPR3 Command Status Message
+
+  ENTER: A = ZCPR3 Command Status Message value (0, 1, or 2)
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is provided to allow a ZCPR3 Shell
+  program to Set the ZCPR3 Command Status Message Byte.  It
+  is NOT intended for general use by application programs.
+  Allowable values for the Command Status Message are:
+
+          0 - this is a "Normal" transient
+          1 - this is a "Shell"
+          2 - this is an "Error Handler"
+
+QERROR - Test Command Status Message for Error Handler
+
+  ENTER: None
+  EXIT : A = Message Code. Zero Set (Z) if transient is an
+             Error Handler, else Clear (NZ)
+  USES : AF
+
+ Usage:  This routine is used as a quick test to see if the
+  ZCPR3 Command Status Message indicates that the current
+  transient is an error handler.  The ZCPR3 Command Status
+  Message is read and tested against the Error Handler code
+  value.   Zero Flag is Set if the current transient is an
+  Error Handler.
+
+QSHELL - Test Command Status Message for Shell Transient
+
+  ENTER: None
+  EXIT : A = Message Code. Zero Set (Z) if transient is Shell
+  USES : AF
+
+ Usage:  This routine is used as a quick test to see if the
+  ZCPR3 Command Status Message indicates that the current
+  transient is a Shell.  The ZCPR3 Command Status Message is
+  read and tested against the Shell code value.   Zero Flag
+  is Set if the current transient is a Shell.
+
+:Error Flag & Error Comnd  ERRADR, GETER1, PUTER1, GETERC, PUTERC 
+
+This set of routines performs the following functions:
+
+    ERRADR - returns the address of the first character of the
+              Command Line in error
+    GETER1 - returns the Error Flag
+    PUTER1 - sets the error flag
+    GETERC - returns the address of the first character of the
+              Error Handler Command Line
+    PUTERC - set the Error Handler Command Line
+
+ERRADR - On Error, return First Char of Erred Command Line
+
+  ENTER: None
+  EXIT : HL = Address of first character of error line
+  USES : HL
+
+ Usage:  Assuming that the current transient is an Error
+  Handler, (call to QERROR returning with Zero Flag Set), this
+  routine returns the address of the first character of the
+  Command Line which was in error. For example, if the Command:
+
+	XXX params;DIR
+
+  was issued and XXX.COM could not be found, ERRADR returns the
+  address of the first character of the string:
+
+	DEFB	'XXX params;DIR',0
+
+GETER1 - Return Error Flag
+
+  ENTER: None
+  EXIT : A <> 0, Zero Flag Clear (NZ) if Error present
+             A = 0, Zero Set (Z) if NO Error
+  USES : AF
+
+ Usage:  Return the error flag in A.  GETER1 has been
+  redefined from the original purpose of determining Error
+  Handler presence, and now only returns the value of the
+  Error Flag.
+
+PUTER1 - Engage/Disengage Error Handler Flag  (* removed *)
+
+  ENTER: None
+  EXIT : None
+  USES : None
+
+ Usage:  This routine no longer performs a function and
+  simply returns to the calling program.
+
+GETERC - Return Address of String invoking Error Handler
+
+  ENTER: None
+  EXIT : HL = Addr of first char of string invoking Handler
+          A <> 0, Zero Flag Clear (NZ) if Valid char
+              A = 0 and Zero Flag Set if string is empty
+  USES : AF,HL
+
+ Usage:  This routine may be used to facilitate Error Handler
+  construction by returning the string address and first char.
+  If the Error Handler is to be invoked by the command:
+
+	ERROR params
+
+  then GETERC returns the address of the first character of:
+
+	DEFB	'ERROR params',0
+
+PUTERC - Set the Error Handler Command Line
+
+  ENTER: HL = Addr of first char of Error Handler Comnd Line
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if Ok
+              A = 0, Zero Flag Set (Z) if Comnd line too long
+                     (more than 32 bytes)
+  USES : AF
+
+ Usage:  This routine established a string which is to be the
+  Command Line executed to invoke an error handler.  The Error
+  string, including the ending 0, must be 32 bytes long or
+  less.
+
+Example:
+	EXT	PUTERC		; Declare the routine
+	...			; ..preceeding code
+	LD	HL,ERSTR	; Address this string
+	CALL	PUTERC		; Set it as Handler Comnd Line
+	JR	NZ,OK		; ..jump if string accepted
+	...			; Else take other action
+ ERSTR:	DEFB	'ERROR NOOPT',0
+:Inter-Transient Error Code    GETER2, PUTER2 
+
+The inter-transient error code is a one-byte message which any
+program can set to indicate its completion success.  The
+convention is that if this message byte is set to 0, then the
+program completed successfully.  If this message byte is not 0,
+then the program had an error and the value of this message
+byte indicates the error.
+
+GETER2 allows a program to determine the value of this inter-
+transient error code and PUTER2 allows a program to set the
+value of the inter-transient error code.
+
+GETER2 - Return the Value of Inter-Transient Error Code
+
+  ENTER: None
+  EXIT :  A = Error Code, Zero Clear (NZ) if Error
+              A = 0, Zero Flag Set (Z) if NO Error
+  USES : AF
+
+ Usage:  This routine is used to determine if a preceeding
+  program passed an error to this one in the Inter-Transient
+  Error Code.
+
+PUTER2 - Set Inter-Transient Error Code
+
+  ENTER:  A = Error Code (0 for No Error)
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is used to signal following programs that
+  No error status resulted from the presently-executing
+  transient.
+
+:GETER3 - Return the value of the Command Error Flag           (*)
+
+  ENTER: None
+  EXIT :  A <> 0, Zero Clear (NZ) if Message Exists
+              A = 0, Zero Set (Z) if NO Message
+  USES : AF
+
+ Usage:  This routine is most often used by Error Handlers to
+  identify whether or not an error occurred.  If an error is
+  detected from the Command Error Flag, the Message Buffers may
+  be used to pass additional information on the cause and
+  action.
+
+PUTER3 - Set the Command Error Flag                           (*)
+
+  ENTER: A = Value to set Command Error Flag
+  EXIT : None.  Value is stored in Command Error Flag
+  USES : None
+
+ Usage:  This routine is used to set the Command Error Flag
+  for possible invocation of an error handler.  Additional
+  information may be passed in other Message Buffers.
+
+Example:
+	EXT	PUTER3		; Declare the routine
+	...
+ ISERR:	LD	A,0FFH		; Signal Error Occurrance
+	JR	ERRV		; ..with Command Error Flag
+
+ NOERR:	XOR	A		; Enter here to set No Errs
+ ERRV:	CALL	PUTER3		; ..set/clear Comnd Err Flag
+	...			; Continue
+
+INVERROR - Invoke Error Handler                               (*)
+
+  ENTER:  A = 0 for Internal errs, A <> 0 for External errs
+	  B = Error code for External errors,
+		undefined for Internal errors
+  EXIT :  A = 0, Zero Set (Z) if CCP is ZCPR 3.3 or later
+	      A <> 0, Zero Clear (NZ) if not ZCPR 3.3
+  USES : AF,DE,HL
+
+ Usage:  This routine set all parameters for an Error Handler
+  invocation.  It is normally used just prior to a program
+  abort to either the Command Processor or to a Warm Boot.
+  If INVERROR returns status for ZCPR 3.3 or later, it may be
+  used to process the error by entering the Warm Entry,
+  otherwise the program should be exitted with a Warm Boot.
+
+
+Example:
+	EXT	INVERROR	; Declare the routine
+	...			; ..pgm flow w/detected error
+	LD	A,(ERRCODE)	; Get error code (if external)
+	LD	B,A		; ..and put in correct register
+	LD	A,(ERRTYPE)	; Load the error type
+	CALL	INVERROR	; Call the routine
+	JP	NZ,0		; ..jump Warm Boot if No ZCPR33
+	...			; Else return to Command Proc
+
+:SETEPB - Set External Program Bit in Command Status Flag      (*)
+
+  ENTER: None
+  EXIT : None
+  USES : None
+
+ Usage:  This routine Sets the External Program Bit in the
+  Command Status Flag to signify to the ZCPR 3.3 or later
+  Command Processor that current actions (such as parsing) is
+  being requested by an External Program.
+
+RESEPB - Reset External Program bit in Command Status Flag.   (*)
+
+  ENTER: None
+  EXIT : None
+  USES : None
+
+ Usage:  This routine resets the External Program bit in the
+  Command Status Flag indicating that the ZCPR 3.3 or later to
+  signify to the Command Processor that any actions there are
+  internal and not related to an External Program.
+
+RETCST - Return the address of the Command Status Flag.       (*)
+
+  ENTER: None
+  EXIT : HL = Address of the Command Status Flag
+  USES : HL
+
+ Usage:  This routine returns the address of the Command Status
+  Flag.  It is used by SETEPB, RESEPB and other internal modules.
+
+:Register Access         GETREG, PUTREG 
+
+The ZCPR3 Message Buffer provides ten one-byte messages which
+are used as one-byte registers.  The GETREG and PUTREG routines
+allow a program to obtain and set a value in any one of the ten
+registers.
+
+GETREG - Return contents of specified Message Buffer
+
+  ENTER:  B = Number of register to access (0..9)
+  EXIT :  A = value of register, Zero Flag is set accordingly
+  USES : AF
+
+ Usage:  This routine is used to obtain the contents of an
+  arbitrary Message Buffer.  These buffers are byte values.
+
+  NOTE:  GETREG performs no validity check on the specified
+  register number, merely using it as an index into the
+  Message Buffer array.  You must insure that only values in
+  the range of 0..9 are passed.
+
+Example:
+	EXT	GETREG		; Declare the routine
+	...			; ..preceeding code
+	LD	B,5		; Get the value of Reg 5
+	CALL	GETREG		; Return Reg 5 value byte
+	JR	Z,R5EQ0		; ..jump to process if 0
+	...			; Else check more, etc
+
+PUTREG - Set a specified Message Buffer Reg to given value
+
+  ENTER: B = Register number to set (0 to 9)
+         A = Value to Set in Register (0 to 255)
+  EXIT : None
+  USES : None
+
+ Usage:  This routine sets a specified Message Buffer Register
+  to a given value which may be tested by other programs.
+
+  NOTE:  No check is made to ensure that B contains a valid
+  register number.  You must insure that in contains only
+  values from 0 to 9.
+
+Example:
+	EXT	PUTREG		; Declare the routine
+	...			; ..preceeding code
+	LD	B,9		; Set Message Register 9
+	LD	A,20		; ..to 20
+	CALL	PUTREG		; Do it
+	...			; ..and continue
+
+:GDEFDU - Return Current Drive and User                        (*)
+
+  ENTER: None
+  EXIT : BC = DU.  B=Drive (A=0,..P=15), C = User Number
+  USES : BC
+
+ Usage:  This routine returns the Current Drive and User
+  settings from the ZCPR 3.3 Message Buffer for use by the CD
+  Change Directory routine, Shells, or when a User Number
+  greater than 15 is logged.  This is the preferred method of
+  logging into High User Areas since the CURDRV byte at
+  location 4 only accomodates Users from 0 through 15.
+
+PDEFDU - Make specified Drive and User Current                (*)
+
+  ENTER: BC = DU.  B=Drive (A=0,..P=15), C=User (0..31) to set
+  EXIT : None.  CURDR and CURUSR are set to specified values
+  USES : None
+
+ Usage:  This routine is used to store specified Drive and User
+  values into CURDR and CURUSR locations in the ZCPR 3 Message
+  Buffer thereby making them current.  It is normally used when
+  Drive and User are obtained from Path specifications to
+  signal Shells or Error Handlers where activities occurred.
+

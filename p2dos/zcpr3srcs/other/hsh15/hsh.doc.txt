@@ -1,0 +1,397 @@
+        HSH.DOC    Version 1.5  9 Apr 86                   Page 1
+
+
+        Copyright 1985-6  Michael M Rubenstein
+
+        This software and the accompanying documentation may be
+        distributed freely for noncommercial use.
+
+
+
+        Credits.
+
+        ZCPR3 is a trademark of Richard L. Conn.
+
+        CP/M is a trademark of Digital Research Incorporated.
+
+        WordStar is a trademark of Micropro International Corporation.
+
+        C/80 is a trademark of The Software Toolworks.
+
+
+
+        Modifications.
+
+        1.1       Fixed handling of wrap around when the history is full.
+        1.2       Modified to respect ZCPR3 quiet flag.
+        1.3       Fixed prompt for user number 10.
+        1.4       Fixed bug in computing user area for HSH.VAR.
+                  Added patch for presetting drive and user for HSH.VAR.
+                  Added patch for making ^V a mode switch, as
+                  in WordStar.
+                  The bug was reported and modifications suggested by Jay
+                  Sage.
+        1.5       Fixed handling of very long command lines (serious --
+                  previous version could crash the system if a line
+                  longer than 256 characters was entered).  Added user
+                  installation of prompt.
+                  The bug was reported and modifications suggested by Jay
+                  Sage.
+
+
+        Description.
+
+        HSH is a history processing ZCPR3 shell.  It provides the ability
+        to recall and edit previous commands and allows much more
+        sophisticated editing than is found in the normal CP/M or ZCPR3
+        command processor.
+
+        For example, with HSH if the command
+
+                  mcpy b:=*.dat
+
+        is typed and one notices that the command should have been
+        "mcopy", one can simply move the cursor back to the "p" and
+        insert an "o".  If the command is entered and an error message
+        received, the command can be recalled and edited in the same
+        manner.
+
+
+
+
+
+
+
+
+
+        HSH.DOC    Version 1.5  9 Apr 86                   Page 2
+
+
+        Unlike many other shells, HSH is intended to be a normal
+        operating environment.  Therefore, it generates no noise unless
+        it's special features are invoked.  For the most part, the user
+        sees the same results as if HSH were not present.
+
+        HSH operates best in conjunction with a ram disk or a high speed
+        hard disk.  Those with slower disks are likely to find response
+        lethargic with HSH present.
+
+
+
+        Requirements.
+
+        HSH requires ZCPR3 with external command line and shell stack.
+        The current version requires a video terminal which automatically
+        wraps lines and which allows backspacing from column one to the
+        end of the previous line.  About 8K of disk space is required for
+        the program.  The history file requires 384 bytes plus 256 bytes
+        per history line being kept.  The default of 10 history lines
+        requires 4K disk space.  The program and history file should be
+        on a ram disk or high speed hard disk for best results.
+
+
+
+        Running HSH.
+
+        Before running HSH, it must be installed with Z3INS in the same
+        way as any other ZCPR3 utility.
+
+        HSH is run with the command
+
+                  hsh
+
+        One operand, the number of history lines to keep (from 0 through
+        100) may be included, e.g.,
+
+                  hsh 50
+
+        If no operand appears on the command line, HSH will use the value
+        from the history file, HSH.VAR, or 10 if there is no history
+        file.  This allows one to exit HSH and return without loosing the
+        history.  If a numeric operand does appear, a new history file
+        be created (the old will be deleted) and any previous
+        history will be lost.
+
+        If there is no problem, HSH will install itself and display a
+        sign on message.  HSH may be started from a submit file, in which
+        case the submit file will complete before HSH actually takes
+        control.
+
+        HSH searches for itself (by whatever name it is called) along the
+        current path.  Normally the current directory is not searched
+        unless it is explicitly included on the path.  This may be
+        changed by a patch.
+
+
+
+
+
+
+
+
+
+        HSH.DOC    Version 1.5  9 Apr 86                   Page 3
+
+
+        HSH normally puts the history file on the "root" directory -- the
+        last directory in the search path.  This can be changed to a
+        specific drive/user with a patch.  For best results, HSH.VAR and
+        the copy of HSH that it finds in searching for itself should both
+        be on a ram disk.  I use a path like
+
+                  RAMDISK $$ ROOT RAMDISK
+
+        so critical programs are found on the ram disk first.  Note that
+        the "root" directory with this path is RAMDISK, not ROOT.
+
+        The HSH prompt looks exactly like the usual ZCPR3 prompt.
+        Commands may be typed and will be executed normally.  The only
+        exceptions are the SAVE, GET, GO, and JUMP commands.  These will
+        not give the desired effect if entered as single commands at the
+        prompt because HSH is in the TPA.  For example, the sequence
+
+                  A0>ddt test.com
+                  A0>save 16 newtest.com
+
+        will result in the first 16 pages of HSH being saved.  To get the
+        desired effect, one must plan ahead and type multiple commands
+
+                  A0>ddt test.com;save 16 newtest.com
+
+        which works since HSH does not regain control between the two
+        commands.
+
+        HSH recognizes two characters as special if they appear as the
+        first character of a typed line.   Both are recognized
+        immediately (i.e., no carriage return is necessary).
+
+             <ESC> -   (Escape key).  Exit HSH.
+
+             ^C    -   (Control C).  Warm boot.  Same as the standard
+                       CP/M or ZCPR2 ^C.
+
+        Entering commands in HSH is similar to doing so in the standard
+        command processor, but there are numerous additional editing
+        options.  These have been patterned (a bit loosely in a few
+        places) after the WordStar editing commands.
+
+             ^A    -   Back one word
+
+             ^D    -   Forward one character.
+
+             ^F    -   Forward one word.
+
+             ^G    -   Delete current character.
+
+             ^H    -   (Backspace).  Delete previous character.
+
+             ^J    -   Display edit command help message and resume
+                       editing line.
+
+
+
+
+
+
+
+
+
+        HSH.DOC    Version 1.5  9 Apr 86                   Page 4
+
+
+             ^P    -   Remove any special meaning from the next
+                       character.  For example, ^P^H inserts a ^H
+                       (backspace) into the line.
+
+             ^Q    -   Back one command.
+
+             ^R    -   Forward one command.
+
+             ^S    -   Back one character without deleting.
+
+             ^T    -   Delete to beginning of next word.
+
+             ^U    -   Delete entire line.
+
+             ^V    -   Insert.  As distributed, inserts one character.
+                       May be patched to toggle insert mode on/off.
+
+             ^W        Delete to beginning of previous word.
+
+             ^Y    -   Delete to end of line.
+
+             ^Z    -   Delete current command.  If the cursor is on a
+                       semicolon, the command to the right will be
+                       deleted.
+
+        The command will be processed when RETURN or ENTER is pressed.
+        The cursor need not be at the end of the line.
+
+        The real power of HSH, however, is in the ability to recall and
+        edit previous command lines.  This is controlled by several
+        additional command keys:
+
+             ^E    -   Recall previous command line.  Repeated
+                       application gets successively earlier command
+                       lines.  If there is no previous command line (or
+                       it has not been kept in the history), the bell
+                       will sound.  The ^U editing command resets the
+                       internal pointer to the end so the next ^E gets
+                       the last command line executed again.
+
+             ^L    -   Searches for a previous command line which matches
+                       the current line to the left of the cursor.  Case
+                       is immaterial.  If none is found, the bell will
+                       sound.  For example, if the previous command lines
+                       were
+
+                                 dir
+                                 ws test.doc
+                                 type whatever.c
+                                 whatever;type what.out
+                                 ws what.out
+                                 dir
+
+                       then typing "w^L" would recall the command
+                       "ws what.out".  The cursor is left after the "w",
+
+
+
+
+
+
+
+
+        HSH.DOC    Version 1.5  9 Apr 86                   Page 5
+
+
+                       so typing "^L" again would recall
+                       "whatever;type what.out".  If "ws^L" were typed
+                       initially, the "whatever" command would be skipped
+                       and the two "ws" commands would be recalled.
+
+             ^X    -   Recalls the next command (assuming a previous
+                       command has been recalled with ^E and is being
+                       edited).  If there is no next command, deletes
+                       the current line.
+
+        While the editing commands may seem a bit complex at first, a
+        little playing at the terminal will make them very natural and
+        easy to use.  The ^L command, in particular, is quite different
+        from the commands found in most editors.  With a very little
+        practice, command line editing with HSH becomes almost automatic
+        and one soon wonders how one lived without it.
+
+
+
+        Customization.
+
+        Several patches may be applied.  In the distributed version, all
+        patch points are zero.
+
+             Address   Function
+             -------   --------------------------------------------------
+               010B    If nonzero, the current directory is searched in
+                       looking for HSH.COM.
+
+               010D    If nonzero, the drive (1=A, 2=B, ...) on which to
+                       put HSH.VAR.  If zero, HSH.VAR is put on the root
+                       directory.
+
+               010F    The user number on which to put HSH.VAR.  Only
+                       used if the byte at 010D is nonzero.
+
+               0111    If nonzero, ^V toggles insert mode as in WordStar.
+                       If zero, ^V simply inserts a character.
+
+               0113    If nonzero, insert mode is initially on.  Note
+                       that if the byte at 0111 is zero, there is no way
+                       to turn it off.  Also, insert mode is reset as
+                       specified by this byte whenever HSH is reloaded
+                       after running a program or ^C.
+
+               0115    Default number of history lines to keep.  If HSH
+                       is run with no argument and there is no HSH.VAR
+                       file, this number of history lines will be kept.
+                       This is a 2 byte number.
+
+               0117    A 48 character prompt string, terminated by a NUL
+                       (0) character.  This string will be used as the
+                       prompt.  It may contain several special character
+                       flags:
+
+
+
+
+
+
+
+
+
+        HSH.DOC    Version 1.5  9 Apr 86                   Page 6
+
+
+                                 $D   Current drive.
+
+                                 $d   Same as $D, but drive lower case.
+
+                                 $U   Current user number.
+
+                                 $u   Same as $U.
+
+                                 $V   Current user number only if
+                                      nonzero.
+
+                                 $v   Same as $V.
+
+                                 $N   Name of the current directory.
+
+                                 $n   Same as $N, but directory name is
+                                      converted to lower case.
+
+                                 $M   If the current directory has a
+                                      name, the name of the directory.
+                                      Otherwise, the drive and user
+                                      number.
+
+                                 $m   Same as $M, but directory name and
+                                      drive letter in lower case.
+
+                                 $:   If the current directory has a
+                                      name, a colon.
+
+                                 $$   A dollar sign.
+
+
+
+        For the Hacker.
+
+        HSH was written in C and compiled with the Software Toolworks
+        C/80 compiler using a private run time library.  Source code is
+        included for informational purposes.  It will not be trivial to
+        convert to use the standard C/80 library or any other C compiler.
+        Anyone interested is welcome to try, but I cannot provide much
+        assistance.
+
+        <End of Document>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

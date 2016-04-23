@@ -1,0 +1,134 @@
+; ECHOCF.Z80
+;
+; ZCNFG configuration module for ECHO.COM.  The assembled version of
+; this file must be named ECHOxx.CFG, where xx is the version number
+; of ECHO, to be automatically recognized by ZCNFG.
+;
+; Version 1.1 -- October 10, 1991 -- Gene Pizzetta
+;	For ECHO 1.4.  Converted case table to a macro.  Changed menu
+;	selections to mnemonic characters.  Minor changes in help screen.
+;
+; Version 1.0 -- October 21, 1990 -- Gene Pizzetta
+;	For ECHO 1.2.
+;
+; Patch locations . . .
+;
+DftUC	equ	015h		; default case
+DftCrt	equ	016h		; default output destination
+;
+; ZCNFG function definitions . . .
+;
+Switch	equ	0		; toggle bit n in a byte (n is specified)
+Text	equ	1		; edit text with UC conversion
+DUSpec	equ	2		; replace a ZCPR style DU spec (NOT DIR:!)
+HexRad	equ	3		; edit byte/word using HEX radix
+DecRad	equ	4		; edit byte/word using DECIMAL radix
+TextLC	equ	5		; edit text, both UC and LC
+FileSp	equ	6		; edit a Z3 filespec or filespec fragment
+Togl3	equ	7		; toggle one of three options: 001B, 010B, 100B
+ToglTF	equ	8		; toggle a byte between 0ffh and 0
+;
+; ASCII characters . . .
+;
+HON	equ	1		; highlighting on
+HOF	equ	2		; highlighting off
+TAB	equ	9		; tab
+LF	equ	10		; linefeed
+CR	equ	13		; carriage return
+;
+; Macro definitions
+;	C	= character to identify menu item
+;	OFFSET	= offset in program's configuration block
+;	FUNC	= ZCNFG function
+;	SCRN	= screen location for data
+;	DATA	= function data address (if required)
+;
+CASE	macro	c,func,offset,bytes,scrn,data
+	db	'&C'
+	dw	func, offset
+	db	bytes
+	dw	scrn, data
+	endm
+;
+; Code . . .
+;
+	rst	0		; for safety, so .CFG file won't execute
+;
+	dw	MenuA		; for relocation of addresses, this
+				; ..points to the NEXT location.
+;
+; Menu list section . . .
+;
+MenuA:	dw	MenuA, MenuA, ScrnA, CaseA, HelpA	; single menu
+;
+; Case table section . . .
+;
+CaseA:	db	(CaseAX-CaseA1)/(CaseA2-CaseA1)	; number of cases
+	db	CaseA2-CaseA1	; length of each record
+;
+;	Macro name
+;	|	Single char menu selector
+;	|	|	Function (see above)
+;	|	|	|	Offset in config block
+;	|	|	|	|	Number of bytes
+;	|	|	|	|	|	Screen location
+;	|	|	|	|	|	|
+;Case1:	CASE	0,	ToglTF,	Loc1,	1,	ScrnA1,	NoYes
+;							|
+;			 Address of data used by function
+;
+; The first two entries in table are labeled for calculation at CaseA:.
+;
+CaseA1:	CASE	C,	ToglTF,	DftUC,	1,	ScrnA1,	YesNo
+CaseA2:	CASE	D,	ToglTF,	DftCrt,	1,	ScrnA2,	ConPrt
+CaseAX:				; for calculation of list length
+;
+; Case table support . . .
+;
+YesNo:	db	'YES',0		; displayed if value is FFh (ToglTF)
+	db	' NO',0		; displayed if value is 00h (ToglTF)
+ConPrt:	db	'PRINTER',0	; displayed if value is FFh (ToglTF)
+	db	'CONSOLE',0	; displayed if value is 00h (ToglTF)
+;
+; Screen image section . . .
+;
+ScrnA:	db	cr,lf,lf,lf,tab,tab,tab,'     ECHO Installation Menu'
+	db	cr,lf,lf,lf
+;
+	db	tab,tab,'(C) ',1,'Default to upper-case? . . . . . . . . . ',2
+ScrnA1:	db	'   '		; current value
+	db	cr,lf,lf
+;
+	db	tab,tab,'(D) ',1,'Default output destination . . . . . ',2
+ScrnA2:	db	'        '	; current value
+	db	cr,lf
+;
+	db	lf,lf,lf,lf,lf,lf,lf	; fill rest of screen
+;
+	db	0		; terminator
+;
+; Help screen section . . .
+;
+HelpA:	db	CR,LF,LF
+;
+	db	HON,'Option C --  Default  Case.',HOF,'  This  configuration '
+	db	' option determines whether',CR,LF
+	db	'ECHO defaults to sending text in upper-case or lower-case. '
+	db	' The default can',CR,LF
+	db	'be changed within the text string with the "%<" and "%>"  '
+	db	'escape sequences.'
+	db	CR,LF,LF
+;
+	db	HON,'Option D  --  Default  Destination.',HOF,'  Whether  ECHO '
+	db	' defaults  to console or',CR,LF
+	db	'printer output of the  text  string  is  set  by this option. '
+	db	' The selected',CR,LF
+	db	'default can be changed within the text string with the "%C" '
+	db	'and "%P" escape',CR,LF
+	db	'sequences.'
+	db	CR,LF
+;
+	db	0		; Terminator
+;
+	end
+

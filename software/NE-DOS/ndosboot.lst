@@ -1,0 +1,661 @@
+   1:			;
+   2:			; NDOSBOOT
+   3:			; NEDOS BOOT FROM CP/M 8-)
+   4:			;
+   5:			; link to DarkStar Monitor symbols...
+   6:			rsym ../../bios.sym
+   7:			
+   8:	F0D8          	NDISPGRCH	EQU	DISPCH
+   9:	3040          	GRAM0BUF	EQU	$3040
+  10:	3041          	GRAM1BUF	EQU	$3041
+  11:	3042          	GRAM2BUF	EQU	$3042
+  12:	3043          	GRAM3BUF	EQU	$3043
+  13:	9F80          	LOADOFFS	EQU	$9F80	; where it will be...
+  14:			
+  15:	03B7          	CODESIZE	EQU	ENDCODE - LOADOFFS
+  16:			
+  17:	9F80          		ORG	LOADOFFS
+  18:			
+  19:	9F80          	NDSPAR	DEFS	128
+  20:	A000          	GOBOOT:
+  21:	A000  31809F  		LD	SP,NDSPAR
+  22:	A003  010000  		LD	BC,$0000
+  23:	A006  CDEEF3  		CALL	BSETTRK
+  24:			; 	INC	A
+  25:			; 	OUT	(FDCDRVRCNT),A
+  26:	A009  CD5DDA  		CALL	HOME
+  27:			; 	JP	NZ,TOCPM
+  28:	A00C  C3AFA2  		JP	NDOSSTA           ; 00F3FD C3 03 F4
+  29:			
+  30:	A00F          	NEDOSCR:
+  31:				; -------------------
+  32:	A00F  CDACF0  		CALL   CLRSCRGR
+  33:	A012  2108A2  		LD     HL,STR005
+  34:	A015  CD80F3  		CALL   DISPSTR
+  35:	A018  2127A2  		LD     HL,STR006
+  36:	A01B  CD80F3  		CALL   DISPSTR
+  37:	A01E  2156A2  		LD     HL,STR007
+  38:	A021  CD80F3  		CALL   DISPSTR
+  39:	A024  3EFF    	NDSLP3:	LD     A,$FF
+  40:	A026  324330  		LD     (GRAM3BUF),A
+  41:	A029  2185A2  		LD     HL,STR009
+  42:	A02C  CD80F3  		CALL   DISPSTR
+  43:	A02F  212605  		LD     HL,$0526
+  44:	A032  CD3FF0  		CALL   SDCUAE
+  45:	A035  CD23A3  		CALL   GETKBD
+  46:	A038  2A68A2  		LD     HL,(STR008)
+  47:	A03B  E5      		PUSH   HL
+  48:	A03C  CD3FF0  		CALL   SDCUAE
+  49:	A03F  E1      		POP    HL
+  50:				; BLANK STR008 SPACE
+  51:	A040  061A    		LD     B,$1A
+  52:	A042  3E20    	NDSLP0:	LD     A,$20
+  53:	A044  CDD8F0  		CALL   NDISPGRCH
+  54:	A047  10F9    		DJNZ   NDSLP0
+  55:	A049  212605  		LD     HL,$0526
+  56:	A04C  CD3FF0  		CALL   SDCUAE
+  57:	A04F  AF      		XOR    A
+  58:	A050  D3D6    		OUT    (FDCDRVRCNT),A
+  59:	A052  D3D0    		OUT    (FDCCMDSTATR),A
+  60:	A054          	NDSLP2:
+  61:	A054  E3      		EX     (SP),HL
+  62:	A055  E3      		EX     (SP),HL
+  63:	A056  DBD0    		IN     A,(FDCCMDSTATR)
+  64:	A058  CB4F    		BIT    1,A
+  65:	A05A  2806    		JR     Z,NDSLP1
+  66:	A05C  3ED0    		LD     A,FDCCMDSTATR
+  67:	A05E  D3D0    		OUT    (FDCCMDSTATR),A
+  68:	A060  18F2    		JR     NDSLP2
+  69:	A062          	NDSLP1:
+  70:	A062  210000  		LD     HL,$0000
+  71:	A065  220090  		LD     ($9000),HL
+  72:	A068  210015  		LD     HL,$1500
+  73:	A06B  220290  		LD     ($9002),HL
+  74:	A06E  3E01    		LD     A,$01
+  75:	A070  D3D6    		OUT    (FDCDRVRCNT),A
+  76:	A072  0605    		LD     B,$05
+  77:	A074  3E0B    	NDSJ1:	LD     A,$0B
+  78:	A076  D3D0    		OUT    (FDCCMDSTATR),A
+  79:	A078  E3      		EX     (SP),HL
+  80:	A079  E3      		EX     (SP),HL
+  81:	A07A  10F8    		DJNZ   NDSJ1
+  82:	A07C  DBD0    	NDSJ2:	IN     A,(FDCCMDSTATR)
+  83:	A07E  CB47    		BIT    0,A
+  84:	A080  20FA    		JR     NZ,NDSJ2
+  85:	A082  ED5B0290	NDSJ5:	LD     DE,($9002)
+  86:	A086  2A0090  		LD     HL,($9000)
+  87:	A089  CDC7A0  		CALL   NDSRDSEC
+  88:	A08C  3A0290  		LD     A,($9002)
+  89:	A08F  3C      		INC    A
+  90:	A090  FE0A    		CP     $0A
+  91:	A092  2008    		JR     NZ,NDSJ3
+  92:	A094  3A0390  		LD     A,($9003)
+  93:	A097  3C      		INC    A
+  94:	A098  320390  		LD     ($9003),A
+  95:	A09B  AF      		XOR    A
+  96:	A09C  320290  	NDSJ3:	LD     ($9002),A
+  97:	A09F  2B      		DEC    HL
+  98:	A0A0  7E      		LD     A,(HL)
+  99:	A0A1  320190  		LD     ($9001),A
+ 100:	A0A4  2B      		DEC    HL
+ 101:	A0A5  7E      		LD     A,(HL)
+ 102:	A0A6  320090  		LD     ($9000),A
+ 103:	A0A9  2B      		DEC    HL
+ 104:	A0AA  7E      		LD     A,(HL)
+ 105:	A0AB  FE01    		CP     $01
+ 106:	A0AD  2007    		JR     NZ,NDSJ4
+ 107:	A0AF  2B      		DEC    HL
+ 108:	A0B0  7E      		LD     A,(HL)
+ 109:	A0B1  FE01    		CP     $01
+ 110:	A0B3  28CD    		JR     Z,NDSJ5
+ 111:	A0B5  C7      		RST    00H
+ 112:	A0B6  2168A2  	NDSJ4:	LD     HL,STR008
+ 113:	A0B9  AF      		XOR    A
+ 114:	A0BA  D3D6    		OUT    (FDCDRVRCNT),A
+ 115:	A0BC  3EF0    		LD     A,$F0
+ 116:	A0BE  323700  		LD     (RAM3BUF),A
+ 117:	A0C1  CD80F3  		CALL   DISPSTR
+ 118:	A0C4  C324A0  		JP     NDSLP3
+ 119:			;;
+ 120:	A0C7          	NDSRDSEC:
+ 121:	A0C7  7B      		LD     A,E
+ 122:	A0C8  D3D2    		OUT    (FDCSECTREG),A
+ 123:	A0CA  7A      		LD     A,D
+ 124:	A0CB  D3D7    		OUT    (FDCDATAREG),A
+ 125:	A0CD  3E1A    		LD     A,$1A
+ 126:	A0CF  D3D0    		OUT    (FDCCMDSTATR),A
+ 127:	A0D1  E3      		EX     (SP),HL
+ 128:	A0D2  E3      		EX     (SP),HL
+ 129:	A0D3  DBD0    	NRD1:	IN     A,(FDCCMDSTATR)
+ 130:	A0D5  0F      		RRCA
+ 131:	A0D6  38FB    		JR     C,NRD1
+ 132:	A0D8  3E88    		LD     A,$88
+ 133:	A0DA  D3D0    		OUT    (FDCCMDSTATR),A
+ 134:	A0DC  C5      		PUSH   BC
+ 135:	A0DD  C1      		POP    BC
+ 136:	A0DE  1803    		JR     NRD2
+ 137:	A0E0  0F      	NRD4:	RRCA
+ 138:	A0E1  300C    		JR     NC,NRD3
+ 139:	A0E3  DBD0    	NRD2:	IN     A,(FDCCMDSTATR)
+ 140:	A0E5  CB4F    		BIT    1,A
+ 141:	A0E7  28F7    		JR     Z,NRD4
+ 142:	A0E9  DBD7    		IN     A,(FDCDATAREG)
+ 143:	A0EB  77      		LD     (HL),A
+ 144:	A0EC  23      		INC    HL
+ 145:	A0ED  18F4    		JR     NRD2
+ 146:	A0EF  DBD0    	NRD3:	IN     A,(FDCCMDSTATR)
+ 147:	A0F1  E65C    		AND    $5C
+ 148:	A0F3  C8      		RET    Z
+ 149:	A0F4  3ED0    		LD     A,FDCCMDSTATR
+ 150:	A0F6  D3D0    		OUT    (FDCCMDSTATR),A
+ 151:	A0F8  C9      		RET
+ 152:			;;
+ 153:			;; NDSHW - TEST VIDEO HARDWARE FOR NEDOS
+ 154:	A0F9          	NDSHW:
+ 155:	A0F9  21007F  		LD     HL,$7F00
+ 156:	A0FC  220690  		LD     ($9006),HL
+ 157:	A0FF  AF      		XOR    A
+ 158:	A100  08      		EX     AF,AF'
+ 159:	A101  21FFFF  		LD     HL,$FFFF
+ 160:	A104  224030  		LD     (GRAM0BUF),HL
+ 161:	A107  21FFEF  		LD     HL,$EFFF
+ 162:	A10A  224230  		LD     (GRAM2BUF),HL
+ 163:	A10D  CD0CA3  		CALL   NFILVRAMG
+ 164:	A110  CD9DF0  		CALL   RDRR19R12
+ 165:	A113  218007  		LD     HL,$0780
+ 166:	A116  DB8C    	NDH1:	IN     A,(CRT6545ADST)
+ 167:	A118  CB7F    		BIT    7,A
+ 168:	A11A  28FA    		JR     Z,NDH1
+ 169:	A11C  DB80    		IN     A,(CRTRAM0DAT)
+ 170:	A11E  3C      		INC    A
+ 171:	A11F  200A    		JR     NZ,NDH2
+ 172:	A121  DB84    		IN     A,(CRTRAM1DAT)
+ 173:	A123  3C      		INC    A
+ 174:	A124  2005    		JR     NZ,NDH2
+ 175:	A126  DB88    		IN     A,(CRTRAM2DAT)
+ 176:	A128  3C      		INC    A
+ 177:	A129  2815    		JR     Z,NDH3
+ 178:	A12B  ED730490	NDH2:	LD     ($9004),SP
+ 179:	A12F  ED7B0690		LD     SP,($9006)
+ 180:	A133  E5      		PUSH   HL
+ 181:	A134  ED730690		LD     ($9006),SP
+ 182:	A138  ED7B0490		LD     SP,($9004)
+ 183:	A13C  08      		EX     AF,AF'
+ 184:	A13D  3E01    		LD     A,$01
+ 185:	A13F  08      		EX     AF,AF'
+ 186:	A140  2B      	NDH3:	DEC    HL
+ 187:	A141  AF      		XOR    A
+ 188:	A142  D38D    		OUT    (CRT6545DATA),A
+ 189:	A144  7C      		LD     A,H
+ 190:	A145  B5      		OR     L
+ 191:	A146  20CE    		JR     NZ,NDH1
+ 192:	A148  CD9DF0  		CALL   RDRR19R12
+ 193:	A14B  08      		EX     AF,AF'
+ 194:	A14C  B7      		OR     A
+ 195:	A14D  2861    		JR     Z,NDH4
+ 196:	A14F  CDACF0  		CALL   CLRSCRGR
+ 197:	A152  218BA2  		LD     HL,STR010
+ 198:	A155  CD80F3  		CALL   DISPSTR
+ 199:	A158  214001  		LD     HL,$0140
+ 200:	A15B  CD3FF0  		CALL   SDCUAE
+ 201:	A15E  ED730490		LD     ($9004),SP
+ 202:	A162  3E20    	NDH7:	LD     A,$20
+ 203:	A164  CDD8F0  		CALL   NDISPGRCH
+ 204:	A167  ED7B0690		LD     SP,($9006)
+ 205:	A16B  E1      		POP    HL
+ 206:	A16C  ED730690		LD     ($9006),SP
+ 207:	A170  7C      		LD     A,H
+ 208:	A171  C630    		ADD    A,$30
+ 209:	A173  CDD8F0  		CALL   NDISPGRCH
+ 210:	A176  2600    		LD     H,$00
+ 211:	A178  29      		ADD    HL,HL
+ 212:	A179  29      		ADD    HL,HL
+ 213:	A17A  29      		ADD    HL,HL
+ 214:	A17B  29      		ADD    HL,HL
+ 215:	A17C  7C      		LD     A,H
+ 216:	A17D  FE0A    		CP     $0A
+ 217:	A17F  3802    		JR     C,NDH5
+ 218:	A181  C607    		ADD    A,$07
+ 219:	A183  C630    	NDH5:	ADD    A,$30
+ 220:	A185  CDD8F0  		CALL   NDISPGRCH
+ 221:	A188  B7      		OR     A
+ 222:	A189  7D      		LD     A,L
+ 223:	A18A  1F      		RRA
+ 224:	A18B  1F      		RRA
+ 225:	A18C  1F      		RRA
+ 226:	A18D  1F      		RRA
+ 227:	A18E  FE0A    		CP     $0A
+ 228:	A190  3802    		JR     C,NDH6
+ 229:	A192  C607    		ADD    A,$07
+ 230:	A194  C630    	NDH6:	ADD    A,$30
+ 231:	A196  CDD8F0  		CALL   NDISPGRCH
+ 232:	A199  3A0790  		LD     A,($9007)
+ 233:	A19C  FE7F    		CP     $7F
+ 234:	A19E  20C2    		JR     NZ,NDH7
+ 235:	A1A0  ED7B0490		LD     SP,($9004)
+ 236:	A1A4  219BA2  		LD     HL,STR011
+ 237:	A1A7  CD80F3  		CALL   DISPSTR
+ 238:	A1AA  CD5DF0  		CALL   SCUROF
+ 239:	A1AD  CD23A3  		CALL   GETKBD
+ 240:	A1B0  C3ACF0  	NDH4:	JP     CLRSCRGR
+ 241:			
+ 242:			;--------------------------------------------------------
+ 243:			
+ 244:	A1B3          	STR001:                        ; 00F301
+ 245:				; -------------------
+ 246:	A1B3  0B01    		db    $0b,$01
+ 247:	A1B5  47524146		db    "GRAFIC - MONITOR 1.0",$00
+	      4943202D
+	      204D4F4E
+	      49544F52
+	      20312E30
+	      00
+ 248:	A1CA          	STR002:                        ; 00F318
+ 249:	A1CA  0402    		db    $04,$02
+ 250:	A1CC  74797065		db    "type",$00
+	      00
+ 251:	A1D1          	STR003:                        ; 00F31F
+ 252:	A1D1  3A03    		db    $3a,$03
+ 253:	A1D3  22455343		db    $22,"ESC",$22," for BOOTSTRAPPING",$00
+	      2220666F
+	      7220424F
+	      4F545354
+	      52415050
+	      494E4700
+ 254:	A1EB          	STR004:                        ; 00F339
+ 255:	A1EB  D903    	        db    $d9,$03
+ 256:	A1ED  22524554		db    $22,"RETURN",$22," for testing VIDEO",$00
+	      55524E22
+	      20666F72
+	      20746573
+	      74696E67
+	      20564944
+	      454F00
+ 257:	A208          	STR005:                        ; 00F356
+ 258:	A208  0801    		db    $08,$01
+ 259:	A20A  424F4F54		db    "BOOTSTRAP Version GRAFIC 1.0",$00
+	      53545241
+	      50205665
+	      7273696F
+	      6E204752
+	      41464943
+	      20312E30
+	      00
+ 260:	A227          	STR006:                        ; 00F375
+ 261:	A227  9F01    		db    $9f,$01
+ 262:	A229  496E7365		db    "Insert NE-DOS-DISK Version GRAFIC in drive 0",$00
+	      7274204E
+	      452D444F
+	      532D4449
+	      534B2056
+	      65727369
+	      6F6E2047
+	      52414649
+	      4320696E
+	      20647269
+	      76652030
+	      00
+ 263:	A256          	STR007:                        ; 00F3A4
+ 264:	A256  4E02    		db    $4e,$02
+ 265:	A258  7468656E		db    "then type a key",$00
+	      20747970
+	      65206120
+	      6B657900
+ 266:	A268          	STR008:                        ; 00F3B6
+ 267:	A268  8903    		db    $89,$03
+ 268:	A26A  204E6F20		db    " No NE-DOS Version GRAFIC ",$00
+	      4E452D44
+	      4F532056
+	      65727369
+	      6F6E2047
+	      52414649
+	      432000
+ 269:	A285          	STR009:                        ; 00F3D3
+ 270:	A285  2505    		db    $25,$05
+ 271:	A287  3E203C00		db    "> <",$00
+ 272:	A28B          	STR010:                        ; 00F3D9
+ 273:	A28B  0E00    		db    $0e,$00
+ 274:	A28D  4572726F		db    "Errorpoints :",$00
+	      72706F69
+	      6E747320
+	      3A00
+ 275:	A29B          	STR011:                        ; 00F3E9
+ 276:	A29B  2800    		db    $28,$00
+ 277:	A29D  506C6561		db    "Please type a key",$00
+	      73652074
+	      79706520
+	      61206B65
+	      7900
+ 278:			;;
+ 279:			;;
+ 280:	A2AF          	NDOSSTA:
+ 281:	A2AF  DB8C    		IN     A,(CRT6545ADST)         ; 00F403 DB 8C
+ 282:	A2B1  AF      		XOR    A               ; 00F405 AF
+ 283:	A2B2  D3D6    		OUT    (FDCDRVRCNT),A         ; 00F406 D3 D6
+ 284:	A2B4  F3      		DI                     ; 00F408 F3
+ 285:	A2B5  310070  		LD     SP,$7000        ; 00F409 31 00 70
+ 286:	A2B8  CD73F0  		CALL   INICRT           ; 00F40C CD A5 F0
+ 287:	A2BB  CDF9A0  	NDST1:	CALL   NDSHW           ; 00F40F CD 27 F2
+ 288:	A2BE  21B3A1  		LD     HL,STR001        ; 00F412 21 01 F3
+ 289:	A2C1  CD80F3  		CALL   DISPSTR           ; 00F415 CD E1 F2
+ 290:	A2C4  21CAA1  		LD     HL,STR002        ; 00F418 21 18 F3
+ 291:	A2C7  CD80F3  		CALL   DISPSTR           ; 00F41B CD E1 F2
+ 292:	A2CA  21D1A1  		LD     HL,STR003        ; 00F41E 21 1F F3
+ 293:	A2CD  CD80F3  		CALL   DISPSTR           ; 00F421 CD E1 F2
+ 294:	A2D0  21EBA1  		LD     HL,STR004        ; 00F424 21 39 F3
+ 295:	A2D3  CD80F3  		CALL   DISPSTR           ; 00F427 CD E1 F2
+ 296:	A2D6  2185A2  		LD     HL,STR009        ; 00F42A 21 D3 F3
+ 297:	A2D9  CD80F3  		CALL   DISPSTR           ; 00F42D CD E1 F2
+ 298:	A2DC  212605  		LD     HL,$0526        ; 00F430 21 26 05
+ 299:	A2DF  CD3FF0  		CALL   SDCUAE           ; 00F433 CD 60 F0
+ 300:	A2E2          	KBLP0:
+ 301:	A2E2  CD23A3  		CALL   GETKBD           ; 00F436 CD 94 F0
+ 302:	A2E5  FE1B    		CP     $1B             ; 00F439 FE 1B
+ 303:	A2E7  CA0FA0  		JP     Z,NEDOSCR         ; 00F43B CA 3D F1
+ 304:	A2EA  FE0D    		CP     $0D             ; 00F43E FE 0D
+ 305:	A2EC  28CD    		JR     Z,NDST1         ; 00F440 28 CD
+ 306:	A2EE  1844    		JR     TOCPM           ; 00F442 18 F2
+ 307:			
+ 308:			;;
+ 309:			;; NDISPGR - Display a full graphic char frpm GRAMBUF
+ 310:			;
+ 311:	A2F0          	NDISPGR:
+ 312:	A2F0  DB8C    		IN     A,(CRT6545ADST)         ; 00F044 DB 8C
+ 313:	A2F2  CB7F    		BIT    7,A             ; 00F046 CB 7F
+ 314:	A2F4  28FA    		JR     Z,NDISPGR         ; 00F048 28 FA
+ 315:	A2F6  214030  		LD     HL,GRAM0BUF        ; 00F04A 21 40 30
+ 316:	A2F9  7E      		LD     A,(HL)          ; 00F04D 7E
+ 317:	A2FA  D380    		OUT    (CRTRAM0DAT),A         ; 00F04E D3 80
+ 318:	A2FC  23      		INC    HL              ; 00F050 23
+ 319:	A2FD  7E      		LD     A,(HL)          ; 00F051 7E
+ 320:	A2FE  D384    		OUT    (CRTRAM1DAT),A         ; 00F052 D3 84
+ 321:	A300  23      		INC    HL              ; 00F054 23
+ 322:	A301  7E      		LD     A,(HL)          ; 00F055 7E
+ 323:	A302  D388    		OUT    (CRTRAM2DAT),A         ; 00F056 D3 88
+ 324:	A304  23      		INC    HL              ; 00F058 23
+ 325:	A305  7E      		LD     A,(HL)          ; 00F059 7E
+ 326:	A306  D38E    		OUT    (CRTRAM3PORT),A         ; 00F05A D3 8E
+ 327:	A308  AF      		XOR    A               ; 00F05C AF
+ 328:	A309  D38D    		OUT    (CRT6545DATA),A         ; 00F05D D3 8D
+ 329:	A30B  C9      		RET                    ; 00F05F C9
+ 330:			;;
+ 331:			;; NFILVRAMG - Fill the video ram in graphic mode (from GRAMBUF)
+ 332:			;
+ 333:	A30C          	NFILVRAMG:
+ 334:	A30C  210000  		LD     HL,$0000        ; 00F126 21 00 00
+ 335:	A30F  CD9DF0  		CALL   RDRR19R12           ; 00F129 CD D8 F0
+ 336:	A312  E5      	NFVLP0:	PUSH   HL              ; 00F12C E5
+ 337:	A313  CDF0A2  		CALL   NDISPGR           ; 00F12D CD 44 F0
+ 338:	A316  E1      		POP    HL              ; 00F130 E1
+ 339:	A317  23      		INC    HL              ; 00F131 23
+ 340:	A318  7C      		LD     A,H             ; 00F132 7C
+ 341:	A319  FE07    		CP     $07             ; 00F133 FE 07
+ 342:	A31B  20F5    		JR     NZ,NFVLP0        ; 00F135 20 F5
+ 343:	A31D  7D      		LD     A,L             ; 00F137 7D
+ 344:	A31E  FE80    		CP     $80             ; 00F138 FE 80
+ 345:	A320  20F0    		JR     NZ,NFVLP0        ; 00F13A 20 F0
+ 346:	A322  C9      		RET                    ; 00F13C C9
+ 347:			
+ 348:			;;
+ 349:			;; GETKBD - wait for a key and return in A
+ 350:			;
+ 351:	A323          	GETKBD:
+ 352:				; wait for strobe clean
+ 353:	A323  DB85    		IN	A,(CRTKEYBDAT)		; was 00F094 DB 85
+ 354:	A325  2F      		CPL
+ 355:	A326  CB7F    		BIT	7,A
+ 356:	A328  20F9    		JR	NZ,GETKBD
+ 357:				; wait for keypress
+ 358:	A32A  DB85    	GKLP0:	IN	A,(CRTKEYBDAT)
+ 359:	A32C  2F      		CPL
+ 360:	A32D  CB7F    		BIT	7,A
+ 361:	A32F  28F9    		JR	Z,GKLP0
+ 362:	A331  E67F    		AND	$7F
+ 363:	A333  C9      		RET
+ 364:			;;
+ 365:	A334          	TOCPM:
+ 366:	A334  C30000  		JP	$0000
+ 367:			
+ 368:	A337          	ENDCODE	EQU	$
+ 369:			
+ 370:			wsym ndosboot.sym
+ 371:			
+**** ndosboot.asm ****
+
+
+
+Statistics:
+
+   677	symbols
+   823	bytes
+
+
+
+Symbol Table:
+
+aftrio          dcec+    fwend           f4c2+    noovf           dc3d+    
+alibn           f74a+    fwrdy           f4b3+    noprow          dd55+    
+all00           e097+    gcurtrk         f418+    nrd1            a0d3     
+all01           e0ce+    gdcua           f755+    nrd2            a0e3     
+all02           dfe9+    gentr           f68c+    nrd3            a0ef     
+all03           e020+    get1hnum        f67b+    nrd4            a0e0     
+alloc           dc44+    gethnum         f686+    nulfn2          fddb+    
+altprnprt          3+    getkbd          a323     ocjpv           f963+    
+appbuf            2a+    getlpen         f85b+    ocrlf1          f998+    
+base               0+    gfdcstat        f411+    offcal          fe4a+    
+bconin          f7d6+    gklp0           a32a     offgt1          fe5d+    
+bconout         f9e3+    gnxtc           f689+    offgtz          fe5c+    
+bconsp          f9ac+    goboot          a000+    offzer          fe64+    
+bconst          f9a0+    gocpm           d9f7+    outchr          f959+    
+bdnxt           f7c4+    goexec          f750+    outcrlf         f997+    
+bdos            ca06+    gram0buf       =3040     outgrbuf        fd22+    
+bdosb           ca00+    gram1buf       =3041+    path            da46+    
+bdwtyp          dd54+    gram2buf       =3042     pdnload         f22b+    
+begdat          dd50+    gram3buf       =3043     phydpt          d8a6+    
+bfailmsg        d8ff+    greet           f980+    phylen             a+    
+bhome           f421+    h2aen1          f93a+    phyoff             f+    
+bias            8e00+    h2aj1           f93f+    phyprm          d89b+    
+bindisp         f7c2+    h2aj2           f948+    physpt          d8a5+    
+biohby            d8+    h2aj3           f94d+    phystr          dad8+    
+bioreas          a00+    hdboot          fd47+    pop1prm         f684+    
+bios            d800+    hdrvv           f394+    pop2prm         f992+    
+biosiz           550+    hehex           f682+    pop3num         f8c0+    
+biostds          600+    hl2asc          f937+    portin          f769+    
+bldoffs         2000+    hl2ascb         f954+    portout         f771+    
+bmpro           f5ff+    hlistst         fdd3+    ppakstb            1+    
+boot            f59f+    hnhex           f69a+    ppcntrp            2+    
+bootfail        d9ef+    home            da5d     ppdatap            3+    
+bootm           f5ef+    homflo          da6b+    ppdini             0+    
+botdsk          d836+    hstact          dd50+    ppdokg             2+    
+botok           d949+    hstbsz           200+    ppdrdy             4+    
+bread           f46c+    hstbuf          dd69+    ppdstp             6+    
+bseldsk         f3fd+    hstdsk          dd61+    ppstrob            0+    
+bsetdma         f3f8+    hstfil          dcb7+    ppuack             7+    
+bsetsec         f3f3+    hstfrd          dce9+    ppuini             1+    
+bsettrk         f3ee     hstful          dc91+    ppuokg             3+    
+btpasiz            6+    hstlgs          dd5f+    ppurdy             5+    
+bwaitio         f478+    hstloa          dc80+    prbend          f183+    
+bwrite          f473+    hstrdd          dc83+    prbloo          f151+    
+calchlde        f929+    hstrsf          dd0e+    prcvblk         f136+    
+cbboot          d916+    hstsec          dd64+    prnak           f17d+    
+cbkend          f8d3+    hstsyn          dc8e+    prnchr          f966+    
+cbread          dbc4+    hsttmp          dd60+    prntbusybit        0+    
+cbrev              b+    hsttrk          dd62+    prvtop            4f+    
+ccp             c200+    hstwrt          dd52+    prwcsm          f170+    
+cdisk              4+    iclp1           f09f+    psbok           f228+    
+cfil1           fcf7+    ictlp0          f57b+    psndblk         f1da+    
+chk00           e105+    idisk1            24+    psndch          f1bb+    
+chk01           e125+    idisk2            24+    psnxtc          f1f2+    
+chk02           e057+    idisk3             1+    pwackb          f1c9+    
+chk03           e077+    idisk4             1+    rafchr            7e+    
+chkbrk          f8d6+    ini6545         f575+    rafdflt         ffff+    
+chkctr          f8fd+    inicrt          f073     rafrtr             5+    
+chkeor          f8c9+    inicrtcur       fafc+    rafshow         ffff+    
+chkhex          f8ea+    inicrtreg       f563+    ram0buf           34+    
+chksid          dbaa+    init0           f526+    ram1buf           35+    
+chkuna          dbff+    intron             0+    ram2buf           36+    
+chome           fb38+    iobval            95+    ram3buf           37     
+cibt1           f813+    iobyte             3+    rcp             e200+    
+cieqb           f7e9+    iocac2          fc3a+    rcps              10+    
+cigon           f7f9+    iocack          fafc+    rdflo           db0a+    
+cigrtog         f88d+    iocbas2         fbcf+    rdrr19r12       f09d     
+cihcr           f84c+    iocbase         faf3+    rdvrt           db19+    
+cijp4           f87e+    iocbe2          fc10+    readhst         daf4+    
+cilop           f806+    iocbel          fb06+    res3miob        fd41+    
+ciprc           f7ec+    iocbs           fb09+    resattr         fbc0+    
+cirbf           f7d2+    iocbs1          fb19+    resroom          400+    
+ciren           f848+    iocbs2          fb29+    rhstfi          dcaf+    
+cisti           f7ed+    iocca2          fbec+    rst7spc           38+    
+citc1           f821+    ioccan          fbc6+    rtcbuf          da58+    
+citc2           f828+    ioccr           fb6d+    rwm1            f7a0+    
+cld1            da2b+    ioccr1          fb75+    rwm2            f7a2+    
+cldcmnd         da28+    iocd12          fc4c+    rwm3            f787+    
+clreol          fb97+    iocdc1          fbc0+    rwmem           f783+    
+clrj0           fb8a+    iocdc2          fc6a+    rwmove          dd38+    
+clrlin          fc74+    iocdc3          fc6d+    rwoper          dc4b+    
+clrlin1         fc77+    iocdc4          fc58+    rwoshf          dc52+    
+clrlp1          fc80+    iocdle          fc1c+    s_dlpr          f329+    
+clrscr          fb49+    iocem           fbf0+    s_vhdr          f32b+    
+clrscrgr        f0ac     iocen2          fc0a+    savcolb         fa27+    
+clsnc           fb5e+    iocenq          fb91+    scrtst          f91a+    
+cmdset          da4f+    ioceo2          fc34+    scurof          f05d     
+codesize       = 3b7+    ioceot          fbcc+    scuron          f06a+    
+coire           f97f+    ioces2          fc2e+    sdcuae          f03f     
+coiupc          f970+    iocesc          fbb9+    sdcuae1         f04d+    
+cojp1           fa07+    iocet2          fc70+    sdsta           f89f+    
+cojp2           fa16+    iocetb          fbad+    sectran         dad5+    
+colbuf            4f+    iocetx          fc04+    seg1            e200+    
+coldbeg         da3e+    iocff           fb49+    seg10           ec00+    
+coldend         da45+    iocff2          fc9c+    seg11           ef00+    
+conou2          fa2b+    iocfs           fbb1+    seg12           efd0+    
+constr          f983+    iocfs2          fbfe+    seg2            ea00+    
+cont            d9d7+    iocgs           fbb5+    seg3            ea00+    
+coutch          f8b8+    iocgs2          fc22+    seg4            ed00+    
+cpmboot         f3c0+    iocht           fc40+    seg5            ed80+    
+cpmsiz          1bd0+    ioclf           fbbd+    seg6            edd0+    
+cr                 d+    iocnak          fbd0+    seg7            edf4+    
+crlftab         f560+    iocnul          fc66+    seg8            edff+    
+crt6545adst       8c     iocrs           fbc9+    seg9            ee00+    
+crt6545data       8d     iocrs2          fc52+    sekdsk          dd57+    
+crtbase           80+    iocs2           fc16+    sekhst          dd66+    
+crtbeepport       8f+    iocsi           fb97+    seksec          dd5a+    
+crtblinkbit        0+    iocsi2          fc46+    sektrk          dd58+    
+crtfil          fce9+    iocso           fb78+    selact          da8f+    
+crthilitbit        3+    iocso2          fbf8+    seldsk          da74+    
+crtkeybcnt        87+    iocsoh          faf4+    selflp          dab7+    
+crtkeybdat        85     iocst2          fc28+    selhdd          dabd+    
+crtmodebit         4+    iocstx          faf8+    selndb          dab2+    
+crtprgend       f065+    iocsub          fbf4+    selvrt          dabe+    
+crtprntcnt        83+    iocsy2          fbd3+    set3miob        fd3b+    
+crtprntdat        81+    iocsyn          fba9+    setdma          dad0+    
+crtram0cnt        82+    iocus           fb94+    setrow          fa50+    
+crtram0dat        80     iocus2          fbe9+    setsec          dacb+    
+crtram1cnt        86+    iocvec          fc9f+    setsid          f3b2+    
+crtram1dat        84     iocvec2         fcbf+    settrk          dac6+    
+crtram2cnt        8a+    iocvt           fb38+    sfdccmd         f402+    
+crtram2dat        88     iocvt2          fc99+    shsize            20+    
+crtram3port       8e     ioflag          dd53+    shstk           ed00+    
+crtrevrsbit        1+    iop                0+    shstks             4+    
+crtservcnt        8b+    iops               0+    sidone          f3bd+    
+crtservdat        89+    iptrckbd        f8d5+    signon          d8a8+    
+crttab1         f512+    iuser1            24+    sk2hst          dcfb+    
+crtunderbit        2+    iuser2             f+    sndcl           f403+    
+crtwidthbit        1+    iuser3            24+    spacer          f957+    
+csglp0          f0c1+    iuser4             f+    ssiz1           f37e+    
+cslp0           f984+    jboot           f000+    ssiz2           f37c+    
+curadr          fa3e+    jconin          f003+    ssiz5           f37a+    
+curbfb          fac1+    jconou          f006+    str001          a1b3     
+curbfl          fac5+    jconst          f039+    str002          a1ca     
+curblb          fab9+    jcpmbt          f033+    str003          a1d1     
+curbll          fabd+    jcurtr          f024+    str004          a1eb     
+curfxb          facd+    jdispg          f02d+    str005          a208     
+curfxl          fad1+    jdrvsl          f02a+    str006          a227     
+curofb          fac9+    jfdcmd          f021+    str007          a256     
+curofs          fa63+    jfseek          f027+    str008          a268     
+curpbuf           49+    jfstat          f01e+    str009          a285     
+currgt          fa19+    jgethn          f036+    str010          a28b     
+cursetmode      fad3+    jhome           f009+    str011          a29b     
+cwflg           da3d+    jprnch          f03c+    str100          f540+    
+datsiz           3f5+    jread           f018+    strload         f336+    
+dblank          fcdf+    jselds          f00c+    strwait         f32f+    
+delay           f102+    jsetdm          f015+    synpnd          dd3b+    
+dfmt128            0+    jsetse          f012+    time            da54+    
+dfmt256            0+    jsettr          f00f+    tmpbyte           4b+    
+dfmt512         ffff+    jusrcm          f030+    tocpm           a334     
+dgclp0          f0d9+    jwrite          f01b+    togju           f917+    
+diff16          dd4a+    kbdbyte           4d+    togpr           f915+    
+dirbf           df69+    kblp0           a2e2+    togprnio        f90a+    
+dismvc          faed+    keybstrbbit        7+    tpa              100+    
+dispch          f0d8     lf                 a+    trans           d877+    
+dispgr          fd05+    lindn           fc58+    transk          fe23+    
+dispnortr       fd0b+    loadoffs       =9f80     trask1          fe27+    
+dispstr         f380     lsect           d9c5+    true            ffff+    
+div16           fe0b+    mbmenu          f62c+    ucmdtab         f9af+    
+divlo           fe11+    mcblist         fd89+    ucrej           f6a5+    
+dlight          fadf+    mco1            f6f9+    unacnt          dd56+    
+dly1            f106+    mconin          fd50+    unadsk          dd5b+    
+dly2            f104+    mconout         fd63+    unasec          dd5e+    
+dmaadr          dd67+    mconst          fd76+    unatrk          dd5c+    
+dmpalia         f748+    mconx           f6e7+    uplchr          f111+    
+dmpalib         f743+    mdjmp0          fa95+    upload          f190+    
+dogetchr        f8b5+    mdjmp1          faab+    upwstrb         f11e+    
+doprompt        f8b2+    mdp1            f73d+    urestr          f909+    
+dpbase          d837+    mdp2            f70a+    usenodeblock       0+    
+dpbnds          d882+    mdp3            f72e+    usrcmd          f6ab+    
+dpbvrt          d857+    mdp4            f730+    valgetchr       f8fa+    
+dreadh          daf7+    mdp5            f722+    vcpmbt          f33a+    
+drvsel          f398+    mdp6            f702+    vcresreg        fa76+    
+dselbf            4e+    mdp7            f71b+    vdbufsz            a+    
+dslp0           f38a+    mejp            fab6+    vdrdsec            0+    
+dwrith          db27+    memcomp         f6e4+    vdrend          f2b3+    
+endcode        =a337     memdump         f6ff+    vdrnok          f2b4+    
+enddat          e145+    memmove         f779+    vdrok           f29a+    
+epfill          fe7c+    memtest         f7ab+    vdrsl1          f25b+    
+erflag          dd51+    miobyte           4c+    vdrtry          f252+    
+expath          edf4+    ml1601          fe3e+    vdskbuf           2c+    
+expaths            5+    ml1602          fe44+    vdskrd          f24b+    
+extfcb          edd0+    mlistst         fd9c+    vdskwr          f2ba+    
+extrabias       1200+    mmnxt           f77c+    vdwend          f321+    
+extstk          efd0+    mnohd           fdfa+    vdwnok          f323+    
+false              0+    monmaj            32+    vdwok           f309+    
+fcp             ea00+    monmin            32+    vdwrsec            1+    
+fcps               4+    movdn           fa7b+    vdwsl1          f2ca+    
+fdcbase           d0+    movdn1          fa7f+    vdwtry          f2c1+    
+fdccmdstatr       d0     mprompt         f950+    vers              16+    
+fdcdatareg        d7     mpunch          fdaf+    wboot           d98a+    
+fdcdrvrcnt        d6     mreader         fdc0+    wboote          d803+    
+fdcreadc          88+    mscnt             f6+    whstfi          dca8+    
+fdcrestc           7+    msize             3c+    wraf1           db71+    
+fdcsectreg        d2     msnodev         fdee+    wraf2           db6e+    
+fdcseekc          17+    mterr           f7bd+    wrafe           db80+    
+fdctrakreg        d1+    mtnxt           f7ae+    wrall              0+    
+fdcwritc          a8+    mul16           fe37+    wrdir              1+    
+fdrvbuf           46+    ndevmsg         fdde+    wrfer           db91+    
+ff                 c+    ndh1            a116     wrfl0           db85+    
+fgtrk           f465+    ndh2            a12b     wrfl2           db8e+    
+fillmem         f6d8+    ndh3            a140     wrfl3           db87+    
+filvramg        f0eb+    ndh4            a1b0     wrflo           db3a+    
+flme1           f6db+    ndh5            a183     wrflt           db40+    
+flopio          f4f1+    ndh6            a194     write           dbd7+    
+floppyread      f4e5+    ndh7            a162     writehst        db24+    
+floppywrit      f4ec+    ndispgr         a2f0     wrttmp          dd65+    
+fmemnp          f58f+    ndispgrch      =f0d8     wrual              2+    
+fmemsiz         f588+    ndossta         a2af     wrvrt           db9f+    
+fmestp          f59c+    ndshw           a0f9     z3cl            ef00+    
+fok0            f436+    ndsj1           a074     z3cls             d0+    
+frbsy           f49a+    ndsj2           a07c     z3env           ec00+    
+frdpbuf           42+    ndsj3           a09c     z3envs             2+    
+fretr0          f424+    ndsj4           a0b6     z3msg           ed80+    
+fretr1          f444+    ndsj5           a082     z3ndir          ee00+    
+frrdy           f49d+    ndslp0          a042     z3ndirs           1c+    
+frwbsy          f4b0+    ndslp1          a062     z3rev             21+    
+frwlp           f47c+    ndslp2          a054     z3whl           edff+    
+frwnxt          f483+    ndslp3          a024     zbufbas         e200+    
+frwwro          f4a9+    ndspar          9f80     zdsmntr         f000+    
+fsecbuf           44+    ndsrdsec        a0c7     zero128         da35+    
+fseek           f43b+    ndst1           a2bb     zerom           da37+    
+fsekbuf           40+    nedoscr         a00f     zflopkg          200+    
+fshtm           f4de+    nextop          d9da+    ziopkg             0+    
+fterr           f468+    nfilvramg       a30c     zrespkg          800+    
+ftrkbuf           47+    nfvlp0          a312     zstdovr          400+    
+fvlp0           f0f1+    nib2asc         fc8f+    

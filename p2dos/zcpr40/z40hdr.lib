@@ -1,0 +1,792 @@
+
+; Z40HDR.LIB
+
+; This is the configuration file for the ZCPR Version 3.4 command processor.
+; You should read through this file and set the equates according to the
+; features you want to implement.  Since the command processor is limited to
+; no more than 2K (2048 bytes), it is impossible to include all features.
+
+; 4.0E -  1 Jun 92 - Added Banked flag, modified PEEK for B/P Banking,
+;		adjusted Banked/Unbanked accesses for DosDisk.		HFB
+;---------------------------------------------------------------------------
+
+	CSEG
+;=============================================================================
+;    A D V A N C E D    O P E R A T I N G    S Y S T E M    S U P P O R T
+;=============================================================================
+; This version adds conditional assemblies to adapt to Time and Date features
+; of DateStamper(tm) for time display in the Prompt line, to more advanced
+; features of File Stamp copying with CP available under ZSDOS.  Set the
+; following equates to tailor these features to your system.
+
+; Set ONLY ONE of the following two to TRUE !!!
+ZSDOS	 EQU	TRUE		; To print time in Prompt, copy stamps
+DATESTMP EQU	FALSE		; Only if Not ZsDos to print time in Prompt
+
+BANKED	EQU	TRUE		;4.0E Set to TRUE if using B/P Banked feature
+ZSDOS2	 EQU	TRUE		;4.0E Set to TRUE to use advanced features of
+				;4.0E   ZSDOS Version 2 (Parse, Free space)
+INCLTIM	 EQU	TRUE		; Include Time in the Prompt line?
+
+;.....
+; The following Bdos Function equates have been added to ease readability
+
+B_RCON	EQU	1		; Read Char from Console
+B_SCON	EQU	2		; Send Char to Console
+B_SLST	EQU	5		; Send Char to Printer (LST device)
+B_RBUF	EQU	10		; Read line from Console to Buffer
+B_RSTS	EQU	11		; Read Console Status
+B_GVER	EQU	12		; Get running Dos Version #
+B_RESET	EQU	13		; General Disk System Reset
+B_SDRV	EQU	14		; Select Drive #
+B_FOPN	EQU	15		; Open a file
+B_FCLS	EQU	16		; Close a file
+B_FSRF	EQU	17		; Search for First occurrance of File
+B_FSRN	EQU	18		; Search for Next occurrance of File
+B_FERA	EQU	19		; Erase a File
+B_FRD	EQU	20		; Sequential Sector Read of File
+B_FWR	EQU	21		; Sequential Sector Write to File
+B_FMAK	EQU	22		; Create a File
+B_FREN	EQU	23		; Rename a File
+B_GDRV	EQU	25		; Get Currently-logged Drive #
+B_SDMA	EQU	26		; Set DMA Transfer Address
+B_GALV	EQU	27		; Get ALV Buffer for currently-logged Drive
+B_SATT	EQU	30		; Set File attributes
+B_GDPB	EQU	31		; Get address of DPB for currently-logged Drive
+B_SUSR	EQU	32		; Get/Set Current User Number Area
+B_FRDR	EQU	33		; Random Sector File Read
+B_FSIZ	EQU	35		; Get File Size
+B_RESDR	EQU	37		; Specified File Reset
+B_GFREE	EQU	46		; Get Free Disk Space
+B_GTIM	EQU	98		; Get RTC Time/Date
+B_STIM	EQU	99		; Set RTC Time/Date
+B_GSTMP	EQU	102		; Get File Stamp
+B_PSTMP	EQU	103		; Put File Stamp
+B_PARS	EQU	152		; ZSDos2 Parse Function
+
+;=============================================================================
+;	R E S I D E N T    C O M M A N D S    S E L E C T I O N
+;=============================================================================
+; Commands to include in the command processor
+
+; The primary function of the command processor is to interpret user commands.
+; Providing resident command functions is secondary.  As the command processor
+; has evolved to provide ever more advanced command processing functions, there
+; has been correspondingly less room for resident command code in the
+; processor.
+
+; There are some interrelations between a number of the possible resident
+; commands.  Some are so close (LIST and TYPE) that a single equate controls
+; both functions.  Others like DIR and ERA share code (both display file
+; listings).  It is efficient to select or deselect them together.  The RCP
+; has the room to provide more elaborate capabilities.  Therefore, it makes
+; sense to choose for the CPR those resident commands that are intrinsically 
+; simple, (e.g., NOTE) or which depend on intrinsic command processing code
+; (e.g., GET, GO, JUMP).
+
+clson	EQU	YES	; CLS	Command for clearing the screen		;4.0E
+copyon	EQU	YES	; COPY	Command available			;4.0E
+dateon	EQU	YES	; DATE	Command to Print current Date		;4.0E
+diron	EQU	YES	; DIR	Command to display disk directory
+echoon	EQU	YES	; ECHO	Send text to screen or printer		;4.0E
+eraon	EQU	YES	; ERA	Command for deleting files
+feedon	EQU	YES	; FEED	Command to send FormFeed to printer	;4.0E
+freeon	EQU	YES	; Free	SP(ace) on disk drive available		;4.0E
+geton	EQU	YES 	; GET	Load a file to a general address
+goon	EQU	YES 	; GO	Command to execute code in TPA (at 100H)
+helpon	EQU	YES	; HELP	List available Commands			;4.0E
+jumpon	EQU	YES	; JUMP	Execute code at a general address
+lton	EQU	YES	; LIST & TYPE commands for file printing and display
+noteon	EQU	YES	; NOTE	Command for comments in multiple command lines
+peekon	EQU	YES	; PEEK	Command for dumping memory		;4.0E
+pokeon	EQU	YES	; POKE	Command for altering memory contents	;4.0E
+porton	EQU	YES	; PORT	Command for addressing IO Ports		;4.0E
+proton	EQU	YES	; PROT	Set file attributes			;4.0E
+regon	EQU	YES	; REG	Display ZCPR registers			;4.0E
+renon	EQU	YES	; REN	Command for changing names of files
+reson	EQU	YES	; R	Reset all Drives Command		;4.0E
+saveon	EQU	YES	; SAVE	Command for saving TPA to files
+spopon	EQU	YES	; SPOP	Pop the shell stack			;4.0E
+timeon	EQU	YES	; TIME	Command for printing current Time	;4.0E
+tston	EQU	no	; TST	Test for program error			;4.0E
+verson	EQU	YES	; VER	Print relevant Version Numbers		;4.0E
+whlon	EQU	YES	; WHL	Command to Display/Set the Weel byte	;4.0E
+
+;-----------------------------------------------------------------------------
+; Wheel control over accessibility of commands
+
+; To prevent unauthorized users from performing certain dangerous or sensitive
+; operations on the computer, ZCPR35 provides the capability of disabling the
+; operation of certain commands when the wheel byte is off.  In ZCPR30, an
+; attempt to use one of these wheel-protected commands when the wheel byte was
+; off resulted in an error message.  In ZCPR35 things work differently.  In the
+; same situation, the command simply disappears.  In this way a transient
+; program or extended command processor function can take over and deal with
+; the attempt to use the command in a much more flexible way.
+
+; Wheel-protected commands in ZCPR30 had extra code to intercept the function
+; and disable it.  In ZCPR35, wheel protection is enabled and disabled in a
+; different way.  To wheel-protect a command the high bit of the first
+; character in the command name is set.  The command table scanner in ZCPR35
+; will not recognize these commands when the wheel byte is off.  Since the same
+; command scanner is used to scan the commands in the RCP and FCP (flow control
+; package), commands there can be wheel protected in the same way.  For skilled
+; computer operators it is very easy to use a debugger, file patcher, or disk
+; utility to enable and disable wheel protection without having to reassemble
+; the CPR, RCP, or FCP.
+
+; Because of the way the command scanner works, once one command is wheel
+; protected, there is no further code penalty in protecting other commands.
+; Therefore, we recommend protecting all possibly sensitive commands or none.
+
+
+wcls	EQU	NO	; Wheel-protect CLS				;4.0E
+wcopy	EQU	YES	;   "      "    COPY				;4.0E
+wdate	EQU	NO	;   "      "    DATE (Set automatically checks)	;4.0E
+wdir	EQU	NO	;   "      "    DIR
+wecho	EQU	NO	;   "      "    ECHO				;4.0E
+wera	EQU	YES	;   "      "	ERA
+wfeed	EQU	YES	;   "      "    FEED				;4.0E
+wfree	EQU	YES	;   "      "    SP				;4.0E
+wget	EQU	YES	;   "      "    GET
+wgo	EQU	YES	;   "      "    GO
+whelp	EQU	NO	;   "      "    HELP				;4.0E
+wjump	EQU	YES	;   "      "    JUMP
+wlt	EQU	YES	;   "      "    LIST and TYPE
+wpeek	EQU	YES	;   "      "    P				;4.0E
+wpoke	EQU	YES	;   "      "    POKE				;4.0E
+wport	EQU	YES	;   "      "    PORT				;4.0E
+wprot	EQU	YES	;   "      "    PROT				;4.0E
+wreg	EQU	YES	;   "      "    REG				;4.0E
+wren	EQU	YES	;   "      "    REN
+wreset	EQU	YES	;   "      "    RES				;4.0E
+wsave	EQU	YES	;   "      "    SAVE
+wspop	EQU	YES	;   "      "    SPOP				;4.0E
+wtime	EQU	NO	;   "      "    TIME (Set automatically checks)	;4.0E
+wtst	EQU	NO	;   "      "	TST				;4.0E
+wvers	EQU	NO	;   "      "    VER				;4.0E
+wwhl	EQU	NO	;   "      "    WHL				;4.0E
+
+;-----------------------------------------------------------------------------
+; Command names
+
+; The CTABLE macro, which constructs the command dispatch table, includes a
+; line for each command, the first parameter of which is the name of the
+; command.  These names may be changed if you wish.  But make sure that you
+; do not use a name that is longer than the maximum allowed length.  If you
+; do, the name will be truncated and a nonfatal error will occur during
+; assembly.  DO NOT CHANGE ANY PARAMETER OTHER THAN THE COMMAND NAME.  Lower
+; case letters will be converted to upper case.  The macro COMMAND is defined
+; in Z34MAC.LIB.
+
+CMDSIZE	EQU	4		; Maximum length of command names
+
+; Command table		name,	enable,	wheel,	jump_addr
+;			- DO NOT CHANGE THESE PARAMETERS -
+CTABLE	  MACRO
+	COMMAND		CLS,	clson,	wcls,	CLS			;4.0E
+	COMMAND		CP,	copyon,	wcopy,	COPY			;4.0E
+	COMMAND		DATE,	dateon,	wdate,	DATE			;4.0E
+	COMMAND		DIR,	diron,	wdir,	DIR
+	COMMAND		ECHO,	echoon,	wecho,	ECHO			;4.0E
+	COMMAND		ERA,	eraon,	wera,	ERA
+	COMMAND		FEED,	feedon,	wfeed,	FEED			;4.0E
+	COMMAND		GET,	geton,	wget,	GET
+	COMMAND		GO,	goon,	wgo,	GO
+	COMMAND		H,	helpon,	whelp,	HELP			;4.0E
+	COMMAND		JUMP,	jumpon,	wjump,	JUMP
+	COMMAND		LIST,	lton,	wlt,	LIST
+	COMMAND		NOTE,	noteon,	false,	NOTE
+	COMMAND		P,	peekon,	wpeek,	PEEK			;4.0E
+	COMMAND		POKE,	pokeon,	wpoke,	POKE			;4.0E
+	COMMAND		PORT,	porton,	wport,	PORT			;4.0E
+	COMMAND		PROT,	proton,	wprot,	PROT			;4.0E
+	COMMAND		REG,	regon,	wreg,	REGISTR			;4.0E
+	COMMAND		REN,	renon,	wren,	REN
+	COMMAND		RES,	reson,	wreset,	RESET			;4.0E
+	COMMAND		SAVE,	saveon,	wsave,	SAVE
+	COMMAND		SP,	freeon,	wfree,	FREE			;4.0E
+	COMMAND		SPOP,	spopon,	wspop,	SPOP			;4.0E
+	COMMAND		TIME,	timeon,	wtime,	TIME			;4.0E
+	COMMAND		TST,	tston,	wtst,	TSTERR			;4.0E
+	COMMAND		TYPE,	lton,	wlt,	TYPE
+	COMMAND		VER,	verson,	wvers,	VER			;4.0E
+	COMMAND		WHL,	whlon,	wwhl,	WHL			;4.0E
+	  ENDM
+
+;-----------------------------------------------------------------------------
+; DIR command options
+
+wide	EQU	YES		; Wide display for 80-column terminals
+fence	EQU	'|'		; Separator to use between columns of names
+allchar	EQU	'A'		; Option letter (must be upper case) for
+				; showing SYS and DIR files
+syschar	EQU	'S'		; Option letter (must be upper case) for
+				; showing only SYS files
+slashfl	EQU	YES		; Allow forms "DIR /S" and "DIR /A"?
+whldir	EQU	YES		; Allow display of SYS files only if wheel set
+
+; Do not change
+
+whldir	DEFL	whldir AND diron
+
+;-----------------------------------------------------------------------------
+; ERA command options
+
+; There are options that control whether or not and in what way the user will
+; be prompted before files are erased.  If ERAOK is off, then there will never
+; by any prompting.  If ERAOK is on and INSPFL is off, then the user will be
+; prompted before all deletions.  If INSPFL is also on, then the user will be
+; prompted only when the prompt option character is included on the command
+; line.  If this character is defined to be a blank space, then any character
+; will turn on prompting.
+
+eraok	EQU	ON		; Enable prompting before files are erased
+inspfl	EQU	ON		; Enable command-line inspection flag
+inspch	EQU	' '		; Character to use (must be upper case) to
+				; invoke inspection. If this is set to
+				; ' ' (space character), then any character
+				; after the files spec will turn on the
+				; inspect option.
+
+;-----------------------------------------------------------------------------
+; GET command options
+
+fullget	EQU	YES		; If yes, no memory checks are performed with
+				; the GET command (files can even overwrite the
+				; command processor or page 0).
+
+;-----------------------------------------------------------------------------
+; SAVE command options
+
+sectch	EQU	'S'		; Option character (must be upper case) to
+				; select saving of sectors.  If set to ' '
+				; (space), then any character will select the
+				; sector-save option.
+
+bellfl	EQU	YES		; If yes, bell will ring for SAVE and REN
+				; commands when the file already exists.
+
+;-----------------------------------------------------------------------------
+; TYPE command options
+
+pagefl	EQU	YES		; If enabled, normally page the output.  If not
+				; enabled, page output only when paging toggle
+				; character is present.
+pagech	EQU	'P'		; Option character (must be upper case) to
+				; toggle paging.  If it is set to ' '
+				; (space), then any character will toggle
+				; the paging mode
+
+;-----------------------------------------------------------------------------
+; CLS Command Options
+
+clstcap	EQU	YES		; Use the TCAP for Clear Screen String
+clsstr	  macro
+	DEFC	'Z'-'A'		; Print this string if No Termcap (Control-Z)
+	  endm
+
+;-----------------------------------------------------------------------------
+; PEEK Command Options
+
+peekhdr	EQU	YES		; If yes, label the columns in the display with
+				; the low hex digit of the address
+peekbdr	EQU	YES		; If yes, include a line of hyphens under the
+				; column headers
+peekchk	EQU	YES		; If yes, the ending address will be tested to
+				; prevent overflow past FFFF (costs 5 bytes)
+
+;-----------------------------------------------------------------------------
+; POKE Command Option
+
+pokeq	EQU	FALSE		; Set TRUE to suppress Console Message to Save
+				; Code and/or improve Security
+
+;-----------------------------------------------------------------------------
+; REGister Command Option
+
+seterr	EQU	TRUE		; Copy new reg value to pgm error flag
+
+;-----------------------------------------------------------------------------
+; Disk RESet Command Option
+
+resmsg	EQU	YES		; Print disk reset message?
+
+;-----------------------------------------------------------------------------
+; Disk FREE Space Command Options
+
+dirsp	EQU	YES		; Show space after DIR?
+erasp	EQU	YES		; Show space after ERA?
+cpsp	EQU	YES		; Show space after CP?
+
+;-----------------------------------------------------------------------------
+; H (Help) Command Options
+
+; This Command list all available commands in the Command Processor and
+; optionally, the RCP and FCP Commands.  Wheel Protected Commands can be
+; suppressed if Wheel access is not set.
+
+cmdslin	EQU	5		; Number of Commands per line
+cmdspac	EQU	12		; Number of spaces for each Command
+
+listrcp	EQU	YES		; List any available RCP Commands?
+listfcp	EQU	YES		; List any available FCP Commands?
+noshow	EQU	YES		; Suppress Wheel-Protected Comnds per Wheel?
+
+;-----------------------------------------------------------------------------
+; CP (Copy) Command Options
+
+; This command copies a single file.  The destination file can have a different
+; name from the source file.  Set the size of the memory buffer in K below (do
+; not change the second definition).  The copy buffer is placed at the top of
+; the TPA, where it will generally not interfere with subsequent use of the GO
+; command to rerun a program loaded in the TPA.
+
+cpblks	DEFL	16		; Size of copy buffer in K
+cpblks	DEFL	cpblks * 8	; Convert to number of records
+
+cptim	EQU	YES		; Copy Time Stamps of files?
+
+;-----------------------------------------------------------------------------
+; DATE Command Options
+
+;4.0E This command prints the current Date returned from the Dos.  It can be set
+;4.0E to display in either <DD MMM YYYY> or <MMM DD, YYYY> format at assembly time
+;4.0E using the labels below.  If not wheel-protected, or user is WHEEL, setting
+;4.0E is permitted in US (MM/DD/YY) or European (DD-MM-YY or DD.MM.YY) formats.
+
+usdat	EQU	NO		;4.0E Yes for US format, No for dd-mmm-yyyy form
+
+;-----------------------------------------------------------------------------
+; WHL Command Option
+
+whlquiet EQU	NO		; Operate WHL in Quiet mode? (No display of
+				;  Wheel Byte status)
+
+WPASS	  macro
+	DEFB	'SYSTEM  '	; Keep to 8 chars or more (only 8 checked)
+	  endm
+
+;-----------------------------------------------------------------------------
+; Error Testing Command
+
+tstm80	EQU	TRUE
+tstf80	EQU	FALSE
+
+; Equates for addresses where error counts are kept by the programs to be
+; tested for M80/F80, version 3.44
+
+	  if  tstm80
+M80F	EQU	03CEDH		; Addr of word with fatal error count (m80)
+M80W	EQU	03CEFH		; Addr of word with warning error count (m80)
+	  endif		; tstm80
+
+	  if  tstf80
+F80F	EQU	001C1H		; Addr of word with fatal error count (f80)
+F80W	EQU	002ADH		; Addr of word with warning error count (f80)
+	  endif		; tstf80
+
+;-----------------------------------------------------------------------------
+; 'ECHO' command
+
+; This command sends characters to the console or list device.	If ECHOLST is
+; enabled, then code is included for sending characters to the LST device.
+; Characters normally go the the console device and are normally upper or lower
+; case depending on the setting of UPCASE.  The command line can have special
+; command sequences to toggle the case of the output and to change the
+; destination between the console and printer.	Any other character following
+; the command character will be sent as is.  For the normal setting of the
+; equates below (upcase/yes, cmdchar/%, prtchar/P, crtchar/C, lcasech/>,
+; and ucasech/<) an example command line would be:
+;	A0:ROOT>ECHO T%>HIS IS A TEST^M^J^IDONE%PONE, TWO, %<THREE
+; The following text would be echoed to the console (inlcuding carriage return,
+; linefeed, and tab characters, '|' indicates the left margin):
+;	|This is a test
+;	|	done
+; The string "one, two, THREE" would be sent to the printer.
+
+ECHOLST	EQU	NO		; Allow sending characters to lst device
+
+UPCASE	EQU	YES		; Initial case of output
+
+CMDCHAR	EQU	'%'		; Character to flag case change
+
+PRTCHAR	EQU	'P'		; Character to start sending output to
+			; The printer (must be upper case)
+CRTCHAR	EQU	'C'		; Character to start sending output to
+				; The crt (must be upper case)
+UCASECHAR EQU	'<'		; Character after casechar that toggles
+				; Subsequent output to upper case
+LCASECHAR EQU	'>'		; Character after casechar that toggles
+				; Subsequent output to lower case
+
+;=============================================================================
+;	   C O M M A N D    P R O C E S S I N G    O P T I O N S
+;=============================================================================
+; ZCPR35 has many more command processing options than did ZCPR30.  These are
+; controlled by the following equates.
+;-----------------------------------------------------------------------------
+; Environment access
+
+; In ZCPR30 the command processor knew about its environment only at the time
+; it was assembled.  Therefore, all aspects of the environment were fixed.
+; Loading a new ENV module might change the way a transient program would
+; function (for example by changing the maximum drive and user values that
+; would be accepted), but the command processor would not recognize these
+; changes.  ZCPR35 can be made to recognize dynamically several possible
+; changes in the environment.
+
+duenv	EQU	YES	; If enabled, the CPR will get the values of
+			; the maximum drive and user to recognize from
+			; the environment descriptor
+
+aduenv	EQU	YES	; If enabled, the CPR will use the DUOK flag
+			; byte in the environment to determine
+			; whether or not to accept DU: references
+
+inclenv	EQU	YES	; If enabled, inclusion of the DU in the
+			; prompt will be controlled by the DUOK flag
+
+; The following three functions, if enabled, allow one to dynamically trade off
+; buffer space between named directories, resident commands, and flow control.
+; By executing a command like "LDR NEW.ENV,NEW.RCP,NEW.FCP,NEW.NDR" one can
+; temporarily expand the capabilities of one module at the expense of another.
+; To use these capabilities, the three buffers must be contiguous in memory.
+; Since making such changes can be risky, it is recommended that it be done
+; only with aliases, so that all necessary changes get made automatically and
+; at the same time.
+
+fcpenv	EQU	YES	; If enabled, the CPR will determine the address
+			; of the FCP (flow command package) from the
+			; environment descriptor.
+
+rcpenv	EQU	YES	; If enabled, the CPR will determine the address
+			; of the RCP (resident command package) from
+			; the environment descriptor.
+
+ndrenv	EQU	YES	; If enabled, the CPR will determine the address
+			; of the NDR (named directory registers) from
+			; the environment descriptor.
+
+; Do not change the following code
+
+	  if  fcps GE 255
+fcpenv	DEFL	YES	; If NZCOM system, must be yes
+	  endif
+	  if  rcps GE 255
+rcpenv	DEFL	YES	; If NZCOM system, must be yes
+	  endif
+	  if  z3ndirs GE 255
+ndrenv	DEFL	YES	; If NZCOM system, must be yes
+	  endif
+
+;-----------------------------------------------------------------------------
+; Control over types of files to load and run as transient programs.
+
+comtyp	  macro			; The file type for executable files (this will
+	DEFB	'COM'		; be changed only in the most unusual
+	  endm			; situtations).  This file type will also apply
+				; to the extended command processor.
+
+attchk	EQU	NO		; If enabled, the command processor can be made
+				; to recognize as executable files only those
+				; with particular attributes (defined by the
+				; COMATT equate below).
+
+comatt	EQU	0		; 0 = system, 80h = DIR (01h will give both,
+				; but in that case setting ATTCHK to false will
+				; give the same result with less code).
+
+;-----------------------------------------------------------------------------
+; Batch processing using ZEX.
+
+zexnoise EQU	1		; If 0, the ZEX prompt will always be
+				; suppressed; if 1, the prompt will be
+				; controlled by the quiet flag; if any other
+				; value, the ZEX prompt will always be
+				; displayed.
+
+; Batch processing using the submit facility.  This takes up quite a bit of
+; space in the command processor, and you may wish to omit it.  Most of the
+; type of processing that submit can do can be accomplished using either the
+; the memory-based ZEX batch processor or command-line scripts (aliases).
+
+subon	EQU	YES		; If enabled, the command processor will
+				; process submit files.
+
+subzero	EQU	NO		; Always look for $$$.SUB in user 0 rather
+				; than current user.  Default is "yes" to
+				; allow user area changes within scripts.
+
+longsub	EQU	NO		; If yes, special code is included to handle
+				; SUBMIT jobs with more than 128 command
+				; lines (which otherwise produces undetected
+				; undesirably behavior).  LONGSUB, however,
+				; requires a special version of SUB.COM and
+				; the $$$.SUB file is incompatible with CP/M2.2
+
+subnoise EQU	1		; If 0, submit lines, like command lines
+				; generated by aliases, will not be echoed
+				; to the screen.  If 1, then echoing will
+				; be controlled by the ENV QUIET flag. If more
+				; than 1, submit command lines will always
+				; be echoed.
+
+subclue	EQU	YES		; If yes, use the flag returned by the DOS
+				; as a clue to the existence of a submit file
+				; (some versions of ZRDOS -- including 1.7 --
+				; do not return the correct value, in which
+				; case 'no' should be used here).  The speed
+				; advantage to using 'yes' is probably not
+				; great.
+
+sprmpt	EQU	']'		; CPR prompt indicating submit command
+
+subtyp	  macro			; The file type for the '$$$' file used by the
+	DEFB	'SUB'		; submit processor (this will very rarely be
+	  endm			; changed)
+
+; WARNING -- the following equate should not be changed from 'A' unless you
+; know what you are doing!
+
+subdrv	EQU	'A'		; Drive to use for submit file (normally this
+				; will be 'A', but in special cases, such as
+				; when there is a RAM disk, you might want to
+				; specify another drive)
+
+;-----------------------------------------------------------------------------
+; PATH options -- ZCPR searches for user programs along a path of directories
+; specified in the path buffer.  Because of the efficiency it adds, the
+; minpath (minimum path) is not an option in ZCPR35 but is always in effect.
+; This minimum path eliminates duplicate references that can arise in several
+; ways and otherwise cause a useless search of a directory a second or third
+; time.
+
+drvprefix	EQU	YES	; If enabled, an explicit DU: or DIR: prefix on
+				; a command verb will be recognized and made
+				; the first element of the command search path.
+
+scancur		EQU	NO	; If enabled, the currently logged directory
+				; will always be added to the beginning of the
+				; symbolic path (we advise disabling this
+				; option -- you can always include '$$' in the
+				; path, but then you can omit it when you wish
+				; and you can control its position in the path,
+				; searching your main directories first).  See
+				; the Z33 User Guide for special precautions
+				; required when SCANCUR is off.
+
+; In order to save space in the CPR for valuable code, the minpath can be
+; built in a memory buffer external to the CPR.  If your symbolic path has
+; no more than 10 elements, the minpath will automatically be built at the
+; bottom of the external stack.  Otherwise, if you want an external minpath,
+; you must set the EXTMPATH symbol to yes and supply the address of the memory
+; to use.  The memory requirement is twice the length of the symbolic path
+; (see Z3BASE.LIB or run SHOW to get this value) plus 2 if SCANCUR is enabled
+; plus 2 if DRVPREFIX is enabled, plus 1 for the ending null.
+
+extmpath	EQU	NO	; If yes, the minpath will be built in a buffer
+				; external to the command processor at an
+				; address supplied in the next definition.
+
+extmpathadr	EQU	0	; If EXPMPATH is enabled, provide the address
+				; of the external buffer here.
+
+; Do not change the following code
+
+	  if  expaths LE 10
+extmpath	DEFL	YES	; Automatic placement of minpath
+	  endif
+
+;-----------------------------------------------------------------------------
+; Control over the acceptance and display of drive/user and named directory
+; forms.  With the options provided in ZCPR35 it is quite easy to provide a
+; fully secure system with the DU form enabled.  The DU form is often the only
+; one recognized by non-ZCPR programs and is often more convenient and natural
+; to use.  We, therefore, recommend that both DU and DIR forms be allowed and
+; displayed.  Processing of DIR forms will not be carried out, obviously, if
+; the named directory register (NDR) is not implemented in the system.
+
+accptdu		EQU	YES	; Accept DU: form in command lines
+accptdir	EQU	YES	; Accept DIR: form in command lines
+dufirst		EQU	NO	; If enabled, the DU form will be checked
+				; before the DIR form.
+
+incldu		EQU	YES	; Include DU in prompt
+incldir		EQU	YES	; Include DIR in prompt
+
+; Do not change the following
+
+incldir		DEFL	incldir AND (z3ndirs NE 0)
+accptdir	DEFL	accptdir AND (z3ndirs NE 0)
+
+;-----------------------------------------------------------------------------
+; Security matters
+
+pwcheck	EQU	YES		; If enabled, passwords on named directories
+				; will be checked for DIR forms in the command
+				; verb and the first two command-line tokens.
+				; If disabled, passwords will not be checked
+				; even if a directory has a password defined.
+
+pwnoecho EQU	YES		; If yes, the BIOS conout routine will be
+				; disabled during password input so that the
+				; password will not be echoed to the screen.
+				; This does involves poking in the BIOS and
+				; could in rare instances cause problems.
+
+wdu	EQU	NO		; If enabled, the DU: and DIR: forms will not
+				; be allowed for changing the logged directory
+				; unless the wheel byte is set.
+
+wpass	EQU	YES		; If enabled, password checking of named
+				; directories is bypassed when the wheel byte
+				; is set.
+
+wprefix	EQU	NO		; If set, this option will effectively turn
+				; off DRVPREFIX when the wheel byte is off.
+				; Explicit drive prefixes will then be allowed
+				; only when the wheel byte is set.  Otherwise
+				; they will be ignored except that ECPs will
+				; not be invoked if a prefix was present.
+
+; Do not change the next lines
+
+pwcheck	 DEFL	pwcheck AND ( z3ndirs NE 0 )
+pwnoecho DEFL	pwnoecho AND pwcheck
+
+;-----------------------------------------------------------------------------
+; Advanced command processing options
+
+highuser EQU	NO	; If yes, the command processor will log into user
+			; numbers higher than 15 (up to 31).  WARNING: BECAUSE
+			; CP/M USES A SINGLE BYTE AT ADDRESS 0004H TO KEEP
+			; BOTH DRIVE AND USER, PROGRAMS THAT USE THAT BYTE TO
+			; DETERMINE THE DEFAULT DU MAY NOT RUN PROPERLY WHEN
+			; ONE IS LOGGED INTO A USER NUMBER ABOVE 15.
+
+skippath EQU	YES	; If yes, command verbs with an explicit DU: or DIR:
+			; prefix will not use the search path; if the command
+			; is not found in the specified directory, the error
+			; handler will be invoked immediately (no path or ECP).
+
+fastecp	 EQU	YES	; If yes, command verbs with leading spaces will be
+			; executed directly by the ECP (saves the time of
+			; searching the path for a COM file when one knows the
+			; command is for the ECP).
+
+altspace EQU	YES	; If yes, the alternate character, ECPCHAR, can also
+			; be used to invoke ECP processing immediately
+			; (FASTECP must be enabled).
+
+altonly	 EQU	NO	; If ALTSPACE is on, then if ALTONLY is also on, the
+			; alternate character the only one that will invoke
+			; fast ECP processing (spaces will not).
+
+ecpchar	 EQU	'/'	; Alternate (or required) char for fast ECP invocation.
+
+altcolon EQU	YES	; If enabled, an alternate character (recommend period)
+			; can be used in place of a colon to make the CPR skip
+			; resident commands and add the current directory to
+			; the search path.
+
+altchar	 EQU	'.'	; Character that serves as an alias for leading colon
+			; if it is the first non-blank char in the command.
+
+; WARNING -- do not change the following equate from 'no' unless you
+; know what you are doing!
+
+shellif	 EQU	NO	; If yes, flow control processing can take place in
+			; shell aliases (complex command sequences being used
+			; as a shell).  The penalty is that each time the
+			; shell runs, the entire flow control system is
+			; reinitialized.  Flow control information will not
+			; persist across shell invocations.  If SHELLIF is
+			; off, flow commands in shell aliases will not be
+			; recognized as FCP commands (they will be flushed)
+			; and, therefore, should not be used.
+
+; Do not change the following
+
+skippath DEFL	skippath AND drvprefix
+
+;-----------------------------------------------------------------------------
+; Extended command processing
+
+; The extended command processor comes into effect when a way to process a
+; command verb has still not been found after the entire search path for a
+; COM file has been exhausted.  The entire user command is taken as the
+; command tail on the extended command processor.  In ZCPR30 one could either
+; have extended command processing OR error handling.  In ZCPR33 one can, and
+; should, have both.
+
+rootonly	EQU	YES	; If yes, the command processor looks for the
+				; ECP only in the directory specified as the
+				; last one in the path instead of scanning the
+				; entire path for the ECP.
+
+; The following macro defines the name of the ECP.  Rename your favorite
+; ECP (ours is ARUNZ) to CMDRUN.COM or whatever name you put in below.
+
+ecpname	  macro
+	DEFB	0		; Drive (do not change this from 0)
+	DEFB	'CMDRUN  '	; Name of ECP program (exactly 8 characters)
+	;	'--------'	; (Eight-character space marker)
+	  endm
+
+badduecp	EQU	YES	; If yes, pass commands that try to log into a
+				; bad directory to the ECP for processing; if
+				; set to NO, invoke the error handler
+				; immediately under these circumstances.
+
+badcmdecp	EQU	YES	; If yes, commands that are unacceptable
+				; because they contain wildcard characters or
+				; include an explicit file type will be passed
+				; to the extended command processor
+
+; Do not change the following
+
+badcmdecp	DEFL	badcmdecp AND badduecp
+
+;-----------------------------------------------------------------------------
+; Miscellaneous equates
+
+cmdsep	EQU	';'		; Separator between multiple commands
+
+; This macro defines additional characters that are not allowed in file names.
+; CP/M does not allow any of them.  By commenting out a line, the corresponding
+; character will be permitted.
+
+delimlist  macro
+	DEFB	'>'
+	DEFB	'<'
+;4.0E	DEFB	'_'		; Allow underscore as in MSDOS
+	  endm
+
+; The following two equates are used only if the equates to get this
+; information from the environment descriptor are not enabled.
+
+maxusr	EQU	31 		; Maximum user number accessible
+maxdisk	EQU	4		; Maximum number of disks accessible
+
+supres	EQU	FALSE 		; Supresses user number in prompt for user 0
+
+cprmpt	EQU	'>'		; CPR prompt indicating user command
+
+numbase	EQU	'H'		; Character used to designate a hexadecimal
+				; number in the SAVE command
+
+curind	EQU	'$'		; Symbol in symbolic path for current disk
+				; or user
+
+comment	EQU	';'		; Lines beginning with this character are
+				; treated as comments
+
+; Definition equates
+
+wheel	DEFL	wera OR wcls OR wpeek OR wpoke OR wport OR wreset OR wfree
+wheel	DEFL	wheel OR wren OR wlt OR wgo OR wsave OR wget OR wjump OR wdir
+wheel	DEFL	wheel OR wecho OR wprot OR wspop OR wtime OR wdate OR wvers ;4.0E
+
+;--------------------- End of Z40HDR.LIB -------------------------
+

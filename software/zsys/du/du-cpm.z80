@@ -1,0 +1,311 @@
+
+; PROGRAM:	DU-CPM.Z80
+; AUTHOR:	Jay Sage
+; DATE:		July 21, 1991
+
+; This code is a patch that can be used with DU35 to embed an internal
+; environment descriptor and TCAP so that DU35 can be used under standard
+; CP/M (2.2 or 3) as well as Z-System.  To use this patch, DU35.Z80 must be
+; assembled as usual to a REL file and then linked with the data segment
+; (DSEG) moved 100H higher in memory to provide a place to insert the ENV.
+; The appropriate linker commands with the version-4.4 libraries are as
+; follows (the code actually ends at 2D54H, and we are rounding up to 2D60H):
+;
+;	SLRNK DU35/N,/P:100,/D:2E60,DU35,VLIB/S,Z3LIB/S,SYSLIB0/S,/E
+; or
+;	ZML DU35,VLIB/,Z3LIB/,SYSLIB0/ D2E60
+;
+; This linking leaves the space from 2D60H to 2E5FH free for an internal
+; ENV and TCAP, which are defined below in this patch.  As distributed,
+; this patch is set up with an ENV for my Televideo 803H computer and a
+; TCAP for a Wyse-50 terminal (this works on the Televideo, too).  You
+; should edit the file so that it describes your system (search for the
+; sections marked with "***** USER EDIT *****".
+;
+; Once the patch has been edited, assemble it to a HEX file and then use
+; MLOAD (or MYLOAD) to apply the overlay:
+;
+;	MLOAD DU=DU35.COM,DU-CPM.HEX
+
+; An alternative way to install the TCAP is to extract a binary TCAP from
+; one of the distribution files (such as Z3TCAP.TCP, which is a library
+; collection of TCAPs).  Then, after installing the DU-CPM patch, use a
+; debugger or file editor to install the desired TCAP into DU.COM at address
+; 2DD0H (on top of the one installed by this patch).
+
+; ---------------------------------------------------------------------------
+
+; System configuration information (***** USER EDIT *****)
+
+; The environment type tells a Z-System program what kind of information is
+; provided in the ENV module and what level of TCAP is supported.  Use the
+; value 81H if you have an extended TCAP and 80H if you have an older type
+; of TCAP.
+
+envtyp	equ	81h
+
+cpumhz	equ	4		; CPU speed in MHz
+
+; Operating system addresses and sizes (you can get the address of the BIOS
+; by running the program Z3LOC or by examining the byte stored at address
+; 0002.  This is the page at which the BIOS starts.  The other values will
+; follow from that for a normal CP/M system.
+
+biospg	equ	0d1h		; Page where BIOS starts
+
+bios	equ	100h * biospg
+doss	equ	28		; Size of DOS in records
+dos	equ	bios - 80h * doss
+ccps	equ	16		; Size of CCP in records
+ccp	equ	dos - 80h * ccps
+
+; Information about drives and user areas available
+
+;		PONMLKJIHGFEDCBA
+drvec	equ	0000000000001111B	; Put '1' for each drive
+highdsk	equ	'D'			; Letter of highest drive
+maxdisk	equ	highdsk - '@'		; Number of highest drive (A=1)
+maxuser	equ	31			; Number of highest user area
+
+; Data about console screen and printers
+
+crtwid	equ	80			; Width of CRT screen
+crtlen	equ	24			; Number of lines on screen
+crtuse	equ	crtlen -2		; Number of lines to use
+
+prtwid	equ	80			; Printer width
+prtlen	equ	66			; Printer total length
+prtuse	equ	prtlen - 8		; Printer lines to use
+prtff	equ	1			; Formfeed flag (1 if recognized)
+			   
+; ---------------------------------------------------------------------------
+
+intenv	equ	02d60h		; Place in DU35 for the internal ENV
+
+; ---------------------------------------------------------------------------
+
+; Install ENV address at beginning of code
+
+	org	109h		; Place for the ENV address
+
+	dw	intenv		; Internal ENV address
+
+; ---------------------------------------------------------------------------
+
+; Install the dummy ENV in the DU35 code
+
+	org	intenv
+
+	jp	0		; Dummy jump address
+
+	db	'Z3ENV'		; Environment ID
+	db	envtyp
+
+	dw	0		; external path address
+	db	0		; number of 2-byte elements in path
+
+	dw	0		; RCP address
+	db	0		; number of 128-byte blocks in RCP
+
+	dw	0		; IOP address
+	db	0		; number of 128-byte blocks in IOP
+
+	dw	0		; FCP address
+	db	0		; number of 128-byte blocks in FCP
+
+	dw	0		; NDR address
+	db	0		; number of 18-byte entries in NDR
+
+	dw	0		; ZCPR3 Command Line
+	db	0		; number of bytes in Command Line
+
+	dw	intenv		; ZCPR3 Environment Descriptor
+	db	2		; number of 128-byte blocks in Descriptor
+
+	dw	0		; Shell Stack address
+	db	0		; number of shsize-byte entires in Shell Stack
+	db	0		; size of a Shell Stack entry
+
+	dw	0		; ZCPR3 Message buffer
+
+	dw	0		; ZCPR3 External FCB
+
+	dw	0		; ZCPR3 External Stack
+
+	db	0		; quiet flag (1=quiet, 0=not quiet)
+
+	dw	0		; address of Wheel Byte
+
+	db	cpumhz		; Processor Speed in MHz
+
+	db	maxdisk		; maximum disk
+	db	maxuser		; maximum user
+
+	db	1		; 1=OK to accept DU, 0=not OK
+
+	db	0		; CRT selection (0=CRT 0, 1=CRT 1)
+	db	0		; Printer selection (n=Printer n)
+
+	db	crtwid		; width of CRT
+	db	crtlen		; number of lines on CRT
+	db	crtuse		; number of lines of text on CRT
+
+	dw	drvec
+	db	0
+
+	db	prtwid		; data for printer
+	db	prtlen
+	db	prtuse
+	db	prtff
+
+	db	0,0,0,0
+
+	dw	ccp
+	db	ccps
+
+	dw	dos
+	db	doss
+
+	dw	bios
+
+	db	'SH      '	; shell variable filename
+	db	'VAR'		; shell variable filetype
+
+	db	'        '	; filename 1
+	db	'   '		; filetype 1
+
+	db	'        '	; filename 2
+	db	'   '		; filetype 2
+
+	db	'        '	; filename 3
+	db	'   '		; filetype 3
+
+	db	'        '	; filename 4
+	db	'   '		; filetype 4
+
+;  Fill unused space with nulls
+
+	rept	128-($-intenv)
+	db	0
+	endm
+
+;  End of Environment Descriptor -- beginning of TCAP
+
+; ***** USER EDIT *****
+
+; NZTCAP:  NZWYS50.Z80
+; Author:  Joe Wright, modified by Jay Sage
+; Date:    12 October 87, modified 15 June, 1991
+; Version: 1.0
+
+; Extended Termcap Data for NZ
+
+; This is the proposed TermCap Data for the New Z-System.
+; It more fully describes the terminal and its capabilities.
+
+ESC	EQU	27		; ASCII escape character
+
+; I have adopted the convention that a terminal name is terminated
+; with a space character, therefore no spaces within the name.
+; Also that the terminal name is unique in the first eight characters.
+
+NZTCAP:	DB	'WYSE-50D     ' ; Name of terminal (13 bytes)
+
+; The Graphics section is no longer fixed so we must provide an
+; offset to it.  One byte is sufficient for a two-record TCAP.
+
+B13:	DB	GOELD-NZTCAP	; Offset to GOELD
+
+; Bit 7 of B14 indicates the new Extended TCAP.  Bits 6-0 are undefined.
+
+B14:	DB	10000000B	; Extended TCAP
+
+; It is often desirable to differentiate terminals with other than
+; their commands.  For example TeleVideo 955 has the same command
+; set as Wyse 60 but takes less time to initialize (reset).
+
+; 16 bits are now reserved for indicating terminal charactistics
+; which cannot be known from the strings.  I have defined five
+; of these bits for my own purposes.  
+
+; B15 b0	Standout	0 = Half-Intensity, 1 = Reverse Video
+; B15 b1	Power Up Delay	0 = None, 1 = 10-second delay
+; B15 b2	No Wrap		0 = Line Wrap, 1 = No Wrap
+; B15 b3	No Scroll	0 = Scroll, 1 = No Scroll
+; B15 b4	ANSI		0 = ASCII, 1 = ANSI
+
+B15:	DB	00000111B	; Power Up Delay
+
+	DB	'K'-'@'		; Cursor up
+	DB	'J'-'@'		; Cursor down
+	DB	'L'-'@'		; Cursor right
+	DB	'H'-'@'		; Cursor left
+
+	DB	00		; Clear-screen delay
+	DB	00		; Cursor movement delay
+	DB	00		; Clear-to-end-of-line delay
+
+; Strings start here.
+
+CL:	DB	ESC,'+',0	; Clear-screen string		0
+	DB	ESC,'=%+ %+ ',0	; Cursor movement string	1
+	DB	ESC,'T',0	; Clear-to-end-of-line		2
+	DB	ESC,')',0	; Standout-on string		3
+	DB	ESC,'(',0	; Standout-end string		4
+	DB	0		; Terminal init string		5
+	DB	ESC,'(',0	; Terminal deinit string	6
+
+; Extensions to Standard Z3TCAP 
+
+LD:	DB	ESC,'R',0	; Line Delete			7
+LI:	DB	ESC,'E',0	; Line Insert			8
+CD:	DB	ESC,'Y',0	; Clear-to-end-of-screen	9
+
+; Set Attribute strings once again included.
+
+SA:	DB	ESC,'G',0	; Set Attributes		10
+;SA:	DB	ESC,'G%+0',0	; Set Attributes		10
+AT:	DB	'0248',0	; Attributes			11
+
+; These two allow reading the Terminal's screen.
+
+RC:	DB	ESC,'?',0	; Read current cursor position	12
+RL:	DB	ESC,'6',0	; Read line until cursor	13
+
+; Graphics start here.
+
+GOELD:	DB	0		; On/Off Delay			0
+
+; Graphics strings offset from Delay value.
+
+GO:	DB	ESC,'H',2,0     ; Graphics mode On
+GE:	DB	ESC,'H',3,0     ; Graphics mode Off
+CDO:	DB	ESC,'`0',0      ; Cursor Off
+CDE:	DB	ESC,'`1',0      ; Cursor On
+
+; Graphics Characters
+
+GULC:	DB	'2'		; Upper left corner
+GURC:	DB	'3'		; Upper right corner
+GLLC:	DB	'1'		; Lower left corner
+GLRC:	DB	'5'		; Lower right corner
+GHL:	DB	':'		; Horizontal line
+GVL:	DB	'6'		; Vertical line
+GFB:	DB	'7'		; Full block
+GHB:	DB	';'		; Hashed block
+GUI:	DB	'0'		; Upper intersect
+GLI:	DB	'='		; Lower intersect
+GIS:	DB	'8'		; Mid intersect
+GRTI:	DB	'9'		; Right intersect
+GLTI:	DB	'4'		; Left intersect
+
+;  Fill unused space with nulls
+
+	REPT	128-($-NZTCAP)
+	DB	0
+	ENDM
+
+	END
+
+;  End of NZTCAPD
+                                               

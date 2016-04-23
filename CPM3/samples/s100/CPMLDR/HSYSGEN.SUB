@@ -1,0 +1,52 @@
+
+; This program (HSYSGEN) is used to write the CPM3 loader (CPMLDR)
+; (also included in this program) on to the system tracks of an IDE Hard Disk 
+; using the S100Computers IDE Controller. 
+
+;r Z80ASM.com
+;r RMAC.com
+;r MAC.COM
+;r LINK.COM
+;r SID.COM
+r CPM3.LIB
+r Z80.LIB
+
+R HSYSGEN.ASM
+MAC HSYSGEN 
+
+r HLDRBIOS.ASM
+RMAC HLDRBIOS.ASM 
+w HLDRBIOS.PRN
+r CPMLDR.REL
+LINK CPMLDR[L100]=CPMLDR,HLDRBIOS
+;
+; CPMLDR.COM will reside from 100H to < 1800H (~15FF)
+; Note if your BIOS is larger adjust values below
+;
+W CPMLDR.COM 
+; Note:- You can check CPMLDR.COM itself with SID CPMLDR.COM 
+; Use the G command.
+
+; Now we will place HSYSGEN.HEX at 100H to < ~900H
+; We place CPMLDR.COM at 1100H (1000H+100H)
+; We write the whole image (100H to 2800) as a .COM file
+; This HSYSGEN program will the write the CPMLDR to the system tracks
+; starting from 1100H in RAM upwards, (12 X 512 byte sectors), extra sectors
+; just contain junk info.
+;
+; Put in Clear screen instead of 26 CR's for signon
+; If your CRT does not have a Clear Screen CMD (1AH), skip
+;
+;
+SID HSYSGEN.HEX
+<RCPMLDR.COM,1000
+<F1226,123D,00
+<F1225,1226,1A
+<WHSYSGEN.COM,100,2800
+<^C
+W HSYSGEN.COM B
+;
+;HSYSGEN.COM is a file to put the (NON-BANKED) CPMLDR on Track 0 of an IDE Hard Disk
+;
+
+

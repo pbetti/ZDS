@@ -1,0 +1,133 @@
+;
+; Version 1.1 modifications by Bruce Morgen, September 12, 1988
+; Installed character delay code like PAGE has, fixed command
+; name print routine to strip high bits.  Re-implemented Howard
+; Goldstein's more frequent pause checking, although I kludged
+; my own code for it, no longer "owning" the LT source.  Made
+; disabling of paging with Control-Z a toggle rather than a
+; permanent cancellation.  Disallowed wildcards within LBR file
+; specifications under CP/M 3.x (for Z3PLUS users).  Truncated
+; long Z3LIB/SYSLIB symbol names to 6 characters so RMAC could
+; by used in addition to M80 or SLRMAC, rebuilt UNC.REL to use
+; the public symbol "UNCOUT" instead of "OUT", which is a taboo
+; reserved word for RMAC.  There are now two sample assembly
+; aliases, M80ZLT (M80 and ZLINK) and RMACZLT (RMAC and LINK).
+; Note:
+;	For unmodified RMAC, rename to ZLTxx.ASM before running
+; 	RMACZLT.
+;-----------------------------------------------------------------------
+; December 15, 1987, ZLT Version 1.0
+;
+; LT was always a marginal file extraction tool at best, so I've spun
+; off ZLT as a typer-only program -- for ZCPR3-compatible systems
+; only.  Use Bob Peddicord's LBREXT for extraction-with-uncompression
+; chores.  Eliminating the parser code in favor of a simple Z3LOG
+; call shrinks ZLT to very manageable proportions, while ZCPR 3.3
+; takes care of security matters very competently.  Filetype exclu-
+; sion is the one remaining assembly-time option of any significance,
+; line count limits are still overridden by a non-zero wheel byte.
+;
+; ZLT is basically a Z-ified LT23 with file extraction and parsing
+; code removed and one significant feature added: ZLT handles wild-
+; card filespecs for files in the same manner as for LBR members --
+; LT23 simply settled for the first matching file found by BDOS.
+; The help message routine has been heavily modified to show the
+; actual name of the program and the options available to the user.
+; Other displays screwed up by questionable conditional assemblies
+; in LT2x.MAC have also been (or seem to be) fixed.  ZLT now appears
+; to be fully re-entrant, even from a help-message-only run.
+;
+; In deferrence to the formidable Prof. Falconer, ZLT remains coded
+; in Intel mnemonics and 8080-compatible opcodes for M80 (SLRMAC will
+; undoubtedly handle it just fine too) - use Irv Hoff's XIZ tool to
+; translate it for Zilog-only assemblers.  Linkage with L80 is possi-
+; ble, I suppose, but Echelon's ZLINK (or DRI's LINK) is much better
+; for that job.  Use the ASMZLT alias (for M80 and ZLINK) as a model.
+; In addition to the UNC and WILDEX modules, you'll also need Z3LIB
+; and SYSLIB - almost any vintage of these should be OK.  Make sure
+; to use Z3INS or Z-RIP on ZLT.COM if you still run ZCPR 3.0, or if
+; you intend to use ZLT with a generic-CP/M CCP emulator like LUX77B.
+;
+; To accommodate a ZCPR3 header, the remaining option bytes start at
+; 10Bh, followed by the filetype exclusion table.  Zeroes at the
+; three active bytes turn off linecount limits, filetype exclusion and
+; control-character filtering, in that order.
+;
+;					Bruce Morgen
+;
+; c/o	NAOG/ZSIG	P.O. Box #2781		Warminster, PA	18974
+;
+; Phone:	215-443-9031	(East Coast business hours only)
+;
+; RAS:	Lillipute Z-Nodes	(312-649-1730, 312-664-1730)
+;	DHN*			(215-623-4040)
+;		(all 300/1200/2400 baud & 24 hours)
+;____________________________________________________________________
+;
+; Revision history of LT (Library Typer) by C.B. Falconer follows:
+;____________________________________________________________________
+;
+; 08/12/87  Fixed to properly handle 0-length files.  Modified to
+;   v23     check for pause and abort from console after every typed
+;	    character rather than at the end of each line.  This was
+;	    necessary to prevent loss of data on some very slow
+;	    terminals such as the one I use, and to enable the typing
+;	    of a file with no linefeeds to be aborted.	Also fixed the
+;	    tab expansion routine to work correctly with files con-
+;	    taining unusual control characters such as backspace, and
+;	    made the "turn up one line" feature more foolproof.
+;					- Howard Goldstein
+;
+; 07/30/87  Added the long needed ZCPR/ZCMD support of maximum user
+;   v22     area.  When the UZCPR option is set, the page 0 value
+;	    will be examined to determine if the requested user area
+;	    is within the allowable range.  This is primarily useful
+;	    on RCP/M's (but I suspect that is where LT is primarily
+;	    used).  Added code to allow overriding the line counter
+;	    and user area restrictions when the wheel is active.
+;					- Gary Inman, Sysop
+;					  West Los Angeles RCP/M
+;
+; 07/21/87  When at a [more] pause, the space bar now turns up one
+;   v21     line at a time.  LTxx is often used on RCPM systems as
+;	    their general purpose TYPE.COM program.  This makes it
+;	    compatible with UNARC16.  These two  programs are used
+;	    in the popular LUX program to type ASCII files in ARC,
+;	    ARK or LBR files.  I have always liked this feature in
+;	    UNARC16 and decided to add it to LT20.  I believe most
+;	    users will find this quite useful and hope JB Falconer
+;	    does not mind my adding this feature.  This version is
+;	    a little over 4k.  If this makes any problem, just use
+;	    an earlier version. 	- Irv Hoff, Sysop
+;					  PRACSA RCPM
+;
+; 07/17/87  Able to use wheel byte in conjunction with OUTFLG flag.
+;   v20     One byte added in ddt modifiable area at program start.
+;	    WHLFLG and/or WHEEL now tested in conjunction with the
+;	    OUTFLG flag eliminating need for two copies of program
+;	    when used on a remote system.  Found that it would not
+;	    assemble properly using M80/L80 because of YES/NO, now
+;	    corrected.	Restored program name, version number, and
+;	    author credit. Other minor mods to keep code size <4k.
+;					- G.F. Reding [72436,45]
+;
+; 06/10/87  Change to only display characters between "[" and "]" in
+;   v19     the header of crunched files as other characters in this
+;	    area are reserved.	Removed the redundant "IF NOT UNCR"
+;	    (marked ";;;;") following an "ELSE" which prevented LT18
+;	    from being assembled in its distributed form. Slight text
+;	    changes to keep <4k.	- Steven Greenberg
+;
+; 12/28/86  Allows access to .LBR files > 512k.  Was using CPM 1.4
+;   v18     variety of direct access.  Mods to keep under 4k total.
+;	    Should CP/M v1.4 check and refusal.
+;					- C.B. Falconer
+;
+; Previous LT revisions, all by C.B. Falconer:
+;
+; v17, 12/13/86; v16, 11/24/86; v15, 11/17/86; v14, 11/15/86;
+; v13, 2/12/86; v12, 12/5/84; v11, 12/4/84; v10, 10/2/84.
+;
+; Adapted from Steven R. Holtzclaw's "LUXTYP (06/10/83)"
+; for independent use without the complete LUX system.
+;

@@ -1,0 +1,560 @@
+ Introduction
+ Graphics Init       - GZ3INIT
+ Graphics Enable     - GRXON, GRXOFF
+ Block Graphics      - DRFULL, DRHASH
+ Corner Routines     - ULEFT, URIGHT, LLEFT, LRIGHT
+ Intersect Routines  - LTISEC, RTISEC, UISEC, LISEC, ISEC
+ Horizontal Bars     - DRHBAR, DRHORZ, ERAHORZ, GHBAR, ERAHBAR
+ Vertical Bars       - DRVBAR, DRVERT, ERAVERT, GVBAR, ERAVBAR
+ Box Draw Routines   - DRFBOX, DRBOX, ERABOX, GFBOX, GBOX, GERBOX, CHKBOX
+ Pull-Down Menus     - SETPDM, CLRPDM, SELPDM, MCLS
+ P-D Menu Support    - PDMINI, ISPDM, SPDMCHR
+:			 INTRODUCTION 
+
+			 8 April 1989
+
+These extensions to VLIB incorporate many of the interfaces of
+the origina Echelon/Dennis Write GRXLIB and GRWLIB, and provide
+additional functionality for easier interfacing.  They require
+the extended TCAP definitions in order to work.
+
+					Harold F. Bower
+					P.O. Box 313
+					Ft. Meade, MD  20755
+
+:GZ3INIT - Initialize Z3LIB & VLIB, return TCAP flags
+
+  ENTER: HL = Pointer to Z3 Environment Descriptor
+  EXIT :  A = Bitmap of capabilities, Zero set on results as:
+	    B0 = 1 if Delete/Insert Line present, 0 if absent
+	    B1 = 1 if Clear to EOS present, 0 if absent
+	    B2 = 1 if Graphics On/Off present, 0 if absent
+	    B3 = 1 if 13 Graphics chars exist, 0 if any absent
+  USES : AF
+
+ Usage: This routine calls Z3VINIT and therefore may be
+  substituted for it to set the Z3LIB ENVPTR and initialize
+  VLIB routines.  Flag bits are returned to show whether the
+  TCAP extended functions are present.
+
+:GRXON  - Place Terminal in Graphics Mode
+ GRXOFF - Return Terminal to Alphanumeric Mode
+
+  ENTER: None
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if Operation Successful
+	      A = 0, Zero Flag Set (Z) if NOT implemented
+  USES : AF
+
+ Usage: These two routines control the graphics capabilites of
+  your terminal as defined in the extended TCAP.  If these
+  routines are not implemented, any calls to Graphic routines
+  will print the defined strings in normal Alphanumeric mode.
+
+Example:
+	EXT	GRXON,GRXOFF	; Define the routines
+	...			; ..do VIDINIT/Z3VINIT up here
+	CALL	GRXON		; Put Terminal in Graphics mode
+	JR	Z,NOGRAF	; .jump if No Graphics Mode
+	...			; ..Else print in Graphics
+	CALL	GRXOFF		; Return to Alphanumeric mode
+
+:DRFULL - Print a Full Graphics Block character
+ DRHASH - Print a Hashed or Shaded Graphics Block character
+
+  ENTER: None
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if character printed
+	      A = 0, Zero Flag Set (Z) if NOT implemented
+  USES : AF
+
+ Usage: This routine is used by several of the added routines
+  to print full-block graphics characters to the screen.
+  Examples are the line draw routines.
+
+Example:
+	EXT	DRFULL,DRHASH	; Declare the routines
+	...			; ..other code including Z3INIT
+	CALL	DRFULL		; Print full block graphics
+	CALL	DRHASH		; ..and Hashed (shaded) block
+	...			; Carry On!
+
+:ULEFT  - Print Upper-Left Corner Graphics character  (+)
+ URIGHT - Print Upper-Right Corner Graphics character (+)
+ LLEFT  - Print Lower-Left Corner Graphics character  (+)
+ LRIGHT - Print Lower-Right Corner Graphics character (+)
+
+  ENTER: None
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if character printed
+	      A = 0, Zero Flag Set (Z) if NOT implemented
+  USES : AF
+
+ Usage: These routines print the respective corner graphics
+  characters and are used in the Box drawing routine described
+  elsewhere.  If you have no Graphics capability, use chars
+  in parens in TCAP strings.
+
+:LTISEC - Print Left Intersection Graphics character  (+)
+ RTISEC - Print Right Intersection Graphics character (+)
+ UISEC  - Print Upper Intersection Graphics character (+)
+ LISEC  - Print Lower Intersection Graphics character (+)
+ ISEC   - Print Intersection character                (+)
+
+  ENTER: None
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if character printed
+	      A = 0, Zero Flag Set (Z) if NOT implemented
+  USES : AF
+
+ Usage: As with the corner routines, these print the respective
+  Graphics character for their function.  Define the TCAP
+  string for these functions to be the ASCII character in
+  parentheses if you have no Graphics capability.
+
+Example:
+	EXT	LTISEC,RTISEC,UISEC,LISEC,ISEC	; Declare routines
+	...			; ..preceding code
+	CALL	LTISEC		; (or RTISEC, etc)
+
+:                   Horizontal Bars 
+
+DRHBAR - Print Heavy Horizontal Bar with the Graphics Full or
+	Hashed Block character from Inline code.
+
+  ENTER: None.  The top of Stack points to parameters
+  EXIT : None.  Execution resumes after the parameters
+  USES : None.
+
+ Usage: This routine is used where fixed parameters exist.  For
+  variable bar parameters, use GHBAR which executes the same from
+  parameters passed in registers.  Parameters are:
+
+	call	drhbar
+
+	defb	Type	; - 1 = Full Block, 2 = Hashed Block
+	defb	Row	; - 1 = Top Row on screen
+	defb	Column	; - 1 = Left Most Column on screen
+	defb	Length	; - Number of characters to print
+	defb	Direc	; - 0 = Left-to-Right, 1 = R-to-L
+
+Example:
+	EXT	DRHBAR		; Declare the routine
+	...			; ..preceding code
+	CALL	DRHBAR		; Draw heavy bar at:
+	DEFB	1,2,10,20,0	; Full, Row 2, Col 10, Len 20
+				; ..Print Left-to-right
+	...			; Execution resumes here
+
+ NOTE: When bars are specified as Right-to-Left, the left
+ margin is validated for exceeding the left margin, and only
+ the valid portion is printed.  Actual printing is always
+ Left-to-Right.
+
+DRHORZ  - Print Graphics Horizontal Line from Inline parms
+ERAHORZ - Erase a Horizontal Line from Inline parameters by over-
+	 writing with Spaces
+
+  ENTER: None.  The top of Stack points to parameters
+  EXIT : None.  Execution resumes after the parameters
+  USES : None.
+
+ Usage: These routines draw a thin graphics horizontal line,
+  and erase a line by overwriting wih spaces respectively.
+  They are used where fixed parameters exist.  For variable bar
+  parameters, use GHBAR and ERAHBAR which execute the same from
+  parameters passed in registers.  Parameters are:
+
+	call	drhorz (or erahorz)
+
+	defb	Row	; - 1 = Top Row on screen
+	defb	Column	; - 1 = Left Most Column on screen
+	defb	Length	; - Number of characters to print.
+	defb	Direc	; - 0 = Left-to-Right, 1 = Right-to-Left.
+
+Example:
+	EXT	DRHORZ,ERAHORZ	; Declare the routines
+	...			; ..preceding code
+	CALL	DRHORZ		; Draw horizontal line at:
+	DEFB	2,10,20,0	; Row 2, Col 10, Length 20
+				; ..Print Left-to-right
+	...			; Execution resumes here
+	CALL	ERAHORZ		; Erase the horizontal line at:
+	DEFB	5,60,20,1	; Row 5, Col 60, Length 20
+				; ..from Right-to-Left
+
+ NOTE: When lines are specified as Right-to-Left, the left
+ margin is validated for exceeding the left margin, and only
+ the valid portion is printed.  Actual printing is always
+ Left-to-Right.
+
+GHBAR - Print a Graphics Horiz Bar/Line from parms in Regs
+
+  ENTER:  A = Bar Type (0=Line, 1=Full Block, 2=Hashed Block)
+	  B = Length of Bar
+	  C = Print Direction (0=Left-to-Right,1=Right-to-Left)
+	  H = Starting Row (1=Top of screen)
+	  L = Starting Column (1=Leftmost Column)
+  EXIT : None.  Registers are meaningless, the bar is printed
+  USES : AF,BC,HL
+
+ Usage: This routine is used where horizontal bar parameters
+  are calculated by a program, or not known at assembly time.
+
+Example:	   (See Note in DRHORZ Example)
+	EXT	GHBAR		; Declare the routine
+	...			; ..preceding code
+	LD	A,2		; Print bar w/Hashed Block char
+	LD	HL,10*256+25	; .Start at Row 10, Column 25
+	LD	BC,15*256+0	; ..Length of 15, Left-to-Right
+	CALL	GHBAR		; Print it Graphically
+
+ERAHBAR - Erase Horizontal bar from Register parameters
+
+  ENTER:  B = Length of Bar
+	  C = Print Direction (0=Left-to-Right,1=Right-to-Left)
+	  H = Starting Row (1=Top of screen)
+	  L = Starting Column (1=Leftmost Column)
+  EXIT : None.  Registers are meaningless, the bar is erased
+  USES : AF,BC,HL
+
+ Usage: This routine is used to erase a horizontal bar by over-
+  writing with spaces where parameters are calculated by a
+  program, or are not known at assembly time.
+
+Example:	   (See Note in ERAHORZ Example)
+	EXT	ERAHBAR		; Declare the routine
+	...			; ..preceding code
+	LD	HL,8*256+50	; .Start at Row 8, Column 50
+	LD	BC,40*256+1	; ..Length of 40, Right-to-Left
+	CALL	ERAHBAR		; Erase it
+
+:                      Vertical Bars 
+
+DRVBAR - Draw Heavy Vertical Bar from parms passed on stack
+
+  ENTER: None.  Parameters are addressed by Top of Stack
+  EXIT : None.  Execution resumes after parms, bar is printed
+  USES : None
+
+ Usage: This routine is used when a Heavy fixed-location bar is
+  needed, or bar location and size are known at assembly time.
+  Bar characters may be Full or Hashed Block, either single or
+  width.  See GVBAR for the same functions from parms passed in
+  registers. Parameters are:
+
+	call	drvbar	; Call routine passing params address
+	defb	Type	; 1=Solid Single, 2=Solid Double wide
+			; 3=Hashed Single, 4=Hashed Double wide
+	defb	Row	; Starting Row (1=Top row)
+	defb	Column	; Starting Column (1=Leftmost row)
+	defb	Length	; Number of Columns in bar
+	defb	Dir	; 0=Top-to-Bottom, 1=Bottom-to-Top
+
+Example:
+	EXT	DRVBAR		; Declare the routine
+	...			; ..preceding code
+	CALL	DRVBAR		; Draw vertical bar as:
+	DEFB	2,20,10,5,0	; Solid single-width, Row 20,
+				; ..Col 10, 5 long, Top-to-Bot
+	...			; Execution resumes here
+
+ NOTE: When a bar is drawn from Bottom-to-Top, checks are
+ made for exceeding the top of screen (Row 1).  The length is
+ adjusted if so to print only the part on screen.  Bars are
+ always printed Top-To-Bottom.
+
+DRVERT  - Print Graphics Vertical Line from Inline params
+ERAVERT - Erase a Vertical Line from Inline parameters
+
+  ENTER: None.  The top of Stack points to parameters
+  EXIT : None.  Execution resumes after the parameters
+  USES : None.
+
+ Usage: These routines are used where fixed parameters exist.
+  For variable bar parameters, use GVBAR and ERAVBAR which
+  execute the same from parameters passed in registers.
+  Parameters are:
+
+	call	drvert (or eravert)
+
+	defb	Row	; 1 = Top Row on screen
+	defb	Column	; 1 = Left Most Column on screen
+	defb	Length	; Number of characters to print
+	defb	Direc	; 0 = Top-to-Bottom, 1 = Bottom-to-Top
+
+Example:
+	EXT	DRVERT,ERAVERT	; Declare the routines
+	...			; ..preceding code
+	CALL	DRVERT		; Draw vertical line at:
+	DEFB	2,10,15,0	; Row 2, Col 10, Length 15
+				; ..Print Top-to-Bottom
+	...			; Execution resumes here
+	CALL	ERAVERT		; Erase the vertical line at:
+	DEFB	22,60,20,1	; Row 22, Col 60, Length 20
+				; ..from Bottom-to-Top
+
+ NOTE: When a bar is drawn from Bottom-to-Top, checks are
+ made for exceeding the top of screen (Row 1).  The length is
+ adjusted if so to print only the part on screen.  Bars are
+ always printed Top-To-Bottom.
+
+GVBAR - Print Graphics Vertical Bar/Line from Register parms
+
+  ENTER:  A = Bar Type (0=Line, 1=Single Full Block, 2=Double
+	      Full Block, 3=Single Hash Block, 4=Double Hash)
+	  B = Length of Bar (# of characters)
+	  C = Print Direction (0=Top-to-Bottom,1=Bottom-to-Top)
+	  H = Starting Row (1=Top of screen)
+	  L = Starting Column (1=Leftmost Column)
+  EXIT : None.  Registers are meaningless, the bar is printed
+  USES : AF,BC,HL
+
+ Usage: This routine used to print calculated Vert bars from
+  programs where parameters are not known at assembly time.
+
+Example:	   (See Note in DRVERT Example)
+	EXT	GVBAR		; Declare the routine
+	...			; ..preceding code
+	LD	A,2		; Double bar w/Full Block char
+	LD	HL,22*256+60	; .Start at Row 22, Column 60
+	LD	BC,15*256+1	; ..Length of 15, Bottom-to-Top
+	CALL	GVBAR		; Print it Graphically
+
+ERAVBAR - Erase Vertical bar from Register Parameters
+
+  ENTER:  B = Length of Bar (# of chars)
+	  C = Print Direction (0=Top-to-Bottom,1=Bottom-to-Top)
+	  H = Starting Row (1=Top of screen)
+	  L = Starting Column (1=Leftmost Column)
+  EXIT : None.  Registers are meaningless, the bar is erased
+  USES : AF,BC,HL
+
+ Usage: This routine is used to erase a Vertical bar by
+  overwriting with spaces where parameters are calculated by a
+  program, or are not known at assembly time.  Do twice for
+  double-width bar.
+
+Example:	   (See Note in ERAVERT Example)
+	EXT	ERAVBAR		; Declare the routine
+	...			; ..preceding code
+	LD	HL,8*256+10	; .Start at Row 8, Column 10
+	LD	BC,15*256+0	; ..Length of 15, Top-to-Bottom
+	CALL	ERAVBAR		; Erase it
+
+:                   Box Draw Routines 
+
+DRFBOX - Draw Box with the Graphics Full Block char
+DRBOX  - Draw Box with Graphics line and corner characters
+ERABOX - Erase a Box by overwriting with spaces
+
+  ENTER: None.  The Top of Stack addresses Box parameters
+  EXIT : None.  Execution resumes at byte following the parms
+  USES : None
+
+ Usage: These routines are used to draw Graphics boxes framed
+  with Full Block characters (DRFBOX), normal Graphics line and
+  corner characters (DRBOX), or erase a box (ERABOX).  Boxes
+  are drawn from top-left to bottom right, and erased by
+  overwriting with spaces.  Parameters are:
+
+	call	drfbox	; (or drbox or erabox)
+
+	defb	Row	; Starting Row (1 = Top row)
+	defb	Column	; Starting Column
+	defb	Height	; Height of box in Character Rows
+	defb	Width	; Width of box in Character positions
+Example:
+	EXT	DRFBOX,DRBOX,ERABOX	; Declare routines
+	...			; ..preceding code
+	CALL	DRBOX		; Draw a Normal Box
+	DEFB	5,5,10,20	; Row 5, Col 5, 10 Spaces High
+				; ..and 20 spaces wide
+	CALL	DRFBOX		; Draw box framed w/solid blks
+	DEFB	10,30,6,25	; Row 10, Col 30, 6 Spaces High
+				; ..and 25 wide
+	CALL	ERABOX		; Erase the first box
+	DEFB	5,5,10,20
+	...			; ..and continue on
+
+GFBOX  - Draw Graphics Box framed with Solid Block Character
+GBOX   - Draw Box framed with line and corner Graphics chars
+GERBOX - Erase Box by overwriting with spaces
+
+  ENTER:  B = Width of Box in Character spaces
+	  C = Height of Box in Lines
+	  H = Starting Row (Top Left Corner, 1=Top row)
+	  L = Starting Column (Top Left Corner, 1=Leftmost Col)
+  EXIT : None.  Registers indeterminate, Box drawn
+  USES : AF,BC,HL
+
+ Usage: These routines implement the same functions as previous
+  Box routines, but derive their parameters from CPU registers.
+  Use these routines for calculated values or for parameters
+  not known at assembly.
+
+Example:
+	EXT	GFBOX,GBOX,GERBOX	; Declare the routines
+	...				; ..preceding code
+	LD	BC,30*256+10		; 30 spaces wide, 10 Hi
+	LD	HL,10*256+20		; ..at Row 10, Col 20
+	CALL	GBOX			; Draw it!
+CHKBOX - Check & Adjust Box Parameters
+
+  ENTER:  B = Width of Box in Character spaces
+	  C = Height of Box in Lines
+	  H = Starting Row (Top Left Corner, 1=Top row)
+	  L = Starting Column (Top Left Corner, 1=Leftmost Col)
+  EXIT :  A <> 0, Zero Clear (NZ) if box drawable, parms set
+              A = 0, Zero Flag Clear (Z) if Box NOT drawable
+  USES : AF  (maybe B,C,H,L if parameters adjusted)
+
+ Usage: This routine is used internally to adjust box dimen-
+  sions to screen size reflected in the CRT data in the Z3
+  Environment.  Starting Row/Column exceeding the maximum
+  Height/Width will cause the error status.  It may be used
+  after setting registers for a GRBOX/GRFBOX call to save the
+  actual box parameters which will be drawn.
+
+Example:
+	EXT	CHKBOX,GBOX	; Declare the routines
+	...			; ..set up for box draw
+	CALL	CHKBOX		; Validate the dimentions/loc'n
+	JR	Z,NOGOOD	; ..jump if can't draw this one
+	LD	(HITWID),BC	; Else save width/height
+	LD	(ROWCOL),HL	; ..and Row/Col Start loc'n
+	CALL	GBOX		; Draw this box
+	...
+:                     Pull-Down Menus 
+
+SETPDM - Set Select Menu and Item Menu Bar for PDM from Stack
+SETPDR - Set Select Menu and Item Menu Bar for PDM from Regs
+
+  ENTER: (SETPDM) None.  Top of Stack points to Menu Data Area
+         (SETPDR) HL = Pointer to Menu Data Area
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if Pull-Down Menu Ok
+	      A = 0, Zero Set (Z) if Error or Not Supported
+         (SETPDR) HL = Address of byte after terminating Null
+  USES : AF (SETPDR also uses HL)
+
+ Usage: These routines are used to establish a single Menu
+  selection, and set information for the Pull-Down Item
+  Selection bar.  The number of Menu selections is determined
+  by screen width, and up to ten selections may be supported.
+  Menu Data descriptions are ASCII text strings with binary
+  values of one to ten (only 1-5 currently used) to denote
+  special features and fields.
+
+Menus are structured as:
+	The first byte is the Menu Number in the range of 1..10
+	The Menu Name string is next terminated by a binary 1
+	Item Selection strings are terminated by a binary 3
+    Optional fields may be interspersed with Select strings as:
+	Sub-Header strings terminated by a binary 2
+	Separator lines which are shown with a binary 4
+	Blank lines which are shown with a binary 5
+
+Example:
+	EXT	SETPDM		; Declare the routine
+	...			; ..call PDMINI up here
+	CALL	SETPDM
+	DEFB	1		; Menu number (1..10)
+	DEFB	'MenuName',1	; Name on Menu Bar
+	DEFB	'Subheader',2	; Optional subheader(s)
+	DEFB	4		; Optional Separator Line
+	DEFB	'Item 1',3	; First Item Name
+	DEFB	5		; Optional Blank Line
+	DEFB	'Item 2',3	; Second Item Name
+	DEFB	0		; End of Menu Item List
+	...			; ..execution resumes here
+CLRPDM - Clear a Pull-Down Menu from the Menu Selection Bar
+
+  ENTER:  A = Menu Number to Clear (0 = Clear All)
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if Operation Successful
+              A = 0, Zero Flag Set (Z) if Entry Not Found
+  USES : AF
+
+ Usage: This routine deletes an entry from the Menu Bar and
+  moves all subsequent entries to the left.  Logical entry
+  numbers stay the same as when loaded, but this function
+  refers to the physical positioning on the Menu Bar.
+
+Example:
+	EXT	CLRPDM		; Declare the variable
+	...			; ..establish Pull-Down Menus
+	LD	A,4		; Remove the 4th entry
+	CALL	CLRPDM		; ..in the bar
+	JR	NZ,REMOK	; Jump if removal Ok
+	...
+
+SELPDM - Enter Pull-Down Menu.  Return Menu/Item Selections
+
+  ENTER: None
+  EXIT :  A = 0, Zero Flag Set (Z) if PDM Escape key pressed
+	  A <> 0, Zero Clear (NZ) if Menu Item selected,
+	  H = Menu Number
+	  L = Item Selection Number
+  USES : AF,HL
+
+ Usage: This routine forms the heart of the Pull-Down Menu
+  system.  When entered, control will not return to the program
+  until either the PDM Escape character is pressed, or a valid
+  menu and item are selected.  By evaluating the returned
+  values, specific actions may be taken such as selecting
+  programs to run, items to list, etc.
+
+MCLS - Clear Terminal Screen except for Pull-Down Menu Bar
+
+  ENTER: None
+  EXIT :  A <> 0, Zero Flag Reset (NZ) if Screen Cleared Ok
+	      A = 0 Zero Flag Set (Z) if CLREOS Not implemented
+  USES : AF
+
+ Usage: This routine is used to clear the screen from Line 2 to
+  End-of-Screen, to preserve Pull-Down Menu Selection bar on
+  line 1.
+
+:                 Pull-Down Menu Support 
+
+PDMINI - Initialize Pull-Down Menu Functions
+
+  ENTER: None
+  EXIT : None.  Internal Menu variables are initialized
+  USES : None
+
+ Usage: This routine MUST be called before the Pull-Down Menu
+  system is used.  It clears needed variables and sets the
+  default PDM Escape character to ESC (1BH).
+
+Example:
+	EXT	PDMINI		; Declare the routine
+	...			; ..preliminary code sections
+	CALL	PDMINI		; Initialize Pull-Down Menus
+	...			; ..now set menus, etc
+
+ISPDM - Check character for Pull-Down Menu Escape Character
+
+  ENTER:  A = Character to check
+  EXIT :  A = Char, Zero Clear (NZ) if it IS the Escape char
+		Zero Flag Set (Z) if NOT the Escape char
+  USES : Flags
+
+ Usage: This routine is used in the Pull-Down Menu Selection
+  code to sense for the Escape character, and may be used in a
+  similar mode in other programs.  Set the desired character
+  with SPDMCHR.
+
+Example:
+	EXT	ISPDM,CIN	; Declare some routines
+	...			; ..preceding code
+	CALL	CIN		; Get a character from console
+	CALL	ISPDM		; Is it the Escape char?
+	JR	NZ,HAVIT	; ..jump if so
+	...			; Else loop or whatever..
+
+SPDMCHR - Change the value of the Pull-Down Menu Escape Char
+
+  ENTER: A = New character to use as PD Menu Escape char
+  EXIT : None.  The char is set (Normally ESC-1BH, or ^\ - 1CH)
+  USES : None
+
+ Usage: This routine is used to change the Pull-Down Menu
+  Escape character from the initial value of ESC (1BH).  Normal
+  values are either ESC (1BH) or Control-\ (1CH).
+

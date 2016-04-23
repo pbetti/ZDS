@@ -1,0 +1,355 @@
+; PPIP-5C3.Z80
+
+; CP/M 3 routines (require Z80 processor, bypassed with 8080)
+
+SETERL	EQU	2Dh		; CP/M 3 : Set level of response to hardware
+				;          error
+GETLBL	EQU	65h		; CP/M 3 : Does the disc have stamps?
+GETSTP	EQU	66h		; CP/M 3 : Get a file's datestamps
+GETTOD	EQU	69h		; CP/M 3 : Get today's date
+
+GETSTMP:
+	SUB	A		; Since putting the stamp requires
+	RET	PE		; Z80 instructions, let's use them here as well
+	PUSH	HL		; Save the registers
+	PUSH	BC
+	LD	A,(DE)		; FCB drive
+	PUSH	DE
+	OR	A
+	JR	NZ,GSTP0
+	LD	C,19h		; Get current drive
+	CALL	BDOS
+	INC	A
+GSTP0:	DEC	A
+	LD	E,A		; E = source drive
+	LD	C,GETLBL	; Does a directory label exist?
+	CALL	BDOS		; If not, no special features
+	POP	DE
+	LD	L,A		; are usable.
+	AND	1
+	JR	Z,NOSTMP
+	PUSH	HL
+	PUSH	DE		; Get file stamps
+	LD	C,GETSTP
+	CALL	BDOS
+	POP	DE
+	POP	HL
+	LD	A,L
+	AND	10h		; Stamp create on?
+	LD	BC,18h
+	CALL	NZ,GCRST
+	JR	NZ,GSTP1
+;
+;Stamp Create is off.
+;
+	LD	A,L
+	AND	20h		; Stamp update on?
+	LD	BC,1Ch
+	CALL	NZ,GCRST
+	CALL	NZ,GUPST	; Use update stamp for both
+	JR	NZ,GSTP2
+;
+;Stamp Update is off.
+;
+	LD	A,L
+	AND	40h		; Stamp access on?
+	LD	BC,18h
+	CALL	NC,GCRST
+	CALL	NZ,GUPST	; Use access stamp for both
+	JR	NZ,GSTP2
+;
+;No stamps are on.
+;
+NOSTMP:	PUSH	DE
+	LD	DE,CRSTAMP
+	LD	C,GETTOD
+	CALL	BDOS
+	LD	(CRSTAMP+4),A
+	LD	HL,CRSTAMP
+	LD	DE,UPSTAMP
+	LD	BC,5
+	LDIR
+	POP	DE
+	JR	GSTP2
+;
+GSTP1:	LD	A,L		;Creation stamp OK.
+	AND	20h
+	LD	BC,1Ch
+	CALL	NZ,GUPST	;Update stamp OK.
+	JR	NZ,GSTP2
+	PUSH	DE
+	LD	DE,UPSTAMP	;No update stamp, guess.
+	LD	C,GETTOD
+	CALL	BDOS
+	LD	(UPSTAMP+4),A
+	POP	DE
+GSTP2:	CALL	ZEROFCB		;Remove timestamp info.
+	POP	BC
+	POP	HL
+	RET
+;
+GUPST:	PUSH	AF		; Move a stamp from (DE+BC) to UPSTAMP
+	PUSH	HL
+	PUSH	DE
+	PUSH	BC
+	LD	L,C
+	LD	H,B
+	ADD	HL,DE
+	LD	DE,UPSTAMP
+	JR	GCRS1
+;
+GCRST:	PUSH	AF		; Move a stamp from (DE+BC) to CRSTAMP
+	PUSH	HL
+	PUSH	DE
+	PUSH	BC
+	LD	L,C
+	LD	H,B
+	ADD	HL,DE
+	LD	DE,CRSTAMP
+GCRS1:	LD	BC,4
+	LDIR
+	POP	BC
+	POP	DE
+	POP	HL
+	POP	AF
+	RET
+;
+;Use stamp. CP/M 3 doesn't provide this function, so we simulate it by:
+;
+;1. Disable any BIOS clock
+;2. Save the SCB time
+;3. Set the time in the SCB to the stamp time
+;4. Execute the function
+;5. Calculate time elapsed in stage 4
+;6. Add this to the former SCB time
+;7. Return this value to the SCB
+;8. Enable the BIOS clock.
+;
+TDOS:	SUB	A		;If 8080, cannot do this bit.
+	JP	PE,BDOS
+	LD	A,(CPYING)
+	OR	A		;Proper file to file copy?
+	JP	Z,BDOS		;No, must be from console to file.
+	PUSH	BC		;Function no.
+	PUSH	DE		;FCB
+;
+	LD	A,C		;Choose which stamp to use (create or
+	LD	HL,CRSTAMP	;update).
+	CP	16h
+	JR	Z,TDOS1		;Use create stamp for file creation
+	LD	HL,UPSTAMP
+TDOS1:	LD	DE,NEWTOD	;and update stamp for other operations.
+	LD	BC,5
+	LDIR
+;
+	LD	C,0Ch
+	CALL	BDOS		;Is this CP/M 3?
+	CP	30h
+	JP	C,SFWD		;No, this routine won't work.
+
+	LD	DE,TOD
+	LD	C,GETTOD
+	CALL	BDOS		;Get current time
+	LD	(SEC),A
+;
+;Disable the BIOS TIME routine.
+;
+	LD	HL,(1)
+	LD	BC,4BH
+	ADD	HL,BC
+	LD	(TIME),HL
+	LD	A,(HL)
+	CP	0C3H
+	JR	Z,OKTIME
+	CP	0C9H
+	JR	Z,OKTIME
+;
+;Invalid BIOS.
+;
+SFWD:	POP	DE
+	POP	BC
+	JP	BDOS
+;
+OKTIME:	LD	(OTIME),A
+	LD	(HL),0C9h	;BIOS routine becomes RET.
+;
+;Set the new stamp.
+;
+	LD	C,31h
+	LD	DE,SCBPBT
+	CALL	5
+	LD	L,0F4h
+	LD	(SCBADR),HL
+	LD	DE,NEWTOD
+	LD	BC,5
+	EX	DE,HL
+	CALL	DILDIR	;LDIR with interrupts disabled
+	LD	C,SETERL
+	LD	E,0FEh	;CP/M must not quit while the time is mis-set.
+	CALL	BDOS
+	POP	DE
+	POP	BC
+	CALL	5	;Execute function.
+	PUSH	AF	;Save results, preserve IX/IY as well.
+	PUSH	HL
+	PUSH	IX
+	PUSH	IY
+;
+;4. Get time now, subtract time as stamped.
+;
+	LD	HL,(SCBADR)
+	LD	DE,PTDTIME
+	PUSH	DE		;Get SCB time into user memory. Thus
+	POP	IX		;interrupts needn't be disabled while
+	LD	BC,5		;SUBTIME is being used.
+	CALL	DILDIR
+	LD	IY,NEWTOD
+	CALL	SUBTIME		;NEWTOD now contains difference.
+;
+;Add value obtained to previous time.
+;
+	LD	IX,TOD
+	CALL	ADDTIME		;NEWTOD now contains current time.
+	POP	IY
+	POP	IX
+;
+;Restore time in SCB.
+;
+	LD	HL,(SCBADR)
+	LD	DE,NEWTOD
+	LD	BC,5
+	EX	DE,HL
+	CALL	DILDIR		;SCB time is now accurate on interrupt systems.
+;
+;Restore TIME rtn in BIOS.
+;
+	LD	A,(OTIME)
+	LD	HL,(TIME)
+	LD	(HL),A
+;
+;Return.
+;
+	LD	C,SETERL
+	LD	E,0	;CP/M can now quit if there is a serious error.
+	CALL	BDOS
+	POP	HL
+	POP	AF
+	CP	0FFh
+	JR	NZ,RETER1
+	LD	A,H
+	OR	A
+	JP	NZ,0	;Quit, hardware error
+	LD	A,L
+RETER1:	LD	B,H
+	RET
+;
+subtime:
+	xor	a
+	ld	a,(ix+4)
+	ld	b,(iy+4)
+	ld	c,60h
+	call	sbcd
+	ld	(iy+4),a
+	ld	a,(ix+3)
+	ld	b,(iy+3)
+	ld	c,60h
+	call	sbcd
+	ld	(iy+3),a
+	ld	a,(ix+2)
+	ld	b,(iy+2)
+	ld	c,24h
+	call	sbcd
+	ld	(iy+2),a
+	ld	l,(ix+0)
+	ld	h,(ix+1)
+	ld	e,(iy+0)
+	ld	d,(iy+1)
+	sbc	hl,de
+	ld	(iy+0),l
+	ld	(iy+1),h
+	ret
+;
+sbcd:
+;
+;BCD subtract B from A. If carry, BCD add C to result.
+;
+	sbc	a,b
+	daa
+	ret	nc
+	add	a,c
+	daa
+	scf
+	ret
+;
+addtime:
+	ld	a,(ix+4)
+	ld	b,(iy+4)
+	ld	c,60h
+	call	abcd
+	ld	(iy+4),a
+	ld	a,(ix+3)
+	ld	b,(iy+3)
+	ld	c,60h
+	call	abcd
+	ld	(iy+3),a
+	ld	a,(ix+2)
+	ld	b,(iy+2)
+	ld	c,24h
+	call	abcd
+	ld	(iy+2),a
+	ld	l,(ix+0)
+	ld	h,(ix+1)
+	ld	e,(iy+0)
+	ld	d,(iy+1)
+	adc	hl,de
+	ld	(iy+0),l
+	ld	(iy+1),h
+	ret
+;
+abcd:
+;
+;BCD add B to A. If carry set or result > C, BCD subtract C from result.
+;
+	adc	a,b
+	daa
+	jr	c,abcd1	;Carry set => result >100
+	cp	c
+	ccf
+	ret	nc	;If <C, OK.
+abcd1:	sub	c	;A=true result.
+	daa
+	scf
+	ret
+;
+DILDIR:
+;
+;Execute LDIR with interrupts disabled, restore previous interrupt status
+;afterwards.
+;
+	LD	A,I	;V:=IFF2.
+	PUSH	AF
+	DI		;Don't let clock change while we do this.
+	LDIR		;Time set.
+	POP	AF
+	RET	PE
+	EI
+	RET
+;
+TIME:	DEFW	0	;Address of BIOS time routine
+OTIME:	DEFB	0	;Previous 1st byte of BIOS time routine
+TOD:	DEFS	4	;Current date & time
+SEC:	DEFB	0
+NEWTOD:	DEFS	5	;File date & time
+PTDTIME:
+	DEFS	5
+SCBPBT:	DEFW	003AH
+SCBADR:	DEFW	0
+CRSTAMP:
+	DEFS	5
+UPSTAMP:
+	DEFS	5
+
+;		 end of basic time and date routines
+;-----------------------------------------------------------------------
+;
+

@@ -1,0 +1,1814 @@
+	title	Monitor Main Module
+	name	('MONIT')
+;
+;	Last Edited	85-04-27	Wagner
+;
+;	Copyright (c) 1984, 1985 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; >>>> MUST LOOK STILL THRU CODE <<<< Werner Cirsovius, July 1993
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+
+	maclib	monopt.lib
+;
+	entry	monent,monmain,monitor,cmderr,eocmd
+	entry	stack,listaddr,asmaddr,dumpaddr,variables
+;
+IF	HILO
+	entry	highval,lowval,maxval,topval
+ENDIF;HILO
+IF	EXTENDED
+	entry	listbnk,dumpbnk,asmbnk
+ENDIF;EXTENDED
+;
+	entry	tracecount,tracejp,tracenl,traceexp,traceptr,trcallopt
+	entry	bkexpbuf,protexpbuf
+	entry	prompt
+;
+	ext	initsystem
+;
+IF	symbolic
+	ext	rdsymname,defsymbol,killsymbol,dissymbols,wrsymbol
+	ext	symstart
+ IF	fileops
+	ext	symtop,readsym,symwrite,rsvsym
+	ext	sfile
+ ENDIF;FILEOPS
+ENDIF;SYMBOLIC
+;
+	ext	wraddr,wrchar
+;
+IF	EXTENDED
+	ext	xltbank,peek,peeks,poke,paddr,pbank,psaddr,psbank,peekbuf,cbank
+ENDIF;EXTENDED
+;
+	ext	wrhex,wrhexdig,wrword,space,space2,crlf,wrdec,wrbit,wrstr
+	ext	readstring,expression,skipsep,bytestring,rdregister
+	ext	mexpression,sexpression
+	ext	getch,testch,isletter,isdigit,isspecial,iscontrol
+	ext	string
+;
+	ext	userdef
+	ext	disasm,assemble,analop
+	ext	initbreak,display,disalt,disyvars,unbreak,dotrace
+;
+IF	HILO
+	ext	dishighlow
+ENDIF;HILO
+;
+IF	fileops
+	ext	read,write,file,jmacro,killmac
+ENDIF;FILEOPS
+;
+	ext	deletebk,definebk,numbreaks,breaklist,addbk
+;
+	ext	regi,regiff,regbc,regpc,altbc
+;
+;
+;	This is the main entry to the monitor.
+;	Variables and registers are initialised, then INITSYSTEM is called
+;	for system dependent initialisations.
+;
+monent:
+	ld	sp,stack
+	ld	hl,varstart
+	ld	de,varstart+1
+	ld	bc,varspace-1
+	ld	(hl),0
+	ldir			; init all defaults and variables to 0
+	call	initbreak	; init break-variables
+	call	initsystem	; system dependent initialisation
+	call	crlf
+;
+;	MONITOR is the entry jumped to on a break.
+;
+monitor:
+IF	EXTENDED
+	ld	a,-1
+	ld	(listbnk),a
+	ld	(dumpbnk),a
+	ld	(asmbnk),a
+ENDIF;EXTENDED
+;
+;	MONMAIN is the main program loop.
+;	It is also the entry jumped to by CMDERR
+;
+monmain:
+	xor	a
+	ld	(tracecount),a	; in case trace was aborted in CRLF
+	ld	sp,stack	; re-init stack
+	call	resettmpbk
+	ld	a,':'
+prompt	equ	$-1
+	call	wrchar		; prompt
+	call	readstring	; get command
+	call	getch
+	ld	b,-1
+	jr	nz,monmain1	; ok if not empty
+	ld	a,(dumpword)
+	ld	b,a
+	ld	a,(lastop)	; use last command as default
+monmain1:
+	ld	(lastop),a	; remember last command
+	ld	hl,dumpword
+	ld	(hl),b
+moncmd:
+	ld	hl,commands
+	call	tabsel		; select routine
+	jr	monmain		; loop
+;
+tabsel:
+	call	isletter	; letter ?
+	jr	c,cmderr	; no command if not
+	sub	'A'
+	add	a,a		; *2
+	ld	e,a
+	ld	d,0
+	ld	hl,commands
+	add	hl,de		; point to command handler
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; command handler address
+	ex	de,hl		; into hl
+	call	skipsep		; prepare access to next char
+	jp	(hl)		; enter routine
+;
+;	eocmd:		check for end of command, abort if not at end
+;
+eocmd:
+	push	af
+	call	skipsep
+	jr	nz,cmderr
+	pop	af
+	ret
+;
+;	cmderr:		issue error message, go to main loop
+;
+cmderr:
+	ld	a,'?'		; issue error message
+	call	wrchar
+	call	wrchar		; write ??
+	call	crlf
+IF	fileops
+	call	killmac
+ENDIF;FILEOPS
+	jr	monmain		; loop
+;
+;	command handler table
+;
+commands:
+	dw	asmop		; A
+	dw	breakset	; B
+	dw	calltrace	; C
+	dw	dump		; D
+IF	fileops
+	dw	exec		; E
+	dw	file		; F
+ELSE
+	dw	cmderr
+	dw	cmderr
+ENDIF;FILEOPS
+	dw	go		; G
+	dw	hexcalc		; H
+	dw	input		; I
+IF	fileops
+	dw	jmacro		; J
+	dw	killmac		; K
+ELSE
+	dw	cmderr
+	dw	cmderr
+ENDIF;FILEOPS
+	dw	list		; L
+	dw	move		; M
+IF	symbolic
+	dw	namedef		; N
+ELSE
+	dw	cmderr		; N (undef)
+ENDIF;SYMBOLICS
+	dw	output		; O
+	dw	protect		; P
+	dw	query		; Q
+IF	fileops
+	dw	fread		; R
+ELSE
+	dw	cmderr
+ENDIF;FILEOPS
+	dw	substit		; S
+	dw	trace		; T
+	dw	userdef		; U
+	dw	verify		; V
+IF	fileops
+	dw	fwrite		; W
+ELSE
+	dw	cmderr
+ENDIF;FILEOPS
+	dw	where		; X
+	dw	yvar		; Y
+	dw	zap		; Z
+;
+;------------------------------------------------------------------------------
+;	A:	Assemble
+;
+asmop:
+	call	expression
+	jr	nc,asmop10	; ok if expression
+	call	eocmd
+	ld	hl,(asmaddr)	; else use defaults
+	jr	asmloop
+asmop10:
+IF	EXTENDED
+	ld	(asmbnk),a
+ENDIF;EXTENDED
+	call	eocmd
+asmloop:
+	ld	(asmaddr),hl	; save as default
+	push	hl
+IF	EXTENDED
+	ld	a,(asmbnk)
+ENDIF;EXTENDED
+IF	symbolic
+	ld	b,0
+ELSE
+	ld	b,-1
+ENDIF;SYMBOLIC
+	call	disasm		; disassemble
+	call	readstring	; get input
+	jr	z,asm10		; next if null input
+	pop	hl
+	cp	'.'
+	ret	z		; exit if dot
+	push	hl		; current address
+IF	EXTENDED
+	ld	a,(asmbnk)
+ENDIF;EXTENDED
+	call	assemble	; assemble
+IF	EXTENDED
+	call	poke		; store back
+ENDIF;EXTENDED
+asm10:
+	pop	hl
+	call	analop		; analyse again to get length
+	jr	asmloop		; and loop
+;
+;------------------------------------------------------------------------------
+;
+;	B:	set breakpoint
+;
+breakset:
+	jr	z,breaklst	; no parameter means list
+	cp	'X'
+	jp	z,breakdel	; X means delete breakpoint
+	cp	'I'
+	jr	nz,breaks1	; I means condition
+	call	getch		; skip I
+	call	clrbkcond	; clear old condition flags
+	call	copyexp		; copy expression
+	ld	c,TRUE		; mark conditional
+	jr	breaks2
+breaks1:
+	ld	c,FALSE		; mark unconditional
+breaks2:
+	push	bc
+	call	sexpression	; get breakpoint addr
+	pop	bc
+	jp	c,cmderr	; error if something else
+breakslp:
+	push	bc
+	call	definebk	; define breakpoint
+	call	sexpression	; check for another
+	pop	bc
+	jp	c,eocmd		; ready if end
+	jr	breakslp
+breaklst:
+				; list breakpoints
+	ld	a,(numbreaks)
+	or	a
+	ret	z		; ready if none
+	ld	b,a		; B = number of entries
+	ld	iy,breaklist+1	; IY = break def pointer
+	ld	de,5		; DE = entry length
+	ld	c,0		; C = marker: list condition if nonzero
+IF	symbolic
+	ld	h,3		; H = counter for entries per line
+ELSE
+	ld	h,4
+ENDIF;SYMBOLIC
+	ld	l,c		; L = marker: at start of line if zero
+breakll:
+	push	hl
+	ld	l,(iy+0)	; HL = break addr
+	ld	h,(iy+1)
+IF	EXTENDED
+	ld	a,(iy+2)	; bank
+ENDIF;EXTENDED
+	call	wraddr		; write breakpoint address
+	ld	a,(iy+3)		; conditional flag
+	or	a
+	jr	z,breakll1
+	ld	c,a		; mark condition occurred
+	push	hl
+	ld	hl,bkcnstr
+	call	wrstr		; mark as conditional
+	pop	hl
+breakll1:
+IF	symbolic
+	call	space
+	ld	a,'.'
+	push	iy
+	push	de
+	push	bc
+	call	wrsymbol
+	pop	bc
+	pop	de
+	pop	iy
+ENDIF;SYMBOLIC
+	call	space2
+	add	iy,de		; next entry
+	pop	hl		; restore entry counter
+	inc	l
+	dec	h
+	jr	nz,breakll2	; jump if not end of line
+	call	crlf
+IF	symbolic
+	ld	h,3
+ELSE
+	ld	h,4
+ENDIF;SYMBOLIC
+	ld	l,0
+breakll2:
+	djnz	breakll
+breaklsti:
+	ld	a,l
+	or	a
+	call	nz,crlf		; CRLF if not at start of line
+	ld	a,c
+	or	a		; conditional breakpoint found ?
+	ret	z		; ready if not
+	ld	hl,bkifstr
+	call	wrstr		; else display condition
+	ld	hl,bkexpbuf
+	call	wrstr
+	jp	crlf
+;
+breakdel:
+	call	getch		; skip 'X'
+	call	testch
+	sub	'I'		; delete condition only ?
+	jr	z,clrbkcond
+	call	sexpression	; get breakpoint addr
+	jr	c,breakdelall	; delete all breakpoints if no address
+breakdellp:
+	call	deletebk
+	call	sexpression	; check if another one to delete
+	jp	c,eocmd		; ready if not
+	jr	breakdellp
+breakdelall:
+	call	eocmd
+	xor	a		; delete all breakpoints
+	ld	(numbreaks),a
+	ld	(breaklist),a
+	ret
+;
+clrbkcond:
+				; clear conditional flag in all breakpoints
+	ld	a,(numbreaks)
+	or	a
+	ret	z
+	ld	b,a
+	ld	hl,breaklist+4	; first condition field
+	ld	de,5
+clrbklp:
+	ld	(hl),0
+	add	hl,de
+	djnz	clrbklp
+	ret
+;
+;	copy expression into save area
+;
+copyexp:
+	call	skipsep
+	ld	de,bkexpbuf	; destination
+	push	ix
+	pop	hl		; current line pointer
+copyexlp:
+	ld	a,(hl)		; copy up to ';'
+	or	a
+	jp	z,cmderr	; error if end of line
+	cp	';'
+	jr	z,copyex10	; ready if ;
+	ld	(de),a		; store char
+	inc	hl
+	inc	de
+	jr	copyexlp
+copyex10:
+	xor	a
+	ld	(de),a		; terminate
+	call	mexpression	; evaluate once to trap errors
+	jp	c,cmderr
+	call	getch
+	cp	';'
+	jp	nz,cmderr	; error if something after expression
+	ret
+;
+bkifstr:db	'If: ',0
+bkcnstr:db	'(If)',0
+;
+;------------------------------------------------------------------------------
+;
+;	D:	Dump
+;
+dump:
+	cp	'W'
+	jr	nz,dump05
+	call	getch
+	call	skipsep
+	xor	a
+	jr	dump06
+dump05:
+	ld	a,(dumpword)
+	or	a
+dump06:
+	ld	(dumpword),a
+	push	af
+	call	sexpression	; from
+	jr	nc,dump10
+	ld	de,(dumpaddr)	; use default if no from address
+	jr	dump15
+dump10:
+IF	EXTENDED
+	ld	(dumpbnk),a
+ENDIF;EXTENDED
+	push	hl
+	call	sexpression	; end address
+	pop	de
+	jr	nc,dump20	; ok if specified
+dump15:
+	ld	hl,reclng-1	; default end address = from + 7fh
+	add	hl,de
+	jr	nc,dump20	; ok if no wraparound to zero
+	ld	hl,-1
+dump20:
+	call	eocmd
+	ex	de,hl		; HL = from, DE = end
+;
+;	write dump header line
+;
+	ld	b,7
+IF	EXTENDED
+	ld	a,(dumpbnk)
+	cp	-1		; default bank ?
+	jr	z,dumpspac	; then 7 spaces
+	push	hl
+	ld	hl,cbank
+	cp	(hl)		; same as current bank ?
+	pop	hl
+	jr	z,dumpspac	; then 7 spaces
+	ld	b,10		; else three spaces more for 'hh:'
+ENDIF;EXTENDED
+dumpspac:
+	call	space
+	djnz	dumpspac	; write spaces
+	pop	af		; W-option ?
+	ld	a,l		; low byte of addr
+	ld	b,8
+	jr	z,dumpwhdr
+	ld	b,16
+dumphdr:
+	push	af
+	call	wrhexdig	; write lower nibble
+	call	space2
+	ld	a,b
+	cp	9
+	call	z,space		; one space after 8 digits
+	pop	af
+	inc	a
+	djnz	dumphdr
+	call	crlf
+;
+;	write dump
+;
+dumploop:
+IF	EXTENDED
+	ld	a,(dumpbnk)
+ENDIF;EXTENDED
+	call	dumpline	; dump a line
+	ld	(dumpaddr),hl	; store next addr as default
+	ld	a,d		; end
+	inc	a
+	cp	h		; hi(curr) = hi(end) + 1 ?
+	ret	z		; then wraparound, stop dump
+	or	a
+	push	de		; end
+	ex	de,hl
+	sbc	hl,de		; end - current
+	ex	de,hl
+	pop	de		; end
+	jr	nc,dumploop	; again if end >= current
+	ret
+;
+dumpwhdr:
+	push	af
+	inc	a
+	call	wrhexdig	; write lower nibble
+	call	space
+	pop	af
+	push	af
+	call	wrhexdig
+	call	space2
+	call	space
+	pop	af
+	inc	a
+	inc	a
+	djnz	dumpwhdr
+	call	crlf
+;
+;	write dump
+;
+dumpwloop:
+IF	EXTENDED
+	ld	a,(dumpbnk)
+ENDIF;EXTENDED
+	call	dumpwline	; dump a line
+	ld	(dumpaddr),hl	; store next addr as default
+	or	a
+	push	de
+	ex	de,hl
+	sbc	hl,de		; end - current
+	ex	de,hl
+	pop	de
+	jr	nc,dumpwloop	; again if end >= current
+	ret
+;
+;	dumpline:	dump one line
+;
+;		entry:	A/HL = address
+;
+;		exit:	HL = HL + 16
+;
+dumpline:
+	push	bc
+IF	EXTENDED
+	push	hl
+	call	peek
+ENDIF;EXTENDED
+	call	wraddr		; show address
+	call	space2
+	ld	b,16
+IF	EXTENDED
+	ld	hl,peekbuf
+ELSE
+	push	hl
+ENDIF;EXTENDED
+dumplinlp:
+	ld	a,(hl)
+	inc	hl
+	call	wrhex		; write byte at address
+	call	space
+	ld	a,b
+	cp	8+1
+	call	z,space		; one space after 8 bytes
+	djnz	dumplinlp
+dumplinasc:
+	call	space
+IF	EXTENDED
+	ld	hl,peekbuf
+ELSE
+	pop	hl
+ENDIF;EXTENDED
+	ld	b,16
+	ld	a,'>'
+	call	wrchar
+dumpch:
+	ld	a,(hl)		; write as character
+	inc	hl
+	call	iscontrol
+	jr	c,dumpch10
+	ld	a,'.'		; replace non-display char
+dumpch10:
+	call	wrchar
+	djnz	dumpch
+	ld	a,'<'
+	call	wrchar
+IF	EXTENDED
+	pop	hl
+	ld	bc,16
+	add	hl,bc		; increase address
+ENDIF;EXTENDED
+	pop	bc
+	jp	crlf		; exit via crlf
+;
+dumpwline:
+	push	bc
+IF	EXTENDED
+	push	hl
+	call	peek
+ENDIF;EXTENDED
+	call	wraddr		; show address
+	call	space2
+	ld	b,8
+IF	EXTENDED
+	ld	hl,peekbuf
+ELSE
+	push	hl
+ENDIF;EXTENDED
+	push	de
+dumpwlinlp:
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ex	de,hl
+	call	wrword		; write word at address
+	call	space2
+	ex	de,hl
+	djnz	dumpwlinlp
+	pop	de
+	jr	dumplinasc
+;
+;------------------------------------------------------------------------------
+;
+;	E:	Execute command
+;
+IF	fileops
+exec:
+	call	mexpression	; get condition
+	ret	c		; default to FALSE if no expression
+	call	getch
+	cp	';'
+	ret	nz		; do nothing if no command
+	ld	a,h
+	or	l		; true expression ?
+	ret	z		; do nothing if false
+	call	skipsep
+	call	getch		; get command character
+	jp	moncmd		; execute command
+ENDIF;FILEOPS
+;
+;------------------------------------------------------------------------------
+;
+;	G:	Go
+;
+go:
+	xor	a
+	ld	(lastop),a	; this op may not be repeated
+	ld	(tmpbkflag),a
+	call	expression	; get address to jump to
+	jr	nc,gogo		; ok if specified
+	ld	hl,(regpc)	; else load default
+IF	EXTENDED
+	ld	a,(cbank)
+ENDIF;EXTENDED
+gogo:
+	ld	(regpc),hl
+IF	EXTENDED
+	cp	-1
+	jr	z,gogo10
+	ld	(cbank),a
+ENDIF;EXTENDED
+gogo10:
+	call	skipsep
+	ld	a,(numbreaks)	; current number of breakpoints
+	ld	b,a
+	call	getch
+	jr	z,gogoubk	; go if no further parameter
+	cp	';'
+	jp	nz,cmderr	; error if not ';'
+	call	expression	; get temp breakpoint
+	jp	c,cmderr	; error if nothing after ;
+	ld	c,a		; save bank
+	ld	a,(numbreaks)	; number of breaks again
+	ld	b,a
+	ld	a,c		; bank number
+	call	addbk		; add temp breakpoint
+	ld	a,(iy+3)	; conditional ?
+	and	NoMSB		; mask off hi bit
+	ld	(iy+3),a	; to mark unconditional
+	ld	hl,numbreaks
+	ld	a,(hl)
+	sub	b		; check if new break or old
+	dec	a
+	ld	(tmpbkflag),a	; save (-2 if new, -1 if old)
+	ld	(hl),b
+	ld	(tmpbkiy),iy
+gogoubk:
+	call	eocmd
+	jp	unbreak		; and go
+;
+resettmpbk:
+	ld	hl,tmpbkflag
+	ld	a,(hl)
+	or	a
+	ret	z
+	ld	(hl),0
+	ld	iy,(tmpbkiy)
+	inc	a
+	jr	z,resetcond
+	ld	l,(iy+0)
+	ld	h,(iy+1)
+	ld	a,(iy+2)
+	jp	deletebk
+resetcond:
+	ld	a,(iy+3)
+	or	a
+	ret	z
+	ld	(iy+3),-1
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	H:	Hex calculate
+;
+hexcalc:
+IF	HILO
+	jp	z,dishighlow	; display high/low if no param
+ENDIF;HILO
+	call	expression	; get the expression
+	jp	c,cmderr	; error if no expression
+hexcallp:
+	ex	de,hl
+	ld	hl,0
+	sbc	hl,de		; negate
+	ex	de,hl
+	call	wrword		; write hex
+	call	space2
+	ex	de,hl
+	ld	a,'-'
+	call	wrchar
+	call	wrword		; write complement as hex
+	call	space2
+	ex	de,hl
+	ld	a,' '
+	call	wrdec		; write decimal
+	call	space2
+	ex	de,hl
+	ld	a,'-'
+	call	wrdec		; write complement as decimal
+	call	space2
+	ex	de,hl
+	ld	a,h
+	call	wrbit		; write as bit string
+	ld	a,l
+	call	wrbit
+	call	space2
+	ld	a,''''
+	call	wrchar		; write as character
+	ld	a,l
+	call	iscontrol
+	jr	c,hexcdisc	; ok if not a control character
+hexcch:
+	push	af
+	ld	a,'^'		; mark control char
+	call	wrchar
+	pop	af
+	add	a,'A'-1
+hexcdisc:
+	call	wrchar
+	ld	a,''''
+	call	wrchar
+IF	symbolic
+	call	space2
+	ld	a,'.'
+	call	wrsymbol
+ENDIF;SYMBOLIC
+	call	crlf
+	call	sexpression
+	jr	nc,hexcallp	; display again if another expression
+	jp	eocmd
+;
+;------------------------------------------------------------------------------
+;
+;	I:	input from port
+;
+input:
+	call	expression	; get port number
+	jr	nc,inp1		; ok if specified
+	ld	hl,(lastinp)	; else use default
+inp1:
+	call	eocmd
+	ld	(lastinp),hl	; store as default
+	ld	b,h
+	ld	c,l
+	in	e,(c)		; get byte
+	ld	a,'I'
+portwr:
+	call	wrchar		; write command identification
+	ld	hl,portstr
+	call	wrstr
+	ld	a,c
+	call	wrhex		; display port number
+	ld	hl,sepstr
+	call	wrstr
+	ld	a,b
+	call	wrhex		; display register B
+	ld	hl,pendstr
+	call	wrstr
+	ld	a,e
+	call	wrhex		; display data as hex
+	call	space2
+	ld	a,e
+	call	wrbit		; display data as bitstring
+	jp	crlf
+;
+;	O:	Output to port
+;
+output:
+	call	expression	; get data
+	jr	nc,outpa
+	ld	hl,(outdata)	; use last data if not specified
+	ld	a,h
+	or	a
+	jp	z,cmderr	; error if no last data
+outpa:
+	ld	e,l
+	ld	h,-1
+	ld	(outdata),hl	; store as default data
+	push	de
+	call	sexpression	; get port
+	pop	de
+	jr	nc,outp1
+	ld	hl,(lastout)	; use last port if no port number
+outp1:
+	call	eocmd
+	ld	(lastout),hl	; store as default
+	push	hl
+	ld	b,h
+	ld	c,l
+	ld	a,e
+	push	af
+	ld	a,'O'
+	call	portwr		; display port & data
+	pop	af
+	pop	bc
+	out	(c),a		; output data
+	ret
+;
+portstr:db	'(Port=',0
+sepstr:	db	',B=',0
+pendstr:db	'): ',0
+;
+;------------------------------------------------------------------------------
+;
+;	L:	Disassemble
+;
+list:
+	call	expression	; from
+	jr	nc,list1
+	ld	hl,(listaddr)	; use default if no from-address
+	ld	c,-1
+	ld	b,8		; mark 8 lines to list
+	jr	list2
+list1:
+IF	EXTENDED
+	ld	(listbnk),a
+ENDIF;EXTENDED
+	push	hl
+	call	sexpression	; to
+	pop	de
+	ex	de,hl		; from into HL
+	ld	c,0
+	jr	nc,list2	; ok if to given
+	ld	c,-1
+	ld	b,8		; else mark 8 lines to list
+list2:
+	call	eocmd
+	push	de		; save to-address
+listloop:
+	push	bc
+IF	EXTENDED
+	ld	a,(listbnk)
+ENDIF;EXTENDED
+	ld	b,-1
+	call	disasm		; disassemble line
+	ld	(listaddr),hl	; store next addr as next default
+	call	crlf
+	pop	bc
+	bit	0,c		; 8 lines ?
+	jr	z,listcmp	; branch if to-address given
+	djnz	listloop	; else use count
+	pop	de
+	ret
+listcmp:
+	pop	de		; to-address
+	push	de
+	ex	de,hl
+	or	a
+	sbc	hl,de		; to - current
+	ex	de,hl
+	jr	nc,listloop	; list if current <= to
+	pop	de
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	M:	Move memory
+;
+move:
+	call	expression	; start
+	jp	c,cmderr	; error if no start-addr
+	push	hl
+IF	EXTENDED
+	ld	(mvsrcbnk),a
+ENDIF;EXTENDED
+	call	sexpression	; end
+	jp	c,cmderr
+	push	hl
+	call	sexpression	; to
+	jp	c,cmderr
+IF	EXTENDED
+	ld	(mvdstbnk),a
+	ld	(pbank),a	; set bank for poke
+ENDIF;EXTENDED
+	call	eocmd
+	pop	de		; end into DE
+	ex	(sp),hl		; to-addr on stack, get start
+	ex	de,hl		; end into HL
+	or	a
+	sbc	hl,de		; end - start
+	jp	c,cmderr	; error if start > end
+	inc	hl		; length + 1
+IF	EXTENDED
+	push	hl		; save length
+	ld	b,4		; divide by 16
+movlp1:
+	srl	h
+	rr	l
+	djnz	movlp1
+	ld	b,h
+	ld	c,l		; move number of 16-byte chunks into BC
+	pop	hl		; length
+	ex	(sp),hl		; to-addr into HL, length on stack
+	ex	de,hl		; dest into DE, start into HL
+	ld	a,(mvsrcbnk)	; source bank
+	call	peeks		; peek into string
+movloop:
+	ld	a,b
+	or	c
+	jr	z,movend	; branch if no further 16-bit chunks
+	push	bc
+	ld	bc,16
+	add	hl,bc		; increase source addr
+	ex	de,hl
+	ld	(paddr),hl	; set poke-address
+	add	hl,bc		; increase dest addr
+	push	de		; save dest
+	push	hl		; save source
+	ld	hl,string
+	ld	de,peekbuf
+	ldir			; copy string -> peek/poke buffer
+	pop	de		; restore source
+	pop	hl		; restore dest
+	ld	a,(mvsrcbnk)
+	call	peeks		; get next chunk into string
+	call	poke		; write into destination
+	pop	bc		; number of chunks
+	dec	bc
+	jr	movloop		; loop
+movend:
+	ex	de,hl		; destination
+	pop	bc		; original length
+	ld	a,c		; remainder
+	and	LoMASK		; of division by 16
+	ret	z		; ready if no remaining bytes to move
+	ld	c,a
+	ld	b,0
+	ld	a,(mvdstbnk)
+	call	peek		; peek destination
+	ld	hl,string
+	ld	de,peekbuf
+	ldir			; copy string into destination
+	jp	poke		; write it
+ELSE
+	ld	b,h
+	ld	c,l		; length into BC
+	pop	hl
+	push	hl		; get & save to
+	or	a
+	sbc	hl,de		; to - start
+	pop	hl		; to again
+	ex	de,hl		; HL = source, DE = dest
+	jr	nc,move80	; jump if to >= start
+	ldir
+	ret
+move80:
+	dec	bc
+	add	hl,bc
+	ex	de,hl
+	add	hl,bc
+	ex	de,hl
+	inc	bc
+	lddr
+	ret
+ENDIF;EXTENDED
+;
+;------------------------------------------------------------------------------
+;
+;	N:	Name definition
+;
+IF	symbolic
+namedef:
+	jp	z,dissymbols
+ IF	fileops
+	cp	'W'		; write symbols
+	jr	nz,namedef10
+	call	getch
+	call	skipsep
+	jp	symwrite
+namedef10:
+	cp	'F'
+	jr	nz,namedef15
+	call	getch
+	call	skipsep
+	jp	z,cmderr
+	jp	sfile		; set filename
+namedef15:
+	cp	'S'		; reserve space
+	jr	nz,namedef20
+	call	getch
+	call	sexpression
+	jp	c,cmderr
+	call	eocmd
+	jp	rsvsym
+namedef20:
+ ENDIF;FILEOPS
+	cp	'X'		; kill symbol
+	jr	z,namekill
+ IF	fileops
+	cp	'R'		; symbol read ?
+	jr	nz,namdefloop
+	call	getch
+	call	sexpression
+	jp	readsym
+ ENDIF;FILEOPS
+namdefloop:			; define symbol
+	call	sexpression
+	jp	c,cmderr
+	push	hl
+	call	rdsymname
+	jp	c,cmderr
+	pop	de
+	call	defsymbol
+	call	skipsep
+	jr	nz,namdefloop
+	ret
+;
+namekill:
+	call	getch
+	call	skipsep
+	jr	z,namekall
+namekloop:
+	call	rdsymname
+	jp	c,cmderr
+	jp	z,cmderr
+	call	killsymbol
+	call	skipsep
+	jr	nz,namekloop
+	ret
+;
+namekall:
+	ld	hl,(symstart)
+ IF	fileops
+	ld	(symtop),hl
+ ELSE
+	ld	(topval),hl
+ ENDIF;FILEOPS
+	ret
+ENDIF;SYMBOLIC
+;
+;------------------------------------------------------------------------------
+;
+;	P:	Protect
+;
+protect:
+	jr	z,protlst	; list if no param
+	cp	'X'
+	jr	z,protdel	; delete if X
+	push	ix
+	pop	hl
+	ld	de,protexpbuf
+	ld	bc,.linlen
+	ldir			; copy buffer
+	call	mexpression	; evaluate once to trap errors
+	jr	c,proterr
+	call	testch
+	ret	z
+proterr:
+	call	protdel
+	jp	cmderr
+protdel:
+	ld	hl,0
+	ld	(protexpbuf),hl	; mark buffer empty
+	ret
+protlst:
+	ld	hl,protexpbuf
+	call	wrstr		; write expression
+	jp	crlf
+;
+;------------------------------------------------------------------------------
+;
+;	Q:	Query memory for a byte string
+;
+query:
+	cp	'J'		; justified ?
+	ld	a,0
+	jr	nz,query1
+	call	getch		; skip J
+query1:
+	ld	(querjust),a	; set justified flag
+	call	sexpression	; start
+	jp	c,cmderr
+IF	EXTENDED
+	ld	(querbnk),a
+ENDIF;EXTENDED
+	push	hl
+	call	sexpression	; end
+	jp	c,cmderr
+	push	hl
+	call	skipsep
+	call	bytestring	; assemble string to look for
+	jp	c,cmderr
+	pop	hl		; end
+	pop	de		; start
+	sbc	hl,de		; end - start
+	jp	c,cmderr	; error if end < start
+	inc	hl		; length
+	ex	de,hl		; addr into HL, length into DE
+querloop:
+	ld	ix,string
+	ld	c,(ix-1)	; string length
+	push	hl		; save start
+IF	EXTENDED
+querloop1:
+	ld	a,(querbnk)
+	call	peek		; get memory
+	push	de
+	ld	de,16
+	add	hl,de		; increase memory addr
+	pop	de
+	ld	b,16
+	push	hl
+	ld	hl,peekbuf
+ENDIF;EXTENDED
+quercmp:
+	ld	a,(ix+0)
+	cp	(hl)
+	jr	nz,quernxt		; branch if unequal
+	inc	hl
+	inc	ix
+	dec	c
+IF	EXTENDED
+	jr	z,quermatch	; match if string length expired
+	djnz	quercmp		; loop for 16 bytes in chunk
+	pop	hl
+	jr	querloop1	; get next 16-byte chunk
+ELSE
+	jr	nz,quercmp
+ENDIF;EXTENDED
+quermatch:
+IF	EXTENDED
+	pop	hl		; discard current addr
+ENDIF;EXTENDED
+	pop	hl		; get start addr
+	push	hl		; and save
+	push	de
+	ld	a,(querjust)	; justified ?
+	or	a
+	jr	z,quermat1
+	ld	de,8
+	sbc	hl,de		; display 8 bytes before addr if justified
+quermat1:
+IF	EXTENDED
+	ld	a,(querbnk)
+ENDIF;EXTENDED
+	call	dumpline	; dump the matching line
+	pop	de
+IF	EXTENDED
+	push	hl		; dummy push
+ENDIF;EXTENDED
+quernxt:
+IF	EXTENDED
+	pop	hl		; discard current addr
+ENDIF;EXTENDED
+	pop	hl		; start addr again
+	inc	hl		; next addr to compare
+	dec	de		; decrease count
+	ld	a,d
+	or	e
+	ret	z		; ready if count exprired
+	jr	querloop	; else try again to find match
+;
+;------------------------------------------------------------------------------
+;
+;	R:	Read
+;
+IF	fileops
+fread:
+	call	expression	; offset
+	jp	read		; continue in system dependent part
+ENDIF;FILEOPS
+;
+;------------------------------------------------------------------------------
+;
+;	S:	Substitute
+;
+substit:
+	call	expression	; substitution address
+	jr	nc,substit10
+	call	eocmd
+	ld	hl,(asmaddr)	; use default if no start addr
+	jr	subsmain
+substit10:
+IF	EXTENDED
+	ld	(asmbnk),a
+ENDIF;EXTENDED
+	push	hl
+	call	skipsep
+	call	bytestring	; specified in command ?
+	pop	hl
+	jr	c,subsmain	; normal substit if not
+	call	subslinp	; substitute
+	ld	(asmaddr),hl	; set new default
+	ret			; and exit
+subsmain:
+	ld	(asmaddr),hl	; set new default
+IF	EXTENDED
+	ld	a,(asmbnk)
+	call	peek		; get memory
+ENDIF;EXTENDED
+	call	wraddr		; show address
+	call	space2
+IF	EXTENDED
+	ld	a,(peekbuf)
+ELSE
+	ld	a,(hl)
+ENDIF;EXTENDED
+	call	wrhex		; show byte at address
+	call	space2
+	push	hl
+	call	readstring	; get input line
+	pop	hl
+	jr	z,subs10	; next if empty
+	cp	'.'
+	ret	z		; exit if dot
+	push	hl
+	call	bytestring	; get byte string
+	jp	c,cmderr	; error if something else
+	pop	hl		; restore address
+	call	subsline	; substitute
+	jr	subsmain
+subs10:
+	inc	hl		; next address
+	jr	subsmain
+;
+subslinp:
+IF	EXTENDED
+	ld	a,(asmbnk)
+	call	peek		; get memory
+ENDIF;EXTENDED
+subsline:
+IF	EXTENDED
+	ex	de,hl		; addr into DE
+ENDIF;EXTENDED
+	ld	c,b		; string length into C
+subslinlp:
+IF	EXTENDED
+	ld	b,16		; length of a chunk
+	ld	hl,peekbuf
+ENDIF;EXTENDED
+subsloop:
+	ld	a,(ix+0)	; get byte
+	ld	(hl),a		; store at address
+	inc	hl
+	inc	ix
+IF	EXTENDED
+	inc	de		; increase addr, too
+ENDIF;EXTENDED
+	dec	c
+IF	EXTENDED
+	jr	z,subslex	; ready if string count reached
+	djnz	subsloop	; loop for all 16 bytes	in chunk
+	call	poke		; store the 16 bytes
+	ex	de,hl		; addr again
+	ld	b,c
+	jr	subslinp	; get next 16-byte chunk
+ELSE
+	jr	nz,subsloop
+ENDIF;EXTENDED
+subslex:
+IF	EXTENDED
+	call	poke		; store back
+	ex	de,hl		; restore HL (addr)
+ENDIF;EXTENDED
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	C:	Trace over Calls
+;	T:	Trace
+;
+calltrace:
+	ld	a,TRUE
+	jr	trace1
+trace:
+	xor	a
+trace1:
+	ld	(trcallopt),a	; trace over calls option
+	xor	a
+	ld	(traceexp),a	; init options
+	ld	(tracenl),a
+	ld	(tracejp),a
+trace2:
+	call	testch
+	cp	'N'		; no list ?
+	jr	z,trace21
+	cp	'J'		; jumps only ?
+	jr	z,trace22
+	cp	'W'		; while ?
+	jr	z,trace23
+	cp	'U'		; until ?
+	jr	nz,trace3
+	ld	a,.until	; mark until
+	jr	tracewu
+trace21:
+	ld	(tracenl),a	; mark no list
+trace29:
+	call	getch		; skip char
+	jr	trace2		; check for other options
+trace22:
+	ld	(tracejp),a	; mark jumps only
+	jr	trace29
+;
+;	trace with count
+;
+trace3:
+	call	sexpression	; get number of ops to trace
+	jr	nc,trace10
+	ld	hl,1		; default is 1
+trace10:
+	call	eocmd
+	ld	a,h
+	or	l
+	jp	z,cmderr	; error if zero count
+	ld	(tracecount),hl	; save
+	jp	dotrace		; doit
+;
+;	trace while/until
+;
+trace23:
+	ld	a,.while	; mark while
+tracewu:
+	ld	(traceexp),a	; mark expression kind
+	call	getch		; skip W/U
+	call	skipsep
+	ld	(traceptr),ix	; remember position in line
+	call	mexpression	; evaluate once to trap errors
+	jp	c,cmderr
+	call	testch
+	jp	nz,cmderr	; error if something left on line
+	ld	hl,-1
+	ld	(tracecount),hl	; set dummy trace count
+	jp	dotrace		; go trace
+;
+;------------------------------------------------------------------------------
+;
+;	V:	Verify memory
+;
+verify:
+	call	expression	; start
+	jp	c,cmderr	; error if no start-addr
+	push	hl
+IF	EXTENDED
+	ld	(mvsrcbnk),a
+ENDIF;EXTENDED
+	call	sexpression	; end
+	jp	c,cmderr
+	push	hl
+	call	sexpression	; to
+	jp	c,cmderr
+	call	eocmd
+IF	EXTENDED
+	ld	(mvdstbnk),a
+ENDIF;EXTENDED
+	pop	de		; end into DE
+	ex	(sp),hl		; to-addr on stack, get start
+	ex	de,hl		; end into HL
+	or	a
+	sbc	hl,de		; end - start
+	jp	c,cmderr	; error if start > end
+	inc	hl		; length + 1
+	ld	b,h
+	ld	c,l		; length into BC
+	pop	hl
+	ex	de,hl		; dest into DE, start into HL
+verifyloop:
+IF	EXTENDED
+	push	bc
+	ld	bc,16
+	ld	a,(mvsrcbnk)	; source bank
+	call	peek		; source into peekbuf
+	add	hl,bc		; inc source addr
+	ex	de,hl
+	ld	a,(mvdstbnk)
+	call	peeks		; dest into string
+	add	hl,bc		; inc dest addr
+	pop	bc
+	push	hl		; save dest
+	push	de		; save source
+	ld	de,string
+	ld	hl,peekbuf
+	ld	a,16
+verify10:
+	push	af
+ENDIF;EXTENDED
+	ld	a,(de)
+	cp	(hl)
+	call	nz,verifyerr	; display if mismatch
+	inc	hl
+	inc	de
+	dec	bc
+	ld	a,b
+	or	c
+IF	EXTENDED
+	jr	nz,verify20
+	pop	af
+	pop	de
+	pop	hl
+	ret
+verify20:
+	pop	af
+	dec	a
+	jr	nz,verify10
+	pop	hl		; source
+	pop	de		; dest
+	jr	verifyloop
+ELSE
+	jr	nz,verifyloop
+	ret
+ENDIF;EXTENDED
+;
+verifyerr:
+IF	EXTENDED
+	push	hl
+	push	de
+	push	bc
+	ld	c,a
+	ld	b,(hl)
+	ld	de,peekbuf
+	or	a
+	sbc	hl,de
+	push	hl		; offset
+	ld	de,(paddr)
+	add	hl,de		; source addr + offset
+	ld	a,(mvsrcbnk)
+	call	wraddr		; write source addr
+	call	space
+	ld	a,b
+	call	wrhex		; write source byte
+	call	space2
+	ld	hl,(psaddr)
+	pop	de
+	add	hl,de		; dest addr + count
+	ld	a,(mvdstbnk)
+	call	wraddr		; write dest addr
+	call	space
+	ld	a,c
+	call	wrhex		; write dest byte
+	call	crlf
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+ELSE
+	call	wraddr
+	call	space
+	ld	a,(hl)
+	call	wrhex
+	call	space2
+	ex	de,hl
+	call	wraddr
+	call	space
+	ld	a,(hl)
+	call	wrhex
+	call	crlf
+	ex	de,hl
+	ret
+ENDIF;EXTENDED
+;
+;------------------------------------------------------------------------------
+;
+;	W:	Write
+;
+IF	fileops
+fwrite:
+	call	expression	; from
+	jp	c,cmderr
+	push	hl
+	push	af
+	call	sexpression	; to
+	jp	c,cmderr
+	ex	de,hl		; to into DE
+	pop	af		; bank
+	pop	hl		; from
+	jp	write		; continue in system dependent part
+ENDIF;FILEOPS
+;
+;------------------------------------------------------------------------------
+;
+;	X:	where are we & register display/mod
+;
+where:
+	jp	z,display	; display regs if no param
+	cp	''''
+	jp	z,disalt	; display alternate regs
+whereloop:
+	call	rdregister	; read register name
+	jp	c,cmderr	; error if none
+	ld	b,a
+	push	bc
+	push	hl
+	call	sexpression
+	jr	c,wheredis	; display if no expression
+	pop	de
+	pop	bc
+	push	af
+	ld	a,b
+	and	30h
+	cp	10h
+	jr	z,set8reg	; branch if 8-bit reg
+	pop	af
+	call	putval
+wherenxt:
+	call	skipsep
+	ret	z
+	jr	whereloop
+set8reg:
+	ex	de,hl
+	pop	af
+	ld	a,b
+	cp	17h
+	jr	z,setrr
+	ld	(hl),e
+	jr	wherenxt
+setrr:
+	ld	a,e
+	ld	r,a
+	jr	wherenxt
+;
+wheredis:
+	pop	hl
+	pop	bc
+	ld	a,b
+	and	30h
+	cp	10h
+	jr	z,mod8reg	; branch if 8-bit reg
+wheremod:
+	push	hl		; save reg addr
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; get contents
+	ex	de,hl
+	call	wrword		; write contents
+	call	whereget	; get replacement
+	pop	de		; restore reg addr
+	ret	c		; ret if no change
+putval:
+	ex	de,hl
+	ld	(hl),e		; store new value
+	inc	hl
+	ld	(hl),d
+	ld	bc,regpc+1	; was it PC ?
+	or	a
+	sbc	hl,bc
+	ret	nz		; ready if not
+IF	EXTENDED
+	call	xltbank		; adjust bank
+	ld	(cbank),a	; set new bank
+ENDIF;EXTENDED
+	ld	(listaddr),de	; set new default list addr
+	ret
+;
+mod8reg:
+	ld	a,b
+	cp	17h		; R ?
+	jr	z,modrr		; R is special
+	push	hl		; save address
+	ld	a,(hl)
+	call	wrhex		; show value
+	call	whereget	; get replacement
+	pop	de
+	ret	c		; ready if no change
+	ex	de,hl
+	ld	(hl),e		; store value
+	ret
+;
+modrr:
+	ld	a,r		; get current value of R
+	call	wrhex		; display
+	call	whereget
+	ret	c
+	ld	r,a		; set new value
+	ret
+;
+whereget:
+	call	space2
+	call	readstring	; get input line
+	scf
+	ret	z		; ready if no replacement
+	call	sexpression	; get value
+	jp	c,cmderr
+	jp	eocmd
+;
+;------------------------------------------------------------------------------
+;
+;	Y:	Display/change Y-variables
+;
+yvar:
+	jp	z,disyvars	; display if no parameter
+	call	expression
+	jp	c,cmderr	; error if no number
+setyloop:
+	ld	a,h
+	or	a
+	jp	nz,cmderr
+	ld	a,l
+	cp	10
+	jp	nc,cmderr
+	add	a,a		; digit * 2
+	ld	e,a
+	ld	d,0
+	ld	hl,variables
+	add	hl,de		; address variable
+	push	hl
+	call	sexpression
+	ex	de,hl
+	pop	hl
+	jr	c,wheremod	; continue like for register
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	call	sexpression
+	ret	c
+	jr	setyloop
+;
+;------------------------------------------------------------------------------
+;
+;	Z:	Zap memory with constant
+;
+zap:
+	call	expression	; from
+	jp	c,cmderr
+IF	EXTENDED
+	ld	(zapbnk),a
+ENDIF;EXTENDED
+	push	hl
+	call	sexpression	; to
+	jp	c,cmderr
+	push	hl
+	call	skipsep
+	call	bytestring	; value
+	jp	c,cmderr
+	pop	hl		; to
+	pop	de		; from
+	sbc	hl,de		; to - from
+	jp	c,cmderr	; error if to < from
+	inc	hl
+	ex	de,hl		; length in DE, addr in HL
+	ld	ix,string
+	ld	c,(ix-1)	; string length
+zaploop:
+IF	EXTENDED
+	ld	a,(zapbnk)
+	call	peek		; get memory
+	push	de
+	ld	de,16
+	add	hl,de		; increase addr
+	pop	de
+	push	hl
+	ld	b,16
+	ld	hl,peekbuf
+zaploop2:
+ENDIF;EXTENDED
+	ld	a,(ix+0)	; copy bytes into destination
+	ld	(hl),a
+	inc	hl
+	inc	ix
+	dec	de
+	ld	a,d
+	or	e
+IF	EXTENDED
+	jr	z,zapend	; ready if all bytes zapped
+ELSE
+	ret	z
+ENDIF;EXTENDED
+	dec	c
+IF	EXTENDED
+	jr	nz,zaploop10	; loop if more bytes in string
+ELSE
+	jr	nz,zaploop
+ENDIF;EXTENDED
+	ld	ix,string
+	ld	c,(ix-1)	; go back to start of string
+zaploop10:
+IF	EXTENDED
+	djnz	zaploop2	; loop for all 16 bytes in chunk
+	call	poke		; store back
+	pop	hl
+ENDIF;EXTENDED
+	jr	zaploop		; get next chunk
+IF	EXTENDED
+zapend:
+	pop	hl
+	jp	poke		; return via poke
+ENDIF;EXTENDED
+;
+;------------------------------------------------------------------------------
+;
+	dseg
+;
+varstart:
+;
+tmpbkflag:
+	ds	1
+tmpbkiy:ds	2
+;
+listaddr:
+	ds	2		; default list
+IF	EXTENDED
+listbnk:ds	1
+ENDIF;EXTENDED
+dumpaddr:
+	ds	2		; default dump
+IF	EXTENDED
+dumpbnk:ds	1
+ENDIF;EXTENDED
+asmaddr:ds	2		; default assemble/substitute
+IF	EXTENDED
+asmbnk:	ds	1
+ENDIF;EXTENDED
+lastinp:ds	2		; default input port
+lastout:ds	2		; default output port
+outdata:ds	2		; default output data
+lastop:	ds	1		; last command
+dumpword:
+	ds	1		; dump word if lastop is dump command
+tracecount:
+	ds	2		; number of lines to trace
+trcallopt:
+	ds	1		; trace over calls if <> 0
+tracenl:ds	1		; trace without list if <> 0
+tracejp:ds	1		; trace jumps only if <> 0
+traceexp:
+	ds	1		; trace while if 7f, until if 80
+traceptr:
+	ds	2		; expression pointer for trace U/W
+variables:
+	ds	20		; variables Y0..Y9
+IF	HILO
+lowval:	ds	2		; special variable L
+highval:ds	2		; special variable H
+maxval:	ds	2		; special variable M
+topval:	ds	2		; special variable T
+ENDIF;HILO
+protexpbuf:
+	ds	.linlen		; expression for trace protection
+bkexpbuf:
+	ds	.linlen		; expression for BREAK IF
+;
+IF	EXTENDED
+bnktmp1:ds	1
+bnktmp2:ds	1
+ENDIF;EXTENDED
+movdest:ds	2
+;
+IF	EXTENDED
+zapbnk	 equ	bnktmp1
+mvsrcbnk equ	bnktmp1
+mvdstbnk equ	bnktmp2
+querbnk  equ	bnktmp1
+querjust equ	bnktmp2
+ELSE
+querjust:
+	ds	1
+ENDIF;EXTENDED
+;
+varspace equ	$-varstart
+;
+	ds	2*128		; stack space
+stack:
+	end
+st equ	bnktmp2
+ELSE
+querjust:
+	ds	1
+ENDIF;EXTENDED
+;
+varspace equ	$-varstart
+;
+	d

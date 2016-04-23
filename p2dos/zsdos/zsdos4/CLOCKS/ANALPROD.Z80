@@ -1,0 +1,140 @@
+	TITLE	"Heath89 - Analytical Products MM58167 - (ANLYTCL-PRD)"
+	SUBTTL	"Description of Clock Module"
+;---------------------------------------------------------
+; Translated for Z80ASM/ZSDOS 06/11/88 from vers of 7/5/85
+; Ver 0.5 current as of 15 Oct 88.
+;---------------------------------------------------------
+
+VERS	EQU	05
+	.Z80
+	NAME ANALPR
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; Thisyr
+
+CLKNAM:	DEFB	'Heath89 Analytical Pr$  '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'   Heath-89 TIM2 left-side board MM58167',CR,LF
+	DEFB	'   year held at latch (baseport+9) (Analytical Products)',0
+
+	  IF  [$-DESCST]
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	NPARAMS		; # of parameters
+	DEFW	STRS
+
+NP0:
+XPORT	EQU	$+1
+	DEFB	BYTE
+	DEFW	PORT
+
+NPARAMS	EQU	($-NP0)/3
+
+STRS:	DEFB	'Base Port for Clock ',0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Analytical Products H89 Clock"
+
+PORT	EQU	80H		; Default port
+YEAR	EQU	9
+SECONDS	EQU	2
+
+;	d EQU mask, e EQU preserved buffer-seconds value
+;	b EQU count, c EQU data port
+
+MASK	EQU	01001000B	; Yr,thsec,mon,day,daywk,hr,min,sec
+				; 9  8	   7   6   5	 4  3	2
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	PUSH	HL
+RETRY:	POP	HL
+	PUSH	HL
+	LD	D,MASK		; Set skip mask
+YYEAR	EQU	$+1
+	LD	BC,256*(YEAR) + (PORT+YEAR) ; Set count and port
+YSECS	EQU	$+1
+	IN	A,((PORT+SECONDS)) ; Read seconds
+	PUSH	AF		; Save seconds on stack
+
+	SCF			; So 9th time will exit
+LOOP:	RL	D
+	JR	C,$$SKIP
+	LD	E,(HL)		; Save buffer value
+	INI			; Read & install
+	INC	B		; Offset auto-decrement
+$$SKIP:	DEC	C		; Bump port
+	DJNZ	LOOP		; And count
+
+	DEC	HL		; Point at seconds
+	POP	AF		; Compare to initial read value
+	CP	(HL)
+	POP	BC		; Clear stack
+	LD	A,01		;== Set Exit value
+	RET	Z		; No rollover, exit
+	PUSH	BC		; Buf ptr back to stack
+	LD	(HL),E		; Repair damage
+	JR	RETRY
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	LD	A,(XPORT)	; Point to Port address
+	ADD	A,YEAR
+	SETBYT	,YYEAR
+	LD	A,(XPORT)
+	ADD	A,SECONDS
+	SETBYT	,YSECS
+	RET
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Check"
+
+; This module is executed just before clock installation to insure that
+; a valid clock is present
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

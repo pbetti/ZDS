@@ -1,0 +1,729 @@
+;Program name: CFGSUBS.Z80
+;Author: Al Hawley
+;Date 02/10/92
+;Previous Date 01/28/92
+
+;Program function: Subroutines used with ZCNFG
+
+;standard definitions
+	.XLIST		;don't bother listing in PRN
+	INCLUDE SYSDEF
+	.LIST
+
+;symbols from other modules
+;from ZCNFG
+	EXT	Z3ENV,DEFDU,QUIT,Z3ENVF
+	EXT	COLCNT,ROWCNT,UCFLAG,GZ3FLG
+	EXT	RELOCC,TGTBUF,BADOVL,RELFLG,NCRECS
+
+;from CFGLIB
+	EXT	SDELM
+
+;from SYSLIB
+	EXT	SETDMA,MA2HC,GUA,SUA,@BDOSA,ISPRINT
+	EXT	CST
+
+;from VLIB
+	EXT	VPSTR,STNDOUT,STNDEND
+	EXT	GRXON,GRXOFF,@GHL
+
+;symbols availale to other modules
+	PUBLIC	B2BCD,CLSFIL,CIN,CONIN,COUT,COUTB,CRLF,CST
+	PUBLIC	DEF_FT,DEF_DU,DEF_FN,GUA,OPNFIL,RANGE,ISTXTF
+	PUBLIC	RDFILE,RDREC,RELOC,RELOCL,STORDT,STRCPY,ISFNC
+	PUBLIC	HLINE,TYPLIN,VCOUT,WRREC,MOVE2Z,SKIP2Z
+
+;=======================================================
+
+DEF_DU:
+;provides defaults for undefined D and/or U
+;entry-	HL = DU with possible undefined values
+;	BC = default DU
+;exit-	HL = DU with no ambiguity
+;	BC preserved
+
+	LD	A,31		;max user
+	CP	L		;usr > max?
+	JR	NC,FIXA1	;no if NC, don't adjust
+	LD	L,C		;install default user
+FIXA1::	LD	A,16		;max drive (1...16)
+	CP	H		;drive > max?
+	RET	NC		;done if not, else
+	CCF			;reset carry, and
+	LD	H,B		;install default drive
+	RET
+
+;=======================================================
+
+DEF_FN:
+;install the default FileName in the
+;target FN field if it is empty.
+
+;entry-	DE -> target FCB
+;	HL -> default FN
+;exit-	flags NZ = no replacement
+;	       Z = FN field filled
+;	DE preserved
+;	 B = 0
+
+	PUSH	DE
+	INC	DE		;->FN
+	LD	BC,8		;(length of fn field)
+	LD	A,(DE)
+	CP	SPC		;if the fn field is still empty,
+	JR	NZ,DEFFNX	;(it isn't if nz)
+	LDIR			;use target fn for overlay name
+DEFFNX:	POP	DE
+	RET
+	
+;=========================================================
+
+DEF_FT:
+;install the default filetype in the fcb filetype
+; field if it is currently filled with spaces.
+;on entry, DE -> initialized FCB
+;	   HL -> default file type
+;exit-	flags NZ = no replacement
+;	       Z = FN field filled
+;	DE is preserved.
+;	 B = O
+
+	PUSH	DE
+	EX	DE,HL
+	LD	BC,9
+	ADD	HL,BC
+	LD	A,' '
+	CP	A,(HL)		;first char of type blank?
+	JR	NZ,FCBTYX	;return if not. User has supplied type
+	EX	DE,HL		;de -> fcb+9, hl -> def type
+	LD	BC,3		;3 char to move
+	LDIR			;move 'em
+FCBTYX:	POP	DE		;fcb address
+	RET
+
+;=======================================================
+;	TEST FOR DE WITHIN RANGE
+
+RANGE:
+;Returns NC if DE is within the range. The range
+;of values includes the endpoints. Returns CY set
+;if DE > Max or DE < Min
+;entry-	DE = value to test
+;	HL = high end of range
+;	BC = low end of range
+;exit-	DE and BC preserved
+;	HL destroyed
+;	Cy set = out of range, NC within
+
+	OR	A
+	SBC	HL,DE		;test high limit
+	RET	C		;de higher than max
+	PUSH	DE		;save test value
+	EX	DE,HL
+	SBC	HL,BC		;test lower limit
+	POP	DE
+	RET			;cy set = lower than min
+
+;=======================================================
+
+;	B2BCD - Convert Binary Byte to BCD
+
+B2BCD:
+;entry- A = binary value to convert
+;exit-	A = bcd tens,ones
+;	B = tens in high nibl
+;	C = hundreds
+;	flags, Z = number <100, NZ = number >99
+
+	LD	BC,0FFFFH	;b,c =-1, rdy for first increment
+B2BCD1:	INC	C		;accumulate hundreds
+	SUB	100
+	JR	NC,B2BCD1
+	ADD	100		;too much - back up!
+B2BCD0:	INC	B		;accumulate 10s
+	SUB	10
+	JR	NC,B2BCD0
+	ADD	10		;too much - back up!
+	RLC	B		;shift into high nibl
+	RLC	B
+	RLC	B
+	RLC	B
+	OR	B		;..and put into high nibl of A
+	INC	C
+	DEC	C		;return nz if 100s present
+	RET			;..and Z if not
+
+;=======================================================
+
+;	CONVERT BINARY TO DATE STRING
+
+STORDT:
+; BYTE -> 2 ASCII CHAR, 1 POSITION SKIPPED.
+; Typically used to fill in '__/__/__'
+
+;entry-	HL -> Source (bytes)
+;	DE -> Destination for ASCII
+;	B  = number of bytes to convert
+;exit-	HL -> next dest. & source
+;	DE is preserved
+
+	PUSH	DE
+STRDT0:	PUSH	BC		;counter
+	LD	A,(HL)
+	CALL	MA2HC		;send Hex ASCII to dest.
+	INC	DE		;skip a dest. position
+	INC	HL		;-> next source byte
+	POP	BC		;recover counter
+	DJNZ	STRDT0
+	POP	DE
+	RET
+
+;===========================================================
+;called by MAPPER (and formerly by MCASE)
+
+RELOC:
+;Adjust OFFSET, S_ADDR, and S_LIST parameters in a CASE
+;record to reflect current locations in memory.
+;Issue an error and abort if the original offset exceeds
+;the bounds of the configuration block, which may be
+;one or two records.
+;entry-	HL -> OFFSET field of Case record in CFG file image.
+;exit-	all registers used
+
+;do nothing if relocation has already been done.
+	LD	A,(RELFLG)	;0 if not yet adjusted
+	OR	A
+	RET	NZ		;nothing to do
+;test for illegal offset
+	LD	A,(NCRECS)
+	DEC	A
+	LD	BC,0		;for 2 rcrd cfg block
+	JR	NZ,RELOC1
+	LD	BC,80H		;for 1 rcrd file size!
+RELOC1:	PUSH	HL		;-> OFFSET field
+	LD	A,(HL)		;get original offset
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	ADD	HL,BC		;from above
+	INC	H
+	DEC	H		;..in H if offset >0ffh
+	JP	NZ,BADOVL
+	SBC	HL,BC		;recover (offset)
+;adjust OFFSET to actual memory address
+	LD	BC,TGTBUF
+	ADD	HL,BC
+	EX	DE,HL		;adjusted offset in DE
+	POP	HL		;->OFFSET in CASE record
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D
+	INC	HL		;->CFGD
+	INC	HL		;->S_ADDR
+;relocate address data at s_addr, s_list.
+	LD	DE,(RELOCC)	;relocation constant
+	LD	B,2		;2 words to relocate
+;	JP	RELOCL
+
+;=========================================================
+
+RELOCL:
+;Relocate a list of words, skipping
+;words whose value is zero
+;entry-	HL -> word list
+;	 B = number of words in list
+;	DE = relocation constant
+;exit-	DE, HL preserved
+
+	PUSH	HL		;preserve it
+	DI			;protect data from interupts
+	LD	(RELOCX+1),SP
+	LD	SP,HL		;->first word to relocate
+
+..RLC1:	POP	HL		;get an address
+	LD	A,H
+	OR	L		;test for 0 (special meaning)
+	JR	Z,..RLP		;don't relocate a 0 address!
+	ADD	HL,DE		;relocate
+	PUSH	HL		;put it back
+	INC	SP
+	INC	SP		;move to next one
+..RLP:	DJNZ	..RLC1
+
+RELOCX:	LD	SP,0		;filled in above
+	EI			;allow interupts again
+	POP	HL		;->List of addresses
+	RET
+
+;=========================================================
+
+;CIN and COUT are replacements for the SYSLIB routines of 
+;the same name. Whereas SYSLIB uses BIOS calls for these 
+;functions, the replacements use DOS function 6 calls.
+;This strategy avoids a bug in CP/M which prevents mixing
+;direct and buffered BDOS console IO.
+;CST (in SYSLIB) is a direct BIOS call to get
+;console status. The CP/M 2.2 BDOS does not provide
+;this function.
+
+;--------------------------
+
+CONIN:
+;Wait for and get a character from the console
+;using BDOS function 6.
+	CALL	CST
+	JR	NZ,CONIN
+;when character is ready, use CIN to get it.
+;	JR	CIN
+;--------------------------
+
+CIN:
+;console input using DOS function 6
+;exit-	A contains the character
+;	if A=0 then there was no character
+;	 or a null (^@) was input.
+
+	PUSH	DE
+	PUSH	BC
+	PUSH	HL
+	LD	E,0FFH		; get console input
+	LD	C,6
+	CALL	BDOS
+	POP	HL
+	POP	BC
+	POP	DE
+	RET
+
+
+;=================================================
+
+;	SEND CRLF TO CONSOLE
+
+CRLF:	LD	A,CR
+	CALL	COUT
+	LD	A,LF
+	JR	COUT
+
+;--------------------------
+
+VCOUT:
+;console output with highlighting
+	CP	1
+	JP	Z,STNDOUT	;start standout mode & ret
+	CP	2
+	JP	Z,STNDEND	;end standout mode & ret
+
+;--------------------------
+
+COUT:
+; COUT - console output using DOS function 6
+;entry-	A = char to be output, 0-FCH
+;exit-	char sent to console
+;	AF and 8080 registers preserved
+
+	OR	A
+	RET	Z	;don't send nulls to console
+	PUSH	DE
+	PUSH	BC
+	PUSH	HL
+	PUSH	AF
+COMASK:	AND	7FH	;don't send graphics!
+	CALL	TABS
+	LD	E,A
+	LD	C,6
+	CALL	NC,BDOS
+	POP	AF
+	POP	HL
+	POP	BC
+	POP	DE
+	RET
+
+;===========================================================
+
+TABS:
+;tabs routine to be called from cout
+; NOTE: this routine does not account for
+; BS and 7fh characters
+
+	LD	HL,COLCNT	;column counter (in ZCNFG)
+	LD	C,(HL)
+	CP	TAB
+	JR	Z,TABIFY
+	CP	CR
+	JR	NZ,TABS01
+	LD	C,0		;CR resets column counter
+	JR	TABSX
+
+TABS01:	CP	LF
+	JR	NZ,TABS02
+	INC	HL
+	INC	(HL)		;increment line counter
+	DEC	HL
+TABS02:	CP	SPC		;ret cy set for cntl chars
+	CCF			;NC = current char is <spc
+	RET	NC		;don't advance counter for cntl char
+	CCF			;return NC so character will be output
+	INC	C		;count the printing char
+TABSX:	LD	(HL),C		;advance column counter
+	RET
+
+TABIFY:
+	LD	A,C
+	CPL
+	AND	7
+	INC	A
+	LD	B,A
+
+TABSL:	LD	E,SPC
+	LD	A,6
+	CALL	@BDOSA
+	INC	C
+	DJNZ	TABSL
+
+	SCF			;show tabs expanded
+	JR	TABSX
+
+;===========================================================
+
+;	COPY DELIMITED STRING (HL) TO (DE)
+
+STRCPY:
+; string is delimited by null, '$', or high bit set
+; or by a char count in excess of the number passed
+; in reg B. The special delimiter in C is most
+; likely a space that terminates a FN in an FCB.
+;entry-	HL->string to copy
+;	DE->destination
+;	B = Max length of string
+;	C = 0, '$', or special delimiter
+;exit-	A = delimiter
+;	B = unused locations in dest.
+;	HL->delimiter
+;	DE->next unwritten loc in dest.
+; the delimiter is not copied.
+
+	LD	A,(HL)
+	RES	7,A
+	OR	A,A		;null delimiter?
+	RET	Z
+	CP	C		;named delimiter?
+	RET	Z
+	CP	'$'		;delimiter?
+	RET	Z
+	BIT	7,(HL)		;high bit set?
+	JR	NZ,STRHBS
+
+	LD	(DE),A		;transfer a byte
+	INC	HL
+	INC	DE
+	DJNZ	STRCPY
+	RET
+
+STRHBS:	LD	(DE),A		;transfer last char
+	INC	DE		;next dest
+	DEC	B		;count the char
+	RET			;ret hl->delimiting char
+
+;=================================================
+
+;	SEND REPEATED CHARACTER TO CONSOLE
+
+COUTB:
+;entry	A = char to send
+;	B = number of times to send
+
+	CALL	COUT
+	DJNZ	COUTB
+	RET
+
+;=================================================
+
+;	PRINT HORIZONTAL GRAPHICS LINE
+;Prints solid line if graphics available
+;in the TCAP, else prints dashes
+
+HLINE:
+;entry	B = length of line, characters
+
+	LD	A,(GZ3FLG)	;TCAP capabilities byte
+	BIT	3,A		;graphics present?
+	LD	A,'-'		;assume not,
+	JR	Z,COUTB		;NOT PRESENT
+	CALL	GRXON
+	CALL	Z,SET8		;allow 8-bit graphics if no GRXON
+	LD	A,(@GHL)
+	CALL	COUTB
+	LD	A,7FH
+	LD	(COMASK+1),A	;reset to 7 bit console output
+	JP	GRXOFF
+
+SET8:	OR	0FFH		;inline code modification
+	LD	(COMASK+1),A	;allows 8 bit console output
+	RET
+
+;=================================================
+
+;	PRINT NULL TERMINATED STRING
+
+TYPLIN:
+;entry	DE -> null terminated string
+;exit	DE used, others preserved
+
+	LD	A,(DE)
+	INC	DE
+	OR	A
+	RET	Z
+	CALL	VCOUT
+	JR	TYPLIN
+
+;=========================================================
+
+MOVE2Z:
+;copy a null terminated string from (HL)
+;to (DE). Don't copy the null. Ret HL->null
+;entry-	HL -> source
+;	DE -> destination
+;exit-	AF = 0,Z,NC
+;	BC,DE,HL used
+
+	LD	A,(HL)
+	OR	A
+	RET	Z
+	LDI
+	JR	MOVE2Z
+
+;=========================================================
+
+SKIP2Z:
+;scan until binary zero.
+;entry-	HL-> null or null terminated string
+;exit-	AF = 0,Z,NC
+;	HL-> byte following the 0.
+
+	LD	A,(HL)
+	INC	HL
+	OR	A
+	RET	Z
+	JR	SKIP2Z
+
+;=================================================
+
+ISTXTF:
+;scan a block of bytes for non-printable
+;characters. The block is terminated by
+;the byte in A or by the end-of-field.
+;If A=-1, then only field length is used.
+;entry-	HL->start of block
+;	 B = string field length
+;	 A = String terminator byte
+;UCFLAG is bitmapped, 
+;	B0 set = UC only
+;	B7 set = ignore high bit
+;exit-
+;	HL preserved
+; flags- Z,NC = all are printable
+;	 B = trailing unused bytes in field
+;	 C = bytes used by string, incl leading sp
+;	 D = leading spaces
+;	 E = String terminator byte
+; flags- NZ,C = non printing char found
+;	BC,DE undefined
+
+	PUSH	HL
+	LD	E,A		;save terminator
+	LD	C,0		;string length counter
+	LD	D,C
+ISTXT1:	LD	A,(HL)
+	CP	SPC
+	JR	NZ,ISTXT2
+	INC	D		;count leading spaces
+	INC	C		; and total spc + str
+	INC	HL
+	DJNZ	ISTXT1
+	POP	HL
+	RET			;string is all spaces
+
+ISTXT2:	PUSH	DE		;save leading space count
+	LD	A,(UCFLAG)
+	LD	D,A		;UC only if -1
+
+ISTXT3:	LD	A,D
+	AND	80H		;isolate bit 7
+	CPL			;make high bit mask
+	AND	(HL)		;ignore high bit if D7 was 1,
+				;allowing HBS chars in string.
+
+	CP	E		;end of string?
+	JR	Z,ISTXTX
+	INC	HL
+
+	CALL	ISPRINT		;printable?
+	SCF			;..in case not
+	JR	NZ,ISTXTX
+;test for LC if bit 0 of UCFLAG = 1
+	BIT	0,D		;NZ = CAPS ONLY
+	JR	Z,ISTXT4	;Z = LC is OK
+	CP	61H		;CAP?
+	JR	C,ISTXT4	;Cy=yes, pass it
+	CP	'{'		;also pass specials
+	JR	C,ISTXTX	;LC is an error	
+
+ISTXT4:	INC	C		;count string bytes
+	DJNZ	ISTXT3
+	XOR	A		;all printable
+
+ISTXTX:	POP	DE		;leading spaces in D
+	POP	HL
+	RET
+
+;=================================================
+
+ISFNC:
+;determines if a character is part of
+;the set which defines a filename.
+;This is all characters from "!" to "Z"
+;except those listed in the table below.
+;entry-	A = byte to test
+;exit-	all regs preserved except F
+;	NC = character may be part of FN
+;	 C = char is outside the set.
+
+	cp	5bh
+	ccf
+	ret	c	;C = >'Z'
+	cp	'!'
+	ret	c	;C = < '!'
+	push	hl
+	push	bc
+	ld	hl,nfndat
+	ld	bc,nfndend-nfndat
+	cpir		;CY unaffected, still reset
+	pop	bc
+	pop	hl
+	ret	nz	;NZ = not in list
+	scf		;show reject if found
+	ret
+
+nfndat:	db	'%()*,./;:<>=?'
+nfndend:
+
+;=================================================
+
+;	OPEN FILE
+
+OPNFIL:
+;entry-	DE -> file FCB
+;	user number at (DE-1)
+;exit-	Z = file not found
+	DEC	DE
+	LD	A,(DE)
+	INC	DE
+	CALL	SETUSR
+
+	LD	HL,80H		;12/12/92
+	CALL	SETDMA
+	LD	A,17
+	CALL	@BDOSA
+	CP	255
+	JR	Z,RESUSR	;
+
+	LD	A,15
+	CALL	@BDOSA
+	CP	255
+	JR	RESUSR
+
+;=================================================
+
+;	CLOSE FILE
+;entry-	DE -> file FCB
+;	user number at (DE-1)
+
+CLSFIL:
+	LD	A,16
+	CALL	@BDOSA		;returns tested dir code
+	RET	P		;anything <80h is OK
+	LD	DE,CLOSER	;>80h is a close error
+	JR	ERRORX
+
+;=================================================
+
+SETUSR:
+;set the user number to that passed in A
+;if it is a number <255
+
+	CP	0FFH	;is default requested?
+	JP	NZ,SUA	;jmp if user specified
+;else fall through and set default user
+
+;=================================================
+
+;RESTORE THE DEFAULT USER NUMBER
+
+RESUSR:	PUSH	AF
+	LD	A,(DEFDU)
+	CALL	SUA
+	POP	AF
+	RET
+
+;=================================================
+;	READ ENTIRE FILE INTO DMA ADDRESS
+
+;entry-	DE -> FCB
+;	HL =  DMA address
+
+RDFILE:	LD	BC,128		;sector size
+RDF_LP:	CALL	SETDMA
+	CALL	RDREC
+	RET	C		;end of file
+	ADD	HL,BC
+	JR	RDF_LP
+
+;=================================================
+
+;	READ NEXT RECORD
+
+RDREC:	LD	A,20
+	CALL	@BDOSA
+	RET	Z
+	CP	2		;check for eof
+	RET	C
+
+	OR	30H		;make ascii
+	LD	(RDERRN),A
+	LD	DE,READER
+	JR	ERRORX
+
+;=================================================
+
+;	WRITE NEXT RECORD
+
+WRREC:	LD	A,21
+	CALL	@BDOSA
+	RET	Z
+
+	CP	1
+	JP	Z,DIRFUL
+	OR	30H		;make ascii
+	LD	(WRERRN),A
+	LD	DE,WRITER
+	JR	ERRORX
+
+;=================================================
+
+;	DIRECTORY FULL ERROR ENTRY POINT
+
+DIRFUL:	LD	DE,DIRER
+ERRORX:	CALL	TYPLIN
+	JP	QUIT
+
+DIRER:	DB	'DIRECTORY FULL',0
+CLOSER:	DB	'CLOSE ERROR',0
+READER:	DB	CR,LF,'READ ERROR ='
+RDERRN:	DB	' ',0
+WRITER:	DB	CR,LF,'WRITE ERROR ='
+WRERRN:	DB	' ',0
+
+;=================================================
+
+	END
+                                                                         

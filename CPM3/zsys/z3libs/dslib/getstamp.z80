@@ -1,0 +1,105 @@
+	TITLE	"Get Time Stamp for Specified File"
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+; Date    : 8 Jan 89
+; Version : 1.0
+; Module  : GETSTAMP
+; Abstract: This module contains the routine GSTAMP which returns
+;	a ZSDOS/DateStamper-type File Stamp for the unambiguous
+;	file specified.  If no stamp can be located, an error
+;	status is returned and the destination stamp field is not
+;	defined.
+; Revisions:
+;	1.1, 8 May 89.  Corrected erroneous JR condition.  HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		GSTAMP
+
+; External References
+
+; ..from DSLIB Get..
+
+	EXT		DOSTYP, TIMTYP, FSTNXT, GETTD, P2UTIM
+
+; ..from SYSLIB Get..
+
+	EXT		SETDMA
+
+; Definitions
+
+BDOS	EQU	5		; Dos Entry Vector
+FGSTMP	EQU	102		; ZSDOS & CP/M Plus Get Stamp Command
+
+	.Z80
+	CSEG
+;===================================================================
+; Get filestamp for file addressed by FCB in DE to Destination in HL
+; Enter: DE --> FCB for file of interest
+;	 HL --> points to 15-byte buffer to receive stamp
+; Exit : AF <> 0, Zero Flag clear (NZ) if Ok,
+;		Zero Flag Set (Z) if Error
+; Uses : AF,BC,HL
+; Side Effects : DMA Address will be altered with DateStamper or
+;		 ZSDOS Stamp retrieval
+; NOTE: Drive and User must be logged to that of the desired file
+;	before calling this routine
+;===================================================================
+
+GSTAMP:	PUSH	DE		; Save FCB
+	LD	A,(TIMTYP)	; Are we running ZSDOS Time Stamps?
+	CP	'S'
+	JR	Z,USEZS0	; ..jump to use Function 102 if so
+	CP	'3'		; Are we running CP/M Plus Stamps?
+	JR	Z,USECP3	; ..jump to Plus routine if so
+	CP	'D'		; Are we running DateStamper?
+	JR	NZ,DSGERR	; ..jump to Error exit if Not
+
+; This section retrieves a DateStamper stamp
+
+	PUSH	HL		; Preserve Destination addr for stamp
+	LD	C,17		; Here to use DateStamper support routine
+	CALL	FSTNXT		; ..and locate the file
+	POP	HL		; Restore dest addr
+	JR	C,DSGERR
+	LD	A,B
+	CALL	GETTD		; Get 15-byte stamp string
+	JR	NZ,DSGDON
+	JR	DSGERR		; Go here on error
+
+; This section retrieves a CP/M Plus stamp and converts to Universal
+
+USECP3:	PUSH	HL		; Save Destination addr for stamp
+	LD	C,FGSTMP	; Get the CP/M Plus stamp
+	CALL	BDOS		; ..with Function 102
+	POP	DE		; Restore Destination addr from stack
+	INC	A		; Any errors? (FF --> 0 if error)
+	JR	Z,DSGERR	; ..jump error exit if so
+	POP	HL		; Restore FCB addr
+	PUSH	HL		; ..keeping it on the stack
+	LD	BC,24		; Offset to stamp start addr
+	ADD	HL,BC
+	CALL	P2UTIM		; Convert Creation Date
+	XOR	A		; Null out Last Access field
+	LD	B,5
+CP3LOP:	LD	(DE),A		; ..with Zeros
+	INC	DE
+	DJNZ	CP3LOP		; ...loop til done
+	CALL	P2UTIM		; Convert Last Modify field
+	JR	DSGDO1		; Change 0 return to 1 and exit
+
+; This section retrieves a ZSDOS/ZDDOS stamp
+
+USEZS0:	CALL	SETDMA		; Set DMA addr to Date fields in HL
+	LD	C,FGSTMP	; Get time stamps (Function 102)
+	CALL	BDOS
+DSGDO1:	INC	A		; Do we have stamps? (FF-->0 if error)
+	JR	NZ,DSGDON
+DSGERR:	XOR	A		; Show no stamping here
+DSGDON:	POP	DE
+	RET
+
+	END

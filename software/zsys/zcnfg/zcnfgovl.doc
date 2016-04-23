@@ -1,0 +1,173 @@
+                      MAKING ZCNFG OVERLAY FILES
+                              Al Hawley
+
+
+ZCNFG needs a configuration overlay file for each target program
+that will be configured. The overlay files are by default recognized
+by ZCNFG when the file extension is '.CFG' and the filname is the
+same as that of the target program. If the name of the overlay is
+included in the target program at offset 0DH from the start of the
+program, then ZCNFG will use that name directly without mention on
+the invoking command line. The structure of configuration overlays
+is described in detail in ZCNFG.HLP. You should have it available
+for reference when using this implementation note.
+
+This memo describes a procedure by which configuration overlays
+can be made with minimum effort and confusion. Carson Wilson has
+contributed a file (ZCNFGMDL.ZZ0) which is an excellent description
+of configuration overlays. You should study that file along with
+this one; you may wish to use IT to make your first configuration
+overlay. For multiple screens and a complex configuration, use of
+the following techniques will save time and aggravation, however.
+It is assumed that the target program contains configurable data 
+within the first 256 bytes of the program (for ZCNFG13 and earlier
+the limit is the first 128 bytes). 
+You will need the following programming tools:
+
+1. A text editor which can produce straight ASCII files. I use PMATE
+or WordStar in non-document mode. Many others are satisfactory. Use
+it to produce MENU and HELP SCREEEN images (.TXT files) and for
+assembler source files.
+
+2. A Relocating Macro Assembler and associated Linker. I used ZMAC
+and ZML for the procedures given below. The SLR and Microsoft will
+work with very few changes. Others can be used, but may require
+some changes to pseudo-op names.
+
+3. The TEXT2DB program, available from ZNODEs and other bulletin
+boards. This program converts a .txt file to an assembler source
+file of DB statements. MENU images require labels on some of these
+DB statements where fields in the image are to be programatically
+updated; TEXT2DB generates such labels according to your desires.
+
+4. An alias, MCFG.COM, is provided in this library to generate
+the final .CFG file. A similar alias can be written for use by
+an assembler/linker other than ZMAC/ZML.
+
+5. CNFGDEF.LIB which contains the Function and Macro definitions
+required for the code in ZCCFG.
+
+The file names given as examples are part of ZCNFGCFG.LBR, the
+complete configuration overlay source for ZCNFG itself.
+
+To make the overlay file, the following command is used:
+
+	>MCFG ZCCFG ZCNFG
+
+ZCCFG.SRC is the source file for the overlay and ZCNFG.CFG is
+the file produced. The MCFG alias invokes ZMAC to assemble the
+source file and then (if there are no errors) ZML to link the 
+resulting REL file to make the final .CFG file. The structure of
+ZCCFG is:
+
+	<Program offset definitions>
+	INCLUDE CNFGDEF		;ZCNFG related definitions
+	rst	0		;first byte of code in the overlay
+	dw	menu1		;required reference for relocation
+menu1:	dw	menu1,menu1,........(etc. see ZCCFG.SRC)
+case11:	<The CASE TABLE for the first menu screen>
+scrn1:	INCLUDE ZCSCR1
+help1:	INCLUDE ZCHLP1
+	...
+	<DATA structures used by CASE tables>
+	end
+
+If the configuration options are numerous enough to require
+several menu screens, then menu1:, case11:, scrn1:, and help1:
+are simply repeated for each screen with appropriate changes in
+labels, of course. (See ZCNFG.HLP)
+
+To make a configuration overlay, start with the Screen Image(s),
+then make the CASE table(s), then the HELP files.
+
+SCREEN Images
+
+Use your editor to make the screen exactly as you want it to appear.
+Fields in the image that change during operation of ZCNFG such as
+'YES'/' NO' or a place for numbers should be filled in with some
+visible character. I use 'zzz...' or the ASCII string that just fills
+the field. These are fields destined to be marked for labeling by
+TEXT2DB. There will be one such field for each configurable item
+in the target program configuration block.
+
+The last five lines of a menu screen are reserved for use by ZCNFG.
+Thus, for a 24 line screen the menu itself must be 18 lines or less,
+including blank lines at the top of the screen.
+
+After you are satisfied with the screen layout, INSERT an accent 
+character (`) before each such field. Then replace the dummy 
+characters in each field with spaces. The accent character is the 
+que that TEXT2DB uses to generate a label for that field. The
+label generated is of the form AAAnnn, where AAA is alphabetic and
+'nnn' is a decimal number. You specify the first label for TEXT2DB
+to use; subsequent labels have the numeric part incremented so that
+each generated label is unique. The command
+
+	TEXT2DB ZCSCR1 .LIB /SSCR100
+
+generates ZCSCR1.LIB from ZCSCR1.TXT. The labels in the output file
+are SCR100:, SCR101:, etc. You will be using these labels when you
+generate the CASE table in the next step. If there are many of them,
+you may wish to make a printed copy of the .LIB file for reference.
+
+CASE table
+
+In this example, the Case Table is part of ZCCFG.SRC. If it is very
+large or if there are several such tables (for multiple screens),
+then you might wish to make an INCLUDE file of this one, too.
+
+The case table is assembly source code prepared with a text editor.
+The details of its structure are described in ZCNFG.HLP. You will be
+filling in the argument list for one of the macros in CNFGDEF.LIB for
+each entry in the case table. These arguments are mostly symbols which
+are labels in the SCREEN (ZCSCR1.LIB), labels in the DATA area, 
+symbolic offsets in the target program, and parameters that tell ZCNFG
+what to do with the configuration data and screen field for each
+configuration item. The symbols used for ZCNFG parameters are defined
+in CNFGDEF.LIB. Detailed information for each field is in ZCNFG.HLP.
+
+Two macros are provided which you can use to make Case Table records,
+BITMAP and VECTOR. The only difference between them is the treatment
+of the 6th bye of the record, 'bdata'. For function 0, this byte
+specifies the bit to be toggled in a configuration byte. The bit to
+be toggled corresponds to the bit that is set in bdata. The BITMAP
+macro simply translates an easier-to-enter number from 0 to 7 into
+a byte with exactly one bit set in the correct location. So, it is
+best to use the BITMAP macro for function 0, and the VECTOR macro
+for other functions. The use of tabs and spaces in the macro argument
+list is useful to keep the Case Table entries formatted so you can
+easily keep track of the identity of each argument; each argument type
+has its own column. 
+
+Construction of the Case Table(s) is the most exacting task you will
+perform. Once you 'get the hang of it', it goes pretty fast.
+
+The HELP screens
+
+The files ZCHLP1.TXT and ZCHLP1.LIB are examples of the help screens
+you include in the .CFG file for the user to reference during a
+configuration session. There must be a help screen for each Menu,
+even if it only contains a 'HELP not available' message.
+
+A help file may be as long as you wish. ZCNFG displays the help text
+with paging and a prompt on the bottom line of the screen. Each page
+is 22 lines long (2 lines are reserved for the prompt). A colon (':')
+as the first character on a line will force a new page. The colon is
+not displayed by ZCNFG versions after v1.8, but will be displayed by
+earlier versions (and ignored as a pageing signal). You can use this
+function to avoid having paragraphs split between screens, and you 
+can provide a space at the top of each screen. 
+
+To generate the .lib file from the .txt file, use TEXT2DB. Since there
+are no labels in the help file, the /S option is not needed. Here's
+the command that generated ZCHLP1.LIB
+
+	TEXT2DB ZCHLP1   .LIB
+
+That's it. Now assemble and link!
+
+-A tip about .TXT files-
+Don't throw them away! When you want to make changes to the .CFG
+file, you will save a lot of time by just modifying the old .TXT
+file and regenerating the .LIB file! 
+                                

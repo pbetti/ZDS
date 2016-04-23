@@ -1,0 +1,3546 @@
+   1:			;-----------------------------------------------------------------------
+   2:			
+   3:			; PPIP19.Z80
+   4:			
+   5:	0000          		.Z80
+   6:	0000          		ASEG			; Needed for M80, ignore otherwise
+   7:	0100          		ORG	0100H
+   8:			
+   9:			; File copy program for use across user areas
+  10:			
+  11:			; Copyright (C) by D. Jewett, III, 1986.  All rights reserved.	You
+  12:			; shall not use this program for commercial purposes or for monetary
+  13:			; gain without first obtaining written permission from the author.
+  14:			
+  15:			; Your comments and bug reports are welcomed:
+  16:			
+  17:			;			David Jewett, III
+  18:			;			10376 Iron Mill Road
+  19:			;			Richmond, VA  23235
+  20:			;			Day Phone:  (804) 794-7667
+  21:			
+  22:			; or upload them to Data-Plus(tm) (914) 246-6906 and/or leave a message.
+  23:			
+  24:			; Thanks to Harry Kaemmerer for his invaluable assistance with this
+  25:			; program.
+  26:			
+  27:			; For further information see PPIP.DOC
+  28:			
+  29:			;-----------------------------------------------------------------------
+  30:			;		      Revisions in reverse order:
+  31:			; 05 Dec 95  Added support for CP/M 3 time stamping (requires a Z80
+  32:			;   v1.9     processor) and exact file sizes
+  33:			;                                       - John Elliott
+  34:			;
+  35:			; 07/15/88  Added support for Z80DOS type of time stamping.
+  36:			;   V1.8			-Eugene Nolan
+  37:			;
+  38:			; 05/24/88  Fixed one more instance of corrupted code from the PPIP15-17
+  39:			;   V1.73   fiasco which rendered the program totally unusable on my system.
+  40:			;				-Howard Goldstein
+  41:			;
+  42:			; 05/16/88  Minor changes to corrupted code and changed yes/no on/off EQUs.
+  43:			;   v1.72   Minor corrections to documentation.
+  44:			;                                       -Ernest F. Barnhart, N8DVE
+  45:			;
+  46:			; 08/26/87  Cosmetic change in new move code screen messages.  Now
+  47:			;   v1.7    folds line if datestamper enabled.  Changed DateStamper
+  48:			;           code to all 8080 compatable instructions.
+  49:			;					- Cameron W. Cotrill
+  50:			;
+  51:			; 08/11/87  Added /M option to move files (copy then delete source).
+  52:			;   v1.6    'M' in the option tail turns the move mode on and forces
+  53:			;	    CRC verification.  'OPTOK' routine changed to support move.
+  54:			;	    Fixed ADD A and ADD L instructions in DateStamper code that
+  55:			;	    M80 didn't like.  Fixed last DS instruction in OPTIONS
+  56:			;	    table to DS 2 to prevent overwrite of IOBUF in vanilla
+  57:			;	    version.  Added version display in vanilla version.
+  58:			;					- Cameron W. Cotrill
+  59:			;
+  60:			; 01/13/87  Put in true ZCPR3 header and stripped out Joe Wright's auto-
+  61:			;   v1.5    install code (many people now have ZCPR3 with autoinstall
+  62:			;	    capability).  If not, users will have to install with Z3INS.
+  63:			;	    The default ENV address of 0000h will signal a non-Z3 system.
+  64:			;	    Also put in some more bullet-proof Z3 installation check
+  65:			;	    code.  Changed TPASET code to work optimally with RSXs (like
+  66:			;	    BGII).  Fixed code so it will work with GO command.  Added
+  67:			;	    optional DatStamper support to copy date/stamp of source
+  68:			;	    file to destination (NOTE: this code uses ZILOG opcodes!)
+  69:			;	    Made some format changes in the built-in help screen and
+  70:			;	    verify 'OK' message. Modularized files for easier editing.
+  71:			;					- Jay Sage
+  72:			;
+  73:			; 05/30/86  Refined ZCPR3 support through use of Joe Wright's FENV rou-
+  74:			;   v1.4    tine.  Front-end data bytes now appear at the same addresses
+  75:			;	    regardless of the ZCPR3 equate's value.  Z3INS is no longer
+  76:			;	    required for the Z3 version of PPIP, as a matter of fact,
+  77:			;	    Z3INS.COM will tell the user that PPIP is NOT a Z3 utility.
+  78:			;	    This is because I had to leave off the conventional Z3 header
+  79:			;	    to keep PPIP within the 4K boundary without resorting to Z80
+  80:			;	    opcodes.  Just pay no attention to the ravings of Z3INS and
+  81:			;	    enjoy the program.		- Bruce Morgen
+  82:			;
+  83:			; 05/14/86  Introduced conditional assembly for ZCPR3 use, the consistent
+  84:			;   v1.3    modularity of PPIP's structure made this amazingly straight-
+  85:			;	    forward to do, opened up user areas 16-31 (if MAXUSER byte
+  86:			;	    allows) by simply replacing the PRNDU routine with one used
+  87:			;	    in MLOAD24.ASM, MAKE23.ASM and many other programs, cost in
+  88:			;	    code length was trivial, so why not?  Also corrected harmless
+  89:			;	    but incorrect JP instruction to a JMP (my boo-boo from 1.2).
+  90:			;					- Bruce Morgen
+  91:			;
+  92:			; 04/21/86  Made syntax selection automatic at the expense of the comma
+  93:			;   v1.2    and space as acceptable delimiters in CP/M mode.  PPIP now
+  94:			;	    scans the command line for '=' and defaults to MS-DOS mode
+  95:			;	    if not found.  Help message now educates on both options
+  96:			;	    since they are both ALWAYS available.  Added support for '/'
+  97:			;	    or '//' alone as a help request (that's standard syntax with
+  98:			;	    ZCPR3, where this program is getting quite popular).  Added
+  99:			;	    test for ZRDOS, which does not need a reset call to insure a
+ 100:			;	    safe disk write.		- Bruce Morgen
+ 101:			;
+ 102:			; 01/31/86  Fixed where CRC was always being done on source file.  Fixed
+ 103:			;   v1.1    options list in help message.  Added version information.
+ 104:			;					- D. Jewett, III
+ 105:			;
+ 106:			; 12/02/85  Original version		- D. Jewett, III
+ 107:			;   v1.0
+ 108:			
+ 109:			;-----------------------------------------------------------------------
+ 110:			;			  System Equates
+ 111:			
+ 112:			; Conditional Assembly Values
+ 113:			
+ 114:	0000          	NO	EQU	0
+ 115:	FFFF          	YES	EQU	NOT NO
+ 116:			;
+ 117:			;=======================================================================
+ 118:			;		      main options (only 4)
+ 119:			; ZCPR3 support
+ 120:			
+ 121:	0000          	ZCPR3	EQU	NO	        ; YES only for ZCPR3
+ 122:			
+ 123:			; DateStamper support
+ 124:			
+ 125:	0000          	DATESTAMP EQU	NO		; Include DateStamper support (copies
+ 126:							; ..time/date stamps with files)
+ 127:			
+ 128:			; Z80DOS support
+ 129:			
+ 130:	0000          	Z80DOS	EQU	NO		; Include Z80DOS timestamping support
+ 131:			
+ 132:			; CP/M 3 support
+ 133:			
+ 134:	0000          	CPM3	EQU	NO		; Include CP/M 3 timestamping support
+ 135:			
+ 136:			;=======================================================================
+ 137:			
+ 138:	0000          		 IF	ZCPR3
+ 141:				 ENDIF			; ZCPR3
+ 142:			
+ 143:			; Version
+ 144:			
+ 145:	0031          	VTENS	EQU	'1'		; Version number tens
+ 146:	0039          	VUNITS	EQU	'9'		; Version number units
+ 147:			
+ 148:			; Option Status
+ 149:			
+ 150:	0000          	OFF	EQU	0
+ 151:	FFFF          	ON	EQU	NOT NO
+ 152:			
+ 153:			; CP/M functions
+ 154:			
+ 155:	0001          	CONIN	EQU	1		; Read console character
+ 156:	0002          	CONOUT	EQU	2		; Write console character
+ 157:	0006          	DCONIO	EQU	6		; Direct console input/output
+ 158:	000B          	CONSTAT	EQU	11		; Get console status
+ 159:	000C          	GETVRS	EQU	12		; 2.x get version
+ 160:	000D          	RSTDSK	EQU	13		; Reset disk system
+ 161:	000E          	SELDSK	EQU	14		; Select disk
+ 162:	000F          	OPEN	EQU	15		; Open file
+ 163:	0010          	CLOSE	EQU	16		; Close file
+ 164:	0011          	SRCHFST	EQU	17		; Search for first directory occurrence
+ 165:	0012          	SRCHNXT	EQU	18		; Search for next directory occurrence
+ 166:	0013          	DELETE	EQU	19		; Delete file
+ 167:	0014          	BDREAD	EQU	20		; Sequential file read record
+ 168:	0015          	WRITE	EQU	21		; Sequential file write record
+ 169:	0016          	CREATE	EQU	22		; Create file
+ 170:	0019          	GETDSK	EQU	25		; Get current disk number
+ 171:	001A          	SETDMA	EQU	26		; Set DMA address
+ 172:	001E          	SETATT	EQU	30		; Set file attributes
+ 173:	0020          	SETUSR	EQU	32		; 2.x set user number
+ 174:	0020          	GETUSR	EQU	SETUSR		; 2.x get current user number
+ 175:	0030          	ZRDVER	EQU	48		; ZRDOS version call
+ 176:			
+ 177:			; Addresses
+ 178:			
+ 179:	0000          	WBOOT	EQU	0000H		; Warm start
+ 180:	0004          	DULOC	EQU	0004H		; Drive/user byte
+ 181:	0005          	BDOS	EQU	0005H		; BDOS entry address
+ 182:	005C          	DFCB	EQU	005CH		; CP/M's default FCB #1
+ 183:	0080          	CMDBUF	EQU	0080H		; CP/M's default DMA/command buffer
+ 184:			
+ 185:			; ASCII values
+ 186:			
+ 187:	0007          	BELL	EQU	7		; Ring console bell
+ 188:	0008          	BS	EQU	8		; Back space
+ 189:	0009          	TAB	EQU	9		; Tab over
+ 190:	000A          	LF	EQU	10		; Line feed
+ 191:	000D          	CR	EQU	13		; Carriage return
+ 192:	007F          	RUB	EQU	07FH		; Rubout
+ 193:			
+ 194:	0003          	BRKKEY	EQU	'C'-040H	; Break key (to stop program execution)
+ 195:	001A          	EOF	EQU	'Z'-040H	; CP/M end-of-file marker for text files
+ 196:			
+ 197:			; File name and FCB definitions
+ 198:			
+ 199:	0024          	FCBSZ	EQU	36		; Size of entire File Control Block
+ 200:	000B          	FNAMSZ	EQU	11		; Size of file name in FCB (name + type)
+ 201:	0003          	FTYPSZ	EQU	3		; Size of the "type" field in file name
+ 202:			
+ 203:			; Offsets into CP/M FCB
+ 204:			
+ 205:	FFFE          	BLOFF	EQU	-2		; Last Record Byte count in special FCB
+ 206:	FFFF          	USROFF	EQU	-1		; User byte in our special FCB
+ 207:	0000          	DRVOFF	EQU	0		; Drive byte
+ 208:	0001          	NAMOFF	EQU	1		; File name
+ 209:	0009          	ROOFF	EQU	9		; T1' - read-only attribute
+ 210:	000B          	ARCOFF	EQU	11		; T3' - archive attribute
+ 211:	000C          	EXTOFF	EQU	12		; Extent byte
+ 212:			
+ 213:			; Miscellaneous equates
+ 214:			
+ 215:	0080          	RECSZ	EQU	128		; Size of a CP/M standard disk record
+ 216:	000C          	NAMESZ	EQU	12		; Max. size of a CP/M file name less DU:
+ 217:	0200          	MAXNARG	EQU	512		; Max no. of file names
+ 218:	0008          	MAXARG	EQU	8		; Max. no. of command arguments (0<n<255)
+ 219:			
+ 220:			; Equates used by the editor subroutine
+ 221:			
+ 222:			; When using the editor routine to enter text from the console, you can
+ 223:			; use a "trigger" to enter control characters.  For instance, to enter a
+ 224:			; literal backspace, enter the trigger character plus an 'H'. To enter
+ 225:			; the trigger character itself, just type it twice.  Don't use '^' as a
+ 226:			; trigger since '^^' is a control character.  You really only need to
+ 227:			; use the trigger to enter backspace (^H), carriage return (^M), EOF
+ 228:			; (^Z) and the trigger itself, since other control sequences will be
+ 229:			; interpreted literally if you just hit control- and the key as usual.
+ 230:			; You may define the trigger you want to use here.
+ 231:			
+ 232:	007E          	TRIGGER	EQU	'~'		; Character to trigger control sequence
+ 233:			
+ 234:			; The editor also needs to know your screen width.
+ 235:			
+ 236:	FFFF          		 IF	NOT ZCPR3
+ 237:	0050          	SWID	EQU	80		; Console screen width
+ 238:				 ENDIF			; NOT ZCPR3
+ 239:			
+ 240:			;-----------------------------------------------------------------------
+ 241:			
+ 242:			; This program is divided into modules.  Each module has a number so it
+ 243:			; can be located easily with a text processor.	Each module number is
+ 244:			; surrounded by <<>> to distinguish it from other text.  For instance,
+ 245:			; module one appears as <<1>>.	An index to the modules follows:
+ 246:			
+ 247:			;      Module		    Description
+ 248:			;      ------	-------------------------------------
+ 249:			;	 0	Main-line code and user customization
+ 250:			;	 1	Command argument parsing
+ 251:			;	 2	File name handling
+ 252:			;	 3	Disk input/output
+ 253:			;	 4	CRC verification
+ 254:			;	 5	DateStamper routines
+ 255:			;	 5ZD	Z80DOS routines
+ 256:			;	 5C3	CP/M 3 routines
+ 257:			;	 7	Console input/output
+ 258:			;	 8	General utility subroutines
+ 259:			;	 9	Data area
+ 260:			
+ 261:			;-----------------------------------------------------------------------
+ 262:			
+ 263:				INCLUDE	PPIP-0.Z80	; Module <<0>> main code
+**** PPIP-0.Z80 ****
+   1:			; PPIP-0.Z80
+   2:			
+   3:			; <<0>> 	    Start of code - MAIN module
+   4:			
+   5:	0100  C31401  		JP	START		; Jump to real start of program
+   6:			;
+   7:	0000          		 IF	ZCPR3		; ZCPR3 header
+  12:				 ENDIF			; ZCPR3
+  13:			
+  14:			;=======================================================================
+  15:			
+  16:			; User customizable values
+  17:			
+  18:	0103  03      	RETRY:	DB	3		; Number of retries if CRC error (0 = none)
+  19:	0104  50      	MAXDRV:	DB	'P'		; Max. accessible drive (CHARACTER)
+  20:	0105  0F      	MAXUSR:	DB	15		; Max. accessible user (0..31 only)
+  21:	0106  2F      	SWITCH:	DB	'/'		; Character used to activate options
+  22:			
+  23:			;-----------------------------------------------------------------------
+  24:			
+  25:			; Options Switches.  This is a very simple option scheme.  Options are
+  26:			; stored in memory in 2 bytes.	The first is the option character and
+  27:			; the second is the option status.  The options used here are either ON
+  28:			; or OFF.  No other values are used.
+  29:			;
+  30:			; To make it possible to rerun the code with the GO command, there is a
+  31:			; configuration copy of the option switches here and a working copy in
+  32:			; the uninitialized data area.	The configuration options are copied
+  33:			; into the working options at the beginning of the program.
+  34:			;
+  35:	0107          	OPTIONS0:
+  36:	0107  56      		DB	'V'		; Do CRC Verification
+  37:	0108          	VERIFY0:
+  38:	0108  00      		DB	OFF
+  39:			
+  40:	0109  43      		DB	'C'		; Report CRC values
+  41:	010A          	REPORT0:
+  42:	010A  00      		DB	OFF
+  43:			
+  44:	010B  41      		DB	'A'		; Copy Archived files
+  45:	010C          	ARCHIV0:
+  46:	010C  00      		DB	OFF
+  47:			
+  48:	010D  45      		DB	'E'		; Delete (Emend) R/W files without asking
+  49:	010E          	EMEND0:
+  50:	010E  00      		DB	OFF
+  51:			
+  52:	010F  57      		DB	'W'		; Delete (Wipe) R/W and R/O files not asking
+  53:	0110          	WIPE0:
+  54:	0110  00      		DB	OFF
+  55:			
+  56:	0111  4D      		DB	'M'		; Move File (Copy, then delete source)
+  57:	0112          	MOVF0:
+  58:	0112  00      		DB	OFF
+  59:			
+  60:	0113  00      		DB	0		; Zeros mark end of table
+  61:			
+  62:	000D          	OPTSIZE	EQU	$ - OPTIONS0
+  63:			
+  64:			;=======================================================================
+  65:			
+  66:			; Main line code
+  67:			;
+  68:			; Set up stack, initialize RAM, and find top of available memory
+  69:			;
+  70:	0114          	START:
+  71:	0114  215410  		LD	HL,DATA		; Zero out uninitialized data area
+  72:	0117  010004  		LD	BC,400H		; 1K should be plenty
+  73:	011A          	INIT:
+  74:	011A  3600    		LD	(HL),0		; Write the null
+  75:	011C  23      		INC	HL		; Point to next byte
+  76:	011D  0B      		DEC	BC		; Decrement count
+  77:	011E  78      		LD	A,B		; Check for end
+  78:	011F  B1      		OR	C
+  79:	0120  C21A01  		JP	NZ,INIT		; If more, loop
+  80:	0123  211513  		LD	HL,ARGBUF	; Initialize ARGV pointer
+  81:	0126  227510  		LD	(ARGV),HL
+  82:	0129  219513  		LD	HL,NARGBUF	; Initialize IOBUF pointer
+  83:	012C  226F10  		LD	(IOBUF),HL
+  84:	012F  210000  		LD	HL,0		; Save old stack pointer
+  85:	0132  39      		ADD	HL,SP
+  86:	0133  225610  		LD	(OLDSP),HL
+  87:	0136  315410  		LD	SP,STACK	; Set local stack
+  88:	0139  210701  		LD	HL,OPTIONS0	; Copy configuration options
+  89:	013C  116110  		LD	DE,OPTIONS	; ..to working options
+  90:	013F  060D    		LD	B,OPTSIZE
+  91:	0141  CDAF0D  		CALL	MOVE
+  92:	0144  CDEB0D  		CALL	TPASET		; Set top of TPA
+  93:			
+  94:	0000          		 IF	ZCPR3		; Get ENV values from memory
+ 132:				 ENDIF			; ZCPR3
+ 133:			
+ 134:			; Parse the command line
+ 135:			
+ 136:	0147          	PARSCMD:
+ 137:	0147  3A5D00  		LD	A,(DFCB+NAMOFF)	; Check default FCB
+ 138:	014A  FE2F    		CP	'/'		; For Z3-style help query
+ 139:	014C  CA030E  		JP	Z,HELP		; Branch if found
+ 140:	014F  CD8B05  		CALL	PARSE		; Parse the command line
+ 141:	0152  3A7210  		LD	A,(ARGC)	; Get arg count
+ 142:	0155  B7      		OR	A		; Test for zero
+ 143:	0156  CA030E  		JP	Z,HELP		; Help user if no arguments
+ 144:	0159  CD3C06  		CALL	GETOPT		; Get options from command line
+ 145:	015C  FE03    		CP	3		; Less than 3 arguments ?
+ 146:	015E  DA8A01  		JP	C,SAVEDU	; YES - move on
+ 147:			
+ 148:			; Tell user we are ignoring superfluous arguments
+ 149:			
+ 150:	0161  4F      		LD	C,A		; Put arg. count into C
+ 151:	0162  0602    		LD	B,2		; Initialize index to THIRD argument
+ 152:	0164  CDFB0C  		CALL	ILPRT		; Tell user
+ 153:	0167  0D0A4967		DB	CR,LF,'Ignoring:',CR,LF,0
+	      6E6F7269
+	      6E673A0D
+	      0A00
+ 154:	0175          	IGNORE:
+ 155:	0175  3E09    		LD	A,TAB		; Tab in
+ 156:	0177  CD0B0D  		CALL	TYPE
+ 157:	017A  78      		LD	A,B		; Get index in Acc.
+ 158:	017B  CDE905  		CALL	GETARGV		; Get argument address
+ 159:	017E  CD010D  		CALL	PRINT		; Print the argument
+ 160:	0181  CD320D  		CALL	NEWLINE		; Plus cr/lf
+ 161:	0184  04      		INC	B		; Increment index
+ 162:	0185  78      		LD	A,B		; Get index
+ 163:	0186  B9      		CP	C		; Is it last one ?
+ 164:	0187  DA7501  		JP	C,IGNORE	; NO - continue until all done
+ 165:			
+ 166:			; Get and save current (default) disk and user
+ 167:			
+ 168:	018A          	SAVEDU:
+ 169:	018A  CDC00A  		CALL	GETDU		; Get current drive/user from CP/M
+ 170:	018D  78      		LD	A,B		; And save it locally
+ 171:	018E  325410  		LD	(DRIVE),A
+ 172:	0191  79      		LD	A,C
+ 173:	0192  325510  		LD	(USER),A
+ 174:			
+ 175:			; Reset the disk system, if necessary
+ 176:			
+ 177:	0195          	RESET:
+ 178:	0195  2E00    		LD	L,0		; Zero out L register
+ 179:	0197  0E30    		LD	C,ZRDVER	; Set up to see if we run ZRDOS
+ 180:	0199  CD0500  		CALL	BDOS		; Call it in
+ 181:	019C  7D      		LD	A,L		; MSB to A
+ 182:	019D  B7      		OR	A		; Zero means DRI BDOS, so reset
+ 183:	019E  C2A601  		JP	NZ,ZRDYES	; Otherwise no reset required
+ 184:	01A1  0E0D    		LD	C,RSTDSK	; Set up for disk system reset
+ 185:	01A3  CD0500  		CALL	BDOS		; Call it in
+ 186:			
+ 187:			; Check command mode
+ 188:			
+ 189:	01A6          	ZRDYES:
+ 190:	01A6  218300  		LD	HL,CMDBUF+3	; First place to look for '='
+ 191:	01A9          	EQSCAN:
+ 192:	01A9  7E      		LD	A,(HL)		; Char in A
+ 193:	01AA  FE3D    		CP	'='		; Is it or isn't it?
+ 194:	01AC  CAB701  		JP	Z,CPMODE	; If it is, we have CP/M syntax
+ 195:	01AF  23      		INC	HL		; Bump the pointer
+ 196:	01B0  B7      		OR	A		; Check for terminating null
+ 197:	01B1  C2A901  		JP	NZ,EQSCAN	; If not yet, keep looping
+ 198:	01B4  C3C301  		JP	CONCHK		; Go, do with MS-DOS syntax, 1.3
+ 199:	01B7          	CPMODE:
+ 200:	01B7  3A7210  		LD	A,(ARGC)	; Get argument count for CP/M mode
+ 201:	01BA  FE02    		CP	2		; Two arguments ?
+ 202:	01BC  DAC301  		JP	C,CONCHK	; NO - then mode doesn't matter
+ 203:	01BF  AF      		XOR	A		; Else get index for argument 0
+ 204:	01C0  CD2A06  		CALL	SWAPARG		; And swap it with argument 1
+ 205:			
+ 206:			; See if console (CON:) is the source "file"
+ 207:			
+ 208:	01C3          	CONCHK:
+ 209:	01C3  AF      		XOR	A		; Index to argument 0
+ 210:	01C4  CDE905  		CALL	GETARGV		; Get address in HL
+ 211:	01C7  11D00F  		LD	DE,CONNAM	; DE points to 'CON:'
+ 212:	01CA  0604    		LD	B,4		; B = 4 (characters in the name)
+ 213:	01CC  CDDB0D  		CALL	STRNCMP		; Compare and if not CON:
+ 214:	01CF  C20902  		JP	NZ,MFN		; Then go do a regular file-to-file copy
+ 215:	01D2  3A7210  		LD	A,(ARGC)	; Get argument count
+ 216:	01D5  FE02    		CP	2		; Two of 'em ?
+ 217:	01D7  DAE201  		JP	C,NODEST	; NO - error
+ 218:	01DA  3EFF    		LD	A,ON		; Else turn console copy operation flag ON
+ 219:	01DC  326010  		LD	(CONOP),A
+ 220:	01DF  C34C02  		JP	ALLOC		; And allocate memory for the buffer
+ 221:			;
+ 222:	01E2          	NODEST:
+ 223:	01E2  CDFB0C  		CALL	ILPRT		; Else error and quit
+ 224:	01E5  4E6F2064		DB	'No destination file specified.',CR,LF,0
+	      65737469
+	      6E617469
+	      6F6E2066
+	      696C6520
+	      73706563
+	      69666965
+	      642E0D0A
+	      00
+ 225:	0206  C37B05  		JP	DONE
+ 226:			
+ 227:			; Set up File Control Blocks
+ 228:			
+ 229:	0209  AF      	MFN:	XOR	A		; Set arg number 0
+ 230:	020A  CDE905  		CALL	GETARGV		; Get argument address in HL
+ 231:	020D  118910  		LD	DE,SOURCE	; And point DE to address of source FCB
+ 232:	0210  CDA506  		CALL	DOWILD		; Then do wild card expansion
+ 233:	0213  DA7B05  		JP	C,DONE		; Done if error or no file
+ 234:	0216  3A7210  		LD	A,(ARGC)	; Get arg. count
+ 235:	0219  FE02    		CP	2		; Are there two arguments ?
+ 236:	021B  D23702  		JP	NC,MFN2		; YES - get destination file name
+ 237:			
+ 238:	021E          	MFN1:
+ 239:	021E  11D410  		LD	DE,TEMP+USROFF	; Else install current drive and user
+ 240:	0221  3A5510  		LD	A,(USER)	; Into the temporary FCB
+ 241:	0224  12      		LD	(DE),A
+ 242:	0225  13      		INC	DE
+ 243:	0226  3A5410  		LD	A,(DRIVE)
+ 244:	0229  3C      		INC	A
+ 245:	022A  12      		LD	(DE),A
+ 246:	022B  13      		INC	DE		; Point to name field in temp. FCB
+ 247:	022C          	MFN1A:
+ 248:	022C  218A10  		LD	HL,SOURCE+NAMOFF; Then copy source name to temp. FCB
+ 249:	022F  0623    		LD	B,FCBSZ-1
+ 250:	0231  CDAF0D  		CALL	MOVE
+ 251:	0234  C34C02  		JP	ALLOC		; Temp. FCB is complete
+ 252:			
+ 253:	0237          	MFN2:
+ 254:	0237  3E01    		LD	A,1		; Get index for SECOND argument
+ 255:	0239  CDE905  		CALL	GETARGV		; And get address of dest. file name
+ 256:	023C  11D510  		LD	DE,TEMP		; And point to temporary FCB
+ 257:	023F  CDB906  		CALL	EXPAND		; And expand second arg. into temp. FCB
+ 258:	0242  DA7B05  		JP	C,DONE		; Done now if error
+ 259:	0245  13      		INC	DE		; Point to first character in temp. FCB
+ 260:	0246  1A      		LD	A,(DE)		; Get it
+ 261:	0247  FE20    		CP	' '		; If nothing is there (DU: only)
+ 262:	0249  CA2C02  		JP	Z,MFN1A		; Then copy source file name
+ 263:			
+ 264:			; Calculate the size of our disk I/O buffer
+ 265:			
+ 266:	024C          	ALLOC:
+ 267:	024C  2A5810  		LD	HL,(MEMTOP)	; Get address of last available ram
+ 268:	024F  EB      		EX	DE,HL		; Put it into DE
+ 269:	0250  2A6F10  		LD	HL,(IOBUF)	; Get address for beginning of iobuf in HL
+ 270:	0253  CDD40D  		CALL	SUB16		; DE = DE (memtop) - HL (iobuf) = bufsize
+ 271:	0256  DA7302  		JP	C,NORAM		; Error if no memory available
+ 272:	0259  218000  		LD	HL,RECSZ	; Get record size (bytes)
+ 273:	025C  010000  		LD	BC,0		; Initialize counter for divide
+ 274:	025F          	ALLOC1:
+ 275:	025F  CDD40D  		CALL	SUB16		; Bytes in buffer/bytes in record =
+ 276:	0262  DA6902  		JP	C,ALLOC2	; Records in buffer
+ 277:	0265  03      		INC	BC
+ 278:	0266  C35F02  		JP	ALLOC1
+ 279:	0269          	ALLOC2:
+ 280:	0269  60      		LD	H,B		; Put result into HL
+ 281:	026A  69      		LD	L,C
+ 282:	026B  225A10  		LD	(BUFRECS),HL	; And squirrel it away
+ 283:	026E  7C      		LD	A,H		; Do we have any memory available?
+ 284:	026F  B5      		OR	L		; Test for zero
+ 285:	0270  C28A02  		JP	NZ,ANYCOPY	; And move on if we do
+ 286:	0273          	NORAM:
+ 287:	0273  CDFB0C  		CALL	ILPRT		; Else error
+ 288:	0276  4F757420		DB	'Out of memory.',CR,LF,0
+	      6F66206D
+	      656D6F72
+	      792E0D0A
+	      00
+ 289:	0287  C37B05  		JP	DONE		; And quit
+ 290:			
+ 291:			; Select either the file-to-file or console-to-file routine
+ 292:			
+ 293:	028A          	ANYCOPY:
+ 294:	028A  3A6010  		LD	A,(CONOP)	; Get console op. flag
+ 295:	028D  B7      		OR	A		; Test
+ 296:	028E  CA4E03  		JP	Z,COPY		; And do file-to-file if zero
+ 297:			
+ 298:			; Copy from console to file
+ 299:			
+ 300:	0291          	CONCPY:
+ 301:	0291  3E01    		LD	A,1		; Get index for destination
+ 302:	0293  CDE905  		CALL	GETARGV		; And get file name address for it
+ 303:	0296  11AF10  		LD	DE,DEST		; Make an FCB for dest. file
+ 304:	0299  CDB906  		CALL	EXPAND
+ 305:	029C  DA7B05  		JP	C,DONE		; Quit if name error
+ 306:	029F  3AB010  		LD	A,(DEST+NAMOFF)	; See if there is a name specified
+ 307:	02A2  FE21    		CP	' '+1		; By looking for a space at dest. FCB
+ 308:	02A4  DAE201  		JP	C,NODEST	; Error if no file name there
+ 309:	02A7  3E3F    		LD	A,'?'		; See if there is a wild card in the name
+ 310:	02A9  21B010  		LD	HL,DEST+NAMOFF	; By searching FCB for a '?'
+ 311:	02AC  CDBF0D  		CALL	POS
+ 312:	02AF  CAD102  		JP	Z,CNCPY1	; Continue if none found
+ 313:	02B2  CDFB0C  		CALL	ILPRT		; Else error
+ 314:	02B5  57696C64		DB	'Wildcards not allowed.',CR,LF,0
+	      63617264
+	      73206E6F
+	      7420616C
+	      6C6F7765
+	      642E0D0A
+	      00
+ 315:	02CE  C37B05  		JP	DONE
+ 316:			
+ 317:	02D1          	CNCPY1:
+ 318:	02D1  21AF10  		LD	HL,DEST		; Point to dest. FCB
+ 319:	02D4  CD4108  		CALL	PRNFNAM		; Print the file name
+ 320:	02D7  CDEC09  		CALL	NEWFILE		; Create a new file
+ 321:	02DA  DA7B05  		JP	C,DONE		; Done if file can't be created
+ 322:	02DD  CDFB0C  		CALL	ILPRT		; Tell them it's ok to proceed
+ 323:	02E0  0D0A4669		DB	CR,LF,'File is open.  Use ^Z to quit.',CR,LF,LF,0
+	      6C652069
+	      73206F70
+	      656E2E20
+	      20557365
+	      205E5A20
+	      746F2071
+	      7569742E
+	      0D0A0A00
+ 324:	0304  2A6F10  		LD	HL,(IOBUF)	; Load buffer address
+ 325:	0307  CDE30B  		CALL	EDIT		; And go get console input
+ 326:	030A  5F      		LD	E,A		; A=no. bytes remaining
+ 327:	030B  3E80    		LD	A,80h
+ 328:	030D  93      		SUB	E		; A:=no. bytes used in last record
+ 329:	030E  11AD10  		LD	DE,DEST-2
+ 330:	0311  12      		LD	(DE),A		; Set LRBC
+ 331:	0312  13      		INC	DE
+ 332:	0313  13      		INC	DE		; Write everything to file
+ 333:	0314  2A6F10  		LD	HL,(IOBUF)	; From the buffer
+ 334:	0317  CD3D09  		CALL	BLKWRT
+ 335:	031A  D24803  		JP	NC,CNCPY2	; Continue if write ok
+ 336:	031D  CDFB0C  		CALL	ILPRT		; Else error - erase old file
+ 337:	0320  0D0A4469		DB	CR,LF,'Disk is full.  Deleting file.',CR,LF,0
+	      736B2069
+	      73206675
+	      6C6C2E20
+	      2044656C
+	      6574696E
+	      67206669
+	      6C652E0D
+	      0A00
+ 338:	0342  CD840A  		CALL	FDELETE
+ 339:	0345  C37B05  		JP	DONE		; And quit
+ 340:			
+ 341:	0348          	CNCPY2:
+ 342:	0348  CDDE09  		CALL	FCLOSE		; All is ok so close the file
+ 343:	034B  C37B05  		JP	DONE		; That's all
+ 344:			
+ 345:			; Copy source files to destination files with CRC
+ 346:			
+ 347:	034E          	COPY:
+ 348:	034E  CDB80B  		CALL	INITCRC		; Initialize CRC tables
+ 349:	0351  11F910  		LD	DE,LAST		; Initialize "last" name
+ 350:	0354  060B    		LD	B,FNAMSZ
+ 351:	0356  3E20    		LD	A,' '
+ 352:	0358  CDB80D  		CALL	PAD
+ 353:	035B  3A0301  		LD	A,(RETRY)	; Initialize retry count
+ 354:	035E  325E10  		LD	(ATTMPT),A
+ 355:	0361  219513  		LD	HL,NARGBUF	; Point to beginning of file names
+ 356:	0364  CDFB0C  		CALL	ILPRT		; Tell user what we're doing
+ 357:	0367  434F5059		DB	'COPYING:',CR,LF,0
+	      494E473A
+	      0D0A00
+ 358:			
+ 359:			; Main copy loop
+ 360:			
+ 361:	0372          	COPY0:
+ 362:	0372  E5      		PUSH	HL		; Save the nargbuf address from harm
+ 363:	0373  118A10  		LD	DE,SOURCE+NAMOFF ; Point to source FCB name field
+ 364:	0376  060B    		LD	B,FNAMSZ	; Get character count for name
+ 365:	0378  CDAF0D  		CALL	MOVE		; Move the name into the source FCB
+ 366:	037B  218910  		LD	HL,SOURCE	; Create the destination name by
+ 367:	037E  11AF10  		LD	DE,DEST		; Matching wild cards in temporary FCB
+ 368:	0381  01D510  		LD	BC,TEMP		; With those in the source FCB
+ 369:	0384  CDFF07  		CALL	MTCHWLD
+ 370:	0387  218910  		LD	HL,SOURCE	; Print the file names involved
+ 371:	038A  CD4108  		CALL	PRNFNAM
+ 372:	038D  CDFB0C  		CALL	ILPRT
+ 373:	0390  20746F20		DB	' to ',0
+	      00
+ 374:	0395  21AF10  		LD	HL,DEST
+ 375:	0398  CD4108  		CALL	PRNFNAM
+ 376:	039B  3A6610  		LD	A,(ARCHIV)	; See if this is an archive operation
+ 377:	039E  FEFF    		CP	ON
+ 378:	03A0  C2BB03  		JP	NZ,CHKWID	; And move on if not
+ 379:	03A3  3A9410  		LD	A,(SOURCE+ARCOFF) ; Get archive byte from name
+ 380:	03A6  E680    		AND	080H		; Is it set?
+ 381:	03A8  CABB03  		JP	Z,CHKWID	; NO - then ok to copy
+ 382:	03AB  CDFB0C  		CALL	ILPRT
+ 383:	03AE  20417263		DB	' Archived',0	; Else let them know
+	      68697665
+	      6400
+ 384:	03B8  C34705  		JP	COPYDUN		; And try next file
+ 385:			
+ 386:	03BB          	CHKWID:
+ 387:	FFFF          		 IF	NOT ZCPR3	;
+ 388:	0000          		  IF 	CPM3
+ 393:				  ENDIF			;CPM3
+ 394:	FFFF          		  IF	NOT CPM3
+ 395:	03BB  3E50    		LD	A,SWID		; Newline issued if width < 80
+ 396:				  ENDIF			; NOT CPM3
+ 397:				 ENDIF			; NOT ZCPR3
+ 398:			
+ 399:	0000          		 IF	ZCPR3
+ 401:				 ENDIF			; ZCPR3
+ 402:			
+ 403:	03BD  FE50    		CP	80
+ 404:	03BF  D2C503  		JP	NC,CKSAME
+ 405:	03C2  CD320D  		CALL	NEWLINE
+ 406:	03C5          	CKSAME:
+ 407:	03C5  218810  		LD	HL,SOURCE+USROFF ; Compare source and dest. FCB's
+ 408:	03C8  11AE10  		LD	DE,DEST+USROFF
+ 409:	03CB  060D    		LD	B,FNAMSZ+2
+ 410:	03CD  CDDB0D  		CALL	STRNCMP
+ 411:	03D0  C2F903  		JP	NZ,CKLAST	; And move on if not the same
+ 412:	03D3  CDFB0C  		CALL	ILPRT		; Else error
+ 413:	03D6  2043616E		DB	' Can''t copy to same drive/user.',0
+	      27742063
+	      6F707920
+	      746F2073
+	      616D6520
+	      64726976
+	      652F7573
+	      65722E00
+ 414:	03F6  C37B05  		JP	DONE		; And quit now
+ 415:			
+ 416:	03F9          	CKLAST:
+ 417:	03F9  21B010  		LD	HL,DEST+NAMOFF	; Compare dest. name with last name
+ 418:	03FC  11F910  		LD	DE,LAST		; To determine whether the last
+ 419:	03FF  060B    		LD	B,FNAMSZ	; File will be overwritten (this allows us
+ 420:	0401  CDDB0D  		CALL	STRNCMP		; To avoid an EXISTS error in cases where
+ 421:	0404  C21904  		JP	NZ,COPYFIL	; We can figure out what has happened)
+ 422:			;
+ 423:	0407  CDFB0C  		CALL	ILPRT		; Tell user we'll pass on this one
+ 424:	040A  20447570		DB	' Duplicate!',0
+	      6C696361
+	      74652100
+ 425:	0416  C34705  		JP	COPYDUN		; And skip the rest
+ 426:			
+ 427:			; Copy happens
+ 428:			
+ 429:	0419          	COPYFIL:
+ 430:	0419  218910  		LD	HL,SOURCE	; Get source
+ 431:	041C  11AF10  		LD	DE,DEST		; And destination FCB's
+ 432:			
+ 433:	0000          		 IF	Z80DOS OR CPM3
+ 436:				 ENDIF			; Z80DOS OR CPM3
+ 437:			
+ 438:	041F  CD9108  		CALL	FCOPY		; Do it
+ 439:			
+ 440:	0000          		 IF	Z80DOS OR CPM3
+ 443:				 ENDIF			; Z80DOS
+ 444:			
+ 445:	0422  D22F04  		JP	NC,CRCHK	; Continue if no error
+ 446:	0425  3A7110  		LD	A,(FERROR)	; Fatal file error?
+ 447:	0428  B7      		OR	A
+ 448:	0429  C27B05  		JP	NZ,DONE		; YES - then quit
+ 449:	042C  C34705  		JP	COPYDUN		; Else try next file
+ 450:			
+ 451:			; Copy done - do CRC
+ 452:			
+ 453:	042F          	CRCHK:
+ 454:	042F  3A6210  		LD	A,(VERIFY)	; Get verify option
+ 455:	0432  FE00    		CP	OFF		; Is it off?
+ 456:	0434  CAC404  		JP	Z,SAVLAST	; YES - then skip CRC
+ 457:	0437  2A1113  		LD	HL,(CRCVAL)	; Move crcval
+ 458:	043A  221313  		LD	(CRCVAL2),HL	; To crcval2
+ 459:	043D  CDFB0C  		CALL	ILPRT
+ 460:	0440  202D2056		DB	' - Verifying ',0
+	      65726966
+	      79696E67
+	      2000
+ 461:	044E  11AF10  		LD	DE,DEST		; Point to destination FCB
+ 462:	0451  CD520B  		CALL	FCRC		; Do the crc check
+ 463:	0454  DA7B05  		JP	C,DONE		; Quit now if error
+ 464:	0457  2A1313  		LD	HL,(CRCVAL2)	; Get source crc
+ 465:	045A  EB      		EX	DE,HL		; Into DE
+ 466:	045B  2A1113  		LD	HL,(CRCVAL)	; And dest. crc into HL
+ 467:	045E  CDD40D  		CALL	SUB16		; Test
+ 468:	0461  CAA904  		JP	Z,CRCOK		; Good copy if zero
+ 469:	0464  CDFB0C  		CALL	ILPRT		; Else admit that we blew it
+ 470:	0467  6661696C		DB	'failed!',CR,LF,0
+	      6564210D
+	      0A00
+ 471:	0471  3A5E10  		LD	A,(ATTMPT)	; Get number of retry attempts
+ 472:	0474  B7      		OR	A		; Test for zero
+ 473:	0475  C29B04  		JP	NZ,AGAIN	; And try again if more tries are allowed
+ 474:	0478  CDFB0C  		CALL	ILPRT		; Else, send error message
+ 475:	047B  0D0A506C		DB	CR,LF,'Please check your disk.',BELL,CR,LF,0
+	      65617365
+	      20636865
+	      636B2079
+	      6F757220
+	      6469736B
+	      2E070D0A
+	      00
+ 476:	0498  C37B05  		JP	DONE		; And bail out
+ 477:			
+ 478:	049B          	AGAIN:
+ 479:	049B  3D      		DEC	A		; Decrement attempt count
+ 480:	049C  325E10  		LD	(ATTMPT),A	; Save it
+ 481:	049F  E1      		POP	HL		; Restore pointer to file name
+ 482:	04A0  11AF10  		LD	DE,DEST		; Point to destination FCB
+ 483:	04A3  CD840A  		CALL	FDELETE		; And delete the offending file
+ 484:	04A6  C35B05  		JP	COPY9		; And try the copy again
+ 485:			
+ 486:	04A9          	CRCOK:
+ 487:	04A9  CDFB0C  		CALL	ILPRT		; Tell 'em the copy is good
+ 488:	04AC  4F4B2000		DB	'OK ',0
+ 489:	04B0  3A0301  		LD	A,(RETRY)	; Re-init. retry count
+ 490:	04B3  325E10  		LD	(ATTMPT),A
+ 491:	04B6  3A6410  		LD	A,(REPORT)	; See if we need to print the CRC value
+ 492:	04B9  FE00    		CP	OFF		; Move on
+ 493:	04BB  CAC404  		JP	Z,SAVLAST	; If not
+ 494:	04BE  2A1113  		LD	HL,(CRCVAL)	; Else get the value
+ 495:	04C1  CD540D  		CALL	DHXOUT		; And print it
+ 496:			
+ 497:			; Copy is finished - save destination as last
+ 498:			
+ 499:	04C4          	SAVLAST:
+ 500:	0000          		 IF	DATESTAMP	;
+ 502:				 ENDIF			; DATESTAMP
+ 503:			;
+ 504:			; NEW /M OPTION CODE
+ 505:			;
+ 506:	04C4  3A6C10  		LD	A,(MOVF)
+ 507:	04C7  FEFF    		CP	ON
+ 508:	04C9  C2E804  		JP	NZ,SAVLAST1	; IF MOVE NOT REQUESTED
+ 509:	04CC  CDFB0C  		CALL	ILPRT
+ 510:	0000          		 IF	DATESTAMP
+ 512:				 ENDIF
+ 513:	04CF  2D204572		DB	'- Erasing ',0
+	      6173696E
+	      672000
+ 514:	04DA  218910  		LD	HL,SOURCE	; SOURCE FCB
+ 515:	04DD  E5      		PUSH	HL
+ 516:	04DE  CD4108  		CALL	PRNFNAM		; SHOW WHAT FILE WE'RE KILLING
+ 517:	04E1  D1      		POP	DE
+ 518:	04E2  CDB10A  		CALL	FSETUSR		; SET USER AREA
+ 519:	04E5  CD840A  		CALL	FDELETE		; ERASE SOURCE
+ 520:			;
+ 521:	04E8          	SAVLAST1:
+ 522:	04E8  21B010  		LD	HL,DEST+NAMOFF	; Point to dest. FCB, name field
+ 523:	04EB  11F910  		LD	DE,LAST		; And "last" buffer
+ 524:	04EE  060B    		LD	B,FNAMSZ	; Get count of name characters
+ 525:	04F0  CDAF0D  		CALL	MOVE		; And copy dest. name to last name
+ 526:			
+ 527:			; Set attributes
+ 528:			
+ 529:	04F3  3A5C10  		LD	A,(EXISTS)	; Did dest. file exist?
+ 530:	04F6  B7      		OR	A
+ 531:	04F7  CA0C05  		JP	Z,ATTNEW	; NO - then copy source attributes to dest.
+ 532:	04FA  3A5D10  		LD	A,(RO)		; Was existing file read-only?
+ 533:	04FD  B7      		OR	A
+ 534:	04FE  CA2305  		JP	Z,ATTARC	; NO - then move on
+ 535:	0501  3AB810  		LD	A,(DEST+ROOFF)	; Else set R/O bit back on
+ 536:	0504  F680    		OR	080H		; (we had to turn it off to write the file)
+ 537:	0506  32B810  		LD	(DEST+ROOFF),A
+ 538:	0509  C32305  		JP	ATTARC		; And move on
+ 539:			
+ 540:	050C          	ATTNEW:
+ 541:	050C  118A10  		LD	DE,SOURCE+NAMOFF ; Point to source FCB.name
+ 542:	050F  21B010  		LD	HL,DEST+NAMOFF	; And to destination FCB.name
+ 543:	0512  060B    		LD	B,FNAMSZ	; And load count of name characters
+ 544:	0514          	ATTNW1:
+ 545:	0514  7E      		LD	A,(HL)		; Turn dest. attribute off as default
+ 546:	0515  E67F    		AND	07FH
+ 547:	0517  77      		LD	(HL),A
+ 548:	0518  1A      		LD	A,(DE)		; Get a byte from source
+ 549:	0519  E680    		AND	080H		; Mask the attribute bit
+ 550:	051B  B6      		OR	(HL)		; And IF SET then dest. will be set too
+ 551:	051C  77      		LD	(HL),A
+ 552:	051D  23      		INC	HL		; Bump pointers
+ 553:	051E  13      		INC	DE
+ 554:	051F  05      		DEC	B		; Decrement count
+ 555:	0520  C21405  		JP	NZ,ATTNW1	; And continue until every byte is done
+ 556:	0523          	ATTARC:
+ 557:	0523  3A6610  		LD	A,(ARCHIV)	; See if this is an archive operation
+ 558:	0526  FEFF    		CP	ON
+ 559:	0528  C24105  		JP	NZ,ATTDST	; NO - then don't worry about archive attrib
+ 560:	052B  3A9410  		LD	A,(SOURCE+ARCOFF) ; Else get source archive byte
+ 561:	052E  F680    		OR	080H		; Set archive bit
+ 562:	0530  329410  		LD	(SOURCE+ARCOFF),A ; Put it back
+ 563:	0533  3ABA10  		LD	A,(DEST+ARCOFF)	; Clear destination archive bit
+ 564:	0536  E67F    		AND	07FH
+ 565:	0538  32BA10  		LD	(DEST+ARCOFF),A
+ 566:	053B  118910  		LD	DE,SOURCE	; Point to source FCB
+ 567:	053E  CD900A  		CALL	ATTRBUT		; And set archive attribute for source
+ 568:	0541          	ATTDST:
+ 569:	0541  11AF10  		LD	DE,DEST		; Point to dest FCB
+ 570:	0544  CD900A  		CALL	ATTRBUT		; Set attributes into directory
+ 571:	0547          	COPYDUN:
+ 572:	0547  2A7310  		LD	HL,(NARGC)	; Get argument count
+ 573:	054A  2B      		DEC	HL		; Decrement it
+ 574:	054B  227310  		LD	(NARGC),HL	; And save the result
+ 575:	054E  7C      		LD	A,H		; Test if for zero
+ 576:	054F  B5      		OR	L
+ 577:	0550  E1      		POP	HL		; Restore pointer to names
+ 578:	0551  CA7B05  		JP	Z,DONE		; And done if args. exhausted
+ 579:	0554  CD320D  		CALL	NEWLINE		; Next console line
+ 580:	0557  110B00  		LD	DE,FNAMSZ	; Set DE to the size of one name
+ 581:	055A  19      		ADD	HL,DE		; And increment buffer pointer by this much
+ 582:	055B          	COPY9:
+ 583:	055B  CD470D  		CALL	KEYPRESS	; Check console status - any key ?
+ 584:	055E  CA7203  		JP	Z,COPY0		; NO - loop
+ 585:	0561  CD3B0D  		CALL	GETKEY		; Else get the key
+ 586:	0564  FE03    		CP	BRKKEY		; Break key?
+ 587:	0566  C27203  		JP	NZ,COPY0	; NO - loop
+ 588:	0569          	USRABRT:
+ 589:	0569  CDFB0C  		CALL	ILPRT
+ 590:	056C  0D0A5573		DB	CR,LF,'User abort',CR,LF,0
+	      65722061
+	      626F7274
+	      0D0A00
+ 591:			
+ 592:			; Exit point: resets current DU:, reloads old SP, and returns to CP/M
+ 593:			
+ 594:	057B  3A5410  	DONE:	LD	A,(DRIVE)
+ 595:	057E  47      		LD	B,A
+ 596:	057F  3A5510  		LD	A,(USER)
+ 597:	0582  4F      		LD	C,A
+ 598:	0583  CDD10A  		CALL	SETDU
+ 599:	0586          	DONEX:
+ 600:	0586  2A5610  		LD	HL,(OLDSP)
+ 601:	0589  F9      		LD	SP,HL
+ 602:	058A  C9      		RET
+ 603:			;			  end of routine
+ 604:			;-----------------------------------------------------------------------
+**** PPIP19.Z80 ****
+ 264:				INCLUDE	PPIP-1.Z80	; Module <<1>> argument processing
+**** PPIP-1.Z80 ****
+   1:			; PPIP-1.Z80
+   2:			
+   3:			; <<1>> 	    Argument processing module
+   4:			
+   5:			; This module functions similarly to the "C"-style command argument
+   6:			; processor.  Arguments from the command line are placed in a buffer and
+   7:			; each argument from 0 to ARGC-1 (total number of arguments found) is
+   8:			; accessible via an array of argument vectors (ARGV[ARGC]).  There is
+   9:			; one important difference here:  unlike "C," our ARGV[0] is the first
+  10:			; command line argument, NOT the program name.	Commas can be used to
+  11:			; create NULL arguments (,,).
+  12:			
+  13:			;-----------------------------------------------------------------------
+  14:			
+  15:			; Parse the command buffer and remove arguments to the argument buffer.
+  16:			
+  17:			; Entry:  none
+  18:			
+  19:			; Return:  ARGC = number of arguments
+  20:			;	   up to MAXARG arguments are placed in ARGBUF with points in ARGV
+  21:			;	   all registers affected
+  22:			
+  23:	058B          	PARSE:
+  24:	058B  AF      		XOR	A		; Initialize argument count
+  25:	058C  327210  		LD	(ARGC),A
+  26:	058F  218000  		LD	HL,CMDBUF	; Point to command buffer
+  27:	0592  7E      		LD	A,(HL)		; Get number of characters
+  28:	0593  B7      		OR	A		; Test for zero
+  29:	0594  C8      		RET	Z		; And return now if none
+  30:	0595  23      		INC	HL		; Point to first char. of command
+  31:	0596  0608    		LD	B,MAXARG	; Initialize max arg. count
+  32:	0598          	BLANKS:
+  33:	0598  7E      		LD	A,(HL)		; Get a char. from command buffer
+  34:	0599  23      		INC	HL		; Point to next
+  35:	059A  FE3D    		CP	'='		; Skip '=' (special case for CP/M mode)
+  36:	059C  CA9805  		JP	Z,BLANKS
+  37:	059F  FE20    		CP	' '		; Skip leading spaces
+  38:	05A1  CA9805  		JP	Z,BLANKS
+  39:	05A4  D8      		RET	C		; Done if end of line is reached
+  40:	05A5  2B      		DEC	HL		; Adjust pointer back to non-space char.
+  41:	05A6  CDAE05  		CALL	GETARG		; Get one argument
+  42:	05A9  05      		DEC	B		; Decrement number we can handle
+  43:	05AA  C29805  		JP	NZ,BLANKS	; Do more if max. count not reached
+  44:	05AD  C9      		RET			; Else return
+  45:			
+  46:			;-----------------------------------------------------------------------
+  47:			
+  48:			; Get an argument from the command line and place it, zero-terminated,
+  49:			; into our buffer.
+  50:			
+  51:			; Entry:  HL = pointer to command line argument
+  52:			
+  53:			; Return:  ARGV[ARGC] = pointer to argument
+  54:			;	   ARGC += 1
+  55:			;	   HL = pointer to CHAR <= space
+  56:			;	   BC preserved, DE destroyed
+  57:			
+  58:	05AE          	GETARG:
+  59:	05AE  C5      		PUSH	BC		; Save reg.
+  60:	05AF  E5      		PUSH	HL		; Save pointer into command buffer
+  61:	05B0  3A7210  		LD	A,(ARGC)	; Get count number for this arg.
+  62:	05B3  CDE905  		CALL	GETARGV		; Get storage addr. (argv[argc]) in HL
+  63:	05B6  EB      		EX	DE,HL		; Put it in DE
+  64:	05B7  3C      		INC	A		; Bump argument count
+  65:	05B8  327210  		LD	(ARGC),A	; And store it for next time
+  66:	05BB  E1      		POP	HL		; Retrieve command buffer pointer
+  67:	05BC          	GETMOR:
+  68:	05BC  7E      		LD	A,(HL)		; Get command character
+  69:	05BD  FE21    		CP	' '+1		; CHAR > space?
+  70:	05BF  DAD105  		JP	C,GETDUN	; NO - then done
+  71:	05C2  FE3D    		CP	'='		; Equals sign? (special case for CP/M mode)
+  72:	05C4  C2CB05  		JP	NZ,GETM1	; NO - go save the character
+  73:	05C7          	GETDLM:
+  74:	05C7  23      		INC	HL		; Skip over the '='
+  75:	05C8  C3D105  		JP	GETDUN		; And terminate the argument
+  76:			
+  77:	05CB          	GETM1:
+  78:	05CB  12      		LD	(DE),A		; Save it in storage
+  79:	05CC  23      		INC	HL		; Point to next command character
+  80:	05CD  13      		INC	DE		; Point to next storage location
+  81:	05CE  C3BC05  		JP	GETMOR		; And get more
+  82:			
+  83:	05D1          	GETDUN:
+  84:	05D1  EB      		EX	DE,HL		; Swap pointers (HL = storage)
+  85:	05D2  3600    		LD	(HL),0		; Terminate the argument
+  86:	05D4  23      		INC	HL		; Bump storage pointer loc. for next arg.
+  87:	05D5  3A7210  		LD	A,(ARGC)	; Get count for NEXT argument
+  88:	05D8  CDF305  		CALL	SAVARGV		; And save address for it
+  89:	05DB  EB      		EX	DE,HL		; Put command buffer pointer back in HL
+  90:	05DC  C1      		POP	BC		; Restore
+  91:	05DD  C9      		RET			; All done getting one argument
+  92:			
+  93:			;-----------------------------------------------------------------------
+  94:			
+  95:			; Return the address that contains an argument vector.
+  96:			
+  97:			; Entry:  Acc. = argument number
+  98:			
+  99:			; Return:  HL = address of argument vector (&argv[argc])
+ 100:			;	   other registers unaffected
+ 101:			
+ 102:	05DE          	GETADDR:
+ 103:	05DE  C5      		PUSH	BC		; Get a register to use
+ 104:	05DF  4F      		LD	C,A		; And put argument number in BC
+ 105:	05E0  0600    		LD	B,0		; So BC = argc
+ 106:	05E2  217510  		LD	HL, ARGV	; Let HL = argv
+ 107:	05E5  09      		ADD	HL,BC		; +  argc * 2  (2 = sizeof(int))
+ 108:	05E6  09      		ADD	HL,BC		; To find argv+argc
+ 109:	05E7  C1      		POP	BC		; Restore
+ 110:	05E8  C9      		RET			; Done
+ 111:			
+ 112:			;-----------------------------------------------------------------------
+ 113:			
+ 114:			; Return an argument vector
+ 115:			;
+ 116:			; Entry:  Acc. = argument number
+ 117:			;
+ 118:			; Return:  HL = the argument vector (ARGV[ARGC])
+ 119:			;	   other registers unaffected
+ 120:			
+ 121:	05E9          	GETARGV:
+ 122:	05E9  F5      		PUSH	AF		; Save argument number
+ 123:	05EA  CDDE05  		CALL	GETADDR		; Get argument vector address in HL
+ 124:	05ED  7E      		LD	A,(HL)		; Put the arg. vector into HL
+ 125:	05EE  23      		INC	HL
+ 126:	05EF  66      		LD	H,(HL)
+ 127:	05F0  6F      		LD	L,A
+ 128:	05F1  F1      		POP	AF		; Restore argument number
+ 129:	05F2  C9      		RET
+ 130:			
+ 131:			;-----------------------------------------------------------------------
+ 132:			
+ 133:			; Save an argument vector
+ 134:			;
+ 135:			; Entry:  Acc. = argument number
+ 136:			;	  HL   = argument vector
+ 137:			
+ 138:			; Return: no registers affected
+ 139:			
+ 140:	05F3          	SAVARGV:
+ 141:	05F3  D5      		PUSH	DE		; Save caller's reg.
+ 142:	05F4  EB      		EX	DE,HL		; Put arg. vector in DE
+ 143:	05F5  CDDE05  		CALL	GETADDR		; Get vector table address in HL
+ 144:	05F8  73      		LD	(HL),E		; Store the arg. vector there
+ 145:	05F9  23      		INC	HL
+ 146:	05FA  72      		LD	(HL),D
+ 147:	05FB  EB      		EX	DE,HL		; Put address back into HL
+ 148:	05FC  D1      		POP	DE		; Restore
+ 149:	05FD  C9      		RET			; Done
+ 150:			
+ 151:			;-----------------------------------------------------------------------
+ 152:			
+ 153:			; Delete an argument
+ 154:			;
+ 155:			; Entry:  Acc. = argument number to delete
+ 156:			
+ 157:			; Returns: PSW destroyed
+ 158:			;	   no other registers affected
+ 159:			
+ 160:	05FE          	DELARG:
+ 161:	05FE  C5      		PUSH	BC		; Save caller's registers
+ 162:	05FF  D5      		PUSH	DE
+ 163:	0600  E5      		PUSH	HL
+ 164:	0601  47      		LD	B,A		; Save argument number to delete
+ 165:	0602  3A7210  		LD	A,(ARGC)	; Get argument count
+ 166:	0605  B7      		OR	A		; Any args ?
+ 167:	0606  CA2606  		JP	Z,DELAR2	; NO - then nothing to delete so quit
+ 168:	0609  3D      		DEC	A		; Else, less one
+ 169:	060A  327210  		LD	(ARGC),A	; Store it
+ 170:	060D  4F      		LD	C,A		; And save a copy of new arg. count
+ 171:	060E  78      		LD	A,B		; Retrieve arg. number to delete
+ 172:	060F          	DELAR1:
+ 173:	060F  B9      		CP	C		; Compare index to argument count
+ 174:	0610  CA2606  		JP	Z,DELAR2	; Ready to return if (i = argc-1)
+ 175:	0613  CDDE05  		CALL	GETADDR		; Get address of argument i
+ 176:	0616  EB      		EX	DE,HL		; Into de
+ 177:	0617  3C      		INC	A		; And address of argument i+1
+ 178:	0618  CDDE05  		CALL	GETADDR		; Into HL
+ 179:	061B  47      		LD	B,A		; Save i+1
+ 180:	061C  7E      		LD	A,(HL)		; Get low part of argv[i+1]
+ 181:	061D  12      		LD	(DE),A		; Move it down to argv[i]
+ 182:	061E  13      		INC	DE		; Bump pointers
+ 183:	061F  23      		INC	HL
+ 184:	0620  7E      		LD	A,(HL)		; Then do high byte the same way
+ 185:	0621  12      		LD	(DE),A
+ 186:	0622  78      		LD	A,B		; Get index back
+ 187:	0623  C30F06  		JP	DELAR1		; And repeat
+ 188:			
+ 189:	0626          	DELAR2:
+ 190:	0626  E1      		POP	HL		; Restore old environment
+ 191:	0627  D1      		POP	DE
+ 192:	0628  C1      		POP	BC
+ 193:	0629  C9      		RET			; And done
+ 194:			
+ 195:			;-----------------------------------------------------------------------
+ 196:			
+ 197:			; Swap two arguments
+ 198:			;
+ 199:			; Entry:  Acc. = index to first argument
+ 200:			
+ 201:			; Return: The first argument is swapped with the one immediately after it.
+ 202:			;	  Acc. += 1, other registers intact
+ 203:			
+ 204:	062A          	SWAPARG:
+ 205:	062A  CDE905  		CALL	GETARGV		; Get first argument (i) in HL
+ 206:	062D  EB      		EX	DE,HL		; Temp = i
+ 207:	062E  3C      		INC	A		; Get second argument (j)
+ 208:	062F  CDE905  		CALL	GETARGV
+ 209:	0632  3D      		DEC	A		; I = j
+ 210:	0633  CDF305  		CALL	SAVARGV
+ 211:	0636  3C      		INC	A		; J = i
+ 212:	0637  EB      		EX	DE,HL
+ 213:	0638  CDF305  		CALL	SAVARGV
+ 214:	063B  C9      		RET
+ 215:			
+ 216:			;-----------------------------------------------------------------------
+ 217:			
+ 218:			; Get options from the command line.  The options scheme used here is
+ 219:			; very simple.	Valid options are stored in the OPTIONS table as two
+ 220:			; bytes, (1) the option character and (2) the option status, either ON
+ 221:			; or OFF.  Except for the 'M' command, if a valid option switch is
+ 222:			; encountered in the command line the corresponding option's status is
+ 223:			; simply toggled.  The 'M' command differs in that if the 'M' argument
+ 224:			; is used, CRC verification is turned on and 'M' is turned on, rather
+ 225:			; than being toggled.  Options are effectively deleted from the argument
+ 226:			; list.
+ 227:			
+ 228:			; Entry:  call PARSE first to fill ARGBUF and ARGC
+ 229:			
+ 230:			; Return: all registers affected
+ 231:			
+ 232:	063C          	GETOPT:
+ 233:	063C  0600    		LD	B,0		; Initialize arg. index to zero
+ 234:	063E          	GETOP0:
+ 235:	063E  3A7210  		LD	A,(ARGC)	; Get argument count
+ 236:	0641  4F      		LD	C,A		; Hold it
+ 237:	0642  78      		LD	A,B		; Get arg index back
+ 238:	0643  B9      		CP	C		; Compare index to arg. count
+ 239:	0644  D0      		RET	NC		; Return if NOT (index < argc)
+ 240:	0645  CDE905  		CALL	GETARGV		; Get argument address (in HL)
+ 241:	0648  3A0601  		LD	A,(SWITCH)	; Get our switch character
+ 242:	064B  BE      		CP	(HL)		; Compare with char. in argument
+ 243:	064C  CA5306  		JP	Z,OPFOUND	; Break if option has been found
+ 244:	064F  04      		INC	B		; Else increment index
+ 245:	0650  C33E06  		JP	GETOP0		; And loop
+ 246:			
+ 247:	0653          	OPFOUND:
+ 248:	0653  78      		LD	A,B		; Get index
+ 249:	0654  CDFE05  		CALL	DELARG		; Delete this argument from the list
+ 250:	0657          	OPSRCH:
+ 251:	0657  23      		INC	HL		; Point to next argument character
+ 252:	0658  7E      		LD	A,(HL)		; Retrieve it
+ 253:	0659  B7      		OR	A		; End of argument ?
+ 254:	065A  CA3E06  		JP	Z,GETOP0	; YES - then next argument
+ 255:	065D  116110  		LD	DE,OPTIONS	; Address the options table
+ 256:	0660          	OPSRC1:
+ 257:	0660  1A      		LD	A,(DE)		; Get an option character
+ 258:	0661  13      		INC	DE		; Point to next
+ 259:	0662  B7      		OR	A		; Test for end of options
+ 260:	0663  CA6E06  		JP	Z,OPTBAD	; Break - UNRECOGNIZED
+ 261:	0666  BE      		CP	(HL)		; Compare with argument character
+ 262:	0667  CA9106  		JP	Z,OPTOK		; Break - RECOGNIZED
+ 263:	066A  13      		INC	DE		; Point to next option
+ 264:	066B  C36006  		JP	OPSRC1		; And try again
+ 265:			
+ 266:	066E          	OPTBAD:
+ 267:	066E  7E      		LD	A,(HL)		; Get offending character
+ 268:	066F  CD0B0D  		CALL	TYPE		; Type the bad option
+ 269:	0672  CDFB0C  		CALL	ILPRT		; Plus error message
+ 270:	0675  202D2075		DB	' - unrecognized option',CR,LF,0
+	      6E726563
+	      6F676E69
+	      7A656420
+	      6F707469
+	      6F6E0D0A
+	      00
+ 271:	068E  C35706  		JP	OPSRCH		; And try next character in argument
+ 272:			
+ 273:	0691          	OPTOK:
+ 274:	0691  FE4D    		CP	'M'		; IS IT MOVE?
+ 275:	0693  C29E06  		JP	NZ,OPTOK1	; NO - DO AS NORMAL
+ 276:	0696  3EFF    		LD	A,ON
+ 277:	0698  326210  		LD	(VERIFY),A	; FORCE CRC VERIFICATION
+ 278:	069B  C3A006  		JP	OPTOK2		; AND SET MOVE ON
+ 279:	069E          	OPTOK1:
+ 280:	069E  1A      		LD	A,(DE)		; Else get current status
+ 281:	069F  2F      		CPL			; Switch it (on->off, off->on)
+ 282:	06A0          	OPTOK2:
+ 283:	06A0  12      		LD	(DE),A		; Put it back where we got it
+ 284:	06A1  13      		INC	DE		; Point to next option character
+ 285:	06A2  C35706  		JP	OPSRCH		; And try to do another
+ 286:			
+ 287:			;	      end of argument handler module <<1>>
+ 288:			;-----------------------------------------------------------------------
+**** PPIP19.Z80 ****
+ 265:				INCLUDE	PPIP-2.Z80	; Module <<2>> file name module
+**** PPIP-2.Z80 ****
+   1:			; PPIP-2.Z80
+   2:			
+   3:			; <<2>> 		  File name module
+   4:			
+   5:			; This module validates file names, extracts disk/user numbers, expands
+   6:			; wild card characters, and installs names into file control blocks.
+   7:			
+   8:			;-----------------------------------------------------------------------
+   9:			
+  10:			; Expand a possibly ambiguous file name and fill buffer with all matches
+  11:			; from the specified drive and user area.
+  12:			
+  13:			; Entry:  HL = pointer to UPPER CASE file name
+  14:			;	  DE = pointer to FCB that will receive file name (FCB[0-1] = user)
+  15:			
+  16:			; Return:  NARGC = number of matches found
+  17:			;	   NARGBUF contains names in fixed length fields
+  18:			;	   DE preserved, other registers destroyed
+  19:			;	   CARRY SET if file name error or no match found
+  20:			
+  21:	06A5          	DOWILD:
+  22:	06A5  CDB906  		CALL	EXPAND		; Expand the name into the FCB
+  23:	06A8  D8      		RET	C		; Quit if name error
+  24:	06A9  CD0C0B  		CALL	DIRSRCH		; Search directory for matches
+  25:	06AC  D0      		RET	NC		; Return now if match found
+  26:	06AD  CD790D  		CALL	ERRET		; Else error
+  27:	06B0  6E6F2066		DB	'no file ',0
+	      696C6520
+	      00
+  28:			
+  29:			;-----------------------------------------------------------------------
+  30:			
+  31:			; Expand a possibly ambiguous file name into an FCB.
+  32:			;
+  33:			; Entry:  HL = pointer to UPPER CASE file name
+  34:			;	  DE = pointer to FCB (FCB[0-1] = user)
+  35:			
+  36:			; Return:  if successful, carry clear and HL = file name without du:
+  37:			;	   if error, carry set and HL = complete file name
+  38:			;	   BC and PSW destroyed
+  39:			;	   CARRY SET if error
+  40:			
+  41:	06B9          	EXPAND:
+  42:	06B9  CDFB06  		CALL	STRIPDU		; Strip off the disk/user spec
+  43:	06BC  D2DA06  		JP	NC,EXPND1	; Continue if du: is ok
+  44:	06BF  CD790D  		CALL	ERRET		; ERROR - print message and return
+  45:	06C2  62616420		DB	'bad drive/user spec in ',0
+	      64726976
+	      652F7573
+	      65722073
+	      70656320
+	      696E2000
+  46:	06DA          	EXPND1:
+  47:	06DA  CD5507  		CALL	MAKEFCB		; Make an FCB for the file name
+  48:	06DD  D2FA06  		JP	NC,EXPND2	; Continue if file name is ok
+  49:	06E0  CD790D  		CALL	ERRET		; ERROR - print msg. and ret
+  50:	06E3  696E7661		DB	'invalid characters in ',0
+	      6C696420
+	      63686172
+	      61637465
+	      72732069
+	      6E2000
+  51:	06FA          	EXPND2:
+  52:	06FA  C9      		RET
+  53:			
+  54:			;-----------------------------------------------------------------------
+  55:			
+  56:			; "Strip" the disk/user spec off a file name and put it in FCB.
+  57:			
+  58:			; Entry:  HL = pointer to UPPER CASE file name
+  59:			;	  DE = pointer to FCB (FCB[0-1] = user)
+  60:			;	  DRIVE = current drive
+  61:			;	  USER	= current user
+  62:			
+  63:			; Return: HL = pointer to next byte after DU: spec or unaffected
+  64:			;	       if no DU: spec found
+  65:			;	  DE unaffected
+  66:			;	  BC and PSW destroyed
+  67:			;	  CARRY SET if error
+  68:			
+  69:	06FB          	STRIPDU:
+  70:	06FB  D5      		PUSH	DE		; Save FCB address
+  71:	06FC  3A5410  		LD	A,(DRIVE)	; Put current du: in BC
+  72:	06FF  47      		LD	B,A
+  73:	0700  3A5510  		LD	A,(USER)
+  74:	0703  4F      		LD	C,A
+  75:			;
+  76:	0704          	COLON:
+  77:	0704  3E3A    		LD	A,':'		; Load a colon
+  78:	0706  CDBF0D  		CALL	POS		; Find position of it (if any) in name
+  79:	0709  CA4707  		JP	Z,STRPDUN	; If no colon appears use default du:
+  80:	070C  E5      		PUSH	HL		; Put original pointer to name on stack
+  81:	070D  3D      		DEC	A		; Test to see if ':' is first character
+  82:	070E  CA5107  		JP	Z,BADDU		; Bad du: if so
+  83:			
+  84:	0000          		 IF	ZCPR3
+  94:				 ENDIF			; ZCPR3
+  95:			
+  96:	0711  3A0401  		LD	A,(MAXDRV)	; Get MAXDRV in Acc.
+  97:	0714  BE      		CP	(HL)		; If drive > MAXDRV
+  98:	0715  DA5107  		JP	C,BADDU		; Then error
+  99:	0718  7E      		LD	A,(HL)		; Get the drive character in Acc.
+ 100:	0719  D641    		SUB	'A'		; Is it less than 'A' ?
+ 101:	071B  DA2007  		JP	C,STRUSR	; Then it's not a drive - try user
+ 102:	071E  47      		LD	B,A		; Else get drive in B
+ 103:	071F  23      		INC	HL		; Point to next character
+ 104:	0720          	STRUSR:
+ 105:	0720  CD9E0D  		CALL	GETASCD		; Get a digit and convert to binary
+ 106:	0723  DA3807  		JP	C,STRUSR1	; We're done here if not a good digit
+ 107:	0726  4F      		LD	C,A		; Else save a copy of the first number
+ 108:	0727  23      		INC	HL		; Point to second (possible) digit
+ 109:	0728  CD9E0D  		CALL	GETASCD		; And try to get another digit
+ 110:	072B  DA3807  		JP	C,STRUSR1	; Move on if no second digit
+ 111:	072E  57      		LD	D,A		; Else save it
+ 112:	072F  23      		INC	HL		; Point to whatever is next
+ 113:	0730  79      		LD	A,C		; Get the 10's digit back
+ 114:	0731  07      		RLCA			; Multiply times 2
+ 115:	0732  4F      		LD	C,A		; Save this
+ 116:	0733  07      		RLCA			; Times 4
+ 117:	0734  07      		RLCA			; Times 8
+ 118:	0735  81      		ADD	A,C		; C * 10 =  C * 2 + C * 8
+ 119:	0736  82      		ADD	A,D		; Plus units
+ 120:	0737  4F      		LD	C,A		; Put new user code into C
+ 121:			
+ 122:	0000          		 IF	ZCPR3
+ 130:				 ENDIF			; ZCPR3
+ 131:	0738          	STRUSR1:
+ 132:	0738  7E      		LD	A,(HL)		; Get a character
+ 133:	0739  FE3A    		CP	':'		; If it is not a colon then
+ 134:	073B  C25107  		JP	NZ,BADDU	; We have a bad user spec
+ 135:	073E  23      		INC	HL		; Else point to rest of file name
+ 136:	073F  3A0501  		LD	A,(MAXUSR)	; Get MAXUSR
+ 137:	0742  B9      		CP	C		; Compare with our user spec
+ 138:	0743  DA5107  		JP	C,BADDU		; Error if user > MAXUSR
+ 139:	0746  D1      		POP	DE		; Discard original pointer to name
+ 140:	0747          	STRPDUN:
+ 141:	0747  D1      		POP	DE		; Restore FCB pointer
+ 142:	0748  1B      		DEC	DE		; Set to FCB[0-1]
+ 143:	0749  79      		LD	A,C		; Get user number in Acc.
+ 144:	074A  12      		LD	(DE),A		; And store it
+ 145:	074B  13      		INC	DE		; Point to FCB[0]
+ 146:	074C  78      		LD	A,B		; Get drive code in Acc.
+ 147:	074D  3C      		INC	A		; Increment since in FCB, A=1, B=2, etc.
+ 148:	074E  12      		LD	(DE),A		; Store it
+ 149:	074F  AF      		XOR	A		; Clear Acc./carry
+ 150:	0750  C9      		RET			; Done
+ 151:			
+ 152:	0751          	BADDU:
+ 153:	0751  E1      		POP	HL		; Restore original name pointer
+ 154:	0752  D1      		POP	DE		; And FCB address
+ 155:	0753  37      		SCF			; Set carry = ERROR
+ 156:	0754  C9      		RET			; And return
+ 157:			
+ 158:			;-----------------------------------------------------------------------
+ 159:			
+ 160:			; Make an FCB from a file name
+ 161:			;
+ 162:			; Entry:  HL = pointer to file name WITHOUT DRIVE/USER SPEC
+ 163:			;	  DE = pointer to FCB
+ 164:			
+ 165:			; Return: HL and DE unaffected
+ 166:			;	  BC and PSW destroyed
+ 167:			;	  CARRY SET if BAD file name.
+ 168:			
+ 169:	0755          	MAKEFCB:
+ 170:	0755  CDCD07  		CALL	CLRFCB		; Clear the FCB
+ 171:	0758  E5      		PUSH	HL		; Keep a copy of the file name pointer
+ 172:	0759  D5      		PUSH	DE		; And a copy of the FCB pointer
+ 173:	075A  13      		INC	DE		; Set pointer to the name field
+ 174:	075B  0608    		LD	B,FNAMSZ-3	; Character count for name, less type
+ 175:	075D          	MKNAME:
+ 176:	075D  7E      		LD	A,(HL)		; Get character from file name
+ 177:	075E  CDEF07  		CALL	CHKCHR		; Check it for validity
+ 178:	0761  C2C907  		JP	NZ,BADNAME	; Break if bad character
+ 179:	0764  7E      		LD	A,(HL)		; Get it back again
+ 180:	0765  23      		INC	HL		; Point to next
+ 181:	0766  FE2E    		CP	'.'		; If '.'
+ 182:	0768  CA9507  		JP	Z,MKTYPE	; Then go do file type field
+ 183:	076B  FE2A    		CP	'*'		; If '*'
+ 184:	076D  CA8A07  		JP	Z,MKWILD	; Then make wild
+ 185:	0770  FE21    		CP	' '+1		; If delimiter
+ 186:	0772  DABA07  		JP	C,MKDUN		; Then all done
+ 187:	0775  12      		LD	(DE),A		; Else put the character into the FCB
+ 188:	0776  13      		INC	DE		; Point to next FCB character
+ 189:	0777  05      		DEC	B		; Decrement count
+ 190:	0778  C25D07  		JP	NZ,MKNAME	; Do more until end of file name field
+ 191:	077B          	MKNAM1:
+ 192:	077B  7E      		LD	A,(HL)		; We did all allowable name characters
+ 193:	077C  23      		INC	HL		; Are there any more ?
+ 194:	077D  FE2E    		CP	'.'		; Must have type now
+ 195:	077F  CA9A07  		JP	Z,MKTYP1	; So keep looking until we find '.'
+ 196:	0782  FE21    		CP	' '+1		; Or if we find a delimiter
+ 197:	0784  DABA07  		JP	C,MKDUN		; Then done
+ 198:	0787  C37B07  		JP	MKNAM1		; Extra name chars are ignored
+ 199:			
+ 200:	078A          	MKWILD:
+ 201:	078A  3E3F    		LD	A,'?'		; Fill rest of name field with '?'
+ 202:	078C          	MKWLD1:
+ 203:	078C  12      		LD	(DE),A
+ 204:	078D  13      		INC	DE
+ 205:	078E  05      		DEC	B
+ 206:	078F  C28C07  		JP	NZ,MKWLD1
+ 207:	0792  C37B07  		JP	MKNAM1		; And find type field
+ 208:			
+ 209:	0795          	MKTYPE:
+ 210:	0795  13      		INC	DE		; Increment DE to file type field
+ 211:	0796  05      		DEC	B
+ 212:	0797  C29507  		JP	NZ,MKTYPE
+ 213:	079A          	MKTYP1:
+ 214:	079A  0603    		LD	B,3		; Get type field size in counter
+ 215:	079C          	MKTYP2:
+ 216:	079C  7E      		LD	A,(HL)		; Get character from file type
+ 217:	079D  CDEF07  		CALL	CHKCHR		; Check it for validity
+ 218:	07A0  C2C907  		JP	NZ,BADNAME	; Break if bad character
+ 219:	07A3  7E      		LD	A,(HL)		; Get character again
+ 220:	07A4  23      		INC	HL		; Point to next
+ 221:	07A5  FE2E    		CP	'.'		; If '.'
+ 222:	07A7  CAC907  		JP	Z,BADNAME	; Then break - '.' can't occur in type
+ 223:	07AA  FE2A    		CP	'*'		; If '*'
+ 224:	07AC  CABE07  		JP	Z,MKWLD2	; Then make wild
+ 225:	07AF  FE21    		CP	' '+1		; If delimiter
+ 226:	07B1  DABA07  		JP	C,MKDUN		; Done
+ 227:	07B4  12      		LD	(DE),A		; Else put the character into the FCB
+ 228:	07B5  13      		INC	DE		; Point to next FCB character
+ 229:	07B6  05      		DEC	B		; Decrement count
+ 230:	07B7  C29C07  		JP	NZ,MKTYP2	; Do more until end of file name field
+ 231:	07BA          	MKDUN:
+ 232:	07BA  D1      		POP	DE		; Get original FCB address back
+ 233:	07BB  E1      		POP	HL		; Restore original file name pointer
+ 234:	07BC  AF      		XOR	A		; Make sure flags reflect GOOD NAME
+ 235:	07BD  C9      		RET			; And return
+ 236:			
+ 237:	07BE          	MKWLD2:
+ 238:	07BE  3E3F    		LD	A,'?'		; Make file type wild
+ 239:	07C0  12      		LD	(DE),A
+ 240:	07C1  13      		INC	DE
+ 241:	07C2  05      		DEC	B
+ 242:	07C3  C2BE07  		JP	NZ,MKWLD2
+ 243:	07C6  C3BA07  		JP	MKDUN		; And we're done
+ 244:			
+ 245:	07C9          	BADNAME:
+ 246:	07C9  D1      		POP	DE		; Restore original FCB address
+ 247:	07CA  E1      		POP	HL		; Restore pointer to file name
+ 248:	07CB  37      		SCF			; Set error flag
+ 249:	07CC  C9      		RET			; Quit
+ 250:			
+ 251:			;-----------------------------------------------------------------------
+ 252:			
+ 253:			; Clear an FCB (exclusive of the user and drive bytes).
+ 254:			
+ 255:			; Entry:  DE = FCB address
+ 256:			;
+ 257:			; Return:  FCB name and type filled with spaces.  Rest of FCB set to zero.
+ 258:			;	   all but PSW are unaffected.
+ 259:			
+ 260:	07CD          	CLRFCB:
+ 261:	07CD  C5      		PUSH	BC		; Save caller's reg.
+ 262:	07CE  D5      		PUSH	DE		; Save FCB address
+ 263:	07CF  13      		INC	DE		; And point to name field
+ 264:	07D0  060B    		LD	B,FNAMSZ	; Get size of file name
+ 265:	07D2  3E20    		LD	A,' '		; Get a space character in Acc.
+ 266:	07D4  CDB80D  		CALL	PAD		; And pad file name with spaces
+ 267:	07D7  D1      		POP	DE		; Restore old FCB
+ 268:	07D8  CDDD07  		CALL	ZEROFCB		; Initialize rest of FCB
+ 269:	07DB  C1      		POP	BC		; Restore old B reg.
+ 270:	07DC  C9      		RET
+ 271:			
+ 272:			;-----------------------------------------------------------------------
+ 273:			
+ 274:			; "Zero" an FCB for access by setting all bytes after file name/type to
+ 275:			; zero.
+ 276:			
+ 277:			; Entry DE = FCB address
+ 278:			;
+ 279:			; Return:  The business-end of the FCB is set to all zeros.
+ 280:			;	   all but PSW are unaffected
+ 281:			
+ 282:	07DD          	ZEROFCB:
+ 283:	07DD  C5      		PUSH	BC		; Save all
+ 284:	07DE  D5      		PUSH	DE
+ 285:	07DF  E5      		PUSH	HL
+ 286:	07E0  210C00  		LD	HL,EXTOFF	; Get offset to extent byte
+ 287:	07E3  19      		ADD	HL,DE		; Added to address of FCB
+ 288:	07E4  EB      		EX	DE,HL		; In DE reg.
+ 289:	07E5  AF      		XOR	A		; Clear Acc.
+ 290:	07E6  0618    		LD	B,FCBSZ-EXTOFF	; Get size FCB less name & drive
+ 291:	07E8  CDB80D  		CALL	PAD		; And pad with zeros
+ 292:	07EB  E1      		POP	HL		; Restore all
+ 293:	07EC  D1      		POP	DE
+ 294:	07ED  C1      		POP	BC
+ 295:	07EE  C9      		RET			; And done
+ 296:			
+ 297:			;-----------------------------------------------------------------------
+ 298:			
+ 299:			; Check to see if a character is a legal file name component
+ 300:			;
+ 301:			; Entry:  Acc. = character to check
+ 302:			
+ 303:			; Return:  ZERO SET if character is OK
+ 304:			;	   or Acc. contains relative position of invalid character
+ 305:			
+ 306:	07EF          	CHKCHR:
+ 307:	07EF  E5      		PUSH	HL		; Save caller's HL
+ 308:	07F0  21F807  		LD	HL,ILLTBL	; And use it to reference "illegal table"
+ 309:	07F3  CDBF0D  		CALL	POS		; See if there is a match in table
+ 310:	07F6  E1      		POP	HL		; Restore old
+ 311:	07F7  C9      		RET			; And done
+ 312:			
+ 313:	07F8  2C3B3A3D	ILLTBL:	DB	',;:=''"',0
+	      272200
+ 314:			
+ 315:			;-----------------------------------------------------------------------
+ 316:			
+ 317:			; "Match" wild cards in a "wild" FCB with characters from an unambiguous
+ 318:			; FCB to create a result FCB.
+ 319:			
+ 320:			; Entry:  HL = first FCB.  Must have unambiguous file name.
+ 321:			;	  BC = second "wild" FCB.
+ 322:			;	  DE = result FCB.
+ 323:			
+ 324:			; Result: Wild cards in the second FCB are filled from the first FCB
+ 325:			;	  and put into result FCB.
+ 326:			;	  All registers affected.
+ 327:			
+ 328:			;	  Examples:   first: COPY    .ASM     first: DC      .COM
+ 329:			;		     second: ?????NEW.???    second: DZ??????.???
+ 330:			;		     result: COPYNEW .ASM    result: DZ      .COM
+ 331:			
+ 332:	07FF          	MTCHWLD:
+ 333:	07FF  CDCD07  		CALL	CLRFCB		; Clear the result FCB
+ 334:	0802  1B      		DEC	DE		; Copy user byte from wild to result
+ 335:	0803  0B      		DEC	BC
+ 336:	0804  0A      		LD	A,(BC)
+ 337:	0805  12      		LD	(DE),A
+ 338:	0806  13      		INC	DE		; Copy drive byte
+ 339:	0807  03      		INC	BC
+ 340:	0808  0A      		LD	A,(BC)
+ 341:	0809  12      		LD	(DE),A
+ 342:	080A  03      		INC	BC		; Increment first FCB and temp FCB
+ 343:	080B  23      		INC	HL		; To the name field
+ 344:	080C  D5      		PUSH	DE		; Save pointer to result FCB
+ 345:	080D  110411  		LD	DE,FNBUF	; Gonna assemble name in a buffer first
+ 346:	0810  3E08    		LD	A,FNAMSZ-FTYPSZ	; Get length of name field
+ 347:	0812  CD2808  		CALL	MTCHW1		; Do name field
+ 348:	0815  3E2E    		LD	A,'.'		; Add in the period
+ 349:	0817  12      		LD	(DE),A
+ 350:	0818  13      		INC	DE
+ 351:	0819  3E03    		LD	A,FTYPSZ	; Then do the type field
+ 352:	081B  CD2808  		CALL	MTCHW1
+ 353:	081E  AF      		XOR	A		; Get a zero
+ 354:	081F  12      		LD	(DE),A		; And terminate the name
+ 355:	0820  210411  		LD	HL,FNBUF	; Put the file name address in HL
+ 356:	0823  D1      		POP	DE		; Get the FCB address in DE
+ 357:	0824  CD5507  		CALL	MAKEFCB		; And complete the destination FCB
+ 358:	0827  C9      		RET
+ 359:			
+ 360:	0828          	MTCHW1:
+ 361:	0828  F5      		PUSH	AF		; Save counter
+ 362:	0829  0A      		LD	A,(BC)		; Get a character from second (wild) FCB
+ 363:	082A  FE3F    		CP	'?'		; Wild card ?
+ 364:	082C  C23208  		JP	NZ,MTCHW2	; NO - save it
+ 365:	082F  7E      		LD	A,(HL)		; Else use a character from first FCB
+ 366:	0830  E67F    		AND	07FH		; But mask the attribute
+ 367:	0832          	MTCHW2:
+ 368:	0832  FE20    		CP	' '		; Don't save blanks
+ 369:	0834  CA3908  		JP	Z,MTCHW3
+ 370:	0837  12      		LD	(DE),A		; Move character to name buffer
+ 371:	0838  13      		INC	DE		; Increment pointer to name buffer
+ 372:	0839          	MTCHW3:
+ 373:	0839  03      		INC	BC		; Bump second FCB
+ 374:	083A  23      		INC	HL		; Bump first FCB
+ 375:	083B  F1      		POP	AF		; Get counter
+ 376:	083C  3D      		DEC	A		; One more done
+ 377:	083D  C22808  		JP	NZ,MTCHW1	; Loop if not zero
+ 378:	0840  C9      		RET
+ 379:			
+ 380:			;-----------------------------------------------------------------------
+ 381:			
+ 382:			; Print a file name on the console
+ 383:			
+ 384:			; Entry:  HL = pointer to FCB (FCB[0-1] = user).
+ 385:			
+ 386:			; Result:  DE preserved. Other registers affected.
+ 387:			
+ 388:	0841          	PRNFNAM:
+ 389:	0841  46      		LD	B,(HL)		; Get drive
+ 390:	0842  05      		DEC	B		; Decrement since in FCB A=1
+ 391:	0843  2B      		DEC	HL
+ 392:	0844  4E      		LD	C,(HL)		; Get user
+ 393:	0845  CD6208  		CALL	PRNDU		; Print du:
+ 394:	0848  23      		INC	HL		; And point to file name
+ 395:	0849  23      		INC	HL
+ 396:	084A  0608    		LD	B,FNAMSZ-3	; Get number of characters in name field
+ 397:	084C  CD5608  		CALL	PRNF1		; Print name
+ 398:	084F  3E2E    		LD	A,'.'		; Print a period
+ 399:	0851  CD0B0D  		CALL	TYPE
+ 400:	0854  0603    		LD	B,3		; Get number of character in type field
+ 401:	0856  7E      	PRNF1:	LD	A,(HL)		; Get a character
+ 402:	0857  E67F    		AND	7Fh		; Strip attribute bits
+ 403:	0859  23      		INC	HL		; Point to next
+ 404:	085A  CD0B0D  		CALL	TYPE		; Type the character
+ 405:	085D  05      		DEC	B		; Decrement counter
+ 406:	085E  C25608  		JP	NZ,PRNF1	; Loop 'till all done
+ 407:	0861  C9      		RET			; And return
+ 408:			
+ 409:			;-----------------------------------------------------------------------
+ 410:			
+ 411:			; Print drive/user
+ 412:			
+ 413:			; Entry:  B = drive number (0 .. 15)
+ 414:			;	  C = user number  (0 .. 31, 32-user environments supported)
+ 415:			;
+ 416:			; Result:  all registers except PSW are preserved.
+ 417:			
+ 418:	0862          	PRNDU:
+ 419:	0862  78      		LD	A,B		; Get drive in Acc.
+ 420:	0863  C641    		ADD	A,'A'		; Add character offset so 0 = 'A'
+ 421:	0865  CD0B0D  		CALL	TYPE		; Type it
+ 422:	0868  79      		LD	A,C		; Get user in Acc.
+ 423:			
+ 424:			; Version 1.3 mods start here
+ 425:			
+ 426:	0869  062F    		LD	B,'0'-1		; Preset for two-digit calculation later
+ 427:	086B  FE0A    		CP	10		; See if single digit
+ 428:	086D  D27808  		JP	NC,TWODIG	; If not, print two digits
+ 429:	0870  C630    		ADD	A,'0'		; Else convert to ASCII
+ 430:	0872  CD0B0D  		CALL	TYPE		; Print to CON:
+ 431:	0875  C38B08  		JP	PUTCLN		; Then do colon
+ 432:	0878          	TWODIG:
+ 433:	0878  04      		INC	B		; Count tens digit in B
+ 434:	0879  D60A    		SUB	10		; Keep subtracting 10 until carry is set
+ 435:	087B  D27808  		JP	NC,TWODIG
+ 436:	087E  C60A    		ADD	A,10		; Get remainder (units digit) back
+ 437:	0880  4F      		LD	C,A		; Save it in C
+ 438:	0881  78      		LD	A,B
+ 439:	0882  CD0B0D  		CALL	TYPE
+ 440:	0885  79      		LD	A,C
+ 441:	0886  C630    		ADD	A,'0'
+ 442:	0888  CD0B0D  		CALL	TYPE
+ 443:			
+ 444:			; Version 1.3 mods end here
+ 445:			
+ 446:	088B          	PUTCLN:
+ 447:	088B  3E3A    		LD	A,':'		; Get a colon
+ 448:	088D  CD0B0D  		CALL	TYPE		; Type that
+ 449:	0890  C9      		RET			; All done
+ 450:			
+ 451:			;		      end of file name module
+ 452:			;-----------------------------------------------------------------------
+**** PPIP19.Z80 ****
+ 266:				INCLUDE	PPIP-3.Z80	; Module <<3>> disk I/O module
+**** PPIP-3.Z80 ****
+   1:			; PPIP-3.Z80
+   2:			
+   3:			; <<3>> 		  Disk I/O module
+   4:			
+   5:			; This module handles disk input/output operations, including file open,
+   6:			; read, write, close, etc.
+   7:			
+   8:			;-----------------------------------------------------------------------
+   9:			
+  10:			; Copy a file
+  11:			;
+  12:			; Entry:  HL = source FCB
+  13:			;	  DE = destination FCB (if the destination file exists it should
+  14:			;	       be deleted BEFORE this routine is called).
+  15:			
+  16:			; Return:  HL and DE preserved
+  17:			;	   CARRY SET if error
+  18:			
+  19:	0891          	FCOPY:
+  20:	0891  AF      		XOR	A		; Get a zero in accumulator
+  21:	0892  325F10  		LD	(EOFLAG),A	; And turn off the end-of-file-flag
+  22:	0895  321113  		LD	(CRCVAL),A	; Also, set crc to zero
+  23:	0898  321213  		LD	(CRCVAL+1),A
+  24:	089B  EB      		EX	DE,HL		; Get source FCB in DE
+  25:			
+  26:	0000          		 IF	CPM3
+  28:				 ENDIF			; CPM3
+  29:			
+  30:	089C  CD8D09  		CALL	FOPEN		; Open source file for READ
+  31:	089F  D2BA08  		JP	NC,FCPY1	; Continue if open ok
+  32:	08A2  210000  		LD	HL,0		; Else error
+  33:	08A5  CD790D  		CALL	ERRET
+  34:	08A8  63616E27		DB	'can''t open source',0
+	      74206F70
+	      656E2073
+	      6F757263
+	      6500
+  35:	08BA          	FCPY1:
+  36:	08BA  F5      		PUSH	AF		; Be on the safe side...
+  37:	08BB  3A8710  		LD	A,(SOURCE+BLOFF)
+  38:	08BE  32AD10  		LD	(DEST+BLOFF),A
+  39:	08C1  F1      		POP	AF		; Transfer LRBC
+  40:			
+  41:	0000          		 IF	Z80DOS
+  43:				 ENDIF			; Z80DOS
+  44:			
+  45:	0000          		 IF	DATESTAMP
+  52:				 ENDIF			; DATESTAMP
+  53:			
+  54:	08C2  EB      		EX	DE,HL		; Get dest FCB in DE
+  55:	08C3  CDEC09  		CALL	NEWFILE		; Create the destination file for WRITE
+  56:	08C6  D8      		RET	C		; Return if we can't make the file
+  57:	08C7          	FCPY2:
+  58:	0000          		 IF	DATESTAMP
+  65:				 ENDIF			; DATESTAMP
+  66:			
+  67:	08C7  EB      		EX	DE,HL		; HL = dest, DE = source
+  68:	08C8  E5      		PUSH	HL		; Save dest. FCB on stack
+  69:	08C9  2A5A10  		LD	HL,(BUFRECS)	; Get number of records to read
+  70:	08CC  44      		LD	B,H		; Into BC
+  71:	08CD  4D      		LD	C,L
+  72:	08CE  2A6F10  		LD	HL,(IOBUF)	; And buffer address in HL
+  73:	08D1  CD6109  		CALL	BLKRD		; Read a buffer-full
+  74:	08D4  D2DE08  		JP	NC,FCPY3	; Move on if NOT EOF
+  75:	08D7  3A5F10  		LD	A,(EOFLAG)	; Else switch on the
+  76:	08DA  2F      		CPL			; Flag
+  77:	08DB  325F10  		LD	(EOFLAG),A
+  78:	08DE          	FCPY3:
+  79:	08DE  44      		LD	B,H		; Get number of records to write
+  80:	08DF  4D      		LD	C,L		; Into BC
+  81:	08E0  E1      		POP	HL		; Get dest FCB back
+  82:	08E1  EB      		EX	DE,HL		; Now HL = source, DE = dest
+  83:	08E2  E5      		PUSH	HL		; Save source FCB on stack
+  84:	08E3  2A6F10  		LD	HL,(IOBUF)	; Get buffer address in HL
+  85:	08E6  CD3D09  		CALL	BLKWRT		; And write the block
+  86:	08E9  E1      		POP	HL		; HL = source, DE = dest
+  87:	08EA  D20F09  		JP	NC,FCPY4	; Continue if no error
+  88:	08ED  CD840A  		CALL	FDELETE		; Delete the dest. file we just made
+  89:	08F0  210000  		LD	HL,0
+  90:	08F3  CD790D  		CALL	ERRET		; Issue error message and quit
+  91:	08F6  4469736B		DB	'Disk full. Copy deleted.',0
+	      2066756C
+	      6C2E2043
+	      6F707920
+	      64656C65
+	      7465642E
+	      00
+  92:	090F          	FCPY4:
+  93:	090F  3A5F10  		LD	A,(EOFLAG)	; Now check to see if end of file
+  94:	0912  B7      		OR	A
+  95:	0913  CAC708  		JP	Z,FCPY2		; Loop if not
+  96:			
+  97:	0000          		 IF	Z80DOS
+  99:				 ENDIF			; Z80DOS
+ 100:			
+ 101:	0916  CDDE09  		CALL	FCLOSE		; Close dest. file
+ 102:	0919  F5      		PUSH	AF
+ 103:	091A  CD900A  		CALL	ATTRBUT		; Set last record byte count
+ 104:	091D  F1      		POP	AF
+ 105:	091E  D0      		RET	NC		; And return if ok
+ 106:	091F  210000  		LD	HL,0		; Else error
+ 107:	0922  CD790D  		CALL	ERRET
+ 108:	0925  63616E27		DB	'can''t close destination',0
+	      7420636C
+	      6F736520
+	      64657374
+	      696E6174
+	      696F6E00
+ 109:			
+ 110:			;-----------------------------------------------------------------------
+ 111:			
+ 112:			; Write a block of records to a file
+ 113:			;
+ 114:			; Entry:  DE points to FCB for file to write.
+ 115:			;	  BC = number of records to write
+ 116:			;	  HL = starting address of memory block
+ 117:			;	  file must have already been opened
+ 118:			
+ 119:			; Return:  HL = count of records actually written
+ 120:			;	   BC -= records written, DE preserved, PSW lost
+ 121:			;	   CARRY SET if file write error
+ 122:			
+ 123:	093D          	BLKWRT:
+ 124:	093D  CDB10A  		CALL	FSETUSR		; Set to correct user
+ 125:	0940  E5      		PUSH	HL		; Save buffer address
+ 126:	0941  210000  		LD	HL,0		; Initialize record count
+ 127:	0944          	BLKW1:
+ 128:	0944  E3      		EX	(SP),HL		; Now HL = addr., stack = record count
+ 129:	0945  78      		LD	A,B		; Test record count
+ 130:	0946  B1      		OR	C
+ 131:	0947  CA5F09  		JP	Z,BLKWDUN	; And return if zero
+ 132:	094A  CDB509  		CALL	FACCESS		; Set DMA address
+ 133:	094D  CDC209  		CALL	FWRITE		; Write one record
+ 134:	0950  DA5F09  		JP	C,BLKWDUN	; Return now if error
+ 135:	0953  D5      		PUSH	DE		; Save reg.
+ 136:	0954  118000  		LD	DE,RECSZ	; So we can use it to bump DMA address
+ 137:	0957  19      		ADD	HL,DE		; By one record
+ 138:	0958  D1      		POP	DE		; Then restore reg.
+ 139:	0959  E3      		EX	(SP),HL		; Retrieve rec. count
+ 140:	095A  23      		INC	HL		; And update it
+ 141:	095B  0B      		DEC	BC		; Decrement number of records to write
+ 142:	095C  C34409  		JP	BLKW1		; And loop
+ 143:			
+ 144:	095F          	BLKWDUN:
+ 145:	095F  E1      		POP	HL		; Get record count in HL
+ 146:	0960  C9      		RET			; And return
+ 147:			
+ 148:			;-----------------------------------------------------------------------
+ 149:			
+ 150:			; Read a block of records from a file with CRC
+ 151:			;
+ 152:			; Entry:  DE points to FCB for file to read.
+ 153:			;	  BC = number of records to read
+ 154:			;	  HL = starting address of memory block
+ 155:			;	  file must have already been opened
+ 156:			
+ 157:			; Return:  HL = count of records actually read
+ 158:			;	   BC -= records read, DE preserved, PSW lost
+ 159:			;	   CRCVAL (globally defined) is updated
+ 160:			;	   CARRY SET if End-Of-File
+ 161:			
+ 162:	0961          	BLKRD:
+ 163:	0961  CDB10A  		CALL	FSETUSR		; Set user number
+ 164:	0964  E5      		PUSH	HL		; Save buffer address
+ 165:	0965  210000  		LD	HL,0		; Initialize record count
+ 166:	0968          	BLKRD1:
+ 167:	0968  E3      		EX	(SP),HL		; Now HL = addr., stack = record count
+ 168:	0969  78      		LD	A,B		; Test record count
+ 169:	096A  B1      		OR	C
+ 170:	096B  CA8B09  		JP	Z,BLKRDUN	; And return if zero
+ 171:	096E  CDB509  		CALL	FACCESS		; Set DMA address
+ 172:	0971  CDD009  		CALL	FREAD		; Read one record
+ 173:	0974  DA8B09  		JP	C,BLKRDUN	; Return now if error
+ 174:	0977  3A6210  		LD	A,(VERIFY)	; Is CRC verification being done?
+ 175:	097A  FEFF    		CP	ON
+ 176:	097C  CC8C0B  		CALL	Z,RECRC		; YES - do crc check on entire record
+ 177:	097F  D5      		PUSH	DE		; Save reg.
+ 178:	0980  118000  		LD	DE,RECSZ	; So we can use it to bump DMA address
+ 179:	0983  19      		ADD	HL,DE		; By one record
+ 180:	0984  D1      		POP	DE		; Then restore reg.
+ 181:	0985  E3      		EX	(SP),HL		; Retrieve rec. count
+ 182:	0986  23      		INC	HL		; And update it
+ 183:	0987  0B      		DEC	BC		; Decrement number of records to read
+ 184:	0988  C36809  		JP	BLKRD1		; And loop
+ 185:			
+ 186:	098B          	BLKRDUN:
+ 187:	098B  E1      		POP	HL		; Get record count in HL
+ 188:	098C  C9      		RET			; And return
+ 189:			
+ 190:			;-----------------------------------------------------------------------
+ 191:			
+ 192:			; Open a file
+ 193:			
+ 194:			; Entry:  DE = pointer to completed FCB for file to open (FCB[0-1] = user).
+ 195:			
+ 196:			; Returns:  all regs. except PSW preserved
+ 197:			;	    CARRY SET if error
+ 198:			
+ 199:	098D  C5      	FOPEN:	PUSH	BC		; Save all
+ 200:	098E  E5      		PUSH	HL
+ 201:	098F  D5      		PUSH	DE		;
+ 202:	0990  CDDD07  		CALL	ZEROFCB		; Zero the extent and current record
+ 203:	0993  212000  		LD	HL,32
+ 204:	0996  19      		ADD	HL,DE
+ 205:	0997  36FF    		LD	(HL),0FFh	; Last Record Byte Count
+ 206:	0999  CDB10A  		CALL	FSETUSR		; Set user
+ 207:	099C  0E0F    		LD	C,OPEN		; Do CP/M function call
+ 208:	099E  CD0500  		CALL	BDOS
+ 209:			
+ 210:	0000          		 IF	DATESTAMP
+ 213:				 ENDIF			; DATESTAMP
+ 214:			
+ 215:	09A1  C601    		ADD	A,1		; From BDOS, Acc. = 0FFh if ERROR
+ 216:	09A3  D1      		POP	DE		; FCB addr.
+ 217:	09A4  F5      		PUSH	AF
+ 218:	09A5  212000  		LD	HL,32
+ 219:	09A8  19      		ADD	HL,DE
+ 220:	09A9  7E      		LD	A,(HL)		; Last Record Byte Count
+ 221:	09AA  3600    		LD	(HL),0
+ 222:	09AC  1B      		DEC	DE
+ 223:	09AD  1B      		DEC	DE
+ 224:	09AE  12      		LD	(DE),A		; Store it
+ 225:	09AF  13      		INC	DE
+ 226:	09B0  13      		INC	DE
+ 227:	09B1  F1      		POP	AF
+ 228:	09B2  E1      		POP	HL		; Restore all
+ 229:	09B3  C1      		POP	BC
+ 230:	09B4  C9      		RET
+ 231:			
+ 232:			;-----------------------------------------------------------------------
+ 233:			
+ 234:			; Set CP/M Direct Memory Access address
+ 235:			
+ 236:			; Entry:  HL = the address of the next record to be read/written
+ 237:			
+ 238:			; Return: none
+ 239:			;	  all registers except PSW preserved
+ 240:			
+ 241:	09B5          	FACCESS:
+ 242:	09B5  C5      		PUSH	BC		; Save all
+ 243:	09B6  D5      		PUSH	DE
+ 244:	09B7  E5      		PUSH	HL
+ 245:	09B8  EB      		EX	DE,HL		; Put DMA address in DE
+ 246:	09B9  0E1A    		LD	C,SETDMA	; Do CP/M function to
+ 247:	09BB  CD0500  		CALL	BDOS		; Set the DMA address to our buffer
+ 248:	09BE  E1      		POP	HL		; Restore
+ 249:	09BF  D1      		POP	DE
+ 250:	09C0  C1      		POP	BC
+ 251:	09C1  C9      		RET
+ 252:			
+ 253:			;-----------------------------------------------------------------------
+ 254:			
+ 255:			; Sequential WRITE of one record to a file
+ 256:			
+ 257:			; Entry:  DE = pointer to completed FCB for file to write
+ 258:			;	  Current DMA address holds the record to be written
+ 259:			
+ 260:			; Return:  all but PSW are preserved
+ 261:			;	   CARRY SET if error
+ 262:			
+ 263:	09C2          	FWRITE:
+ 264:	09C2  C5      		PUSH	BC		; Save old stuff
+ 265:	09C3  D5      		PUSH	DE
+ 266:	09C4  E5      		PUSH	HL
+ 267:			
+ 268:	0000          		 IF	Z80DOS
+ 270:				 ENDIF	; Z80DOS
+ 271:			
+ 272:	09C5  0E15    		LD	C,WRITE
+ 273:	0000          		 IF	CPM3
+ 275:				 ELSE			; CPM3
+ 276:	09C7  CD0500  		CALL	BDOS
+ 277:				 ENDIF			; CPM3
+ 278:			
+ 279:	09CA  C6FF    		ADD	A,0FFH		; From BDOS, Acc. = 00h if OK
+ 280:	09CC  E1      		POP	HL		; Restore
+ 281:	09CD  D1      		POP	DE
+ 282:	09CE  C1      		POP	BC
+ 283:	09CF  C9      		RET
+ 284:			
+ 285:			;-----------------------------------------------------------------------
+ 286:			
+ 287:			; Sequential READ of one record from a file
+ 288:			
+ 289:			; Entry:  DE points to FCB
+ 290:			
+ 291:			; Return:  next record from file is in the current DMA buffer or
+ 292:			;	   CARRY SET if PHYSICAL end-of-file
+ 293:			;	   all but PSW are preserved
+ 294:			
+ 295:	09D0          	FREAD:
+ 296:	09D0  C5      		PUSH	BC		; Save old regs.
+ 297:	09D1  D5      		PUSH	DE
+ 298:	09D2  E5      		PUSH	HL
+ 299:	09D3  0E14    		LD	C,BDREAD	; Do CP/M function
+ 300:	09D5  CD0500  		CALL	BDOS
+ 301:	09D8  C6FF    		ADD	A,0FFH		; From BDOS, Acc. = 00h if OK
+ 302:	09DA  E1      		POP	HL		; Restore
+ 303:	09DB  D1      		POP	DE
+ 304:	09DC  C1      		POP	BC
+ 305:	09DD  C9      		RET
+ 306:			
+ 307:			;-----------------------------------------------------------------------
+ 308:			
+ 309:			; Close a file
+ 310:			
+ 311:			; Entry:  DE points to FCB of file to close.
+ 312:			
+ 313:			; Return: CARRY SET if error
+ 314:			;	  all regs. except PSW preserved
+ 315:			
+ 316:	09DE          	FCLOSE:
+ 317:	09DE  C5      		PUSH	BC		; Save all
+ 318:	09DF  E5      		PUSH	HL
+ 319:	09E0  D5      		PUSH	DE
+ 320:	09E1  0E10    		LD	C,CLOSE		; Do CP/M function
+ 321:	0000          		 IF	CPM3
+ 323:				 ELSE			; CPM3
+ 324:	09E3  CD0500  		CALL	BDOS
+ 325:				 ENDIF			; CPM3
+ 326:	09E6  C601    		ADD	A,1		; From BDOS, Acc. = 0FFh if ERROR
+ 327:	09E8  D1      		POP	DE		; Restore all
+ 328:	09E9  E1      		POP	HL
+ 329:	09EA  C1      		POP	BC
+ 330:	09EB  C9      		RET
+ 331:			
+ 332:			;-----------------------------------------------------------------------
+ 333:			
+ 334:			; Create a new file.  Includes user inquiry and Read-Only check.
+ 335:			
+ 336:			; Entry:  DE points to FCB for file
+ 337:			;	  EMEND and WIPE options should be pre-set.
+ 338:			
+ 339:			; Return: EXISTS = non-zero if file exists
+ 340:			;	  RO	 = non-zero if file is read-only
+ 341:			;	  CARRY SET if new file cannot be created.
+ 342:			;	  all except PSW are preserved unless error
+ 343:			
+ 344:	09EC          	NEWFILE:
+ 345:	09EC  AF      		XOR	A		; Zero Acc.
+ 346:	09ED  325C10  		LD	(EXISTS),A	; Initialize exists-flag to "does not"
+ 347:	09F0  325D10  		LD	(RO),A		; Initialize Read-Only flag to "is not"
+ 348:	09F3  CDE40A  		CALL	FXIST		; See if file already exists
+ 349:	09F6  DA540A  		JP	C,NEWFI4	; NO - go create the file
+ 350:	09F9  CD410B  		CALL	COPYDIR		; FILE EXISTS - copy directory entry to FCB
+ 351:	09FC  3EFF    		LD	A,ON		; And set exists-flag
+ 352:	09FE  325C10  		LD	(EXISTS),A
+ 353:	0A01  E5      		PUSH	HL		; Save HL
+ 354:	0A02  210900  		LD	HL,ROOFF	; Get offset to the R/O byte
+ 355:	0A05  19      		ADD	HL,DE		; Add the FCB base address
+ 356:	0A06  7E      		LD	A,(HL)		; Get R/O attribute byte
+ 357:	0A07  E680    		AND	080H		; Mask R/O bit and test
+ 358:	0A09  7E      		LD	A,(HL)		; In any event, get byte back again
+ 359:	0A0A  17      		RLA			; And lop off the 7th (R/O) bit
+ 360:	0A0B  0F      		RRCA			; (without affecting the zero flag)
+ 361:	0A0C  77      		LD	(HL),A		; Put that back - file will be R/W
+ 362:	0A0D  E1      		POP	HL		; Restore old HL
+ 363:	0A0E  CA310A  		JP	Z,NEWFI2	; If file was R/W then move on
+ 364:	0A11  3EFF    		LD	A,ON		; FILE IS R/O - set flag
+ 365:	0A13  325D10  		LD	(RO),A
+ 366:	0A16  3A6A10  		LD	A,(WIPE)	; Get wipe option
+ 367:	0A19  FEFF    		CP	ON		; Is it ON ?
+ 368:	0A1B  CA2B0A  		JP	Z,NEWFI1	; YES - then delete the R/O file
+ 369:	0A1E  CDFB0C  		CALL	ILPRT		; Tell them it's read-only
+ 370:	0A21  20522F4F		DB	' R/O!',0
+	      2100
+ 371:	0A27  CD1A0D  		CALL	QDELET		; Ask them if we should delete
+ 372:	0A2A  D8      		RET	C		; Return now if they don't say yes
+ 373:	0A2B          	NEWFI1:
+ 374:	0A2B  CD900A  		CALL	ATTRBUT		; Set attribute to R/W
+ 375:	0A2E  C3510A  		JP	NEWFI3		; Then go delete the file
+ 376:			
+ 377:	0A31          	NEWFI2:
+ 378:	0A31  3A6810  		LD	A,(EMEND)	; FILE IS R/W - get emend option
+ 379:	0A34  FEFF    		CP	ON		; Is it ON ?
+ 380:	0A36  CA510A  		JP	Z,NEWFI3	; YES - then delete without asking
+ 381:	0A39  3A6A10  		LD	A,(WIPE)	; Get the wipe option
+ 382:	0A3C  FEFF    		CP	ON		; Is it ON?
+ 383:	0A3E  CA510A  		JP	Z,NEWFI3	; YES - it works for r/w also, so delete
+ 384:	0A41  CDFB0C  		CALL	ILPRT		; Else tell them that the file exists
+ 385:	0A44  20457869		DB	' Exists!',0
+	      73747321
+	      00
+ 386:	0A4D  CD1A0D  		CALL	QDELET		; Ask them if we should delete
+ 387:	0A50  D8      		RET	C		; NO - then don't mess with it
+ 388:	0A51          	NEWFI3:
+ 389:	0A51  CD840A  		CALL	FDELETE		; Delete the old file
+ 390:	0A54          	NEWFI4:
+ 391:	0A54  CD700A  		CALL	FCREAT		; Create the new file
+ 392:	0A57  D0      		RET	NC		; Return if all ok
+ 393:	0A58  210000  		LD	HL,0		; Else error and return
+ 394:	0A5B  CD790D  		CALL	ERRET
+ 395:	0A5E  64697265		DB	'directory is full',0
+	      63746F72
+	      79206973
+	      2066756C
+	      6C00
+ 396:			
+ 397:			;-----------------------------------------------------------------------
+ 398:			
+ 399:			; Create a file
+ 400:			
+ 401:			; Entry:  DE points to FCB of file to create
+ 402:			
+ 403:			; Return: CARRY SET if error
+ 404:			;	  all registers except PSW are preserved
+ 405:			
+ 406:	0A70          	FCREAT:
+ 407:	0A70  C5      		PUSH	BC		; Save all
+ 408:	0A71  D5      		PUSH	DE
+ 409:	0A72  E5      		PUSH	HL
+ 410:	0A73  CDDD07  		CALL	ZEROFCB		; Zero the extent and current rec.
+ 411:	0A76  CDB10A  		CALL	FSETUSR		; Set the user
+ 412:			
+ 413:	0000          		 IF	Z80DOS
+ 415:				 ENDIF			; Z80DOS
+ 416:			
+ 417:	0A79  0E16    		LD	C,CREATE	; Do CP/M function
+ 418:			
+ 419:	0000          		 IF	CPM3
+ 421:				 ELSE			;CPM3
+ 422:	0A7B  CD0500  		CALL	BDOS
+ 423:				 ENDIF			;CPM3
+ 424:			
+ 425:	0000          		 IF	DATESTAMP
+ 428:				 ENDIF			; DATESTAMP
+ 429:			
+ 430:	0A7E  C601    		ADD	A,1		; From BDOS, Acc. = 0FFh if ERROR
+ 431:	0A80  E1      		POP	HL		; Restore all
+ 432:	0A81  D1      		POP	DE
+ 433:	0A82  C1      		POP	BC
+ 434:	0A83  C9      		RET
+ 435:			
+ 436:			;-----------------------------------------------------------------------
+ 437:			
+ 438:			; Delete a file
+ 439:			
+ 440:			; Entry:  DE points to FCB of file to delete
+ 441:			
+ 442:			; Return: all regs. except PSW preserved
+ 443:			;	  no error check is made
+ 444:			
+ 445:	0A84          	FDELETE:
+ 446:	0A84  C5      		PUSH	BC		; Save all
+ 447:	0A85  D5      		PUSH	DE
+ 448:	0A86  E5      		PUSH	HL
+ 449:	0A87  0E13    		LD	C,DELETE	; Do CP/M function
+ 450:	0A89  CD0500  		CALL	BDOS
+ 451:	0A8C  E1      		POP	HL		; Restore all
+ 452:	0A8D  D1      		POP	DE
+ 453:	0A8E  C1      		POP	BC
+ 454:	0A8F  C9      		RET
+ 455:			
+ 456:			;-----------------------------------------------------------------------
+ 457:			
+ 458:			; Set file attributes
+ 459:			
+ 460:			; Entry: DE = FCB with attribute bytes properly set
+ 461:			
+ 462:			; Return:  none
+ 463:			;	   all registers preserved
+ 464:			
+ 465:	0A90          	ATTRBUT:
+ 466:	0A90  C5      		PUSH	BC		; Save all
+ 467:	0A91  D5      		PUSH	DE
+ 468:	0A92  E5      		PUSH	HL
+ 469:	0A93  CDB10A  		CALL	FSETUSR		; Set appropriate user number
+ 470:	0A96  1B      		DEC	DE
+ 471:	0A97  1B      		DEC	DE
+ 472:	0A98  1A      		LD	A,(DE)		;Last Record Byte Count
+ 473:	0A99  13      		INC	DE
+ 474:	0A9A  13      		INC	DE
+ 475:	0A9B  212000  		LD	HL,32
+ 476:	0A9E  19      		ADD	HL,DE
+ 477:	0A9F  77      		LD	(HL),A
+ 478:	0AA0  210600  		LD	HL,6
+ 479:	0AA3  19      		ADD	HL,DE
+ 480:	0AA4  7E      		LD	A,(HL)		;Set f6'
+ 481:	0AA5  F680    		OR	80h
+ 482:	0AA7  77      		LD	(HL),A
+ 483:	0AA8  0E1E    		LD	C,SETATT	; Do CP/M set attribute function
+ 484:	0AAA  CD0500  		CALL	BDOS
+ 485:	0AAD  E1      		POP	HL		; Restore all
+ 486:	0AAE  D1      		POP	DE
+ 487:	0AAF  C1      		POP	BC
+ 488:	0AB0  C9      		RET
+ 489:			
+ 490:			;-----------------------------------------------------------------------
+ 491:			
+ 492:			; Set user
+ 493:			
+ 494:			; Entry:  DE = FCB address.  User number must be at FCB[0-1]
+ 495:			
+ 496:			; Return: none
+ 497:			;	  all registers preserved except PSW
+ 498:			
+ 499:	0AB1          	FSETUSR:
+ 500:	0AB1  C5      		PUSH	BC		; Save all
+ 501:	0AB2  D5      		PUSH	DE
+ 502:	0AB3  E5      		PUSH	HL
+ 503:	0AB4  1B      		DEC	DE		; Point to user as specified in FCB
+ 504:	0AB5  1A      		LD	A,(DE)		; Get it
+ 505:	0AB6  5F      		LD	E,A		; Put it in E
+ 506:	0AB7  0E20    		LD	C,SETUSR	; Get CP/M function number
+ 507:	0AB9  CD0500  		CALL	BDOS		; Set the user
+ 508:	0ABC  E1      		POP	HL		; Restore all
+ 509:	0ABD  D1      		POP	DE
+ 510:	0ABE  C1      		POP	BC
+ 511:	0ABF  C9      		RET			; And done
+ 512:			
+ 513:			;-----------------------------------------------------------------------
+ 514:			
+ 515:			; Get current drive and user
+ 516:			
+ 517:			; Entry:  none
+ 518:			
+ 519:			; Return:  B = drive (0 = A)
+ 520:			;	   C = user
+ 521:			;	   all registers may be affected
+ 522:			
+ 523:	0AC0          	GETDU:
+ 524:	0AC0  0E19    		LD	C,GETDSK	; Get current disk drive number
+ 525:	0AC2  CD0500  		CALL	BDOS
+ 526:	0AC5  F5      		PUSH	AF		; Save it temporarily
+ 527:	0AC6  1EFF    		LD	E,0FFH		; Get current user number
+ 528:	0AC8  0E20    		LD	C,GETUSR
+ 529:	0ACA  CD0500  		CALL	BDOS
+ 530:	0ACD  4F      		LD	C,A		; Put user in C
+ 531:	0ACE  F1      		POP	AF		; Get drive back
+ 532:	0ACF  47      		LD	B,A		; Put drive in B
+ 533:	0AD0  C9      		RET
+ 534:			
+ 535:			;-----------------------------------------------------------------------
+ 536:			
+ 537:			; Set drive and user
+ 538:			
+ 539:			; Entry:  B = drive (0 = A)
+ 540:			;	  C = user
+ 541:			
+ 542:			; Return:  DE and HL are preserved
+ 543:			
+ 544:	0AD1          	SETDU:
+ 545:	0AD1  D5      		PUSH	DE		; Save regs.
+ 546:	0AD2  E5      		PUSH	HL
+ 547:	0AD3  C5      		PUSH	BC		; Save original
+ 548:	0AD4  58      		LD	E,B		; Put drive number into E
+ 549:	0AD5  0E0E    		LD	C,SELDSK	; And select new drive
+ 550:	0AD7  CD0500  		CALL	BDOS
+ 551:	0ADA  C1      		POP	BC		; Get original back
+ 552:	0ADB  59      		LD	E,C		; Put user number in E
+ 553:	0ADC  0E20    		LD	C,SETUSR	; And set new user
+ 554:	0ADE  CD0500  		CALL	BDOS
+ 555:	0AE1  E1      		POP	HL		; And old registers
+ 556:	0AE2  D1      		POP	DE
+ 557:	0AE3  C9      		RET			; And done
+ 558:			
+ 559:			;-----------------------------------------------------------------------
+ 560:			
+ 561:			; Select user and see if a file exists
+ 562:			
+ 563:			; Entry:  DE = pointer to FCB[0].  Drive byte should be set, and
+ 564:			;	  FCB[0-1] must be set with user number.
+ 565:			
+ 566:			; Return:  HL and DE are preserved
+ 567:			;	   BC and PSW are destroyed
+ 568:			;	   if found, Acc. = offset byte from BDOS search call
+ 569:			;	   if not found, CARRY SET
+ 570:			
+ 571:	0AE4          	FXIST:
+ 572:	0AE4  E5      		PUSH	HL		; Save registers
+ 573:	0AE5  D5      		PUSH	DE		; Save FCB address
+ 574:	0AE6  CDDD07  		CALL	ZEROFCB		; Set extent and current record to zero
+ 575:	0AE9  218000  		LD	HL,CMDBUF	; Set DMA address
+ 576:	0AEC  CDB509  		CALL	FACCESS		; To CP/M's default buffer
+ 577:	0AEF  CDB10A  		CALL	FSETUSR		; And set user
+ 578:	0AF2  0E11    		LD	C,SRCHFST	; Get search-first function number
+ 579:	0AF4  CD0500  		CALL	BDOS		; Do it
+ 580:	0AF7  D1      		POP	DE		; FCB address now back in DE
+ 581:	0AF8  E1      		POP	HL		; Restore registers
+ 582:	0AF9  C601    		ADD	A,1		; Set carry if result = 0FFh
+ 583:	0AFB  3D      		DEC	A		; But restore original offset in Acc.
+ 584:	0AFC  C9      		RET			; Done
+ 585:			
+ 586:			;-----------------------------------------------------------------------
+ 587:			
+ 588:			; Translate the offset that CP/M gives us after a "search" call to an
+ 589:			; absolute address in the default CP/M DMA block.
+ 590:			
+ 591:			; Entry:  Acc. = offset from search call
+ 592:			
+ 593:			; Returns:  HL = address in DMA of the matching file name
+ 594:			;	    PSW destroyed, other registers preserved.
+ 595:			
+ 596:	0AFD  D5      	FNOFF:	PUSH	DE		; Save register.
+ 597:	0AFE  87      		ADD	A,A		; Shift result * 2
+ 598:	0AFF  87      		ADD	A,A		; * 4
+ 599:	0B00  87      		ADD	A,A		; * 8
+ 600:	0B01  87      		ADD	A,A		; * 16
+ 601:	0B02  87      		ADD	A,A		; * 32
+ 602:	0B03  6F      		LD	L,A		; Put name offset in HL
+ 603:	0B04  2600    		LD	H,0
+ 604:	0B06  118000  		LD	DE,CMDBUF	; And add this offset to DMA[0] address
+ 605:	0B09  19      		ADD	HL,DE
+ 606:	0B0A  D1      		POP	DE		; Restore old DE
+ 607:	0B0B  C9      		RET			; And return
+ 608:			
+ 609:			;-----------------------------------------------------------------------
+ 610:			
+ 611:			; Search the directory for all matches to a name
+ 612:			;
+ 613:			; Entry:  DE = pointer to completed FCB, with user number at FCB[0-1].
+ 614:			
+ 615:			; Return:  NARGC = number of matches found
+ 616:			;	   NARGBUF will contain the names in FCB-image fields.
+ 617:			;	   DE preserved, all other registers affected
+ 618:			;	   CARRY SET if no match was found.
+ 619:			
+ 620:	0B0C          	DIRSRCH:
+ 621:	0B0C  CDE40A  		CALL	FXIST		; See if file exists
+ 622:	0B0F  D8      		RET	C		; Return now if not
+ 623:	0B10          	DIRS1:
+ 624:	0B10  D5      		PUSH	DE		; Save the FCB address from harm
+ 625:	0B11  CDFD0A  		CALL	FNOFF		; Get address of file name in HL
+ 626:	0B14  23      		INC	HL		; Skip the drive byte
+ 627:	0B15  EB      		EX	DE,HL		; Put this address in DE
+ 628:	0B16  2A6F10  		LD	HL,(IOBUF)	; Get buffer pointer in HL
+ 629:	0B19  EB      		EX	DE,HL		; Now HL = file name, DE = buffer
+ 630:	0B1A  060B    		LD	B,FNAMSZ	; B = size of FCB-image file name
+ 631:	0B1C  CDAF0D  		CALL	MOVE		; Move the file name into narg. buffer
+ 632:	0B1F  EB      		EX	DE,HL		; Get buffer pointer back in HL
+ 633:	0B20  226F10  		LD	(IOBUF),HL	; And store it for next time
+ 634:	0B23  2A7310  		LD	HL,(NARGC)	; Get new argument count
+ 635:	0B26  23      		INC	HL		; Increment it
+ 636:	0B27  227310  		LD	(NARGC),HL	; And re-save it
+ 637:	0B2A  EB      		EX	DE,HL		; Then put it in DE
+ 638:	0B2B  210002  		LD	HL,MAXNARG	; Get max. count
+ 639:	0B2E  CDD40D  		CALL	SUB16		; And find difference
+ 640:	0B31  D1      		POP	DE		; Restore FCB address
+ 641:	0B32  C8      		RET	Z		; And return if we've reached max. count
+ 642:	0B33  D5      		PUSH	DE		; Else, save FCB address from harm
+ 643:	0B34  0E12    		LD	C,SRCHNXT	; Search for next occurrence
+ 644:	0B36  CD0500  		CALL	BDOS
+ 645:	0B39  D1      		POP	DE		; Get FCB address back
+ 646:	0B3A  3C      		INC	A		; Test result for 0FFh, but make sure
+ 647:	0B3B  B7      		OR	A		; Carry is off since we found at least one
+ 648:	0B3C  C8      		RET	Z		; Return if no more matches
+ 649:	0B3D  3D      		DEC	A		; Else undo what the test did
+ 650:	0B3E  C3100B  		JP	DIRS1		; And repeat
+ 651:			
+ 652:			;-----------------------------------------------------------------------
+ 653:			
+ 654:			; Copy directory entry file name found by FXIST into an FCB
+ 655:			
+ 656:			; Entry:  DE = FCB to receive the name
+ 657:			;	  Acc. = offset from FXIST: subroutine
+ 658:			
+ 659:			; Return:  none, all registers except PSW are preserved
+ 660:			
+ 661:	0B41          	COPYDIR:
+ 662:	0B41  C5      		PUSH	BC		; Save all
+ 663:	0B42  D5      		PUSH	DE
+ 664:	0B43  E5      		PUSH	HL
+ 665:	0B44  13      		INC	DE		; Point to file name field in our FCB
+ 666:	0B45  CDFD0A  		CALL	FNOFF		; Get address of directory entry in HL
+ 667:	0B48  23      		INC	HL		; Point to file name field in dir. entry
+ 668:	0B49  060B    		LD	B,FNAMSZ	; Get full size of file name
+ 669:	0B4B  CDAF0D  		CALL	MOVE		; And move directory name to our FCB
+ 670:	0B4E  E1      		POP	HL		; Restore old
+ 671:	0B4F  D1      		POP	DE
+ 672:	0B50  C1      		POP	BC
+ 673:	0B51  C9      		RET			; And done
+ 674:			
+ 675:			;		     end of disk I/O module
+ 676:			;-----------------------------------------------------------------------
+**** PPIP19.Z80 ****
+ 267:				INCLUDE	PPIP-4.Z80	; Module <<4>> CRC module
+**** PPIP-4.Z80 ****
+   1:			; PPIP-4.Z80
+   2:			;
+   3:			; <<4>>        Cyclic Reduncancy Check Verification Module
+   4:			;	       -------------------------------------------
+   5:			;
+   6:			; NOTE:
+   7:			; -----
+   8:			; The UPDCRC and INITCRC subroutines have been lifted from DISK77B.ASM,
+   9:			; Copyright (c) 1984 by Frank Gaude',  all rights reserved.   They use the
+  10:			; same algorithm recommended by CCITT for asynchronous communications, and
+  11:			; are compatible with CHEK, MODEM7, etc.
+  12:			; -------------------------------------------------------------------------
+  13:			; Do CRC verify on a disk file
+  14:			;
+  15:			; Entry:  DE points to completed fcb for file
+  16:			;
+  17:			; Return:  CRCVAL (globally defined) contains the crc check value
+  18:			;	   CARRY SET on return if error
+  19:			;
+  20:	0B52  210000  	FCRC:	LD	HL,0		; Initialize the crcval
+  21:	0B55  221113  		LD	(CRCVAL),HL	; To zero
+  22:	0B58  CD8D09  		CALL	FOPEN		; Open the file
+  23:	0B5B  D2780B  		JP	NC,FCRC1	; Continue if ok
+  24:			;
+  25:	0B5E  CD790D  		CALL	ERRET		; Else return error
+  26:	0B61  76657269		DB	'verify file open error',0
+	      66792066
+	      696C6520
+	      6F70656E
+	      20657272
+	      6F7200
+  27:			;
+  28:	0B78  218000  	FCRC1:	LD	HL,CMDBUF	; Point to default DMA address
+  29:	0B7B  CDB509  		CALL	FACCESS		; Set DMA address
+  30:	0B7E  CDD009  	FCRC2:	CALL	FREAD		; Read one record
+  31:	0B81  DA8A0B  		JP	C,FCRCDUN	; Finished now if end of file
+  32:	0B84  CD8C0B  		CALL	RECRC		; Do crc check on entire record
+  33:	0B87  C37E0B  		JP	FCRC2		; And loop
+  34:			;
+  35:	0B8A          	FCRCDUN:
+  36:	0B8A  AF      		XOR	A		; Carry off - normal exit
+  37:	0B8B  C9      		RET
+  38:			;
+  39:			; --------------------------------------------------------------------------
+  40:			; Update CRC for one record.
+  41:			;
+  42:			; Entry:  HL = starting address (current DMA address)
+  43:			;
+  44:			; Return:  CRCVAL (globally defined) is updated
+  45:			;	   all regs. preserved except PSW
+  46:			;
+  47:	0B8C  C5      	RECRC:	PUSH	BC		; Save all
+  48:	0B8D  D5      		PUSH	DE
+  49:	0B8E  E5      		PUSH	HL
+  50:	0B8F  0680    		LD	B,RECSZ		; Counter for one record's worth of bytes
+  51:	0B91  7E      	RECRC1:	LD	A,(HL)		; Get a character
+  52:	0B92  CD9E0B  		CALL	UPDCRC		; Update crc with it
+  53:	0B95  23      		INC	HL		; Point to next
+  54:	0B96  05      		DEC	B		; Decrement count
+  55:	0B97  C2910B  		JP	NZ,RECRC1	; Loop 'till done
+  56:	0B9A  E1      		POP	HL		; Restore all
+  57:	0B9B  D1      		POP	DE
+  58:	0B9C  C1      		POP	BC
+  59:	0B9D  C9      		RET			; Back we go
+  60:			;
+  61:			; -------------------------------------------------------------------------
+  62:			; Update CRC with one byte.
+  63:			;
+  64:			; Entry:  Acc. = byte for update
+  65:			;
+  66:			; Result:  CRCVAL (globally defined) is updated
+  67:			;	   all regs. except PSW are preserved
+  68:			;
+  69:	0B9E  C5      	UPDCRC:	PUSH	BC		; Update 'crc'..
+  70:	0B9F  E5      		PUSH	HL		; Accumulator..
+  71:	0BA0  2A1113  		LD	HL,(CRCVAL)	; Pick up partial remainder
+  72:	0BA3  EB      		EX	DE,HL		; De-pair now has partial
+  73:	0BA4  0600    		LD	B,0
+  74:	0BA6  AA      		XOR	D
+  75:	0BA7  4F      		LD	C,A
+  76:	0BA8  211111  		LD	HL,CRCTBL
+  77:	0BAB  09      		ADD	HL,BC
+  78:	0BAC  7E      		LD	A,(HL)
+  79:	0BAD  AB      		XOR	E
+  80:	0BAE  57      		LD	D,A
+  81:	0BAF  24      		INC	H
+  82:	0BB0  5E      		LD	E,(HL)
+  83:	0BB1  EB      		EX	DE,HL
+  84:	0BB2  221113  		LD	(CRCVAL),HL
+  85:	0BB5  E1      		POP	HL
+  86:	0BB6  C1      		POP	BC
+  87:	0BB7  C9      		RET
+  88:			;
+  89:			; -------------------------------------------------------------------------
+  90:			; Initialize tables for fast crc calculations.
+  91:			;
+  92:			; Entry: none
+  93:			;
+  94:			; Return:  all registers affected
+  95:			;
+  96:	0BB8          	INITCRC:
+  97:	0BB8  211111  		LD	HL,CRCTBL
+  98:	0BBB  0E00    		LD	C,0		; Table index
+  99:	0BBD  EB      	GLOOP:	EX	DE,HL
+ 100:	0BBE  210000  		LD	HL,0		; Initialize crc register pair
+ 101:	0BC1  79      		LD	A,C
+ 102:	0BC2  C5      		PUSH	BC		; Save index in c-reg
+ 103:	0BC3  0608    		LD	B,8
+ 104:	0BC5  AC      		XOR	H
+ 105:	0BC6  67      		LD	H,A
+ 106:	0BC7  29      	LLOOP:	ADD	HL,HL
+ 107:	0BC8  D2D30B  		JP	NC,LSKIP
+ 108:	0BCB  3E10    		LD	A,10H		; Generator is x^16 + x^12 + x^5 + x^0
+ 109:	0BCD  AC      		XOR	H
+ 110:	0BCE  67      		LD	H,A
+ 111:	0BCF  3E21    		LD	A,21H
+ 112:	0BD1  AD      		XOR	L
+ 113:	0BD2  6F      		LD	L,A
+ 114:	0BD3  05      	LSKIP:	DEC	B
+ 115:	0BD4  C2C70B  		JP	NZ,LLOOP
+ 116:	0BD7  C1      		POP	BC
+ 117:	0BD8  EB      		EX	DE,HL		; DE has 'crc', HL points to table.
+ 118:	0BD9  72      		LD	(HL),D		; Store high..
+ 119:	0BDA  24      		INC	H		; And..
+ 120:	0BDB  73      		LD	(HL),E		; Low byte of 'crc'.
+ 121:	0BDC  25      		DEC	H
+ 122:	0BDD  23      		INC	HL		; Move to next table entry
+ 123:	0BDE  0C      		INC	C		; Next index
+ 124:	0BDF  C2BD0B  		JP	NZ,GLOOP
+ 125:	0BE2  C9      		RET
+ 126:			;
+ 127:			;			  end of CRC module
+**** PPIP19.Z80 ****
+ 268:			
+ 269:	0000          		 IF	DATESTAMP
+ 271:				 ENDIF			; DATESTAMP
+ 272:			
+ 273:	0000          		 IF	Z80DOS
+ 275:				 ENDIF			; Z80DOS
+ 276:			
+ 277:	0000          		 IF	CPM3
+ 279:				 ENDIF			; CPM3
+ 280:			
+ 281:				INCLUDE	PPIP-7.Z80	; Module <<7>> console I/O module
+**** PPIP-7.Z80 ****
+   1:			; PPIP-7.Z80
+   2:			
+   3:			; <<7>> 		  Console I/O module
+   4:			
+   5:			;-----------------------------------------------------------------------
+   6:			
+   7:			; Editor subroutine
+   8:			
+   9:			; Entry:  HL = buffer address
+  10:			;	  BUFRECS should be preset to max. no. of records we'll accept
+  11:			
+  12:			; Return:  BC = number of records to write from buffer
+  13:			;	   all registers used
+  14:			
+  15:	0BE3          	EDIT:
+  16:	0BE3  0E00    		LD	C,0		; Initialize Console line position
+  17:	0BE5  0680    		LD	B,RECSZ		; Initialize Bytes-left-in-record
+  18:	0BE7  110100  		LD	DE,1		; Initialize recorD count
+  19:			
+  20:			; Main edit loop
+  21:			
+  22:	0BEA          	EDLUP:
+  23:	0BEA  CDE70C  		CALL	DCONIN		; Get a character
+  24:	0BED          	EDLUP0:
+  25:	0BED  FE7E    		CP	TRIGGER		; Case: trigger
+  26:	0BEF  CA1E0C  		JP	Z,CTLCHR
+  27:	0BF2  FE08    		CP	BS		; Case: backspace
+  28:	0BF4  CAA20C  		JP	Z,EDRUB
+  29:	0BF7  FE7F    		CP	RUB		; Case: rubout
+  30:	0BF9  CAA20C  		JP	Z,EDRUB
+  31:	0BFC  FE0D    		CP	CR		; Case: carriage return
+  32:	0BFE  CAC30C  		JP	Z,EDCRLF
+  33:	0C01  FE1A    		CP	EOF		; Case: end edit
+  34:	0C03  CA120C  		JP	Z,EDDUN
+  35:	0C06          	EDLUP1:
+  36:	0C06  CD3B0C  		CALL	EDOUT		; Default: output the character to console
+  37:	0C09  CA120C  		JP	Z,EDDUN		; Quit now if end of buffer
+  38:	0C0C          	EDLUP2:
+  39:	0C0C  CD7F0C  		CALL	EDSAVE		; Save it in memory
+  40:	0C0F  C2EA0B  		JP	NZ,EDLUP	; Repeat if not end of buffer
+  41:	0C12          	EDDUN:
+  42:	0C12  78      		LD	A,B		; Get pad count in Acc.
+  43:	0C13          	EDDN1:
+  44:	0C13  361A    		LD	(HL),EOF	; Pad one (always)
+  45:	0C15  23      		INC	HL		; Bump buffer pointer
+  46:	0C16  3D      		DEC	A		; Decrement pad count
+  47:	0C17  C2130C  		JP	NZ,EDDN1	; And loop until done
+  48:	0C1A  78      		LD	A,B		; A = pad count - bytes remaining.
+  49:	0C1B  42      		LD	B,D		; Put record count in BC
+  50:	0C1C  4B      		LD	C,E
+  51:	0C1D  C9      		RET			; And return
+  52:			
+  53:			; Handle an embedded ("triggered") control character
+  54:			
+  55:	0C1E          	CTLCHR:
+  56:	0C1E  CDE70C  		CALL	DCONIN		; Get another character
+  57:	0C21  CDA60D  		CALL	TOUPPER		; Convert to upper case
+  58:	0C24  FE40    		CP	'@'
+  59:	0C26  DA330C  		JP	C,CTLNOT	; Not control if < '@'
+  60:	0C29  FE60    		CP	'_'+1
+  61:	0C2B  D2330C  		JP	NC,CTLNOT	; And not control if > '_'
+  62:	0C2E  D640    		SUB	040H		; Subtract offset to get real ctl. char
+  63:	0C30  C3060C  		JP	EDLUP1		; And back into main loop
+  64:			
+  65:	0C33          	CTLNOT:
+  66:	0C33  FE7E    		CP	TRIGGER		; Not control - is it the trigger again ?
+  67:	0C35  CA060C  		JP	Z,EDLUP1	; YES - ok we'll take it this time
+  68:	0C38  C3ED0B  		JP	EDLUP0		; Else process as a new character
+  69:			
+  70:			; Edit output routine - expects character in Acc.
+  71:			; Returns zero if end of buffer.
+  72:			
+  73:	0C3B          	EDOUT:
+  74:	0C3B  D5      		PUSH	DE		; Free-up a register
+  75:	0C3C  5F      		LD	E,A		; And save a copy of the character
+  76:	0C3D  FE20    		CP	' '		; Is it a control character ?
+  77:	0C3F  D24C0C  		JP	NC,EDOUT1	; NO - move on
+  78:	0C42  F5      		PUSH	AF		; Else save the control character
+  79:	0C43  3E5E    		LD	A,'^'		; And send a carat
+  80:	0C45  CD0B0D  		CALL	TYPE
+  81:	0C48  F1      		POP	AF		; Retrieve the character
+  82:	0C49  0C      		INC	C		; And increment console position
+  83:	0C4A  C640    		ADD	A,040H		; Make it printable
+  84:	0C4C          	EDOUT1:
+  85:	0C4C  CD0B0D  		CALL	TYPE		; Type it
+  86:			
+  87:	0000          		 IF	ZCPR3
+  91:				 ENDIF			; ZCPR3
+  92:			
+  93:	0C4F  0C      		INC	C		; Increment console line pointer
+  94:	0C50  79      		LD	A,C		; And get it in Acc.
+  95:	FFFF          		 IF	NOT ZCPR3
+  96:	0C51  FE4F    		CP	SWID-1		; Are we at or past the end of con: line?
+  97:				 ENDIF			; NOT ZCPR3
+  98:			
+  99:	0000          		 IF	ZCPR3
+ 101:				 ENDIF			; ZCPR3
+ 102:			
+ 103:	0C53  DA600C  		JP	C,EDOUT2	; NO - then go check if we're close yet
+ 104:	0C56  7B      		LD	A,E		; Else get the character
+ 105:	0C57  CD7F0C  		CALL	EDSAVE		; Save it
+ 106:	0C5A  CA7D0C  		JP	Z,EDOUT4	; Quit now if end of buffer
+ 107:	0C5D  C36B0C  		JP	EDOUT3		; Else force next line
+ 108:	0C60          	EDOUT2:
+ 109:	FFFF          		 IF	NOT ZCPR3
+ 110:	0C60  FE46    		CP	SWID-10		; Are we even close to the end of line?
+ 111:				 ENDIF			; NOT ZCPR3
+ 112:			
+ 113:	0000          		 IF	ZCPR3
+ 124:				 ENDIF			; ZCPR3
+ 125:			
+ 126:	0C62  7B      		LD	A,E		; In any event, get the character back
+ 127:	0C63  DA7D0C  		JP	C,EDOUT4	; And done if not close to end of line
+ 128:	0C66  FE20    		CP	' '		; Else, was the character a space
+ 129:	0C68  C27D0C  		JP	NZ,EDOUT4	; NO - then we're done
+ 130:	0C6B          	EDOUT3:
+ 131:	0C6B  3E0D    		LD	A,CR		; Else force newline by sending a CR
+ 132:	0C6D  CD0B0D  		CALL	TYPE
+ 133:	0C70  0E00    		LD	C,0		; Zero the console line position
+ 134:	0C72  CD7F0C  		CALL	EDSAVE		; Save the CR
+ 135:	0C75  CA7D0C  		JP	Z,EDOUT4	; Quit if buffer full
+ 136:	0C78  3E0A    		LD	A,LF		; Then send a LF
+ 137:	0C7A  CD0B0D  		CALL	TYPE		; (LF will still be in Acc. on return)
+ 138:	0C7D          	EDOUT4:
+ 139:	0C7D  D1      		POP	DE		; Restore caller's register
+ 140:	0C7E  C9      		RET			; And curtain
+ 141:			
+ 142:			; Save a character in the buffer and check buffer limits.  Returns
+ 143:			; with zero set if the end of the buffer has been reached.  Rings bell
+ 144:			; if five or fewer characters remain.
+ 145:			
+ 146:	0C7F          	EDSAVE:
+ 147:	0C7F  77      		LD	(HL),A		; Put the character in buffer
+ 148:	0C80  23      		INC	HL		; Bump buffer pointer
+ 149:	0C81  05      		DEC	B		; Decrement bytes left in this record
+ 150:	0C82  78      		LD	A,B		; If bytes left = 0
+ 151:	0C83  B7      		OR	A
+ 152:	0C84  C28A0C  		JP	NZ,EDSAV1
+ 153:	0C87  0680    		LD	B,RECSZ		; Then bytes left = one whole record
+ 154:	0C89  13      		INC	DE		; And bump record count up
+ 155:	0C8A          	EDSAV1:
+ 156:	0C8A  D5      		PUSH	DE		; Save record count
+ 157:	0C8B  E5      		PUSH	HL		; And buffer pointer
+ 158:	0C8C  2A5A10  		LD	HL,(BUFRECS)	; Max. records in HL, record count in DE
+ 159:	0C8F  CDD40D  		CALL	SUB16		; Find difference
+ 160:	0C92  E1      		POP	HL		; Restore bufptr
+ 161:	0C93  D1      		POP	DE		; Restore bytes-count
+ 162:	0C94  C0      		RET	NZ		; Return if records < > max. (non-zero)
+ 163:	0C95  3E05    		LD	A,5		; Return if more than 5 characters left
+ 164:	0C97  B8      		CP	B
+ 165:	0C98  D8      		RET	C		; (non-zero)
+ 166:	0C99  3E07    		LD	A,BELL		; Else ring bell
+ 167:	0C9B  CD0B0D  		CALL	TYPE
+ 168:	0C9E  3E01    		LD	A,1		; More than 1 character left ?
+ 169:	0CA0  B8      		CP	B
+ 170:	0CA1  C9      		RET			; (zero set if only one character left)
+ 171:			
+ 172:			; Do a rubout
+ 173:			
+ 174:	0CA2          	EDRUB:
+ 175:	0CA2  CDA80C  		CALL	EDRUB0		; Do the rubout
+ 176:	0CA5  C3EA0B  		JP	EDLUP		; And re-enter the loop
+ 177:			
+ 178:	0CA8          	EDRUB0:
+ 179:	0CA8  79      		LD	A,C		; Can't move past beginning of line
+ 180:	0CA9  B7      		OR	A		; So if line count = 0
+ 181:	0CAA  C8      		RET	Z		; Then return now
+ 182:	0CAB  2B      		DEC	HL		; Else move buffer pointer back
+ 183:	0CAC  7E      		LD	A,(HL)		; Take a look at the character there
+ 184:	0CAD  FE20    		CP	' '		; Is it a control character?
+ 185:	0CAF  D2B60C  		JP	NC,EDRUB1	; NO - then skip this next bit
+ 186:	0CB2  CDDF0C  		CALL	EDERAS		; Else erase an extra character from scrn.
+ 187:	0CB5  0D      		DEC	C		; And decrement console position
+ 188:	0CB6          	EDRUB1:
+ 189:	0CB6  CDDF0C  		CALL	EDERAS		; Erase character from screen
+ 190:	0CB9  0D      		DEC	C		; Console position goes back one
+ 191:	0CBA  04      		INC	B		; Add one more byte to record
+ 192:	0CBB  78      		LD	A,B		; Get result in Acc.
+ 193:	0CBC  FE81    		CP	RECSZ+1		; Test for overflow (more than RECSZ bytes)
+ 194:	0CBE  D8      		RET	C		; Return if ok
+ 195:	0CBF  0601    		LD	B,1		; Else bytes left = 1
+ 196:	0CC1  1B      		DEC	DE		; And decrement record count
+ 197:	0CC2  C9      		RET
+ 198:			
+ 199:			; Do a carriage return and add a line feed
+ 200:			
+ 201:	0CC3          	EDCRLF:
+ 202:	0CC3  CDCC0C  		CALL	EDCLF0		; Do the cr/lf
+ 203:	0CC6  CA120C  		JP	Z,EDDUN		; Quit if out of memory
+ 204:	0CC9  C3EA0B  		JP	EDLUP		; Else back to top of loop
+ 205:			
+ 206:	0CCC          	EDCLF0:
+ 207:	0CCC  3E0D    		LD	A,CR		; Get a CR
+ 208:	0CCE  CD0B0D  		CALL	TYPE		; Type it
+ 209:	0CD1  0E00    		LD	C,0		; Zero the line position
+ 210:	0CD3  CD7F0C  		CALL	EDSAVE		; And save the CR
+ 211:	0CD6  C8      		RET	Z		; Done if end of buffer
+ 212:	0CD7  3E0A    		LD	A,LF		; Else get an LF
+ 213:	0CD9  CD0B0D  		CALL	TYPE		; Type it, too
+ 214:	0CDC  C37F0C  		JP	EDSAVE		; And save it (EDSAVE: does the return)
+ 215:			
+ 216:			; Erase a character from the screen (destructive backspace)
+ 217:			
+ 218:	0CDF          	EDERAS:
+ 219:	0CDF  CDFB0C  		CALL	ILPRT
+ 220:	0CE2  08200800		DB	BS,' ',BS,0
+ 221:	0CE6  C9      		RET
+ 222:			
+ 223:			; Direct console input - waits for character
+ 224:			
+ 225:	0CE7          	DCONIN:
+ 226:	0CE7  C5      		PUSH	BC		; Save all
+ 227:	0CE8  D5      		PUSH	DE
+ 228:	0CE9  E5      		PUSH	HL
+ 229:	0CEA          	DCNIO1:
+ 230:	0CEA  1EFF    		LD	E,0FFH		; Get status/character
+ 231:	0CEC  0E06    		LD	C,DCONIO	; From bdos
+ 232:	0CEE  CD0500  		CALL	5
+ 233:	0CF1  B7      		OR	A
+ 234:	0CF2  CAEA0C  		JP	Z,DCNIO1	; Loop until a character arrives
+ 235:	0CF5  E67F    		AND	07FH		; Then mask parity on it
+ 236:	0CF7  E1      		POP	HL		; Restore all
+ 237:	0CF8  D1      		POP	DE
+ 238:	0CF9  C1      		POP	BC
+ 239:	0CFA  C9      		RET			; Return to caller
+ 240:			
+ 241:			;-----------------------------------------------------------------------
+ 242:			
+ 243:			; In-Line PRinT routine
+ 244:			;
+ 245:			; Entry:  Stack:  <message address>
+ 246:			
+ 247:			; Return:  All registers except PSW are preserved.
+ 248:			
+ 249:	0CFB          	ILPRT:
+ 250:	0CFB  E3      		EX	(SP),HL		; Stack points to message so put in HL
+ 251:	0CFC  CD010D  		CALL	PRINT		; Print it
+ 252:	0CFF  E3      		EX	(SP),HL		; HL has return address so put it on stack
+ 253:	0D00  C9      		RET			; And get old HL back, and done.
+ 254:			
+ 255:			;-----------------------------------------------------------------------
+ 256:			
+ 257:			; Print a string
+ 258:			;
+ 259:			; Entry:  HL = pointer to ZERO TERMINATED string
+ 260:			
+ 261:			; Return: HL is incremented. PSW destroyed. Rest preserved.
+ 262:			
+ 263:	0D01          	PRINT:
+ 264:	0D01  7E      		LD	A,(HL)		; Get a character
+ 265:	0D02  23      		INC	HL		; Point to next
+ 266:	0D03  B7      		OR	A		; Test for zero
+ 267:	0D04  C8      		RET	Z		; Return if zero
+ 268:	0D05  CD0B0D  		CALL	TYPE		; Else type the character
+ 269:	0D08  C3010D  		JP	PRINT		; And repeat
+ 270:			
+ 271:			;-----------------------------------------------------------------------
+ 272:			
+ 273:			; Type the character on the console
+ 274:			;
+ 275:			; Entry:  Acc. = character
+ 276:			
+ 277:			; Return:  All registers are preserved.
+ 278:			
+ 279:	0D0B          	TYPE:
+ 280:	0D0B  C5      		PUSH	BC		; Save all
+ 281:	0D0C  D5      		PUSH	DE
+ 282:	0D0D  E5      		PUSH	HL
+ 283:	0D0E  F5      		PUSH	AF
+ 284:	0D0F  5F      		LD	E,A		; Cp/m wants char. in E
+ 285:	0D10  0E02    		LD	C,CONOUT	; Do function
+ 286:	0D12  CD0500  		CALL	BDOS
+ 287:	0D15  F1      		POP	AF
+ 288:	0D16  E1      		POP	HL		; Restore all
+ 289:	0D17  D1      		POP	DE
+ 290:	0D18  C1      		POP	BC
+ 291:	0D19  C9      		RET			; Done
+ 292:			
+ 293:			;-----------------------------------------------------------------------
+ 294:			; Query the user about file deletion.
+ 295:			
+ 296:			; Entry:  none
+ 297:			
+ 298:			; Return:  CARRY SET if file is NOT to be deleted.
+ 299:			
+ 300:	0D1A          	QDELET:
+ 301:	0D1A  CDFB0C  		CALL	ILPRT		; Query user about file deletion
+ 302:	0D1D  2044656C		DB	' Delete? ',0
+	      6574653F
+	      2000
+ 303:	0D27  CD3B0D  		CALL	GETKEY		; Get an answer
+ 304:	0D2A  CDA60D  		CALL	TOUPPER		; Convert to upper case
+ 305:	0D2D  FE59    		CP	'Y'		; Was the answer 'Y'es ?
+ 306:	0D2F  C8      		RET	Z		; Return if so
+ 307:	0D30  37      		SCF			; Else set carry
+ 308:	0D31  C9      		RET			; And return
+ 309:			
+ 310:			;-----------------------------------------------------------------------
+ 311:			
+ 312:			; Print a carriage return/line feed combination on console
+ 313:			
+ 314:			; Entry:  none
+ 315:			
+ 316:			; Return:  All registers preserved.
+ 317:			
+ 318:	0D32          	NEWLINE:
+ 319:	0D32  F5      		PUSH	AF		; Save caller's Acc/status
+ 320:	0D33  CDFB0C  		CALL	ILPRT		; Send it
+ 321:	0D36  0D0A00  		DB	CR,LF,0
+ 322:	0D39  F1      		POP	AF		; Restore
+ 323:	0D3A  C9      		RET			; And that's it
+ 324:			
+ 325:			;-----------------------------------------------------------------------
+ 326:			
+ 327:			; Wait for and get a character from the console
+ 328:			
+ 329:			; Entry:  none
+ 330:			
+ 331:			; Return:  Acc. = character
+ 332:			;	   Other registers preserved
+ 333:			
+ 334:	0D3B          	GETKEY:
+ 335:	0D3B  C5      		PUSH	BC
+ 336:	0D3C  D5      		PUSH	DE
+ 337:	0D3D  E5      		PUSH	HL
+ 338:	0D3E  0E01    		LD	C,CONIN
+ 339:	0D40  CD0500  		CALL	BDOS
+ 340:	0D43  E1      		POP	HL
+ 341:	0D44  D1      		POP	DE
+ 342:	0D45  C1      		POP	BC
+ 343:	0D46  C9      		RET
+ 344:			
+ 345:			;-----------------------------------------------------------------------
+ 346:			
+ 347:			; Get console status
+ 348:			
+ 349:			; Entry:  none
+ 350:			
+ 351:			; Return:  ZERO flag SET if NOT ready
+ 352:			;	   All registeres except PSW are preserved
+ 353:			;
+ 354:	0D47          	KEYPRESS:
+ 355:	0D47  C5      		PUSH	BC
+ 356:	0D48  D5      		PUSH	DE
+ 357:	0D49  E5      		PUSH	HL
+ 358:	0D4A  0E0B    		LD	C,CONSTAT
+ 359:	0D4C  CD0500  		CALL	BDOS
+ 360:	0D4F  B7      		OR	A
+ 361:	0D50  E1      		POP	HL
+ 362:	0D51  D1      		POP	DE
+ 363:	0D52  C1      		POP	BC
+ 364:	0D53  C9      		RET
+ 365:			
+ 366:			;-----------------------------------------------------------------------
+ 367:			
+ 368:			; Output a 4-digit hex number
+ 369:			
+ 370:			; Entry:  HL = number to output
+ 371:			
+ 372:			; Return:  None
+ 373:			;	   all registers preserved
+ 374:			
+ 375:	0D54          	DHXOUT:
+ 376:	0D54  E5      		PUSH	HL		; Save regs
+ 377:	0D55  F5      		PUSH	AF
+ 378:	0D56  7C      		LD	A,H		; Get MSB
+ 379:	0D57  CD610D  		CALL	HEXO		; Send it
+ 380:	0D5A  7D      		LD	A,L		; Get LSB
+ 381:	0D5B  CD610D  		CALL	HEXO		; Send it
+ 382:	0D5E  F1      		POP	AF
+ 383:	0D5F  E1      		POP	HL		; Restore
+ 384:	0D60  C9      		RET			; That's it
+ 385:			
+ 386:			;-----------------------------------------------------------------------
+ 387:			
+ 388:			; Output one hex byte to the console
+ 389:			;
+ 390:			; Entry:  Acc. = byte to output
+ 391:			
+ 392:			; Return:  none
+ 393:			;	   PSW destroyed, other registers unaffected
+ 394:			
+ 395:	0D61          	HEXO:
+ 396:	0D61  F5      		PUSH	AF		; Save original digit
+ 397:	0D62  1F      		RRA			; Roll high nybble into low nybble
+ 398:	0D63  1F      		RRA
+ 399:	0D64  1F      		RRA
+ 400:	0D65  1F      		RRA
+ 401:	0D66  CD6A0D  		CALL	NYBBLE		; And send it
+ 402:	0D69  F1      		POP	AF		; Restore original (to do low part)
+ 403:	0D6A          	NYBBLE:
+ 404:	0D6A  E60F    		AND	0FH		; Mask out the high nybble
+ 405:	0D6C  FE0A    		CP	10		; Is it < 10?
+ 406:	0D6E  DA730D  		JP	C,DIGOUT	; YES - ready to send digit
+ 407:	0D71  C607    		ADD	A,7		; Else, add alpha offset
+ 408:	0D73          	DIGOUT:
+ 409:	0D73  C630    		ADD	A,'0'		; Add ASCII offset
+ 410:	0D75  CD0B0D  		CALL	TYPE		; And send it to the console
+ 411:	0D78  C9      		RET
+ 412:			
+ 413:			;		    end of console I/O module
+ 414:			;-----------------------------------------------------------------------
+**** PPIP19.Z80 ****
+ 282:				INCLUDE	PPIP-8.Z80	; Module <<8>> utility subroutines
+**** PPIP-8.Z80 ****
+   1:			; PPIP-8.Z80
+   2:			
+   3:			; <<8>> 	      Various utility subroutines
+   4:			
+   5:			;-----------------------------------------------------------------------
+   6:			
+   7:			; Print an error message and return
+   8:			
+   9:			; Entry:  Stack:   <a return address>
+  10:			;		   <message address>  (similar to ILPRT)
+  11:			;	  HL = pointer to another optional message OR 0000h
+  12:			
+  13:			; Return:  CARRY always SET, FERROR = non-zero
+  14:			;	   PSW and HL destroyed, other regs. preserved.
+  15:			
+  16:	0D79          	ERRET:
+  17:	0D79  E5      		PUSH	HL		; Save HL (second optional message)
+  18:	0D7A  CDFB0C  		CALL	ILPRT		; Identify this as an error message
+  19:	0D7D  0D0A4552		DB	CR,LF,'ERROR:  ',BELL,0
+	      524F523A
+	      20200700
+  20:	0D89  E1      		POP	HL		; Get 2nd error message off stack
+  21:	0D8A  E3      		EX	(SP),HL		; Swap it with primary one
+  22:	0D8B  CD010D  		CALL	PRINT		; Print primary one
+  23:	0D8E  E1      		POP	HL		; Get 2nd again
+  24:	0D8F  7C      		LD	A,H		; See if it is a good address
+  25:	0D90  B5      		OR	L
+  26:	0D91  C4010D  		CALL	NZ,PRINT	; Print if HL > 0000
+  27:	0D94  CD320D  		CALL	NEWLINE		; Print carriage return/line feed
+  28:	0D97  3EFF    		LD	A,ON		; Set FERROR flag
+  29:	0D99  327110  		LD	(FERROR),A
+  30:	0D9C  37      		SCF			; Also set carry as error indicator
+  31:	0D9D  C9      		RET			; And go give 'em the bad news
+  32:			
+  33:			;-----------------------------------------------------------------------
+  34:			
+  35:			; Retrieve an ascii decimal digit
+  36:			
+  37:			; Entry:  HL = pointer to digit
+  38:			
+  39:			; Return:  Acc. = legal decimal digit or CARRY SET if illegal
+  40:			
+  41:	0D9E          	GETASCD:
+  42:	0D9E  3E39    		LD	A,'9'		; Is character > '9'
+  43:	0DA0  BE      		CP	(HL)
+  44:	0DA1  D8      		RET	C		; Return if so
+  45:	0DA2  7E      		LD	A,(HL)		; Get the character
+  46:	0DA3  D630    		SUB	'0'		; And subtract ascii offset
+  47:	0DA5  C9      		RET			; And done
+  48:			
+  49:			;-----------------------------------------------------------------------
+  50:			
+  51:			; Convert character in accumulator to upper case
+  52:			
+  53:			; Entry:  Acc. = character to convert
+  54:			
+  55:			; Return: Acc. = converted character IF character was lower case
+  56:			;	  other regs. unaffected
+  57:			
+  58:	0DA6          	TOUPPER:
+  59:	0DA6  FE61    		CP	'a'		; Skip if not 'a' <= CHAR <= 'z'
+  60:	0DA8  D8      		RET	C
+  61:	0DA9  FE7B    		CP	'z'+1
+  62:	0DAB  D0      		RET	NC
+  63:	0DAC  E65F    		AND	05FH		; Else change to upper case
+  64:	0DAE  C9      		RET
+  65:			
+  66:			;-----------------------------------------------------------------------
+  67:			
+  68:			; Move memory
+  69:			;
+  70:			; Entry:  HL = source
+  71:			;	  DE = destination
+  72:			;	  B  = count of bytes to move
+  73:			
+  74:			; Return:  HL += B, DE += B, B = 0, PSW destroyed.
+  75:			
+  76:	0DAF          	MOVE:
+  77:	0DAF  7E      		LD	A,(HL)		; Get source
+  78:	0DB0  12      		LD	(DE),A		; Put at destination
+  79:	0DB1  23      		INC	HL		; Bump pointers
+  80:	0DB2  13      		INC	DE
+  81:	0DB3  05      		DEC	B		; Decrement counter
+  82:	0DB4  C2AF0D  		JP	NZ,MOVE		; Until zero
+  83:	0DB7  C9      		RET			; And finis
+  84:			
+  85:			;-----------------------------------------------------------------------
+  86:			
+  87:			; Pad (fill) memory
+  88:			
+  89:			; Entry: Acc. = byte to use for pad
+  90:			;	 DE = starting location
+  91:			;	 B  = count of bytes to fill
+  92:			
+  93:			; Return:  DE += B, B = 0, character still in Acc., zero flag set
+  94:			
+  95:	0DB8          	PAD:
+  96:	0DB8  12      		LD	(DE),A		; Put byte at [DE]
+  97:	0DB9  13      		INC	DE		; Point to next
+  98:	0DBA  05      		DEC	B		; Decrement count
+  99:	0DBB  C2B80D  		JP	NZ,PAD		; Continue until all bytes done
+ 100:	0DBE  C9      		RET			; And return
+ 101:			
+ 102:			;-----------------------------------------------------------------------
+ 103:			
+ 104:			; Return POSition of byte in accumulator as it occurs in a string
+ 105:			
+ 106:			; Entry:  Acc. = byte to look for
+ 107:			;	  HL = pointer to ZERO-TERMINATED character string
+ 108:			
+ 109:			; Return:  Acc. = position indexed 1 .. n if found or
+ 110:			;	   ZERO flag SET if NOT FOUND
+ 111:			;	   all other registers preserved
+ 112:			
+ 113:	0DBF          	POS:
+ 114:	0DBF  C5      		PUSH	BC		; Get a register to use
+ 115:	0DC0  E5      		PUSH	HL		; Save pointer to string
+ 116:	0DC1  0600    		LD	B,0		; Initialize position counter
+ 117:	0DC3  4F      		LD	C,A		; Byte to look for is in C
+ 118:	0DC4          	POS1:
+ 119:	0DC4  04      		INC	B		; Bump counter
+ 120:	0DC5  7E      		LD	A,(HL)		; Get byte from string
+ 121:	0DC6  23      		INC	HL		; Point to next
+ 122:	0DC7  B7      		OR	A		; Test for terminator
+ 123:	0DC8  CAD10D  		JP	Z,POSDUN	; Quit if end of string
+ 124:	0DCB  B9      		CP	C		; Compare the two bytes
+ 125:	0DCC  C2C40D  		JP	NZ,POS1		; Do another if not equal
+ 126:	0DCF  78      		LD	A,B		; We found it - put position in Acc.
+ 127:	0DD0  B7      		OR	A		; Set flags (non-zero)
+ 128:	0DD1          	POSDUN:
+ 129:	0DD1  E1      		POP	HL		; Restore old regs.
+ 130:	0DD2  C1      		POP	BC
+ 131:	0DD3  C9      		RET			; And back we go
+ 132:			
+ 133:			;-----------------------------------------------------------------------
+ 134:			
+ 135:			; 16-bit subtract
+ 136:			
+ 137:			; Entry:  DE = minuend
+ 138:			;	  HL = subtrahend
+ 139:			
+ 140:			; Return: DE = DE - HL
+ 141:			;	  BC preserved, PSW destroyed
+ 142:			
+ 143:	0DD4          	SUB16:
+ 144:	0DD4  7B      		LD	A,E		; Subtract low nybble
+ 145:	0DD5  95      		SUB	L
+ 146:	0DD6  5F      		LD	E,A		; Result in E
+ 147:	0DD7  7A      		LD	A,D		; Subtract high nybble, with borrow
+ 148:	0DD8  9C      		SBC	A,H
+ 149:	0DD9  57      		LD	D,A		; Result in D
+ 150:	0DDA  C9      		RET
+ 151:			
+ 152:			;-----------------------------------------------------------------------
+ 153:			
+ 154:			; Compare two strings
+ 155:			
+ 156:			; Entry:  HL = string #1
+ 157:			;	  DE = string #2
+ 158:			;	  B  = characters to compare
+ 159:			
+ 160:			; Return:  ---> if carry set  then HL > DE
+ 161:			;	   else if zero clear then HL < DE
+ 162:			;	   else if zero set   then HL = DE
+ 163:			;	   HL and DE are incremented to end or first unequal byte
+ 164:			;	   B and Acc. destroyed
+ 165:			
+ 166:	0DDB          	STRNCMP:
+ 167:	0DDB  7E      		LD	A,(HL)		; Get a byte from [HL]
+ 168:	0DDC  E67F    		AND	07FH		; Mask parity
+ 169:	0DDE  4F      		LD	C,A		; Hold it
+ 170:	0DDF  1A      		LD	A,(DE)		; Get a byte from [DE]
+ 171:	0DE0  E67F    		AND	07FH		; Mask parity
+ 172:	0DE2  B9      		CP	C		; Compare two bytes
+ 173:	0DE3  C0      		RET	NZ		; Return if not the same
+ 174:	0DE4  13      		INC	DE		; Increment pointers
+ 175:	0DE5  23      		INC	HL
+ 176:	0DE6  05      		DEC	B		; And count
+ 177:	0DE7  C2DB0D  		JP	NZ,STRNCMP	; Continue until B bytes are done
+ 178:	0DEA  C9      		RET
+ 179:			
+ 180:			;-----------------------------------------------------------------------
+ 181:			
+ 182:			; TPA - subroutine - finds start of ccp - 100H for safe TPA size
+ 183:			
+ 184:			; Entry:  none
+ 185:			
+ 186:			; Return:  HL and PSW destroyed
+ 187:			;	   MEMTOP contains the result
+ 188:			
+ 189:	0DEB          	TPASET:
+ 190:	0DEB  2A0100  		LD	HL,(WBOOT+1)	; Get bios warmboot address
+ 191:	0DEE  11FDE9  		LD	DE,-1603H	; Offset to CCP entry point
+ 192:	0DF1  19      		ADD	HL,DE
+ 193:	0DF2  EB      		EX	DE,HL		; Put this limit address in DE
+ 194:	0DF3  2A0600  		LD	HL,(BDOS+1)	; Get bdos address
+ 195:			;;	LD	A,H		; High part in accumulator
+ 196:			;;	SUB	9		; Subtract CCP size + "safe area"
+ 197:			;;	LD	H,A		; Put result back in H
+ 198:			;;	LD	L,0		; Make it an even page address
+ 199:	0DF6  D5      		PUSH	DE		; Save value while we test
+ 200:	0DF7  CDD40D  		CALL	SUB16		; DE-HL
+ 201:	0DFA  D1      		POP	DE		; Get address of ccp back
+ 202:	0DFB  D2FF0D  		JP	NC,TPASET1	; If no carry, HL is smaller address
+ 203:	0DFE  EB      		EX	DE,HL		; Else, use DE (smaller)
+ 204:	0DFF          	TPASET1:
+ 205:	0DFF  225810  		LD	(MEMTOP),HL	; And save top of memory
+ 206:	0E02  C9      		RET			; Done
+ 207:			
+ 208:			;-----------------------------------------------------------------------
+ 209:			
+ 210:			; NOTE: DIRTDU and GETNDR adapted from Z3LIB by Richard L. Conn
+ 211:			
+ 212:			; DIRTDU searches for the DIR named pted to by HL.  If found,
+ 213:			; BC = DU (disk A = 0) and NZ.	If not found, A=0 and Zero Flag Set.
+ 214:			; HL pts to delimiter at end of name.
+ 215:			;
+ 216:	0000          		 IF	ZCPR3
+ 370:				 ENDIF
+ 371:			
+ 372:			;-----------------------------------------------------------------------
+ 373:			
+ 374:			; Print the HELP message and quit.
+ 375:			;
+ 376:	0E03  CDFB0C  	HELP:	CALL	ILPRT
+ 377:			
+ 378:	0000          		 IF	ZCPR3 AND NOT Z80DOS
+ 380:				 ENDIF
+ 381:	0000          		 IF	ZCPR3 AND Z80DOS
+ 383:				 ENDIF
+ 384:	0000          		 IF	Z80DOS AND NOT ZCPR3
+ 386:				 ENDIF
+ 387:			
+ 388:	0E06  50504950		DB	'PPIP'
+ 389:	0000          		 IF	ZCPR3
+ 391:				 ENDIF			; ZCPR3
+ 392:	0000          		 IF	Z80DOS
+ 394:				 ENDIF			; Z80DOS
+ 395:	0000          		 IF	CPM3
+ 397:				 ENDIF			; CPM3
+ 398:	0E0A  2C205665		DB	', Version ',VTENS,'.',VUNITS,CR,LF
+	      7273696F
+	      6E20312E
+	      390D0A
+ 399:			
+ 400:	0E19  0D0A5553		DB	CR,LF,'USAGE:  PPIP '
+	      4147453A
+	      20205050
+	      495020
+ 401:	0E28  5B44553A		DB	'[DU:'
+ 402:	0000          		 IF	ZCPR3
+ 405:				 ENDIF			; ZCPR3
+ 406:			
+ 407:	0E2C  5D3C534F		DB	']<SOURCE.TYP>[ [DU:'
+	      55524345
+	      2E545950
+	      3E5B205B
+	      44553A
+ 408:			
+ 409:	0000          		 IF	ZCPR3
+ 411:				 ENDIF			; ZCPR3
+ 412:			
+ 413:	0E3F  5D5B3C44		DB	'][<DEST.TYP>]',0
+	      4553542E
+	      5459503E
+	      5D00
+ 414:	0E4D  CD950E  		CALL	HLPALL
+ 415:	0E50  CDFB0C  		CALL	ILPRT
+ 416:	0E53  09090909		DB	TAB,TAB,TAB,TAB,'<or>'
+	      3C6F723E
+ 417:	0E5B  0D0A0A20		DB	CR,LF,LF,'        PPIP '
+	      20202020
+	      20202050
+	      50495020
+ 418:	0E6B  5B5B4455		DB	'[[DU:'
+	      3A
+ 419:			
+ 420:	0000          		 IF	ZCPR3
+ 422:				 ENDIF			; ZCPR3
+ 423:			
+ 424:	0E70  5D3C4445		DB	']<DEST.TYP>=][DU:'
+	      53542E54
+	      59503E3D
+	      5D5B4455
+	      3A
+ 425:			
+ 426:	0000          		 IF	ZCPR3
+ 428:				 ENDIF			; ZCPR3
+ 429:			
+ 430:	0E81  5D3C534F		DB	']<SOURCE.TYP>',0
+	      55524345
+	      2E545950
+	      3E00
+ 431:	0E8F  CD950E  		CALL	HLPALL
+ 432:	0E92  C3B10E  		JP	HELP0
+ 433:			
+ 434:	0E95          	HLPALL:
+ 435:	0E95  CDFB0C  		CALL	ILPRT		; Print available options
+ 436:	0E98  5B2000  		DB	'[ ',0
+ 437:	0E9B  3A0601  		LD	A,(SWITCH)
+ 438:	0E9E  CD0B0D  		CALL	TYPE
+ 439:	0EA1  CDFB0C  		CALL	ILPRT
+ 440:	0EA4  6F707469		DB	'options]',CR,LF,LF,0
+	      6F6E735D
+	      0D0A0A00
+ 441:	0EB0  C9      		RET
+ 442:			
+ 443:	0EB1          	HELP0:
+ 444:	0EB1  116110  		LD	DE,OPTIONS	; Point to options status
+ 445:	0EB4  210F0F  		LD	HL,OPMSG	; And to options messages
+ 446:	0EB7          	HELP1:
+ 447:	0EB7  CDFB0C  		CALL	ILPRT		; Tab over
+ 448:	0EBA  4F707469		DB	'Options (default):',0
+	      6F6E7320
+	      28646566
+	      61756C74
+	      293A00
+ 449:	0ECD          	OPSTAT:
+ 450:	0ECD  CDFB0C  		CALL	ILPRT
+ 451:	0ED0  0D0A0900		DB	CR,LF,TAB,0
+ 452:	0ED4  1A      		LD	A,(DE)		; Get an option character
+ 453:	0ED5  13      		INC	DE		; Point to status byte
+ 454:	0ED6  B7      		OR	A		; Is character NULL ?
+ 455:	0ED7  CA8605  		JP	Z,DONEX		; YES - quit now
+ 456:	0EDA  F5      		PUSH	AF		; Save the character
+ 457:	0EDB  3A0601  		LD	A,(SWITCH)	; Print the switch
+ 458:	0EDE  CD0B0D  		CALL	TYPE
+ 459:	0EE1  F1      		POP	AF		; Retrieve the character
+ 460:	0EE2  CD0B0D  		CALL	TYPE		; Then print that
+ 461:	0EE5  1A      		LD	A,(DE)		; Get the status byte
+ 462:	0EE6  13      		INC	DE		; Point to next option
+ 463:	0EE7  FE00    		CP	OFF		; Print "OFF" or "ON"
+ 464:	0EE9  CAFC0E  		JP	Z,HELP2
+ 465:	0EEC  CDFB0C  		CALL	ILPRT
+ 466:	0EEF  20284F4E		DB	' (ON)  - ',0
+	      2920202D
+	      2000
+ 467:	0EF9  C3090F  		JP	HELP3
+ 468:	0EFC          	HELP2:
+ 469:	0EFC  CDFB0C  		CALL	ILPRT
+ 470:	0EFF  20284F46		DB	' (OFF) - ',0
+	      4629202D
+	      2000
+ 471:	0F09          	HELP3:
+ 472:	0F09  CD010D  		CALL	PRINT		; Then print the option message
+ 473:	0F0C  C3CD0E  		JP	OPSTAT		; And repeat
+ 474:			
+ 475:			; Options messages in same order as OPTIONS: table
+ 476:			
+ 477:	0F0F  646F2043	OPMSG:	DB	'do CRC Verification',0
+	      52432056
+	      65726966
+	      69636174
+	      696F6E00
+ 478:	0F23  7072696E		DB	'print the CRC value',0
+	      74207468
+	      65204352
+	      43207661
+	      6C756500
+ 479:	0F37  636F7079		DB	'copy only unarchived files',0
+	      206F6E6C
+	      7920756E
+	      61726368
+	      69766564
+	      2066696C
+	      657300
+ 480:	0F52  64656C65		DB	'delete (Erase) R/W files without asking',0
+	      74652028
+	      45726173
+	      65292052
+	      2F572066
+	      696C6573
+	      20776974
+	      686F7574
+	      2061736B
+	      696E6700
+ 481:	0F7A  64656C65		DB	'delete (Wipe) R/W and R/O files without asking',0
+	      74652028
+	      57697065
+	      2920522F
+	      5720616E
+	      6420522F
+	      4F206669
+	      6C657320
+	      77697468
+	      6F757420
+	      61736B69
+	      6E6700
+ 482:	0FA9  6D6F7665		DB	'move files - deletes source after copy',0
+	      2066696C
+	      6573202D
+	      2064656C
+	      65746573
+	      20736F75
+	      72636520
+	      61667465
+	      7220636F
+	      707900
+ 483:			;-----------------------------------------------------------------------
+ 484:			
+ 485:	0000          		 IF	ZCPR3
+ 491:				 ENDIF
+ 492:			;			  end of routine
+ 493:			;-----------------------------------------------------------------------
+**** PPIP19.Z80 ****
+ 283:				INCLUDE	PPIP-9.Z80	; Module <<9>> data areas
+**** PPIP-9.Z80 ****
+   1:			; PPIP-9.Z80
+   2:			
+   3:			; <<9>> 		    Data Area
+   4:			
+   5:			;-----------------------------------------------------------------------
+   6:			
+   7:			; Initialized data
+   8:			
+   9:	0FD0  434F4E3A	CONNAM:	DB	'CON:'		; "file name" for system console
+  10:	0000          		 IF	CPM3
+  12:				 ENDIF
+  13:			;
+  14:			;-----------------------------------------------------------------------
+  15:			
+  16:			; Local stack
+  17:			
+  18:	0FD4          	VERS:
+  19:	0FD4  50504950		DB	'PPIP  v',VTENS,'.',VUNITS,'  3 DEC 95 ',13,10
+	      20207631
+	      2E392020
+	      33204445
+	      43203935
+	      200D0A
+  20:	0FEB  436F7079		DB	'Copyright (C) David Jewett,III - 1986'
+	      72696768
+	      74202843
+	      29204461
+	      76696420
+	      4A657765
+	      74742C49
+	      4949202D
+	      20313938
+	      36
+  21:	1010          		DS	VERS + 128 - $
+  22:			
+  23:	1054          	STACK	EQU	$
+  24:			
+  25:			;-----------------------------------------------------------------------
+  26:			
+  27:			; Uninitialized data
+  28:			
+  29:	1054          	DATA:
+  30:	1054          		DS	0
+  31:	1054          	DRIVE:
+  32:	1054          		DS	1		; Current drive
+  33:	1055          	USER:
+  34:	1055          		DS	1		; Current user
+  35:	1056          	OLDSP:
+  36:	1056          		DS	2		; System's old stack pointer
+  37:	1058          	MEMTOP:
+  38:	1058          		DS	2		; Address of top of memory
+  39:	105A          	BUFRECS:
+  40:	105A          		DS	2		; No. of RECORDS that will fit in buffer
+  41:	105C          	EXISTS:
+  42:	105C          		DS	1		; "ON" if destination file exists
+  43:	105D          	RO:
+  44:	105D          		DS	1		; "ON" if destination file is read-only
+  45:	105E          	ATTMPT:
+  46:	105E          		DS	1		; Number of retry attempts
+  47:	105F          	EOFLAG:
+  48:	105F          		DS	1		; End-of-file flag
+  49:	1060          	CONOP:
+  50:	1060          		DS	1		; Flag, non-zero if console operation
+  51:			
+  52:	1061          	OPTIONS:
+  53:	1061          		DS	1		; Do CRC Verification
+  54:	1062          	VERIFY:
+  55:	1062          		DS	1
+  56:	1063          		DS	1		; Print the CRC value
+  57:	1064          	REPORT:
+  58:	1064          		DS	1
+  59:	1065          		DS	1		; Do not copy Archived files
+  60:	1066          	ARCHIV:
+  61:	1066          		DS	1
+  62:	1067          		DS	1		; Delete (Emend) R/W files without asking
+  63:	1068          	EMEND:
+  64:	1068          		DS	1
+  65:	1069          		DS	1		; Delete (Wipe) R/W and R/O files not asking
+  66:	106A          	WIPE:
+  67:	106A          		DS	1
+  68:	106B          		DS	1		; MOVE FILES (COPY, THEN DELETE SOURCE)
+  69:	106C          	MOVF:
+  70:	106C          		DS	1
+  71:	106D          		DS	2		; Zeros mark end of table
+  72:			
+  73:	0000          		 IF	ZCPR3
+  80:				 ENDIF			; ZCPR3
+  81:			
+  82:	0000          		 IF	DATESTAMP
+ 108:				 ENDIF			; DATESTAMP
+ 109:			
+ 110:	0000          		 IF	Z80DOS
+ 112:				 ENDIF			; Z80DOS
+ 113:			
+ 114:	0000          		 IF	CPM3
+ 116:				 ENDIF			; CPM3
+ 117:			
+ 118:	106F          	IOBUF:
+ 119:	106F          		DS	2		; Beginning of disk I/O buffer
+ 120:	1071          	FERROR:
+ 121:	1071          		DS	1		; "ON" if File Error occurred
+ 122:	1072          	ARGC:
+ 123:	1072          		DS	1		; Original command argument count
+ 124:	1073          	NARGC:
+ 125:	1073          		DS	2		; New argument count after expand
+ 126:	1075          	ARGV:
+ 127:	1075          		DS	2		; ARGV[0] = ARGBUF
+ 128:	1077          		DS	MAXARG * 2	; Storage for pointers to arguments
+ 129:			
+ 130:			;-----------------------------------------------------------------------
+ 131:			
+ 132:			; File control blocks.	You will note that our file control blocks are
+ 133:			; a little different:  FCB - 1 = user number.  To avoid confusion it is
+ 134:			; always referenced as FCB[-1], not FCB[0].
+ 135:			
+ 136:	1087          		DS	1		; Last Record Byte Count
+ 137:	1088          		DS	1		; User number for source file
+ 138:	1089          	SOURCE:
+ 139:	1089          		DS	FCBSZ		; File control block for source file
+ 140:	10AD          		DS	1		; Last Record Byte Count for destination file
+ 141:	10AE          		DS	1		; User for destination file
+ 142:	10AF          	DEST:
+ 143:	10AF          		DS	FCBSZ		; FCB for destination file
+ 144:	10D3          		DS	1		; Last Record Byte Count for temporary file
+ 145:	10D4          		DS	1		; User for temporary file
+ 146:	10D5          	TEMP:
+ 147:	10D5          		DS	FCBSZ		; FCB for temporary file
+ 148:	10F9          	LAST:
+ 149:	10F9          		DS	FNAMSZ		; Name of last file copied (FCB image)
+ 150:	1104          	FNBUF:
+ 151:	1104          		DS	NAMESZ		; Buffer to hold a complete file name
+ 152:	1110          		DS	1		; Plus space for a string terminator
+ 153:			
+ 154:			;----------------------------------------------------------------------
+ 155:			
+ 156:			; CRC verification support
+ 157:			
+ 158:	1111          	CRCTBL:
+ 159:	1111          		DS	512		; Tables for crc calculations
+ 160:	1311          	CRCVAL:
+ 161:	1311          		DS	2		; 2-byte crc value of working file and
+ 162:	1313          	CRCVAL2:
+ 163:	1313          		DS	2		; Of finished source read-file.
+ 164:			
+ 165:			;-----------------------------------------------------------------------
+ 166:			
+ 167:			; Argument buffers follow
+ 168:			;
+ 169:	1315          	ARGBUF:
+ 170:	1315          		DS	128		; FIXED storage for arguments
+ 171:			
+ 172:	1395          	NARGBUF	EQU	$		; Beginning of expanded arguments
+ 173:			;
+ 174:			;-----------------------------------------------------------------------
+ 175:			
+ 176:			; Note: File I/O buffer goes from the end of NARGBUF to the top of
+ 177:			; available memory (CCP - 128).
+ 178:			
+ 179:			;			  end of routine
+ 180:			;-----------------------------------------------------------------------
+**** PPIP19.Z80 ****
+ 284:			;
+ 285:	1395          		END
+
+
+
+Statistics:
+
+   345	symbols
+  3856	bytes
+
+
+
+Symbol Table:
+
+again            49b     edout4           c7d     nargbuf        =1395     
+alloc            24c     edrub            ca2     nargc           1073     
+alloc1           25f     edrub0           ca8     newfi1           a2b     
+alloc2           269     edrub1           cb6     newfi2           a31     
+anycopy          28a     edsav1           c8a     newfi3           a51     
+archiv          1066     edsave           c7f     newfi4           a54     
+archiv0          10c+    emend           1068     newfile          9ec     
+arcoff         =   b     emend0           10e+    newline          d32     
+argbuf          1315     eof            =  1a     no             =   0     
+argc            1072     eoflag          105f     nodest           1e2     
+argv            1075     eqscan           1a9     noram            273     
+aseg               0+    erret            d79     nybble           d6a     
+attarc           523     exists          105c     off            =   0     
+attdst           541     expand           6b9     oldsp           1056     
+attmpt          105e     expnd1           6da     on             =ffff     
+attnew           50c     expnd2           6fa     open           =   f     
+attnw1           514     extoff         =   c     opfound          653     
+attrbut          a90     faccess          9b5     opmsg            f0f     
+baddu            751     fcbsz          =  24     opsrc1           660     
+badname          7c9     fclose           9de     opsrch           657     
+bdos           =   5     fcopy            891     opstat           ecd     
+bdread         =  14     fcpy1            8ba     optbad           66e     
+bell           =   7     fcpy2            8c7     options         1061     
+blanks           598     fcpy3            8de     options0         107     
+blkrd            961     fcpy4            90f     optok            691     
+blkrd1           968     fcrc             b52     optok1           69e     
+blkrdun          98b     fcrc1            b78     optok2           6a0     
+blkw1            944     fcrc2            b7e     optsize        =   d     
+blkwdun          95f     fcrcdun          b8a     pad              db8     
+blkwrt           93d     fcreat           a70     parscmd          147+    
+bloff          =fffe     fdelete          a84     parse            58b     
+brkkey         =   3     ferror          1071     pos              dbf     
+bs             =   8     fnamsz         =   b     pos1             dc4     
+bufrecs         105a     fnbuf           1104     posdun           dd1     
+chkchr           7ef     fnoff            afd     print            d01     
+chkwid           3bb     fopen            98d     prndu            862     
+cklast           3f9     fread            9d0     prnf1            856     
+cksame           3c5     fsetusr          ab1     prnfnam          841     
+close          =  10     ftypsz         =   3     putcln           88b     
+clrfcb           7cd     fwrite           9c2     qdelet           d1a     
+cmdbuf         =  80     fxist            ae4     recrc            b8c     
+cncpy1           2d1     getaddr          5de     recrc1           b91     
+cncpy2           348     getarg           5ae     recsz          =  80     
+colon            704+    getargv          5e9     report          1064     
+conchk           1c3     getascd          d9e     report0          10a+    
+concpy           291+    getdlm           5c7+    reset            195+    
+conin          =   1     getdsk         =  19     retry            103     
+connam           fd0     getdu            ac0     ro              105d     
+conop           1060     getdun           5d1     rooff          =   9     
+conout         =   2     getkey           d3b     rstdsk         =   d     
+constat        =   b     getm1            5cb     rub            =  7f     
+copy             34e     getmor           5bc     savargv          5f3     
+copy0            372     getop0           63e     savedu           18a     
+copy9            55b     getopt           63c     savlast          4c4     
+copydir          b41     getusr         =  20     savlast1         4e8     
+copydun          547     getvrs         =   c+    seldsk         =   e     
+copyfil          419     gloop            bbd     setatt         =  1e     
+cpm3           =   0     help             e03     setdma         =  1a     
+cpmode           1b7     help0            eb1     setdu            ad1     
+cr             =   d     help1            eb7+    setusr         =  20     
+crchk            42f     help2            efc     source          1089     
+crcok            4a9     help3            f09     srchfst        =  11     
+crctbl          1111     hexo             d61     srchnxt        =  12     
+crcval          1311     hlpall           e95     stack          =1054     
+crcval2         1313     ignore           175     start            114     
+create         =  16     illtbl           7f8     stripdu          6fb     
+ctlchr           c1e     ilprt            cfb     strncmp          ddb     
+ctlnot           c33     init             11a     strpdun          747     
+data            1054     initcrc          bb8     strusr           720     
+datestamp      =   0     iobuf           106f     strusr1          738     
+dcnio1           cea     keypress         d47     sub16            dd4     
+dconin           ce7     last            10f9     swaparg          62a     
+dconio         =   6     lf             =   a     swid           =  50     
+delar1           60f     lloop            bc7     switch           106     
+delar2           626     lskip            bd3     tab            =   9     
+delarg           5fe     makefcb          755     temp            10d5     
+delete         =  13     maxarg         =   8     toupper          da6     
+dest            10af     maxdrv           104     tpaset           deb     
+dfcb           =  5c     maxnarg        = 200     tpaset1          dff     
+dhxout           d54     maxusr           105     trigger        =  7e     
+digout           d73     memtop          1058     twodig           878     
+dirs1            b10     mfn              209     type             d0b     
+dirsrch          b0c     mfn1             21e+    updcrc           b9e     
+done             57b     mfn1a            22c     user            1055     
+donex            586     mfn2             237     usrabrt          569+    
+dowild           6a5     mkdun            7ba     usroff         =ffff     
+drive           1054     mknam1           77b     verify          1062     
+drvoff         =   0+    mkname           75d     verify0          108+    
+duloc          =   4+    mktyp1           79a     vers             fd4     
+edclf0           ccc     mktyp2           79c     vtens          =  31     
+edcrlf           cc3     mktype           795     vunits         =  39     
+eddn1            c13     mkwild           78a     wboot          =   0     
+eddun            c12     mkwld1           78c     wipe            106a     
+ederas           cdf     mkwld2           7be     wipe0            110+    
+edit             be3     move             daf     write          =  15     
+edlup            bea     movf            106c     yes            =ffff+    
+edlup0           bed     movf0            112+    z80                0+    
+edlup1           c06     mtchw1           828     z80dos         =   0     
+edlup2           c0c+    mtchw2           832     zcpr3          =   0     
+edout            c3b     mtchw3           839     zerofcb          7dd     
+edout1           c4c     mtchwld          7ff     zrdver         =  30     
+edout2           c60     namesz         =   c     zrdyes           1a6     
+edout3           c6b     namoff         =   1     

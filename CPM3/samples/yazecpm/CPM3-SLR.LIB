@@ -1,0 +1,241 @@
+	.XLIST
+;****************************************************************
+;*								*
+;* Macro Definitionens fuer CP/M3 BIOS				*
+;*								*
+;* Aufrufvereinbarungen						*
+;*								*
+;* Generierung der XDPH's (Parameter in einer Zeile!)		*
+;*								*
+;* dphname:	dph	XLT-Tabelle,	; zum Laufwerk		*
+;*			DPB,		; zum Laufwerk		*
+;*			checksum$size,	; (optional)		*
+;*			alloc$size	; (optional		*
+;*								*
+;* um Fehler zu vermeiden bitte die beiden letzten Parameter	*
+;* weglassen - GENCPM.COM macht das fuer uns			*
+;*								*
+;* Generierung der SKEW-Tabelle					*
+;*								*
+;* xltname:	skew	sectors,	; Wieviel hat die Disk?	*
+;*			skew$factor,    ; den Faktor ?		*
+;*			first$sector	; Beginn mit Sektor (1) *
+;*								*
+;* Generierung des DISK-PARTAMETER-BLOCK (dpb)			*
+;*								*
+;* dpbname:	dpb	Sektorgroesse,	; physikalisch		*
+;*			wieviel$Track,	; vorne (+hinten)	*
+;*			?Tracks,	; pro Seite		*
+;*			Block$groesse,	; in Bytes (dezimal)	*
+;*			DIR-Eintraege,	; wieviel moeglich ?	*
+;*			Systemspuren	; reservierte Tracks	*
+;*								*
+;****************************************************************
+
+	;
+	; ****************
+	; XDPH-Macro
+	; ****************
+	;
+
+dph	macro 	?trans,?dpb,?csize,?asize
+    	local 	?csv,?alv
+	dw 	?trans			;; Adresse der SKEW-Tabelle (XLT)
+	db	0,0,0,0,0,0,0,0,0	;; BDOS Bereich
+	db 	-1			;; Media-flag
+	dw 	?dpb			;; Adresse des DPB
+
+    if 	not nul	?csize
+
+	dw 	?csv			;; (optional) Checksum-Vektor
+
+    else
+
+	dw 	-2			;; CSV wird von GENCPM eingetragen
+
+    endif
+
+    if 	not nul	?asize
+
+	dw 	?alv			;; (optional) Allocation-Vektor
+
+    else
+
+	dw	-2			;; ALV wird von GENCPM eingetragen
+
+    endif
+
+        dw	-2,-2,-2		;; DIRBCB,DTABCB,HASH und HASH-Bank
+	db 	0			;; wird von GENCPM eingetragen
+
+     if	 not nul ?csize
+
+?csv:	ds	?csize			;; Checksum-Vektor
+
+    endif
+
+    if 	not nul	?asize
+
+?alv:	ds	?asize			;; Allocation-Vektor
+
+    endif
+
+    	endm
+
+	;
+	; ****************
+	; DBP-Macro
+	; ****************
+	;
+
+dpb 	macro 	?psize,?pspt,?trks,?bls,?ndirs,?off,?ncks
+    	local 	?spt,?bsh,?blm,?exm,?dsm,?drm,?al0,?al1,?cks,?psh,?psm
+    	local 	?n
+	;;
+	;; physikalische Sektor-Mmaske und physikalischer Sektor-shift
+	;;
+?psh	defl	0
+?n	defl	?psize/128
+?psm	defl	?n-1
+	rept 	8
+?n	defl	?n/2
+
+    if 	?n eq 0					;; = 0
+
+	exitm
+
+    endif
+
+?psh	defl 	?psh+1
+	endm
+?spt	defl	?pspt*(?psize/128)
+
+?bsh	defl	3
+?n	defl	?bls/1024
+	rept 	8
+?n	defl	?n/2
+
+    if 	?n eq 0  				;; = 0
+
+	exitm
+
+    endif
+
+?bsh	defl	?bsh+1
+	endm
+?blm	defl	?bls/128-1
+?size	defl	(?trks-?off)*?spt
+?dsm	defl	?size/(?bls/128)-1
+?exm	defl	?bls/1024
+
+    if	?dsm gt 255
+
+    if	?bls eq 1024
+
+	exitm					;; passt nicht mit 1k Blocks
+
+    endif
+
+?exm	defl	?exm/2
+
+   endif
+
+?exm	defl	?exm-1
+?all	defl	0
+?n	defl	(?ndirs*32+?bls-1)/?bls
+	rept 	?n
+?all	defl	(?all shr 1) or 8000h
+	endm
+?al0	defl	high ?all
+?al1	defl	low ?all
+?drm	defl	?ndirs-1
+
+    if 	not nul ?ncks
+
+?cks	defl	?ncks
+
+    else
+
+?cks	defl	?ndirs/4
+
+    endif
+
+	dw	?spt		;; 128 Byte (log)-Sektoren pro Track
+	db	?bsh,?blm	;; Block-shift und Maske
+	db	?exm		;; Extent-Mmaske
+	dw	?dsm		;; Maximale Block-Anzahl
+	dw	?drm		;; Maximale DIR-Eintraege
+	db	?al0,?al1	;; Belegungs-Vektoren
+	dw	?cks		;; Pruefsumme
+	dw	?off		;; Reservierte Tracks (System)
+	db	?psh,?psm	;; (phys)-Sektor Groesse- &  Shift-Maske
+	endm
+
+	;
+	; ****************
+	; * Hilfsmacros  *
+	; ****************
+	;
+
+gcd 	macro 	?m,?n
+
+	;; Groesster gemeinsame Teiler von m,n
+	;; Ergebnis in Variabler GCDN
+
+?gcdm	defl	 ?m		;; Variable  m
+?gcdn	defl	 ?n		;; Variable  n
+?gcdr	defl	 0		;; Variable  r
+	rept 	65535
+?gcdx	defl 	?gcdm/?gcdn
+?gcdr	defl	?gcdm-?gcdx*?gcdn
+	if	?gcdr eq 0
+	exitm
+	endif
+?gcdm	defl	?gcdn
+?gcdn	defl	?gcdr
+	endm
+	endm
+
+	;
+	; ****************
+	; * SKEW-Macro   *
+	; ****************
+	;
+
+skew 	macro 	?secs,?skf,?fsc
+?nxtsec	defl	0		;; Naechster Sektor
+?nxtbas	defl	0		;; +1 bei Ueberlauf
+	gcd 	%?secs,?skf
+
+	;;	?gcdn = gcd(?secs,skew)
+
+?neltst	defl	?secs/?gcdn
+
+	;; NELTST ist die Anzahl der zu generierender Elemente
+	;; bis ein Element wiederholt wuerde
+
+?nelts	defl	?neltst		;; Zaehler
+	rept 	?secs		;; einmal pro Sektor
+	db	?nxtsec+?fsc
+?nxtsec	defl	?nxtsec+?skf
+
+    if 	?nxtsec gt ?secs
+
+?nxtsec	defl	?nxtsec-?secs
+
+    endif
+
+?nelts	defl	?nelts-1
+
+    if 	?nelts eq 0
+
+?nxtbas	defl	?nxtbas+1
+?nxtsec	defl	?nxtbas
+?nelts	defl	?neltst
+
+    endif
+	endm
+	endm
+
+	.LIST
+

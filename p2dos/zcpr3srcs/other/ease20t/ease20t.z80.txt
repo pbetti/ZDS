@@ -1,0 +1,273 @@
+;**************************************************
+;
+; EASE20T.Z80
+; Eugene Nolan
+; 1/28/89
+;
+; This file is an overlay for EASE20.Z80 generated for
+; use at 8000h (EASE8000.COM). It's main purpose is to
+; display time in the command line prompt. It can get this
+; time from one of two sources, either Z80DOS23+ or BYE510
+; for RCPM use. If BYE510 support is enabled, then if
+; BYE is not found to be running, a check will be made to
+; look for the time from Z80DOS.
+;
+; This code is meant to be assembled to a .HEX file
+; and overlayed onto EASE8000.COM.
+;
+; MLOAD EASE&BYE.COM=EASE8000.COM,EASE20T.HEX
+;
+; NOTE: This overlay MAY be applied to any custom installed
+;	(as to EASE commands) version of EASE8000.COM you
+;	 are running.
+;
+; Most of the code in this file has been translated from
+; INTEL to ZILOG, and was cut directly from ZCMD30B, which
+; had as it's root ZCMD29 and ZCMD28.
+
+	org	504h		; overlay EASE at entry to it's
+				; prompt routine
+	call	timer		; do the time display
+
+	org	1800h		; past the end of EASE in absolute bytes
+	.phase	9700h		; real address in memory
+
+timer:	call	dotime		; Display the time
+	jp	8fedh		; Jump to what we overlay in EASE
+
+NO	equ	0
+YES	equ	NOT NO
+BDOS	equ	5
+
+; The following equate enables the appearance of [HH:MM] before the DU>
+; prompt if BYE5 is running with a clock.  A check is made to see if
+; BYE5 is running and skips the clock read if it's not.
+;
+B5CLOCK	EQU	NO		;*YES, if BYE5 has a clock installed and
+				;   you want the [HH:MM] displayed be-
+				;   fore the DU> PRIDRIV must be NO for
+				;   this to work
+B5TLOS	EQU	NO		;*YES, if BYE5 has a clock installed and
+				;    you want the [NN] displayed before
+				;    the DU>, where nn will indicate
+				;    Time-left-on-system.  B5CLOCK must
+				;    be NO (select only one option).
+
+SHOW	EQU	NO		;*Yes, if WHEEL is set, or user has
+				;  unlimited time and you wish to show
+				;  time-on-system as: '[On:nn]'.
+				; NO, if you want to disable display when
+				;  WHEEL is set or user has unlimited time.
+
+
+
+
+dotime:
+	 IF	B5CLOCK	OR B5TLOS
+	ld	c,32		; Make a BYE BDOS call
+	ld	e,241
+	CALL	BDOS
+	cp	77		; Is BYE5 running?
+	push	af		; Save flags
+	call	z,timbye	;Yes, display [HH:MM] or [nn]
+	pop	af
+	call	nz,timz8d	; BYE not running, use Z80DOS for time
+	 else
+	call	timz8d		; If not for RCPM, just use Z80DOS
+	 ENDIF
+	ret
+
+	 IF	B5CLOCK	AND (NOT B5TLOS)
+TIMBYE:	ld	c,79
+	CALL	BDOS	; Get BYE's RTC address
+	jr	timclk
+	 ENDIF
+
+timz8d:
+	ld	c,0ch		; get version
+	call	bdos		; to see if Z80DOS is running
+	ld	a,d
+	cp	'8'		; if Z80DOS23 or later, returns an '8'
+	ret	nz
+	ld	de,timbuf	; Make Z80DOS get time call
+	ld	c,105
+	call	5
+	ex	de,hl		; returned in DE, put into HL
+	inc	hl		; Skip over JDAY
+	inc	hl
+timclk:	ld	a,(hl)		; Get HH (it's in BCD)
+	push	hl		; Save address
+	ld	hl,anshh	; Storage location
+	CALL	ASCII		; Convert and store ascii
+	pop	hl		; Get address back
+	inc	hl
+	ld	a,(hl)		; Get MM, also in bcd
+	ld	hl,ansmm	; Storage location
+	CALL	ASCII		; Convert and store ascii
+	ld	hl,tmsg
+printhl:
+	ld	a,(hl)
+	or	a		; Zero terminates output
+	ret	z
+	push	hl
+	call	8d58h		; Call EASE20's CONOUT
+	pop	hl
+	inc	hl
+	jr	printhl
+;.....
+;
+;
+ASCII:	push	af		; Save BCD pair
+	srl	a
+	srl	a
+	srl	a
+	srl	a
+	and	0fh		; Get MSB of BCD pair
+	add	a,'0'		; Make ASCII
+	ld	(hl),a		; Store it
+	inc	hl		; Point to next store location
+	pop	af
+	and	0fh		; Get LSB of BCD pair
+	add	a,'0'		; Convert to ASCII
+	ld	(hl),a		; Store it
+	RET
+;.....
+;
+;
+TMSG:	DB	'['
+ANSHH:	DB	'00:'
+ANSMM:	DB	'00] ',0
+timbuf:
+	ds	8
+
+
+;.....
+;
+;
+; The following routine will display [Left:nn] or [On:nn], depending
+;  on your equate settings (BYTLOS and SHOW).  Normal users will be
+;  shown their time-left-on-system (i.e. [Left:nn]), while those with
+;  WHEEL privileges or unlimited time will be shown their time-on-system
+;  (i.e. [On:nn]). 
+;
+	 IF	B5TLOS AND (NOT	B5CLOCK)
+TIMBYE:	ld	c,79
+	CALL	BDOS	; Get current time-on-system
+	push	af	; And save it
+	ld	c,81
+	ld	e,255	; Get maxtime allowed
+	CALL	BDOS
+	ld	b,a	; Put it in B
+	or	a
+	jr	z,time1	; User has unlimited time
+	push	hl
+	push	de
+	ld	hl,8009h 	; get ENV address
+	ld	de,29h	 	; offset to whl address
+	add	hl,de
+	ld	a,(hl)		; get address of wheel
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	a,(hl)		; get wheel
+	or	a
+	pop	de
+	pop	hl
+	jr	nz,time1	; Wheel byte is on
+	pop	af		; TOS in A
+	ld	c,a		; Now in C
+	ld	a,b		; Maxtime in A
+	SUB	C		; Maxtime-TOS=TLOS
+	ld	hl,tlos		; Storage area
+	CALL	DEC8		; Convert/store to ascii
+	ld	hl,tlosm
+	CALL	printhl		; Print first part
+	ld	hl,tlos2
+	jp	printhl		; And second part, exit from prin1
+;
+TIME1:	pop	af		; Get TOS for wheel or unlimited time users
+;
+	 IF	NOT SHOW
+	RET
+	 ENDIF
+;
+	 IF	SHOW
+	ld	hl,tlos1	; Storage area
+	CALL	DEC8		; Convert/ store to ascii
+	ld	hl,tlosm1
+	CALL	printhl		; Print first part [On:xx 
+	ld	hl,tlos2
+	jp	printhl		; second part, then exit from prin1	
+	 ENDIF
+;
+TLOSM:	DB	'[Left:'
+TLOS:	DB	'   ',0		; Buffer for tlos or tos
+;
+	 IF	SHOW
+TLOSM1:	DB	'[On:'
+TLOS1:	DB	'   ',0		; Buffer for tlos or tos
+	 ENDIF
+;
+TLOS2:	DB	'] ',0
+;
+;-----
+;
+;-----------------------------------------------------------------------
+;
+; DEC8 will convert an 8-bit binary number in a to three ASCII bytes.
+; HL points to the MSB location where the ASCII bytes will be stored.
+; Leading zeros are suppressed.
+;
+DEC8:	push	af
+	push	hl
+	xor	a
+	ld	(hl),a		; Clear destination
+	inc	hl
+	ld	(hl),a
+	inc	hl
+	ld	(hl),a
+	pop	hl
+	pop	af
+	push	bc
+	push	de
+	ld	e,0		; Leading zero flag
+	ld	d,100
+;
+DEC81:	ld	c,'0'-1
+;
+DEC82:	inc	c
+	sub	d		; 100 or 10
+	jr	nc,dec82	; Still +
+	ADD	D		; Now add it back
+	ld	b,a		; Remainder
+	ld	a,c		; Get 100/10
+	cp	'1'		; Zero?
+	jr	nc,dec84	; Yes
+	ld	a,e		; Check flag
+	or	a		; Reset?
+	ld	a,c		; Restore byte
+	jr	z,dec85		; Leading zeros are skipped
+;
+DEC84:	ld	(hl),a		; Store it in buffer pointed at by HL
+	inc	hl		; Increment storage location
+	ld	e,0ffh		; Set zero flag
+;
+DEC85:	ld	a,d
+	sub	90		; 100 to 10
+	ld	d,a
+	LD	A,B		; Remainder
+	JR	NC,DEC81	; Do it again
+	ADD	A,'0'		; Make ASCII
+	LD	(HL),A		; And store it
+	POP	DE
+	POP	BC
+	RET
+	 ENDIF			; B5TLOS AND NOT B5CLOCK
+;.....
+	.dephase
+	end
+
+
+
+
+

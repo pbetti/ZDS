@@ -1,0 +1,68 @@
+	TITLE	"VID56 - Vlib 4.4"
+	NAME	('VID56')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from VID5/VID6.Z80 Ver 1.1 by Richard Conn
+; Date	  : 16 Jun 91
+; Version : 1.4
+; Module  : VID56
+; Abstract: This module contains the routines TINIT and DINIT
+;	which initialize and de-initialize a terminal, respectively.
+; Revision:
+;  1.4 - 16 Jun 91 - Revised to preserve AF per docs.		HFB
+;  1.3 - 18 Dec 89 - Joe Wright
+;	Uses @PARSV so that TINIT and DINIT may be macros.
+;  1.2 - 12 Jan 89 - Release Vers.				HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		TINIT, DINIT
+
+; ..From VLIB Get..
+
+	EXT		@PARSV, @TI, @TO
+
+	.Z80
+	CSEG
+;===============================================================
+; TINIT - Initialize Terminal characteristics
+;  Entry: - None
+;  Exit : - Nothing returned or affected
+;  Uses : - None
+; Special Requirements: None
+;===============================================================
+
+TINIT:	PUSH	AF		; 1.4 Save AF around call
+	CALL	TINIT0		; 1.4 .do the set
+	POP	AF		; 1.4 ..restore
+	RET			; 1.4 Quit
+
+TINIT0:	PUSH	HL		; Save some regs
+	PUSH	DE
+	LD	DE,(@TI)	; Init string address
+	JR	INIT
+
+;===============================================================
+; DINIT - De-Initialize Terminal characteristics
+;  Entry: - None
+;  Exit : - Nothing returned or affected
+;  Uses : - None
+;  Special Requirements: None
+;===============================================================
+
+DINIT:	PUSH	AF		; 1.4 Save A and Flags
+	CALL	DINIT0		; 1.4 .do the deinit
+	POP	AF		; 1.4 ..restore
+	RET			; 1.4 Quit
+
+DINIT0:	PUSH	HL		; Save some regs
+	PUSH	DE
+	LD	DE,(@TO)	; Get De-init string addr
+
+INIT:	PUSH	BC
+	JP	@PARSV		; Go to parser in VID7
+
+	END
+

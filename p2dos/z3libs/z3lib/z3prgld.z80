@@ -1,0 +1,114 @@
+	TITLE	"Z3PRGLD - Z3lib 4.0"
+	NAME	('PRGLOA')
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3PRGLD.Z80 Ver 1.1 by Richard Conn
+; Date    : 14 May 88
+; Version : 1.3
+; Module  : Z3PRGLD
+; Abstract: This module contains the routine PRGLOAD which loads
+;	a specified program into memory at 100H and transfers
+;	control to it.  If the file does not exist, PRGLOAD
+;	returns; if file does exist, PRGLOAD clears the stack of
+;	its return address and transfers control to the program
+;	after loading it with the cleared stack as the program's
+;	stack.
+;	WARNING: This routine uses self-modifying code and is
+;		 therefore NOT ROMable.
+; Revision:
+;  1.3 - 28 Jan 91.  Changed GETMTOP ref to GZMTOP.  HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		PRGLOAD
+
+;  External References
+
+	EXT		GZMTOP
+
+; Definitions
+
+BDOS	EQU	5		; BDOS entry point
+TPA	EQU	100H		; Base of Transient Program Area
+FOPEN	EQU	15		; DOS Open file command
+FREAD	EQU	20		; DOS Sequential read command
+SETDMA	EQU	26		; DOS Set DMA address command
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PRGLOAD
+; Entry: DE - Points to an FCB for specified file
+; Exit : - Nothing returned.  Either the routine executes or returns
+; Uses : - AF,BC,DE,HL
+; Special Requirements: None
+;===============================================================
+
+PRGLOAD: CALL	GZMTOP		; Get highest available address
+	LD	BC,-80H		; ..back down one record
+	ADD	HL,BC
+	LD	(LDADR),HL	; Set load address
+	LD	C,40H		; Offset up to where FCB Addr will be
+	ADD	HL,BC
+	LD	(LDFCB),HL	; Save address of FCB
+	LD	(HL),0		; set first byte to 0 (current disk)
+	EX	DE,HL		; Move FCB to DE
+	PUSH	DE		; ..and save local FCB address
+	INC	HL		;pt to name
+	INC	DE		;pt to name
+	LD	BC,11		;11 bytes
+	LDIR			;do copy
+	LD	B,24		;fill next 24 bytes (to R2) with zeroes
+	XOR	A		; Value to store (0)
+ZERO:	LD	(DE),A		; Store it..
+	INC	DE		; ..pt to next
+	DJNZ	ZERO		; And loop til done
+	POP	DE		; Restore LDFCB address
+	LD	C,FOPEN		;try to open file
+	CALL	BDOS
+	INC	A		;error?
+	RET	Z		;abort if error
+
+; Copy Loader Program into TBUFF Area
+
+	POP	AF		;clear stack
+	LD	HL,LOADER	;pt to loader program
+	LD	DE,(LDADR)	;pt to loader address
+	LD	BC,LODEND-LOADER	;copy boot loader
+	LDIR			;do the copy
+	LD	DE,TPA		;initial DMA address
+	LD	HL,(LDADR)	;transfer control to the loader program
+	JP	(HL)		;transfer control to the loader program
+
+;.....
+; Loader Program
+;   Upon execution, the address of LOADER is LDADR
+;   The FCB used by LOADER is at LDFCB
+
+LOADER:	LD	C,SETDMA	;set DMA
+	PUSH	DE		;save address
+	CALL	BDOS		;perform BDOS function
+
+LDFCB	EQU	$+1
+	LD	DE,0000		;pt to FCB
+	LD	C,FREAD		;read next record
+	CALL	BDOS
+	POP	HL		;get DMA address
+	OR	A		;0=OK
+	JP	NZ,TPA		;done with load, so run program
+	LD	DE,80H		;advance to next record
+	ADD	HL,DE
+	EX	DE,HL		;DMA address in DE
+
+LDADR	EQU	$+1
+	JP	0000		;continue load
+
+; Memory Marker - For Easy Location of Module End
+
+	DEFB	'*** ZCPR3 Prgload ***'
+LODEND:				;Tag for end of code
+
+	END
+

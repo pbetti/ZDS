@@ -1,0 +1,185 @@
+
+			  L * U * S * H
+
+		      Library Utility Shell
+
+		 For ZCPR Versions 3.3 and Above
+
+			   Version 1.0
+
+		01 December 1987 by Carson Wilson
+
+
+
+			    Contents
+			    --------
+
+		1. Description
+
+		2. System Requirements
+
+		3. Installation
+
+		4. Usage
+			1. Internal commands
+			2. External commands
+			3. Parsed commands
+			4. Hybrid commands -- KMD and XMODEM
+
+		5. Files included
+
+		6. Assembly
+
+		7. Inquiries
+
+
+
+1.  Description
+
+LUSH is a minimal ZCPR shell which takes advantage of the
+extended CCP services of ZCPR version 3.3.  This allows both
+reduced program size (making for a faster shell) and enhanced
+security.  Since ZCPR itself, and not LUSH, parses DU and
+directory specifications used by the program, LUSH automatically
+adjusts to whatever security levels are present in the current
+ZCPR system.  This means that the same program can be used by
+both secure and private systems without installation.
+
+LUSH contains only three internal commands: LUSH, HELP and DIR.
+All other commands are sent to ZCPR as is, with the option of
+prepending the current library's drive, user, and name as the
+first command parameter.  Therefore, LUSH automatically installs
+for library-oriented programs such as LBRE, LPUT, LT, and TYPELZ
+which accept library names as the first command line parameter.
+
+
+2.  System Requirements
+
+LUSH will only operate on ZCPR systems with a version of 3.3 or
+higher.  Further, LUSH requires that the ZCPR system includes a
+shell stack with entries of at least 32 bytes each (standard
+size), and an external FCB.  If any of these conditions are not
+met, LUSH aborts with the appropriate error message.
+
+
+3.  Installation
+
+No installation is necessary.
+
+
+4.  Usage
+
+4.1  Internal commands
+
+LUSH operates in several modes.  Simplest is the internal command
+mode.  If the commands HELP, ?, DIR, or LUSH are used at LUSH's
+command prompt, they call up procedures built into LUSH itself.
+These commands work as follows:
+
+Command 			Result
+------- 			------
+>HELP or ?. . . . . . . . . . . Display help screen
+>DIR [afn]. . . . . . . . . . . Display this library's directory
+>LUSH [du:|dir:]ufn[.LBR] . . . Attach to another library file
+
+
+4.2  External commands
+
+The second type of LUSH command begins with a leading space, and
+instructs LUSH to send the command verbatim to ZCPR.  Thus:
+
+Command 			Result
+------- 			------
+> command [parameters]. . . . . command [parameters]
+
+When ZCPR has completed processing the command, ZCPR reloads LUSH
+using the program name, ZCPR directory, and library name LUSH was
+originally invoked with.
+
+
+4.3  Parsed commands
+
+The third type of LUSH command begins without a leading space.
+This is where LUSH performs its most important function--that of
+parsing the drive, user, and name of the current library file as
+the first parameter of any ZCPR command line.  This allows LUSH
+to work as a "front end" for the various library utilities which
+accept the first command line parameter as a designation of the
+library file on which to operate.  Thus, if LUSH were attached to
+LUSH10.LBR at directory B0:,
+
+Command 			Result
+------- 			------
+>command [parameters] . . . . . command B0:LUSH10.LBR [parameters]
+
+Again, when ZCPR has completed processing the command, ZCPR
+reloads LUSH using the program name, ZCPR directory, and library
+name LUSH was originally invoked with.
+
+
+4.4  Hybrid commands -- KMD and XMODEM
+
+The fourth and final type of LUSH command is a hybrid between
+internal and external commands.  If the KMD or XMODEM commands
+are given _without_ a leading space, LUSH parses them as follows:
+
+Command 			Result
+------- 			------
+
+>KMD|XMODEM S[K] ufn. . . . . . Send a member of this library
+
+Thus, if LUSH were attached to LUSH10.LBR at directory B0:, and
+the command was "KMD SK THIS.FIL", LUSH would send the command
+"KMD LK B0:LUSH10.LBR THIS.FIL" to ZCPR.
+
+KMD and XMODEM are external commands in the sense that no command
+processing is done by LUSH--it merely sends a command line to
+ZCPR.  But they are internal commands in the sense that they are
+dedicated commands.  Only the commands "KMD" and "XMODEM" will be
+parsed with L or LK as the first parameter, and only "KMD" or
+"XMODEM" will be sent as the command name to ZCPR.  Therefore,
+for use with RCPM systems, a program with the exact name XMODEM
+or KMD must be available for sending files.
+
+
+5.  Files included
+
+Files included in LUSH10.LBR are as follows:
+
+LUSH10.DOC	This file
+LUSH10.FOR	Short description
+LUSH.Z80	Program source code
+LUSH.COM	Object code which loads at 100 hex
+LUSH8000.COM	Object code which loads at 8000 hex
+SLUDIR11.REL	Correction to SYSLIB's SLUDIR module
+
+LUSH.COM loads at 100 hex, allowing ZCPR's GO command to be used
+with LUSH.COM.	LUSH8000.COM loads at 8000 hex, allowing the GO
+command to be used on other programs from within LUSH8000.COM.
+
+
+6.  Assembly
+
+LUSH was assembled using Z80ASM.COM and SLRNK.COM by SLR Systems,
+the latest versions of the ZCPR Z33LIB, Z3LIB, and SYSLIB
+linkable libraries, and SLUDIR11.REL, which supercedes the SYSLIB
+module SLUDIR.
+
+To test modifications to LUSH.COM, comment out the ".dseg"
+pseudo-op near the end of the file, and remove the semicolon from
+the ".request" comment at the beginning of the code and link the
+file as one absolute segment.  When through testing, return these
+to the original state and link using code and data segments for
+smallest code size.
+
+
+7.  Inquiries
+
+Please address any comments or inquiries regarding LUSH10.LBR to:
+
+			  Carson Wilson
+		 Lillipute Z-Nodes, Chicago, IL
+	  24 hours - 300/1200/2400 baud - 8/1/No parity
+		  312-664-1730 and 312-649-1730
+
+

@@ -1,0 +1,390 @@
+program CleanFOR;            { Cleans up FOR. files }
+                             { compiles with ending address of $A400 }
+const
+  debug = false;
+  version = '1.0';
+  date    = '05 Aug 87';
+  authors = 'C. Wilson';
+
+  BufSize  = 1800;   { Max. size of buffer for FOR names  }
+
+  User   = 32;       { CP/M function numbers }
+  DefDrv = 25;
+  SelDsk = 14;
+  Res    = 13;
+
+  { values patchable with DDT, starting at 2100 hex: }
+
+  FORLabel  : array[1..9] of char = '[[CONFIG>';           { pointer }
+  FORdrv    : char = 'A';
+  FORusr    : byte =  14;
+  SrchLabel : array[1..8] of char = '[DRIVES>';   { pointer }
+  ListLen   : byte = 5;            { length of drive list }
+  DriveLst  : array[1..16] of char = 'ABCDE'^@^@^@^@^@^@^@^@^@^@^@;
+
+  SpecLength = 12;
+
+type
+  SpecType = string[SpecLength];
+  BufType  = array[1..11] of string[76];
+  SpecBuf  = array[1..BufSize] of SpecType;
+
+var
+  FORBuf     : SpecBuf;
+  Match      : array[1..BufSize] of boolean;
+  Buffer     : BufType;
+
+  NEWFile,
+  FORFile,
+  FORFil2   : text;
+
+  UnTypedFil  : file;
+
+  Total,
+  Unmatched,
+  DiskBlock,
+  FilsDone,
+  Desc,
+  DefDrvVal,
+  DefUsr     : integer;
+
+  line,
+  MatchUsr,
+  SrchDrv       : byte;
+
+  SearchSpec : SpecType;
+
+  BufFull,
+  AllMatch,
+  AllDone    : boolean;
+
+
+function Exist(Spec : SpecType) : boolean;
+  { Searches for standard Turbo filespec at current user, current
+    drive, or on alternate drive if included in the filespec   }
+  var
+    fil      : file;
+  begin
+  assign(fil, Spec);
+  {$I-} reset(fil) {$I+} ;
+  exist := (IOresult = 0);
+  close(fil);
+  end;     { of procedure Exist }
+
+
+function Search(SearchName : SpecType) : boolean;
+           { Detects match on current drive, all users }
+  const
+    DMA    = $80;       { default address }
+
+    SetDMA    = 26;     { CP/M function numbers }
+    FindFirst = 17;
+    FindNext  = 18;
+  type
+    FileRec = record               { adapted from P.D. DIR.PAS }
+      case boolean of
+        true:
+         (drv : byte;
+          FName  : array[1..11] of char;
+          extent, s1, s2, RecCount : byte;
+          dn : array[16..31] of byte);
+        false:
+         (init : array[1..32] of byte);
+        end;
+  var
+    found     : boolean;
+    off, Ch   : integer;
+    SearchBlk : FileRec;
+    AnswerBlk : array[0..3] of FileRec;
+
+  begin
+  fillchar(SearchBlk.init,32,0);     { initialize search FCB }
+  SearchBlk.drv := ord('?');         { match all user areas & erased files }
+  for Ch := 1 to 11 do
+    SearchBlk.FName[Ch] := SearchName[Ch];    { fill in file name }
+  BDOS(SetDMA,addr(AnswerBlk));             { set DMA to our buffer }
+  off   := bdos(FindFirst,addr(SearchBlk));
+  found := false;
+  while (off <> 255) and (found = false) do
+    with AnswerBlk[off] do
+      begin
+      for Ch := 1 to 11 do
+        FName[Ch] := char(ord(FName[Ch]) and $7F);    { kill R/O, etc. flags }
+      if (drv <> $E5) and (FName = SearchBlk.Fname)
+        then
+          begin
+          found    := true;                           { else erased file }
+          MatchUsr := drv;
+          end;
+      off := bdos(FindNext,addr(SearchBlk));
+      end;
+  Search := found;
+  BDOS(SetDMA,DMA);  { restore default DMA }
+  if debug then
+    writeln('DEBUG: Search for ',searchname,' was ',found);
+  end;       { of procedure Search }
+
+
+function Yes : boolean;  { returns false if answer <> 'Y','y' }
+  var
+    response : char;
+  begin
+  write(' (Y/N)? N',^H);
+  read(kbd,response);
+  response := upcase(response);
+  write(response);
+  if response = 'Y' then Yes := true
+  else Yes := false;
+  end;                  { of function Yes }
+
+
+procedure Parse(var arg : SpecType);
+          { Parses the first word of a capitalized string of up to 12
+            characters into CP/M FCB's filespec format.  NO DRIVESPEC
+            ALLOWED, but accepts a period as delimiter between filename
+            and type.      }
+  var
+    name : string[8];
+    tail : string[3];
+    lett,
+    DotPos,
+    SpcPos : integer;
+  begin
+  SpcPos := pos(' ', arg);
+  if SpcPos <> 0 then
+    arg := copy(arg, 1, SpcPos - 1);        { kill trailing spaces }
+  DotPos := pos('.', arg);
+  if DotPos <> 0 then                         { file type detected }
+    begin
+    tail := copy(arg, DotPos + 1, 255);      { all after  '.' }
+    name := copy(arg, 1, DotPos - 1);        { all before '.' }
+    for lett := DotPos to 8 do
+      name := name + ' ';                     { pad }
+    for lett := length(tail) to 3 do
+      tail := tail + ' ';
+    arg := name + tail;
+    end
+  else arg := copy(arg, 1, 8);             { chars 1-8 only }
+  end;               { of procedure Parse }
+
+
+procedure GoToDef;          { set to default drive/user }
+  begin
+  BDOS(SelDsk, DefDrvVal);
+  BDOS(User, DefUsr);
+  end;
+
+
+procedure GoToFOR;           { set to FOR drive/user     }
+  begin
+  BDOS(SelDsk, ord(FORDrv) - ord('A'));
+  BDOS(User, FORUsr);
+  end;
+
+
+procedure Finish;
+  begin
+  GoToDef;
+  writeln;
+  writeln(^I'Done.');
+  halt;
+  end;
+
+
+{$I CPMSTATS.INC }
+
+function KSize(FilSiz : integer) : integer;
+         { convert Turbo filesize to Kb's, using block size DiskBlock }
+  var
+    size,  { in records or blocks }
+    extra : integer;
+  begin
+  size := FilSiz div 8;
+  if FilSiz mod 8 > 0 then size := size + 1;
+  extra := size mod DiskBlock;
+  if extra > 0 then size := size + (DiskBlock - extra);
+  KSize := size;
+  end;              { of function KSize }
+
+
+BEGIN                   (* MAIN PROGRAM *)
+
+writeln;
+writeln('CLEANFOR ',version,' (c) ',date,' by ',authors,'.');
+
+if ParamStr(1) = 'INSTALL' then
+  begin
+  assign(UntypedFil,'PDTINS.CHN');
+  Chain(UntypedFil);
+  end
+else if ParamCount <> 0 then   { display ZCPR-style help }
+  begin
+  writeln(^I,  'Removes unmatched entries from FOR. files.');
+  writeln('Usage:'^J^M^I'CLEANFOR');
+  halt;
+  end;
+
+DefDrvVal := BDOS(DefDrv);    { get current drive }
+DefUsr    := BDOS(User,$FF);  {  "     "    user  }
+writeln;
+writeln(^I'Reset');
+BDOS(Res);                    { reset disk system }
+GoToFOR;                      { to FOR DU:        }
+
+if not Exist('FOR') then
+  begin
+  write(^I^G,FORDrv, FORUsr, ':FOR. -- not found.  ABORT.');
+  Finish;
+  end
+else
+  begin
+  assign (FORFile,    'FOR');
+  reset  (FORFile);
+  assign (FORFil2,    'FOR');
+  reset  (FORFil2);
+  assign (UntypedFil, 'FOR');
+  reset  (UntypedFil);
+  end;
+
+DiskBlock := CPMStats(FORDrv, size);         { get block size - 2k, 4k, etc. }
+
+if CPMStats(FORDrv, space) < KSize(filesize(UnTypedFil))
+then                         { no room for FOR.NEW }
+  begin
+  close(FORFile);
+  close(FORFil2);
+  close(UntypedFil);
+  write(^I^G'Not enough room on drive ',FORDrv,':.  ABORT.');
+  Finish;
+  end
+else
+  begin
+  close(UntypedFil);
+  assign (NEWFile, 'FOR.NEW');
+  rewrite(NEWFile);
+  end;
+
+AllMatch  := true;        { default to all FOR entries matched }
+Total     := 0;
+Unmatched := 0;
+
+write(^I'Checking ', FORDrv, FORUsr, ':FOR. against drives -->');
+for SrchDrv := 1 to ListLen do write(' ', DriveLst[SrchDrv]);
+writeln('....');
+writeln;
+
+WHILE NOT EOF(FORFile) DO        { loop to process FOR file }
+  begin
+  Desc := 1;
+
+  while not (EOF(FORFile) or (Desc > BufSize)) do
+    begin                      { Fill buffer or read to EOF }
+    line := 1;
+    readln(FORFile,Buffer[line]);        { kill initial '----' }
+    readln(FORFile,FORBuf[Desc]);        { get file spec       }
+    repeat
+      line := succ(line);                { get end of this desc.}
+      readln(FORFile,Buffer[line]);
+    until (Buffer[line] = '   ') or (Buffer[line] = '') or EOF(FORFile);
+    Desc := succ(Desc);
+    end;
+
+  FilsDone := Desc - 1;
+
+  for Desc := 1 to FilsDone do
+    begin
+    Parse(FORBuf[Desc]);                 { to CP/M filespec }
+    Match[Desc] := false;                { no matches found yet }
+    end;
+
+  AllDone := false;                { All entries not matched }
+
+  for SrchDrv := 1 to ListLen do   { Search for matches on all drives in list }
+    if not AllDone then            { Quit searching when all entries matched }
+      begin
+      AllDone := true;
+      BDOS(SelDsk, ord(DriveLst[SrchDrv]) - ord('A'));
+      for Desc := 1 to FilsDone do          { go thru whole buffer }
+        if Match[Desc] = false then         { search only remaining unmatched }
+          begin
+          Match[Desc] := Search(FORBuf[Desc]);
+          if Match[Desc] then
+            begin
+            insert('.', ForBuf[Desc], 9);
+            write(FORBuf[Desc]);
+            lowvideo;
+            write(' matched on ');
+            normvideo;
+            writeln(DriveLst[SrchDrv],MatchUsr,':');
+            end;
+          end;
+      for Desc := 1 to FilsDone do
+        if Match[Desc] = false then AllDone := false;  { test for remaining }
+      end;
+
+  GoToFOR;
+
+  for Desc := 1 to FilsDone do     { Copy matched entries to FOR.NEW }
+    begin
+    Total := succ(Total);
+    line := 1;
+    if Match[Desc] = true then     { copy this entry }
+      repeat
+        line := succ(line);
+        readln(FORFil2,  Buffer[line]);
+        writeln(NEWFile, Buffer[line]);
+      until (Buffer[line] = '   ') or
+            (Buffer[line] = '') or
+            EOF(FORFil2)
+    else                           { display this entry, and skip over it }
+      begin
+      Unmatched := succ(Unmatched);
+      writeln('Deleting:');
+      lowvideo;
+      repeat
+        readln(FORFil2, Buffer[line]);
+        writeln(Buffer[line]);
+      until (Buffer[line] = '   ') or
+            (Buffer[line] = '') or
+            EOF(FORFil2);
+      delay(1000);
+      normvideo;
+      AllMatch := false;
+      end;
+    end;
+
+END;       { of WHILE NOT EOF }
+
+close(FORFile);
+close(FORFil2);
+close(NEWFile);
+
+writeln;
+writeln(^I,Total,' total entries in ',FORDrv, FORUsr,':FOR.');
+
+if AllMatch then
+  begin
+  write(^I'All entries matched.');
+  erase(NEWFile);
+  end
+else
+  begin
+  writeln(^I,Total - UnMatched,' entries matched.');
+  writeln(^I,UnMatched,' entries deleted.');
+  writeln;
+  write(^I'Keep changes');
+  if Yes then
+    begin
+    if exist('FOR.BAK') then        { Remove previous FOR.BAKs, since    }
+      begin                         {  Turbo Rename will create new ones }
+      assign(UntypedFil,'FOR.BAK');
+      erase(UntypedFil);
+      end;
+    rename(FORFile,'FOR.BAK');
+    rename(NEWFile,'FOR');
+    end
+  else erase(NEWFile);
+  end;
+Finish;
+END.
+

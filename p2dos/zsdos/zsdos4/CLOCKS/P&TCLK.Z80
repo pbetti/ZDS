@@ -1,0 +1,133 @@
+	TITLE	"Pickles & Trout BIOS Heartbeat Clock - (P&T-HEARTBT)"
+	SUBTTL	"Description of Clock Module"
+;==========================================================
+; Early Version from Bill Wray.  BM
+; Translated for Z80ASM/ZSDOS 06/11/88 from ver of 10/06/85
+; Vers 0.1 current as of 18 Oct 88
+;==========================================================
+
+VERS	EQU	01
+	.Z80
+	NAME PANDT
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID/
+
+DESCST:	DEFW	0		; Thisyr
+
+CLKNAM:	DEFB	'Pickles&Trout           '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'   Pickles & Trout heartbeat clock',CR,LF
+	DEFB	'   Z80',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		; Dummy parameters
+	DEFW	0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Pickles & Trout HeartBeat"
+
+SPCFUN	EQU	40H		; Entry point for special system functions
+
+	CSEG
+;-------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	PUSH	HL		; Save buffer address
+	LD	B,18H		; Use special system function to read date
+	CALL	SPCFUN		; Reg D = Day of Week
+				; Regs:  E = Day, H = Month, L = Year
+
+	LD	A,L		; Yr
+	LD	D,H		; Mon
+	POP	HL		; -> Year slot
+	CALL	TOBCD
+	LD	A,D		; Month
+	CALL	TOBCD
+	LD	A,E
+	CALL	TOBCD		; Do Day of Month
+
+	PUSH	HL
+	LD	B,15		; Use special system function to read tod
+	CALL	SPCFUN		; Regs:  H = Hrs, L = Mins, D = Secs
+	LD	A,H		; Hrs
+	LD	E,L		; Min
+	POP	HL
+	CALL	TOBCD		; Do Hrs
+	LD	A,E
+	CALL	TOBCD		; Do Mins
+				; Point to place to put converted seconds
+	LD	E,(HL)		; Get entering-memory 'seconds' byte to E
+	LD	A,D		; Seconds
+	CALL	TOBCD
+	DEC	HL		; -> seconds byte
+	LD	A,01		;== Set Ok return value
+	RET
+
+; Convert binary (A) to BCD at HL, and bump HL
+; Uses: A,C
+
+TOBCD:	LD	C,0		; Initialize character
+CLOOP:	SUB	10		; Subtract 10
+	JR	C,C1		; Got first character if carry
+	INC	C		; Otherwise increment character
+	JR	CLOOP
+C1:	ADD	A,10		; Add back 10
+
+; C  is tens value, A is units
+
+	RLD			; Low A (Units) to High byte of Memory
+	LD	A,C		; Fetch Tens
+	RLD			; Hi (HL) to Low (HL), low A (tens) to hi (HL)
+	INC	HL		; Bump pointer
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+	COMMON	/_POST_/
+
+	RET
+	DEFB	0,0,0		; Filler
+
+
+	PAGE
+	SUBTTL "Pre-Execution Clock Checks"
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

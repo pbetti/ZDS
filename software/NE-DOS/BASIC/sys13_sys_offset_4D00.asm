@@ -1,0 +1,135 @@
+;
+;  MDZ80 V0.9.0 Z80 Disassembly of sys13_sys_offset_4D00.bin
+;  2008/03/02 22:09
+;
+	ORG	$4D00
+;
+	LD	A,E		; 4D00  7B		{
+	CP	$8B		; 4D01  FE 8B		~.
+	JR	NC,X4D0D	; 4D03  30 08		0.
+	CP	$63		; 4D05  FE 63		~c
+	JR	NC,X4D0F	; 4D07  30 06		0.
+	CP	$2F		; 4D09  FE 2F		~/
+	JR	C,X4D11		; 4D0B  38 04		8.
+X4D0D:	LD	A,$5A		; 4D0D  3E 5A		>Z
+X4D0F:	SUB	$34		; 4D0F  D6 34		V4
+X4D11:	RRCA			; 4D11  0F		.
+	INC	A		; 4D12  3C		<
+	LD	B,A		; 4D13  47		G
+	LD	HL,X4D21	; 4D14  21 21 4D	!!M
+X4D17:	LD	A,(HL)		; 4D17  7E		~
+	INC	HL		; 4D18  23		#
+	OR	A		; 4D19  B7		7
+	JR	NZ,X4D17	; 4D1A  20 FB		 {
+	DJNZ	X4D17		; 4D1C  10 F9		.y
+	JP	X30D9		; 4D1E  C3 D9 30	CY0
+;
+X4D21:	NOP			; 4D21  00		.
+;
+	DEFB	'NEXT WITHOUT FOR'			; 4D22
+	DEFB	$00					; 4D32 .
+	DEFB	'SYNTAX ERROR'				; 4D33
+	DEFB	$00					; 4D3F .
+	DEFB	'RETURN WITHOUT GOSUB'			; 4D40
+	DEFB	$00					; 4D54 .
+	DEFB	'OUT OF DATA'				; 4D55
+	DEFB	$00					; 4D60 .
+	DEFB	'ILLEGAL FUNCTION CALL'			; 4D61
+	DEFB	$00					; 4D76 .
+	DEFB	'OVERFLOW'				; 4D77
+	DEFB	$00					; 4D7F .
+	DEFB	'OUT OF MEMORY'				; 4D80
+	DEFB	$00					; 4D8D .
+	DEFB	'UNDEFINED LINE #'			; 4D8E
+	DEFB	$00					; 4D9E .
+	DEFB	'SUBSCRIPT OUT OF RANGE'		; 4D9F
+	DEFB	$00					; 4DB5 .
+	DEFB	'REDIMENSIONED ARRAY'			; 4DB6
+	DEFB	$00					; 4DC9 .
+	DEFB	'DIVISION BY ZERO'			; 4DCA
+	DEFB	$00					; 4DDA .
+	DEFB	'ILLEGAL DIRECT'			; 4DDB
+	DEFB	$00					; 4DE9 .
+	DEFB	'TYPE MISMATCH'				; 4DEA
+	DEFB	$00					; 4DF7 .
+	DEFB	'OUT OF STRING SPACE'			; 4DF8
+	DEFB	$00					; 4E0B .
+	DEFB	'STRING TOO LONG'			; 4E0C
+	DEFB	$00					; 4E1B .
+	DEFB	'STRING FORMULA TOO COMPLEX'		; 4E1C
+	DEFB	$00					; 4E36 .
+	DEFB	'CAN'					; 4E37
+	DEFB	$27					; 4E3A '
+	DEFB	'T CONTINUE'				; 4E3B
+	DEFB	$00					; 4E45 .
+	DEFB	'NO RESUME'				; 4E46
+	DEFB	$00					; 4E4F .
+	DEFB	'RESUME WITHOUT ERROR'			; 4E50
+	DEFB	$00					; 4E64 .
+	DEFB	'UNPRINTABLE ERROR'			; 4E65
+	DEFB	$00					; 4E76 .
+	DEFB	'MISSING OPERAND'			; 4E77
+	DEFB	$00					; 4E86 .
+	DEFB	'BAD FILE DATA'				; 4E87
+	DEFB	$00					; 4E94 .
+	DEFB	'DISK BASIC FEATURE'			; 4E95
+	DEFB	$00					; 4EA7 .
+	DEFB	'UNDEFINED USER FUNCTION'		; 4EA8
+	DEFB	$00					; 4EBF .
+	DEFB	'FIELD OVERFLOW'			; 4EC0
+	DEFB	$00					; 4ECE .
+	DEFB	'INTERNAL ERROR'			; 4ECF
+	DEFB	$00					; 4EDD .
+	DEFB	'BAD FILE #'				; 4EDE
+	DEFB	$00					; 4EE8 .
+	DEFB	'FILE NOT FOUND'			; 4EE9
+	DEFB	$00					; 4EF7 .
+	DEFB	'BAD FILE MODE'				; 4EF8
+	DEFB	$00					; 4F05 .
+	DEFB	'FILE ALREADY OPEN'			; 4F06
+	DEFB	$00					; 4F17 .
+;
+	CCF			; 4F18  3F		?
+	NOP			; 4F19  00		.
+;
+	DEFB	'DISK I/O ERROR.  USE E-CMD FOR S'	; 4F1A
+	DEFB	'PECIFIC'				; 4F3A
+	DEFB	$00					; 4F41 .
+	DEFB	'FILE ALREADY EXISTS'			; 4F42
+	DEFB	$00					; 4F55 .
+;
+	CCF			; 4F56  3F		?
+	NOP			; 4F57  00		.
+	CCF			; 4F58  3F		?
+	NOP			; 4F59  00		.
+;
+	DEFB	'DISK FULL'				; 4F5A
+	DEFB	$00					; 4F63 .
+	DEFB	'INPUT PAST END'			; 4F64
+	DEFB	$00					; 4F72 .
+	DEFB	'BAD RECORD #'				; 4F73
+	DEFB	$00					; 4F7F .
+	DEFB	'BAD FILE NAME'				; 4F80
+	DEFB	$00					; 4F8D .
+	DEFB	'MODE MISMATCH'				; 4F8E
+	DEFB	$00					; 4F9B .
+	DEFB	'DIRECT STATEMENT IN FILE'		; 4F9C
+	DEFB	$00					; 4FB4 .
+	DEFB	'TOO MANY FILES'			; 4FB5
+	DEFB	$00					; 4FC3 .
+	DEFB	'DISK WRITE PROTECTED'			; 4FC4
+	DEFB	$00					; 4FD8 .
+	DEFB	'FILE ACCESS DENIED'			; 4FD9
+	DEFB	$00					; 4FEB .
+;
+;	Miscellaneous equates
+;
+;  These are addresses referenced in the code but
+;  which are in the middle of a multibyte instruction
+;  or are addresses outside the initialized space
+;
+X30D9	EQU	$30D9
+;
+	END
+;
+

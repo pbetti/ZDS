@@ -1,0 +1,1485 @@
+; PROGRAM:  FF (Find File)
+; AUTHOR:  Jay Sage
+; VERSION:  1.0
+; DATE:  March 14, 1987
+
+
+;			* * *   IMPORTANT NOTE   * * *
+;
+; This program is copyrighted 1987 by NAOG/ZSIG.  It may be copied and
+; modified freely for personal use but may not be sold or distributed for a
+; fee.  Modified versions must be submitted to and approved by NAOG/ZSIG
+; before they may be distributed.  See the file ZSIGPOL1.DOC on Z-Nodes for
+; the ZSIG policy on signing out and modifying programs.
+
+
+; This program was derived from FINDF version 26.  FINDF was originally created
+; by Richard Conn.  See the history in FINDF for a chronology of contributions
+; by others, including Howard Goldstein, Joe Wright, Al Hawley, Rick Peterson,
+; and Bruce Morgen.  I have given this program the new name FF so that it can
+; develop in different directions without interfering with Echelon's need to
+; support the utilities it provides with its commercial versions of Z-System.
+
+;=============================================================================
+;
+;		R E V I S I O N    H I S T O R Y
+;
+;=============================================================================
+
+VERS	EQU	10
+
+; VERSION 1.0 	Jay Sage	March 14, 1987
+;
+;	Added the DRVTBL configuration word at the beginning of the code.
+;	This word contains a byte for each possible drive in a system.  When
+;	the user has not indicated a specific drive to scan, each drive is
+;	checked against this table and skipped if the bit is not set.  This
+;	allows FF to work in systems with holes (e.g., drives A, B, and F)
+;	in which the BIOS hangs when a drive is accessed that does not exist
+;	or has no disk in it.  As distributed, FF has FFFFH in this word so
+;	that all drives up to the max drive specified in the environment will
+;	be scanned.
+;
+;	Added more flexibility to output paging.  The output can be paged
+;	a line at a time by hitting the space bar or can be aborted at a page
+;	break by hitting control-c
+;
+;	Enhanced syntax to allow specifying a list of drives to be scanned
+;	in the option field.
+;
+;	Added code to set program error flag if no files found and to clear
+;	the flag if files were found.  The number of files found is stored in
+;	a configurable user register.  If the number is more than 255, the
+;	value 255 is stored.  As distrubuted, register 0 is used.
+
+;	Added code to treat all file specs as ambiguous.  thus, "FF A"
+;	is equivalent to "FF A*.*" and "FF A.B" is equivalent to "FF A*.B*".
+;	This feature can be disabled with the E option.
+;
+;=============================================================================
+;
+;		D E F I N I T I O N S    S E C T I O N
+;
+;=============================================================================
+
+Z3ENV	DEFL	0FE00H		; ZCPR3 Environment address
+
+; System equates:
+
+BOOT	EQU	0000H		; CP/M warm boot jump vector
+BDOS	EQU	BOOT+05H	; CP/M bdos call jump vector
+TBUFF	EQU	BOOT+80H	; Disk I/O buffer
+FCB	EQU	BOOT+5CH	; Default file control block
+
+CR	EQU	'M'-'@'		; Carriage return
+LF	EQU	'J'-'@'		; Line feed
+TAB	EQU	'I'-'@'
+BELL	EQU	'G'-'@'		; Bell character
+CTRLC	EQU	'C'-'@'		; Abort
+CTRLS	EQU	'S'-'@'		; Pause
+
+ESIZE	EQU	12		; 12 bytes/dir entry
+
+MDOFF	EQU	2CH		; Max drive offset in Z3ENV
+MUOFF	EQU	2DH		; Max user offset in Z3ENV
+
+RIGHTCH	EQU	'>'		; Character to right of directory name
+
+; SYSLIB and Z3LIB Routines
+
+	EXT	Z3INIT,GETWHL,CODEND,GETCRT
+	EXT	CST,CIN,COUT,CRLF,PRINT,PAFDC,DUNDR
+	EXT	PUTER2,PUTREG
+
+;=============================================================================
+;
+;			M A I N    C O D E    S E C T I O N
+;
+;=============================================================================
+
+
+	JP	START
+
+	DB	'Z3ENV'		; ZCPR3 ID
+	DB	1		; External environment descriptor
+Z3EADR:
+	DW	Z3ENV
+
+		; Configuration area
+
+	DEFB	'DRVTBL'
+
+DRVTBL0:
+	;	ABCDEFGH	; Drives A..H
+	DB	11111111B
+	;	IJKLMNOP	; Drives I..P
+	DB	11111111B
+
+Z3REG:				; User register in which to return the number
+	DB	0		; ..of files found (if > 9, disable)
+
+
+START:
+	LD	HL,(Z3EADR)	; Point to ZCPR3 environment
+	PUSH	HL		; Transfer pointer
+	POP	IX		; ..to the X index register
+	CALL	Z3INIT		; Initialize the ZCPR3 ENV
+	CALL	INIT		; Initialize program
+	LD	(STACK),SP	; Save stack (so cleanup not needed at end)
+	CALL	CODEND		; Determine free space
+	LD	(FNTAB),HL	; File name table
+	LD	DE,512		; 1/2 K space
+	ADD	HL,DE
+	LD	(SCRATCH),HL	; Beginning of scratch area
+	LD	SP,HL		; And top of stack
+	CALL	GTBIOS		; Get bios jump table
+	CALL	HELLO		; Sign on message
+	CALL	HELPCHK		; Check for and print help message
+	CALL	OPTCHK		; Build file name table and process options
+	CALL	NEWLINE		; New line
+	CALL	FIND		; Do the searches
+	CALL	BYE		; Sign off message
+RETURN:
+	LD	SP,(STACK)	; Quiet return
+	RET
+
+;-----------------------------------------------------------------------------
+
+; SAY WHO WE ARE
+
+HELLO:
+	CALL	PRINT
+	DB	CR,LF
+	DB	TAB,TAB,'Find File (FF) Version '
+	DB	[VERS/10]+'0','.',[VERS	MOD 10]+'0'
+	DB	' [ZSIG]'
+	DB	0
+	RET
+
+;-----------------------------------------------------------------------------
+
+;  CHECK FOR HELP REQUEST
+
+HELPCHK:
+	LD	HL,TBUFF+1	; Look at command tail
+	CALL	SBLANK		; Skip blanks
+	LD	A,(HL)		; Get first byte
+	CP	'/'		; Help?
+	JR	Z,HCK1
+	OR	A		; Any argument at all?
+	RET	NZ		; Go process it
+
+; IF NO FILE NAME IS SPECIFIED, ABORT WITH NOTICE
+
+HCK1:
+	CALL	PRINT
+	DB	CR,LF,LF
+	DB	'Find all files matching a list of file '
+	DB	'specs on all drives, a specific '
+	DB	CR,LF
+	DB	'drive, or a list of drives.  All file '
+	DB	'specs are automatically made'
+	DB	CR,LF
+	DB	'wild ("A.B" -> "A*.B*").'
+	DB	CR,LF,LF
+	DB	'   Syntax:  FF [D: or DIR:]afn[,afn].. [d..][/o..]'
+	DB	CR,LF,LF
+	DB	TAB,'Options (d) before slash:'
+	DB	CR,LF
+	DB	TAB,TAB,'List of drives to scan'
+	DB	CR,LF,LF
+	DB	TAB,'Options (o) after slash:'
+	DB	CR,LF
+	DB	TAB,TAB,'E - Exact (no auto wildcarding)',cr,lf
+	DB	TAB,TAB,'P - No Paging',0
+	CALL	GETWHL
+	JR	Z,HCK2
+	CALL	PRINT
+	DB	CR,LF
+	DB	TAB,TAB,'S - Include SYS Files',0
+HCK2:
+	CALL	PRINT
+	DB	CR,LF,LF
+	DB	'Error flag set if no files found'
+	DB	0
+	LD	A,(Z3REG)	; See if register used to store file number
+	CP	10
+	JR	NC,HCK3
+	LD	B,A		; Save register number in B
+	CALL	PRINT
+	DB	'.  Number of files put in REG '
+	DB	0
+	LD	A,B
+	ADD	'0'
+	CALL	COUT
+HCK3:
+	CALL	PRINT
+	DB	'.'
+	DB	CR,LF
+	DB	'Auto-scanned drives are: '
+	DB	0
+
+	LD	HL,(DRVTBL0)	; Get drive map
+	LD	A,H		; Swap H and L
+	LD	H,L
+	LD	L,A
+	LD	B,(IX+MDOFF)	; Scan up to max drive only
+	LD	A,'A'		; Initial drive letter
+HCK4:	ADD	HL,HL		; High bit of HL into carry flag
+	CALL	C,COUT		; Display drive letter if bit was set
+	INC	A		; Advance to next drive letter
+	DJNZ	HCK4		; Loop through drives
+
+	CALL	PRINT
+	DB	'.',CR,LF,0
+
+	JP	RETURN
+
+;-----------------------------------------------------------------------------
+
+; INITIALIZATION
+
+INIT:
+	LD	HL,DATABEG	; Zero out data area
+	LD	DE,DATABEG+1
+	LD	BC,DATAEND-DATABEG-1
+	LD	(HL),0		; Seed value
+	LDIR			; Fill 'em up
+
+	CALL	GETCRT		; Get data on current console
+	INC	HL		; Point to full number of lines on screen
+	LD	A,(HL)
+	DEC	A		; Reduce by one
+	LD	(LPS),A		; Save in lines-per-screen location
+	LD	A,0FFH
+	LD	(NOFILFLAG),A	; Set no-files-found flag
+	LD	(PAGEOPT),A	; Paging option on
+	CALL	PUTER2		; Set Z3 program error flag
+
+	LD	A,1
+	LD	(LINECNT),A	; Set initial line count
+	LD	A,20H
+	LD	(WILDCHR),A	; Initially treat spaces as wildcards
+	LD	HL,(DRVTBL0)	; Copy master drive table map
+	LD	(DRVTBL),HL	; ..into working copy
+
+	RET
+
+;-----------------------------------------------------------------------------
+
+; CHECKS FOR OPTIONS IN COMMAND LINE AND EXTRACTS FILE NAMES INTO
+; TABLE
+
+OPTCHK::
+		; Process list of file specifications
+
+	LD	DE,(FNTAB)	; Pointer to file name table in DE
+FNLOOP:				; Scan thru tbuff, building a file name table
+
+	PUSH	DE		; Save table ptr
+	CALL	GETFN		; Extract file name
+	POP	DE
+	PUSH	HL
+	LD	HL,11		; Pt to next table entry
+	ADD	HL,DE
+	EX	DE,HL
+	POP	HL
+	LD	A,(FNCOUNT)	; Increment count
+	INC	A
+	LD	(FNCOUNT),A
+	LD	A,(HL)		; Get terminating char
+	INC	HL		; Pt to next
+	CP	','		; Another follows?
+	JR	NZ,OPTCK1	; If not, on to second command-line token
+	LD	A,(HL)		; Make sure list did not end with comma
+	CP	' '+1
+	JR	NC,FNLOOP	; If not, back for another file spec
+
+		; Process second command-line token
+
+OPTCK1::
+	DEC	HL		; Point back to delim
+	CALL	SBLANK		; Skip to non-blank
+	LD	A,(HL)		; Get option
+	CALL	DELCHK		; Done if delim
+	RET	Z
+
+	CP	'/'		; See if non-drive option leadin '/'
+	JR	Z,OPTCK3	; If so, branch now
+
+		; Process drive options
+
+	XOR	A		; Initialize for drive list
+	LD	DE,DRVTBL	; Point to drive map
+	LD	(DE),A		; Zero it out
+	INC	DE
+	LD	(DE),A
+	LD	(FCB),A		; Nullify any drive from file spec list
+
+OPTCK2::
+	LD	A,(HL)		; Get drive letter
+	SUB	'A'		; Convert to number in range 0..15
+	JR	C,OPTER		; If less than 'A', it is an error
+	CP	16		; If not less than 16, it is an error
+	JR	NC,OPTER
+	PUSH	HL		; Save pointer to option list
+	CALL	SETDRV		; Set bit in HL corresponding to drive
+	LD	DE,(DRVTBL)	; Get the map so far
+	LD	A,D		; Merge with new drives
+	OR	L		; Drives 8..15
+	LD	D,A
+	LD	A,E
+	OR	H		; Drives 0..7
+	LD	E,A
+	LD	(DRVTBL),DE	; Store new drive map
+	POP	HL		; Get pointer back
+	INC	HL		; Get next character
+	LD	A,(HL)
+	CP	'/'		; Non-drive option leadin?
+	JR	Z,OPTCK3	; If so, take care of non-drive options
+	CALL	DELCHK		; End of list?
+	RET	Z		; Return if so
+	JR	OPTCK2		; Else back for next drive
+
+		; Process non-drive options
+
+OPTCK3::
+	INC	HL		; Point to next option character
+	LD	A,(HL)		; ..and get it
+	CALL	DELCHK		; Delimiter?
+	RET	Z		; If so, we are done
+	CP	'P'		; Paging Toggle?
+	JR	Z,POPT
+CP	'E'		; Exact mode toggle?
+	JR	Z,EOPT
+	CP	'S'		; SYS files option?
+	JR	NZ,OPTER	; If not, it's an option error
+				; Else fall through to SOPT
+
+SOPT:
+	CALL	GETWHL
+	JR	Z,OPTER		; If Z (wheel false), not allowed
+	LD	A,0FFH		; Set flag
+	LD	(SYSTEM),A
+	JR	OPTCK3
+
+EOPT:
+	LD	A,'?'
+	LD	(WILDCHR),A	; Set "?" as only wildcard char
+	JR	OPTCK3
+
+POPT:
+	XOR	A
+	LD	(PAGEOPT),A
+	JR	OPTCK3
+
+OPTER:	CALL	PRINT
+	DB	BELL
+	DB	CR,LF
+	DB	'Invalid Option -- ',0
+	LD	A,(HL)
+	CALL	COUT
+	JP	HCK1
+
+		; Set bit in HL corresponding to drive number in A
+
+SETDRV::
+	LD	HL,1		; Seed value (drive 15)
+	CPL			; Invert drive number
+	AND	0FH		; ..so 0->15, 15->0
+	RET	Z		; If zero, seed value is what we want
+	LD	B,A		; Get count into B
+SETDRV1::
+	ADD	HL,HL		; Shift bit left
+	DJNZ	SETDRV1		; ..number of times in B
+	RET
+
+		; Extract file specification
+
+GETFN:
+	PUSH	DE		; Fill target fcb
+	LD	B,11		; 11 bytes
+	LD	A,' '		; Space fill
+GETFN0:
+	LD	(DE),A		; Put space
+	INC	DE
+	DJNZ	GETFN0
+	POP	DE		; Pt to entry again
+	CALL	SCANCOL		; Scan for colon
+	LD	B,8		; 8 chars max
+	CALL	GETFN1		; Get and fill entry
+	LD	A,(HL)		; Get char
+	CP	'.'		; Delim?
+	RET	NZ		; Done
+	INC	HL		; Pt to after period
+	LD	B,3		; 3 chars max and do it again
+GETFN1:
+	LD	A,(HL)		; Get char
+	CP	'.'		; End of field?
+	JR	Z,GETFN3
+	CALL	DELCHK		; Check delimiter
+	RET	Z
+	CP	'*'		; Wild?
+	JR	Z,GETFNQ
+	LD	(DE),A		; Store char
+	INC	HL		; Pt to next
+	INC	DE
+	DJNZ	GETFN1		; Count down
+GETFN2:
+	LD	A,(HL)		; Flush chars to delim
+	CALL	DELCHK		; Check for delimiter
+	RET	Z
+	INC	HL		; Pt to next
+	JR	GETFN2
+GETFN3:
+	INC	DE		; Pt to after field
+	DJNZ	GETFN3		; Count down
+	RET
+GETFNQ:
+	LD	A,'?'		; Fill with question marks
+	LD	(DE),A
+	INC	DE
+	DJNZ	GETFNQ
+	JR	GETFN2		; Skip to delim
+DELCHK:
+	OR	A		; End of line?
+	RET	Z
+	CP	'.'		; End of field?
+	RET	Z
+	CP	','		; End of entry?
+	RET	Z
+	CP	' '
+	RET
+SBLANK:
+	LD	A,(HL)		; Skip to non-blank
+	CP	' '
+	RET	NZ
+	INC	HL
+	JR	SBLANK
+SCANCOL:
+	PUSH	DE		; Save table ptr
+	PUSH	HL		; Save ptr
+SCOL1:
+	LD	A,(HL)		; Get char
+	INC	HL		; Pt to next
+	CP	':'		; Colon?
+	JR	Z,SCOLX
+	CALL	DELCHK		; Check for delimiter
+	JR	NZ,SCOL1
+SCOL2:
+	POP	HL		; Restore
+	POP	DE
+	RET
+SCOLX:
+	EX	DE,HL		; De pts to after colon
+	POP	HL		; Get old ptr
+	EX	DE,HL		; Replace it
+	POP	DE		; Get table ptr
+	RET
+
+;-----------------------------------------------------------------------------
+
+; LOOK THROUGH DIRECTORY
+
+FIND:	LD	A,(FCB)		; Disk selection, Zero if all disks
+	LD	(DISK),A	; Remember it
+	OR	A
+	JR	Z,FIND0
+	DEC	A		; Offset so A=0
+	LD	(FCB),A
+FIND0:	CALL	NXTDISK		; Get info the first time
+FIND1:	RET	Z		; Abort if error
+FIND2:	CALL	NXTSEC		; Get a directory sector
+	JR	Z,FIND3		; Returns zero flag if no more
+	CALL	CHKENT		; Check it out
+	JR	FIND2		; Keep it up till done
+FIND3:	CALL	DIRALPHA	; Sort entries
+	CALL	PRFILES		; Print sorted entries
+	LD	A,(ECOUNT)	; Check count of files listed
+	AND	1		; If odd, then
+	CALL	NZ,NEWLINE	; ..terminate last line
+	LD	A,(DISK)
+	OR	A
+	RET	NZ
+	LD	A,(FCB)		; Next disk
+	INC	A
+	LD	(FCB),A
+	JR	FIND0
+
+;-----------------------------------------------------------------------------
+
+; SIGN OFF
+
+BYE:
+	LD	A,(Z3REG)	; Get register to use for file count
+	CP	10		; If not in range 0..9, skip
+	JR	NC,BYE2
+	LD	B,A		; Save register number in B
+	LD	HL,(TCOUNT)	; Get total file count
+	LD	A,H		; See if count is > 255
+	OR	A
+	LD	A,255		; Preset for maximum possible value
+	JR	NZ,BYE1
+	LD	A,L		; If < 256, use value in L
+BYE1:
+	CALL	PUTREG		; Save value in A in register in B
+	
+BYE2:
+	LD	A,(NOFILFLAG)	; Get no-file-found flag
+	CALL	PUTER2		; Store in Z3 program error flag
+	OR	A		; If flag reset, files were found
+	JR	Z,BYE3		; ..so we return without message
+	CALL	PRINT		; ..else we report to user
+	DB	CR,LF,' NO Files Found',0
+BYE3:
+	LD	C,13		; Reset system
+	CALL	BDOS
+	JP	RETURN
+
+;-----------------------------------------------------------------------------
+
+; CHECKS THE CURRENT 4 DIRECTORY ENTRIES AGAINST ARGUMENT
+; STORES MATCHING NAMES IN TABLE
+
+CHKENT:
+	LD	B,4		; Number of entries per sector
+	LD	HL,TBUFF	; Beginning of buffer
+CKLUP:
+	PUSH	BC
+	LD	A,(HL)
+	CP	0E5H		; Check for unused
+	JR	Z,CKINC
+
+	LD	E,(IX+MUOFF)	; Check for > maxuser from ENV
+	INC	E		; To make cp easy
+	CP	A,E		; > maxuser?
+	JR	NC,CKINC	; Yes, if nc
+
+	XOR	A		; A=0
+	LD	(CLPFLG),A	; Set flag for no entries found
+	LD	A,(FNCOUNT)	; Get number of file names to look thru
+	LD	B,A		; In b
+	PUSH	HL
+	LD	HL,(FNTAB)	; Pt to table
+	EX	DE,HL		; In de
+	POP	HL
+CKLUP1:
+	PUSH	BC		; Save count
+	PUSH	HL		; Save beginning address
+	PUSH	DE
+	CALL	COMPAR		; Compare with argument and save if match
+	POP	DE
+	LD	HL,11		; Pt to next entry
+	ADD	HL,DE
+	EX	DE,HL
+	POP	HL
+	POP	BC
+	DJNZ	CKLUP1		; Count down
+CKINC:
+	POP	BC
+	LD	DE,32		; Length of entry
+	ADD	HL,DE
+	DJNZ	CKLUP
+	LD	HL,(DIRMAX)
+	DEC	HL		; Reduce sectors left
+	LD	(DIRMAX),HL
+	LD	HL,(SECTOR)	; Point to next sector
+	INC	HL
+	LD	(SECTOR),HL
+	EX	DE,HL
+	LD	HL,(MAXSEC)	; Reached limit?
+	LD	A,H		; Check high
+	CP	D
+	RET	NZ
+	LD	A,L		; Check low
+	CP	E
+	RET	NZ
+	LD	HL,(TRACK)	; Next track
+	INC	HL
+	LD	(TRACK),HL
+	LD	HL,0
+	LD	(SECTOR),HL
+	RET
+
+;-----------------------------------------------------------------------------
+
+; COMPARE 11 BYTES OF DIRECTORY ENTRY AGAINST ARGUMENT; RNZ IF NOT MATCHED
+;  DE PTS TO TABLE ENTRY TO COMPARE TO
+
+COMPAR:
+	LD	A,(CLPFLG)	; Get found flag
+	OR	A		; 0=no
+	RET	NZ
+	LD	(TEMP),HL	; Hold pointer in case of match
+	INC	HL
+	EX	DE,HL
+	LD	B,11
+CMPR1:
+	LD	A,(DE)		; Get directory entry character
+	AND	7FH		; Strip any flags
+	CP	(HL)
+	JR	Z,CMPR2
+	LD	A,(WILDCHR)	; Get alternate wildcard char
+	CP	(HL)
+	JR	Z,CMPR2
+	LD	A,(HL)
+	CP	'?'
+	RET	NZ
+CMPR2:
+	INC	DE
+	INC	HL		; Bump to next character
+	DJNZ	CMPR1		; Loop for 11 characters
+	PUSH	DE		; Save entry ptr
+	LD	A,(DE)		; Get extent in b
+	LD	B,A
+	LD	A,(EXTENT)	; Get extent mask
+	CP	B
+	POP	DE		; Get entry ptr
+	JR	C,CMPR4		; No match
+	LD	A,(SYSTEM)	; Include system files?
+	OR	A		; 0=no
+	JR	NZ,CMPR3
+	DEC	DE		; Back up 2 bytes
+	DEC	DE
+	LD	A,(DE)		; Get t2
+	AND	80H		; Check for sys
+	RET	NZ
+CMPR3:
+	LD	HL,(TEMP)	; Check for user limit
+	LD	A,31		; Max user
+	CP	(HL)		; Beyond max?
+	JR	C,CMPR4
+	LD	HL,(FCOUNT)	; Increment count
+	INC	HL
+	LD	(FCOUNT),HL
+	LD	HL,(DSTART)	; Get ptr to next entry
+	EX	DE,HL
+	LD	HL,(TEMP)
+	LD	B,ESIZE		; Copy entry
+	CALL	MOVE
+	EX	DE,HL
+	LD	(DSTART),HL	; Ptr to next entry
+	EX	DE,HL
+	LD	HL,(BDOS+1)	; Check for memory overflow
+	LD	A,H
+	SUB	10		; Below ccp
+	CP	D		; Pt beyond limit?
+	JR	C,MOVFL
+	XOR	A
+	LD	(NOFILFLAG),A	; Reset no-files-found flag
+	RET			; Returns 'zero' flag set for match
+CMPR4:
+	LD	A,0FFH		; No match
+	OR	A
+	RET
+MOVFL:
+	CALL	PRINT
+	DB	CR,LF,'ABORT -- Not Enough Memory for Buffers',0
+	JP	RETURN
+
+;-----------------------------------------------------------------------------
+
+;  ADVANCE TO NEXT DISK
+
+NXTDISK:
+	LD	BC,TBUFF	; Set dma address
+	CALL	SETDMA
+NXTDISK0:
+	LD	A,(FCB)
+	LD	C,A		; Save drive in C
+
+	CP	A,(IX+MDOFF)	; Check against maxdrive in ENV
+	JR	C,NXTDISK1	; Jump if OK
+	XOR	A		; Else set zero flag and return
+	RET
+
+NXTDISK1:
+	LD	A,(DISK)	; See if specific drive requested
+	OR	A
+	JR	NZ,NXTDISK3	; If so, skip table check
+
+	LD	HL,(DRVTBL)	; Check against table of available drives
+	LD	A,H		; Swap H and L to get bit order right
+	LD	H,L
+	LD	L,A
+	LD	B,C		; Use drive as count in B
+	INC	B		; Shift count range from 0-15 to 1-16
+
+NXTDISK2:			; Shift appropriate bit into carry
+	ADD	HL,HL	
+	DJNZ	NXTDISK2
+
+	JR	C,NXTDISK3	; If drive enabled, proceed
+	LD	A,C		; Else get drive back
+	INC	A		; Increment it
+	LD	(FCB),A		; Install in FCB
+	JR	NXTDISK0	; Go back to process it
+
+NXTDISK3:
+	LD	B,0
+	LD	E,B		; Force bios to re-log disk
+	LD	HL,0
+	CALL	SELDSK		; Make sure drive is
+	LD	A,H		; Selected
+	OR	L
+	RET	Z		; Error return
+	LD	(DPH),HL	; Save the address
+	LD	DE,10		; Pt to dpb
+	ADD	HL,DE
+	LD	E,(HL)		; Get dpb address in hl
+	INC	HL
+	LD	D,(HL)
+	EX	DE,HL
+	LD	E,(HL)		; Number of sectors/track
+	INC	HL		; As 2-byte quantity in de
+	LD	D,(HL)
+	INC	HL
+	EX	DE,HL
+	LD	(MAXSEC),HL	; Set max sectors/track
+	EX	DE,HL
+	INC	HL
+	INC	HL
+	LD	A,(HL)		; Get exm
+	LD	(EXTENT),A
+	INC	HL		; Pt to drm
+	INC	HL
+	INC	HL
+	LD	E,(HL)		; Get number of
+	INC	HL		; Directory entries
+	LD	D,(HL)
+	EX	DE,HL
+	INC	HL		; Account for - 1
+	LD	(DSTART),HL	; Save number of directory entries
+	CALL	SHFHL2		; Shift 'hl' right 2
+	LD	(DIRMAX),HL	; Save number directory sectors
+	LD	HL,5		; Now point to system
+	ADD	HL,DE		; Track offset
+	LD	A,(HL)		; Pick up number of
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	LD	(TRACK),HL
+	LD	HL,0
+	LD	(SECTOR),HL
+
+TEST:
+	CALL	NEWLINE		; Skip one extra line between disks
+	CALL	PRINT
+	DB	'Disk ',0
+	LD	A,(FCB)
+	ADD	'A'
+	CALL	COUT
+	CALL	PRINT
+	DB	' --',CR,LF,0
+	CALL	CHKPAGE		; Check for paging
+	LD	HL,(SCRATCH)	; Pt to scratch area
+	LD	(ORDER),HL	; Address of order table
+	EX	DE,HL
+	LD	HL,(DSTART)	; Get number of directory entries
+	ADD	HL,HL		; Double for number of bytes in order table
+	ADD	HL,DE		; Pt to first byte of dirbuf
+	LD	(DIRBUF),HL	; Set ptr
+	LD	(DSTART),HL	; Set loop ptr
+	LD	HL,0		; Set file count
+	LD	(FCOUNT),HL
+	XOR	A		; Set count
+	LD	(ECOUNT),A
+	CPL			; Flip
+	OR	A		; Ok to continue
+	RET
+
+;-----------------------------------------------------------------------------
+
+; GET BIOS JUMPS VECTORS FOR EASY REFERENCE
+
+GTBIOS:
+	LD	HL,(BOOT+1)	; Points to bios jump table+3
+	LD	DE,WBOOT	; Where we will keep a copy
+	LD	B,16*3		; Move 48 bytes and fall thru to move
+				; Fall through to MOVE routine
+
+;-----------------------------------------------------------------------------
+
+; GENERAL PURPOSE MOVE ROUTINE FROM 'HL' TO 'DE' FOR COUNT
+; GIVEN IN B REGISTER
+
+MOVE:
+	LD	A,(HL)		; Get a byte
+	LD	(DE),A		; Put a byte
+	INC	DE		; Increment to next
+	INC	HL
+	DJNZ	MOVE		; Count down
+	RET
+
+;-----------------------------------------------------------------------------
+
+; READS NEXT SECTOR (GROUP OF FOUR DIRECTORY ENTRIES)
+; RETURNS WITH ZERO FLAG SET IF NO MORE
+
+NXTSEC:
+	LD	HL,(DIRMAX)	; See if more sectors
+	LD	A,H
+	OR	L
+	RET	Z		; Returns zero flag if no more
+	LD	HL,(TRACK)	; Set track
+	LD	B,H
+	LD	C,L
+	CALL	SETTRK
+	LD	HL,(SECTOR)	; Set sector
+	LD	B,H
+	LD	C,L
+	CALL	TRNSLT
+	CALL	SETSEC
+	CALL	READ		; Read a sector
+	AND	1		; Reverse sense of error flag
+	XOR	1		; Returns with zero flag set
+	RET			; If bad read
+
+;-----------------------------------------------------------------------------
+
+; PRINT FILES IN DIRBUF
+
+PRFILES:
+	LD	HL,(FCOUNT)	; Get count
+	LD	A,H		; Any?
+	OR	L
+	RET	Z
+	LD	B,H		; Count in bc
+	LD	C,L
+	LD	HL,(DIRBUF)	; Pt to first one
+PRFLOOP:
+	PUSH	BC		; Save count
+	PUSH	HL		; Save ptr
+	CALL	PRINTFCB	; Print fcb
+	CALL	CST		; Check for abort character
+	JR	NZ,PRFL1	; If not, go on
+	CALL	CIN		; See if character is control-c
+	CP	CTRLC
+	JR	Z,PRFL2
+PRFL1:
+	POP	HL		; Get regs back
+	POP	BC
+	LD	DE,ESIZE	; Pt to next
+	ADD	HL,DE
+	DEC	BC		; Count down
+	LD	A,B
+	OR	C
+	JR	NZ,PRFLOOP
+	RET
+
+PRFL2:
+	CALL	PRINT
+	DB	CR,LF
+	DB	' +++ aborted +++',CR,LF,0
+	JP	BYE3		; Reset disk system and return
+
+;------------------------------------------------------------------------------
+
+; FCB PRINTING ROUTINE
+
+PRINTFCB:
+	CALL	PRINT		; 4 spaces
+	DB	'   ',0
+	LD	A,(FCB)		; Get drive
+	LD	B,A		; Save in B
+	INC	B		; ..offset to A = 1
+	ADD	A,'A'		; Convert to character
+	CALL	COUT
+	LD	A,(HL)		; Get user number
+	PUSH	HL		; Save pointer
+	LD	C,A		; Save in C
+	CALL	PAFDC		; Print it
+	CALL	DUNDR		; Convert DU to NDR
+	LD	B,9		; Spaces to skip if no NDR
+	JR	Z,PRFCB2	; Jump if no named directory
+
+		; Named directory display
+
+	LD	A,':'		; Print the colon separator
+	CALL	COUT
+	INC	HL		; Skip over disk in NDR
+	INC	HL		; Skip over user in NDR
+	LD	B,8		; Length of name
+PRFCB1:	LD	A,(HL)		; Get character
+	CP	' '		; Look for space
+	JR	Z,PRFCB2	; Don't print spaces
+	CALL	COUT
+	INC	HL
+	DJNZ	PRFCB1
+
+PRFCB2:
+	LD	A,RIGHTCH	; Print ending '>'
+	CALL	COUT
+	POP	HL		; Restore pointed to file buffer
+	LD	A,(HL)		; Get user number again
+	CP	10		; Set carry of only one digit
+	LD	A,0		; Increment B if carry set
+	ADC	A,B
+	INC	A		; One extra space in any case
+	LD	B,A		; Save count in B
+	LD	A,' '		; Pad with spaces for alignment
+PRFCB3:
+	CALL	COUT
+	DJNZ	PRFCB3
+
+	INC	HL		; Point to name of file
+PR0:
+	LD	B,8
+	CALL	PR1
+	LD	A,'.'
+	CALL	COUT
+	LD	B,3
+	CALL	PR1
+	LD	HL,(TCOUNT)	; Get total file count
+	INC	HL		; Increment it
+	LD	(TCOUNT),HL	; Save new value
+	LD	A,(ECOUNT)	; Increment count of files
+	INC	A		; ..found on this drive
+	LD	(ECOUNT),A
+	AND	1		; If evenEvery 2
+	JR	Z,NEWLINE	; ..make new line
+	CALL	PRINT		; ..else space to second column
+	DB	'      ',0
+	RET
+
+;-----------------------------------------------------------------------------
+
+; PRINT A CRLF AND KEEP COUNT OF LINES ON PAGE, STOPPING WHEN PAGE IS FULL
+
+NEWLINE:
+	CALL	CRLF
+
+; Check for end of page of display
+
+CHKPAGE:
+	LD	A,(PAGEOPT)	; See if paging in effect
+	OR	A
+	RET	Z		; Return if option not set
+	LD	A,(LPS)		; Get lines-per-screen value
+	LD	B,A		; ..into B
+	LD	A,(LINECNT)	; Get count of lines on page
+	INC	A
+	LD	(LINECNT),A
+	CP	B
+	RET	C		; Return if less than full page
+
+		; Pause for page
+
+	CALL	PRINT
+BEG1:	DB	' [sp=line ^c=abort other=page] '
+END1:	DB	0
+	CALL	CIN
+	LD	C,A		; Save user character
+	LD	A,CR		; Back to beginning of line
+	CALL	COUT
+	LD	A,' '		; Overwrite message with spaces
+	LD	B,END1-BEG1
+CHKP1:	CALL	COUT
+	DJNZ	CHKP1
+
+	LD	A,C		; Retrieve user response
+	CP	CTRLC		; If control-c
+	JP	Z,PRFL2		; ..abort
+	CP	' '		; See if space
+	JR	NZ,CHKP2
+	LD	A,(LINECNT)	; ..decrement line count
+	DEC	A
+	JR	CHKP3
+CHKP2:
+	XOR	A    		; Reset line count
+CHKP3:
+	LD	(LINECNT),A
+	LD	A,CR
+	JP	COUT
+
+PR1:
+	LD	A,(HL)
+	AND	7FH
+	CALL	COUT
+	INC	HL
+	DJNZ	PR1
+	RET
+
+;-----------------------------------------------------------------------------
+
+; SHIFT REGS 'HL' RIGHT 2 BITS LOGICAL
+
+SHFHL2:
+	CALL	SHFHL		; Rotate right 1 bit and fall thru
+SHFHL:
+	XOR	A		; Clear carry
+	LD	A,H
+	RRA			; Shifted bit in carry
+	LD	H,A
+	LD	A,L
+	RRA
+	LD	L,A
+	RET
+
+;-----------------------------------------------------------------------------
+
+; TRANSLATE REG 'BC' FROM LOGICAL TO PHYSICAL SECTOR NUMBER
+
+TRNSLT:
+	LD	HL,(DPH)	; Get ptr to dph
+	LD	E,(HL)		; Get address of xlt
+	INC	HL
+	LD	D,(HL)
+	CALL	SECTRAN		; Use bios routine
+	LD	C,L		; Return value in bc
+	LD	B,H
+	RET
+
+;-----------------------------------------------------------------------------
+
+;  DIRALPHA -- ALPHABETIZES DIRECTORY PTED TO BY HL; BC CONTAINS
+;	THE NUMBER OF FILES IN THE DIRECTORY
+
+DIRALPHA:
+	LD	HL,(FCOUNT)	; Get file count
+	LD	A,H		; Any files?
+	OR	L
+	RET	Z
+	LD	(N),HL		; Set "N"
+	LD	B,H		; Bc=count
+	LD	C,L
+	LD	HL,(DIRBUF)	; Pt to directory
+
+;  SHELL SORT --
+;    THIS SORT ROUTINE IS ADAPTED FROM "SOFTWARE TOOLS"
+;    BY KERNIGAN AND PLAUGHER, PAGE 106.  COPYRIGHT, 1976, ADDISON-WESLEY.
+;  ON ENTRY, BC=NUMBER OF ENTRIES AND HL=ADDRESS OF FIRST ENTRY
+
+SORT:
+	EX	DE,HL		; Pointer to directory in de
+	LD	HL,(ORDER)	; Pt to order table
+
+;  SET UP ORDER TABLE; HL PTS TO NEXT ENTRY IN ORDER TABLE, DE PTS TO NEXT
+;    ENTRY IN DIRECTORY, BC = NUMBER OF ELEMENTS REMAINING
+
+SORT1:
+	LD	(HL),E		; Store low-order address
+	INC	HL		; Pt to next order byte
+	LD	(HL),D		; Store high-order address
+	INC	HL		; Pt to next order entry
+	PUSH	HL		; Save ptr
+	LD	HL,ESIZE	; Hl=number of bytes/entry
+	ADD	HL,DE		; Pt to next dir1 entry
+	EX	DE,HL		; De pts to next entry
+	POP	HL		; Get ptr to order table
+	DEC	BC		; Count down
+	LD	A,B		; Done?
+	OR	C
+	JR	NZ,SORT1
+
+;  THIS IS THE MAIN SORT LOOP FOR THE SHELL SORT IN "SOFTWARE TOOLS" BY K&P
+
+
+
+;  SHELL SORT FROM "SOFTWARE TOOLS" BY KERNINGHAN AND PLAUGER
+
+	LD	HL,(N)		; Number of items to sort
+	LD	(GAP),HL	; Set initial gap to n for first division by 2
+
+;  FOR (GAP = N/2; GAP > 0; GAP = GAP/2)
+
+SRTL0:
+	OR	A		; Clear carry
+	LD	HL,(GAP)	; Get previous gap
+	LD	A,H		; Rotate right to divide by 2
+	RRA
+	LD	H,A
+	LD	A,L
+	RRA
+	LD	L,A
+
+;  TEST FOR ZERO
+
+	OR	H
+	JR	Z,SDONE		; Done with sort if gap = 0
+
+	LD	(GAP),HL	; Set value of gap
+	LD	(K),HL		; Set k=gap for following loop
+
+;  FOR (K = GAP + 1; K <= N; K = K + 1)
+
+SRTL1:
+	LD	HL,(K)		; Add 1 to k
+	INC	HL
+	LD	(K),HL
+
+;  TEST FOR K <= N
+
+	EX	DE,HL		; K is in de
+	LD	HL,(N)		; Get n
+	LD	A,L		; Compare by subtraction
+	SUB	E
+	LD	A,H
+	SBC	A,D		; Carry set means k > n
+	JR	C,SRTL0		; Don't do for loop if k > n
+
+	LD	HL,(K)		; Set j = k initially for first subtraction of gap
+	LD	(J),HL
+
+;  FOR (J = K - GAP; J > 0; J = J - GAP)
+
+SRTL2:
+	LD	HL,(GAP)	; Get gap
+	EX	DE,HL		; In de
+	LD	HL,(J)		; Get j
+	LD	A,L		; Compute j - gap
+	SUB	E
+	LD	L,A
+	LD	A,H
+	SBC	A,D
+	LD	H,A
+	LD	(J),HL		; J = j - gap
+	JR	C,SRTL1		; If carry from subtractions, j < 0 and abort
+	LD	A,H		; J=0?
+	OR	L
+	JR	Z,SRTL1		; If zero, j=0 and abort
+
+;  SET JG = J + GAP
+
+	EX	DE,HL		; J in de
+	LD	HL,(GAP)	; Get gap
+	ADD	HL,DE		; J + gap
+	LD	(JG),HL		; Jg = j + gap
+
+;  IF (V(J) <= V(JG))
+
+	CALL	ICOMPARE	; J in de, jg in hl
+
+;  ... THEN BREAK
+
+	JR	C,SRTL1
+
+;  ... ELSE EXCHANGE
+
+	LD	HL,(J)		; Swap j, jg
+	EX	DE,HL
+	LD	HL,(JG)
+	CALL	ISWAP		; J in de, jg in hl
+
+;  END OF INNER-MOST FOR LOOP
+
+	JR	SRTL2
+
+
+;  SORT IS DONE -- RESTRUCTURE DIR1 IN SORTED ORDER IN PLACE
+
+SDONE:
+	LD	HL,(N)		; Number of entries
+	LD	B,H		; In bc
+	LD	C,L
+	LD	HL,(ORDER)	; Ptr to ordered pointer table
+	LD	(PTPTR),HL	; Set ptr ptr
+	LD	HL,(DIRBUF)	; Ptr to unordered directory
+	LD	(PTDIR),HL	; Set ptr dir buffer
+
+;  FIND PTR TO NEXT DIR1 ENTRY
+
+SRTDN:
+	LD	HL,(PTPTR)	; Pt to remaining pointers
+	EX	DE,HL		; In de
+	LD	HL,(PTDIR)	; Hl pts to next dir entry
+	PUSH	BC		; Save count of remaining entries
+
+;  FIND PTR TABLE ENTRY
+
+SRTDN1:
+	LD	A,(DE)		; Get current pointer table entry value
+	INC	DE		; Pt to high-order pointer byte
+	CP	L		; Compare against dir1 address low
+	JR	NZ,SRTDN2	; Not found yet
+	LD	A,(DE)		; Low-order bytes match -- get high-order pointer byte
+	CP	H		; Compare against dir1 address high
+	JR	Z,SRTDN3	; Match found
+SRTDN2:
+	INC	DE		; Pt to next ptr table entry
+	DEC	BC		; Count down
+	LD	A,C		; End of table?
+	OR	B
+	JR	NZ,SRTDN1	; Continue if not
+
+;  FATAL ERROR -- INTERNAL ERROR; POINTER TABLE NOT CONSISTENT
+
+FERR$PTR:
+	CALL	PRINT
+	DB	0DH,0AH,'DIRALPHA -- Pointer Error',0
+	JP	RETURN
+
+;  FOUND THE POINTER TABLE ENTRY WHICH POINTS TO THE NEXT UNORDERED DIR1 ENTRY
+;    MAKE BOTH POINTERS (PTR TO NEXT, PTR TO CURRENT UNORDERED DIR1 ENTRY)
+;    POINT TO SAME LOCATION (PTR TO NEXT DIR1 ENTRY TO BE ORDERED)
+
+SRTDN3:
+	LD	HL,(PTPTR)	; Get ptr to next ordered entry
+	DEC	DE		; De pts to low-order pointer address
+	LD	A,(HL)		; Make ptr to next unordered dir1 pt to buffer for
+	LD	(DE),A		; Dir1 entry to be moved to next unordered dir1 pos
+	INC	HL		; Pt to next ptr address
+	INC	DE
+	LD	A,(HL)		; Make high point similarly
+	LD	(DE),A
+
+;  COPY NEXT UNORDERED DIR1 ENTRY TO HOLD BUFFER
+
+	LD	B,ESIZE		; B=number of bytes/entry
+	LD	HL,(PTDIR)	; Pt to entry
+	LD	DE,HOLD		; Pt to hold buffer
+	PUSH	BC		; Save b=number of bytes/entry
+	CALL	MOVE
+	POP	BC
+
+;  COPY TO-BE-ORDERED DIR1 ENTRY TO NEXT ORDERED DIR1 POSITION
+
+	LD	HL,(PTPTR)	; Point to its pointer
+	LD	E,(HL)		; Get low-address pointer
+	INC	HL
+	LD	D,(HL)		; Get high-address pointer
+	LD	HL,(PTDIR)	; Destination address for next ordered dir1 entry
+	EX	DE,HL		; Hl pts to entry to be moved, de pts to dest
+	PUSH	BC		; Save b=number of bytes/entry
+	CALL	MOVE
+	POP	BC
+	EX	DE,HL		; Hl pts to next unordered dir1 entry
+	LD	(PTDIR),HL	; Set pointer for next loop
+
+;  COPY ENTRY IN HOLD BUFFER TO LOC PREVIOUSLY HELD BY LATEST ORDERED ENTRY
+
+	LD	HL,(PTPTR)	; Get ptr to ptr to the destination
+	LD	E,(HL)		; Get low-address pointer
+	INC	HL
+	LD	D,(HL)		; High-address pointer
+	LD	HL,HOLD		; Hl pts to hold buffer, de pts to entry dest
+	CALL	MOVE		; B=number of bytes/entry
+
+;  POINT TO NEXT ENTRY IN POINTER TABLE
+
+	LD	HL,(PTPTR)	; Pointer to current entry
+	INC	HL		; Skip over it
+	INC	HL
+	LD	(PTPTR),HL
+
+;  COUNT DOWN
+
+	POP	BC		; Get counter
+	DEC	BC		; Count down
+	LD	A,C		; Done?
+	OR	B
+	JR	NZ,SRTDN
+	RET			; Done
+
+
+;  SWAP (Exchange) the pointers in the ORDER table whose indexes are in
+;    HL and DE
+
+ISWAP:
+	PUSH	HL		; Save hl
+	LD	HL,(ORDER)	; Address of order table - 2
+	LD	B,H		; In bc
+	LD	C,L
+	POP	HL
+	DEC	HL		; Adjust index to 0...n-1 from 1...n
+	ADD	HL,HL		; Hl pts to offset address indicated by index
+				; Of original hl (1, 2, ...)
+	ADD	HL,BC		; Hl now pts to pointer involved
+	EX	DE,HL		; De now pts to pointer indexed by hl
+	DEC	HL		; Adjust index to 0...n-1 from 1...n
+	ADD	HL,HL		; Hl pts to offset address indicated by index
+				; Of original de (1, 2, ...)
+	ADD	HL,BC		; Hl now pts to pointer involved
+	LD	C,(HL)		; Exchange pointers -- get old (de)
+	LD	A,(DE)		; -- get old (hl)
+	EX	DE,HL		; Switch
+	LD	(HL),C		; Put new (hl)
+	LD	(DE),A		; Put new (de)
+	INC	HL		; Pt to next byte of pointer
+	INC	DE
+	LD	C,(HL)		; Get old (hl)
+	LD	A,(DE)		; Get old (de)
+	EX	DE,HL		; Switch
+	LD	(HL),C		; Put new (de)
+	LD	(DE),A		; Put new (hl)
+	RET
+
+;-----------------------------------------------------------------------------
+
+; ICOMPARE compares the entry pointed to by the pointer pointed to by HL
+; with that pointed to by DE (1st level indirect addressing); on entry,
+; HL and DE contain the numbers of the elements to compare (1, 2, ...);
+; on exit, Carry Set means ((DE)) < ((HL)), Zero Set means ((HL)) = ((DE)),
+; and Non-Zero and No-Carry means ((DE)) > ((HL))
+
+ICOMPARE:
+	PUSH	HL		; Save hl
+	LD	HL,(ORDER)	; Address of order - 2
+	LD	B,H		; In bc
+	LD	C,L
+	POP	HL
+	DEC	HL		; Adjust index to 0...n-1 from 1...n
+	ADD	HL,HL		; Double the element number to point to the ptr
+	ADD	HL,BC		; Add to this the base address of the ptr table
+	EX	DE,HL		; Result in de
+	DEC	HL		; Adjust index to 0...n-1 from 1...n
+	ADD	HL,HL		; Do the same with the original de
+	ADD	HL,BC
+	EX	DE,HL
+
+
+; HL NOW POINTS TO THE POINTER WHOSE INDEX WAS IN HL TO BEGIN WITH
+; DE NOW POINTS TO THE POINTER WHOSE INDEX WAS IN DE TO BEGIN WITH
+; FOR EXAMPLE, IF DE=5 AND HL=4, DE NOW POINTS TO THE 5TH PTR AND HL
+; TO THE 4TH POINTER
+
+	LD	C,(HL)		; Bc is made to point to the object indexed to
+	INC	HL		; By the original hl
+	LD	B,(HL)
+	EX	DE,HL
+	LD	E,(HL)		; De is made to point to the object indexed to
+	INC	HL		; By the original de
+	LD	D,(HL)
+	LD	H,B		; Set hl = object pted to indirectly by bc
+	LD	L,C
+
+
+; COMPARE DIR ENTRY PTED TO BY HL WITH THAT PTED TO BY DE;
+; NO NET EFFECT ON HL, DE; RET W/CARRY SET MEANS DE<HL
+; RET W/ZERO SET MEANS DE=HL
+
+CMP$ENTRY:
+
+;  COMPARE BY FILE NAME, FILE TYPE, EXTENSION, AND USER NUM (IN THAT ORDER)
+
+	PUSH	HL
+	PUSH	DE
+	INC	HL		; Pt to fn
+	INC	DE
+	LD	B,11		; Compare fn, ft
+	CALL	COMP
+	POP	DE
+	POP	HL
+	RET	NZ
+	LD	A,(DE)		; Compare user number
+	CP	(HL)
+	RET
+
+;  COMP COMPARES DE W/HL FOR B BYTES; RET W/CARRY IF DE<HL
+;	MSB IS DISREGARDED
+
+COMP:
+	LD	A,(HL)		; Get (hl)
+	AND	7FH		; Mask msb
+	LD	C,A		; In c
+	LD	A,(DE)		; Compare
+	AND	7FH		; Mask msb
+	CP	C
+	RET	NZ
+	INC	HL		; Pt to next
+	INC	DE
+	DJNZ	COMP		; Count down
+	RET
+
+; Uninitialized data area
+
+	DSEG
+
+;  SORT BUFFERS
+
+DATABEG:			; Marker for data area
+
+ORDER:
+	DS	2		; Ptr to order table
+DIRBUF:
+	DS	2		; Pointer to directory
+DSTART:
+	DS	2		; Pointer to first directory entry
+FCOUNT:
+	DS	2		; Total number of files/number of selected files
+HOLD:
+	DS	ESIZE		; Exchange hold buffer for fcb's
+PTPTR:
+	DS	2		; Pointer pointer
+PTDIR:
+	DS	2		; Directory pointer
+K:
+	DS	2		; Indexes for sort
+J:
+	DS	2
+JG:
+	DS	2
+N:
+	DS	2		; Number of elements to sort
+GAP:
+	DS	2		; Binary gap size
+
+; THIS IS THE WORKING COPY OF THE BIOS JUMP TABLE
+
+WBOOT:	DS	3
+CONST:	DS	3
+CONIN:	DS	3
+CONOUT:	DS	3
+LIST:	DS	3
+PUNCH:	DS	3
+READER:	DS	3
+HOME:	DS	3
+SELDSK:	DS	3
+SETTRK:	DS	3
+SETSEC:	DS	3
+SETDMA:	DS	3
+READ:	DS	3
+WRITE:	DS	3
+LISTST:	DS	3
+SECTRAN:DS	3
+
+STACK:
+	DS	2		; Location of stack
+
+; DATA AREAS
+
+FNCOUNT:
+	DS	1		; Number of file names found
+CLPFLG:	DS	1		; 0 for no match locally
+SYSTEM:	DS	1		; 0 if no system files
+
+				; Next two must be in this order
+TCOUNT:	DS	2		; Total count of files (2 bytes)
+ECOUNT:	DS	1		; Count of entries printed - 1
+
+NOFILFLAG:
+	DS	1		; No-file-found flag
+TEMP:	DS	2		; Temp storage for fcb print
+
+;  DISK PARAMETER DATA
+
+DISK:	DS	1		; Disk to search, Zero for all disks.
+DPH:	DS	2		; Address of dph
+DIRMAX:	DS	2		; Number of sectors in directory =
+				;   MAXIMUM NUMBER OF DIRECTORY ENTRIES
+				;   DIVIDED BY 4 (ENTRIES PER SECTOR)
+EXTENT:	DS	1		; Extent mask
+MAXSEC:	DS	2		; Maximum number of sectors/track
+SECTOR:	DS	2		; Current sector number
+TRACK:	DS	2		; Track number of directory
+
+FNTAB:	DS	2		; File name table
+
+SCRATCH:
+	DS	2		; Scratch area
+
+LPS:
+	DS	1		; Lines-per-screen value
+LINECNT:
+	DS	1		; Current line count
+PAGEOPT:
+	DS	1
+WILDCHR:
+	DS	1		; Alternate wildcard char (<sp> or "?")
+DRVTBL:
+	DS	2		; Working copy of drive map
+
+DATAEND:			; Marker for end of data
+
+	END
+                    

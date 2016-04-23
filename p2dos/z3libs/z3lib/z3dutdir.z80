@@ -1,0 +1,75 @@
+	TITLE	"Z3DUTDIR - Z3Lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3DUTDIR.Z80 Ver 1.1 by Richard Conn
+; Date    : 29 Mar 89
+; Version : 1.2
+; Module  : Z3DUTDIR
+; Abstract: This module contains the routine DUTDIR which searches
+;	the resident Named Directory Buffer for a specified Disk
+;	and User.  The routine returns a pointer to the Name
+;	string if a match is made.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		DUTDIR
+
+;  External References
+
+	EXT		GETNDR
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DUTDIR
+; Entry: BC = DU, B = Disk (A = 0), C = User #
+; Exit : Found: A <> 0 and Zero Flag Reset (NZ)
+;		     HL - Points to 8-character name string
+;	 Not Found: A = 0 and Zero Flag Set (Z)
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+DUTDIR:	INC	B		;disk A = 1
+	CALL	GETNDR		;set HL to point to named directory
+	JR	NZ,DD1
+
+; Directory Not Found
+
+DIRNF:	DEC	B		;restore registers
+	XOR	A		;error - no named dir
+	RET
+
+; Search Loop
+
+DD1:	LD	A,(HL)		;check for end
+	OR	A		;0 if end
+	JR	Z,DIRNF
+	CP	B		;check disk
+	INC	HL		; Pt to user (Zero flag not affected)
+	JR	NZ,DD2		;skip to next if no match
+	LD	A,(HL)		;get user
+	CP	C		;check user
+	JR	NZ,DD2		;skip to next if no match
+
+; Directory Name Found
+
+	INC	HL		;pt to name
+	DEC	B		;restore registers
+	OR	0FFH		;return NZ for OK
+	RET
+
+; Skip to Next Entry
+
+DD2:	PUSH	BC		;save BC
+	LD	BC,18-1		;pt to next entry
+	ADD	HL,BC
+	POP	BC		;restore BC
+	JR	DD1
+
+	END
+

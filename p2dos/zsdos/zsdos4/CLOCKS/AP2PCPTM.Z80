@@ -1,0 +1,320 @@
+	TITLE	"Apple 2/2E/2+ TimeMaster Clk w/PCPI AppliCard - (AP2E+PCP-TM)"
+	SUBTTL	"Description of Clock Module"
+;======================================================
+; SW2 open sets TimeMaster Mode
+; The One format with year value is TimeMaster Format,
+;  with FMTByte = ':'
+;	W MO/DD/YY HH:MI:SS<CR>
+;	0  1  2	 3  4  5  Our initial locations
+;	==>
+; NOTE:	3 Byte leadin to 1ST Digit of Month
+;
+; We **Don't support** this mode:
+; SW2 closed sets Apple Clock Mode (old mode)
+;	"MO/DD HH:MI:SS$WYY<CR> (<CR> is uncertain)
+;	0  1  2	 3  4	5  Our initial locations
+;
+; Clock: String is returned to 0200H
+;==========================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from ver of 12/19/85
+; Vers 0.2 current as of 16 Oct 88
+;==========================================================
+
+VERS	EQU	02
+	.Z80
+	NAME A2PCTM
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; Ptr to statyr
+
+CLKNAM:	DEFB	'Apple Timemaster PCPI   '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'  Apple 2,2e,2+ Timemaster H$O$ Clock',CR,LF
+	DEFB	'  using Timemaster mode, with PCPI Z80 Appli-card',0
+
+	  IF  [$-DESCST]
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+;---------------------------------------------------------------------------
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		; Dummy parameters
+	DEFW	0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Apple ii with PCPI Appli-card, TimeMaster"
+;---------------------------------------------------------------------------
+; all 6502 addresses for PCPI
+
+RDTCP	EQU	0C008H		; 6502 read-clock addr, slot 0
+WTTCP	EQU	0C00BH		; 6502 write-clock addr, slot 0
+
+ID0TIM	EQU	008H		; Bytes cn000,cn01,cnfe of timemaster board
+ID1TIM	EQU	078H		; 120$
+IDFETIM	EQU	0B2H		; 178$
+
+GETLN	EQU	0200H		; 6502 input line buffer
+
+SLTTBL	EQU	003B9H - 1
+SLTPAD	EQU	005F8H		; 6502 slot scratchpad memory for slot 0
+CTLBASE	EQU	0C000H		; Control base,slot0
+
+SLOT	EQU	7		; Actual value determined at load-time
+
+; PCPI interfacing
+;	read/write host routines
+
+RHBYTE	EQU	0FFE0H
+WHBYTE	EQU	0FFE3H
+RHWORD	EQU	0FFE6H
+WHWORD	EQU	0FFE9H
+RHBYTS	EQU	0FFECH
+
+; Command Processor Commands:
+
+RDDAT	EQU	1
+WRDAT	EQU	2
+EXECUT	EQU	3
+RDBYTE	EQU	6		; Uses direct addressing
+WRBYTE	EQU	7
+
+FMTBYTE	EQU	':'		; Timemaster mode
+
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	PUSH	HL		; Save buffer ptr
+	LD	DE,5
+	ADD	HL,DE
+	LD	A,(HL)
+	LD	(SAVSEC),A
+
+; select timemaster clock format (p 19)
+
+	LD	C,FMTBYTE	; Set type of format
+YWRITE	EQU	$+1
+	LD	DE,WTTCP	; Write-clock addr
+	CALL	WRONE
+
+; read the clock by calling card rom
+; data is put in $0200 getln buffer
+
+	LD	C,EXECUT	; To read clock data to
+	CALL	WHBYTE		; 6502 buffer
+YREAD	EQU	$+1
+	LD	DE,RDTCP	; Addr of subroutine
+	CALL	WHWORD
+
+; 4$ read data from 6502 buffer to our z80 buffer
+
+	LD	BC,CLKCNT	; Bc equ byte count
+	LD	DE,GETLN+3	; De equ 6502 source, skip leadin
+	LD	HL,CLKBUF	; Our local buffer
+	CALL	RDSTR
+
+	POP	HL		; Caller's buffer ptr
+	PUSH	HL		; And save again
+	LD	B,6		; Convert 6 pairs of ascii digits
+$GETB:	LD	A,(DE)
+	INC	DE
+	RLD
+	LD	A,(DE)
+	INC	DE
+	RLD
+	INC	HL		; Bump buffer ptr
+	INC	DE		; Skip delimiter in source string
+	DJNZ	$GETB
+
+; data in caller's buffer, now put into D/S order
+
+	POP	HL		; Get ptr to slot 0 (caller's yr slot)
+	INC	HL
+	LD	D,H		; De equ ptr to slot 1
+	LD	E,L
+	INC	HL		; Hl equ ptr to slot 2
+	LD	B,(HL)		; B equ yr
+	LD	A,(DE)		; A equ da
+	LD	(HL),A		; Slot 2 equ da
+	DEC	HL		; Hl -> slot 1
+	DEC	DE		; De -> slot 0
+	LD	A,(DE)		; A equ mo
+	LD	(HL),A		; Slot 1 equ mo
+	LD	A,B
+	LD	(DE),A		; Slot 0 equ yr
+
+	LD	DE,4
+	ADD	HL,DE		; Hl-> seconds
+SAVSEC	EQU	$+1
+	LD	E,00		; E equ caller's seconds
+	LD	A,01		; Set Ok status return
+	RET
+
+
+CLKCNT	EQU	17		; Omit $000
+CLKBUF:	DEFS	CLKCNT		; Mo/da/yr hr;mi;se$000 returned in buffer
+
+; Enter: note reverse of Z80 LDIR convention HL=To, DE=From, BC=Count
+
+RDSTR:	PUSH	HL
+	PUSH	BC
+	PUSH	DE
+	LD	C,RDDAT		; Set host to read count bytes beg$ at 6502 from
+	CALL	WHBYTE
+	POP	DE		; De equ source addr
+	CALL	WHWORD		; Set source
+	POP	DE		; Cnt
+	PUSH	DE		; Save cnt again
+	CALL	WHWORD		; Set count
+	POP	DE		; De equ # bytes
+	POP	HL		; Hl equ destn addr
+	JP	RHBYTS
+
+
+; write C=byte to DE=6502 addr
+
+WRONE:	PUSH	BC
+	PUSH	DE
+	LD	C,WRBYTE
+	CALL	WHBYTE
+	POP	DE
+	CALL	WHWORD		; DE = 6502 addr
+	POP	BC		; C = data byte to write
+	JP	WHBYTE
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+;-------------------------------------------------------------------------
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	RET			; Just return if come here
+
+	DEFB	0,0,0		; Filler
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+;-------------------------------------------------------------------------
+; This module is executed just prior to installing the module.  It locates
+; the slot number of the clock board, and insures that the clock is working.
+
+	COMMON	/_PRE_/
+
+FNDSLT:	JR	FNDSL0		; Jump around address store
+	DEFW	FNDSLT		; Org location of the code
+
+; Set Slot Number
+; 1. read slot table to buf
+
+FNDSL0:	LD	(RMODAD),DE	; Save addr of Relocated Clock Module
+	LD	(RMODA1),DE	; ..in two locations
+	LD	BC,8		; BC = byte count
+	LD	DE,SLTTBL	; DE = 6502 source
+	LD	HL,CLKBUF	; Use clock buffer destination
+	CALL	RDSTR
+
+	LD	HL,CLKBUF+7	; Find slot #, starting with 7
+	LD	B,7
+$$LP:	LD	A,(HL)
+	CP	1
+	JR	Z,$$SLOT
+	DEC	HL
+	DJNZ	$$LP		; Can't be slot 0
+	JR	BAD
+
+$$SLOT:				; B equ slot # from here on
+;;	LD	A,B
+;;	adi	0c0h
+;;	sta	yslot		;0C0 + slot #
+
+;	lxi	h,sltpad
+;	mov	a,l
+;	add	b
+;	mov	l,a		; can't carry
+;	shld	yselct		; set select-slot addr
+
+	LD	HL,CTLBASE
+	LD	A,H		; + page of slot
+	OR	B
+RMODAD	EQU	$+1
+	LD	DE,0000		; Addr of Relocated Clock Module poked here
+	LD	HL,YREAD+1
+	ADD	HL,DE
+	LD	(HL),A		; Save page # for Read
+	LD	HL,YWRITE+1
+	ADD	HL,DE
+	LD	(HL),A		; ..and page # for Write
+
+; 2.  now check type of clock board
+
+	LD	DE,0C000H
+	LD	A,D		; Or in slot == page
+	OR	B
+	LD	D,A
+	CALL	GETBYT
+	CP	ID0TIM		; Check byte for type of clock board
+	JR	NZ,BAD
+	CALL	GETBYT
+	CP	ID1TIM
+	JR	NZ,BAD
+	LD	E,0FEH		; 3rd byte is at $cnfe
+	CALL	GETBYT		; Check byte for type of clock board
+	CP	IDFETIM
+	JR	NZ,BAD
+	CALL	GETBYT		; Check $cnff (last byte of page)
+	CP	3		; Must be 3 for timemaster mode
+	JR	NZ,BAD
+
+RMODA1	EQU	$+1
+	LD	DE,0000		; Addr of Relocated Clock Module poked here
+
+	INCLUDE	PRECLOCK.LIB
+
+; get 1 byte at DE (6502 addr) and DE++
+
+GETBYT:	PUSH	DE
+	LD	C,RDBYTE
+	CALL	WHBYTE
+	POP	DE
+	PUSH	DE
+	CALL	WHWORD
+	CALL	RHBYTE		; V 0$2
+	POP	DE
+	INC	DE		; DE++
+	RET
+
+	END
+
+

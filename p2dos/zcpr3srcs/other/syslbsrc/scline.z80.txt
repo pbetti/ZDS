@@ -1,0 +1,65 @@
+;	TITLE	"SCLINE - Syslib 4.0"
+	NAME	('CLINE')
+;================================================================
+; Author  : Harold F. Bower
+;		Derived from SCLINE.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SCLINE
+; Abstract:  This module contains the routine CLINE which saves
+;	the command line whose character count is addressed in
+;	the call.  The line may be up to 255 characters and the
+;	saved string is terminated will a Null (binary 0).  The
+;	starting address of the saved string is returned.  It
+;	differs from previous versions in that the input line
+;	cannot be truncated since the saved line in 255 chars
+;	long and uses a one-byte counter.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		CLINE
+
+; Definitions
+
+BSIZE	EQU	255		; Size of the internal buffer
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - CLINE
+; Entry: HL - Address of the command buffer to save
+; Exit :  A <> 0 and Zero Flag Clear (NZ)
+;	 HL - Address of the Command Line String
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+CLINE:	PUSH	DE		; Save regs
+	PUSH	BC
+	LD	DE,INBUF	; Address of Buffer
+	PUSH	DE		; Save pointer to String
+	LD	A,(HL)		; Get char count
+	INC	HL		; ..and point to first string char
+	LD	C,A		; Set 16-bit count value
+	LD	B,0
+	OR	A		; Any chars entered?
+	JR	Z,CLINE1	; ..jump if not to set ending null
+	LDIR
+CLINE1:	XOR	A		; Get null to terminate string
+	LD	(DE),A		; ..and end it
+	POP	HL		; Restore string start addr
+	POP	BC		; ..and saved regs
+	POP	DE
+	OR	0FFH		; Set Ok ending condition
+	RET
+
+; Data Storage
+
+	DSEG			; Put in Data Segment
+
+INBUF:	DEFS	BSIZE		; Size of Buffer
+	DEFS	1		; + 1 for ending Zero
+
+	END
+

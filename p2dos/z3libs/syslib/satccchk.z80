@@ -1,0 +1,60 @@
+;	TITLE	"SATCCCHK - Syslib 4.0"
+	TITLE	('@CCCHK')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;    Derived & Extracted from SCCOUT/SCLOUT/SCPOUT by Richard Conn
+; Date    : 11 Jun 89
+; Version : 1.1
+; Module  : SATCCCHK
+; Abstract: This module contains the routine @CCCHK which does
+;	the Control character checking for CCOUT, CLOUT and
+;	CPOUT character interpretation routines.  It is intended
+;	as an internal routine and not intended for user use.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		@CCCHK
+
+; Definitions
+
+BEL	EQU	7		; Bell character
+BS	EQU	8		; Backspace character
+LF	EQU	10		; Line Feed character
+CR	EQU	13		; Carriage Return
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - @CCCHK
+; Entry:  A - Contains the character to be tested
+; Exit : AF - A contains entry char
+;		Zero flag set (Z) if printable or selected char
+;		Zero flag Reset (NZ) if processing required
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+@CCCHK:	AND	7FH		; Insure no MSBs are set in here
+	RET	Z		; ..Null is printable
+	CP	' '		; Check for greater than <SP>
+	JR	NC,CCCHK0	; ..jump to set Zero if printable char
+	CP	CR		; Carriage Return?
+	RET	Z		; ..go print it if so
+	CP	BEL		; BEL is printable, 1-6 are Not
+	RET	C		; ..quit here if 1-6 (not printable
+	CP	BS+1		; Is it Greater than BS?
+	JR	C,CCCHK0	; ..jump Ok if BEL or BS
+	CP	LF		; Is it LF?
+	RET			; ..return with Zero if LF, else no print
+
+; Set Zero flag for printable to print normally
+
+CCCHK0:	CP	A		; Set the Zero Flag for Ok-to-print
+	RET
+
+	END
+

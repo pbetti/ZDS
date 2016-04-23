@@ -1,0 +1,540 @@
+;
+; Program:  DEV3
+; Author:   Richard Conn
+; Version:  1.0
+; Date:     04 Apr 84
+; Based on: DEVICE2 of ZCPR2
+;
+VERS	EQU	11
+Z3ENV	DEFL	0FE00H
+;
+; Version 1.1A strips high bits from EFCB characters in
+; help screens. 	Bruce Morgen	December 30, 1987
+;
+; Version 1.1 modifications by Bruce Morgen, December 21, 1987:  Made
+; DEV respond to the WHEEL and QUIET bytes to make it a viable tool on
+; an IOP-based RAS.  DEV now requires wheel powers to work at all.  With
+; the quiet byte set, all display options are disabled while device as-
+; signment proceeds as per 1.0, but with no CON: output.  In combination
+; with WHEEL 3.1 or later and T3RAS.IOP, this allows BYE.COM to be a
+; VALIAS/SALIAS-style recursive alias.	TERM3 supplies the other required
+; tools, T3HANGUP and T3ANSWER.  Implemented smarter help message using
+; External FCB and QUIET byte, added Type 3 environment code.
+;_______________________________________________________________
+;
+;	DEV is a program which enables the user to manipulate the
+; extended ZCPR3 redirectable device drivers.  It allows the user to
+; perform the following functions:
+;
+;		o Display the Names of the Current Devices
+;		o Set One or More of the Current Devices
+;		o Ask for Help
+;
+;	The format of the DEV command is:
+;
+;		DEV or DEV //			<-- Ask for Help
+;		DEV command,command,command ... <-- Issue Commands
+;
+; where "command" may take the following forms:
+;
+;		DISPLAY ALL	<-- Display Names of All Devices
+;		DISPLAY CON	<-- Display Names of Consoles
+;		DISPLAY LST	<-- Display Names of Printers
+;		DISPLAY RDR	<-- Display Names of Readers
+;		DISPLAY PUN	<-- Display Names of Punches
+;
+;		CON:=name	<-- Select Console
+;		LST:=name	<-- Select Printer
+;		RDR:=name	<-- Select Reader
+;		PUN:=name	<-- Select Punch
+;
+;
+;  Constants
+;
+TBUFF	EQU	80H
+CR	EQU	0DH
+LF	EQU	0AH
+;
+;  SYSLIB Routines
+;
+	EXT	Z3INIT,GETIOP
+	EXT	CIN,COUT,PSTR,PRINT,CLINE,CRLF
+	EXT	GETEFCB,GETWHL,GETQUIET,QPRINT
+;
+; External ZCPR3 Environment Descriptor
+;
+; TYPE 3 HEADER
+;
+; Code modified as suggested by Charles Irvine to function correctly with
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+;
+	 IF	Z3ENV NE 0
+ENTRY:	JR	STARTH		; Must use relative jump
+	NOP			; Filler
+	DB	'Z3ENV',3	; Type-3 environment
+
+Z3EADR:	DW	Z3ENV		; Filled in by Z33
+	DW	ENTRY		; Intended load address
+
+STARTH:	LD	HL,0		; Point to warmboot entry
+	LD	A,(HL)		; Save the byte there
+	DI			; Protect against interrupts
+	LD	(HL),0C9H	; Replace warmboot with a return opcode
+	RST	0		; Call address 0, pushing RETADDR
+				; Onto stack
+RETADDR:LD	(HL),A		; Restore byte at 0
+	DEC	SP		; Get stack pointer to point
+	DEC	SP		; To the value of RETADDR
+	POP	HL		; Get it into HL and restore stack
+	EI			; We can allow interrupts again
+	LD	DE,RETADDR	; This is where we should be
+	XOR	A		; Clear carry flag
+	PUSH	HL		; Save address again
+	SBC	HL,DE		; Subtract -- we should have 0 now
+	POP	HL		; Restore value of RETADDR
+	JR	Z,START		; If addresses matched, begin real code
+
+	LD	DE,NOTZ33MSG-RETADDR ; Offset to message
+	ADD	HL,DE
+	EX	DE,HL		; Switch pointer to message into DE
+	LD	C,9
+	JP	0005H		; Return via BDOS print string function
+
+NOTZ33MSG:
+	DB	'Not Z33+$'	; Abort message if not Z33-compatible
+
+START:	LD	HL,(Z3EADR)	; Point to ZCPR3 environment
+	 ENDIF			; Z3ENV NE 0
+;
+; Internal ZCPR3 Environment Descriptor
+;
+	 IF	NOT (Z3DNV NE 0)
+
+	MACLIB	Z3BASE.LIB
+	MACLIB	SYSENV.LIB
+
+Z3EADR:	JP	START
+	SYSENV
+
+START:	LD	HL,Z3EADR	; Point to ZCPR3 environment
+	 ENDIF			; NOT (Z3DNV NE 0)
+;
+; Start of Program -- Initialize ZCPR3 Environment
+;
+	CALL	Z3INIT		; Initialize the ZCPR3 Environment
+	CALL	GETWHL
+	JR	NZ,WHLOK
+	CALL	QPRINT
+	DB	'Wheel privileges required.',0
+	RET
+;
+; Start of Program
+;
+WHLOK:	CALL	GETIOP		; Check for initialization
+	LD	A,H
+	OR	L		; Must NOT be zero
+	JR	NZ,START0
+	CALL	BANNER
+	CALL	PRINT
+	DB	CR,LF,'DEV NOT Initialized with I/O Base',0
+
+ABORT:	CALL	PRINT
+	DB	' -- Aborting',0
+	RET
+
+START0:	CALL	STATUS		; Check for drivers
+	JR	NZ,START1
+	CALL	BANNER
+	CALL	PRINT
+	DB	CR,LF,'Redirection Not Supported',0
+	JR	ABORT
+
+START1:	LD	HL,TBUFF	; Point to input buffer
+	CALL	CLINE		; Extract and save command line
+	CALL	SBLANK		; Skip to non-blank
+	OR	A		; EOL?
+	JR	Z,HELP		; Select help
+	CP	'/'		; Help?
+	JP	NZ,DOCMD	; Run command subroutine
+;
+; Print Help Message
+;
+HELP:	CALL	BANNER
+	CALL	PRINT
+	DB	CR,LF,'DEV - Quick Redirectable I/O Device Selector'
+	DB	CR,LF,'Syntax:'
+	DB	CR,LF,'   ',0
+	CALL	COMNAM
+	CALL	PRINT
+	DB	' or ',0
+	CALL	COMNAM
+	CALL	PRINT
+	DB	' //             '
+	DB	'<-- Ask for Help'
+	DB	CR,LF,'   ',0
+	CALL	COMNAM
+	CALL	PRINT
+	DB	' Command,Command, ...  '
+	DB	'<-- Issue Commands'
+	DB	CR,LF,'where "command" may take the following forms:'
+	DB	0
+	CALL	QPRINT		; No display options if QUIET
+	DB	CR,LF,'  DISPLAY=ALL '
+	DB	'<-- Display All Devices'
+	DB	CR,LF,'  DISPLAY=CON '
+	DB	'<-- Display Consoles'
+	DB	CR,LF,'  DISPLAY=LST '
+	DB	'<-- Display Printers'
+	DB	CR,LF,'  DISPLAY=RDR '
+	DB	'<-- Display Readers'
+	DB	CR,LF,'  DISPLAY=PUN '
+	DB	'<-- Display Punches'
+	DB	CR,LF,0
+	CALL	PRINT
+	DB	CR,LF,'  CON:=name  <-- Select Console'
+	DB	CR,LF,'  LST:=name  <-- Select Printer'
+	DB	CR,LF,'  RDR:=name  <-- Select Reader'
+	DB	CR,LF,'  PUN:=name  <-- Select Punch'
+	DB	0
+	RET
+;
+; Print Banner
+;
+BANNER:	CALL	PRINT
+	DB	'DEV, Version '
+	DB	[VERS/10]+'0','.',[VERS	MOD 10]+'0',0
+	RET
+;
+; Skip to Non-Blank Routine
+;
+SBLANK:	LD	A,(HL)		; Get char
+	INC	HL		; Pt to next
+	CP	' '		; Blank?
+	JR	Z,SBLANK	; Continue if so
+	DEC	HL		; Pt to non-blank
+	RET
+;
+; Skip until a delimiter encountered
+;
+SDELM:	LD	A,(HL)		; Get char
+	INC	HL		; Pt to next
+	CP	' '+1		; <SP> or less?
+	RET	C
+	CP	'='
+	RET	Z
+	CP	','
+	RET	Z
+	JR	SDELM
+;
+; DOCMD -- This subroutine processes the command line pointed to by HL.
+;   It is the Main Line if a DEVICE command line is given, it is just
+;   a subroutine if the user is in interactive mode.
+;
+DOCMD:	CALL	DOCMD1		; Do first command
+	CALL	SDELM		; Skip to delim
+	CP	','		; Another command?
+	JR	Z,DOCMD
+	RET
+
+DOCMD1:	LD	A,(HL)		; Get command letter
+	CP	'D'		; Display?
+	JR	NZ,NOTDIS
+	CALL	GETQUIET
+	JP	Z,DODISP
+	RET
+
+NOTDIS:	CP	'C'		; Console assignment?
+	JR	Z,DOCON
+	CP	'L'		; LST:?
+	JR	Z,DOLST
+	CP	'P'		; PUN:?
+	JR	Z,DOPUN
+	CP	'R'		; RDR:?
+	JR	Z,DORDR
+
+CERR:	CALL	PRINT
+	DB	CR,LF,'Error at -- ',0
+	CALL	PSTR		; Print rest
+	RET
+;
+; Do LST: Assignment
+;
+DOLST:	CALL	QPRINT
+	DB	' LST:',0
+	LD	A,3		; Select LST:
+	JR	ASSIGN
+;
+;  Do PUN: Assignment
+;
+DOPUN:	CALL	QPRINT
+	DB	' PUN:',0
+	LD	A,2		; Select PUN:
+	JR	ASSIGN
+;
+;  Do RDR: Assignment
+;
+DORDR:	CALL	QPRINT
+	DB	' RDR:',0
+	LD	A,1		; Select RDR:
+	JR	ASSIGN
+;
+;  Do CON: Assignment
+;
+DOCON:
+	CALL	QPRINT
+	DB	' CON:',0
+	LD	A,0		; Select console
+;
+;  Do Assignment in General
+;
+ASSIGN:	LD	B,A		; Save A in B
+	PUSH	BC		; Save BC
+	CALL	SDELM		; Skip to delimiter
+	POP	BC		; Get BC
+	CP	' '
+	JR	Z,ASGN0
+	CP	'='
+	JR	NZ,CERR
+
+ASGN0:	LD	A,B		; Get A back
+	LD	(LOGICAL),A	; Save logical device number
+	LD	(NAME),HL	; Save pointer to mnemonic
+	LD	B,A		; Number in B
+	INC	B		; Add 1 for offset
+	CALL	STATUS		; Get device status
+	DEC	HL		; Pt to previous
+	DEC	HL
+
+ASGN1:	INC	HL		; Pt to next
+	INC	HL
+	DJNZ	ASGN1		; Count down
+	LD	C,(HL)		; Get number of devices in C
+	LD	A,C		; Check for value of zero
+	OR	A
+	JR	NZ,ASGN2
+	LD	HL,(NAME)	; Pt to error name
+	JR	CERR
+
+ASGN2:	LD	A,(LOGICAL)	; Get logical device number
+	LD	B,A		; In B
+	PUSH	BC		; Save device count
+	DEC	C		; Pt to previous
+	CALL	NAMER		; Get name
+	EX	DE,HL		; Name pted to by DE
+	LD	HL,(NAME)	; User's name pted to by HL
+
+ASGN3:	LD	A,(DE)		; Get name of device
+	CP	' '+1		; Done?
+	JR	C,ASGN3A
+	CP	(HL)		; Compare to user
+	JR	NZ,ASGN4
+	INC	HL		; Pt to next
+	INC	DE
+	JR	ASGN3
+
+ASGN3A:	LD	A,(HL)		; Get user
+	CP	' '+1		; Done?
+	JR	C,ASGN3B
+	CP	','		; Done?
+	JR	NZ,ASGN4
+
+ASGN3B:	POP	BC		; Match -- C-1 is selected device
+	DEC	C		; Decrement
+	CALL	SELECT		; Select device
+	CALL	GETQUIET
+	LD	A,(LOGICAL)	; Get logical device in A
+	CALL	Z,CURRENT	; Print name of device selected
+	LD	HL,(NAME)	; Pt to name for scan continuation
+	RET
+
+ASGN4:	POP	BC		; Count down
+	DEC	C		; Count down
+	JR	NZ,ASGN2	; Continue
+	LD	HL,(NAME)	; Pt to invalid name
+	CALL	PRINT
+	DB	CR,LF,' Invalid Name at -- ',0
+	CALL	PSTR
+	LD	HL,(NAME)	; Pt to name for scan continuation
+	RET
+;
+; Display Devices and Assignments
+;
+DODISP:	CALL	SDELM		; Skip to delimiter
+	OR	A		; None=all
+	JR	Z,DISPALL
+	LD	A,(HL)		; Get char after delimiter
+	CP	'A'		; All?
+	JR	Z,DISPALL
+	CP	'C'		; CON:
+	JR	Z,DISPCON
+	CP	'L'		; LST:
+	JR	Z,DISPLST
+	CP	'P'		; PUN:
+	JR	Z,DISPPUN
+	CP	'R'		; RDR:
+	JR	Z,DISPRDR
+	JP	CERR
+
+DISPALL:CALL	DISPCON		; Successive displays
+	CALL	DISPRDR
+	CALL	PRINT
+	DB	CR,LF,'Strike Any Key -- ',0
+	CALL	CIN
+	CALL	DISPPUN
+	JR	DISPLST
+
+DISPCON:CALL	PRINT
+	DB	CR,LF,'CON:',0
+	LD	A,0		; Select CON:
+	CALL	DISP
+	JR	CURR
+
+DISPLST:CALL	PRINT
+	DB	CR,LF,'LST:',0
+	LD	A,3		; Select LST:
+	CALL	DISP
+	JR	CURR
+
+DISPRDR:CALL	PRINT
+	DB	CR,LF,'RDR:',0
+	LD	A,1		; Select RDR:
+	CALL	DISP
+	JR	CURR
+
+DISPPUN:CALL	PRINT
+	DB	CR,LF,'PUN:',0
+	LD	A,2		; Select PUN:
+	CALL	DISP
+;
+; Print Name of Current Device
+;
+CURR:	CALL	CRLF		; New line
+
+CURRENT:PUSH	HL		; Save ptr
+	LD	B,A		; Save number in B
+	PUSH	BC		; Save B
+	CALL	PRINT
+	DB	' Assignment is ',0
+	PUSH	BC		; Save B
+	CALL	STATUS		; Get status
+	POP	BC		; Get B
+	INC	B		; Add 1 for offset
+	DEC	HL		; Back up
+
+CURR1:	INC	HL		; Point to next
+	INC	HL
+	DJNZ	CURR1		; Count down
+	POP	BC		; Get logical number in B
+	LD	C,(HL)		; Get physical number in C
+	CALL	PNAME0		; Print first part of name only
+	POP	HL		; Get ptr
+	RET
+;
+; Print Names of All Physical Devices for a Logical Device
+;
+DISP:	PUSH	HL		; Save character ponter
+	PUSH	AF		; Save device number
+	CALL	PRINT
+	DB	' Devices --',0
+	LD	B,A		; Logical device in B
+	PUSH	BC		; Save for later
+	PUSH	BC		; Save it
+	CALL	STATUS		; Get status report
+	POP	BC		; Get logical device number
+	INC	B		; Add 1 for offset
+	DEC	HL		; Back up
+	DEC	HL
+
+DISP1:	INC	HL		; Point to next
+	INC	HL
+	DJNZ	DISP1		; Count down
+	POP	BC		; Get B back
+	LD	C,(HL)		; Get count of devices
+	LD	A,C		; Check for none
+	OR	A
+	JR	Z,DISP3
+
+DISP2:	PUSH	BC		; Save values
+	DEC	C		; Point to next name
+	CALL	PRINT
+	DB	CR,LF,'    ',0
+	CALL	PNAMER		; Print name (B=logical, C=physical)
+	POP	BC		; Get count
+	DEC	C		; Count down
+	JR	NZ,DISP2
+
+DISP3:	POP	AF
+	POP	HL
+	RET
+;
+; Routine to Print Name of Selected Device
+;	B=logical number, C=physical number
+;
+PNAMER:	PUSH	BC		; Save BC
+	CALL	PNAME0		; Print first part of name
+	CALL	PRINT		; Print separator
+	DB	' - ',0
+	CALL	PSTR		; Print rest as string
+	POP	BC		; Restore BC
+	RET
+;
+; Print first part of selected device name
+;
+PNAME0:	CALL	NAMER		; Get ptr to string
+	LD	B,8		; At most 8 chars
+PNAME1:	LD	A,(HL)		; Get char
+
+	INC	HL		; Pt to next char
+	CP	' '		; End of name?
+	JR	Z,PNAME2
+	CALL	COUT		; Print char
+	DJNZ	PNAME1		; Count down
+	RET
+
+PNAME2:	LD	A,' '		; Print spaces
+	CALL	COUT
+	DJNZ	PNAME2		; Count down
+	RET
+;
+; Basic Interface Routines
+;
+STATUS:	LD	DE,0		; Offset 0
+
+RUNIT:	CALL	GETIOP		; Device driver base
+	ADD	HL,DE
+	JP	(HL)
+
+SELECT:	LD	DE,3		; Offset 3
+	JR	RUNIT
+
+NAMER:	LD	DE,6		; Offset 6
+	JR	RUNIT
+;
+; Print actual COMfile name if possible, otherwise print "DEV"
+;
+COMNAM:	CALL	GETEFCB
+	JR	Z,NOEFCB
+	LD	B,8
+
+COMNLP:	INC	HL
+	LD	A,(HL)
+	AND	7FH
+	CP	' '
+	CALL	NZ,COUT
+	DJNZ	COMNLP
+	RET
+
+NOEFCB:	CALL	PRINT
+	DB	'DEV',0
+	RET
+;
+;  Buffers
+;
+	DSEG
+
+LOGICAL:DS	1		; Logical Device Number
+NAME:	DS	2		; Pointer to User-Supplied Name
+
+	END
+

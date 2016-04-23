@@ -1,0 +1,170 @@
+; CHKDIRCF.MAC
+;
+; ZCNFG configuration module for CHKDIR.COM.  The assembled version of
+; this file must be named CHKDIRxx.CFG to be automatically recognized
+; by ZCNFG.
+;
+; Version 1.1 -- May 10, 1992 -- Gene Pizzetta
+;	For CHKDIR 1.1, Howard Goldstein's revision.  Adds "hot key"
+;	entry for disk label tag character.  Changed menu selections
+;	from numeric to alphabetic.  Help screens modified accordingly.
+;
+; Version 1.0 -- October 4, 1990 -- Gene Pizzetta
+;	For CHKDIR 1.0.
+;
+; Patch locations . . .
+;
+WBFlg	equ	015h		; warm boot flag
+NulFlg	equ	016h		; null file flag
+TagChr	equ	017h		; disk label tag character
+;
+; ZCNFG function definitions . . .
+;
+Switch	equ	0	; toggle bit n in a byte (n is specified in BDATA)
+Text	equ	1	; edit text with UC conversion
+DUSpec	equ	2	; replace a ZCPR style DU specification (NOT DIR:!)
+HexRad	equ	3	; edit byte/word using HEX radix
+DecRad	equ	4	; edit byte/word using DECIMAL radix
+TextLC	equ	5	; edit text, both UC and LC
+FileSp	equ	6	; edit a Z3 filespec or filespec fragment
+Togl3	equ	7	; toggle to one of n options defined by mask in BDATA
+ToglTF	equ	8	; toggle a byte between 0FFh and 0
+ASCIIC	equ	9	; replace any ASCII byte with a keystroke
+;
+; ASCII characters . . .
+;
+HON	equ	1		; highlight on
+HOF	equ	2		; highlight off
+TAB	equ	9		; tab
+LF	equ	10		; linefeed
+CR	equ	13		; carriage return
+;
+; Macro definitions
+;	C	= character to identify menu item
+;	OFFSET	= offset in program's configuration block
+;	FUNC	= ZCNFG function
+;	SCRN	= screen location for data
+;	DATA	= function data address (if required)
+;
+CASE	macro	c,func,offset,bytes,scrn,data
+	db	'&C'
+	dw	func, offset
+	db	bytes
+	dw	scrn, data
+	endm
+;
+; Code . . .
+;
+	rst	0		; for safety, so .CFG file won't execute
+;
+	dw	MenuA		; for relocation of addresses, this
+				; ..points to the NEXT location.
+;
+; Menu list section . . .
+;
+MenuA:	dw	MenuA, MenuA, ScrnA, CaseA, HelpA	; single menu
+;
+; Case table section . . .
+;
+CaseA:	db	(CaseAX-CaseA1)/(CaseA2-CaseA1)	; number of cases
+	db	CaseA2-CaseA1	; length of each record
+;
+;	Macro name
+;	|	Single char menu selector
+;	|	|	Function (see above)
+;	|	|	|	Offset in config block
+;	|	|	|	|	Number of bytes
+;	|	|	|	|	|	Screen location
+;	|	|	|	|	|	|
+;Case1:	CASE	0,	ToglTF,	Loc1,	1,	ScrnA1,	NoYes
+;							|
+;			 Address of data used by function
+;
+; The first two entries in table are labeled for calculation at CaseA:.
+;
+CaseA1:	CASE	W,	ToglTF,	WBFlg,	1,	ScrnA1,	YesNo
+CaseA2:	CASE	N,	ToglTF,	NulFlg,	1,	ScrnA2,	YesNo
+	CASE	T,	ASCIIC,	TagChr,	1,	ScrnA3,	0
+	CASE	H,	HexRad,	TagChr,	1,	ScrnA4,	TgRnge
+CaseAX:				; for calculation of list length
+;
+; Case table support . . .
+;
+YesNo:	db	'Yes',0		; displayed if value is FFh (ToglTF)
+	db	' No',0		; displayed if value is 00h (ToglTF)
+TgRnge:	dw	00h,7Fh		; range for TagChr
+;
+; Screen image section . . .
+;
+ScrnA:	db	cr,lf,lf,tab,tab,tab,'  CHKDIR Configuration Menu'
+	db	cr,lf,lf,lf
+;
+	db	tab,tab,'(W) ',1,'Warm boot on exit?  . . . . . . . . . ',2
+ScrnA1:	db	'   '		; current value
+	db	cr,lf,lf
+;
+	db	tab,tab,'(N) ',1,'Check null files? . . . . . . . . . . ',2
+ScrnA2:	db	'   '		; current value
+	db	cr,lf,lf
+;
+	db	tab,tab,'(T) ',1,'Tag character for disk labels . . . . ',2
+ScrnA3:	db	'   '		; current value
+	db	cr,lf
+;
+	db	tab,tab,'(H) ',1,'Tag character in hexadecimal  . . . . ',2
+ScrnA4:	db	'  h'		; current value
+	db	cr,lf
+;
+	db	lf,lf,lf,lf	; fill rest of screen
+;
+	db	0		; terminator
+;
+; Help screen section . . .
+;
+HelpA:	db	CR,LF
+;
+	db	HON,'Option W  --  Warm  boot.',HOF,'  As  distributed '
+	db	' CHKDIR  avoids  overwriting the',CR,LF
+	db	'command processor so it can make a simple  return  on '
+	db	' exit.  If  your disk',CR,LF
+	db	'directories are  so  large  that  CHKDIR runs out of '
+	db	'memory, you can gain a',CR,LF
+	db	'little space by answering "Yes", which will allow the '
+	db	'CCP to be overwritten',CR,LF
+	db	'and cause a warm boot on exit.'
+	db	CR,LF,LF
+;
+	db	HON,'Option N -- Null  files.',HOF,'  While  reading  '
+	db	'a directory CHKDIR always reports',CR,LF
+	db	'the names of null (zero-length) files, but it does not '
+	db	' include  such files',CR,LF
+	db	'in its  directory checking routines because programs '
+	db	'such as SAP erase such',CR,LF
+	db	'files by default.  If you want the checking routines '
+	db	'to include null files,',CR,LF
+	db	'answer "Yes" here.'
+	db	CR,LF,LF
+;
+	db	HON,'Options T and H  --  Tag  character.',HOF,'  These '
+	db	' options  have no effect unless',CR,LF
+	db	'Option N is "Yes".  The  tag  character  is  the  first '
+	db	' character  of disk',CR,LF
+	db	'labels, such  as  those  used  by  cataloging  programs. '
+	db	' The  character is',CR,LF
+	db	'usually "-", "#", or "!".  If a tag character  is  configured'
+	db	',  disk labels',CR,LF
+	db	'will not  be  checked,  even  if Option N is "Yes" so '
+	db	'that other null files',CR,LF
+	db	'will be checked  (important  if  you  use  lower-case '
+	db	'disk labels).  If you',CR,LF
+	db	'don''t want disk labels skipped, make this option a  '
+	db	'null  (^@).  If  a null',CR,LF
+	db	'can''t  be  generated  by  your  keyboard,  use  Option '
+	db	' H  to  enter  it in',CR,LF
+	db	'hexadecimal.'
+	db	CR
+;
+	db	0		; terminator
+;
+	end
+

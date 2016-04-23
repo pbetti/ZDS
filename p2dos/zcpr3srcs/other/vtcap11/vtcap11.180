@@ -1,0 +1,627 @@
+  	MACLIB	VTCAPHDR	; get header information
+ 
+; Cursor address table for ADD and UPDATE routines
+ 
+fld1	equ	0311h 	; name field
+fld2	equ	0607h	; cursor up field   
+fld3 	equ	0707h 	; cursor down field
+fld4	equ	0612h 	; cursor right field
+fld5	equ	0712h 	; cursor left field
+fld6	equ	0a12h 	; delay after clear screen field
+fld7	equ	0b12h 	; delay after direct cursor address field
+fld8 	equ	0c12h	; delay after eol field
+fld9	equ	0628h	; cls
+fld10	equ	0728h	; dca
+fld11	equ	0828h	; eol
+fld12	equ	0928h	; stndout
+fld13	equ	0a28h	; stndend
+fld14	equ	0b28h	; tinit
+fld15	equ	0c28h	; dinit	
+
+; Terminal data base definition
+
+trec	equ	tbuf		; base of terminal buffer
+tname	equ	trec		; terminal name
+curup	equ	tname+16	; cursor up
+curdn	equ	curup+1		; cursor down
+currt	equ	curdn+1		; cursor right
+curlt	equ	currt+1		; cursor left
+delcls	equ	curlt+1		; delay after clear screen
+deldca	equ	delcls+1	; delay after direct cursor addressing
+deleol	equ	deldca+1	; delay after erase po end of line
+strcls	equ	deleol+1	; clear screen
+strdca	equ	strcls+15	; direct cursor addressing
+streol	equ	strdca+15	; erase to end of line    
+strsb	equ	streol+15	; begin standout mode 
+strse	equ	strsb+15	; end standout mode  
+strti	equ	strse+15	; terminal initialization
+strtd	equ	strti+15	; terminal de-initialization
+
+; MACROS
+
+putrg	macro
+	push	bc		; save registers 
+	push	de		
+	push	hl
+	endm
+getrg	macro
+	pop	hl		; restore registers 
+	pop	de
+	pop	bc	
+	endm
+ 
+; External routines are defined in the SYSLIB36, VLIB11 and Z3LIB13
+; files and after assembly the program must be linked with the above
+; libraries.
+ 
+; SYSLIB36
+	ext	putud, logud, getud, initfcb, setdma, bline
+	ext	f$exist, f$open, f$close, f$mopen, f$write, f$read
+	ext	f$rename, f$delete
+	ext	r$read, r$open, r$write, r$close
+	ext	epstr, pstr, print, capine, capin, crlf, cout, cin, ccout
+	ext	padc, pa2hc, phlfdc, phldc, mhldc, ma2hc 
+	ext	comphd, scanner, fillbc, instr, inline, bbline, capstr
+	ext	ssbinit, sort
+	ext	divhd, mulhd, isctrl, isalpha
+	ext	codend
+
+; VLIB11
+	ext	tinit, dinit, z3vinit
+	ext	gxymsg, gotoxy, at
+	ext	stndout, stndend
+	ext	cls, ereol
+
+; Z3LIB13
+	ext	z3init, vidinit, envptr
+	ext	wait1s
+
+	org	100h
+
+	INCLUDE	Z3ENV.HDR
+
+; Initialization routines
+	
+	ld	hl,z3env	; point to the Z3 environment
+	call	z3vinit		; initialize VIDPTR and ENVPTR
+	ld	(envptr),hl	; save environment pointer
+ 	call	z3init		; initialize Z3 envirorment
+	ld	hl,tcap		; point to Z3 TCAP
+	call	vidinit		; initialize video routines
+	call	tinit		; initialize the terminal
+
+	ld	(system),sp	; save stack pointer
+	ld	sp,system
+	call	putud		; save DU status
+	ld	b,tcpdrv
+	ld	c,tcpusr
+	call	logud		; log into TCP DU
+
+	ld	de,fcb1		; initialize FCB's
+	call	initfcb
+	ld	de,fcb2
+	call	initfcb
+				
+	call	cls		; clear screen
+	ld	hl,dfcb1+1	; point to first command tail
+	ld	a,(hl)		; put first character in A
+ 	cp	'/' 		; or did user select option
+ 	jp	z,option	; if yes - parse options
+	ld 	a,(hl)		; put it in A
+	cp	' '		; is it a blank
+	jp	nz,par1		; bypass exit flag
+	ld	a,0ffh		; set exit flag
+	ld	(exflg),a	; save it
+	jp	help
+
+par1:  	ld	de,fcbn1	; move filename to FCB
+	ld	bc,8
+	ldir
+par2:	ld	de,fcb1
+	call	open		; open all files
+
+	ld	hl,dfcb2+1	; move second command tail to buffer
+	ld	de,optbuf
+	ld	bc,20
+	ldir
+	ld	de,fcb1		; point to FCB1
+	ld	hl,buf1		; point to BUF1
+	call	rdtcp		; read TCAP into memory
+
+	push	hl		; save registers
+	push	de
+	push	bc
+	call	gcnt		; get number of records in buffer
+	ld	(cnt),hl	; save count
+	ld	de,terms	; point to storage area
+	call	mhldc		; save results
+	ld	de,versn	; point to version number storage
+	call	gvsn		; get version number
+	ld	hl,(cnt)	; get terminal count
+	call	grecof		; get record offset
+	ld	(recof),hl	; save results
+	pop	bc		; restore registers
+	pop	de
+	pop	hl
+
+	ld	de,fcb1		; point to FCB
+	ld	hl,tbuf		; point to TBUF
+	call	setdma		; set DMA
+	ld	hl,0		; initialize record number
+	ld	bc,(recof)	; get record offset
+	add	hl,bc		; add offset to record number
+	call	r$read		; read record
+	jp	nz,r?read	; error routine
+
+parse:	ld	hl,optbuf  	; point to possible options
+	ld	a,(hl)		; get first character
+	cp	'/'		; is user suppling an option
+	jp	nz,noopt	; no - go to database
+
+option:	call	cls		; clear screen
+	inc	hl		; point to option 
+	ld	a,(hl)		; get option
+	ld	(obuf),a	; save option
+	cp	'/'		; did user request HELP
+	jr	z,hopt
+	cp	'?'
+	jr	z,hopt
+	cp	'H'
+	jr	z,hopt
+	call	dsply	
+	jr 	opt
+
+hopt: 	ld	a,0ffh
+ 	ld	(exflg),a
+	ld	a,(hl)
+
+opt:	cp	'A'		
+	jp	z,add		
+	cp	'D' 
+	jp	z,delete
+	cp	'H'
+	jp	z,help
+	cp	'L'
+	jp	z,list
+	cp	'M'
+	jp	z,merge
+	cp	'N'
+	jp	z,next
+	cp	'P'
+	jp	z,prev    
+	cp	'S'
+	jp	z,search
+	cp	'U'
+	jp	z,update
+	cp	'X' 
+	jp	z,exit
+ 	cp	'Z'
+ 	jp	z,zload
+	cp	'/'
+	jp	z,help
+	cp	'?'
+	jp	z,help
+	call	opt?
+	call	gxymsg
+	db	24,1
+	db	0
+	call 	ereol
+
+exopt:	ld	a,(exflg)
+	cp	0ffh
+	jp	z,exit
+	call	entop
+	jp	getchr
+
+
+; Subroutines for database operation
+
+	INCLUDE	ADD.180
+	INCLUDE ADDMG.180
+	INCLUDE GFIELD.180
+	INCLUDE DELETE.180
+	INCLUDE ENTRY.180
+	INCLUDE HLPSEL.180
+	INCLUDE LIST.180
+	INCLUDE MERGE.180
+	INCLUDE NEXT.180
+	INCLUDE PREV.180
+	INCLUDE	SEARCH.180
+	INCLUDE	GNVER.180
+
+help:	call	cls
+	call	hlpmsg
+	ld	a,(exflg)	; get exit flag
+	cp	0		; 0 = no exit
+	jp	nz,exit
+
+hlp1:	call	hlpsel
+
+hlpex:	call	cls
+	call	dsply
+	call	data
+	call	entop
+	call  	getchr		; act on option
+
+; Other subroutines
+
+	INCLUDE	RDTCP.180
+	INCLUDE	DSPLY.180
+	INCLUDE HLPMSG.180
+	INCLUDE DATA.180
+	INCLUDE STATS.180
+
+entop:	ld	h,24
+	ld	l,1
+	call	gotoxy
+	call	gxymsg
+	db	23,5
+	db	2,'Enter Option:',1 
+	db	0
+	ret
+
+; Subroutine to make the backup file
+
+mbak:	ld	hl,fcb6		; point to Z3TCAPxx.BAK FCB
+	ld	de,fcb2		; point to Z3TCAPxx.TCP FCB
+	call	f$rename	; rename Z3TCAPxx.TCP -> Z3TCAPxx.BAK
+	jp	z,f?rename	; error routines
+	ret
+
+open:	ld	de,fcb1		; open Z3TCAPxx.TCP
+ 	call	f$open
+	jp	nz,f?open	
+
+	ld	de,fcb2		; open Z3TCAP.TCP
+	call	f$open
+	jp	nz,f?open
+	
+	ret
+
+noopt:	ld	hl,optbuf	; point to the option buffer
+	ld	a,(hl)		; get first character in A
+	cp	' '		; is it a space
+	jp	z,no2		; if not - parse filename
+	ld	de,fcbn2	; point to FCB2
+	ld	bc,8		; number of characters in filename
+	ldir			; transfer to FCB2
+
+no2:	ld	hl,tbuf
+	call	setdma
+	ld	de,fcb1
+	ld	hl,0
+	ld	bc,(recof)
+	add	hl,bc
+	call	r$read
+	jp	nz,r?read
+ 	call	dsply
+	call	data
+	call	gxymsg
+	db	23,5
+	db	2,'Enter Option:',1  
+	db	0
+
+getchr:	ld	h,23
+	ld	l,19
+	call	gotoxy
+	call	capin 		; get capitalized input from user   
+	cp	'A'		; is the character in the proper range?
+	jr	c,getchr
+	cp	'Z'+1
+	jr	nc,getchr
+	ld	(option),a	; save option
+	ld	(obuf),a
+	jp	opt		; act on option
+
+exit:	ld	a,(delflg)	; get number of deletions made
+	cp	0		; is it zero?
+	jp	nz,delex	; if records are marked, goto delete function
+
+excon:	call	clall
+	call	getud		; return to original DU
+	ld	sp,(system)	; restore stack pointer
+	call	dinit		; de-initialize the terminal
+	ret
+
+clall:	ld 	de,fcb1		; close Z3TCAPxx.TCP (Current File)
+ 	call	f$close		; close file
+	jp	nz,f?close	; error routines
+
+	ld	de,fcb2		; close Z3TCAP.TCP (Default File)
+	call	f$close
+	jp	nz,f?close
+
+	ret
+
+zload: 	ld	de,fcb1		; close Z3TCAPxx.TCP
+	call	f$close		
+	jp	nz,f?close	
+	call	initfcb		
+
+z2:	call	gxymsg
+	db	23,30
+	db	2,'Filename: ',1
+	db	0
+
+clrn:	ld	a,' '		; put space in A
+	ld	hl,fname	; point to FNAME buffer
+	ld	b,8		; length of filename
+
+clnm:	ld	(hl),a		; store space in buffer
+	inc	hl		; advance pointer
+	djnz	clnm		; loop until done
+		
+	ld	a,0ffh		; echo flag
+	ld	hl,fname	; point to filename buffer
+	call	inline		; get Z3TCAP filename from user
+	ld	hl,fname	; point to filename
+	call	capstr		; capitalize string
+	ld	a,(hl)		; get first character
+	cp	0		; is it a terminator
+	jp	z,fabrt		; if so - abort filename input
+	ld	hl,fname	; point to filename buffer
+	ld	b,8		; length of filename
+
+cltrm:	ld	a,(hl)		; get character in filename
+	cp	0 		; is it a terminator
+	jp	nz,nex		; if not - get next character
+	ld	a,' '		; put space in A
+	ld	(hl),a		; replace terminator with space
+
+nex:	inc	hl		; increment character pointer
+	djnz	cltrm		; loop until all characters checked
+
+	call	clrnm		; clear space on display 
+
+	ld	hl,fname	; point to filename buffer
+	ld	de,fcbn1	; point to FCB
+	ld	bc,8		; length of filename
+	ldir			; move new filename to FCB
+
+	ld	de,fcb1		; point to FCB
+	call	f$exist		; check for existance of file
+	jp	z,nofile	; if file does not exist - print error message
+	ld	hl,fname	; point to filename buffer
+	jp	par1		; load new file
+
+fabrt:	ld	hl,fcbn2	; point to default filename
+	ld	de,fcbn1	; point to FCB1
+	ld	bc,8		; lentgh of buffer
+	ldir			; move default filename to FCB
+	call	clrnm		; clear space on display
+	jp	par2
+
+nofile:	call	gxymsg
+	db	23,30
+	db	'File Does Not Exist'
+	db	0
+	call	wait1s		; delay
+	call	wait1s		; delay
+	call	clrnm		; clear space on display
+	jp	z2
+
+clrnm:	call	gxymsg
+	db	23,30
+	db	'                    '
+	db	0
+	ret
+ 
+; Error handlers
+
+	INCLUDE ERROR.180
+
+; FCB definations
+
+fcb1:	db	0
+fcbn1:	db	'        '
+fcbt1:	db	'TCP'
+	ds	24
+
+fcb2:	db	0
+fcbn2:	db	'Z3TCAP  '
+fcbt2:	db	'TCP'
+	ds	24
+ 
+fcb3:	db	0
+fcbn3:	db	'MERGE   '
+fcbt3:	db	'TCP'
+	ds	24
+	
+fcb4:	db	0
+fcbn4:	db	'TCAP    '
+fcbt4:	db	'ADD'
+	ds	24
+
+fcb5:	db	0
+fcbn5:	db	'ADD     '
+fcbt5:	db	'TCP'
+ 	ds	24
+
+fcb6:	db	0
+fcbn6:	db	'Z3TCAP  '
+fcbt6:	db	'BAK'
+	ds	24
+
+
+; Buffers
+
+termid: db	'                ',0	; id string storage
+iname:	db	'                ',0	; index name storage
+verbuf:	db	'                ',0	; version number buffer
+delstr:	db	'* * DELETED * * ',0	; deleted record message
+fname:	db	'        ',0	; Z3TCAP filename buffer
+zdef:	db	'Z3TCAP  ',0	; default for filename transfer
+term:	db	0    		; description of terminator used
+optbuf:	ds	20		; command line option buffer
+scbuf:	ds	2		; scratch buffer storage
+buffer:	ds	2		; calculated buffer storage
+fcb:	ds	2		; FCB pointer
+buf:	ds	2		; buffer address for tcap file
+wbuf:	ds	2		; end of buffer storage
+ebuf:	ds	2		; end of file storage
+numb:	ds	2		; record counter
+rec:	ds	2		; record number storage
+crec:	ds	2		; temporary record number storage for MERGE
+cend:	ds	2		; code end storage
+ofset:	ds	2		; temporary offset buffer
+ccur:	ds	2		; current cursor pointer storage
+cmem:	ds	2		; current memory pointer storage
+curad:	ds	2		; cursor database pointer buffer
+ashex:	ds	1		; ASCII/HEX flag  0=ASCII FF=HEX
+eflg:	ds	1		; entry flag
+exflg:	ds	1		; exit flag
+dlfg:	ds	1		; delete flag
+delflg:	ds	1		; deletion counter
+line:	ds	1		; line counter
+obuf:	ds	1		; option buffer
+vslf:	ds	1		; variable string length flag
+bcnt:	ds	1		; byte entry counter
+char:	ds	1		; character storage (temporary)
+ftype:	ds	1		; field type flag
+lentab:	ds	1		; table length
+
+bfsize: ds	1		; input buffer size
+bfccnt:	ds	1		; input buffer count
+bfline:	ds	17		; input buffer
+
+writflg: ds	1		; write flag
+quitflg: ds	1		; quit flag
+
+terms:	db	'     ',0	; number of terminals in TCAP
+versn:	db	'    ',0	; space to transfer version number
+recof:	ds	2		; record offset to TCAP files
+cnt:	ds	2		; counter storage
+
+terms2:	db	'     ',0	; number of terminals in second TCAP
+versn2:	db	'    ',0	; second version number
+recof2:	ds	2		; second record offset buffer
+cnt2:	ds	2		; second record count buffer
+
+; Index table for cursor and memory positioning
+; 
+;     cc|mm|l  cc=cursor address  mm=memory address  l=length of field
+
+cursor:	db	16		; length of field
+	dw	vtname		; address of memory pointer for field 1
+	dw	fld1		; address of cursor location for field 1
+
+	db	1
+	dw	vtcup
+	dw	fld2
+
+	db	1
+	dw	vtcdwn
+	dw	fld3
+
+	db	1
+	dw	vtclft
+	dw	fld4
+
+	db	1
+	dw	vtcrht
+	dw	fld5
+
+	db	1
+	dw	vtdcls
+	dw	fld6
+
+	db	1
+	dw	vtddca
+	dw	fld7
+
+	db	1
+	dw	vtdeol
+	dw	fld8
+
+	db	15
+	dw	vtcls
+	dw	fld9
+
+	db	15
+	dw	vtdca
+	dw	fld10
+
+	db	15
+	dw	vteol
+	dw	fld11
+
+	db	15
+	dw	vtsb
+	dw	fld12
+
+	db	15
+	dw	vtse
+	dw	fld13
+
+	db	15
+	dw	vtti
+	dw	fld14
+
+	db	15
+	dw	vttd
+	dw	fld15
+
+; Sort Specification Block
+
+ssb:	
+rec1:	ds	2		; address of buffer to sort
+scnt:	ds	2		; number of entries to sort
+recsiz:	ds	2		; length in bytes of each entry
+cmpadr:	ds	2		; address of compare routine
+ssbptr:	ds	2		; address of pointer table
+	db	0ffh,0		; xx,yy  xx = flag (FF = use pointers)
+				;        yy = unused
+	
+; Buffer space for the input of the variable length strings. Each
+; string will be limited to a maximum length of 15 characters. The
+; last character is necessary for the terminator.
+
+vbuf:
+vtname:	ds	16		; terminal name
+vtcup:	ds	16		; up arrow
+vtcdwn:	ds	16		; down arrow
+vtclft:	ds	16		; left arrow
+vtcrht:	ds	16		; right arrow
+vtdcls:	ds	16	 	; delay cls
+vtddca:	ds	16		; delay dca
+vtdeol:	ds	16		; delay eol
+vtcls:	ds	16		; clear screen sequence
+vtdca:	ds	16		; direct cursor addressing sequence
+vteol:	ds	16		; clear to end of line sequence
+vtsb:	ds	16		; begin standout sequence
+vtse:	ds	16		; end standout sequence
+vtti:	ds	16		; terminal initialization sequence
+vttd:	ds	16		; terminal de-initialization sequence
+
+; Field division for TBUF. Used with the DATA routine. All data
+; read from file, is read into TBUF. These divisions give an easy
+; way to select the desired information to display
+
+ttrec	equ	tbuf		; base address of terminal block
+ttname	equ	ttrec		; terminal name
+tcurup	equ	ttname+16	; cursor up
+tcurdn	equ	tcurup+1	; cursor down
+tcurrt	equ	tcurdn+1	; cursor right
+tcurlt	equ	tcurrt+1	; cursor left
+tdelcls	equ	tcurlt+1	; delay after clearr screen
+tdeldca	equ	tdelcls+1	; delay after direct cursor addressing
+tdeleol	equ	tdeldca+1	; delay after erase to end of line
+string	equ	tdeleol+1	; space for sting definition
+				; clear screen
+				; direct cursor addressing
+				; erase to end of line
+				; begin standout mode
+				; end standout mode
+				; terminal initialization
+				; terminal de-initialization
+
+	ds	($+127 and 0ff80h)-$
+buf1:	ds 	2048		; used as new file buffer in MERGE process
+buf2:	ds	2048		; used as old file buffer in MERGE process
+buf3:	ds	2048		; used as scratch buffer or for MERGE file
+buf4:	ds	2048		; used as scratch buffer or for MERGE file
+
+	ds	512		; stack space
+system	dw	0 
+	end
+

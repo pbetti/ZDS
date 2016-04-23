@@ -1,0 +1,73 @@
+;WILDEX - wildcard expansion module
+; S. Kluger  04/15/84
+;
+; This module, for use with SYSLIB, can be used
+; to expand a wildcard filename into a table of
+; file names as found in current DU:
+;
+; ENTRY:
+; HL = .buffer
+; DE = .afn fcb
+;
+; EXIT:
+; HL = number of files
+; ACC= zero flag set if ok, else error
+; the buffer contains (HL) file names of 16 char each
+; Char 0 contains the user number!
+;
+SFIRST	EQU	17
+SNEXT	EQU	18
+;
+	EXTRN BDOS
+;
+	PUBLIC WILDEX
+;
+WILDEX:	LD	(BUFPTR),HL
+	LD	HL,0
+	LD	(COUNT),HL
+	LD	C,SFIRST
+	CALL	BDOS
+	CP	0FFH
+	RET	Z		; Nothing found -- error
+	CALL	MOVEN		; Move name
+WLOOP:	LD	C,SNEXT		; Search for next
+	CALL	BDOS
+	CP	0FFH
+	JR	Z,DONE		; Finished
+	CALL	MOVEN
+	JR	WLOOP
+;
+DONE:	OR	A
+	LD	HL,(COUNT)
+	RET
+;
+MOVEN:	PUSH	DE
+	LD	HL,(BUFPTR)
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	ADD	A,80H
+	LD	C,A
+	LD	B,0
+	LD	D,16		; Move 16 chars
+MOVLP:	LD	A,(BC)
+	LD	(HL),A
+	INC	HL
+	INC	BC
+	DEC	D
+	JR	NZ,MOVLP
+	LD	(BUFPTR),HL
+	POP	DE
+	LD	HL,(COUNT)
+	INC	HL
+	LD	(COUNT),HL
+	RET
+
+	DSEG
+;
+BUFPTR:	DS	2
+COUNT:	DS	2
+	END
+

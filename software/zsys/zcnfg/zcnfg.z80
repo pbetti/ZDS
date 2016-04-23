@@ -1,0 +1,2638 @@
+;Program name: ZCNFG
+
+;ZCNFG is copyright by A. E. Hawley January, 1988.
+;It may be freely distributed, but it must not be sold 
+;either separately or as part of a package without the 
+;written consent of the author.
+;The author may be reached via electronic mail at the 
+;Ladera Znode (Znode 2) in Los Angeles, 213-670-9465
+
+;ZCNFG is released for distribution through the Z-system 
+;users group, ZSIG. Many Znodes include ZSIG releases
+;among their programs available for download.
+;Several such nodes are:
+;	Znode 3,  Newton Centre, MA	617-965-7259
+;	Znode 32  S.Plainfield, NJ	908-754-9067
+;	Znode 45  Houston, TX		713-937-8886
+
+;See ZCNFG.HST for previous version data and changes.
+
+VERS	EQU	2
+REV	EQU	4
+;version date
+MONTH	EQU	12
+DAY	EQU	12
+YEAR	EQU	92
+
+;Program Function:
+;General purpose configuration program. Loads the first block
+;of program code, displays current option values, accepts
+;interactive user option selections, overwrites the program
+;block to make the changes permanent. A configuration data
+;file for the target program must be available for loading by
+;ZCNFG to provide MENU and HELP screens. See ZCNFG.HLP, ZCFG.HLP,
+;ZCNFGMDL.Z80, ZCNFGOVL.DOC, and ZCNFGCFG.LBR.
+
+;ASSEMBLY & LINK with ZMAC/ZML
+;	ZMAC ZCNFG;ZMAC CFGSUBS
+;	ZML ZCNFG,CFGSUBS
+;link note: .request statements in ZCNFG cause the
+; following REL libraries to be appended to the link
+; list:		CFGLIB/, VLIB/, Z3LIB/, SYSLIB/
+;If you are using a linker which does not support the
+;.request statement, you must include these files in
+;the link list as libraries to search in the above order.
+
+;References in CFGSUBS
+	EXT	B2BCD,CLSFIL,CIN,CONIN,COUT,COUTB,CRLF
+	EXT	DEF_FT,DEF_DU,DEF_FN,OPNFIL,ISTXTF,ISFNC
+	EXT	RANGE,RDFILE,RDREC,RELOC,RELOCL,STORDT,STRCPY
+	EXT	HLINE,TYPLIN,WRREC,VCOUT,MOVE2Z,SKIP2Z
+
+;References in CFGLIB
+	.REQUEST CFGLIB
+	EXT	DUSCN,FILL,FNAME,INIFCB,MPY16,NTSPCS,PKGOFF
+	EXT	PUTZDU,PUTZFN,PUTZFS,RJIP,SDELM,SKSP,UCASE
+
+;from VLIB
+	.REQUEST VLIB
+	EXT	CLS,GZ3INIT,TINIT,DINIT,AT
+
+;from Z3LIB
+	.REQUEST Z3LIB
+	EXT	GETCRT,GETEFCB
+
+;from SYSLIB
+	.REQUEST SYSLIB
+	EXT	BBLINE,MA2HC,MADC,MAFDC,MHL4HC,MHLDC
+	EXT	PA2HC,PHL4HC,PHLFDC,ISPRINT,ISALNUM
+	EXT	RETUD,LOGUD,LUINIT,LUOPEN,LUREAD
+	EXT	SETDMA,COMPB,@FNCMP,SUA
+	EXT	ISDIGIT,EVAL10,EVAL16
+
+;For use by other modules
+	PUBLIC	Z3ENV,DEFDU,COLCNT,ROWCNT,QUIT
+	PUBLIC	UCFLAG,Z3ENVF,RELOCC,RELFLG,NCRECS
+	PUBLIC	TGTBUF,BADOVL,GZ3FLG
+
+;For use by the linker
+	PUBLIC	$MEMRY
+
+;For use during debug
+	public begin,signon,init,help,quit,pgmini,badfil
+	public filinit,exit,assist,menlst
+	public simage,castbl,hlpscr,offset,cfgd,s_addr,s_list
+	public ctsrch,ctlcs0,hlpmsg,stack
+	public mnuhlp,sndhlp,sndh_1,ps_eos
+	public gt_cfg,ovrlay,scr_ld,scr_l0
+	public tgtcfg,namchk,ovlusr,ovlfcb,ovlfn
+	public testid,TGTUSR,tgtfcb,tmpusr,tmpfcb
+	public gotolm,gotonm,ldmenl,mnadj,mnumb,lmnumb
+	public menu0,cmenu,newmnu,reload
+	public in_fn0,in_fn1,in_fn2,in_fn3,in_fn4
+	public in_fn5,infn5,in_fn6,in_fn7,in_fn8
+	public ld_fn0,ld_fn1,ldfn1,ld_fn2,ld_fn3,ld_fn4
+	public ld_fn5,ld_fn6,ld_fn7,ld_fn8
+	public lud,ludfil,ludfcb,ludfn,lbrini
+	public xltadu,xlt1,xlt2,xlt3,xlt4,xlterr
+	public in_fn9,hotkey,hotmsg,ld_fn9,ldfn9,xascii
+	public deldat,spcdat,chrdat,ctldat
+
+;define program constants and data locations
+
+;----------------------
+;system addresses
+FCB	EQU	5CH
+TBUF	EQU	80H		;SYSTEM BUFFER
+CREC	EQU	20H		;offset to Current Record in an FCB
+
+;----------------------
+;offsets in the first page of the target program.
+;A 256-byte page is read in from the program to a
+;buffer which starts at TGTBUF:.
+
+Z3MOFF	EQU	03H		;'Z3ENV' identifies ZCPR3x Utility
+ENVTYP	EQU	08H		;Z3 environment type byte
+Z3EOFF	EQU	09H		;Z3 environment address
+FIDOFF	EQU	0DH		;program identifier, like 'ZCNFG'
+;Target program-specific offsets are defined in the programs
+;overlay file.
+
+IDLEN	EQU	5	;length of 'Z3ENV' string (NOT an offset)
+
+;----------------------
+;ASCII definitions
+CTLC	EQU	3
+BS	EQU	8		;backspace
+HT	EQU	9		;horizontal tab
+LF	EQU	10		;line feed
+CR	EQU	13		;carriage return
+ESC	EQU	1BH		;escape key char
+SPC	EQU	20H		;space char
+DEL	EQU	7FH		;DEL char
+DIM	EQU	1		;highlight on
+BRIGHT	EQU	2		;highlight off
+
+;----------------------
+;	MACROS
+
+;load bc indirect at hl
+LDBCHL	MACRO
+	LD	C,(HL)
+	INC	HL
+	LD	B,(HL)
+	INC	HL
+	ENDM
+
+;load de indirect at hl
+LDDEHL	MACRO
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	INC	HL
+	ENDM
+
+;load hl indirect at hl
+LDHLHL	MACRO
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	ENDM
+
+	.SBTTL MAIN ROUTINE
+	PAGE
+;=========================================================
+;	START OF PROGRAM CODE
+;=========================================================
+
+ZCNFG:	JP	BEGIN
+Z3MARK:	DB	'Z3ENV'		;identifies program as ZCPR3x utility
+	DB	1		;external environment
+Z3ENV:	DW	0		;this address set by Z3INS or ZCPR33/4
+	DW	ZCNFG		;compatible with type 4 enviroment
+;configuration block for THIS program. ZCNFG can
+;alter is own default parameters.
+CNFGID:	DB	'ZCNFG'		;ID string, null terminated
+	DB	VERS+'0',REV+'0'
+	DS	2,0		;total: 8 bytes + null terminator
+				; plus $ or null terminator
+VSNSTR:	DS	3		;room for 3 ascii digit version number
+ALTUSR:	DB	-1		;-1 = search default user
+ALTDRV:	DB	-1		;-1 = search default drive
+
+TGTTYP:	DB	'COM'		;default tgt file type
+OVLTYP:	DB	'CFG'		;default configuration data file type
+
+SCRNLN:	DB	24		;lines per screen
+Z3INST:	DB	0		;install z3env in target if true
+
+CLBRFN:	DB	'CONFIG  '	;CFG library NAME
+CLBRFT:	DB	'LBR'		;..and TYPE
+ZCOPT0:	DB	0FFh		;default is target file DU if FALSE
+				;..and logged DU if TRUE
+
+;=========================================================
+;=========================================================
+
+BEGIN:	LD	(STACK),SP	;save system stack pointer
+	LD	SP,STACK	;set up local stack
+	CALL	INIT		;set current du, Test for Z3
+	LD	DE,SIGNON
+	CALL	TYPLIN
+	CALL	HELP		;provide help if requested & quit
+	CALL	PGMINI		;Get file spec from FCB, open file
+				;abort with message if bad file spec
+	CALL	FILINIT		;identify & load the overlay file
+	CALL	SCR_LD		;load screen image(s)
+	JP	C,BADCFG	;first byte not RST 0 or RET
+
+;select & set options interactively
+;display the screen and the user prompt
+;This is a loop whose exit is one of the cases
+SETOPT:	CALL	Z3CLS		;clear screen
+	LD	DE,(SIMAGE)	;-> screen image
+	CALL	TYPLIN		;display the screen
+;provide a CR,LF if there was none in the screen
+	DEC	DE
+	DEC	DE		;->last screen char
+	LD	A,(DE)
+	CP	LF
+	CALL	NZ,CRLF		;supply missing crlf
+DOPRMT:	LD	A,(Z3ENVF)
+	OR	A
+	JR	Z,NOT1Z3
+	CALL	AT
+ATPRPT:	DB	19,1		;prompt near screen bottom
+NOT1Z3:
+	LD	B,28
+	CALL	HLINE
+	LD	DE,ZMENU0	;' ZCNFG COMMANDS '
+	CALL	TYPLIN
+	LD	B,28
+	CALL	HLINE
+	LD	DE,ZMENU1	;-> prompt line(s)
+	CALL	TYPLIN
+
+;get user input. Make changes as requested, update the
+;screen image and the configuration block.
+GETINP:	CALL	CONIN		;wait for & get user input
+	CALL	UCASE		;make upper case
+	CALL	ISPRINT		;printable character?
+	CALL	Z,COUT		;echo it if so
+	LD	HL,(CASTBL)	;->case table
+	CALL	MCASE		;do case, ret to here if no exit
+	JR	C,NUPRMP
+	CALL	MARKER		;Mark changed & update screen image
+	JR	SETOPT		;redisplay screen & prompt after update
+
+;erase the prompt line
+NUPRMP:	LD	A,CR
+	CALL	COUT
+	LD	B,75
+..ERA:	LD	A,SPC
+	CALL	COUT
+	DJNZ	..ERA
+	LD	A,CR
+	CALL	COUT
+	JR	DOPRMT		;get a new prompt
+
+	.SBTTL MENU MANAGEMENT
+	PAGE
+;=========================================================
+;	MENU MANAGEMENT
+;=========================================================
+
+	DSEG
+menlst:
+;data which defines the current menu environment
+;used by setopt. Changed by menu commands.
+;Loaded initially by pgmini routine.
+
+LASTM:	DS	2		;->previous menu list
+NEXTM:	DS	2		;->next menu list
+SIMAGE:	DS	2		;->screen image
+CASTBL:	DS	2		;->case table
+HLPSCR:	DS	2		;->help screen
+EMENLST:		;for calc list length
+
+;MENU Environments - lastm,nextm,simage,castbl,hlpscr
+;An instance of this 10 byte data structure occurs in
+;in the overlay for each menu data item. The objects
+;addressed are all located in the overlay. There is an
+;overlay for each configuration target (like ZFILER, e.g.)
+
+;=========================================================
+
+;standard data block holds parameters for the current
+;menu item. This data is copied from the case table
+;and relocated each time a menu item is selected.
+
+OFFSET:	DS	2		;->config block data to modify
+CFGD:	DS	1		;data used by function routine
+S_ADDR:	DS	2		;->screen location for this menu item
+S_LIST:	DS	2		;->data structure (alt. screen data, e.g)
+
+;=========================================================
+
+	CSEG
+
+;Table of function routines accessed via MCASE, MAPPER
+;The function# is an entry in every record of the case table.
+;The init entry points are indirectly referenced through
+;their positional relation to the update entries.
+
+;		update	init	function#, name, & use
+FNTBLE:
+	DW	IN_FN0,	LD_FN0	;0 switch, toggle a bit in a byte
+	DW	IN_FN1,	LD_FN1	;1 text,   change text string, length n
+	DW	IN_FN2,	LD_FN2	;2 duspec, change default drive/user
+	DW	IN_FN3,	LD_FN3	;3 hexrad, change a byte or word,
+				; HEX radix
+	DW	IN_FN4,	LD_FN4	;4 decrad, change a byte or word,
+				; DECimal radix
+	DW	IN_FN5,	LD_FN5	;5 textlc, change text, LCase OK, length n
+	DW	IN_FN6, LD_FN6	;6 filesp, change all or part
+				; of Z3-filespec
+	DW	IN_FN7,	LD_FN7	;7 togl3,  toggle among 001B, 010B, 100B
+	DW	IN_FN8,	LD_FN8	;8 togltf, toggle a byte true/false (-1/0)
+	DW	IN_FN9,	LD_FN9	;9 asciic, change ascii byte from keyboard
+FNTBLX:		;used for error checking on function # range
+					  
+;=========================================================
+	PAGE
+
+MCASE:
+;searches a case table for a match with the byte in A
+;If found, jumps to the associated function routine.
+;if not found, searches the built-in menu/control case
+;table, the last entry for which is a default routine which
+;is unconditionally executed for an unrecognized command.
+
+;The case table structure is
+;	db	n	;n = number of entries in list
+;	db	m	;m = number of bytes per rcrd
+;there are n records in the case table in addition to the default
+;rcrd:	db	<srch char>
+;	ds	2	;target address for routine to execute
+;	ds	m-3	;data bytes passed to the routine
+
+;entry-
+;	A  = char to match for case selection
+;	HL -> 'case' table
+;Jump to Target routine with
+;	HL -> parameter list (if any)
+;	DE = Number of bytes in parm list
+;	BC = Target routine address
+
+	CALL	CTSRCH		;search the case table for identifier
+	JR	NC,RFND		;jump if found,
+	LD	HL,CTLCS0	;..else -> built in command table
+	CALL	CTSRCH		;search for control command
+RFND:	INC	HL		;->target address
+	DEC	DE		;bytes remaining
+	LD	C,(HL)
+	INC	HL
+	DEC	DE		;bytes remaining
+	LD	B,(HL)		;bc contains target routine addr
+	INC	HL		;->balance of parameter list
+	INC	B
+	DEC	B		;if high byte is 0, this is a
+	CALL	Z,FNXLT		;function number to translate
+	PUSH	BC		;and set up for indirect jump
+;if e=0, then there are no parameters, so avoid
+;the parameter block load in that case.
+	DEC	E		;bytes left in record (parameters)
+	RET	Z		;really a jump to (BC)
+;transfer case parameters to standard parameter block
+	LD	B,D
+	LD	C,E
+	LD	DE,OFFSET
+	LDIR
+	RET			;jump to service routine
+
+;=========================================================
+	PAGE
+;=========================================================
+
+CTSRCH:
+;search a case table for a record whose key
+;is specified.
+;entry-	 A = key
+;exit-	DE = record length
+;  if found
+;	HL -> record
+;	flags = Z,NC
+;  if not found
+;	HL = address following last entry
+;	flags = C,NZ
+
+;A default case entry (pointing to BADCMD:)
+;follows the internal case table at CTLCS0:
+;for execution when no matching key is found.
+
+	LD	B,(HL)		;number of entries in table
+	INC	HL
+	LD	E,(HL)		;entry length in de (>=2)
+	INC	HL		;->first record
+	LD	D,0
+	LD	C,A
+TSLOOP:	LD	A,(HL)		;is this the desired record?
+	CALL	UCASE
+	CP	C
+	RET	Z		;..ret NC if so
+	ADD	HL,DE		;->next record
+	DJNZ	TSLOOP		;repeat up to B times
+	LD	A,C		;recover search char
+CRNTRY:	SCF			;nothing found if CY set
+	RET			;hl -> addr AFTER last table entry
+
+;--------------------------------------------
+
+;Indexing routine to convert function numbers
+;to subroutine addresses for MCASE and MAPPER
+;MCASE uses the first address in each table entry,
+;MAPPER uses the second for screen initialization.
+
+;entry-
+;	BC = function number
+;exit-
+;	HL, DE are preserved
+;	BC = routine address
+
+FNXLTI:	PUSH	HL		;entry for MAPPER
+	LD	HL,(FNTBLX-FNTBLE)/4 - 1
+	OR	A
+	SBC	HL,BC		;function # out of range?
+	JP	C,BADOVL	;oops, if so. CFG file error.
+
+	LD	HL,FNTBLE+2	;use second addr for init
+	JR	FNXLT0
+
+FNXLT:	PUSH	HL		;entry for MCASE
+	LD	HL,FNTBLE	;uses first address
+FNXLT0:	ADD	HL,BC		;index to proper function addr
+	ADD	HL,BC		;..4 bytes per function
+	ADD	HL,BC
+	ADD	HL,BC
+	LD	C,(HL)
+	INC	HL
+	LD	B,(HL)		;routine addr in BC
+	POP	HL
+	RET
+
+;=========================================================
+
+	.SBTTL CONTROL ROUTINES
+	PAGE
+;=========================================================
+;  CONTROL ROUTINES EXECUTED FROM MCASE CALLS
+;=========================================================
+
+GOTOLM:	LD	HL,(LASTM)	;get previous menu
+	LD	E,-1		;decrement menu number
+	JR	NEWMNU
+
+GOTONM:	LD	HL,(NEXTM)	;Get next menu
+	LD	E,1		;increment menu number
+
+NEWMNU:	CALL	MNADJ		;track the menu number
+	LD	A,(UPDFLG)	;update all screen
+	OR	A		;images if required.
+	JP	NZ,RELOAD
+
+;load the new menu descriptor at (HL)
+LDMENL:	LD	(CMENU),HL	;new current menu source
+	LD	DE,MENLST
+	LD	BC,EMENLST-MENLST
+	LDIR
+	XOR	A
+	RET
+
+MNADJ:	LD	A,(LMNUMB)
+	LD	D,A
+	LD	A,(MNUMB)
+	ADD	E		;inc or dec, depending on E
+	CP	-1		;going from menu0 to last menu?
+	JR	Z,SETLMN
+	CP	D		;going from last menu to menu0?
+	JR	Z,MNADJX	;no, if z
+	JR	C,MNADJX	;no, if c
+	LD	D,0		;..else yes, set menu0
+SETLMN:	LD	A,D		;d contains next menu number
+MNADJX:	LD	(MNUMB),A	;new current menu number
+	OR	A
+	RET
+
+;=========================================================
+
+BADCMD:
+;This is the default routine when mcase cannot
+;find the command letter in its case table or
+;in the built-in menu/control case table.
+
+	LD	DE,BADMSG
+	CALL	TYPLIN
+	POP	HL		;dump return addr
+	JP	GETINP		;get new input
+
+;=========================================================
+
+;Normal exit after changes are made and need to be
+;saved. Assumes that tgtbuf has been updated before 
+;writing the first block back to the file.
+
+EXIT:	LD	A,(Z3INST)
+	OR	A		;allow Z3 installation?
+	JR	Z,EXIT1		;no, if logical false
+	LD	HL,(Z3ENV)	;install current ENV address
+	LD	(TGTBUF+Z3EOFF),HL
+
+EXIT1:	LD	A,(FCB_CR)	;set current record for writing
+	LD	(TGTFCB+CREC),A	;back the configuration block
+
+	LD	A,(TGTUSR)	;make sure CP/M+ knows the user
+	CALL	SUA		;(Drive is automatic, from FCB)
+
+	LD	HL,TGTBUF
+	CALL	SETDMA
+	LD	DE,TGTFCB	;fcb pointer
+	CALL	WRREC
+	LD	HL,TGTBUF+80H
+	CALL	SETDMA
+	LD	A,(NCRECS)	;length of config block, records
+	DEC	A
+	CALL	NZ,WRREC	;write second record if present
+	CALL	CLSFIL		;close the file
+	CALL	Z3CLS		;clear the screen
+
+;=========================================================
+
+QUIT:
+;Here to exit without saving current changes. This is
+;effectively an abort. Assumes that the saved stack pointer
+;points to a safe execution address. This is the case when
+;the program is executed as a normal .com file.
+	LD	A,(Z3ENVF)
+	OR	A
+	CALL	NZ,DINIT	;deinit terminal
+	LD	SP,(STACK)
+	RET
+
+;=========================================================
+
+CMDHLP:
+;Display the internal command information screen.
+	CALL	Z3CLS		;Start with clean screen
+	LD	HL,CMDMSG
+	JR	SNDH_3
+
+;=========================================================
+
+MNUHLP:
+;Display the information screen in response to '/'
+;entered at the menu level.
+
+	LD	HL,(HLPSCR)
+	LD	A,H
+	OR	L		;a zero entry?
+	RET	Z		;ret if help screen not there.
+
+	CALL	Z3CLS		;clear screen if possible
+
+SNDHLP:
+;send text to the screen with prompted pageing
+;entry- HL-> null terminated message
+
+	LD	A,(HL)
+	CP	':'
+	JR	NZ,SNDH_3
+	INC	HL		;ignore leading colon
+	JR	SNDH_3		;at start of the block
+
+;sndh_1 sends a line of text, starting a
+;new screen page if the first char is a
+;colon or formfeed, or if the screen is full.
+SNDH_1:	LD	A,(HL)
+	INC	HL		;ready for next
+	CALL	C,NEWPAGE	;new screen required?
+	JR	C,SNDH_2	;yes, if Cy set
+	OR	A		;if terminator,
+	JR	Z,PS_EOS	;..then quit
+	CALL	VCOUT		;else send the byte
+	CP	LF
+	JR	NZ,SNDH_1	;continue if not lf
+	SCF			;show LF sent
+	DJNZ	SNDH_1		;else count & continue if not eos
+
+SNDH_2:	CALL	PS_EOS		;pause at End Of Screen
+	CP	CTLC		;control-c?
+	RET	Z		;abort help if so
+
+SNDH_3:	LD	A,(SCRNLN)	;lines per screen
+	SUB	2		;allow for prompt line
+	LD	B,A
+	JR	SNDH_1		;do another screen until 0
+
+PS_EOS:	LD	A,(Z3ENVF)
+	OR	A
+	JR	Z,HPAUSE	;skip screen stuff if not Z3
+	CALL	AT		;position cursor
+HLPAT:	DB	24,1		;row,column (home=1,1)
+
+HPAUSE:	LD	DE,PSEMSG	;'SAK' message + CR
+	CALL	TYPLIN		;send it
+HPAUSL:	CALL	CONIN		;wait for, get any char
+
+Z3CLS:	PUSH	AF		;save the char for caller
+	PUSH	HL		;preserve source pointer
+	LD	A,(Z3ENVF)
+	OR	A
+	CALL	NZ,CLS		;home & clear scren
+	LD	HL,ROWCNT
+	LD	(HL),0		;reseet line counter
+	POP	HL
+	POP	AF
+	OR	A		;clear flags
+	RET
+
+NEWPAGE:
+	CP	':'		;leading colon?
+	JR	Z,NEWP_2	;new page if so
+	CP	'L'-'@'		;formfeed?
+	JR	Z,NEWP_2	;new page if so
+	OR	A		;reset carry
+	RET			;NOT a new page
+
+NEWP_2:	LD	A,(Z3ENVF)
+	OR	A		;using ZCPR3?
+	SCF
+	RET	NZ		;yes, cursor will be positioned,
+	LD	A,LF		;else scroll to bottom of screen
+NEWP_3:	CALL	VCOUT
+	DJNZ	NEWP_3
+	SCF			;signal for prompt
+	RET
+
+;=========================================================
+
+	.SBTTL USER FUNCTION ROUTINES
+	PAGE
+;=========================================================
+;  FUNCTION ROUTINES EXECUTED FROM MCASE & MAPPER
+;=========================================================
+
+;	FUNCTION 0 - TOGGLE A SINGLE BIT MAPPED OPTION
+
+IN_FN0:
+;toggles the bit defined by (cfgd) in the byte
+;at (offset), then toggles the screen image at
+;(s_addr) using the two member list at (s_list)
+
+;entry-	HL -> parameter list
+;exit-	all registers undefined
+
+	LD	HL,(OFFSET)	;config byte address
+	LD	A,(CFGD)	;bit mask
+	LD	C,A		;save bit mask in c
+	XOR	A,(HL)		;toggle config byte into A
+	LD	(HL),A		;and put it back
+	XOR	A		;NC for update made
+	RET
+
+LD_FN0:				;entry for initial screen load
+;deposit one of two strings in the screen image,
+;The choice of string is based on the value of
+;the bit specified by the bit mask.
+
+	LD	HL,(S_LIST)
+	LD	A,H
+	OR	L
+	JP	Z,BADOVL	;error if no list
+
+	LD	HL,(OFFSET)	;config byte address
+	LD	A,(CFGD)	;bit mask
+	AND	(HL)		;isolate configuration bit
+
+TOGL0:				;shared with initialization
+;on entry, A is zero except for one bit position
+;which is significant. Z flag is set according to
+;the contents of that bit.
+	LD	DE,(S_ADDR)
+	LD	HL,(S_LIST)	;hl -> screen data pair
+	CALL	Z,SKIP2Z	;skip first data element if false
+	JP	MOVE2Z		;copy to screen image
+
+;=========================================================
+
+;	FUNCTION 1 - PROCESS ASCII STRING
+
+IN_FN1:
+;get (cfgd) characters from the console. Deposit them in
+;the configuration block at (offset) and in the screen image
+;at (s_addr). If the entry is null (only a CR), then
+;nothing is done.
+;user input is capitalized (LC is lost)
+	LD	A,1		;specify caps 
+
+INFN5:	LD	HL,ERRCTL	;->error test level byte
+	OR	(HL)
+	AND	81H		;use bits 0 & 7
+	LD	(UCFLAG),A	;save HBS & caps flags
+	LD	A,(CFGD)	;put field size in prompt
+	LD	DE,FTMSG1
+	CALL	MAFDC
+	LD	DE,FTMSG
+	CALL	TYPLIN		;ask for new string
+
+	LD	A,(UCFLAG)	;caps/nocaps flag
+	RRA			;propagate bit 0
+	SBC	A,A		;  through all 8 bits of A
+	CALL	BBLINE		;get user string, RET HL->string
+	OR	A		;A=string length, incl spaces
+	SCF
+	RET	Z		;ignore empty string
+;if string is longer than field, truncate it
+	LD	C,A		;actual str length, incl leading spc
+	LD	A,(CFGD)	;Max length allowed
+	SUB	C
+	JR	NC,INFN51	;NC = .LE. max len
+	ADD	C		;recover max len
+	LD	C,A		;truncate the string
+	XOR	A		;0 unused space
+;copy string from bbline buffer to cnfg block
+INFN51:	LD	B,A		;trailing unused space
+	PUSH	BC
+	LD	DE,(OFFSET)
+	LD	B,C
+INFN52:	LD	A,(DE)		;get dest byte
+	AND	1 SHL 7		;preserve high bit
+	OR	(HL)		;add in low 7 bits of ASCII
+	LD	(DE),A		;update destination
+	INC	HL
+	INC	DE
+	DJNZ	INFN52
+	POP	BC		;B=unused, C=string length
+
+	LD	hl,(S_LIST)	;get current string terminator
+	LD	A,H
+	OR	L
+	LD	A,(HL)		;possible terminator
+	JR	NZ,NOTERM	;no terminator if Z
+	LD	A,SPC		;use default space fill
+NOTERM:	LD	H,A		;save for istxtf
+	INC	B
+	DEC	B		;any empty space in field?
+	CALL	NZ,FILL		;fill remainder of field
+	XOR	A		;ret NC to cause screen update
+	RET
+
+;-------------------------
+
+;Initial error check of string in CFG block.
+;If no error, then copy string to screen image.
+;CALLed from MAPPER
+
+LD_FN1:	LD	A,1		;FN 1 - string is all caps
+	JR	LDFN1
+
+LD_FN5:	XOR	A		;FN 5 - both UC and LC
+
+LDFN1:	LD	HL,ERRCTL	;->error test level byte
+	OR	(HL)
+	AND	81H		;use bits 0 & 7
+	LD	(UCFLAG),A
+	LD	A,(CFGD)	;MAX number of bytes
+	OR	A
+	JP	Z,BADOVL	;0 length field must be an error
+	BIT	7,A
+	JP	NZ,BADOVL	;>128 byte field must be error
+	LD	B,A
+
+	LD	HL,(S_LIST)
+	LD	A,H
+	OR	L
+	LD	A,(HL)		;possible string terminator
+	JR	NZ,LDFN2	;NZ = actual terminator
+	LD	A,SPC		; else use space as default
+LDFN2:	LD	HL,(OFFSET)	;HL ->config data
+;compute string length, test for illegal characters
+	CALL	ISTXTF
+	JP	C,BADOVL	;C = ERROR, nonprinting char found
+
+;transfer a string of text from the
+;configuration block to the screen image.
+;entry-	HL -> string in CFG block
+;	 B = trailing unused bytes in string field
+;	 C = length of the string, incl leading spc
+;	 D = number of leading spaces
+;	 E = trailing fill byte (terminator)
+
+LDTXT:	LD	DE,(S_ADDR)	;DE ->screen location
+	INC	C
+	DEC	C
+	JR	Z,LDTXT2	;don't try to move 0 len str!
+	PUSH	BC		;save for fill after string
+	LD	B,0
+	LDIR			;transfer string to screen
+	POP	BC
+
+LDTXT2:	INC	B		;trailing spaces
+	DEC	B
+	LD	A,SPC
+	CALL	NZ,FILL		;trailing spaces fill screen field
+	RET
+	
+;=========================================================
+;	FUNCTION 2 - UPDATE A DU SPEC WITH ALTDU WILDCARD
+
+IN_FN2:
+; Transfer a DU spec from bbline input to screen image, left
+; justified in a field of 3. Error if illegal DU.
+; Nothing done for a null string entry.
+
+;get the new DU from the user
+	LD	DE,DUMSG	;-> prompt msg
+	CALL	TYPLIN		;send user prompt
+	LD	DE,DUMSG1	;include '?' if 1-based drive code
+	LD	A,(CFGD)	;get flag byte
+	OR	A		;is it 1-based?
+	CALL	NZ,TYPLIN	;if so, send '?' default msg
+	LD	DE,PRMPT1
+	CALL	TYPLIN		;finish the prompt
+
+	LD	A,-1		;capitalize user input
+	CALL	BBLINE		;get DU token from user
+	OR	A
+	SCF
+	RET	Z		;do nothing if null entry
+	CALL	XLTADU		;translate ascii to D,U in BC
+	RET	C
+;transfer the new DU to the config block
+	LD	HL,(OFFSET)	;->user/drive in config block
+	LD	(HL),C		;store User
+	INC	HL
+	LD	(HL),B		;..and the Drive
+	XOR	A		;ret NC to cause screen update
+	RET
+
+LD_FN2:
+;get the alternate du from the configuration
+;block. Translate from binary form to standard
+;DU form in the screen. A 0ffh value for either
+;D or U translates to '?' on the screen and means
+;that the program being configured is to use the
+;run-time current default DU. (NOT the Current
+;default for ZCNFG!)
+	LD	A,(CFGD)	;only 0 or 1 allowed
+	AND	0FEH		;select bits 1..7
+	JP	NZ,BADOVL	;bad, if any are set!
+
+	LD	HL,(OFFSET)	;->user/drive in config block
+	LDBCHL			;drive in B, User in C
+LDFN2A:	LD	DE,(S_ADDR)	;screen addr in DE
+
+;convert drive # in B to '?' or Drive letter
+	LD	A,(CFGD)	;if data byte is 0...
+	XOR	41H		;0->41, 1->40
+	ADD	B		;0FFH+40H='?', (1..16)+40='A'..'P'
+
+	LD	(DE),A		;install in screen
+	INC	DE		;->loc for User number
+;convert the user number to decimal and store in screen
+	LD	A,SPC		;fill with spaces to erase
+	LD	(DE),A		;previous data
+	INC	DE
+	LD	(DE),A
+	DEC	DE		;->user number area
+
+	LD	A,C		;bin user number
+	CP	0FFH		;use default?
+	CALL	NZ,MAFDC	;store in decimal if not
+	JR	NZ,REDRAW	;done if not 0ffh
+	LD	A,"?"		;indicate default
+	LD	(DE),A
+	INC	DE
+	LD	(DE),A
+	RET
+
+REDRAW:	XOR	A
+	RET
+
+;=========================================================
+;	FUNCTION 3 - UPDATE HEX ASCII BYTE/WORD
+
+IN_FN3:
+;Transfer either 2 max or 4 max characters from
+;bbline input to 1 or 2 bytes in configuration
+;block, interpreting the characters in HEXADECIMAL.
+;Copy the input string to the screen image.
+;(cfgd) specifies the number of bytes to be replaced
+;in the configuration block, and is 1 or 2. When 2
+;bytes are specified, they are interpreted as a WORD,
+;and stored in the standard low-byte-first order. A
+;word (2 byte) is accepted from the terminal and 
+;displayed in the screen (at (s_addr)) in human-readable
+;high-byte-first order.
+
+	LD	HL,HMMOUT	;set up routines to be called
+	LD	(ROUTE1+1),HL	;during xmmout execution
+	LD	(ROUTE2+1),HL
+	LD	DE,PRMPH0	;first part of prompt for HEX
+	CALL	TYPLIN		;send it
+	CALL	XMMOUT		;send min/max if specified in ovly
+	LD	DE,PRMPT1	;stuff after min/max if present
+	CALL	TYPLIN
+
+	LD	A,-1		;capitalize
+	CALL	BBLINE		;user input
+	OR	A		;any input besides CR?
+	SCF
+	RET	Z		;do nothing on empty argument
+	CALL	EVAL16		;interpret as hexadecimal
+	CALL	RNGTST		;test for within range if required
+	RET	C		;do nothing on range error
+
+;binary value is in DE, asci hex is in tmpscr buffer
+	LD	A,(CFGD)	;number of cfg bytes (1 or 2)
+	LD	B,A		;in counter
+	LD	C,A		;save for entry at LDFN3A
+	LD	HL,(OFFSET)	;->1 or 2 cnfg bytes
+
+HEXIN2:	LD	(HL),E		;send one or two bytes
+	LD	E,D		;to the cnfg block
+	INC	HL
+	DJNZ	HEXIN2
+
+	XOR	A		;ret NC to cause screen update
+	RET
+
+;---------------------------------------------------------
+
+LD_FN3:
+; Get data from configuration block and store
+; as ASCII HEX in the screen image.
+;CALL  (from mapper -- indirect call)
+
+	LD	A,(CFGD)	;number of cnfg bytes
+	LD	C,A		;save for dispatch use
+	DEC	A
+	AND	11111110B	;remove lsb
+	JP	NZ,BADOVL
+
+LDFN3A:	LD	HL,(OFFSET)	;hl->config byte(s)
+	LD	DE,(S_ADDR)	;get screen loc
+	DEC	C		;make 0 or 1
+	JR	NZ,LD2HEX	;dispatch to byte or word code
+;here for byte data
+	LD	A,(HL)		;get the data
+	CALL	MA2HC		;store 2 hex ascii in screen
+	XOR	A		;mark no error
+	RET
+
+LD2HEX:		;here for word data
+	LDHLHL
+	CALL	MHL4HC		;store 4 hex ascii in screen
+	XOR	A
+	RET
+
+;=========================================================
+;	FUNCTION 4 - BYTE/WORD UPDATE WITH DECIMAL RADIX
+
+IN_FN4:
+;get user ascii decimal input, convert to bin
+;and store in config block and screen.
+;The byte at cfgd: defines the number of bytes
+;referenced in the configuration block. The
+;pointer at s_list: identifies location of the
+;16 bit min and max values permitted for the entry. If
+;that pointers value is 0000 (before relocation)
+;then no range testing is done; any value is OK.
+;If the number entered by the user is outside the
+;range specified by the min/max word pair, then
+;nothing is done.
+
+;get user input
+	LD	HL,PHLFDC	;send up to 5 decimal digits
+	LD	(ROUTE1+1),HL
+	LD	(ROUTE2+1),HL
+	LD	DE,PRMPD0	;first part of prompt for DEC
+	CALL	TYPLIN		;send it
+	CALL	XMMOUT		;send min/max if specified in ovly
+	LD	DE,PRMPT1	;stuff after min/max if present
+	CALL	TYPLIN		;finish the prompt
+
+	LD	A,-1
+	CALL	BBLINE		;get user input
+	OR	A
+	SCF
+	RET	Z		;ret if nothing entered
+	CALL	EVAL10		;convert to BIN in DE
+;decimal input converted to bin in A, BC, and DE
+	CALL	RNGTST		;test for within range if required
+	RET	C		;do nothing on range error
+
+;value in DE, HL->input string
+	LD	A,(CFGD)	;get number of bytes to update
+	LD	B,A
+
+;update the config block entry
+	LD	HL,(OFFSET)	;config block destination
+FN4_1:	LD	(HL),E		;update it
+	INC	HL		;->next
+	LD	E,D		;in case high byte needed
+	DJNZ	FN4_1
+	XOR	A		;ret NC to cause screen update
+	RET
+
+;---------------------------------------------------------
+
+LD_FN4:
+; Get data from configuration block and store
+; as ASCII decimal in the screen. BYTE configuration
+; data uses up to 3 screen bytes, WORD configuration
+; data ( a 2 at cfgd: ) uses up to 5 screen bytes.
+
+	LD	HL,(OFFSET)	;hl->config byte(s)
+	LD	DE,(S_ADDR)	;get screen loc
+	LD	A,(CFGD)	;number of cnfg bytes
+	CP	1
+	JR	Z,LD1DEC
+	CP	2
+	JR	Z,LD2DEC
+	JP	NZ,BADOVL
+
+LD1DEC:
+;here for byte data, stored in up to 3 bytes
+	LD	A,(HL)		;get the data
+	CALL	MADC		;store decimal ascii in screen
+	XOR	A		;mark no error
+	RET
+
+LD2DEC:
+;here for word data, stored in up to 5 bytes
+	LDHLHL
+	CALL	MHLDC		;up to 5 digits, no space fill
+	XOR	A
+	RET
+
+;=========================================================
+
+;	FUNCTION 5 - PROCESS ASCII INCLUDING LC
+;same as function 1, except lower case allowed
+
+IN_FN5:	XOR	A		;specify both LC & UC
+	JP	INFN5		;(entry in LD_FN1: routine)
+
+;LD_FN5:	;function 5 uses same load as function 1.
+		;and shares the LD_FN1 address
+
+;=========================================================
+
+;		FUNCTION 6
+;	PROCESS ALL OR PART OF A Z3 FILESPEC
+
+IN_FN6:
+;The configuration block contains one of the forms:
+;	FN,FT		(FCB format, 11 bytes blank filled)
+;	Drive		(1 byte)
+;	user,drive	(2 bytes)
+;	User,Drive,FN,FT (User, standard FCB - total 13 bytes)
+;The cfgd byte contains 0..3 to identify these forms. This code
+;is used to control transfer of all or portions of the filespec
+;from user input to tmpfcb, and between tmpfcb and the cnfg block.
+;Data transfer from tmpfcb to the screen image is also controlled
+;by (cfgd) in the sense of selecting the appropriate PUTZ.. routine.
+;Both configuration data and user input are transferred to tmpfcb.
+;Transfer to and from the cnfg block is also controlled by bit 2 of
+;(cfgd) which specifies interpretation of Drive byte values. If the
+;bit is 1, then Drive A is represented by 1; bit 2 = 0 implies that
+;Drive A=0. Thus (cfgd) may have values from 0..3 for 0-based drive
+;specification and 4..7 for 1-based drive specs. (FNAME and the
+;tmpfcb buffer always use 1-based drive designation)
+
+	LD	DE,FN6MSG	;-> prompt message
+	CALL	TYPLIN
+	LD	A,-1
+	CALL	BBLINE		;get user input, capitalize
+	OR	A
+	SCF
+	RET	Z		;don't process empty string!
+	LD	C,A		;length of input string
+	CALL	COLON		;install terminating colon for fname parse
+	LD	BC,100H		;default DU=A0 for fname (1=A:)
+	LD	DE,TMPFCB	;full fcb preceded by user byte
+;a full fcb is required for fname to initialize
+	CALL	FNAME		;parse user input to tmpfcb
+	SCF
+	RET	NZ		;on DU error
+;fname data uses the A=1 convention for the drive byte
+;convert to A=0 form unless A=1 is specified
+	LD	A,(CFGD)
+	BIT	2,A		;A=1 specified
+	JR	NZ,INN61	;jump if A=1 specified
+	LD	HL,TMPFCB
+	DEC	(HL)		;convert to A=0 form
+;copy the relevant portion of tmpfcb to cfg block
+INN61:	CALL	SETUP6		;get source, dest, byte count
+	LDIR	
+	XOR	A		;ret NC to cause screen update
+	RET
+
+COLON:	LD	A,(CFGD)	;check for colon required
+	AND	3		;remove drive range bit
+	RET	Z		;not required for fn.ft
+	CP	3		;..or for full filespec
+	RET	Z
+	PUSH	HL		;save ptr to input string
+	LD	B,0
+	ADD	HL,BC		;->terminating null
+	DEC	HL		;->last char
+	LD	A,':'
+	CP	(HL)		;did user provide colon?
+	JR	Z,COLONX	;skip if so
+	INC	HL		;->terminator
+	LD	(HL),A		;provide colon
+	INC	HL
+	LD	(HL),0		;..and new terminator
+COLONX:	POP	HL		;hl -> colon terminated D or DU
+	RET
+
+SETUP6:
+;perform lookup of field length and location
+;in tmpfcb structure for portions of Z3 filespec
+;specified by the value (0..3) in cfgd:.
+	LD	A,(CFGD)
+	CP	8		;if >7, it's bad data
+	JP	NC,BADOVL	;error msg & abort if so
+	AND	3		;remove A=1 flag
+	LD	C,A
+	ADD	A
+	ADD	C
+	LD	C,A		;for index to table of 3 byte records
+	LD	B,0
+	LD	HL,TBLI6
+	ADD	HL,BC
+	LD	C,(HL)		;number of bytes to transfer
+	INC	HL
+	LD	A,(HL)		;get tmpfcb location
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	LD	DE,(OFFSET)	;config block location
+	RET
+
+TBLI6:	DB	11		;fn+ft
+	DW	TMPFCB+1	;source
+	DB	1		;Drive byte
+	DW	TMPFCB		;location
+	DB	2		;U+D
+	DW	TMPFCB-1
+	DB	13		;U+D+FN+FT
+	DW	TMPFCB-1
+
+LD_FN6:
+;load tmpfcb from the cnfg block
+	CALL	SETUP6		;de=source,hl=dest,bc=count
+	EX	DE,HL		;hl=source, de=dest
+	LDIR
+;convert to A=1 if necessary
+	LD	A,(CFGD)
+	BIT	2,A		;A=1 specified?
+	JR	NZ,PUTFN6	;jump if so. It's already correct
+	LD	HL,TMPFCB	;..else..
+	INC	(HL)		;convert to A=1	for the screen load.
+;fall through to load the screen
+
+;load the screen image from tmpfcb
+PUTFN6:	LD	HL,TMPFCB+1	;->file name field of parsed input
+	LD	DE,(S_ADDR)
+	LD	A,(CFGD)
+	AND	3		;remove A=0/1 flag
+	JR	Z,PUTFNFT	;0 = display <fn>.<ft> only
+	DEC	A
+	JR	Z,PUTZDD	;1 = display D: only
+	DEC	A
+	JR	NZ,PUTFSPEC	;3 = display full filespec
+	JP	PUTZDU		;2 = display DU: only
+;PUTZDU returns CY set on DU error
+
+PUTZDD:	DEC	HL		;->drive byte
+	LD	A,(HL)
+	DEC	A
+	CP	16		;test for within range
+	CCF
+	RET	C		;not in range A..P
+	ADD	'A'		;convert to ascii
+	LD	(DE),A
+	RET
+
+PUTFNFT:
+	CALL	PUTZFN		;send FN.FT to screen dest,
+	LD	B,12		;field width.
+	JR	RJUSTIFY	; C contains # of trailing spaces
+
+PUTFSPEC:
+	CALL	PUTZFS		;send full filespec to screen
+	RET	C		;DU range error
+	LD	B,16		;field width, C=trailing spaces
+RJUSTIFY:
+	LD	HL,(S_ADDR)
+	CALL	RJIP
+	XOR	A
+	RET
+
+;=========================================================
+
+;		FUNCTION 7
+;	ROTATE A BIT WITHIN A FIELD IN A BYTE
+
+IN_FN7:
+;entry-	(CFGD:) = mask defining the field
+;	(OFFSET:) = address of cfg data byte
+;exit-	byte at (OFFSET:) contains rotated field.
+;	Screen image is updated with a string
+;	corresponding to the new bit position.
+;	all registers used.
+
+	LD	HL,(OFFSET)	;->configurable data
+	LD	A,(CFGD)	;mask
+	LD	E,(HL)		;data byte in reg E
+	LD	B,A		;field mask in B
+	CPL
+	LD	C,A		;.not. mask in C
+	CPL			;recover mask
+	AND	E		;isolate the bit field
+	RLCA			;left circular rotate
+	LD	D,A		;save rotated field
+	INC	C
+	DEC	C		;8 bit field?
+	JR	Z,INFN7X	;..done if so
+	AND	C		;test for overflow beyond field
+	JR	Z,INFN7X	;z=no overflow
+;a bit has shifted out of the high position
+;of the field. The field is now all 0s and
+;the shifted bit belongs in the lsb of the field.
+	LD	A,C		;synthesize a new field
+	RLCA			; with lsb set
+	AND	B		;remove all other bits
+	LD	D,A		;save the initialized field
+
+INFN7X:
+	LD	A,(HL)		;data byte
+	AND	C		;remove bit field
+	OR	D		;and replace with rotated field
+	LD	(HL),A		;new data byte
+	XOR	A		;ret NC to cause screen update
+	RET
+
+LD_FN7:
+;This is the entry from MAPPER
+;Copy the string in the overlay corresponding
+;to the bit set in the field to the screen image.
+;entry- same as IN_FN7
+;	S_ADDR: & S_LIST: contain valid addresses
+;exit-	(normal) AF = 0,NZ,NC
+;	(error) program abort with message
+;		on bad CFGD byte.
+
+	LD	HL,(S_LIST)
+	LD	A,H
+	OR	L
+	JP	Z,BADOVL	;list must be present!
+
+	LD	A,(CFGD)
+;test for illogical mask with less than 2 bits set
+	LD	B,A		;save the byte
+	DEC	A		;invert low order 0s and
+				;the first 1 encountered
+	AND	B		;restore 0's from original byte
+				;and set Zflag (NZ if 1's remain)
+	LD	A,B		;restore original byte in A
+	JP	Z,BADOVL	;Z if < 2 bits in the mask
+
+	LD	HL,(OFFSET)
+	AND	(HL)		;bit field only in A
+
+LDFN7A:
+;This is the entry from IN_FN7.
+;shift bit field right to lsb position for indexing
+;entry-	A = field from cfg data, masked
+;	B = mask for field data
+;	HL -> cfg data byte
+	BIT	0,B		;mask & data right justified yet?
+	JR	NZ,LDFN7B	;yes, if nz
+	RRCA			;move bit field right
+	RRC	B		;and also the mask
+	JR	LDFN7A		;and repeat
+
+LDFN7B:
+;index to the proper string in S_LIST
+	LD	HL,(S_LIST)	;->field data list for screen
+	LD	C,A		;cfg field in C
+..INDX:	BIT	0,C		;lsb set?
+	JR	NZ,LDFN7X	;use current list item if so
+	CALL	SKIP2Z		;else skip to next list item
+	RRC	C		;and put next field bit in lsb
+	JR	..INDX		;..and repeat
+
+LDFN7X:
+;copy S_LIST string to screen image
+	LD	DE,(S_ADDR)
+	CALL	MOVE2Z		;copy null terminated string
+	XOR	A		;no error
+	RET
+
+;=========================================================
+
+;	FUNCTION 8 - TOGGLE BYTE BETWEEN TRUE & FALSE
+
+IN_FN8:
+;Toggle a byte in the configuration block at (offset)
+;between 00 and 0ffh (=-1), then update the screen image
+;at (s_addr) with the appropriate one of two choices of
+;null terminated ascii strings at (s_list).
+
+	LD	HL,(OFFSET)	;->configuration byte
+	LD	A,(HL)		;get it
+	OR	A		;adjust flags
+	JR	Z,BYTOG1	;continue if zero
+	LD	A,-1		;else be sure it's 0ffh
+BYTOG1:	CPL			;toggle the byte
+	LD	(HL),A		;restore to config block
+	OR	A		;adjust flags
+	XOR	A		;ret NC to cause screen update
+	RET
+
+LD_FN8:
+;load the screen according to the logic
+;value in the configuration byte
+	LD	HL,(S_LIST)
+	LD	A,H
+	OR	L
+	JP	Z,BADOVL	;list must be present!
+	LD	A,(CFGD)	;not used, but partially identifies
+	DEC	A		;proper function if its value is 1
+	JP	NZ,BADOVL
+	LD	HL,(OFFSET)	;->configuration byte
+	LD	A,(HL)		;get it
+	OR	A		;adjust flags
+	JP	TOGL0		;send ascii to screen
+
+;=========================================================
+
+;	FUNCTION 9 - UPDATE A 7-BIT ASCII BYTE
+
+	.comment ~
+Function 9 configures a single ASCII byte in the target
+configuration block. The screen display is in a right
+justified field of 3 spaces. Printable characters are
+displayed literally, control characters are converted to
+the ^C type display, and unprintable characters are shown
+with a 3 character mnemonic. The mnemonics are ASCII.
+	end comment~
+
+IN_FN9:
+;Gets a keyboard character from user.
+;Deposits the 7-bit character in the
+;configuration block.
+;Uses LDFN9 to update the screen image.
+
+	LD	DE,HOTMSG	;Send the prompt
+	CALL	TYPLIN
+
+HOTKEY:	CALL	CONIN		;Get user keypress
+	LD	C,A
+	LD	HL,(OFFSET)	;Store in CFG block
+	LD	A,(HL)
+	AND	1 SHL 7		;preserve high bit
+	OR	C		;add new ASCII portion
+	LD	(HL),A
+	XOR	A		;ret NC to cause screen update
+	RET
+
+HOTMSG:	DB	') Enter a keystroke:',0
+
+;Entry from initial screen load (SCR-LD:)
+LD_FN9:
+
+;Get byte from CFG block
+	LD	HL,(OFFSET)
+	LD	A,(HL)
+
+;Entry from IN_FN9 bypasses error checking
+LDFN9:
+;copy the character to the screen image, with
+;translation of non-printing bytes to ASCII or
+;"^C" format.
+
+	CALL	XASCII		;translate to mnemonic
+				;HL-> 3 byte mnemonic
+	LD	BC,300H		;length in B for strcpy
+	LD	DE,(S_ADDR)
+	JP	STRCPY		;Copy mnemonic to screen image
+
+XASCII:
+;Translate an ASCII byte into a printable
+;3 character string with ^ notation for
+;control characters, SP, DEL, or the
+;printable char right justified in the field.
+
+;entry-	 A = 7 bit ascii char
+;exit-	HL -> 3 byte translated string
+;	AF used
+
+	LD	HL,DELDAT
+	CP	DEL
+	RET	Z		;del char
+	LD	HL,SPCDAT
+	CP	SPC
+	RET	Z		;space
+	LD	(CHRDAT+2),A
+	LD	HL,CHRDAT
+	RET	NC		;printable character
+	ADD	40H		;cnvt to equivalent UC char
+	LD	(CTLDAT+2),A
+	LD	HL,CTLDAT
+	RET			;show '^char'
+
+DELDAT:	DB	'DEL'
+SPCDAT:	DB	' SP'
+CHRDAT:	DB	'   '
+CTLDAT:	DB	' ^ '
+
+;=========================================================
+
+	.SBTTL SERVICE ROUTINES
+	PAGE
+;=========================================================
+; MISC SERVICE ROUTINES
+;=========================================================
+
+RNGTST:
+;Test current numeric user input against min/max values
+;pointed to by the address at s_list. If that pointer
+;is equal to the relocation constant, then its original
+;value was 0000h, and no range testing is required. i.e.,
+;any value is OK. Returns CY set if out of range, else NC.
+
+;entry-	DE = value to be tested
+;exit-	DE, HL preserved, BC is munched
+;	CY SET = DE > MAX or DE < MIN
+
+	PUSH	HL
+	LD	HL,(S_LIST)	;->possible range data
+	LD	A,H
+	OR	L		;test for presence
+	JR	Z,RNGX		;z = no range test
+	LDBCHL			;get min value in BC
+	LDHLHL			;get max value in HL
+	CALL	RANGE		;preserves DE (test value)
+RNGX:	POP	HL
+	RET
+
+;=========================================================
+
+XLTADU:
+;parse token as DU spec with '?' wildcards to BC.
+;'?' becomes -1, default is at OFFSET:, used if
+;there is nothing present for D or U. '?' means
+;default is deferred until target run-time.
+
+;entry-	HL ->token, null terminated
+;	valid data structure at OFFSET
+;exit-	BC = D,U with deferred default
+;	AF, DE, HL used
+;	errors are simply ignored and
+;	 cause default to return in B/C
+
+	EX	DE,HL
+	LD	HL,(OFFSET)
+	LDBCHL			;default DU
+	EX	DE,HL
+	LD	A,(HL)		;first character
+	CP	SPC
+	JR	Z,XLT2		;leave drive default alone
+	CP	'?'		;wild card drive?
+	JR	NZ,XLT1		;no, check for drive letter
+	LD	B,-1		;yes, use deferred default
+	JR	XLT2		;and goto next character
+
+XLT1:	CALL	ISDIGIT		;user number?
+	JR	Z,XLT4		;yes,do it and quit
+	SUB	'A'		;legal drive is 0..15
+	RET	C		;error, <'A'
+	CP	16		; > P?
+	CCF
+	RET	C		;error if so
+	LD	B,A		;drive range 0..15
+
+	LD	A,(CFGD)	;0 or 1
+	ADD	B		;adjust range
+	LD	B,A		;1..16 if CFGD=1
+
+XLT2:	INC	HL		;->second character
+	LD	A,(HL)
+	OR	A
+	RET	Z		;done if terminator
+	CP	SPC		;leave default as is?
+	RET	Z		;yes, if space
+	CP	'?'		;deferred default?
+	JR	NZ,XLT3
+	LD	C,-1		;use deferred default
+	RET			;done
+XLT3:	CALL	ISDIGIT
+	SCF
+	RET	NZ		;error if not a digit
+
+XLT4:	CALL	EVAL10		;get user number
+	LD	C,E		;user # in C
+XLTERR:	XOR	A		;ret with Z,NC
+	RET
+
+;=========================================================
+
+XMMOUT:
+	LD	HL,(S_LIST)	;-> possible min/max words
+	LD	A,H
+	OR	L		;no data if 0
+	RET	Z
+
+	LD	DE,FROMP	;'from ' part of prompt
+	CALL	TYPLIN
+
+	LDDEHL			;min val in DE
+	LDHLHL			;max val in HL
+	PUSH	HL		;save for route2
+	EX	DE,HL		;min val in HL
+ROUTE1:	CALL	0		;filled in by xmmout caller
+
+	LD	DE,TOMSG	;' to ' part of prompt
+	CALL	TYPLIN
+
+	POP	HL		;max value
+ROUTE2:	CALL	0		;filled in by xmmout caller
+	RET
+
+HMMOUT:
+;select the syslib routine to use for data transfer
+	LD	A,(CFGD)	;number of bytes
+	DEC	A
+	JP	NZ,PHL4HC	;for hex word data
+	LD	A,L
+	JP	PA2HC		;for hex byte data
+
+;=========================================================
+	.SBTTL INITIALIZATION ROUTINES
+	PAGE
+;=========================================================
+;	PROGRAM STARTUP & INITIALIZATION
+;=========================================================
+
+INIT:	LD	HL,UDSTART	;zero uninitialized data
+	LD	BC,UDLEN
+	LD	D,H
+	LD	E,L
+	INC	DE
+	LD	(HL),0
+	LDIR
+
+	CALL	RETUD		;get current DU
+	INC	B		;make drive 1..16
+	LD	(DEFDU),BC	;store the default
+
+;ZCNFG's Alternate DU may contain 0FFh for D and/or U,
+;marking a '?' entry during configuration.
+;Replace such wildcards with the corresponding D or
+;U in (DEFDU), the DU at invocation.
+;entry-	BC = default D/U
+	LD	HL,PATH11
+	LD	(PATH),HL	;init path pointer
+
+	LD	HL,(ALTUSR)
+	CALL	DEF_DU		;provide defaults from DEFDU
+
+	LD	(PATH12),HL	;install in the two
+	LD	(PATH21),HL	;alternate paths
+	LD	(LBRDU),HL	;save for finding a CFG LBR
+
+;install current configuration data in HELP screen
+	LD	HL,LBRDU+2	;Drv + 1 for PUTZDU
+	LD	DE,HLP001	;default ALT: field
+	LD	A,SPC		;fill character
+	LD	B,3		;field length
+	PUSH	DE
+	CALL	FILL		;initialize alt: field
+	POP	DE
+	CALL	PUTZDU
+	LD	HL,HLP001
+	LD	BC,3
+	CALL	NTSPCS
+	CALL	RJIP
+
+	LD	HL,CLBRFN	;default LBR FN.FT
+	LD	DE,HLP002
+	CALL	PUTZFN
+
+;test for ZCPR3 or ZCPR33 availability
+	LD	HL,(Z3ENV)	;get env address into hl
+	CALL	GZ3INIT		;init ENV, TCAP, GRAPHICS pointers
+	LD	(GZ3FLG),A	;bit mapped TCAP capabilities
+	LD	A,H		;see if environment implemented
+	OR	L
+	RET	Z		;NZ=Z3ENV available, Z=use CP/M only
+	OR	0FFH		;show ENV present
+	LD	(Z3ENVF),A	;0=no ENV, 0ffh=ENV present
+	CALL	TINIT		;init terminal if required
+	CALL	GETCRT
+	INC	HL
+	LD	A,(HL)		;get screen length
+	LD	(SCRNLN),A	;use this length instead of cnfg.
+;install the program name in the help screen
+	LD	DE,HLP000	;->help screen name
+	LD	A,(DE)
+	CP	SPC
+	RET	NZ		;name already there
+	CALL	GETEFCB		;HL->EXTFCB
+	RET	Z		;quit if no EXTFCB
+	INC	HL
+	LD	BC,8
+	LDIR
+	RET
+
+;=========================================================
+
+HELP:
+;provide the help screen if requested
+	LD	A,(FCB+1)
+	CALL	ISALNUM		;alphanumeric char present?
+	RET	Z		; no help if so
+
+DOHELP:	CALL	ASSIST		;give help screen & quit
+	JP	QUIT
+
+ASSIST:	LD	DE,HLPMSG	;print the Help screen
+	CALL	TYPLIN		; with no side effects
+	XOR	A
+	RET
+
+;=========================================================
+
+PGMINI:
+	LD	A,(SCRNLN)	;install fixed screen addresses
+	LD	(HLPAT),A	;for the standard prompts
+	SUB	5		;depending on screen length
+	LD	(ATPRPT),A	;menu prompt location
+
+	LD	DE,OVLFCB	;initialize CFG file FCB
+	CALL	INIFCB
+	LD	DE,TGTFCB	;..and target file FCB
+	CALL	INIFCB
+
+;arg1:
+;Parse the first token in the command tail
+;into the target FCB.
+	LD	DE,TGTFCB	;fcb for target file
+	LD	HL,TBUF+1	;->command tail
+	CALL	SKSP		;skip spaces, tabs
+	LD	BC,(DEFDU)
+	CALL	FNAME		;parse the filespec into TGTFCB
+	JP	NZ,BADDU	;jmp to error if bad d/u
+
+	CALL	SKSP		;->next non-space, non-tab byte
+
+;arg2:
+;parse a possible CFG file spec
+	CALL	CPARSE
+	JP	C,BADDU
+
+;arg3:
+;parse a possible configuration LBR filespec
+	CALL	CPARSE
+	JP	C,BADDU
+
+;select the default DU for the overlay file
+;and for the default DU in the path
+	LD	BC,(TGTUSR)
+	LD	A,(ZCOPT0)
+	AND	1		;use logged DU?
+	JR	Z,SETPTH	;no, if bit 0 reset
+	LD	BC,(DEFDU)	;..use logged du if set
+SETPTH:	LD	(PATH11),BC	;install elements in the
+	LD	(PATH22),BC	;two alternate paths
+	
+;reinitialize the two search paths to
+;the directory defined for CFG file if
+;user specified a D or U for CFG file
+	LD	HL,(OVLUSR)
+	INC	HL		;0FFFFH -> 0000
+	LD	A,H
+	OR	L		;neither D nor U specified if 0
+	JR	Z,LBRINI	;use LBR if unspecified D|U
+	DEC	HL		;recover original DU spec
+	CALL	DEF_DU		;defaults from DEFDU | TGTDU
+
+	LD	(PATH11),HL	;redefine both paths to a
+	LD	(PATH21),HL	;single directory, (OVLUSR)
+	SBC	HL,HL		;make 0
+	LD	(PATH12),HL	;terminate the paths
+	LD	(PATH22),HL
+	OR	0FFH		;install code to
+	JR	LBRINX		;turn off lbr access
+
+LBRINI:
+;initialize the lbr LUD
+	LD	HL,CLBRFN	;configured default LBR FN
+	LD	DE,LUDFCB
+	CALL	DEF_FN		;provide default FN if needed
+	LD	HL,CLBRFT	;default LBR FT
+	CALL	DEF_FT		;provide default FT if needed
+
+	LD	BC,(LBRDU)	;default LBR loc
+	LD	HL,(LUDUSR)	;ambiguous LBR DU
+	CALL	DEF_DU		;provide defaults
+	LD	(LBRDU),HL	;new DU for LBR file
+	LD	B,H
+	LD	C,L
+	XOR	A		;restore DU area used in LUD
+	SBC	HL,HL		;to 0000
+	LD	(LUDUSR),HL
+
+	DEC	B		;make drive A=0 for LOGUD
+	CALL	LOGUD
+	LD	DE,LUD
+	CALL	LUINIT
+LBRINX:	LD	(LUSTAT),A	;lbr status flags
+	RET
+
+;=========================================================
+
+CPARSE:
+;Parse a token into tmpfcb, then copy the full
+;FS into LBRFCB if there is a leading slash OR 
+;if the FT is LBR OR if a CFG file has already 
+;been parsed (ie if this is arg3). Else copy
+;the FS to OVLFCB.
+;entry-	HL -> token to parse
+;exit-	HL -> token terminator
+;	CY set on bad DU
+
+	CALL	SKSP		;skip spaces, return non-space in A
+	XOR	'/'		;LBR marker?
+	JR	NZ,CPARS0	;CY reset
+	INC	HL		;skip over the '/'
+	SCF			;show '/' present
+CPARS0:	SBC	A,A		;copy CY to all bits in A
+	PUSH	AF		;LBR marker, flags
+
+	LD	DE,TMPFCB
+	LD	BC,-1
+	CALL	FNAME
+	POP	BC		;LBR marker in B, flags in C
+	SCF			;mark possible bad DU
+	RET	NZ		;and quit if Bad DU
+
+	PUSH	HL		;save token pointer
+	LD	A,(CFGFLG)	;if CFG has already been
+	OR	B		;parsed, then the current
+	LD	(LBRFLG),A	;will be declared a LBR FS
+
+	LD	HL,TMPFT	;test for .LBR FT
+	LD	DE,CLBRFN+8	;->'LBR'
+	LD	B,3
+	CALL	@FNCMP		;string compare from SYSLIB
+	SCF			;show possible LBR file type
+	JR	Z,CPARS2
+	CCF			;not LBR file type
+CPARS2:	SBC	A,A		;make -1 for LBR, else 0
+
+	LD	HL,LBRFLG	;if either is true, then this
+	OR	(HL)		;is a LBR specification
+	LD	(HL),A		;save for DU installation
+;set up OVLFCB for CFG file or LUDFCB for LBR file
+	LD	DE,LUDUSR	;assume LBR
+	JR	NZ,CPARS3
+	LD	DE,OVLUSR
+	DEC	A		;make FF
+	LD	(CFGFLG),A	;show CFG file declared
+
+CPARS3:	LD	HL,TMPUSR	;copy FS to destination FCB
+	LD	BC,13		;DU+FN+FT length
+	LDIR
+	POP	HL		;restore token pointer
+	XOR	A		;reset CY, good return.
+	RET
+
+;=========================================================
+
+FILINIT:
+;Open the target file, read in the configuration page,
+;locate and load the configuration overlay.
+	LD	DE,TGTFCB
+	LD	HL,TGTTYP	;->default FT in ZCNFG config block
+	CALL	DEF_FT		;set default file type if required
+
+	CALL	OPNFIL		;open the target file
+	JP	Z,BADFIL	;error exit, file not found
+
+	CALL	RPAGE		;get first 256 bytes of pgm
+
+;look for the 'Z3ENV' marker at relative location 003
+	LD	DE,Z3MARK
+	LD	HL,TGTBUF+3
+	LD	B,IDLEN		;length of strings
+	CALL	COMPB		;compare 2 strings
+	JR	Z,ZUTIL		;ok, check for env type
+
+;if not found, it's not a ZCPR3x utility
+	XOR	A		;logic false value
+	LD	(Z3INST),A	;prevent zcpr installation
+	JP	GT_CFG
+
+;-------------------------------------------------------
+
+ZUTIL:	LD	HL,TGTBUF
+	LD	DE,ENVTYP	;offset to env type byte
+	ADD	HL,DE
+	LD	A,4
+	CP	(HL)		;type four header?
+	CALL	Z,RPAGE		;skip the header if so, and
+				;read in the first page of the pgm
+	JR	GT_CFG
+
+;-------------------------------------------------------
+
+RPAGE:
+;Read one page of 256 bytes from the target program
+;into the local configuration block buffer
+;save the Current Record byte in the FCB for restoration when
+;the updated configuration block is rewritten
+
+	LD	A,(TGTFCB+CREC)	;get Current Record byte
+	LD	(FCB_CR),A	;save it
+	LD	HL,TGTBUF	;cnfg block buffer
+	CALL	SETDMA
+	LD	DE,TGTFCB	;fcb pointer for target program
+	CALL	RDREC		;get first 128 bytes in tgtbuf
+	JP	C,BADFIL	;premature EOF
+	LD	HL,TGTBUF+80H
+	CALL	SETDMA
+	CALL	RDREC		;get second 128 bytes and return
+	LD	A,(FCB_CR)	;starting record
+	LD	B,A
+	LD	A,(TGTFCB+CREC)	;number of next record
+	SUB	B
+	LD	(NCRECS),A	;may only be 1 rcrd if
+				;the file is that short.
+	RET
+
+;-------------------------------------------------------
+
+GT_CFG:
+;This routine identifies the CFG file name, searches
+;in explicitly named or default directories for it,
+;and loads the file in free memory at OVRLAY:.
+;The name of the overlay is copied from one of three
+;sources, listed in order of priority:
+;	1. from the command line (argument 2).
+;	2. from offset 0DH in the configuration page.
+;	3. the target program name. (cmd line arg 1)
+;The highest priority is a command line name. The
+;first valid filename in this list is taken as the 
+;name of the overlay.
+;A one or two element directory search path has already
+;been defined. If a directory was explicitly declared for
+;the CFG file on the command line then that is the only
+;directory searched. Otherwise, the search path contains
+;three elements: ALT:CONFIG.LBR, the ALT: directory, and
+;a default directory which is configured as either the
+;directory at ZCNFG invocation (DEFDU) or the DU in which 
+;the target file resides (TGTUSR).
+
+;Path element order (search priority) 
+;If an explicit DIR form is present for the overlay file,
+;then that directory alone is accessed to load the overlay.
+
+;If NO dir form is present for the overlay file, then the
+;CONFIG.LBR is searched first, followed by a search of the
+;two directories in the search path, as follows..
+
+;If the CFG filename came from the Targets configuration 
+;page then the ALT ;directory is searched first. Otherwise, 
+;the configured default is searched first.
+
+;If the CFG file is not found, an error message is issued.
+
+	LD	HL,OVLTYP
+	LD	DE,OVLFCB
+	CALL	DEF_FT		;install default ovly FT if needed
+
+;OVLFN contains a FN from the command line
+;or is blank if FN was not specified.
+	CALL	TGTCFG		;install FN from overlay if needed
+				;and if present.
+;OVLFN is still blank if there was no FN
+;in the command line or in the overlay.
+	LD	HL,TGTFN
+	LD	DE,OVLFCB
+	CALL	DEF_FN		;install Target FN if needed
+;The name of the CFG file and the 
+; search paths are now completely defined.
+	INC	DE		;->OVLFN
+	LD	HL,TESTID	;->possible FN from Target CFG area
+	LD	B,8		;FN field length
+	CALL	@FNCMP		;same as OVLFN?
+	LD	HL,ERRCTL
+	LD	A,(HL)		;error test control byte
+	SET	7,A		;assume OVLFN same as in CFG block
+	JR	Z,GTCFG1	;same, so minimize error checking
+	RES	7,A		;not the same, increase error checking
+GTCFG1:	LD	(HL),A
+;get the CFG file from the CFG LBR if it exists and
+;if the user did not specify an explicit D and/or U
+	CALL	GET_LF
+	RET	Z		;Z = CFG file loaded
+
+;get the CFG file from one of the directories
+;on the search path.
+	LD	DE,OVLFCB
+	CALL	GETFIL		;open first file found on the path
+	JP	Z,BADFIL	;file not found
+
+;load CFG overlay and return to FILINIT caller
+	LD	HL,(OVRLAY)	;place to load the file
+	JP	RDFILE		;read in the entire .CFG file
+
+;-------------------------------------------------------
+;	ROUTINES CALLED FROM FILINIT
+;-------------------------------------------------------
+
+TGTCFG:
+;Verify a possible filename at offset 0Dh in the
+;targets configuration page. If found, copy the
+;name to the overlay FCB and adjust the path
+;pointer to change search priority so that the
+;alternate directory is searched first.
+	LD	DE,TMPFCB
+	CALL	INIFCB
+	CALL	NAMCHK		;check for up to 8 AN characters
+	RET	C		;quit if illegal filename string
+	LD	DE,TMPFN
+	LD	C,0
+	CALL	STRCPY		;copy FN to tmpfn
+
+	LD	HL,TMPFN	;->verified ID string
+	LD	DE,OVLFCB
+	CALL	DEF_FN		;copy to OVLFN if needed
+;change paths only if replacement occurs
+	JR	NZ,TCFGX
+	LD	HL,PATH21	;use the second path, which results
+	LD	(PATH),HL	; in search of the alternate du first
+TCFGX:	OR	0FFH		;ret NC,NZ=success
+	RET
+
+;-------------------------------------------------------
+
+GETFIL:
+;traverse the DIR path, using each entry
+;to attempt to open the file in FCB.
+;entry-	DE ->FCB for file to be opened
+;exit-	Z = file not found or can't open.
+;	NZ = file found and opened
+;	DE is preserved, others used
+
+	LD	HL,(PATH)
+	LDBCHL			;get next dir on path
+	LD	(PATH),HL
+	LD	A,B		;test for end of path
+	OR	C
+	RET	Z		;Z = reached end of path
+
+	EX	DE,HL
+	LD	(HL),B		;install new DU in FCB
+	DEC	HL
+	LD	(HL),C
+	INC	HL
+	LD	A,C		;user number
+	LD	BC,13		;offset to FCB+13
+	ADD	HL,BC
+	LD	(HL),A		;store user number like Z3
+	SBC	HL,BC		;recover FCB pointer
+	EX	DE,HL		;..in DE
+	CALL	OPNFIL
+	JR	Z,GETFIL	;not found, try next DIR
+	RET			;found, return NZ
+
+;-------------------------------------------------------
+
+GET_LF:
+;If the user has specified a DU/DIR
+;assume that the CFG file is in that
+;directory and don't bother looking in
+;a library.
+; otherwise....
+;Open the file from OVLFCB in the
+;LBR named in the LUD data structure.
+;After successful open, read the CFG
+;file into memory at (OVRLAY).
+;entry-	LUD is initialized
+;	LBR DIR has been logged in
+;exit-	 Z = CFG file has been loaded
+;	NZ = CFG file not loaded because
+;	  valid LBR or CFG file not found
+
+	LD	A,(LUSTAT)
+	OR	A
+	RET	NZ		;no valid LBR
+	LD	BC,(LBRDU)
+	DEC	B		;make drive A=0 for LOGUD
+	CALL	LOGUD		;login for LBR access
+	LD	HL,OVLFN
+	LD	DE,LUD
+	CALL	LUOPEN
+	JR	NZ,GETLFE	;CFG file not found
+;file open. Read it into memory
+	LD	HL,(OVRLAY)
+LREAD:	CALL	SETDMA
+	CALL	LUREAD
+	LD	BC,80H
+	ADD	HL,BC		;bump dma pointer
+	JR	Z,LREAD
+;EOF encountered
+	XOR	A		;mark success
+	RET
+
+GETLFE:	LD	BC,(DEFDU)
+	DEC	B		;make 0...15
+	CALL	LOGUD		;restore default directory
+	OR	0FFH		;ensure NZ return
+	RET
+
+;-------------------------------------------------------
+
+NAMCHK:
+;Copy a possibly null,$,space, or High bit set
+;terminated FN from (HL) to a local buffer.
+;Return an error if illegal FN characters are
+;present.
+;entry-	HL-> possible FN
+;exit-	all used
+;	Cy set = not a FN
+;  else NC,
+;	HL -> FN in local buffer, space filled
+;	 B = length
+
+	LD	HL,FIDOFF+TGTBUF	;->potential ID string
+	LD	DE,TESTID	;temporary buffer
+	LD	BC,820H		;B=maximum length,C=extra terminator
+	PUSH	DE		;for exit
+
+	CALL	STRCPY
+	LD	C,B		;save for length calc.
+	LD	A,SPC
+	INC	B
+	DEC	B		;any to fill?
+	CALL	NZ,FILL		;trailing spaces
+	LD	A,8		;field length
+	SUB	C		;calc string length
+	LD	B,A		; in B
+	POP	HL		;->potential FN buffer
+	CP	2		;too short for a filename?
+	RET	C		;yes, if Cy set
+;test possible FN for illegal characters
+	PUSH	HL
+	PUSH	BC
+FNTEST:	LD	A,(HL)		;get next char
+	INC	HL
+	CALL	ISFNC		;test it
+	JR	C,FNTSTX	;C = illegal FN char
+	DJNZ	FNTEST
+FNTSTX:	POP	BC		;B=length, C=unused length
+	POP	HL		;-> FN buffer
+	RET
+
+;-------------------------------------------------------
+;	End of routines called from FILINIT
+;=========================================================
+
+SCR_LD:
+;Called once during initialization at start
+; of the program to load config items to screen.
+;Traverses the circular que of menu lists,
+;loading the screen image for each menu
+;from data in the target configuration block.
+
+	LD	HL,(OVRLAY)	;->config data just loaded
+	LD	A,(HL)
+	CP	0C7H		;Is first byte RST 0?
+	JR	Z,SCRLD0
+	CP	0C9H		;..or RET?
+	SCF			;set error flag
+	RET	NZ		;and return if no RET or RST 0
+SCRLD0:	INC	HL		;skip over protective rst0
+	LD	E,(HL)		;get assembled menu0 addr
+	INC	HL
+	LD	D,(HL)		;..in DE
+	INC	HL		;->first menu list
+	LD	(MENU0),HL
+	PUSH	HL
+	OR	A		;clear carry flag
+	SBC	HL,DE		;relocation constant
+	LD	(RELOCC),HL	;save for RELOCL & RELOC routines
+	POP	HL		;->first menu
+
+;initialize the internal counter to track menu number
+	XOR	A
+	LD	(MNUMB),A	;start with menu0
+	DEC	A
+	LD	(LMNUMB),A	;count from -1 to allow for a
+				;final count that is one too much
+
+SCR_L0:
+;For each menu in the CFG file, relocate the main
+;menu list and load the associated screen from the
+;configuration data block in the target file.
+;Abort with an informative error message if data
+;in the target is inconsistent with CFG file format.
+;Count the number of menus and save the count.
+;entry-	(MENU0) = (OVRLAY)+3
+;	(RELOCC) is valid
+;	HL = (MENU0)
+;exit-	The first menu (menu 0) is current
+;	All registers used
+
+	LD	B,(EMENLST-MENLST)/2
+	LD	DE,(RELOCC)	;relocation constant
+	CALL	RELOCL		;relocate menu list in cfg file image
+	CALL	LDMENL		;and transfer to local menu list
+
+	CALL	MAPPER		;load the screen, relocate parameters
+	JP	C,CFGBAD	;target data/cfg format mismatch
+
+	LD	HL,LMNUMB	;bump last menu number
+	INC	(HL)
+	LD	HL,MNUMB	;..and current menu number
+	INC	(HL)
+
+	LD	DE,(NEXTM)	;->next menu list
+	LD	HL,(MENU0)	;..and menu 0
+	OR	A
+	SBC	HL,DE		;are they the same?
+	EX	DE,HL		;HL -> next menu list
+	JR	NZ,SCR_L0	;continue while not menu0
+
+	CALL	LDMENL		;reload menu0 list
+	XOR	A
+	LD	(MNUMB),A	;and show which one it is
+	DEC	A
+	LD	(RELFLG),A	;show relocation done
+	RET
+
+;=========================================================
+
+RELOAD:
+;Reload all screen images from target configuration
+;data buffer.
+;entry-	Menu lists have already been relocated
+;	HL -> source of current menu list
+;exit-	The menu (and screen) which was current at
+;	invokation is restored with updated data.
+;	All registers used
+
+;save the current menu state
+	LD	DE,(MNUMB)
+	PUSH	DE		;current menu number & last menu number
+	PUSH	HL		;current menu pointer
+
+	XOR	A		;start reload with menu 0
+	LD	(MNUMB),A
+	LD	HL,(MENU0)
+
+;loop through all menus, updating each screen
+RLDSC0:	CALL	LDMENL		;load current menu
+	CALL	MAPPER		;load the associated screen
+	
+	LD	HL,(NEXTM)	;->next menu to load
+	LD	E,1		;increment menu number
+	CALL	MNADJ		;returns A=(MNUMB)
+	OR	A		;back to menu 0 yet?
+	JR	NZ,RLDSC0	;continue while not menu0
+
+;restore the initial current menu
+RLDSCX:	POP	HL		;current menu pointer
+	POP	DE		;current, last menu number
+	LD	(MNUMB),DE	;restore them
+	CALL	LDMENL		;reload current menu & return
+	LD	(UPDFLG),A	;use 0 returned by ldmenl
+	RET			; to declare no pending changes
+
+;=========================================================
+	.SBTTL SCREEN UPDATE FROM CFG BLOCK
+	PAGE
+;=========================================================
+;ROUTINES TO TRANSFER CONFIGURATION BLOCK DATA TO THE
+;	SCREEN IMAGE
+;=========================================================
+
+MARKER:
+;called from GETINP code when a change to the
+;target cfg block is made. Marks CFG block
+;changed and updates all items on current screen.
+	LD	A,-1
+	LD	(UPDFLG),A	;show change made
+
+;fall through and update the current screen
+;=========================================================
+
+MAPPER:
+;MAPPER traverses a list of records which
+;contain the data required to maintain one
+;Menu screen and associated cfg data.
+;Each record contains the parameters required for
+;maintaining one menu item. For each record,
+;the parameter list is copied to the local data
+;structure at OFFSET and then the initialization
+;portion of the function named in the record is
+;called to transfer data from the CFG block to the
+;screen image.
+;entry- none
+;exit-	all registers used.
+;	HL -> next address after last record
+
+	LD	HL,(CASTBL)	;get current case table
+	LD	B,(HL)		;number of entries
+	INC	HL
+	LD	E,(HL)		;length of each entry
+	INC	HL		;->first record
+	LD	D,0
+	LD	(MAPER3+1),DE
+	DEC	E		;discount menu ID byte
+	DEC	E		;..and Function number word
+	DEC	E		;de=length of parameter list
+	LD	(MAPER1+1),DE
+
+;visit each record, calling the function required
+;to load the screen image for each menu item.
+MAPER0:	PUSH	BC		;save record counter
+	PUSH	HL		;..and start of current record
+	LD	A,(HL)		;get menu ID letter
+	LD	(CURITM),A	;save for possible error report
+	INC	HL
+	LD	C,(HL)		;get function address
+	INC	HL
+	LD	B,(HL)		;...in BC
+	INC	HL		;->start of parameter list
+	CALL	FNXLTI		;cnvt function number to address
+	PUSH	BC		;and save for indirect call
+
+	PUSH	HL
+	CALL	RELOC		;add tgtbuf to offset, reloc addresses
+	POP	HL
+
+;transfer the parameter list at HL to the standard block
+	LD	DE,OFFSET
+MAPER1:	LD	BC,0		;parm list length entered above
+	LDIR			;copy to standard parm list
+
+	POP	HL		;function address
+	CALL	JPHL		;Call function via HL
+;The called routine uses data in the standard block
+;as required to update the screen image.
+MAPER2:	POP	HL		;recover the record pointer
+	POP	BC
+	RET	C		;quit on error from LD function
+MAPER3:	LD	DE,0		;filled at run time
+	ADD	HL,DE		;-> next table entry
+	DJNZ	MAPER0
+	RET
+
+JPHL:	JP	(HL)		;for indirect calls
+
+;=========================================================
+
+	.SBTTL ERROR HANDLING
+	PAGE
+;=========================================================
+;	ERROR HANDLERS
+;=========================================================
+
+BADDU:
+;here if FNAME finds a bad DU in cmd tail
+	LD	DE,BDUMSG
+	CALL	TYPLIN
+	JP	DOHELP		;show help and abort
+
+;=========================================================
+
+BADCFG:
+;The overlay file does not start with
+;RST 0 or RET code. Must be damaged.
+	LD	DE,ERMSG0
+	JR	EABORT
+
+;=========================================================
+
+CFGBAD:
+;Data in the target is inappropriate for
+;the screen format specified by the overlay.
+	LD	DE,ERMSG2
+	JR	EABORT
+
+;=========================================================
+
+BADOVL:	LD	HL,OVLFN
+	LD	DE,OVFNAM
+	CALL	PUTZFS		;send ovl filename to msg
+	LD	A,(MNUMB)
+	LD	DE,BADMNU
+	CALL	MAFDC		;send menu number to msg
+	LD	DE,OVLMSG
+	JR	EABORT
+
+;=========================================================
+
+BADFIL:
+;Here if a file cannot be opened. Usually a bad filename.
+;entry- DE->fcb for the attempted operation
+
+	INC	DE		;->file name
+	LD	B,8
+	CALL	BADLOP		;send filename to console
+	LD	A,'.'
+	CALL	COUT		;send '.' in FN.FT
+	LD	B,3
+	CALL	BADLOP		;send file type
+	LD	DE,ERMSG1	;report not found
+	JR	EABORT
+
+;send up to B characters to console, skipping spaces
+BADLOP:	LD	A,(DE)
+	INC	DE
+	CP	' '
+	JR	Z,BADSKP
+	CALL	COUT
+BADSKP:	DJNZ	BADLOP
+	RET
+
+;=========================================================
+
+EABORT:
+;send an error message to console and abort
+;entry-	DE->error message
+	CALL	TYPLIN
+	JP	QUIT
+
+;=========================================================
+
+	.SBTTL DATA & MESSAGES
+	PAGE
+;=========================================================
+;	INITIALIZED DATA AREA
+;=========================================================
+
+OVRLAY:				;overlay is loaded in free memory
+$MEMRY:	DS	2		;filled in by linker
+
+;=========================================================
+;	MESSAGES
+
+SIGNON:		;signon banner
+	DB CR,LF,LF,'ZCNFG CONFIGURATION UTILITY, V'
+	DB	VERS+'0','.',REV+'0',' ('
+	DB	MONTH/10+'0',MONTH MOD 10+'0','/'
+	DB	DAY/10+'0',DAY MOD 10+'0','/'
+	DB	YEAR/10+'0',YEAR MOD 10+'0',')'
+	DB	CR,LF,0
+
+BADMSG:	DB	cr,'Invalid command. Try Again: ',0
+
+FTMSG:	DB	')  -Enter up to '
+FTMSG1:	DB	'3  characters: ',0
+
+PRMPD0:	DB	') Enter a number ',0
+PRMPH0:	DB	') Enter HEX ',0
+PRMPT1:	DB	' =>',0
+FROMP:	DB	'from ',0
+TOMSG:	DB	' to ',0
+
+BDUMSG:	DB cr,lf,'Check for possible Drive or user error..',cr,lf,lf
+
+DUMSG:	DB	") New DU",0
+DUMSG1:	DB	" ('?' for default) ",0
+
+PSEMSG:		;prompt for next menu help screen
+	DB	'(Space or CR to continue, ^C for Menu)',cr
+	DB	0		;string terminator
+
+ERMSG0:		;Invalid overlay file
+	DB	'BAD CFG FILE - Does not start with RST 0'
+	DB	' or RET code.',CR,LF
+	DB	0		;string terminator
+
+ERMSG1:		;report not found
+	DB	' was not found.',cr,lf
+	DB	0		;string terminator
+
+ERMSG2:	DB	'Target data inappropriate for this overlay - '
+	DB	'WRONG CONFIGURATION OVERLAY?',CR,LF
+	DB	0		;string terminator
+
+FN6MSG:	DB	') Enter filespec option ',0
+
+OVLMSG:	DB	CR,LF,'BAD DATA IN '
+OVFNAM:	DB	'                '
+	DB	' in the case table for menu #'
+BADMNU:	DB	'   , item '
+CURITM:	DB	' '		;current menu choice
+	DZ	CR,LF
+
+;=========================================================
+
+SPACES:	DB	'      '	;for an empty field....
+	DB	0		;string terminator
+
+;======================================================
+	.SBTTL CONTROL SCREEN IMAGE
+	PAGE
+;=========================================================
+
+;screen image for menu & pgm control selections.
+;This screen is always appended to target-specific
+;menus provided by the configuration overlay.
+
+ZMENU0:	DB	'  ZCNFG COMMANDS  ',0
+ZMENU1:	DB	CR,LF
+	DB	' / ',DIM,' Explain Options    ',BRIGHT,'   >'
+	DB	' ',DIM,' Next Menu        ',BRIGHT,'  Esc ',DIM
+	DB	' Save Changes & eXit  ',BRIGHT,'  ',CR,LF
+	DB	' ? ',DIM,' Explain Commands   ',BRIGHT,'   <'
+	DB	' ',DIM,' Previous Menu    ',BRIGHT,'  ^C  ',DIM
+	DB	' Quit with no changes ',BRIGHT,'  ',CR,LF
+	DB	CR,LF
+BAR000:	DB	' Which choice? ',0
+
+;=========================================================
+
+;Menu & Pgm control options case table
+;This table is searched last for program control
+;options. If a match is not found, then the entry
+;at CTLCSE is executed as a default.
+CTLCS0:	DB	(ctlcse-ctlcs1)/(ctlcs2-ctlcs1)	;number of cases
+	DB	ctlcs2-ctlcs1			;bytes per record
+CTLCS1:	DB	'/'		;explain CFG menu items
+	DW	MNUHLP
+CTLCS2:	DB	'?'		;explain internal menu items
+	DW	CMDHLP
+	DB	'Q'		;quit - no update
+	DW	QUIT
+	DB	'Q'-'@'		;quit - no update
+	DW	QUIT
+	DB	CTLC		;also quit on ^C
+	DW	QUIT
+	DB	CR		;Re-prompt if CR
+	DW	CRNTRY
+	DB	'>'		;next menu
+	DW	GOTONM
+	DB	'D'-'@'		;next menu
+	DW	GOTONM
+	DB	'F'-'@'		;next menu
+	DW	GOTONM
+	DB	'.'		;next menu
+	DW	GOTONM
+	DB	'<'		;previous menu
+	DW	GOTOLM
+	DB	'A'-'@'		;previous menu
+	DW	GOTOLM
+	DB	'S'-'@'		;previous menu
+	DW	GOTOLM
+	DB	','		;previous menu
+	DW	GOTOLM
+	DB	'X'		;quit with options updated
+	DW	EXIT
+	DB	'X'-'@'		;quit with options updated
+	DW	EXIT
+	DB	'W'		;quit with options updated
+	DW	EXIT
+	DB	'W'-'@'		;quit with options updated
+	DW	EXIT
+	DB	ESC		;quit with options updated
+	DW	EXIT
+CTLCSE:		;label used to calc number of entries
+	DB	0		;dummy entry for default case
+	DW	BADCMD		;default case, err msg & ret C
+
+	PAGE
+;=========================================================
+
+CMDMSG:		;Help for command keystrokes
+	DB	CR,LF
+	DB	'Other keys perform the same functions as those'
+	DB	' shown at the',CR,LF
+	DB	'bottom of the main screen. Use them if that''s'
+	DB	' what your fingers',CR,LF
+	DB	'prefer. If X, W, or Q are present as selections'
+	DB	' in the main menu',CR,LF
+	DB	'then they perform the configuration function'
+	DB	' and NOT the function',CR,LF
+	DB	'shown below.',CR,LF,CR,LF
+	DB	'Command         Alternates  ',HT,'Function performed'
+	DB	CR,LF,CR,LF
+	DB	'   /               (none)   ',HT,'display CFG'
+	DB	' help screens',CR,LF
+	DB	'   ?               (none)   ',HT,'display this'
+	DB	' screen',CR,LF
+	DB	'   >               . ^D ^F  ',HT,'display next'
+	DB	' CFG menu',CR,LF
+	DB	'   <               , ^A ^S  ',HT,'display previous'
+	DB	' CFG menu',CR,LF
+	DB	'   Esc             X ^X W ^W',HT,'save changes'
+	DB	' and exit',CR,LF
+	DB	'   ^C              Q ^Q     ',HT,'exit without'
+	DB	' saving changes',CR,LF
+	DB	0
+
+;=========================================================
+
+HLPMSG:		;The Help Screen
+	DB	CR,LF
+	DB	'Configures option data in Executable files (TFS), using'
+	DB	' a configuration',CR,LF
+	DB	'data file (FS) which may be in a LBR (/FS or [DIR:]FN.LBR).'
+	DB	CR,LF,CR,LF
+	DB	'Syntax: '
+HLP000:	DB	' ZCNFG   TFS  [[/]FS]  [[/]FS]',CR,LF,CR,LF
+	DB	'Examples:  (Configure TGT.COM, default LBR is '
+HLP001:	DB	'   :'
+HLP002:	DB	'config.lbr  )',CR,LF,CR,LF
+	DB	'     ZCNFG TGT TGT /CFG01     ;uses TGT.CFG in CFG01.LBR'
+	DB	CR,LF
+	DB	'     ZCNFG TGT /CFG01 TGT     ;order of args 2,3 optional'
+	DB	' with ''/''',CR,LF
+	DB	'     ZCNFG TGT TGT CFG01      ;''/'' optional if LBR is'
+	DB	' 3rd argument',CR,LF
+	DB	'     ZCNFG TGT CFG01.LBR      ;''/'' optional with explicit'
+	DB	' .LBR',CR,LF
+	DB	'     ZCNFG TGT TGT            ;TGT.CFG on Path (includes'
+	DB	' default LBR)',CR,LF
+	DB	'     ZCNFG TGT                ;<internal FN.CFG> or TGT.CFG'
+	DB	' on Path',CR,LF
+	DB	'     ZCNFG ZCNFG              ;configures itself to assign'
+	DB	' ALT:, etc.',CR,LF,CR,LF
+	DB	'FS, TFS are ZCPR style filespecs. All parts optional except'
+	DB	' TGT FN.',CR,LF
+	DB	'Seeks FS files on a configurable internal path which includes'
+	DB	CR,LF
+	DB	' Alt Directory unless superseded by a DIR: form in FS.'
+	DB	CR,LF
+	DB	'See ZCNFG.HLP for full syntax and usage. ',CR,LF
+	DB	0
+
+;=========================================================
+;	UNINITIALIZED DATA
+
+	DSEG
+UDSTART:			;labels DS block for initialization
+Z3ENVF:	DS	1		;0=no Z3ENV, 0ffh=Z3ENV address present
+GZ3FLG:	DS	1		;bit mapped TCAP capability limits
+DEFDU:	DS	2		;default DU at signon, drv is 1..16
+COLCNT:	DS	1		;screen column counter
+ROWCNT:	DS	1		;screen line counter
+RELOCC:	DS	2,0		;overlay relocation constant
+FCB_CR:	DS	1		;current record at start of cfg block
+NCRECS:	DS	1		;number rcrds in cfg block (1 or 2)
+CFGFLG:	DS	1		;TRUE if CFG file named on cmd line
+LBRFLG:	DS	1		;TRUE if LBR file named on cmd line
+RELFLG:	DS	1		;Set to NZ after relocation
+UPDFLG:	DS	1		;NZ = Screen update required
+
+
+VSNDAT:	DS	3		;month,day,year - packed bcd
+
+TIMSTR:	DS	6,0FFH		;room for standard date/time,
+				;yy mm dd hr min sec
+
+TESTID:	DS	8		;trial FN buffer
+
+;these are initialized at scr_ld
+MNUMB:	DS	1		;current menu number, for error reports
+LMNUMB:	DS	1		;last menu number (first is 0)
+MENU0:	DS	2		;memory address for menu 0
+;maintained by LDMENL
+CMENU:	DS	2		;memory address for current menu
+
+UCFLAG:	DS	1		;bitmapped string processing control
+				;bit 0:0=UC only, 1=both LC,UC
+				;bit 7:0=HBS not allowed, 1=HBS is OK
+ERRCTL:	DS	1		;bit mapped error test control flag
+
+;CFG file search paths
+PATH:	DS	2		;Current path pointer
+PATH11:	DS	2
+PATH12:	DS	2
+	DS	2		;first path terminator
+PATH21:	DS	2
+PATH22:	DS	2
+	DS	2		;second path terminator
+
+;note the extended FCBs. User number precedes
+;the drive byte in the normal FCB. Routines in
+;ZCNFG use this byte for auto-select. (see OPNFIL)
+OVLUSR:	DS	1		;user area for overlay
+OVLFCB:	DS	1		;overlay drive
+OVLFN:	DS	8		;overlay filename
+OVLFT:	DS	3		;filetype
+	DS	24		;balance of fcb
+
+LBRDU:	DS	2		;DU used for LBR, drv is 0..15
+LUD:	DS	2		;Length of LBR directory
+	DS	2		;Next block of current file
+	DS	2		;Remaining blocks, current
+LUDFIL:	DS	11		;current FN
+LUDFCB:	DS	36		;FCB for Library
+LUDFN	EQU	LUDFCB+1
+LUDFT	EQU	LUDFCB+9
+LUDUSR	EQU	LUDFCB-1
+LUSTAT:	DS	1		;return from LUINIT
+
+TMPSCR:	DS	30,0		;temporary input data buffer
+TMPUSR:	DS	1		;user byte for temp fcb
+TMPFCB:	DS	36		;temp fcb for fname destination
+TMPFN	EQU	TMPFCB+1	; and for CFG file name
+TMPFT	EQU	TMPFCB+9
+
+TGTUSR:	DS	1		;user number for tgt
+TGTFCB:	DS	1		;drive
+TGTFN:	DS	8		;target filename
+TGTFT:	DS	3		;target file type
+	DS	24		;balance of tgt fcb
+
+UDLEN	EQU	$-UDSTART
+
+;local stack & system stack pointer
+	DS	40
+STACK:	DS	2
+
+TGTBUF:	DS	100H		;working buffer for first
+				;two records from target file
+	END
+                                                                                                  

@@ -1,0 +1,64 @@
+;************************************************
+;
+;	V266OZ8D.Z80
+;	7/17/88
+;	Genå Nolan
+;
+;	Thió ió aî overlaù filå foò VDE/VDÍ 2.6¶ that
+;	addó supporô foò Z80DOÓ time-stamping® Iô will
+;	allo÷ VDE/VDÍ 2.6¶ tï carrù thå creatå datå of
+;	thå sourcå file	tï thå destinatioî file® It
+;	assumeó thaô nï parô oæ thå useò patcè areá at
+;	250h-27fè ió useä anä WILÌ uså iô ALL.
+;
+;	Thå onå caveaô ió thaô 'blocë write§ functions
+;	wilì alsï havå thå creatå datå oæ thå source
+;	file.
+;
+;	Foò VDE¬ selecô thå firsô definitioî oæ bias
+;	below¬ anä foò VMÄ selecô thå second.
+;
+;	Assemblå tï á .HEØ filå anä uså MLOAD:
+;
+;	MLOAÄ VDE=VDE266.COM,V266OZ8D
+;
+;		   OR
+;
+;	MLOAÄ VDM=VDM266.COM,V266OZ8D
+;
+;***********************************************
+
+bias	equ	0		» Foò VDE266
+;bias	equ	3		» Foò VDM266
+
+	org	2c65h+bias
+	call	makem
+
+	org	2b41h+bias
+	call	openem
+
+	org	250h		» Patcè abovå tï here
+
+openem:
+	call	298bh+bias	» Calì BDOS
+	cp	0ffh		» Opeî ok?
+	ret	z		» Z=no
+	push	af
+	push	de
+	push	hl
+	ld	c,54		» Z80DOÓ calì foò GETSTAMP
+	call	5
+	pop	hl
+	pop	de
+	pop	af
+	ret
+
+makem:	push	de
+	push	bc
+	ld	c,55		» Z80DOÓ calì foò uså stamp
+	call	5
+	pop	bc
+	pop	de
+	jp	298bh+bias	» Anä dï requesteä function
+
+	end

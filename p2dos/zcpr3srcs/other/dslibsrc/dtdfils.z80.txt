@@ -1,0 +1,192 @@
+	TITLE	"DTDFILS - Dslib Ver 4.0"
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;	Derived from DSLIB3 routines by Bridger Mitchell
+; Date    : 9 Feb 88
+; Version : 1.0
+; Module  : DTDFILS
+; Abstract: This module contains routines for Opening, Closing,
+;	Reading and Writing the !!!TIME&.DAT file containing date
+;	and time information for files on the logged disk.
+;	   Three variable storage locations, TDBUFF, TDSECT and
+;	TDINDX are also declared for public use by other modules
+;	and user, so duplication of these labels should not be
+;	attempted unless the user is sure that no problems will
+;	result.
+; Revision :
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points :
+
+	PUBLIC		OPENTD, CLOSTD, RWTD
+	PUBLIC		TDBUFF
+
+;  External References :
+	EXT		@TDERR, @TDRET, @TDUSR, @TDFCB
+;..from SYSLIB..
+	EXT		SETDMA
+
+;  Definitions :
+	
+BDOS	EQU	0005		; Operating System entry point
+FOPEN	EQU	15		; Open File Command
+FCLOSE	EQU	16		; Close File Command
+FSETAT	EQU	30		; Set Attributes Command
+FRDRAN	EQU	33		; Read Random Sector Command
+FWRRAN	EQU	34		; Write Random Sector Command
+
+	CSEG
+	.Z80
+;===============================================================
+; Routine: OPENTD.  Open T&D file setting to R/W if writing
+; Enter:  A - A=0 for Read, A=FF for write
+; Exit : AF - A=0, Zero Flag set (Z) if Error, Else Reset (NZ)
+; Uses : All primary registers
+; Requirements - Desired drive must be logged by user
+;===============================================================
+
+OPENTD:	LD	(TDRWFL),A
+	CALL	@TDUSR		; Set to User # 0
+	LD	C,FOPEN		; OPEN the t&d file
+	CALL	BDOSTD
+	INC	A
+	JP	Z,@TDERR	; Z = error
+	LD	A,(TDRWFL)	; If reading, 
+	OR	A
+	JR	Z,OPNRET	; ..all done
+	LD	HL,@TDFCB	; Else Set TD file to Read/Write
+	LD	DE,9
+	ADD	HL,DE
+	RES	7,(HL)
+ATTRET:	LD	C,FSETAT	; ATTRIB Set/Reset Attribute
+	CALL	BDOSTD
+OPNRET:	JP	@TDRET		; Return by resetting User #
+
+
+;=========================================================
+; Routine: CLOSTD.  Close T&D file, setting R/O attribute
+; Enter: DE - None
+; Exit :  A <> 0, Zero Flag Reset (NZ) if Ok
+;	      A = 0, Zero set (Z) if Error
+; Uses : All primary registers
+; Requirements: Desired drive must be logged by user
+;=========================================================
+
+CLOSTD:	LD	DE,@TDFCB	; Point to T&D FCB
+	LD	A,(TDRWFL)	; Is this a Read or Write Close?
+	OR	A
+	JR	Z,CLOST0	; ..bypass bit opns if read
+	LD	HL,9		; Set R/O attribute bit
+	ADD	HL,DE
+	SET	7,(HL)
+	LD	HL,14		; Clear S2 bit 7 to mark "modified"
+	ADD	HL,DE		; ..So close will write to directory
+	RES	7,(HL)
+CLOST0:	CALL	@TDUSR		; Set User # 0
+	LD	C,FCLOSE	; CLOSE ..to disk
+	CALL	BDOSTD
+	INC	A
+	JP	Z,@TDERR	; Z set if error
+	LD	A,(TDRWFL)	; Is this a Close from Write?
+	OR	A
+	JR	Z,OPNRET	; ..if not, just return setting usr #
+	JR	ATTRET		; Set attribute & exit
+
+;===============================================================
+; Routine: RWTD.  Read or write a sector to !!!TIME&.DAT
+;     (T&D file never > 1 extent, so Set/Reset User # omitted)
+; Enter:  A = 0 to read, 0FFH to write
+;	 DE - Contains Random record to Read/Write
+; Exit : HL - Addresses beginning of T&D sector Read/Written
+;	  A <> 0, Zero Flag Reset (NZ) if Ok
+;	      A = 0, Zero Flag Set (Z) if Error
+; Uses : All primary registers
+; Requirements: System DMA address is changed by this routine
+;		User must insure correct drive is logged
+;		File must be opened (for R/W as appropriate
+;			before a call to this routine
+;===============================================================
+
+RWTD:	LD	BC,@TDFCB	; Set FCB ptr
+	LD	HL,33
+	ADD	HL,BC
+
+	LD	(HL),E		; Now insert Random Record #
+	INC	HL
+	LD	(HL),D
+	LD	HL,TDBUFF	; Set transfer addr to T&D buffer
+	CALL	SETDMA		; ..preserving all registers
+	PUSH	AF		; Preserve status
+	CALL	@TDUSR		; Set to User area 0
+	POP	AF		; ..and restore flags
+	OR	A		; Check R.W flag
+	JR	NZ,RWTD02	; ..jump if writing
+
+; Continue execution here if Read.  Get the specified record and
+; validate the sector checksum.  Return the appropriate result.
+
+	LD	C,FRDRAN	; Read random record
+	CALL	BDOSTD		; Errors are >0
+	OR	A
+	JR	NZ,RWTDER
+	CALL	TDCKSM		; Be sure sector's checksum is good
+	XOR	(HL)
+	JR	RWDONE		; Check for errors & return
+
+; Execute here for a write of !!!TIME&.DAT.  First insure the file
+; is open for writing, then calculate checksum, and finally write.
+
+RWTD02:	LD	A,(TDRWFL)	; Is the File Open for Writing?
+	OR	A
+	RET	Z		; ..return error if Not
+
+	CALL	TDCKSM		; Set new sector checksum
+	LD	(HL),A
+	LD	C,FWRRAN	; Write Random (same record)
+	CALL	BDOSTD
+	OR	A
+RWDONE:	PUSH	AF		; Save Status in A
+	CALL	@TDRET		; Restore User area
+	POP	AF		; ..and restore status
+	LD	HL,TDBUFF	; Set the return buffer address
+	JR	NZ,RWTDER	; Jump if error..
+	INC	A		; ..else just clear Z and return
+	RET	
+
+RWTDER:	XOR	A		; Z = Error
+	RET	
+
+
+; Call the BDOS with DE = Time&Date FCB
+
+BDOSTD:	LD	DE,@TDFCB
+	JP	BDOS
+
+;-------------------------------------------------------------
+; Routine: TDCKSM.  Calc checksum of 127 bytes addressed by HL
+; Enter: HL - Points to start of T&D Sector
+; Exit : HL - Points to last (128th) byte of T&D Sector
+;	  A - Contains Checksum of first 127 bytes
+; Uses : B,F
+;-------------------------------------------------------------
+
+TDCKSM:	LD	HL,TDBUFF
+	LD	B,127
+	XOR	A
+TDCKS1:	ADD	A,(HL)
+	INC	HL
+	DJNZ	TDCKS1
+	RET	
+
+;.....
+; Data/Storage Area
+
+	DSEG			; Put these in the Data Segment
+
+TDRWFL:	DEFS	1		; R/W Flag for Open/Close (0=Rd, FF=Wr)
+TDBUFF:	DEFS	128		; Buffer for 1 T&D sector
+
+	END
+

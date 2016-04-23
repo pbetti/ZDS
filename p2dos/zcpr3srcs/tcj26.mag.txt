@@ -1,0 +1,467 @@
+This is the text of my second article in The Computer Journal.  Please
+note that there is an error in the discussion of the operation of
+flow control commands with colons in the command.  The third article,
+which has now appeared, discusses the error and sets the record straight.
+
+This file was prepared for the PMATE text editor (hence the odd line
+below, which sets the right margin and establishes an automatic
+indentation to column 8 for hangling paragraphs).  If you want a clean
+copy, please subscribe to The Journal by sending $16 for one year or $28
+for two years to The Computer Journal, 190 Sullivan Crossroad, Columbia
+Falls, MT 59912.  Call them at (406) 257-9119.  Back issues are
+available at $3.50 each ($3.00 for 6 or more).  The article below appeared
+in issue #26.
+
+R76;I8
+                              The ZSIG Column
+
+                                  Jay Sage
+                             1435 Centre Street
+                          Newton Centre, MA 02159
+
+
+
+     In my last column I promised that this time I would discuss some ideas
+for new Z-System programs and program enhancements.  Before turning to that
+subject, however, I would like to address another issue.
+
+
+                       ZCPR3 on a Floppy-Only System
+
+     Many people have said that ZCPR3 is a great operating system but that
+one must have a hard disk system to use it.  I would like to put that myth
+to rest.  ZCPR3 CAN BE USED AND USED VERY EFFECTIVELY ON A COMPUTER WITH
+FLOPPY DISK DRIVES ONLY.  I have Z-System running on six 8-bit computers,
+and only one has a hard disk drive (that's the Z-Node machine, which I
+almost never get to use myself).  Admittedly, ZCPR3 runs much better on a
+system with a hard disk drive and/or RAM drive, but everything runs much
+better on such a system.  Z-System no more requires a hard disk than does
+standard CP/M.
+
+
+             Squeezing More Performance Out of a Floppy System
+
+     A full-up Z-System with shells, error handlers, a search path, and an
+extended command processor (ECP) can make for a lot of disk accesses, and
+this can slow operation down.  However, there is a simple technique that can
+help a great deal and can even benefit a hard disk.  To understand the
+technique, you need a little background on how the disk operating system
+(DOS -- either BDOS, ZRDOS, or P2DOS) works and how data are stored on a
+diskette.
+
+     Let's take up the second matter first.  Data on a diskette are stored
+in circular tracks numbered from the outside of the diskette.  The first two
+tracks (sometimes one, sometimes three) are reserved for the operating
+system code and are called "the system tracks."  When the computer is first
+turned on or when the reset button is pressed, the microprocessor starts
+running a program stored in a ROM (read-only memory chip).  This program
+contains instructions that initiate a process whereby the entire operating
+system is read in from these system tracks.  Additionally, with each warm
+boot, initiated by the user with a control-C command or automatically by
+some programs when they are done, the command processor code (and generally
+the DOS as well) are reloaded into memory from the system tracks.
+
+     With the next track inside the system tracks begins what is called the
+directory of the disk.  Like the index of a book, the directory has entries
+for each file stored on the disk containing such information as the name of
+the file and where on the disk the data for that file are stored.  The
+directory has a fixed size and can accommodate only a fixed number of
+entries (that is why if you have many small files, you can sometimes get a
+"disk full" message even when there appears to be plenty of room on the
+disk).  The rest of the disk is devoted to the storage of the data for
+files.
+
+     Now let's look at what DOS does when it wants to read a file.  First it
+has to find out where the file is stored, so it moves the drive heads to the
+directory.  Since the directory, unlike the index of a book, is not sorted,
+DOS must start at the beginning and read through the directory until it
+finds the entry for the file it wants.  Once it knows where to go on the
+diskette to find the data, it moves the heads to the proper track and reads
+the data.  This head movement or seeking, as it is called, can take a long
+time, especially with older, slower floppies.  Even a fast, modern drive
+that steps at a rate of six milliseconds per track will take nearly half a
+second to seek from the directory track to the innermost track on an
+80-track drive.  Clearly files located near the directory track will load
+much faster than those located near the inside of the diskette.  And files
+with directory entries near the beginning of the directory will have a
+slight edge over those with their entries at the end.
+
+     I think you can now see what we should do to speed things up.  But two
+further questions face us: 1) which are the files whose loading times are
+critical to the performance of a Z-System, and 2) how can one get the
+operating system to a) place directory entries for these files at the
+beginning of the directory and b) place the data for these files on tracks
+near the directory?
+
+     The second question is easy to answer.  Whenever DOS writes a file out
+to disk, it uses the first free entry in the directory and places the data
+in the outermost available space on the disk.  After a diskette has been
+used for a while and files have been written and erased many times,
+directory entries and file data can be rather disordered.  However, if one
+starts with a freshly formatted disk (with only the operating sysgen'ed onto
+it), files copied to it will fill the directory and data spaces exactly in
+order.
+
+     Now comes the question as to which files should be written to the fresh
+disk first.  The general answer is: the ones that are accessed most often. 
+In a Z-System one must be careful when trying to answer this question
+because there are files that are accessed automatically by the system, and
+the user may not even be aware of them.  Here are my suggestions for files
+to put on the list.  The exact order in which they are copied to the disk is
+not that critical.
+
+     If you are like me and have been known to make typing mistakes when
+entering commands, then you will want the ZCPR3 error handler to be called
+in so that you can correct the mistake.  Put your favorite error handler on
+the list (mine is VERROR).  If you use an extended command processor (more
+on that subject in a future column), you should put it and its associated
+files on the list.  I use ARUNZ, a program that enables one to store
+hundreds of alias scripts in a single, small text file, ALIAS.CMD.  Whenever
+a command cannot be executed either as a built-in command (in the FCP, CPR,
+or RCP) or as a transient (COM file), then ARUNZ is invoked,  It tries to
+find the given command name in ALIAS.CMD.  Since these operations are
+performed often, I include ALIAS.CMD and ARUNZ.COM on my list of files. 
+Another popular extended command processor is LX (or LRUNZ), a program that
+extracts programs from a library (COMMAND.LBR) of COM files.  If you use LX,
+then put LX.COM and COMMAND.LBR on your list.
+
+     The next category of programs to consider is shells and their
+associated files.  I make frequent use of the history shell, HSH, with its
+command line history file HSH.VAR.  It allows one to perform complete
+editing of the command line, just as if one were entering the line with
+WordStar.  In addition, it lets one recall commands issued previously (even
+on a previous day!), edit them as desired, and run them again.  What a
+pleasure to run a system like this!  Another command-line shell, VCED (for
+video command line editor) performs similarly, and the choice between them
+is a matter of personal preference.  Both of them can really slow down the
+operation of a floppy-based system if not placed on the diskette as
+described above.  Other commonly used shells are VFILER (with the VFILER.CMD
+macro file) and MENU and VMENU (with their menu files MENU.MNU and
+MENU.VMN).  If you use any of them, add them to the list.
+
+     The last category of files I include on the list is files that I invoke
+manually very often and want to see the results of fast.  This especially
+includes directory programs (SD and XD, for example).  I also hate to wait
+for my text editor (PMATE), so it is on my list.
+
+     Let me finish by mentioning some files that I do not include on the
+list.  Obviously I don't include files I rarely use, such as the system
+segments (SYS.RCP, SYS.ENV, etc.) that are used rarely except at coldboot
+time.  I also do not include programs that take a fairly long time to run
+anyway or which are generally run in batch mode.  I put assemblers and
+linkers in this category.  With them, most of the time is spent actually
+computing or reading and writing the files on which they operate.  Who cares
+if the assembler loads in 2 rather than 5 seconds if the assembly takes 20
+seconds or more anyway.  I would probably also leave off the list programs
+that I tend to spend a lot of time in once they are loaded.  Turbo Pascal is
+an example.  Since it has a built-in editor and keeps the source code and
+object code in memory simultaneously, one generally lives inside Turbo while
+developing a program.  Batch programs, like SUB, SUBMIT, or ZEX, would not
+be on my list.  Since they initiate a long, time-consuming sequence of
+events anyway, why be in such a hurry to get things started.
+
+     The mention of ZEX reminds me of one final hint on how to expedite the
+use of this speed-up technique.  I make a batch file for ZEX (you could use
+SUBMIT just as well) with all the copy commands in the order in which I want
+the files to be on the new disk.  The script for a MAKESYS.ZEX file to be
+run from the A drive to make a new system diskette on drive B might look
+something like
+
+		MCOPY B:=HSH.*
+		GO B:=ARUNZ.COM,ALIAS.CMD
+		GO B:=VERROR.COM
+		GO B:=VFILER.*
+		GO B:=SD.COM,XD.COM
+		GO B:=*.* N
+		GO B1:=1:*.* N
+
+If you leave out a file and have to repeat the process, it is much easier to
+edit the batch file than to enter manually all the copy commands again,
+especially since you'll probably accidentally skip another file and have to
+repeat the procedure still again!  The last two lines copy all the rest of
+the files in user areas 0 and 1; the 'no replace' option 'N' makes MCOPY
+skip over any files already on the destination directory.  If you have files
+in other user areas, add lines for them, too.
+
+
+                                 ----------
+
+R76;I8
+
+                          New Program Suggestions
+
+
+     We now turn to the promised subject for this month's column --
+suggestions for new programs or program enhancements.  I hope some readers
+will decide to take a shot at writing these programs and submitting them to
+ZSIG.  If so, I recommend that you let me know in one of the ways (including
+writing to me) described in my column in the last issue of The Computer
+Journal.  That way we won't have two versions of a program that have to be
+integrated.  Those of you who perhaps do not have the assembly language
+programming knowledge can still contribute by sending in further suggestions
+and ideas.  As I said in the last column, the real ingenuity in software is
+not so much in the actual coding as in the conceiving of new program ideas.
+
+
+                                  SETPATH
+
+     The path feature of ZCPR3, which allows a COM file to be loaded
+automatically from a drive and user area other than the one from which the
+command was issued, is probably the most used (and least noticed) feature. 
+The utility used to support this capability, PATH.COM, operates in only two
+ways.  When invoked with no command tail, it displays the search path
+currently in effect, listing each path element symbolically (possibly with
+'$' characters for current drive or user), in DU format, and in named
+directory format.  When invoked with a command tail, the tail is interpreted
+as a new search path, replacing the old one.
+
+     I have often wanted to make simple changes to the path, such as adding
+a new element at the beginning or end of the path.  Later I want to remove
+it.  With the present PATH command one has to enter a complete new path
+specification each time.  I would propose a new program, which might be
+called SETPATH, that would offer more flexible options.  The syntax for
+SETPATH would be as follows:
+
+	SETPATH [/option element-list] [/option element-list] ...
+
+The following option specifiers would be recognized:
+
+	C	clear existing path and append elements listed
+	A	append path element list to existing path
+	P	prefix path element list to beginning of existing path
+	D or R	delete (remove) listed elements from existing path
+
+After the new path is built and loaded, the final path would be displayed. 
+Option 'C' would be the default option if no option is given explicitly, and
+thus SETPATH would work the same as PATH when used the same way.  Just to
+make sure that the syntax is clear, here is an example SETPATH command:
+
+		SETPATH /A NEW1 NEW2 /D OLD2 /P NEW3
+
+If the old path had been "OLD1 OLD2", then the new path would be "NEW3 OLD1
+NEW1 NEW2".
+
+     There are some technical details to consider.  The new path should be
+built up in a temporary buffer and its length checked only at the end, since
+additions made before deletions might make the path temporarily longer than
+allowed.  If the final path is too long, one should probably leave the path
+as it was, display an error message, and ring the console bell.  One might
+also want to set the ZCPR3 program error flag (and clear it when the command
+succeeds).  For security reasons, named path elements must be checked for
+passwords, and drive/user path elements must be checked against the maximum
+drive and user values specified in the environment.  Naturally, like PATH,
+the entire utility should work only if the wheel byte is on.
+
+     To be complete and thorough, one might want to recognize a leading pair
+of slash characters not as an option but as a single slash in a path element
+name.  Otherwise one would have no way to use a named directory whose name
+begins with a slash.  The first version of SETPATH could omit this feature,
+since it is not critical.  A command tail with '//' or '/' only should
+display a built-in help message.
+
+     There is an issue with the 'D' and 'R' options.  In some cases an
+element may appear more than once in a path.  My default path, for example,
+is "SYS ASM MODEM SYS".  SYS appears both at the beginning, so that it is
+searched first, and at the end, so that programs that access the root
+element will also use SYS.  My choice would be to make the 'D' and 'R'
+options delete only one occurrence of an element.  Perhaps 'D' could delete
+starting at the beginning of the path and 'R' could remove starting from the
+end of the path.  Usually, of course, the path element would appear only
+once, and both options would give the same result.  I'm not completely sure
+what should be done when the element to be deleted is not found.  The path
+should still be built, and an error message should probably be displayed,
+but the ZCPR3 program error flag should probably not be set.
+
+     SETPATH, as described here, would be fairly easy to write, since it
+could borrow most of its code from the present PATH command.  An alternative
+enhanced PATH command, a video program which might be called VPATH, would
+display the path in a full-screen format and allow the user to edit the
+path, inserting and deleting elements using cursor controls and editing
+commands.  My present feeling is that such a command would be overkill. 
+SETPATH would be adequate and would have the advantage that, not requiring
+interactive input, it could be run from batch files and aliases.
+
+
+R76;I8
+                                   SETNDR
+
+     The named directory facility in ZCPR3 can be very convenient.  I find
+it handy to put all my assembly language tools in a directory called ASM and
+my modem related programs in a directory called MODEM.  It is much easier to
+remember the names than the particular user numbers chosen.  Some programs
+make automatic use of named directories.  The HELP program, for example,
+looks in a directory named HELP for the file containing the help
+information.  Echelon's disk cataloguing program DISCAT uses a directory
+named CAT to keep the catalogues and a directory BACKUP to determine the
+drive holding the diskette to be catalogued.
+
+     A program similar in concept to SETPATH, which might be called SETNDR,
+would be useful for making simple manual additions, deletions, or changes to
+the named directory register (NDR).  For example, as mentioned above, DISCAT
+catalogues diskettes in the drive containing a directory named BACKUP.  In
+order to make DISCAT work with a different drive, one would normally have to
+have or make another NDR file and load it with LDR.  SETNDR would be much
+easier to use.
+
+     SETNDR could be a very simple, short program with the following syntax:
+
+	SETNDR DU:		remove name associated with area DU:
+	SETNDR DIR:		remove directory with name DIR
+	SETNDR DU:NAME		assign NAME to area DU:
+	SETNDR DIR:NAME		change directory DIR to NAME
+
+A second name on the command line could be used to assign a password to the
+directory.
+
+	SETNDR DU:NAME PASS	define new name and password
+	SETNDR DIR:NAME PASS	assign new name and password
+
+Before assigning a name to a drive/user area, the program should check to
+make sure that the name is not already assigned to a different DU.  If it
+is, there are three reasonable possibilities.
+
+   1.	the program could display an error message and refuse to make the
+change;
+   2.	the program could delete the existing assignment, provided it is to
+a user-accessible area (i.e., not password protected or beyond the
+maximum drive and user values specified by the environment); or
+   3.	the program could report the situation to the user and prompt as to
+whether the existing assignment should be deleted (again provided
+the assignment to be deleted is to a user-accessible area).
+
+My preference is the second choice, but a message should be displayed
+reporting the assignment that has been deleted in case it was unintentional.
+
+     Like SETPATH, this program should be fairly easy to code.  The parser
+built into ZCPR3 would do almost all of the work required to interpret the
+command line.  The programmer would only have to detect the absence of any
+command tail or one with only '//'.  In these cases a built-in help screen
+should be displayed.  Most security issues would also be handled by the
+ZCPR3 command-line parser.  However, the program code should check the wheel
+byte and prohibit changes if it is not set.
+
+     If the ZCPR3 parser is used, some possibly erroneous input would pass
+undetected.  For example, the command lines
+
+		SETNDR DU:NEWNAME DIR:
+		SETNDR DU:NEWNAME U:
+
+would ignore the password field (since the parser would see no file name). 
+Also, a command like
+
+		SETNDR NEWNAME
+
+will assign the new name to the currently logged-in area.  The latter is
+probably acceptable (perhaps desirable).  In any case, if one wants to
+control these cases, the code would have to double check the actual command-
+line tail and not rely only on the default file control blocks.
+
+     There is already a utility called LDSK (load disk) for automatically
+setting up named directories after one switches diskettes in a floppy drive. 
+If a user area on the diskette contains a file whose name begins with a
+hyphen, then LDSK assigns that name (not including the hyphen) to that area. 
+LDSK might have some code one could borrow for SETNDR.
+
+
+R76;I8
+                              Enhanced IF.COM
+
+     Conditional command processing, though rarely invoked directly in user-
+entered commands, gives ZCPR3 alias and batch scripts tremendous power and
+flexibility.  Scripts can test such conditions as:
+
+	whether a previously run program has set or cleared the program
+error flag;
+
+	whether a parameter value has been specified or omitted in an alias
+invocation;
+
+	whether a specified file exists;
+
+	whether the file not only exists but has non-zero length;
+
+	whether one of the ten user registers contains a specified value;
+
+	whether the wheel byte is set or clear; or
+
+	whether or not a terminal definition (TCAP) is loaded.
+
+     Some of the conditional testing is performed with the ZCPR3 resident
+FCP (flow command package).  Optionally, the FCP can pass on conditional
+testing to the transient program IF.COM.  The user can also force invocation
+of the transient IF processor by including a directory specification with
+the command, such as "A0:IF..." or even just ":IF...".  Since IF.COM does
+not have to be resident and permanently reduce the memory available for
+program operation, it can be a bigger and more capable program.  I will
+mention here some enhancements that would be useful in IF.COM.
+
+     Current IF processing allows one to determine the presence or absence
+of a parameter with the NULL option.  Howard Goldstein has requested an
+ambiguity option:
+
+		IF AMBIG AFN
+
+This would allow an alias script to determine if a parameter passed to it
+was ambiguous, so that an error message could be echoed instead of passing
+an ambiguous file specification to a program that requires an unambiguous
+file name.
+
+     The current IF processing allows one to determine the existence and
+non-zero size of files with the EXIST and EMPTY options.  It would be useful
+to be able to test the attributes of files, as in
+
+	IF ARCHIVE AFN		do files have archive bit set
+	IF RO AFN		are files read-only
+	IF RW AFN		are files read-write
+	IF WP AFN		are file wheel protected
+	IF SYS AFN		are files of system (SYS) type
+	IF DIR AFN		are files of directory (DIR) type
+
+     The current version of IF.COM allows a test of the form
+
+		IF AFN1=AFN2
+
+which compares two possibly ambiguous file specifications.  It can be used
+fairly generally to compare command line tokens, as in the following
+VFILER.CMD macro script:
+
+		IF %PT=LBR;LDIR %$;ELSE;ECHO NOT LBR FILE;FI
+
+VFILER replaces the parameter %PT with the type of the file currently
+pointed to.  If the pointed-to file is a library, its directory will be
+displayed; otherwise an error message will be echoed.
+
+     There have been a number of times when I have wanted to test
+inequalities.  ARUNZ alias scripts can read values from the user registers
+and from memory locations.  Sometimes one would like to test for values that
+are less than or greater than some other value.  Thus it would be handy to
+have tests other than just equality.  Equality is the easiest to code
+because the ZCPR3 command line parser already handles the equal sign (since
+it is used in commands such as REN and CP).  For the extended comparisons, I
+would propose a syntax of the form
+
+		IF TOKEN1 TOKEN2 RELATION
+
+The first two tokens (words) on the command line will be parsed by the ZCPR3
+command processor and placed into the two default file control blocks at 5Ch
+and 6Ch.  The IF.COM code would have to scan the command tail saved starting
+at memory location 80h to see if there is a third token.  The following
+tokens could be recognized:
+
+		EQ or =		token1 same as token2
+		NE or <>	token1 not same as token2
+		LT or <		token1 less than token2
+		LE or <=	token1 less than or same as token2
+		GT or >		token1 greater than token2
+		GE or >=	token1 greater than or same as token2
+
+Any wildcard characters in either token would be taken as equal to any
+corresponding character in the other token.  Thus "ABC*" would be equal to
+"?BC", since the "A" in the first position matches the "?" in the second
+token and the "*" in the first token matches all the blank spaces in the
+last five character positions in the second token.
+
+     I think these ideas should be enough to keep you busy for a while!  I
+have several possible subjects for my next column but will await your
+response before deciding what to cover.  Please send in your suggestions.
+

@@ -1,0 +1,428 @@
+;
+                     WRITING CONFIGURATION (CFG) FILES 
+
+                                    FOR
+
+                                 Z C N F G
+
+
+                      I -->  Introduction            
+                      D -->  Definitions             
+                      O -->  Overlay Header          
+                      M -->  Menu Pointer List       
+                      T -->  Case Table              
+                      S -->  Screen Image            
+                      F -->  Field Data for Screens   
+                      H -->  Help Screen Image Data   
+                      U -->  Using ZCNFG             
+:I
+INTRODUCTION
+
+Configuration (CFG) files are complex but they need not be difficult to 
+write.  The easiest way to write a CFG file is to start with the source 
+code for a CFG file that you have already used and like, and use it for a 
+model.  Most recent libraries for ZCPR3 utilities contain both a CFG file 
+and its source code.  The file ZCNFG21.LBR contains several files that you 
+will find useful in understanding and implementing a configuration file:
+
+     ZCNFGMDL.Z80   a sample configuration file.
+     ZCNFGCFG.LBR   the configuration source for ZCNFG
+          (includes Alias MCFG.COM, for making CFG files)
+     ZCNFGOVL.DOC   step by step instructions for making ZCNFG.CFG
+
+It is extremely useful to study a working CFG source file to see how the 
+structures covered here work in practice.  Print out the source code for a 
+model CFG file and refer to it as you use this help file.
+The Configuration File
+
+The configuration (CFG) file is an overlay loaded at run time by ZCNFG.  It 
+contains the data required by ZCNFG to allow a user to configure the 
+operation of a specific target program file.  The overlay conventionally 
+has the same name as the file to be configured, and a filetype of CFG.  It 
+is created by assembly of a standard Z80 source file to produce a binary 
+image.  An Origin (ORG) statement is not required in the source file 
+because the image is automatically relocated during loading at run time.  
+The relocation depends on the OVERLAY HEADER being present as the first 
+code producing item in the source file.  This requirement is discussed in
+the sections on 'OVERLAY HEADER' and 'MENU POINTER LIST'. 
+Configuration Functions
+
+A common configuration function is a choice based on the value of a byte 
+(zero/non-zero) in the target program.  Such bytes appear in the ZCNFG menu 
+as 'YES' or 'NO' (or any other set of descriptive terms you like), and are 
+toggled when that menu item is selected.  ZCNFG can also:
+
+       Toggle any bit in a byte (8 YES/NO choices)
+       Rotate a bit within a field of bits in a byte (multiple choice)
+       Change the value of a byte with display/entry in HEX or Decimal
+       Change the value of a word with display/entry in HEX or Decimal
+       Replace a string of printable ASCII characters
+       Replace a single ASCII character (including non printable)
+       Replace or modify a DU specification
+       Replace or modify a Z3-style File Specification
+
+You can specify an acceptable range for numeric values for each byte or 
+word value.  Values outside that range will not be entered in the target 
+program.  The range is displayed for each item if it has been specified.  
+This is useful for entry of, for example, a buffer size or a ZCPR3 system 
+file number.  The last two are useful for editing a default filespec.
+The CFG File Structure
+
+The CFG source file contains the following main sections:
+
+         DEFINITIONS
+         OVERLAY HEADER
+         MENU POINTER LIST for first menu
+         CASE TABLE for first menu
+         SCREEN IMAGE for first menu
+         HELP SCREEN(s) for first menu
+         FIELD DATA for SCREEN IMAGES
+
+When more than one menu is needed, four sections are repeated:
+
+         MENU POINTER LIST for each additional menu
+         CASE TABLE for each additional menu
+         SCREEN IMAGE for each additional menu
+         HELP SCREEN(s) for each additional menu
+
+See the main menu for details of each of these sections.
+Target Program Structure
+
+The program for which the CFG configuration overlay file is being written 
+is called the Target Program.  All configurable data in the Target Program 
+must be located in the first page (256 bytes) of the program.  The Target 
+should contain the name of the default CFG file at relative location 0DH 
+(right after the Z34 header).  ZCNFG examines up to 8 bytes and will assume 
+a possible filename if it is terminated with enough spaces to make 8 bytes 
+or if it is terminated by null, $, or High-bit-set for the last character.  
+In other words, if the string looks like a legal file name, it is taken as 
+the name portion of the overlay filespec.
+
+     TIP: Don't try to save bytes by terminating the CFG filename before 
+     the 8 bytes allowed. Put the filename left justified in a field of 8 
+     blanks.  That way, there is room for configuration of the filename 
+     itself!
+
+The object of this strategy is to permit normal invocation with an implied 
+overlay filespec.  If the target program contains the name of its overlay 
+file as described, the overlay is very likely to be found even if the 
+target program has been renamed.
+:D
+DEFINITIONS
+
+This section defines symbols and macros used in the balance of the source 
+file.  
+
+Functions provided by ZCNFG are referenced by function number.  These 
+function numbers are given names in CFGDEF.LIB via EQU statements.  By 
+including this file in your source, the names can be used as entries in CASE 
+tables. Function names are only used in your source; change them if you like.
+
+You must provide offsets in the configuration page for configurable items; 
+this is best accomplished by defining them symbolically  (EQU statements) for 
+ease in constructing the CASE tables.  
+
+CFGDEF.LIB includes two macro definitions which greatly simplify the 
+construction of case tables.  Their use is illustrated in ZCNFGCFG.LBR and 
+the other overlay model files. 
+:O
+OVERLAY HEADER
+
+The first three code generating lines in the file MUST be:
+
+          RST  0
+          DW   MENUA     ;or whatever label you use for menua:
+MENUA:    DW   LASTM,NEXTM,SCREENA,CASEA,HELPA
+
+The RST 0 instruction is present to prevent this file from being 
+inadvertently executed.  A RET instruction could also be used here in many 
+cases.
+
+The DW statement containing the symbolic address of the first menu record 
+is used for run-time relocation of pointers in the menu records and CASE 
+tables.
+
+The list of five symbols which follow at MENUA: comprise the MENU POINTER 
+LIST for the first menu.  This list must be located here at offset 3 in the 
+file because ZCNFG uses it in connection with the value in the preceding DW 
+statement for relocation of all pointers when this overlay is loaded.
+:M
+MENU POINTER LIST
+
+LASTM and NEXTM are pointers in a doubly linked circular queue of records 
+like that at MENUA:.  There is one record for each menu screen displayed by 
+ZCNFG.  If there is only one menu screen (the case for many target program 
+implementations) then LASTM and NEXTM will both be replaced with MENUA.  
+For n menu screens, added menu records are required.  For example:
+
+  MENUb:    DW   MENUn,MENUi,SCREENb,CASEb,HELPb
+              ....
+  MENUi:    DW   MENUb,MENUn,SCREENi,CASEi,HELPi
+            ....
+  MENUn:    DW   MENUi,MENUa,SCREENn,CASEn,HELPn
+
+There is no requirement imposed for location of menu records after the 
+first one (MENUA).  ZCNFG finds the MENUA record at the specified offset in 
+the configuration overlay (offset is 3).  Any others are located through 
+the links LASTM and NEXTM. For the same reason, all other sections in the
+overlay file may be in any order that you feel appropriate.
+
+:T
+CASE TABLE(s)
+
+There is one CASE table for each menu screen. The case table is labeled and 
+the label is an entry in the associated menu record.  Each case table 
+contains a series of records: one record for each configurable item in the 
+menu display, and one initial 2-byte entry which specifies the number of 
+records present and the number of bytes in each record.  Since variable 
+length records are not implemented in ZCNFG, the record length byte is 
+always 0AH.  Here is the structure of a CASE TABLE:
+
+     CASE0:  DB (RCRD0X-RCRD00)/0AH  ;number of records
+             DB 0AH                  ;record length
+     RCRD00: ds 10                   ;first CASE record
+             ....
+     RCRD0n: DS 10
+             ....
+             DS 10                   ;last CASE record
+     RCRD0X:                         ;empty label for length expression
+
+Here is the structure of each CASE record:
+
+     ITEM:     ds   1    ; ASCII character for the menu item selection.
+     FUNCTION: ds   2    ; 16 bit function number.
+     OFFSET:   ds   2    ; 16 bit offset of config data in target pgm.
+     BDATA:    ds   1    ;  8 bit data required by function.
+     SCRNLOC:  ds   2    ; 16 bit address for data in the screen image.
+     PDATA:    ds   2    ; 16 bit address of data required by function.
+
+
+ITEM is the ASCII character input from the console by the user to 
+select a menu item.  Typical characters are "db 'A'", "db '1'", etc.
+
+OFFSET specifies the relative address of the data item in the target 
+program that is to be configurable with this menu selection.  OFFSET is a 
+word (16 bit) quantity, even though its value is in the range 0-ffH.
+
+SCRNLOC is the address in the screen image at which the ASCII 
+representation of the configuration data for this menu item is to be 
+displayed.  This is a label in the screen image source described below. 
+
+FUNCTION defines one of a set of standard modifications that can be made 
+to data in the target program configuration area and to the ZCNFG screen 
+display.  For example, function 0 toggles a bit in a specified byte; the 
+associated field in the menu display may toggle between 'YES' and 'NO'.  
+The latter are strings whose address is given at PDATA, so you have control 
+of what is displayed.  If you wished, the display in this case might be '1' 
+and '0' or 'True' and 'False'.
+
+     Name     Function   Purpose
+     ------   --------   ------------------------------------------
+     SWITCH       0      Toggle bit <bdata> in the byte at <offset>
+     TEXT         1      Edit <bdata> characters with UC conversion
+     DUSPEC       2      Edit a byte pair as a DU specification
+     HEXRAD       3      Edit a configuration byte/word in HEX.
+     DECRAD       4      Edit a configuration byte/word in DECIMAL
+     TEXTLC       5      Edit <bdata> characters, both UC and LC
+     FILESP       6      Edit a Z3 filespec or filespec fragment
+     TOGL3        7      Rotate a bit in an n-bit field of the byte 
+                         at <offset>. If n=3: 001B/010B/100B
+     TOGLTF       8      Toggle byte at <offset> between 0 and 0ffH 
+     ASCIIC       9      Replace byte with single byte keystroke
+
+BDATA is a byte whose value implies the size of the data in the 
+configuration block or how it is to be interpreted.   Functions 1 (TEXT) and 
+5 (TEXTLC), for example, require BDATA to specify the length of the text 
+field in the configuration block.  ZCNFG will abort with a diagnostic error 
+message if the value of BDATA found in the CFG file is inappropriate for the 
+function specified.
+
+     Name     Function   BDATA entry required
+     ------   --------   ------------------------------------------
+     SWITCH       0      Bit position to toggle, lsb = 0, msb = 7
+     TEXT         1      Number of characters to edit with UC conversion
+     DUSPEC       2      0 for (A..P)=(0..15), 1 for (A..P)=(1..16)
+     HEXRAD       3      1 for byte, 2 for word config data
+     DECRAD       4      1 for byte, 2 for word config data
+     TEXTLC       5      Number of characters to edit (UC and LC)
+     FILESP       6      0= FN.FT, 1=Drive, 2=DU, 3=Full filespec
+     TOGL3        7      7 (=00000111B) Mask for a 3 bit field at bit 0
+     TOGLTF       8      1  (one byte gets toggled 00/ff)
+     ASCIIC       9      1  (one byte gets replaced)
+
+Data for Function 7 is explained in the next screen.
+BDATA FOR FUNCTION 7
+
+FUNCTION 7 actually rotates a bit in a field of n bits, where n is 2 to 8.  
+BDATA for this function is a mask whose bits are set (1) corresponding to the 
+field required.  Only one bit is set in the field, and each invocation of 
+function 7 rotates that bit left one position in the field. TOGL3 uses this 
+bit position to select 1 of n strings to display; the target program uses the 
+bit position to select 1 of n alternate action/configuration choices. In the 
+example on the previous screen, the bit field has 3 values: 001, 010, and 
+100.  Other bits in the byte are unaffected. Here are some examples of valid 
+mask bytes and the associated bit fields produced:
+
+     00011000  ...01... , ...10...      (.. are unaffected bits)
+     00111000  ..001... , ..010... , ..100...
+     11110000  0001.... , 0010.... , 0100.... , 1000....
+
+Bit fields must be contiguous. The following are examples of invalid masks:
+
+     11000011 , 1011100 , 00110110 
+
+PDATA (see below) points to a list of strings. There must be as many strings 
+there as there are set bits in the bit mask.
+
+PDATA is the address of data within the configuration file used by a 
+function.  Because it is relocated when the overlay is loaded by ZCNFG, it 
+may NOT designate an absolute address outside the overlay.  
+
+The following table shows the PDATA entry required by each function: 
+
+     Name     Function   PDATA entry required
+     ------   --------   ------------------------------------
+     SWITCH       0      Address of 2 null terminated strings
+     TEXT         1      0 or address of a terminator byte
+     DUSPEC       2      0
+     HEXRAD       3      0 or address of min/max data words
+     DECRAD       4      0 or address of min/max data words
+     TEXTLC       5      0 or address of a terminator byte
+     FILESP       6      0
+     TOGL3        7      Address of n null terminated strings
+     TOGLTF       8      Address of 2 null terminated strings
+     ASCIIC       9      0
+:S
+SCREEN IMAGE
+
+The Screen Image is a set of DB statements that specify enough spaces, 
+data, and CR,LF characters to 'paint' 18 lines of the screen.  The other 
+6 lines of a 24-line screen are taken up by the prompt message and user 
+response lines at the bottom of the screen.
+
+The first statement of the screen image is labeled.  That label is part of 
+the MENU record, identified as SCREENa, SCREENi, etc, in the description of 
+the menu record structure above.  Screen images are illustrated in the 
+model CFG source file ZCNFGMDL.Z80.
+
+The screen image data comprise titles, borders and the text of menu items 
+that does not change.  Fields in which configurable data is to be displayed 
+are filled with spaces and must be at least as long as the configurable 
+data (See next screen for field lengths).  Such fields are usually labeled 
+DB statements.  The label is an entry in the case table record at SCRNLOC. 
+The entire screen image is terminated by a binary zero. 
+
+Data from the configuration block is translated to human-readable form on 
+the screen. The space required in the screen image is summarized in the
+following table. Use these field sizes to avoid a scrambled display.
+
+     Name     Function   Minimum Field Length in Screen Image
+     ------   --------   ------------------------------------
+     SWITCH       0      Length of null terminated data strings
+     TEXT         1      Length specified in BDATA
+     DUSPEC       2      3  (examples: 'A15', ' B3')
+     HEXRAD       3      2 for byte data, 4 for word data
+     DECRAD       4      3 for byte data, 5 for word data
+     TEXTLC       5      Length specified in BDATA
+     FILESP       6      16 for DU:FN.FT, 12 for FN.FT only
+     TOGL3        7      Length of null terminated data strings
+     TOGLTF       8      Length of null terminated data strings
+     ASCIIC       9      3 (examples: "  A", " ^X", "DEL")
+
+Alternate data strings in the CFG file for functions 0, 7, and 8 must 
+be filled to the same length to avoid unwanted characters in the display.
+
+
+The easiest way by far to prepare a screen image is to create a text file 
+using a screen oriented editor like ZMATE, WordStar, or ZDE in non-document 
+mode. Make the image just like you want it to appear, including the spaces 
+for ASCII configuration data to be displayed. Fill those fields with 
+visible fill characters so you can see them. When the display is as you 
+want it, INSERT an unique character before each field. (an accent mark (`) 
+or tilde (~) is usually unique.) That character will be recognized by 
+TEXT2DB as the place to create a label instead of the mark. Now running 
+TEXT2DB on the text file will create a file of DB statements which have 
+been labeled with unique labels where they are required.  These labels 
+are the ones which you transfer to the associated CASE table records. 
+(See also the section 'HELP SCREEN DATA'.) 
+
+     TIP:  Don't forget to put the menu ITEM selection characters in the 
+     screen image near the data to be referenced!  This is how the user 
+     knows which key to press for a particular item.
+:F
+FIELD DATA FOR SCREENS
+
+Functions 2 (DUSPEC), 6 (FILESP) and 9 (ASCIIC) get their data from the 
+keyboard. Functions 1 and 5 use a pointer at PDATA, described later.
+
+Two kinds of data structures are referenced by pointers at PDATA for the 
+other functions.  The first type of data is required by functions 0 
+(SWITCH), 7 (TOGL3) and 8 (TOGLTF).  It is composed of DB statements that 
+define null terminated ASCII strings.  These strings appear in the menu to 
+show the current state of the configuration item addressed by this case 
+table record.  T3MSG for function 7 (TOGL3) and YNDATA for function 8 
+(TOGLTF) are two examples.  Messages at each label must be of the same 
+length and may include 01h and 02h to control standout video:
+
+     YNDATA:      DB   1,'YES',2,0     ; Displayed when value is 0FFh
+                  DB   1,' NO',2,0     ; Displayed when value is 000h
+
+Example from ZMAC for BDATA = 00000111 (n = 3 bit field)
+     T3MSG:       DB   '.LALL',0 ; List ALL MACROS if value is 001B   
+                  DB   '.SALL',0 ; Suppress MACROS if value is 010B   
+                  DB   '.XALL',0 ; List MACRO code if value is 100B   
+
+The second type of data is range data required by numeric data input 
+functions 3 (HEXRAD) and 4 (DECRAD).  The MIN/MAX data words are a pair of 
+16 bit (DW) values which contain the minimum and maximum values allowed for 
+the current item being configured.  Do NOT use DB!  The first word is a 
+minimum value and the second is a maximum for the numeric data addressed by 
+this case.  If the POINTER value in PDATA is 0000h, then no range checking 
+will occur.  When MIN/MAX values are given, they are displayed in the 
+proper radix in the prompt line.  If the user attempts to enter a value 
+outside the indicated range, his entry is ignored.  
+
+For example, Z3 system file numbers are from 1 to 4.  The data provided in 
+the configuration file for this case would be:
+
+     SFILMM:      DW   1        ; Minimum value first
+                  DW   4        ; Maximum value second
+
+Functions 1 and 5 use the data byte at PDATA to specify an optional
+terminator for the string in the configuration block. If PDATA is 0 then
+there is no terminator. Otherwise, PDATA points to a byte in the CFG file
+(DB statement).  This byte is normally 0 or '$'.
+:H
+HELP SCREEN DATA
+
+Help screens are accessed via the '?' or '/' at the menu prompt.  A help 
+screen should be provided for each menu, even if it contains no more than a 
+'help not available' message.  The help screen may be omitted if a 0000h 
+entry is made in the MENU record (HELPa, HELPi, HELPn).  That causes ZCNFG 
+to ignore help request (/ or ?) from the menu served by that record.
+
+The help screen for each menu is labeled.  That label is an entry (HELPa, 
+etc.) in the associated MENU record.
+ 
+Help screens are, like screen images, a block of DB statements which define 
+the text to be displayed.  Help screens may be longer than 24 lines.  ZCNFG 
+counts lines and executes a display pause for each screen-full of text.  
+You can control the content of successive displays by adding or removing 
+line feed characters in the DB statements.  But there is an easier way, 
+introduced in ZCNFG version 1.8.  A colon or ASCII formfeed as the very 
+first character of a line is a signal to ZCNFG to start a new screen.  The 
+colon or FF is not sent to the screen, but invokes paging.
+
+The entire block of ASCII text that comprises a HELP display, which may be 
+displayed in multiple screens, is terminated with a binary zero (NOT a 
+'$').  This convention permits the use of the $ character in your screen 
+displays. 
+
+The easiest way to prepare help screens is with your text editor.  Put a 
+colon or formfeed (^L) at the beginning of a line where a screen break is 
+desired.  Remember that screens are about 22 lines long.  You can then run 
+a utility such as TXT2DB to convert the text file into a DB file for 
+inclusion into your CFG source file.  Make sure that TEXT2DB has been 
+configured to terminate the file with a null.
+:U:ZCNFG.HLP
+                    

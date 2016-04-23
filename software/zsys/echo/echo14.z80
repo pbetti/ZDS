@@ -1,0 +1,287 @@
+; ECHO.Z80
+;
+;	Echoes a text string to console or printer.
+;
+Vers	equ	14
+SubVers	equ	' '		; revision level
+;
+; The purpose of ECHO is two-fold:
+;	(1) to provide a convenient way of sending messages to the
+;	console during the execution of a command file or multiple
+;	command line.  For example:
+;
+;	  echo Assembling;m80 =$1;^E
+;	  if input;echo Linking;l80 /P:100,$1,A:SYSLIB/S,$1/N,/E;fi
+;
+;	as a single multiple command line will print the informative
+;	messages of "ASSEMBLING" and "LINKING" during the respective
+;	phases of the commands.
+;
+;	(2) to provide a convenient way to send escape sequences to
+;	the CRT and printer.  ECHO does no character translation,
+;	except as noted below.  It uses direct BIOS calls, so sequences
+;	used to program intelligent devices can be issued by running
+;	echo and typing in those sequences.  All ASCII characters from
+;	00h (null="^@") to 7Fh (delete="%D") can now be sent to
+;	terminal or printer.
+;
+; USAGE:
+;
+;	ECHO {text}
+;
+; Text may contain the following escape characters:
+;
+;	^c	Send character c as a control character.  For example,
+;		"^Z" sends a control-Z.
+;	%P	Send following characters to printer.
+;	%C	Send following characters to console (default).
+;	%>	Send following characters in lower-case.
+;	%<	Send following characters in upper-case (default).
+;	%^	Send a caret character.
+;	%D	Send a delete character.
+;	%S	Send a semi-colon character.
+;	%%	Send a percent character.
+;
+; Version 1.4 -- October 10, 1991 -- Gene Pizzetta
+;	ECHO was sometimes exhibiting strange behavior under BYE, which
+;	Howard Goldstein diagnosed as a stack problem.  The stack size
+;	has been increased.  Also, now uses ZSLIB GCOMNAM instead of
+;	Z3LIB PRTNAME so correct disk name prints on usage screen even
+;	with GO command.  Some code tweeking save a few bytes.
+;
+; Version 1.3 -- November 25, 1990 -- Gene Pizzetta
+;	Fixed a bug reported by Biff Bueffel that could cause a crash
+;	under certain circumstances if no text string was given on the
+;	command line.  Added %D escape sequence that sends a DEL
+;	(RUB) character, the only character ECHO could not send.
+;	Converted code to Zilog.
+;
+; Version 1.2 -- October 21, 1990 -- Gene Pizzetta
+;	I got tired of my aliases not working whenever I got rid of my
+;	RCP for more memory.  So I decided to make the transient ECHO
+;	compatible with Carson Wilson's Z34RCP.  Most of the code is his,
+;	modified as necessary.  The dollar sign ($) for printer output
+;	no longer works.  One additional escape sequence has been added:
+;	%S sends a semi-colon to printer or screen; there was no other
+;	way to send one.  Now properly requires *two* slashes for the
+;	help message.  Added type-3 safety header.  Added type-4 version.
+;	Configurable with ZCNFG.
+;
+; RCPECHO for Z34RCP -- Version 1.0 -- June 15, 1988 -- Carson Wilson
+;
+; Version 1.1 -- September 22, 1987 -- Comeron W. Cotrill
+;
+; Version 1.0 -- March 22, 1984 -- Richard Conn
+;
+	.request	zslib,z3lib,syslib
+;
+; Z3LIB and SYSLIB references
+;
+	ext	gcomnam,comnam			; ZSLIB
+	ext	z3init				; Z3LIB
+	ext	eprint,epstr,phl4hc,cout,lout	; SYSLIB
+;
+; Equates
+;
+CpmDma	equ	80h
+CpmFcb	equ	5Ch
+CR	equ	0Dh
+FF	equ	0Ch
+LF	equ	0Ah
+;
+; TYP3HDR.MAC, Version 1.1  --  Extended Intel Mnemonics
+; This code has been modified as suggested by Charles Irvine so that
+; it will function correctly with interrupts enabled.
+; Extended Intel mnemonics by Gene Pizzetta, April 30, 1989.
+;
+Entry:	jr	Start0		; must use relative jump
+	db	0		; filler
+	db	'Z3ENV',3	; type-3 environment
+Z3EAdr:	dw	0		; filled in by Z33
+	dw	Entry		; intended load address
+;
+; Configuration area . . .
+;
+	db	'ECHO'		; for ZCNFG
+	db	Vers/10+'0',Vers mod 10+'0','  '
+DftUC:	db	0FFh		; 0=default to lower-case, FFh=to upper
+DftCrt:	db	0		; 0=default to console, FFh=printer
+;
+Start0:	ld	hl,0		; point to warmboot entry
+	ld	a,(hl)		; save the byte there
+	di			; protect against interrupts
+	ld	(hl),0C9h	; replace warmboot with a return opcode
+	rst	0		; call address 0, pushing RetAddr onto stack
+RetAddr:
+	ld	(hl),a		; restore byte at 0
+	dec	sp		; get stack pointer to point
+	dec	sp		; ..to the value of RetAddr
+	pop	hl		; get it into HL and restore stack
+	ei			; we can allow interrupts again
+	ld	de,RetAddr	; this is where we should be
+	xor	a		; clear carry flag
+	push	hl		; save address again
+	sbc	hl,de		; subtract -- we should have 0 now
+	pop	hl		; restore value of RetAddr
+	jr	z,Start		; if addresses matched, begin real code
+;
+	ld	de,NotZ33Msg-RetAddr ; offset to message
+	add	hl,de
+	ex	de,hl		; switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; return via BDOS print string function
+;
+NotZ33Msg:
+	db	'Not Z33+$'	; abort message if not Z33-compatible
+;
+; Program begins . . .
+;
+Start:	ld	hl,(Z3EAdr)	; point to ZCPR3 environment
+	call	z3init		; initialize environment
+	ld	(Stack),sp	; save old stack pointer
+	ld	sp,Stack	; ..and set up new stack
+	ld	hl,DftNam	; point to default name
+	call	gcomnam		; ..and get disk name
+	ld	a,(CpmFcb+1)	; check for help request
+	cp	'/'
+	jr	nz,Start1	; (nope)
+	ld	a,(CpmFcb+2)	; do we have a second one
+	cp	'/'
+	jp	z,Usage		; (yep)
+Start1:	ld	hl,(DftUC)	; get default case and destination flags
+	ld	(CasFlg),hl	; ..and store them
+	call	Echo		; do it . . .
+Exit:	ld	sp,(Stack)	; restore old stack
+	ret
+;
+; Entry to main loop . . .
+;
+Echo:	ld	hl,CpmDma+1	; point to command tail
+	call	GetChr		; get first character (should be blank)
+;
+; Main loop to echo characters
+;
+Echo0:	call	GetChr
+	cp	FF		; form feed?
+	jr	z,EchoXX	; (yes)
+	cp	'^'
+	jr	nz,Echo1	; (not control character prefix)
+	call	GetChr		; get next character
+	and	1Fh		; convert to control character
+	jr	EchChr		; ..and echo it
+;
+Echo1:	cp	'%'		; case shift prefix?
+	jr	nz,EchChr	; (no, normal echo)
+	call	GetChr		; get next character
+	cp	'P'		; turn printer on?
+	jr	z,Echo2		; (store non-zero in CrtFlg)
+	cp	'C'		; turn printer off?
+	jr	nz,Echo3	; (no, test for shift characters)
+	xor	a		; yes, clear CrtFlg
+Echo2:	ld	(CrtFlg),a
+	jr	Echo0		; and on to next character
+;
+Echo3:	cp	'<'		; up-shift character?
+	jr	z,Echo4		; (yes, store non-zero in CasFlg
+	cp	'>'		; lower-case character?
+	jr	nz,Echo5	; (no)
+	xor	a		; clear CasFlg
+Echo4:	ld	(CasFlg),a
+	jr	Echo0		; and on to next character
+;
+Echo5:	cp	'S'		; request for semi-colon?
+	jr	nz,Echo6	; (no)
+	ld	a,';'
+	jr	EchChr
+;
+Echo6:	cp	'D'		; request for delete?
+	jr	nz,EchChr	; (no, send it as-is)
+	ld	a,7Fh
+EchChr:	call	EchOut		; send character
+	jr	Echo0
+;
+; Form feed - send new line followed by form feed if printer output
+;
+EchoXX:	ld	a,(CrtFlg)	; printer output?
+	or	a
+	jr	z,EchoFF	; (no, send form feed normally)
+	call	EchoNL		; send new line
+	ld	a,FF		; send form feed
+	jr	EchOut
+;
+; Send form feed char to console
+EchoFF:	ld	a,FF
+	jr	EchChr
+;
+; Get a character from the command tail buffer
+;
+GetChr:	ld	a,(hl)		; get character
+	inc	hl		; point to next one
+	or	a		; check for end of string
+	ret	nz		; (more to go)
+	pop	hl		; clean up stack
+; End of print loop - check for printer termination
+	ld	a,(CrtFlg)	; check flag
+	or	a
+	ret	z		; (no printer output)
+; Output a new line
+EchoNL:	ld	a,CR		; output CRLF on printer
+	call	EchOut
+	ld	a,LF
+; Output char to printer or console
+EchOut:	ld	c,a		; char in C
+	cp	'A'		; if less than 'A'
+	jr	c,EchOuA	; leave as is
+	cp	'Z'+1		; if greater than 'Z'
+	jr	nc,EchOuA	; leave as is
+	add	a,20h		; else convert to lower-case
+EchOuA:	ld	d,a		; save lower-case version in D
+	ld	a,(CasFlg)	; check case flag
+	or	a		; upper-case?
+	jr	nz,EchOuB	; if upper-case selected, go on as is
+	ld	c,d		; else substitute lower-case version
+EchOuB:	ld	a,(CrtFlg)	; check destination flag
+	or	a
+	ld	a,c		; put character in A
+	call	z,cout		; console output
+	call	nz,lout
+	ret
+;
+; Usage -- help message
+;
+Usage:	call	eprint
+DftNam:	db	'ECHO    Version '
+	db	Vers/10+'0','.',Vers mod 10+'0',SubVers,'   (loaded at ',0
+	ld	hl,entry
+	call	phl4hc
+	call	eprint
+	db	'h)',CR,LF
+	db	'Sends text to the console or printer.',CR,LF
+	db	'Usage:',CR,LF,'   ',0
+	ld	hl,comnam	; print disk name
+	call	epstr
+	call	eprint
+	db	' {text}',CR,LF
+	db	'Escape sequences recognized in text:',CR,LF
+	db	'   %P   Send following characters to printer',CR,LF
+	db	'   %C   Send following characters to console',CR,LF
+	db	'   %>   Send following characters in lower-case',CR,LF
+	db	'   %<   Send following characters in upper-case',CR,LF
+	db	'   ^c   Send c as a control character',CR,LF
+	db	'   %D   Send a delete character',CR,LF
+	db	'   %S   Send a semi-colon character',CR,LF
+	db	'   %^   Send a caret character',CR,LF
+	db	'   %%   Send a percent character',0
+	jp	Exit
+;
+; Uninitialized data . . .
+;
+	DSEG
+;
+CasFlg:	ds	1		; 0=lower-case, FFh=upper-case
+CrtFlg:	ds	1		; 0=console output, FFh=printer output
+	ds	60
+Stack:	ds	2		; stack pointer storage
+;
+	end
+

@@ -1,0 +1,103 @@
+
+                             CHKDIR
+                           Version 1.1
+
+                Gene Pizzetta / Howard Goldstein
+                           May 11, 1992
+            Based on CLEANDIR 1.8 by Steve Dirickson
+
+
+CHKDIR checks a disk directory for duplicate directory entries,
+user numbers greater than 31, extent numbers greater than 31,
+record counts greater than 128 (80h), filenames containing
+illegal characters, allocation groups assigned to multiple files,
+and allocation groups assigned twice to the same file.  In
+addition, it reports the names of null (zero-length) files.
+
+CHKDIR is based on CLEANDIR 1.8, but it contains only the
+diagnostic code.  It does no writing, so it poses no danger to
+the directory or to !!!TIME&.DAT files.
+
+
+USAGE:
+
+     CHKDIR dir:
+
+A DU or DIR specification is required, but only the drive is
+significant.  If only a user specification is given, the current
+drive is assumed.  If no DU or DIR specification is given, a
+brief usage message will be displayed.
+
+ERRORS:  If any errors are found in the directory, CHKDIR will
+report them.  If running under ZCPR3, the program error flag will
+be set to the appropriate value:
+       2  02h  invalid directory
+       4  04h  miscellaneous error
+      12  0Ch  insufficient memory to load entire directory
+     250  FAh  duplicate directory entry
+     251  FBh  user area greater than 31
+     252  FCh  illegal characters in filename
+     253  FDh  extent number greater than 31
+     254  FEh  record count greater than 128 (80h)
+     255  FFh  allocation block used more than once
+
+If multiple errors are encountered, the error code on exit will
+reflect only the most recent one.  Null files are reported, but
+do not cause errors.
+
+In addition, CHKDIR will invoke the error handler, primarily so a
+ZEX or SUB file can be aborted, if necessary.
+
+CONFIGURATION:  CHKDIR can be configured using ZCNFG and the
+CHKDIRnn.CFG configuration file.  Do not change the name of the
+CFG file so ZCNFG can find it even if you change CHKDIR's name.
+
+The first option determines whether CHKDIR will do a warm boot on
+exit.  As distributed CHKDIR does not overwrite the command
+processor so it can make a simple return on exit.  If your disk
+directories are so large that CHKDIR runs out of memory, you can
+gain a little space by answering "YES" here, which will cause the
+CP to be overwritten and a warm boot on exit.
+
+The second option determins whether CHKDIR will run null files
+through it checking procedures.  While reading a directory CHKDIR
+always reports the names of null (zero-length) files, but it does
+not include such files in its directory checking routines because
+programs such as SAP erase such files by default.  If you want
+null files included in the checking routines, answer "YES" here.
+
+The third option, designating a tag character, has no effect
+unless the second option, above, is set to "YES".  The tag
+character is the first character of disk labels, such as those
+used by cataloging programs.  The character is usually "-" (2Dh),
+"#" (23h), or "!" (21h).  If this option is configured, disk
+labels will not be checked, even if the second option is "YES".
+This is important if you use lower-case disk labels.  If you
+don't want disk labels skipped, make this option a null (00h).
+
+SPEED:  CHKDIR may seem slow because it takes time to check all
+allocation map entries.  On a 9.216 MHz SB180, CHKDIR takes 49
+seconds to do allocation checking on a directory with 1000 groups
+allocated (a little less than 4 Megabytes).  Since the procedure
+is completely compute-bound, you can calculate how long it will
+take to check your disk by scaling this figure for your processor
+speed and the number of groups allocated in your directory.
+Remember, the maximum number of entries the disk can have no
+longer means anything.  Only active directory entries are seen by
+CHKDIR.  As a worst-case example, a 2 MHz Z80 checking the
+directory of a filled 8 Meg disk would take almost 7 minutes.
+
+ASSEMBLY:  This version was developed and assembled with SLR
+System's Z80ASM and SLRNK+.
+
+This version allocates a smaller-than-usual amount of space for
+the stack--50 bytes.  This should be more than sufficient for
+most systems, since the maximum that is on the stack at any BIOS
+entry is 10 bytes--on the call to SECTRN; all other BIOS calls
+have 8 or less bytes on the stack.  Unless your BIOS read or
+write routines take more than 40 bytes of stack space, you should
+have no problem.  If you do, just change the amount of space for
+the stack to a larger value and re-assemble the source code.
+Note that this will reduce the amount of space available for
+directory entries.
+

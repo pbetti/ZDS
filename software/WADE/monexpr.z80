@@ -1,0 +1,670 @@
+	title	Expression evaluation for Monitor
+	name	('MONEXPR')
+;
+;	Last Edited	85-04-05	Wagner
+;
+;	Copyright (c) 1984, 1985 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, October 1990
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+	maclib	monopt.lib
+;
+	entry	expression,mexpression,sexpression
+;
+if	symbolic
+	ext	rdsymbol
+endif;SYMBOLIC
+	ext	rdregval,rdword,rdstrword
+	ext	getch,testch,skipsp,skipsep
+	ext	mul16,div16
+	ext	cmderr
+if	extended
+	ext	peek,poke,peekbuf,cbank,bankok,xltbank
+endif;EXTENDED
+;
+;------------------------------------------------------------------------------
+;
+;	mexpression:	process multiple expressions, return value of last
+;
+mexpression:
+	call	expression
+	ret	c		; ret with carry if none
+mexploop:
+	push	hl
+	push	af
+	call	sexpression
+	jr	c,mexpend	; ready if no more expressions
+	pop	de
+	pop	de		; discard old expression
+	jr	mexploop
+mexpend:
+	pop	af
+	pop	hl		; restore expression
+	or	a		; clear carry
+	ret
+;
+;	expression:	read expression, return word value
+;	sexpression:	call skipsep first, then expression
+;
+;		exit:	HL = value
+;			A = bank (CBANK if none specified)
+;			Carry set if no value
+;
+;		uses:	-
+;
+sexpression:
+	call	skipsep
+expression:
+	push	bc
+	push	de
+	push	iy
+	call	bexpression
+	pop	iy
+	pop	de
+	ld	a,b
+	pop	bc
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	For all following expression subroutines, the following general
+;	register usage holds:
+;
+;		HL contains the result
+;		C  contains the factor descriptor (0 means 16-Bit variable
+;		   or no variable)
+;		DE contains a variable address if the factor is a variable
+;		   or register, otherwise zero
+;
+;		additionally, EXTEXPRESSION returns the extended address byte
+;		in register B.
+;
+bexpression:
+	call	extexpression	; first factor
+	ret	c		; exit if no value
+	push	bc
+	push	de
+	ld	iy,assexpoptab
+	call	isop
+	jr	z,assexit	; ready if end of string/expression
+	call	bexpression	; get next operand
+	jp	c,cmderr	; error if operator without operand
+	ret			; enter handler by returning
+assexit:
+	pop	de		; restore first operand address
+	pop	bc
+	ret
+;
+assexpoptab:
+	db	':='
+	dw	opwassign
+	db	'=='
+	dw	opassign
+	db	0
+;
+opassign:
+	pop	iy		; first operand value
+	pop	de		; first operand address
+	pop	bc		; first operand descriptor
+	push	iy		; value back on the stack
+	ld	a,d		; variable address present ?
+	or	e
+	jr	nz,assreg	; assign to var if yes
+	pop	de		; else assign byte to address
+if	extended
+	ex	de,hl
+	ld	a,b
+	call	peek
+	ld	a,e
+	ld	(peekbuf),a
+	call	poke
+	ex	de,hl
+else
+	ld	a,l
+	ld	(de),a
+endif;EXTENDED
+	ld	h,0
+assret:
+	ld	de,0
+if	extended
+	ld	a,(cbank)
+	ld	b,a
+endif;EXTENDED
+	ret
+;
+assreg:
+	pop	af		; discard first operand value
+	ld	a,l
+	ld	(de),a		; store 8-bit value into DE
+	ld	a,c
+	or	a		; 16-bit register ?
+	jr	z,asswordreg	; then assign 16-bit
+	ld	h,0
+	jr	assret
+asswordreg:
+	inc	de
+	ld	a,h
+	ld	(de),a
+	jr	assret
+;
+opwassign:
+	pop	iy		; first operand value
+	pop	de		; first operand address
+	pop	bc		; first operand descriptor
+	push	iy		; value back on the stack
+	ld	a,e		; variable address present ?
+	or	d
+	jr	nz,assreg	; assign to variable if yes
+	pop	de		; else assign word to address
+if	extended
+	ex	de,hl
+	ld	a,b
+	call	peek
+	ld	(peekbuf),de
+	call	poke
+	ex	de,hl
+else
+	ld	a,l
+	ld	(de),a
+	inc	de
+	ld	a,h
+	ld	(de),a
+endif;EXTENDED
+	jr assret
+;
+;------------------------------------------------------------------------------
+;
+extexpression:
+if	extended
+	call	boolexpression	; first factor
+	ld	a,(cbank)	; init bank
+	ld	b,a
+	ret	c
+	ld	iy,extexpoptab
+	call	isop
+	ret	z
+	call	boolexpression	; get next operand
+	jp	c,cmderr	; error if operator without operand
+	call	execop		; execute operation
+	ret
+;
+extexpoptab:
+	db	':',0
+	dw	opextaddr
+	db	0
+;
+opextaddr:
+	ex	de,hl		; Result: HL = Operand 2
+	ld	b,e		; 	  B = Operand 1 (low byte)
+	ld	de,0
+	ret
+endif;EXTENDED
+;
+;------------------------------------------------------------------------------
+;
+boolexpression:
+	call	simpleexpression ; first factor
+	ret	c		; exit if no value
+boolexploop:
+	ld	iy,boolexpoptab
+	call	isop
+	ret	z		; ready if end of string/expression
+	call	simpleexpression ; get next operand
+	jp	c,cmderr	; error if operator without operand
+	call	execop		; execute operation
+	jr	boolexploop
+;
+boolexpoptab:
+	db	'&&'
+	dw	opbooland
+	db	'||'
+	dw	opboolor
+	db	'!!'
+	dw	opboolor
+	db	0
+;
+opbooland:
+	call	makebool
+	ld	a,h
+	and	d
+	ld	h,a
+	ld	l,a
+	ret
+;
+opboolor:
+	call	makebool
+	ld	a,h
+	or	d
+	ld	h,a
+	ld	l,a
+	ret
+;
+makebool:
+	call	setbits
+	ex	de,hl
+setbits:
+	ld	a,h
+	or	l
+	ret	z
+	ld	h,-1
+	ld	l,h
+	ret
+;
+;------------------------------------------------------------------------------
+;
+simpleexpression:
+	call	compexpression	; first factor
+	ret	c		; exit if no value
+simpexploop:
+	ld	iy,simpexpoptab
+	call	isop
+	ret	z		; ready if end of string/expression
+	call	compexpression	; get next operand
+	jp	c,cmderr	; error if operator without operand
+	call	execop		; execute operation
+	jr	simpexploop
+;
+simpexpoptab:
+	db	'<='
+	dw	opltoreq
+	db	'>='
+	dw	opgtoreq
+	db	'<>'
+	dw	opnoteq
+	db	'=',0
+	dw	opeq
+	db	'>',0
+	dw	opgt
+	db	'<',0
+	dw	oplt
+	db	0
+;
+oplt:
+	sbc	hl,de
+	jr cmpresult
+opgt:
+	ex	de,hl
+	jr	oplt
+opgtoreq:
+	sbc	hl,de
+	ccf
+	jr	cmpresult
+opltoreq:
+	ex	de,hl
+	jr	opgtoreq
+cmpresult:
+	jr	c,cmprestrue
+	jr	cmpresfalse
+opeq:
+	sbc	hl,de
+	jr	z,cmprestrue
+cmpresfalse:
+	ld	hl,FALSE
+	ret
+opnoteq:
+	sbc	hl,de
+	jr	z,cmpresfalse
+cmprestrue:
+	ld	hl,TRUE
+	ret
+;
+;------------------------------------------------------------------------------
+;
+compexpression:
+	call	mulexpression	; first factor
+	ret	c		; exit if no value
+compexploop:
+	ld	iy,compexpoptab
+	call	isop
+	ret	z		; ready if end of string/expression
+	call	mulexpression	; get next operand
+	jp	c,cmderr	; error if operator without operand
+	call	execop		; execute operation
+	jr	compexploop
+;
+compexpoptab:
+	db	'-',0
+	dw	opminus
+	db	'+',0
+	dw	opplus
+	db	0
+;
+opminus:
+	sbc	hl,de
+	ret
+opplus:
+	add	hl,de
+	ret
+;
+;------------------------------------------------------------------------------
+;
+mulexpression:
+	call	logexpression	; first factor
+	ret	c		; exit if no value
+mulexploop:
+	ld	iy,mulexpoptab
+	call	isop
+	ret	z		; ready if end of string/expression
+	call	logexpression	; get next operand
+	jp	c,cmderr	; error if operator without operand
+	call	execop		; execute operation
+	jr	mulexploop
+;
+mulexpoptab:
+	db	'<<'
+	dw	opshl
+	db	'>>'
+	dw	opshr
+	db	'*',0
+	dw	opmul
+	db	'/',0
+	dw	opdiv
+	db	'%',0
+	dw	opmod
+	db	0
+;
+opshl:
+	ld	a,d
+	or	a
+	jp	nz,cmderr
+	ld	b,e
+	or	b
+	ret	z
+expshll:
+	ld	a,h
+	rlca
+	rl	l
+	rl	h
+	djnz	expshll
+	ret
+opshr:
+	ld	a,d
+	or	a
+	jp	nz,cmderr
+	ld	b,e
+	or	b
+	ret	z
+expshrl:
+	ld	a,l
+	rrca
+	rr	h
+	rr	l
+	djnz	expshrl
+	ret
+opmul:
+	call	mul16
+	ret
+opdiv:
+	call	div16
+	ret
+opmod:
+	call	div16
+	ex	de,hl		; remainder into HL
+	ret
+;
+;------------------------------------------------------------------------------
+;
+logexpression:
+	call	factor		; first factor
+	ret	c		; exit if no value
+logexploop:
+	ld	iy,logexpoptab
+	call	isop
+	ret	z		; ready if end of string/expression
+	call	factor		; get next operand
+	jp	c,cmderr	; error if operator without operand
+	call	execop		; execute operation
+	jr	logexploop
+;
+logexpoptab:
+	db	'&',0
+	dw	opand
+	db	'!',0
+	dw	opor
+	db	'|',0
+	dw	opor
+	db	'#',0
+	dw	opexor
+	db	'^',0
+	dw	opexor
+	db	0
+;
+opand:
+	ld	a,h
+	and	d
+	ld	h,a
+	ld	a,l
+	and	e
+	ld	l,a
+	ret
+opor:
+	ld	a,h
+	or	d
+	ld	h,a
+	ld	a,l
+	or	e
+	ld	l,a
+	ret
+opexor:
+	ld	a,h
+	xor	d
+	ld	h,a
+	ld	a,l
+	xor	e
+	ld	l,a
+	ret
+;
+;------------------------------------------------------------------------------
+;
+factor:
+	ld	de,0
+	call	skipsp
+	scf
+	ret	z		; exit if no sign/value
+	cp	'+'
+	jr	z,issign
+	cp	'-'
+	jr	z,issign
+	cp	'~'
+	jr	nz,nosign
+issign:
+	push	af
+	inc	ix		; skip sign
+	call	skipsp
+	jp	z,cmderr	; sign only is an error
+	pop	af
+nosign:
+	push	af		; save sign
+	call	testch
+	cp	'('
+	jr	nz,noexprval
+	inc	ix
+	call	bexpression	; get expression value
+	call	skipsp
+	call	getch
+	cp	')'
+	jp	nz,cmderr
+if	extended
+	ld	de,0
+	ld	a,b
+	call	peek
+	ld	hl,(peekbuf)
+	ld	h,0
+	call	testch
+	cp	'.'
+	jr	nz,factready
+	inc	ix
+	ld	hl,(peekbuf)
+else
+	ld	e,(hl)
+	ld	d,0
+	call	testch
+	cp	'.'
+	jr	nz,factexp1
+	inc	ix
+	inc	hl
+	ld	d,(hl)
+factexp1:
+	ex	de,hl
+	ld	de,0
+endif;EXTENDED
+	jr	factready
+;
+noexprval:
+	cp	'['
+	jr	nz,nofactexpr
+	inc	ix
+	call	bexpression
+	call	skipsp
+	call	getch
+	cp	']'
+	jp	nz,cmderr
+	ld	de,0
+	jr	factready
+nofactexpr:
+	call	number
+	jr	c,nonumber
+factready:
+	pop	af		; restore sign
+	jr	nz,factexit	; ret if no sign
+	cp	'+'
+	jr	z,factplus	; ret if plus
+	cp	'-'
+	jr	nz,factcpl
+	ex	de,hl
+	ld	hl,0
+	sbc	hl,de		; 0 - val -> negation
+factplus:
+	ld	de,0
+factexit:
+	or	a		; clear carry
+	ret
+;
+factcpl:
+	ld	a,h
+	cpl
+	ld	h,a
+	ld	a,l
+	cpl
+	ld	l,a
+	jr	factplus
+;
+nonumber:
+	pop	af
+	jp	z,cmderr	; lonely sign
+	scf
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	isop:	check if input is an operator
+;
+;		entry:	IY = table address
+;
+;		exit:	Zero-Flag set if not an operator
+;			then: DE and HL are left untouched
+;
+;			Zero-Flag clear if operator
+;			then:  	(SP) = Operator handler routine addr
+;				(SP+2) = HL
+;				DE = 0
+;
+isop:
+	ex	(sp),hl		; save HL
+	push	hl		; save retaddr
+	call	skipsp
+	jr	z,isnotanop	; not an operator if end of input
+isoploop:
+	ld	a,(iy+0)	; get first char of operator
+	or	a
+	jr	z,isnotanop	; not an operator if at end of list
+	cp	(ix+0)		; compare with first input char
+	jr	nz,isopnext	; next list entry if not equal
+	ld	a,(iy+1)	; next char of operator
+	or	a
+	jr	nz,isopcnext	; compare with next if two-char operator
+	ld	a,(ix+1)	; next char from input line
+	cp	'='		; compare with possible second char ops
+	jr	z,isopnext	; and go to next table entry if it is one
+	cp	'>'
+	jr	z,isopnext
+	cp	'<'
+	jr	z,isopnext
+	cp	'&'
+	jr	z,isopnext
+	cp	'!'
+	jr	z,isopnext
+	cp	'|'
+	jr	z,isopnext
+	jr	isanop
+isopcnext:
+	cp	(ix+1)
+	jr	nz,isopnext
+	inc	ix		; skip two characters
+isanop:
+	inc	ix		; skip operator character
+	ld	l,(iy+2)	; get handler routine addr
+	ld	h,(iy+3)
+	ex	(sp),hl		; put on the stack
+	or	-1		; set nonzero to mark operator found
+	ld	de,0		; clear var addr
+	jp	(hl)		; and return
+isnotanop:
+	pop	hl		; retaddr
+	ex	(sp),hl		; HL
+	xor	a		; clear A
+	ret
+isopnext:
+	inc	iy
+	inc	iy
+	inc	iy
+	inc	iy
+	jr	isoploop
+;
+;	execop:	execute operator
+;
+;		entry:	HL = second operand
+;			(SP+2) = handler address
+;			(SP+4) = HL of first operand
+;
+;		exit:	HL = result
+;
+execop:
+	ex	de,hl		; HL 2 -> DE
+	pop	hl		; retaddr
+	pop	iy		; handler
+	ex	(sp),hl		; HL 1
+	or	a		; clear carry
+	jp	(iy)		; go to handler
+;
+;------------------------------------------------------------------------------
+;
+number:
+if	symbolic
+	call	rdsymbol	; try symbol name
+	ld	de,0
+	ret	nc
+endif;SYMBOLIC
+	call	rdregval	; try register name
+	ret	nc		; ready if register
+	call	rdword		; read value
+	ld	de,0
+	ret	nc		; ready if present
+	call	rdstrword	; else try string word
+	ld	de,0
+	ret
+
+	end
+l	rdword		; read value
+	ld	de,0
+	ret	nc		;

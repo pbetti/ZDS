@@ -1,0 +1,159 @@
+;                                                               v 1.0
+
+
+               PACK  --   Disk Packing Utility
+
+
+               I  Introduction
+               U  Usage
+               M  Messages
+
+:I
+Introduction
+
+PACK reorganises CP/M disks to improve file access times.  It requires 
+ZCPR3 with CP/M 2.2 or ZRDOS, and a Z80 or compatible processor.  It 
+will only run if the user has wheel priviledge.
+
+The data on a given disk is rearranged in situ so that all the data 
+associated with each file is contiguous.  This reduces disk head 
+movement when that file is subsequently read or modified.  The user can 
+specify certain files which should not be moved, and can specify 
+priorities among the remaining files, so that the most frequently 
+accessed files are moved close to the disk directory for reduced access 
+time.
+
+:U
+Using PACK
+
+Follow these steps -
+
+    1. Make a list of fixed and priority files
+    2. Backup the disk
+    3. Sort the directory
+    4. Run PACK
+
+The file list
+
+PACK requires an input file which specifies which files on the disk must 
+remain where they are and which of the remaining files should be moved 
+to the beginning of the disk.  The structure of this file is a sequence 
+of file names and file classes, one to a line.  File classes (fixed or 
+mobile) are specified by a line beginning with a semi-colon.  So a 
+typical file list might be:
+
+     ; Fixed
+     *:!!*.*
+     *:BADSECT*.*
+
+     ; Mobile
+     CMD:COMMAND.LBR
+     ROOT:*.*
+
+This means that all files in any user area matching !!*.* and BADSECT*.* 
+remain fixed (on my system these are PluPerfect DateStamper and 
+Backgrounder files, and files which lock out flakey sectors).  Then the 
+library file containing less frequently used COM files is moved to the 
+front, followed by all files in my ROOT directory.  PACK automatically 
+appends *:*.* to the end of the mobile list, so all remaining files on 
+the disk follow on.
+
+Case is not significant in the file list, and blank lines are ignored.  
+Directories can be given in DU: or DIR: form. * or ? in the directory 
+field means all user numbers.  If a disk is specified implicitly or 
+explictly it must correspond to the disk specified on the command line
+(see D option below).
+
+
+Backing up the disk
+
+You should do this reqularly, and always before running PACK.  Not that 
+a disk crash is more probable while running PACK than at other times, 
+but it is more certainly catastrophic if it does happen.  You will 
+definitely have to restore the disk from your backup copy (floppies or 
+tape) if the system crashes due to a power failure or inadvertent reset 
+while PACK is running.
+
+
+Sorting the directory
+
+Use CLEANDIR or SAP to sort the directory entries on the disk.  The file 
+list given to PACK preempts directory order, but within each group of 
+files which match an entry in the file list directory order determines 
+the order in which the data is packed.
+
+
+Running PACK
+
+Enter the command:  PACK <flist> <options>
+
+<flist> is required and is the name of the file containing the list of 
+fixed and mobile file patterns.  The possible options are:
+
+     Dx      - pack disk x (default is the disk on which flist resides)
+     S       - display statistics only.  No packing takes place.
+     V       - be verbose.  The file patterns extracted from <flist> are
+               displayed, and then the group permutation table (mainly 
+               for debugging).
+
+Examples:
+
+     B>PACK FLIST.C DCS       - display number of allocation groups that 
+                                would have to be read and written to 
+                                pack disk C according to the file list 
+                                FLIST.C
+     B>PACK FLIST.C DC        - as before, but 'for real'
+
+PACK will ask for confirmation before proceeding to pack the disk.  The 
+process takes anywhere from a few seconds to maybe half an hour 
+depending on how much data must be moved and how fast your disk hardware 
+is.  If you get impatient, on no account switch off or reset the 
+machine.  If you hit ^C the program will attempt to cut short the 
+packing process, but it may take some time to reach a convenient 
+consistent state.
+
+:M
+Messages
+
+Normal messages:
+
+     Ready to pack disk x
+     Are you sure you wish to proceed? (y/n) - 
+
+     Disk packed
+
+Statistics report:
+
+     nnnn group reads and mmmm group writes required to pack disk.
+
+Interrupt:
+     PACK: interrupted by user          - you pressed ^C
+
+Problems with options:
+
+     Option not recognized: x
+     No such disk: x
+     Disk specification missing
+
+Problems with <flist>
+
+     Line xxxx: invalid filename
+     Line xxxx specifies disk x (y expected)
+     Line xxxx: can't interpret directory specification
+     Line xxxx too long: truncated.
+
+Disk read/write errors:
+     Can't read directory               - disk read error
+     read error at group gggg:ss        - group cannot be read/written,
+     write error at group gggg:ss       -  see PACK.DOC for recovery
+
+General problems:
+
+     PACK requires CP/M 2.2 (or ZRDOS)
+     Can't find <flist>
+     Disk x is set read only
+     Out of memory                      - you have a tiny TPA
+     Disk overflow (can't happen!)      - more groups are allocated in 
+                                          the directory than there are
+                                          groups on the disk
+

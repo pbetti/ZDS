@@ -1,0 +1,55 @@
+; Submitfile for generation of the biosinterface to the yaze-bios
+;
+; ---> Assemble source files
+
+ifnew bioskrnl.z80
+:z80asm bioskrnl
+
+ifnew ydrvtbl.z80
+:z80asm ydrvtbl
+
+ifnew mmu.z80
+:z80asm mmu
+
+ifnew yct.z80
+:z80asm yct
+
+ifnew scb.z80
+:z80asm scb
+
+;
+; ---> link the bnkbios3
+
+ifnew bioskrnl.rel ydrvtbl.rel mmu.rel yct.rel scb.rel
+:linkdr bnkbios3[b,nr]=bioskrnl,mmu,ydrvtbl,yct,scb
+;:linkdr bios3[os]=bioskrnl,ydrvtbl,yct,scb
+
+;
+; ---> fill whole memory with 00h
+mera
+;
+; --> Now generate cpm3
+
+ifnew bnkbios3.spr
+:gencpm auto ; display
+
+;
+; --> compile BOOTSYS
+
+era bootsys.rel
+era bootsys.sym
+era bootsys.prn
+ifnew bootsys.z80
+:mera
+:z80asm bootsys/a
+
+;
+; --> generate cpm3.com
+
+era a:cpm3.com
+pip a:cpm3.com[v]=bootsys.com,cpm3.sys
+
+;
+; --> bild crc
+
+crc a:cpm3*.*

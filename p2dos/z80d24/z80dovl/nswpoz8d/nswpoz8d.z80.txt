@@ -1,0 +1,69 @@
+;************************************************
+;
+;	NSWPOZ8D.Z80
+;	7/16/88
+;	Gene Nolan
+;
+;	This is an overlay file for NSWP207 that
+;	adds support for Z80DOS time-stamping.
+;	It will allow NSWP18 to carry the create
+;	and alteration date of the source file(s)
+;	to the destination file(s) for single and
+;	mass file copies; and the creation date
+;	for squeeze/unsqueeze/reverse
+;
+;	Assemble to a .HEX file and use MLOAD:
+;
+;	MLOAD NSWP207=NSWP207.COM,NSWPOZ8D
+;
+;***********************************************
+
+	org	245h		; Point NSWP to new buffer area
+	ld	hl,buffer
+
+	org	1A1Ah		; Point NSWP to new buffer area
+	ld	hl,buffer
+
+	org	1A1Dh		; Point NSWP to new buffer area
+	ld	de,buffer
+
+	org	1F8Ch		; Point NSWP to new buffer area
+	ld	de,buffer
+
+	org	172Dh		; NSWP opens source file here
+	call	openem
+
+	org	0FE1h		; NSWP does writes to destination here
+	call	wrtseq
+
+	org	1875h		; NSWP close's destination file here
+	call	closem
+
+	org	17F4h		; NSWP MAKE's the destination file here
+	call	makem
+
+	org	3D88h		; Patch above to here
+
+openem:
+	call	5		; Call BDOS
+	cp	0ffh		; Open ok?
+	ret	z		; Z=no
+	push	af
+	ld	c,54		; Z80DOS call for GETSTAMP
+	call	5
+	pop	af
+	ret
+
+wrtseq:				; Vector MAKE,WRITE SEQ,CLOSE to here
+closem:
+makem:	push	de
+	push	bc
+	ld	c,55		; Z80DOS call for use stamp
+	call	5
+	pop	bc
+	pop	de
+	jp	5		; And do requested function
+
+buffer:				; NSWP's data buffer is now here, was
+				; originally at 3D87H
+	end

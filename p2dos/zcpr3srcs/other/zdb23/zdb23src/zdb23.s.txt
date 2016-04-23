@@ -1,0 +1,992 @@
+;
+; ZDB23.S - Subroutine Module
+;
+; Screen display routines
+;
+frame:	call	curoff		; Turn off cursor
+	call	cls		; Clear screen
+	call	at		; Do standout header
+	db	1,1
+	ld	b,79		; Do standout bar
+	call	pad
+	call	vprint		; Back up one and overwrite '<'
+	dc	bs,1,' ',2
+	call	at
+	db	2,1
+	call	grxon
+	call	line
+	call	at
+	db	22,1
+	call	line
+	call	grxoff
+;
+	ld	hl,panel
+	ld	b,(hl)		; Enter with hl=panel pointer
+	inc	hl
+;
+scrnlp:	call	@goxy
+	call	vpstr
+	djnz	scrnlp
+	ret
+;
+refscr:	call	frame		; Refreshes entire screen
+	call	currec
+	jp	menu
+;
+; Display current record number and total
+;
+currec:	call	savcurr		; Save current FPTR
+	call	disprec		; Display current record number and total
+;
+; Display current record
+;
+displa:	ld	hl,pospanel	; Point to cursor position panel
+	ld	de,afpnl	; Point to field panel
+	ld	b,(hl)
+	inc	hl
+;
+dsplalp:call	@goxy		; Position cursor to field start
+	push	bc		; Save field count
+	ld	b,(hl)		; Get field length
+	dec	b		; Minus termination
+	inc	hl		; Point to next field
+	call	stndout
+	ex	de,hl		; Hl=field address
+	push	hl		; Save field address pointer
+	call	lhlhl		; Get field addr in hl
+	call	bpstr		; Display field
+	call	stndend
+	pop	hl
+	pop	bc		; Restore field count
+	inc	hl		; Point to next field
+	inc	hl
+	ex	de,hl
+	djnz	dsplalp
+;
+newdat:	call	gxymsg		; Displays date
+	db	3,64,1,0	; Date location
+	ld	hl,datmod+1	; Get month
+	call	paslsh
+	inc	hl		; Get day
+	call	paslsh
+	dec	hl
+	dec	hl		; Get year
+	ld	a,(hl)
+	call	pa2hc
+	jp	stndend
+;
+divhl2:	srl	h		; Divide hl by 2, result in hl
+	rr	l
+	ret
+;
+curtim:	call	gxymsg		; Displays current date and time
+	db	1,64,1,0
+	ld	hl,today+1
+	call	paslsh
+	inc	hl
+	call	paslsh
+	dec	hl
+	dec	hl
+	ld	a,(hl)
+	call	pa2hc
+	call	gettim
+	jr	nz,notime
+	ld	a,' '
+	call	cout
+	inc	hl
+	inc	hl
+	inc	hl
+;
+; Format clock display correctly for 12 or 24 hour time
+;
+	ld	a,(time)	; Get time flag
+	or	a
+	ld	a,(hl)		; Get bcd hour
+	jr	nz,condun	; 24hr, so we're done
+;
+	sub	12h
+	jr	z,noon		; Noon
+	jr	c,morn		; Morning
+;
+	daa			; Decimal adjust time to bcd
+	jr	condun
+;
+morn:	add	a,12h
+	jr	nz,condun	; Not Midnight
+;
+noon:	add	a,12h
+;
+condun:	ld	b,a		; Save hour
+	ld	a,(time)
+	or	a
+	ld	a,b
+	push	af
+	call	nz,pa2hc	; Use leading 0 for military time
+	pop	af
+	call	z,pahc		; Else use leading space
+	ld	a,':'
+	call	cout
+	inc	hl
+	ld	a,(hl)
+	call	pa2hc
+;
+notime:	jp	stndend
+;
+gettim:	call	timini		; See if there is a clock
+	jr	nz,clkfnd
+	inc	a
+	ret
+;
+clkfnd:	push	hl
+	ld	hl,today	; Point to clock buffer
+	call	rclock
+	pop	hl
+	ret
+;
+paslsh:	ld	a,(hl)
+	call	pa2hc		; Print date with slash
+	ld	a,'/'
+	jp	cout
+;
+; Since the index may have been resorted and we only know the
+; current fptr, we need to find the corresponding recptr to properly
+; redisplay the current record at its new location in the index.
+;
+getrp:	call	decfptr		; Back up one
+;
+getrp0:	ld	hl,(first)	; Start of index
+	ld	de,14		; Record number offset
+;
+recplp:	add	hl,de		; Hl=recptr
+	push	hl		; Save recptr
+	call	lhlhl		; Hl=fptr for index record
+	ld	de,(fptr)	; De=fptr
+	call	comphd		; Does this record have the right fptr?
+	pop	hl		; Restore recptr
+	ld	de,16		; Offset to next
+	jr	nz,recplp	; Not this index record, check next
+;
+recc:	ld	(recptr),hl	; Save record pointer
+	call	disprec		; Update record display
+	jr	current		; Display record
+;
+; Write 256 bytes to random record
+;
+rwrtblk:ld	hl,edblk
+	call	rwrite		; Write new record
+	ld	hl,edblk1
+	jp	rwrite
+;
+; Delete record
+;
+delete:	call	clrmnu
+	dc	bel,1,'Are you sure?  y/[N] ?',2,bs
+	call	getchar
+	cp	'Y'
+	jp	nz,menu
+;
+	ld	a,'D'
+	ld	(newflg),a
+	call	iniblk		; Fill current record w/ nulls
+	ld	hl,edblk
+	ld	(hl),on		; Make first byte 0ffh
+	call	decfptr		; Decrement file record
+;
+wrecs:	call	rwrtblk		; Write 256 bytes to file
+	ld	hl,(recptr)	; Get record pointer
+	ld	de,14
+	sbc	hl,de		; Back up to index pointer
+	ex	de,hl		; Pointer in de for movkey
+	call	movkey		; Update index key
+	ld	de,ssb
+	call	sort		; Sort index
+;
+	ld	a,(newflg)	; Deleting a record?
+	cp	'D'
+	jr	nz,getrp	; Exit from edit, so get record pointer
+;
+	call	ckdel		; Quit if no non-deleted records
+	call	next
+	jp	menu
+;
+; File movement routines
+;
+oknxt:	call	riread		; Increment pointers, read next record
+;
+ckrec:	call	delrec		; Check for deleted record
+	jp	nz,currec	; Ok, display it, else fall thru
+;
+; Find and display next record
+;
+next:	call	ckeoi		; Check for end of index
+	jr	nz,oknxt	; Not eoi
+;
+firstr:	call	gotop		; Set pointer to beginning of file
+;
+current:call	rread		; Read current record
+	jr	ckrec
+;
+; Move to and display last record
+;
+last:	ld	hl,(xrecptr)	; Get last index record pointer in hl
+	call	savptr
+	jr	current
+;
+; Move to and display previous record
+;
+prev:	call	backup		; Move pointer back
+	call	rread		; Read a record
+	ld	hl,edblk	; Check first byte to see if it's a
+	ld	a,(hl)		; Valid record.  0ffh = deleted record.
+	inc	a
+	jr	z,prev		; If deleted, try the previous one
+	jp	currec
+;
+; Get first index record number
+;
+gotop:	ld	hl,(first)	; Get start of index table
+;
+getpt0:	ld	de,14		; Offset to record number
+;
+getptr:	add	hl,de
+;
+savptr:	ld	(recptr),hl	; Save record pointer
+	call	lhlhl
+	ld	(fptr),hl	; Save record number
+	ret
+;
+; Back up to previous record
+;
+backup:	ld	hl,(recptr)	; Get current index record
+	or	a		; Clear carry
+	ld	de,16		; Back up one index record
+	sbc	hl,de		; Get new record pointer
+	ld	de,(first)	; Check if past first
+	call	comphd
+	jr	nc,savptr	; Save pointers
+;
+	ld	hl,(xrecptr)	; Point to last record pointer
+	jr	savptr		; Save pointers
+;
+; Read record, increment pointers
+;
+rrinc:	call	rread
+	jr	mxrptr
+;
+; Increment record pointers
+;
+mvrptr:	call	ckeoi		; Check for end of index table
+	jr	z,gotop		; Yes, start over
+;
+mxrptr:	ld	hl,(recptr)	; Get index record pointer
+	ld	de,16		; Point to next
+	jr	getptr
+;
+; Scans the entire record for a match
+;
+find:	ld	b,11		; Long key length for find
+	call	getkeyf		; Get search input
+	ret	z		; Quit if empty search string
+;
+	ld	hl,rloop	; Set continue search routine address
+	ld	(stype),hl	; Save search type
+	call	savcurr		; Save current FPTR
+;
+; Check for end of file
+;
+rloop:	call	ckeoi		; Check for end of index
+	jr	nz,okgo
+;
+nofind:	call	clrmnu
+	dc	bel,1,'Not Found'
+	call	pak
+	call	cin
+;
+rcurr:	call	rstcurr		; Restore current record
+	jp	getrp0
+;
+okgo:	call	mxrptr		; Point to next index entry
+	call	rread
+	ld	de,edblk	; DE points to target
+	call	scanbuf		; Scan buffer
+	jr	nz,rloop	; No match
+;
+	call	savcurr		; Save current FPTR
+	jp	getrp
+;
+; Scan edblk buffer
+;
+scanbuf:ld	bc,253*256	; B=length of target, 0=init count
+	push	bc		; Save buffer length
+	ld	de,edblk	; Point to buffer
+	ld	hl,srch-1	; Hl=search string pointer
+	ld	c,(hl)		; Put length in C
+	inc	hl		; Point to search string
+	call	scan
+	pop	bc
+	ret	nz		; 1st string not found so quit
+;
+	ld	hl,srch2-1	; Point to second search string length byte
+	ld	a,(hl)		; Quit search if empty string
+	or	a
+	ret	z
+;
+	ld	c,a		; Put length in C
+	inc	hl		; Point to second search string
+	ld	de,edblk	; Point to target
+;
+; Search routines.  Uses a revised 'scanner' from syslib which eliminates
+; case sensitivity.  QFIND uses an index in RAM to find file pointers for
+; last names or zip codes, depending on which index is selected.  FIND
+; runs through the file, top to bottom, to do its search.
+;
+scan:	ld	a,b		; Done if b<c
+	cp	c		; Done?
+	ret	c
+;
+; Scan de for hl for c bytes
+;
+	push	bc		; Save registers
+	push	de
+	push	hl
+;
+scan0:	ld	a,(hl)		; Check search string byte
+	cp	' '		; Check for space
+	jr	nz,scan1	; No
+;
+	dec	c		; Yes, skip it and adjust count
+	inc	hl
+	jr	nz,scan0
+	jr	match		; Quit if end of string
+;
+scan1:	ld	a,(de)		; Get field byte
+	cp	' '
+	jr	nz,scan2
+;
+	inc	de		; Skip spaces
+	jr	scan1
+;
+scan2:	cp	'a'		; Capitalize if necessary
+	jr	c,scan3
+	cp	'z'+1
+	jr	nc,scan3
+	and	05fh
+;
+scan3:	cp	(hl)		; Compare with search string character
+	jr	nz,nexthl	; No match
+;
+	inc	de		; Pt to next
+	inc	hl
+	dec	c		; Count down
+	jr	nz,scan0
+;
+; Match
+;
+match:	pop	hl		; Restore registers
+	pop	de
+	pop	bc		; Old bc
+	ret			; Zero flag is set
+;
+; Not found yet
+;
+nexthl:	pop	hl		; Restore registers
+	pop	de
+	pop	bc		; Get count
+	inc	de		; Point to next in scanned vector
+	djnz	scan		; Continue scanning
+;
+	or	0ffh		; Set no-match flag
+	ret
+;
+; Repeat search routine
+;
+repsrch:ld	a,(srchlen)	; Get length of search string
+	or	a		; Return on empty string
+	ret	z
+;
+	ld	hl,(stype)
+;
+jphl:	jp	(hl)
+;
+; Express search routine
+;
+qfind:	ld	b,6		; Shorter key length for qfind
+	call	getkeyf		; Get search input
+	ret	z		; Quit if empty search string
+;
+	ld	hl,qfind0	; Save search type
+	ld	(stype),hl
+;
+qfind0:	call	savcurr
+	ld	hl,(n)		; Record count
+	dec	hl
+	ld	(xcount),hl	; Save count
+;
+	ld	hl,(recptr)	; Get current record pointer
+	inc	hl
+	inc	hl		; Points to next index entry
+	ld	(inxptr),hl	; Store Index Pointer
+;
+qloop:	ld	de,srch-1	; Point to search string length byte
+	ld	a,(de)
+	ld	c,a
+	inc	de		; DE=search string
+	ld	b,14		; B=length of index key first/last names
+	push	hl		; Save index pointer
+	ex	de,hl
+	call	scan		; Scan the target
+	pop	hl		; Restore index pointer
+	jr	nz,nomatch	; Jump if no match
+;
+	ld	de,srch2-1	; Point to 2nd search string length byte
+	ld	a,(de)
+	inc	de		; DE=2nd search string
+	or	a
+	jr	z,qloop0	; Jump on empty second string
+;
+	ld	c,a		; Put length in C
+	ld	b,14		; B=index length
+	push	hl		; Save index pointer
+	ex	de,hl
+	call	scan		; Scan for second search string
+	pop	hl		; Restore index pointer
+	jr	nz,nomatch	; Jump if no second match
+;
+qloop0:	call	getpt0		; Get file pointer
+	call	rread		; Read the record
+	call	currec		; Display it
+	jp	savcurr
+;
+nomatch:ld	de,(xcount)	; Get count of records
+	ld	a,d
+	or	e		; Quit if xcount = 0
+	jp	z,nofind	; No, go again
+;
+	dec	de
+	ld	(xcount),de	; Decrement record count
+	ld	hl,(inxptr)	; Increment index pointer
+	ld	de,16
+	add	hl,de		; HL=address of next index entry
+	ld	de,(order)	; Is it beyond the end of index?
+	call	comphd
+	jr	c,noteoi	; No
+;
+	call	gotop		; Yes, roll over to top
+	ld	hl,(first)
+;
+noteoi:	ld	(inxptr),hl	; Save new pointer
+	jr	qloop		; And keep searching
+;
+; Sort routines
+;
+; Set index type		; Do index type as toggle function
+;
+settyp:	ld	a,(srttyp)	; Get original type
+	or	a		; Is it null (name)?
+	cpl			; Toggle it
+	ld	(srttyp),a	; Save new type
+	ld	hl,lntyp	; Name index msg
+	jr	nz,set0		; Zip, make name
+	ld	hl,ziptyp	; Zip index msg
+;
+set0:	ld	de,inxtyp	; Move index type to header message
+	ld	bc,9
+	ldir
+	ld	hl,inxmsg	; Point to index message
+	call	@goxy		; Position cursor
+	call	vpstr		; Display message
+	call	index		; Do new index
+	jp	firstr		; And display new first record
+;
+; Create index
+;
+index:	call	codend		; Get end of code
+	ld	(order),hl	; Save in ssb as start of order table
+	ld	(first),hl	; And as address of first record
+	ld	hl,0		; Start with first file record
+	ld	(fptr),hl
+	ld	(count),hl	; Zero the counter
+;
+inxlp:	call	ckeof		; Check for end of file
+	jr	z,inxsrt	; We're done, so sort index
+;
+	ex	de,hl
+	ld	(xfptr),hl	; Save it as last record
+	call	rread		; Read next record and increment pointer
+	call	updinx		; Update index
+	jr	inxlp		; Repeat until done
+;
+; Add new record to index table
+;
+updinx:	ld	de,(order)	; Point to end of index table
+	call	movkey		; Add key
+	ld	(xrecptr),de	; Save last record number pointer
+	ld	hl,xfptr
+	ld	bc,2		; Move record number to index
+	ldir
+	ld	(order),de	; Save start of next index entry
+;
+inccnt:	ld	hl,(count)	; Bump counter
+	inc	hl
+	ld	(count),hl
+	ret
+;
+; Create sorted index
+;
+inxsrt:	ld	hl,(rafptr)	; Make sure we have a return address pointer
+	ld	a,h
+	or	l
+	call	z,norar		; No, reset return address flags
+;
+	ld	hl,(count)	; Get count
+	ld	(n),hl		; Store in ssb as total
+	ld	hl,(order)	; Pointer to end of index table
+	ld	de,ssb		; Pointer to ssb
+	call	ssbini		; Create order table
+	jp	sort		; Sort index
+;
+; Add new capitalized key to index table.
+; On entry, de points to start of next index entry
+;
+movkey:	ld	hl,cmnts2	; Check for return address record
+	ld	a,(raflag)	; First character
+	cp	(hl)
+	jr	nz,mov0		; Not this one
+;
+	ld	hl,(fptr)	; Get current file pointer
+	dec	hl
+	dec	hl
+	ld	(rafptr),hl	; Save it as return address record pointer
+	ld	(drafptr),hl	; And as default pointer
+;
+mov0:	ld	a,(srttyp)	; Check index type
+	or	a		; Zip?
+	jr	nz,movzip	; Yes
+;
+	ld	hl,lname
+	ld	b,9		; Index on first 9 bytes of lname
+	call	capmov
+	ld	hl,fstnm
+;
+mov5:	ld	b,5		; Then on first 5 bytes of fstnm
+	call	capmov
+	ret
+;
+movzip:	ld	hl,zip
+	ld	b,9		; Index on 9 zip bytes
+;
+movz:	ld	a,(hl)		; Get zip digit
+	inc	hl		; Point to next
+	or	a
+	jr	z,movzp
+;
+	call	isdigit		; Move only digits
+	jr	nz,movz
+;
+movzp:	ld	(de),a		; Move digit
+	inc	de
+	djnz	movz
+;
+	ld	hl,lname	; Then on first 5 bytes of last name
+	jr	mov5
+;
+; Move b bytes from hl to de, capitalizing them
+;
+capmov:	ld	a,(hl)		; Get character
+	cp	'a'		; Capitalize if necessary
+	jr	c,capm0
+	cp	'z'+1
+	jr	nc,capm0
+	and	05fh
+;
+capm0:	ld	(de),a		; Move it
+	inc	hl		; Point to next
+	inc	de
+	djnz	capmov
+	ret
+;
+; Ask if we want to write sorted file
+;
+asksrt:	call	clrmnu
+	dc	1,'Write Sorted File? y/[N] ?',2,bs
+	call	getchar
+	cp	'Y'
+	jp	nz,menu
+;
+	ld	de,fcb
+	call	dwf		; Display writing file message
+	ld	hl,srtfnm	; Get sort file name into its fcb
+	ld	de,srtfcb
+	call	fnamz		; Fname
+	ld	a,(srtfcb)	; Get drive
+	call	chkdrv		; Convert to ascii
+	ld	(sfdrv),a	; Store it
+	xor	a
+	ld	(srtfcb+12),a	; Set extent to 0
+	ld	(srtfcb+32),a	; Likewise w/ current record
+	ld	de,srtfcb	; Open sort output file
+;
+	call	f$make
+	jp	nz,nogood
+;
+	ld	hl,0
+	ld	(count),hl	; Zero the count
+	call	gotop		; Get starting record number
+;
+getrec:	call	rrinc		; Read next record, increment pointers
+	ld	hl,edblk
+	call	setdma
+	ld	a,(hl)		; Skip deleted records
+	inc	a		; If first byte = 0ffh it's an erased
+	jr	z,nowrt		; Record.
+	ld	de,srtfcb	; Write a record
+	call	f$write
+	ld	hl,edblk1
+	call	setdma
+	ld	de,srtfcb
+	call	f$write		; Write a record
+;
+nowrt:	call	inccnt		; Increment the count
+	ld	de,(n)
+	call	comphd
+	jr	nz,getrec
+;
+finsrt:	ld	de,srtfcb	; Close sorted file
+	call	f$close
+	ld	de,fcb		; Close original file
+	call	f$close
+;
+	ld	de,bakfcb
+	ld	hl,bakfil	; Backup filename
+	call	fnamz		; Expand it to fcb
+	call	f$delete	; Delete it if it exists
+;
+	ld	de,fcb		; Rename original file
+	ld	hl,bakfcb	;   to 'backup.dta'
+	call	f$rename
+;
+	ld	de,srtfcb	; Rename sorted file
+	ld	hl,fcb		;    to original datafile name
+	call	f$rename
+	jp	reopen		; Reopen the newly sorted file
+;
+; Compare de.vector to hl.vector for b bytes
+;    return C if de.vector < hl.vector
+;
+compv:	ex	de,hl
+	ld	b,16
+	call	compb
+	ex	de,hl
+	ret
+;
+; Exit from program if we don't have any non-deleted records
+;
+ckdel:	ld	hl,(first)	; First index record
+	ld	de,10		; Offset to deleted record byte
+;
+cdloop:	add	hl,de		; Point to deleted record byte
+	ld	de,(order)
+	call	comphd		; End of index without a match?
+	jp	nc,exit		; File has all deleted records or is empty
+;
+	ld	a,(hl)		; Get byte
+	cp	on		; Good record?
+	ret	nz		; Yes, we can continue
+;
+	ld	de,16		; Point to next record
+	jr	cdloop
+;
+wrtinc:	call	setdma		; Hl points to dma
+	ld	de,fcb
+	call	f$write		; Writes one 128 byte record
+	jp	nz,wrterr
+	ld	a,(newflg)	; Is it a new record?
+	or	a		; If not, don't inc fptr
+	ret	z
+	jr	incfptr		; Increment file pointer
+;
+rwrite:	call	setdma
+	ld	hl,(fptr)
+	ld	de,fcb
+	call	r$write
+	jp	nz,ermgr1
+;
+; Increment record pointer by one
+;
+incfptr:ld	hl,(fptr)
+	inc	hl
+	ld	(fptr),hl	; Increment file pointer
+	ret
+;
+savcurr:ld	hl,(fptr)	; Save current record pointer
+	ld	(cfptr),hl
+	ret
+;
+rstcurr:ld	hl,(cfptr)	; Restore current record pointer
+	jr	savfptr
+;
+; Decrement record pointer by 2
+;
+decfptr:ld	hl,(fptr)
+;
+savfptr:dec	hl
+	dec	hl
+	ld	(fptr),hl
+	ret
+;
+; Read one data record (two file records), increment file record pointer
+;
+riread:	call	mvrptr		; Increment record pointers
+;
+; (fptr) has record number
+;
+rread:	ld	hl,edblk
+;
+raread:	push	hl		; Save dma address
+	call	rrdinc		; Read first record
+	pop	hl		; Restore dma address
+	ld	de,128		; Point to start of next record
+	add	hl,de		; Set new dma address
+;
+; Read one random record
+;
+rrdinc:	call	setdma
+	ld	hl,(fptr)
+	ld	de,fcb
+	call	r$read
+	jp	nz,ermgr1
+	jr	incfptr		; Increment file pointer
+;
+; Display string for B characters, adding spaces if necessary
+;	HL=pointer to zero-terminated string
+;	B =string length
+;
+bpstr:	ld	a,(hl)		; Get character
+	inc	hl		; Point to next
+	or	a
+	jr	z,pad0		; Pad the rest of field
+;
+	call	cout		; Display character
+	djnz	bpstr
+	jr	padnd		; End of field, add termination character
+;
+; Display b standout spaces
+;
+pad:	call	stndout		; Set standout
+	dec	b		; B has byte count on entry
+;
+pad0:	call	bfil
+;
+; End standout and add termination character
+;
+padnd:	call	stndend
+	ld	a,(termf)	; Check for termination character
+	or	a
+	ret	z
+	jp	cout
+;
+bfil:	ld	a,' '
+;
+ploop:	call	cout
+	djnz	ploop
+	ret
+;
+; Check for default drive
+;
+chkdrv:	or	a		; Is it default?
+	jr	nz,gotdrv	; (no)
+;
+	ld	c,25		; Get default
+	call	bdos
+	inc	a		; A=0 changed to a=1
+;
+gotdrv:	add	a,40h		; Make it printable
+	ret
+;
+clrmnu:	call	gxymsg		; Clear menu lines
+	dc	23,1,4
+	jp	vprint		; Display trailing menu message
+;
+clredm:	call	clrmnu
+	dc	1,'F=Find X=Xfind <>=Prev/Nxt P=PrintCurrent'
+	call	vpstr		; Display trailing message
+	call	qquit		; And fall thru to get input
+;
+getchar:call	curon		; Get keyboard input at prompt/message
+	call	capin
+	push	af
+	call	curoff
+	pop	af
+	ret
+;
+line:	ld	b,79		; Draw graphics line
+	ld	a,(@ghl)
+;
+linlp:	call	cout
+	djnz	linlp
+	ret
+;
+; Display current record number and total
+;
+disprec:ld	hl,(recptr)
+	call	lhlhl		; Get record number of current record
+	call	divhl2		; Divide by 2
+	inc	hl		; Make it rel 1
+;
+currec0:call	gxymsg
+	db	1,45,1,0
+	call	phldc
+	call	vprint
+	dc	' of '
+	ld	hl,(recs)	; Get total number of records
+	call	divhl2		; Divide by 2
+	call	phlfdc
+	call	vprint		; Terminate field and end standout
+	dc	'    ',2
+	ret
+;
+noclk:	call	vprint
+	db	bel,'Can''t find clock!',cr,lf,lf
+	db	'Enter today''s date:',cr,lf
+	dc	'  Month (MM): '
+	ld	de,today+1	; Point to month
+	call	getdat
+	call	vprint
+	dc	cr,lf,'    Day (DD): '
+	inc	de		; Point to day
+	call	getdat
+	call	vprint
+	dc	cr,lf,'   Year (YY): '
+	dec	de		; Point to year
+	dec	de
+;
+getdat:	ld	hl,datbuf
+	ld	b,2
+;
+getdat0:call	cin
+	cp	3
+	jp	z,exit2
+	call	cout
+	ld	(hl),a
+	inc	hl
+	djnz	getdat0
+	ld	(hl),0
+	dec	hl
+	dec	hl
+	push	de
+	call	eval10
+	pop	de
+	call	binbcd
+	ld	(de),a
+	ret
+;
+; Common quit message
+;
+qquit:	call	vprint
+	dc	' Q=Quit ?',bs,2
+	ret
+;
+; Common press any key message
+;
+pak:	call	vprint
+	dc	' - Press Any Key',2,bel
+	ret
+;
+; Get contents of hl in hl
+;
+lhlhl:	ld	a,(hl)		; Get record number
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ret
+;
+; Check for current return address record and invalid addresses.
+; To be valid, an address must have a city entry, at least one
+; address entry and must not be the current return address record
+; or a deleted record.
+;
+; Entry:None
+; Exit: Z if record is invalid and to be skipped
+;
+valid:	ld	a,(city)
+	or	a
+	ret	z		; Invalid if no city
+;
+	ld	a,(addr1)	; Check address 1
+	or	a
+	jr	nz,valid0	; Yes, check return address
+;
+	ld	a,(addr2)	; Check address 2
+	or	a
+	ret	z		; Invalid if no address
+;
+valid0:	ld	hl,(ofptr)	; Get last file record pointer
+	ld	de,(rafptr)	; Get return address record pointer
+	call	comphd
+	ret	z		; Skip return address record
+;
+; Check to see if record is deleted
+;
+delrec:	ld	hl,edblk
+	ld	a,(hl)
+	inc	a
+	ret
+;
+; Check for end of index
+;
+ckeoi:	ld	de,(recptr)	; Get current index record pointer
+	ld	hl,(xrecptr)	; Get last index record pointer
+	jr	comphd
+;
+; Check for end of file
+;
+ckeof:	ld	hl,(recs)	; Get number of records
+	ld	de,(fptr)	; Get current record number
+	jr	comphd
+;
+; Check available memory
+;
+chkmem:	ld	hl,(order)	; Get address of order table
+	ld	de,(recs)	; Get number of records
+	add	hl,de		; Add to addr of order table
+	inc	h		; Start buffer at next page boundary
+	ld	l,0
+	ld	(bufadr),hl	; Save as address of file buffer
+	ex	de,hl
+	call	gzmtop		; Get top of TPA (hl=1st byte of CCP)
+	dec	h		; Safety zone of 256 bytes
+;
+; Compare HL with DE, set flags
+;
+; Exit: DE>HL	C,NZ
+;	DE=HL	NC,Z
+;	DE<HL	NC,NZ
+;
+comphd:	or	a		; Clear CARRY
+	sbc	hl,de
+	add	hl,de
+	ret
+;
+; Test for common exit-to-menu commands
+;
+qmenu:	call	qmret
+	jp	z,menu		; Exit and return to menu
+	ret			; Continue
+;
+; Test for common return exit commands
+;
+qmret:	cp	'Q'		; Exit on 'Q'
+	ret	z
+	cp	esc		; And ESC
+	ret	z
+	cp	ctrlc		; And ^C
+	ret	z
+;
+; Sound the alarm
+;
+beep:	ld	a,bel		; Ring the bell
+	jp	cout
+;
+; End of ZDB.S
+;
+

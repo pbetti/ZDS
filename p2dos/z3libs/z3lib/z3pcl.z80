@@ -1,0 +1,123 @@
+	TITLE	"Z3PCL - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3PCL.Z80 Ver 1.1 by Richard Conn
+; Date    : 29 Mar 89
+; Version : 1.2
+; Module  : Z3PCL
+; Abstract: This module contains the routine PUTCL which stores
+;	a command in the ZCPR3 Command Line Buffer
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		PUTCL
+
+;  External References
+
+	EXT		GETCL1, GETCL2
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PUTCL
+; Entry: HL - Points to a Command Line
+; Exit :  A <> 0, Zero Flag Reset (NZ) if Ok
+;	      A = 0, Zero Flag Set (Z) if Comd Line Overflow
+;			possible (no change to command line)
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+PUTCL:	PUSH	BC		;save registers
+	PUSH	DE
+	PUSH	HL
+	EX	DE,HL		; DE pts to new line
+	CALL	GETCL1		; Is command line available?
+	JR	Z,NOCL		; ..jump Error exit if Not
+			;.. Process Command Line
+	LD	B,A		; Char count in B
+	EX	DE,HL		; HL pts to new line
+	PUSH	HL		; Save ptr to new line
+
+PCL2:	LD	A,(HL)		;go to end of line
+	OR	A		;at end?
+	JR	Z,PCL3
+	INC	HL		;pt to next
+	DJNZ	PCL2		;count down
+	POP	HL		;clear stack
+	JR	NOCL		;command line too long
+
+; At End of New Command Line (ptr on stack)
+;	Ptr to first char of new command line on stack
+;	HL pts to ending 0 of new command line
+;	B = number of chars remaining before overflow of Z3 command line
+
+PCL3:	EX	DE,HL		;DE pts to last byte
+	PUSH	DE		;save ptr to last byte in case of error
+	CALL	GETCL2		;pt to tail of command line buffer
+	LD	A,(HL)		;get first char of tail
+	CP	';'		;continuation?
+	JR	Z,PCL4
+	OR	A		;done?
+	JR	Z,PCL4
+	LD	A,';'		;set continuation char
+	LD	(DE),A
+	INC	DE
+	DEC	B		;count down
+	JR	Z,PCL5		;overflow
+
+; Copy tail onto end of new command line
+
+PCL4:	LD	A,(HL)		;get next char
+	LD	(DE),A		;store it
+	INC	HL		;pt to next
+	INC	DE
+	OR	A		;done?
+	JR	Z,PCL6
+	DJNZ	PCL4		;count down
+
+; Command Line too Long
+
+PCL5:	POP	HL		;get ptr to end of old line
+	LD	(HL),0		;store ending 0
+	POP	AF		;clear stack
+	JR	NOCL
+
+; New Command Line OK
+
+PCL6:	POP	AF		;clear stack
+	CALL	GETCL1		;get ptr to buffer
+	LD	DE,4		;pt to first char in buffer
+	EX	DE,HL
+	ADD	HL,DE
+	EX	DE,HL
+	LD	(HL),E		;store address
+	INC	HL
+	LD	(HL),D		;DE pts to first char of buffer
+	POP	HL		;HL pts to first char of new line
+
+; Copy New Command Line into Buffer
+
+PCL7:	LD	A,(HL)		;copy
+	LD	(DE),A
+	INC	HL
+	INC	DE
+	OR	A		; EOL?
+	JR	NZ,PCL7		; ..loop if not
+
+; Exit with OK Code
+
+	DEFB	3EH		; Set Ok Code of NZ with "LD  A,0AFH"
+NOCL:	XOR	A		; Set Z Error exit code if entered here
+	OR	A		; ..set flags
+	POP	HL		; Restore regs
+	POP	DE
+	POP	BC
+	RET
+
+	END
+

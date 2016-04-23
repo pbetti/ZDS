@@ -1,0 +1,324 @@
+	TITLE	"Apple 2/2E/2+ Thndr & Mountain w/PCPI AppliCard - (AP2E+PCPI)"
+	SUBTTL	"Description of Clock Module"
+;-----------------------------------------------------------
+; Translated for Z80ASM/ZSDOS 06/11/88 from vers of 12/19/85
+; Vers 0.2 current as of 16 Oct 88
+;-----------------------------------------------------------
+
+VERS	EQU	02
+	.Z80
+	NAME AP2PCT
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	BCDYR		; Ptr to statyr
+
+CLKNAM:	DEFB	'Apple Thndr/Mountn PCPI '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'  Apple 2,2e,2+ Thunder or Mountain Hardware Clock',CR,LF
+	DEFB	'  with PCPI Z80 Appli-card',0
+
+	  IF  [$-DESCST]
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		; Dummy parameters
+	DEFW	0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Apple with Thunder/Mountain Clocks"
+
+; Thunder clock returns ascii string at 0F200H
+; Mtn hardware clock return ascii string at 0F293H in REVERSE
+;	No year available
+
+;	mo/da hr;mi;se.000	returned in 6502 buffer
+
+; all 6502 addresses for PCPI
+
+SLTTBL	EQU	003B9H - 1
+SLTPAD	EQU	005F8H		; 6502 slot scratchpad memory for slot 0
+CTLBASE	EQU	0C000H		; Control base,slot0
+
+GETLN	EQU	00200H		; 6502 input line buffer
+MTNLNE	EQU	00293H		; 6502 buffer for mtn hwe clock string
+				; This is the end of buffer
+MTNLNS	EQU	00293H-CLKCNT	; Low digit of seconds (reverse order)
+
+;ID0THN EQU			;unknown
+;ID1THN EQU			;unknown
+ID2MTN	EQU	02CH
+
+ID0THN	EQU	008H		; Bytes 0,1,2 of thunderclock+ board
+ID1THN	EQU	078H
+ID2THN	EQU	028H
+
+SLOT	EQU	7		; Actual value determined at load-time
+
+; PCPI interfacing
+; Read/write host routines
+
+RHBYTE	EQU	0FFE0H
+WHBYTE	EQU	0FFE3H
+RHWORD	EQU	0FFE6H
+WHWORD	EQU	0FFE9H
+RHBYTS	EQU	0FFECH
+
+; Command processor commands:
+
+RDDAT	EQU	1
+WRDAT	EQU	2
+EXECUT	EQU	3
+RDBYTE	EQU	6		; Uses direct addressing
+WRBYTE	EQU	7
+
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+PRGBAS:
+GETTIM:	PUSH	HL		; Save buffer ptr
+
+; 2. set format
+
+	LD	C,0		; Select mtn hwe clock format
+YSELCT	EQU	$+1
+	LD	DE,SLTPAD+SLOT
+	CALL	WRONE
+
+; 3. call clock-read routine in slot rom
+; need confirmation on this function
+
+	LD	C,EXECUT	; To read clock data to
+	CALL	WHBYTE		; 6502 buffer
+YCTL	EQU	$+1
+	LD	DE,CTLBASE	; Call 6502 rom subr$ addr
+	CALL	WHWORD
+
+; 4. read data from 6502 buffer to our z80 buffer
+
+	LD	BC,CLKCNT	; Bc equ byte count
+YBUF	EQU	$+1
+	LD	DE,GETLN	; De equ 6502 source
+	LD	HL,CLKBUF	; Our local buffer
+	CALL	RDSTR
+
+; convert returned str to bcd for caller's buffer
+; for mtn clk, convert addr to end of buffer
+
+FIXBUF	EQU	$+1
+	LD	DE,CLKBUF
+	POP	HL		; Caller's 6-byte buffer ptr
+BCDYR	EQU	$+1
+	LD	(HL),CURYR	; Static yr - configured by dsconfig
+	INC	HL		; ->month
+
+	LD	B,5		; Convert mo,da,hr,mi,sec
+
+A2B:	LD	C,(HL)		; Save buffer byte in c
+	LD	A,(DE)		; Convert ascii to bcd
+	RLD			; Opcode uses low nybble only
+
+; for mtn clk, convert to 'dcx d'
+
+YINXD1:	INC	DE		; Low ascii nybble
+	LD	A,(DE)
+	RLD
+	INC	HL		; Bump destn ptr
+YINXD2:	INC	DE		; Skip over delimiter: '/',' ',';'
+	DJNZ	A2B
+
+	LD	E,C		; E equ caller's seconds
+	DEC	HL		; Hl-> seconds
+	LD	A,01		; ..Set Ok return status
+	RET			; A equ seconds
+
+CLKCNT	EQU	14		; Omit $000
+CLKBUF:	DEFS	CLKCNT		; Mo/da hr;mi;se$000	returned in buffer
+
+; Enter: Note reverse of Z80 LDIR convention HL=To, DE=From, BC=Count
+
+RDSTR:	PUSH	HL
+	PUSH	BC
+	PUSH	DE
+	LD	C,RDDAT		; Set host to read count bytes beg$ at 6502 from
+	CALL	WHBYTE
+	POP	DE		; De equ source addr
+	CALL	WHWORD		; Set source
+	POP	DE		; Cnt
+	PUSH	DE		; Save cnt again
+	CALL	WHWORD		; Set count
+	POP	DE		; De equ # bytes
+	POP	HL		; Hl equ destn addr
+	JP	RHBYTS
+
+; write cEQU byte to deEQU 6502 addr
+
+WRONE:	PUSH	BC
+	PUSH	DE
+	LD	C,WRBYTE
+	CALL	WHBYTE
+	POP	DE
+	CALL	WHWORD		; De equ 6502 addr
+	POP	BC		; C equdata byte to write
+	JP	WHBYTE
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports ad Masks"
+
+	COMMON	/_POST_/
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	RET			; Just return from here
+
+	DEFB	0,0,0		; Filler
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module locates the clock slot within the computer, then tests to
+; insure that a valid clock is installed.  It is executed just priot to
+; installing the driver module.
+
+	COMMON	/_PRE_/
+
+DCXD	EQU	01BH		; Dcx d opcode
+
+TSTSLT:	JR	TSTSL0		; Jump around address store
+	DEFW	TSTSLT		; ORG location of the code
+
+; set slot
+; 1. read slot table to buf
+
+TSTSL0:	LD	(RMODAD),DE	; Save Relocated Clock module addr
+	LD	(RMODA1),DE	; ..in two places
+	LD	BC,8		; BC = byte count
+	LD	DE,SLTTBL	; DE = 6502 source
+	LD	HL,CLKBUF	; Use clock buffer destination
+	CALL	RDSTR
+
+	LD	HL,CLKBUF+7	; Find slot #, starting with 7
+	LD	B,7
+$$LP:	LD	A,(HL)
+	CP	1
+	JR	Z,$$SLOT
+	DEC	HL
+	DJNZ	$$LP		; Can't be slot 0
+	JP	BAD
+
+$$SLOT:				; B equ slot # from here on
+;;	LD	A,B
+;;	adi	0c0h
+;;	sta	yslot		;0C0 + slot #
+
+	PUSH	DE
+RMODAD	EQU	$+1
+	LD	DE,0000		; Fill in Relocated clock addr
+	PUSH	DE
+	LD	HL,YSELCT	; Set select-slot addr
+	ADD	HL,DE		; ..offset into code
+	LD	DE,SLTPAD
+	LD	A,E
+	ADD	A,B
+	LD	E,A		; Can't carry
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; ..and enter the addr
+	POP	DE		; Restore clock addr
+	LD	HL,YCTL+1	; ..and offset to Base Slot addr
+	ADD	HL,DE	
+
+	LD	DE,CTLBASE
+	LD	A,D		; + page of slot
+	OR	B
+	LD	(HL),A		; ..and enter base page
+	POP	DE		; Restore entry DE
+
+;2.  now check type of clock board to get buffer addr
+
+	PUSH	BC		; Save b equ slot
+	LD	C,RDBYTE	; Get that byte from 6502
+	CALL	WHBYTE		; Direct addressing command
+	POP	BC
+	LD	DE,0C002H	; 6502 addr
+	LD	A,D
+	OR	B		; Or in slotequequpage
+	LD	D,A
+	CALL	WHWORD
+	CALL	RHBYTE		; V 0$2
+
+RMODA1	EQU	$+1
+	LD	DE,0000		; Poke Relocated Clock addr on entry
+
+	CP	ID2THN		; Check byte for type of clock board
+	JR	Z,$$THND
+	CP	ID2MTN
+	JR	NZ,BAD		; Bad board id
+
+; found the mountain hardware clock board
+; it stores string in REVERSE order
+
+	LD	A,DCXD		; Mtn string stored in reverse
+	LD	HL,YINXD1	; Reverse INC to DEC
+	ADD	HL,DE
+	LD	(HL),A
+	LD	HL,YINXD2
+	ADD	HL,DE
+	LD	(HL),A
+
+	LD	BC,CLKBUF+CLKCNT-1 ; Start at end of clk buffer
+	LD	HL,FIXBUF	; Offset to buffer addr in clock
+	ADD	HL,DE
+	LD	(HL),C
+	INC	HL
+	LD	(HL),B
+	LD	HL,MTNLNS
+	JR	$$SBUF
+
+; found the thunder clock board in slot (b)
+
+$$THND:	LD	BC,GETLN	; Set clock data buffer addr
+
+$$SBUF:	LD	HL,YBUF		; Set buffer addr
+	ADD	HL,DE		; ..offset in clock module
+	LD	(HL),C
+	INC	HL
+	LD	(HL),B
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

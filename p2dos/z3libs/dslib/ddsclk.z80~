@@ -1,0 +1,99 @@
+	TITLE	"DDSCLK - Dslib Ver 4.0"
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;	Derived from DSLIB3 and other routines by Bridger Mitchell
+; Date    : 21 Jun 87
+; Version : 1.0
+; Module  : DDSCLK
+; Abstract:  This module contains the routine FINDCK which
+;	locates an installed DateStamper (tm) Version 2.0 or
+;	later clock.  An error flag is returned if DateStamper
+;	is not installed.
+;	   The routine RDCLK is also contained in this module
+;	which reads the current date and time from the Date-
+;	Stamper clock to a user-specified six-character buffer.
+;	Error flags are returned if The clock cannot be located
+;	or FINDCK did not locate DateStamper.
+;	   NOTE:  FINDCK *MUST* be run before RDCLK is called
+;	The Date/Time string returned from the clock consists
+;	of six packed BCD digits in the following order:
+;		0 - Year
+;		1 - Month
+;		2 - Day
+;		3 - Hours
+;		4 - Minutes
+;		5 - Seconds
+; Revision :
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points :
+
+	PUBLIC		RDCLK, FINDCK
+
+;  Definitions :
+
+BDOS	EQU	0005H		; BDOS entry vector address
+
+GETVFN	EQU	12		; BDOS get version function
+DSID	EQU	'D'		; DateStamper ID for getversion call
+
+	CSEG
+	.Z80			; Set for Z80 code
+;=======================================================
+; Routine - RDCLK
+; ENTER: HL - Points to 6-byte buffer for date/time
+; EXIT : HL - Points to time if OK, HL=0 if no clk
+;	  A <> 0, Zero flag Clear (NZ) if OK
+;	      A = 0, Zero Flag Set (Z) if No Clock
+; Uses All Registers
+;=======================================================
+; Read the DateStamper clock into user buffer
+
+RDCLK:	EX	DE,HL		; Buffer ptr to DE
+	LD	HL,(XCLKAD)	;do we have a resident clock?
+	LD	A,H
+	OR	L
+	RET	Z		; Return HL = 0, Z set
+	EX	DE,HL		; Buffer ptr to HL
+
+XCLKAD	EQU	$+1		; Clock address set by FINDCK
+
+	CALL	0000		;call DateStamper clock
+CKEXIT:	LD	A,H		; Set Flags
+	OR	L
+	RET	
+
+;=======================================================
+; Routine - FINDCK.  Locate installed DateStamper clock
+; ENTER: - None
+; EXIT : HL - Points to clock if OK, HL=0 if no clk
+;	  A <> 0, Zero flag Clear (NZ) if OK
+;	      A = 0, Zero Flag Set (Z) if No Clock
+; Uses All Registers
+;=======================================================
+; Derived from ckclkz.asm 6/26/85 by Bridger Mitchell
+;  modified by routines in DSLIB3 by Bridger Mitchell
+;-------------------------------------------------------
+; Use BDOS version # call to check for DateStamper Ver >= 2.0
+;   Call with E = 'D'.
+; If DateStamper is installed, function returns H = 'D',
+;   L = 22H, and DE = address of clock.
+
+FINDCK:	LD	E,DSID		; Special parameter for
+	LD	C,GETVFN	; ..getversion call
+	CALL	BDOS
+	CP	22H		; Must be 2.2
+	JR	NZ,NOCLK
+	LD	A,H
+	CP	DSID		; If H = DSID..
+	JR	Z,CLKOK		; ..then Clock is OK so set it
+
+NOCLK:	LD	DE,0		; Else go error with Null clock addr
+CLKOK:	EX	DE,HL		; Else clock addr was in DE
+	LD	(XCLKAD),HL	;set addr in ram for clock calls
+	JR	CKEXIT		; Check clock address and set flags
+
+	END
+

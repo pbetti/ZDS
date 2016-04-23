@@ -1,0 +1,166 @@
+                          SBASIC NOTES
+                               #2
+
+     One of SBASIC's more notable shortcomings is its lack of an
+end-of-file function.  Programming languages differ in how they
+deal with the end of a file.  Some treat it as an expected or
+normal occurance and provide some means of testing for it.
+Pascal is such a language.  Others treat it as an exception or
+error, something to be recovered from.  PL/I is an instance of
+the latter approach.  So, unfortunately, is SBASIC.
+
+     Where a program creates its own data files, the lack of an
+end-of-file function is no particular problem.  It's easy to 
+arrange for the size of the file to be stored as part of
+the first record.  That way the program, by keeping track of the 
+number of records read so far, can avoid attempting to read 
+beyond the end of file.  Alternatively, the program can write a 
+special value to the last record that serves as a sentinal.  But 
+there are a very large number of utility programs that deal with 
+data -- typically text -- created by other programs.  Many of 
+these utilities fall under the general classification of 
+"filters" -- programs that read a file and manipulate the 
+contents in some useful way.  The book Software Tools, by Brian 
+W. Kernighan and P. J. Plauger, describes a number of these 
+programs.
+
+     The problem of detecting end-of-file is further complicated 
+under CP/M because the operating system does not store file size
+information as an exact number of bytes, but only in terms of
+128-byte records.  For text files, there is a convention that the
+end of data is marked with a control-Z (ASCII code 26 decimal or
+1A hex).  However, text files created under other operating
+systems (Unix, for example) don't necessarily follow this
+convention, and it sometimes isn't followed even under CP/M if 
+the very last character in a text file falls on a 128-byte 
+boundary.
+
+     Let's take a simple example of a program to read a file
+created by the popular word processing program WordStar and
+write a file that consists of straight ASCII text.  WordStar sets
+the high bit on the final character of each word as well as on
+carriage returns that do not mark the end of a paragraph.
+(WordStar does other things to the file as well, but to keep the
+example simple, we'll ignore them for the moment).  Because we
+can't count on a control-Z marking the end of file, the following
+code will not always work:
+
+
+	var ch = character
+	input3 #2; ch
+	while (ch <> 1AH) do	rem Stop on control-Z
+	    begin
+		input3 #2; ch
+		if ch > 7FH then ch = ch - 80H
+		print #3; ch;
+	    end
+
+
+(This code assumes file channel 2 and 3 have been declared and
+opened for input and output, respectively.  Why subtraction
+rather than a more conventional AND operation is used to strip
+the high bit is reserved for a separate discussion).
+
+     This leaves two approaches.  The first is to accept that we
+are going to have to trap an end-of-file error and respond to it
+appropriately.  The result will be code that is unavoidably ugly,
+since SBASIC has only an ON ERROR GOTO and not an ON ERROR GOSUB
+statement.  Additionally, it lacks a RESUME statement.  Although
+the ugliness of GOTO statements is mitigated somewhat by the fact
+that SBASIC allows aphabetic characters in line "numbers" (which
+are treated simply as labels) the first character must still be a
+digit.
+
+     So, for example, our WordStar-to-ASCII filter might be
+written this way:
+
+
+	var ch = character
+	based errcode = integer
+	base errcode at 103H	rem SBASIC's error code location
+	on error goto 8_trap
+	input3 #2; ch
+	while ch <> 1AH do
+	    begin
+		input3 #2; ch
+		if ch > 7FH then ch = ch - 80H
+		print #3; ch;
+	    end
+        goto 9_done             rem Jump around error trap
+
+	rem Error code 15 signifies read or write past EOF
+	8_trap if errcode <> 15 then print "Runtime error  =";errcode
+
+        rem Make sure output file is properly terminated
+        9_done print #3; chr(1AH);
+
+
+     An alternate approach to the end-of-file problem is to
+determine, before processing the file, how big it is.  Armed with
+this information, we can simply keep track of the number of bytes
+processed and thereby avoid reading past the end of file.  SBASIC
+has a function, SIZE, which is supposed to provide the size of a
+disk file.  However, it returns that information as the number of
+disk "blocks" (allocation groups) occupied by the file, not bytes
+or 128-byte records.  Sadly, the size of a block is not a
+constant but varies from one disk format to another.  More
+distressing, not only is the value returned by the SIZE function
+not very helpful, experiments show that it is sometimes not even
+correct.
+
+     Fortunately, it is relatively easy to write our own
+function that will correctly return the number of 128-byte
+records in a file:
+
+     comment
+         Return size of named file as number of 128-byte records
+         Assumes file is on currently logged-in drive
+     end
+     function fsize(filename = string:20) = integer
+         var hl, de, bc, a_psw = integer
+         based fname = string:20
+         based sz = integer
+         dim byte workfcb(36)
+         location array de = workfcb
+         base fname at de
+         base sz at de + 33
+         fname = fcb$(filename)
+         workfcb(0) = 0
+         bc = 23H               rem BDOS get file size function
+         call (5,hl,de,bc,a_psw)
+     end = sz
+
+
+(There are a number of advanced SBASIC features at work in this
+routine, but the details will be passed over in the interest of
+keeping the present discussion focussed).
+
+     With fsize in hand, our previous code can be rewritten as
+follows:
+
+	var ch = character
+        var bytecount, records, filesize = integer
+        bytecount = 1
+        records = 0
+        filesize = fsize(filename)
+        input3 #2; ch
+	while (ch <> 1AH) and (records < filesize) do
+	    begin
+		input3 #2; ch
+                if bytecount = 128 then
+                   begin
+                       records = records + 1
+                       bytecount = 1
+                   end
+                else bytecount = bytecount + 1
+		if ch > 7FH then ch = ch - 80H
+		print #3; ch;
+	    end
+        print #3; chr(1AH);
+
+
+Admittedly, neither this nor the preceeding error-trap approach
+is as stright-forward or elegant as the corresponding code in
+Pascal or C, but both work reasonably well and expand the range
+of useful programs that can be written in SBASIC.
+

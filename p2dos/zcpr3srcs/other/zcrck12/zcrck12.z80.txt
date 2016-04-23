@@ -1,0 +1,381 @@
+Z3ENV	DEFL	0FE00H
+VERS	EQU	12
+
+; Version 1.2 modifications February 20, 1988 by Bruce
+; Morgen, use faster CRC routines from SYSLIB4, include
+; type-3 safety header, a few cosmetic touches, etc.
+
+; Version 1.1 modifications May 13, 1987 by Bruce Morgen
+; Added printer output option, made ZCRCK a Z33 type 3
+; COMfile.  PRNDU is now internal, calling SYSLIB for
+; output.  ZCRCK will no longer run on an 8080 or 8085.
+
+;Z-systemCRCK, adapted by Bruce Morgen 5/22/86 from
+;NewCRCK  -  NCRCK v1.00 as of 04/22/84 by S. Kluger
+;
+; ZCRCK satisfies both worlds by providing simultaneous display
+; of CRCs computer by two polynomials:
+;
+; X^16 + X^12 + X^5 +1				(the one used in CHEK, LU)
+; X^16 + X^15 + X^13 + X^7 + X^4 + X^2 + X + 1	(the one used in CRCK, XMODEM)
+;
+; The primary purpose is to display CRCK values on RCP/M systems.
+; Therefore, no provisions for file output have been made.
+; (It does, however, provide a much smaller, fast-loading
+; alternative to more elaborate programs, like the standard Z3
+; CRC.COM - b/m)
+;
+CR	EQU	0DH
+LF	EQU	0AH
+BEL	EQU	07H
+;
+DFCB	EQU	5CH
+DBUF	EQU	80H
+FCB2	EQU	6CH
+BDOSE	EQU	05H
+PRNSTR	EQU	9
+;
+	EXTRN	WILDEX		; Sigi's wildcard table builder
+	EXTRN	Z3INIT,DUTDIR,GETWHL,GETEFCB,Z3LOG
+	EXTRN	SHL4HC,SHLDC,SAFDC,SPRINT,SOUT,CIN,SCRLF,SCTLFL
+	EXTRN	F$OPEN,INITFCB,F$READ,HMOVB,EPRINT,EPSTR,COUT
+	EXTRN	CODEND,RETUD
+	EXTRN	CRC3CLR,CRC3UPD,CRC3DONE,CRC3INIT
+	EXTRN	CRC2CLR,CRC2UPD,CRC2DONE
+	EXTRN	DIVHD
+;
+
+; TYPE 3 HEADER
+
+; Code modified as suggested by Charles Irvine to function correctly with
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+
+ENTRY:
+	JR	START0			; Must use relative jump
+	NOP				; Filler
+	DB	'Z3ENV',3		; Type-3 environment
+Z3EADR:
+	DW	Z3ENV			; Filled in by Z33
+	DW	ENTRY			; Intended load address
+
+START0:
+	LD	HL,0			; Point to warmboot entry
+	LD	A,(HL)			; Save the byte there
+	DI				; Protect against interrupts
+	LD	(HL),0C9H		; Replace warmboot with a return opcode
+	RST	0			; Call address 0, pushing RETADDR
+					; onto stack
+RETADDR:
+	LD	(HL),A			; Restore byte at 0
+	DEC	SP			; Get stack pointer to point
+	DEC	SP			; To the value of RETADDR
+	POP	HL			; Get it into HL and restore stack
+	EI				; We can allow interrupts again
+	LD	DE,RETADDR		; This is where we should be
+	XOR	A			; Clear carry flag
+	PUSH	HL			; Save address again
+	SBC	HL,DE			; Subtract -- we should have 0 now
+	POP	HL			; Restore value of RETADDR
+	JR	Z,START			; If addresses matched, begin real code
+
+	LD	DE,NOTZ33MSG-RETADDR	; Offset to message
+	ADD	HL,DE
+	EX	DE,HL			; Switch pointer to message into DE
+	LD	C,PRNSTR
+	JP	BDOSE			; Return via BDOS print string function
+NOTZ33MSG:
+	DB	'Not Z33+$'		; Abort message if not Z33-compatible
+;
+START:
+	LD	(STKSAV),SP
+	LD	SP,STACK
+	LD	HL,(Z3EADR)
+	CALL	Z3INIT
+	LD	HL,SCTLFL
+	LD	(HL),1		; CON: only
+	CALL	GETWHL
+	JR	Z,BANNER
+	LD	DE,(FCB2+1)
+	LD	A,E
+	CP	'/'
+	JR	NZ,NOSLSH
+	LD	A,D
+NOSLSH:	CP	'L'
+	JR	NZ,BANNER
+	LD	(HL),81H	; CON: & LST:
+BANNER:	CALL	EPRINT		; Never to LST:
+	DB	'ZCRCK, Version '
+	DB	[VERS/10]+'0','.',[VERS	MOD 10]+'0'
+	DB	' (ESKAY-b/m)',CR,LF,LF,0
+	LD	A,(DFCB+1)
+	CP	'/'
+	JP	Z,ZHELP
+	CP	' '
+	JP	Z,HELP
+DUISOK:	CALL	CODEND		; Get start of buffer area
+	CALL	CRC3INIT
+	INC	H
+	INC	H
+	LD	(BUFPTR),HL	; Save as buffer pointer
+	LD	DE,DFCB
+	CALL	Z3LOG
+	CALL	WILDEX		; Expand possible wildcards
+	JP	Z,NOFILE	; Quit if no file
+	CALL	SYSCK		; Check and mark $sys files
+	CALL	SPRINT
+	DB	'Matching files:',0
+	LD	HL,(COUNT)
+	CALL	SHLDC
+	CALL	RETUD
+	CALL	DUTDIR
+	JR	Z,NOTNDR
+	PUSH	HL
+	CALL	SPRINT
+	DB	' in the [',0
+	POP	HL
+	LD	B,8
+NDRLOP:	LD	A,(HL)
+	CP	' '
+	CALL	NZ,SOUT
+	INC	HL
+	DJNZ	NDRLOP
+DIRMSG:	CALL	SPRINT
+	DB	'] directory.',0	
+NOTNDR:	CALL	SPRINT
+	DB	CR,LF,LF
+STLINE:	DB	'DU:filename.[typ]   '
+ENDLIN:	DB	0
+	CALL	RETUD
+	LD	A,9
+	CP	C
+	LD	A,' '
+	CALL	C,SOUT
+	CALL	SPRINT
+BGLIN:	DB	'CRCK     CHEK     KBytes   Records'
+ENLINE:	DB	CR,LF,0
+	LD	A,'-'
+	CALL	C,SOUT
+HYPHLN:	LD	B,[ENDLIN-STLINE]+[ENLINE-BGLIN]
+HYPHLP:	CALL	SOUT
+	DJNZ	HYPHLP
+	CALL	SCRLF
+LOOP:	LD	HL,0		; Initialize sector count
+	LD	(SECTS),HL
+	LD	HL,(COUNT)	; Get file count
+	LD	A,H
+	OR	L
+	JP	Z,EXIT		; No more - exit
+	DEC	HL		; Decrement file count...
+	LD	(COUNT),HL	; ...and save it
+;
+; loop here for each file
+;
+LOOP1:	LD	HL,(BUFPTR)	; Move next file name...
+	LD	DE,FCB		; ...into fcb
+	LD	B,16
+	PUSH	DE
+	CALL	HMOVB
+	POP	DE
+	LD	(BUFPTR),HL	; Points to next table entry
+	CALL	INITFCB		; Zero the fcb
+	LD	A,(FCB+10)	; $sys file?
+	OR	A
+	JP	M,LOOP1		; Yes, skip this one
+	CALL	F$OPEN		; Open file
+	JR	NZ,LOOP		; Just in case!
+	CALL	RETUD
+	CALL	PRNDU
+	LD	HL,FCB+1	; Now, print the file name
+	CALL	PFN
+	CALL	CRC2CLR		; Clear both CRC accumulators
+	CALL	CRC3CLR
+;
+; continuously read and update CRC, increment sector count
+; and loop until EOF detected
+;
+GETLP:	CALL	F$READ
+	OR	A
+	JR	NZ,GOTEOF
+	LD	BC,DBUF		; Point to buffer
+	LD	HL,(SECTS)	; Increment sector count
+	INC	HL
+	LD	(SECTS),HL	; add a sector to count
+CLP:	LD	A,(BC)		; Get byte
+	CALL	CRC2UPD		; Update both accumulators
+	CALL	CRC3UPD
+	INC	C		; Increment pointer...
+	JR	NZ,CLP		; ..until end of buffer
+	CALL	CTLC		; Check for abort
+	JR	GETLP
+;
+; got end of file - print stats
+;
+GOTEOF:	CALL	SPACE		; Space to CRCK
+	CALL	CRC2DONE
+	CALL	SHL4HC		; Output hl as NNNN hex
+	CALL	SPACE		; Space to CHEK
+	CALL	CRC3DONE
+	CALL	SHL4HC
+	CALL	SPACE		; Space to KBYTES
+	LD	HL,(SECTS)
+	LD	DE,7		; Round to next full k
+	ADD	HL,DE
+	INC	DE
+	CALL	DIVHD
+	CALL	SHLDC
+	CALL	SPACE		; Space to SECTORS
+	LD	HL,(SECTS)
+	CALL	SHLDC
+	CALL	SCRLF
+	JP	LOOP		; Go do next file
+;
+; check for $sys files and remove them
+;
+SYSCK:	LD	B,H		; Save counter for local use
+	LD	C,L
+	LD	(COUNT),HL
+	CALL	CODEND		; Get buffer start
+	INC	H
+	INC	H
+	LD	DE,10		; $sys flag offset
+	ADD	HL,DE
+	LD	DE,16		; File-to-file offset
+CKSYS:	LD	A,B		; Check if we still have more files
+	OR	C
+	RET	Z		; All done, quit
+	DEC	BC
+	LD	A,(HL)		; Get t2 byte
+	OR	A		; $sys?
+	CALL	M,SYS		; Yes, call processor
+	ADD	HL,DE		; Point to next t2 byte
+	JR	CKSYS
+;
+SYS:	CALL	GETWHL
+	JR	NZ,PASS		; Wheel set - strip flag
+	PUSH	HL
+	LD	HL,(COUNT)	; Else decrement file counter...
+	DEC	HL		; ...so that it doesn't show...
+	LD	(COUNT),HL	; ...in the total count
+	POP	HL
+	RET
+;
+PASS:	LD	A,(HL)		; Strip $sys bit
+	AND	7FH
+	LD	(HL),A
+	RET
+;
+CTLC:	PUSH	HL
+	PUSH	DE
+	PUSH	BC
+	LD	C,6
+	LD	E,0FFH
+	CALL	BDOSE
+	OR	A
+	POP	BC
+	POP	DE
+	POP	HL
+	RET	Z		; Nothing typed on con: - return
+	CP	'C'-40H		; Was it ^C?
+	JR	Z,ABORT		; Yes, quit
+	CP	'S'-40H		; Was it ^S?
+	RET	NZ		; No - return
+	JP	CIN		; Else wait for keypress
+;
+; print 5 spaces
+;
+SPACE:	CALL	SPRINT
+	DB	'     ',0
+	RET
+;
+; print file name
+;
+PFN:	LD	B,8
+	CALL	PFN2
+	LD	A,'.'
+	CALL	SOUT
+	LD	B,3
+PFN2:	LD	A,(HL)
+	AND	7FH
+	CALL	SOUT
+	INC	HL
+	DJNZ	PFN2
+	RET
+
+; Print "DU:" to switched output when B=Disk and C=User code.
+
+PRNDU:	LD	A,B
+	ADD	A,'A'
+	CALL	SOUT
+	LD	A,C
+	CALL	SAFDC
+	LD	A,':'
+	JP	SOUT		; JP xxxx = CALL xxxx!RET
+
+
+; Print actual program name if possible, otherwise print "ZCRCK"
+
+COMNAM:	CALL	GETEFCB
+	JR	Z,NOEFCB
+	LD	B,8
+COMNLP:	INC	HL
+	LD	A,(HL)
+	AND	7FH
+	CP	' '
+	CALL	NZ,COUT
+	DJNZ	COMNLP
+	RET
+NOEFCB:	CALL	EPRINT
+	DB	'ZCRCK',0
+	RET
+	
+;
+ABORT:	CALL	EPRINT
+	DB	CR		; CR only! - erases filename.typ
+	DB	'<<< Aborted! >>>',CR,LF,0
+	JP	QUIT
+;
+EXIT:	CALL	EPRINT
+	DB	CR,LF,'Done.',CR,LF,0
+	JP	QUIT
+;
+NOFILE:	CALL	EPRINT
+	DB	CR,LF
+	DB	'File not found',CR,LF,0
+	JP	QUIT
+;
+HELP:	CALL	EPRINT
+	DB	CR,LF
+	DB	'No file specified',CR,LF,0
+ZHELP:	CALL	EPRINT
+	DB	'Syntax:',CR,LF,' ',0
+	CALL	COMNAM
+	CALL	EPRINT
+	DB	' [du: or dir:]afn [[/]Option]',CR,LF,LF
+	DB	' CRC values for the selected file(s) are displayed.',CR,LF
+	DB	' Both "CHEK" and "CRCK" values shown.',CR,LF,0
+	CALL	GETWHL
+	LD	HL,NOWHLH
+	JR	Z,NOTWHL
+	LD	HL,LSTHLP
+NOTWHL:	CALL	EPSTR
+
+QUIT:	LD	SP,(STKSAV)
+	RET
+
+LSTHLP:	DB	' Option: "L"=output listing to LST: device.'
+NOWHLH:	DB	CR,LF,0
+;
+	DSEG
+
+STKSAV:	DS	2
+COUNT:	DS	2
+BUFPTR:	DS	2
+BYTES:	DS	2
+SECTS:	DS	2
+FCB:	DS	36
+	DS	60
+STACK:	DS	2
+
+	END
+

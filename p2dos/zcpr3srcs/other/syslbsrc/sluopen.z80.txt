@@ -1,0 +1,136 @@
+;	TITLE	"SLUOPEN - Syslib 4.0"
+	NAME	('LUOPEN')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SLUOPEN.Z80 Ver 1.0 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.1
+; Module  : SLUOPEN
+; Abstract: This module contains LUOPEN which opens a file within
+;	a library for reading.  It locates the file and loads the
+;	appropriate buffers in the LUD for following reads.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		LUOPEN
+
+; From SYSLIB Get..
+
+	EXT		F$OPEN, R$READ, SETDMA, @AFNCMP
+
+; Definitions
+
+BDOSE	EQU	5		; CP/M, ZRDOS, P2DOS entry point
+TBUFF	EQU	0080H		; Default sector buffer
+LUIDX	EQU	12		; Offset to index in LU directory
+LUDFCB	EQU	17		; Offse to LUD FCB
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - LUOPEN
+; Entry: DE - Points to LUD
+;	 HL - Points to a Filename and Type
+; Exit :  A = 0, Zero Set (Z) if Ok
+;	      A = 0FFH, Zero Clear (NZ) if File Not Found
+; Uses : AF
+; Special Requirements: NOTE: DMA address is set to TBUFF
+;===============================================================
+
+LUOPEN:	PUSH	HL		; save regs
+	PUSH	DE
+	PUSH	BC
+	LD	(FILE),HL	; save ptr to file name
+	LD	HL,TBUFF	; Set default DMA Address
+	CALL	SETDMA
+	LD	HL,LUDFCB	; offset to FCB
+	ADD	HL,DE
+	EX	DE,HL		; DE = FCB
+	PUSH	HL		; save ptr to LUD
+	LD	C,(HL)		; get length of directory
+	INC	HL
+	LD	B,(HL)
+	LD	HL,0		; read directory in (record 0)
+LOOP:	CALL	R$READ		; random read
+	JR	NZ,ERROR	; file not found if error
+	PUSH	DE		; save key regs
+	PUSH	BC
+	CALL	SCAN		; scan for file name match
+	POP	BC		; restore key regs
+	POP	DE
+	JR	Z,MATCH
+	INC	HL		; pt to next record
+	DEC	BC		; count down length of dir
+	LD	A,B		; done?
+	OR	C
+	JR	NZ,LOOP
+ERROR:	POP	HL		; restore LUD ptr
+	OR	0FFH		; set 0FFH
+DONE:	POP	BC		; restore regs
+	POP	DE
+	POP	HL
+	RET
+
+;.....
+; Match - HL pts to entry.  Copy index and length into LUD
+
+MATCH:	LD	(LUDENT),HL	; save ptr to LUD entry
+	LD	DE,LUIDX	; offset to index
+	ADD	HL,DE		; HL pts to index
+	POP	DE		; DE pts to LUD
+	INC	DE		; DE pts to index in LUD
+	INC	DE
+	LD	BC,4		; copy index and length into LUD
+	LDIR			; copy
+	LD	HL,(LUDENT)	; get ptr to LUD entry
+	INC	HL		; pt to file name
+	LD	BC,11		; 11 bytes to copy
+	LDIR			; copy
+	XOR	A		; A=0
+	JR	DONE
+
+;.....
+;  Scan TBUFF for file name
+;  If found, A=0 and HL pts to entry.  If not found, A=0FFH
+
+SCAN:	PUSH	HL		; save regs
+	LD	HL,TBUFF	; pt to buffer
+	LD	C,4		; 4 entries possible
+SCAN1:	LD	A,(HL)		; check for active entry
+	OR	A		; 0=yes
+	JR	NZ,SCANXT
+	PUSH	HL
+	INC	HL		; pt to name
+	LD	DE,(FILE)	; pt to file name
+	LD	B,11		; 11 bytes
+	PUSH	BC		; ..save counters
+	EX	DE,HL		; Swap pointers for compare
+	CALL	@AFNCMP		; ..and perform ambiguous compare
+	POP	BC
+	JR	NZ,SCANLP2	; Jump if Not equal or included
+	POP	HL		; we have a match - pt to entry with HL
+	POP	AF		; flush old HL
+	XOR	A		; return with zero for match
+	RET
+
+SCANLP2: POP	HL		; pt to current
+SCANXT:	LD	DE,32		; pt to next
+	ADD	HL,DE
+	DEC	C		; count down
+	JR	NZ,SCAN1
+	POP	HL		; restore HL
+	OR	0FFH		; set no match
+	RET
+
+;  Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+FILE:	DEFS	2		; pointer to FN.FT
+LUDENT:	DEFS	2		; pointer to LUD entry
+
+	END
+

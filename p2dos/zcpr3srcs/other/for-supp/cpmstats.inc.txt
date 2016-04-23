@@ -1,0 +1,88 @@
+{
+  Turbo Pascal Include file to display space remaining on disk.
+  Nov. 19, 1986 by Carson Wilson. For all CP/M 2.2 systems.
+  ByteMask works on the principle that, e.g., if ByteMask = 00100000 (binary),
+  ByteMask AND AllocByte = 1 only if the third bit in AllocByte = 1.
+
+CALLING CONVENTIONS:
+
+writeln(CPMStats('d',space));
+                       ...If 'd' is a legal drive letter (see "LegalDrives"
+                          below), get space on that drive. If 'd' is an
+                          ILLEGAL drive letter, get space remaining on
+                          current drive. Output is a number representing
+                          the number of kilobytes left.
+
+BLSize := CPMStats('d',size);
+                       ...Gets block size of drive, or current drive, where
+                          "BLSize" is an integer variable.
+}
+type
+  calltype = (space,size);   { return space on disk, or block size? }
+
+function CPMStats(DriveLtr : char; command : calltype) : integer;
+  const
+    GetParams = 31;   { BDOS Get Disk Parameters Address }
+    GetAlloc  = 27;   {   "  Get Allocation Address      }
+    MaxByte   = $80;  { 10000000 binary }
+    LegalDrives : set of char = ['A'..'P'];
+  type
+    table = record         { holds disk parameters block for selected disk }
+      SPT : integer;
+      BSH, BLM, EXM : byte;
+      DSM, DRM : integer;
+      AL0, AL1 : byte;
+      CKS, OFF : integer;
+      end;
+  var
+    TableArray : table;
+    BlockSize,          { size, in Kb, of each data block on disk }
+    ByteMask,
+    AllocBit,           { 1 bit     within allocation  block }
+    AllocByte : byte;   { 1 byte       "       "         "   }
+    TableSize,          { length, in bits, of the allocation table }
+    offset,
+    AllocAddr,          { address of start of allocation block }
+    TableAddr,          {    "     "   "   "  disk parameters }
+    K : integer;        { calculated disk space in Kb }
+
+  begin
+  DriveLtr := upcase(DriveLtr);
+  if DriveLtr in LegalDrives then
+    bdos(14,ord(DriveLtr) - $41);    { select drive - else use default drive }
+  K := 0;
+  TableAddr := bdoshl(GetParams);
+  AllocAddr := bdoshl(GetAlloc);
+  for offset := 0 to 14 do
+    mem[addr(TableArray) + offset] :=
+    mem[TableAddr + offset];      { move disk parameters into record variable }
+                                  {      "TableArray"                         }
+  with TableArray do begin
+    if DSM > 255 then BlockSize := EXM * 2 + 2
+    else BlockSize := EXM + 1;     { see p. 147 of Dig. Res. CP/M 2.2 Manual }
+    TableSize := DSM + 1;
+    end;
+
+  for offset := 0 to (TableSize div 8 - 1) do begin  { do full bytes in }
+    AllocByte := mem[AllocAddr + offset];            { allocation block }
+    ByteMask := MaxByte;                    { 10000000B }
+    for AllocBit := 1 to 8 do begin
+      if AllocByte AND ByteMask = 0 then
+        K := K + BlockSize;                 { doesn't match mask }
+      ByteMask :=  ByteMask SHR 1;
+      end;
+    end;
+
+  offset := offset + 1;
+  AllocByte := mem[AllocAddr + offset];
+  ByteMask := MaxByte;
+  for AllocBit := 1 to (TableSize mod 8) do begin   { do remaining allocation }
+    if AllocByte AND ByteMask = 0 then K := K + BlockSize;     { bits, if any }
+    ByteMask :=  ByteMask SHR 1;
+    end;
+  case command of
+    space : CPMStats := K;
+    size  : CPMStats := BlockSize;
+    end;
+  end;           { function CPMStats }
+

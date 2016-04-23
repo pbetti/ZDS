@@ -1,0 +1,533 @@
+;  Program:  Z-CUBE
+;  Version:  1.1
+;  Date:     21 January, 1986
+;
+;  Author:  Paul Pomerleau
+
+VERS	EQU	11
+Z3ENV	aset	0f300h
+
+	ext	print, cout, cin, caps, mulhd
+	ext	z3vini, tinit, z3init, gotoxy, cls, stnden, stndou
+	ext	z3log, pfind, zfname
+;
+; Basic Definitions
+;
+BDOS	equ	5	; Location for BDOS calls
+;
+; End of equates
+;
+	jp	FIRST		; Jump around Z3 environment descriptor
+	db	'Z3ENV'
+	db	1
+Z3EADR:
+	dw	Z3ENV		; Location for beginning of Z3 env. desc.
+
+;
+; Bytes to be written
+;
+;       Set at the begining so subsequent changes to the code 
+;       would not change their location.
+FACES:
+	db	1,1,1,1,1,1,1,1,1	; Y
+	db	2,2,2,2,2,2,2,2,2	; W
+	db	3,3,3,3,3,3,3,3,3	; O
+	db	4,4,4,4,4,4,4,4,4	; B
+	db	5,5,5,5,5,5,5,5,5	; G
+	db	6,6,6,6,6,6,6,6,6	; R
+;
+; Bytes to be modified by user ala DDT or PATCH
+;
+NAME:	db	'B0:ZCUBE.COM              ',0
+;
+; Start of code.
+;
+FIRST:
+	ld	a,(5dh)
+	cp	'/'
+	jp	z,HELP
+	ld	(STACK),sp
+	ld	hl,(Z3EADR)
+	call	Z3INIT
+	call	Z3VINI
+	call	TINIT
+	call	CLS
+	call	PRINT
+	db	'Z-Cube vers ',(vers / 10) + '0','.',(vers mod 10) + '0'
+	db	'  --  ^Q Quits.',13,10,10
+	db	'         Outside                '
+	db	'                 Inside',0
+	call	BOTTOM
+LOOP:	call	SCRPRINT
+	call	INPUT
+	jr	LOOP
+
+INPUT:	call	CIN
+GOTKEY:	call	CAPS
+	cp	'Q' - '@'
+	jp	z,DONE
+	cp	'S' - '@'
+	jp	z,SCREWDRIVER
+	cp	'W' - '@'
+	jp	z,WRITE
+	cp	' '
+	jp	z,CKRIGHT
+	cp	'0'
+	jp	z,CKRIGHT
+	cp	13
+	jp	z,CKLEFT
+	cp	'9' + 1
+	jr	c,NUMBERIN
+	ld	hl,LETTERS
+	ld	bc,6
+	cpir
+	ret	nz
+	ld	a,5
+	sub	c
+	ld	(FOCUS),a
+	call	BOTTOM
+	ret
+NUMBERIN:
+	ld	hl,NUMBERS
+	ld	bc,6
+	cpir
+	ret	nz
+	ld	a,5
+	sub	c
+	ld	(FOCUS),a
+	jp	BOTTOM
+
+SCRPRINT:
+	ld	a,5
+	ld	(LINE),a
+	ld	hl,0501h
+	call	GOTOXY
+	ld	hl,SCREEN
+SCRLOOP:
+	ld	a,(hl)
+	inc	hl
+	or	a
+	ret	z
+	cp	'\'
+	jr	z,SCRCOUT
+	cp	'>'
+	jr	z,SCRCOUT
+	cp	'<'
+	jr	z,SCRCOUT
+	cp	'_'
+	jr	z,SCRCOUT
+	cp	'|'
+	jr	z,POSPLUS
+	cp	10
+	jr	z,LINEPLUS
+	cp	'0'
+	jr	nc,PROCESS
+SCRCOUT:
+	call	COUT
+	jr	SCRLOOP
+PROCESS:
+	ex	af,af'
+	ld	a,(hl)
+	inc	hl
+	sub	'0'
+	push	hl
+	ld	e,a
+	ld	d,0
+	ld	hl,9
+	call	MULHD
+	ld	de,FACES
+	add	hl,de
+	ex	af,af'
+	sub	'0'
+	ld	e,a
+	ld	d,0
+	add	hl,de
+	ld	a,(hl)
+	call	OUTPUT
+	pop	hl
+	jr	SCRLOOP
+
+POSPLUS:
+	push	hl
+	ld	a,(LINE)
+	ld	h,a
+	ld	l,40
+	call	GOTOXY
+	pop	hl
+	jr	SCRLOOP
+
+LINEPLUS:
+	ld	a,(LINE)
+	inc	a
+	ld	(LINE),a
+	ld	a,10
+	jr	SCRCOUT
+
+BOTTOM:	ld	hl,1001h
+	call	GOTOXY
+	call	PRINT
+	db	'Turning: ',0
+	ld	a,(FOCUS)
+	ld	e,a
+	ld	d,0
+	ld	hl,6
+	call	MULHD
+	ld	de,COLORS
+	add	hl,de
+	ld	b,6
+COLORLOOP:
+	ld	a,(hl)
+	inc	hl
+	push	bc
+	call	COUT
+	pop	bc
+	djnz	COLORLOOP
+	ret
+
+OUTPUT:	dec	a
+	ld	e,a
+	cp	3
+	push	af
+	call	c,STNDOU
+	pop	af
+	push	af
+	bit	1,a
+	call	nz,BRACK1
+	jr	nz,SKIP1
+	bit	0,a
+	call	nz,BRACE
+	call	z,SPACE
+SKIP1:	ld	hl,LETTERS
+	ld	d,0
+	add	hl,de
+	ld	a,(hl)
+	call	COUT
+	pop	af
+	bit	1,a
+	call	nz,BRACK2
+	jr	nz,SKIP2
+	bit	0,a
+	call	nz,BRACE
+	call	z,SPACE
+SKIP2:	cp	3
+	call	c,STNDEN
+	ret
+
+CKLEFT:	ld	a,(FOCUS)
+	cp	1
+	jr	z,RIGHT
+	cp	2
+	jr	z,RIGHT
+	cp	5
+	jr	z,RIGHT
+	jr	LEFT	
+
+CKRIGHT:
+	ld	a,(FOCUS)
+	cp	1
+	jr	z,LEFT
+	cp	2
+	jr	z,LEFT
+	cp	5
+	jr	z,LEFT
+
+RIGHT:	call	MOVE
+	call	MOVE
+	jr	SIDEMOVE
+
+LEFT:	call	RIGHT
+	call	RIGHT
+	jr	RIGHT
+
+MOVE:	ld	a,(FOCUS)
+	inc	a
+	ld	e,a
+	ld	d,0
+	ld	hl,9
+	call	MULHD
+	ld	de,FACES
+	add	hl,de
+	dec	hl
+	dec	hl
+	push	hl
+	ld	b,8
+MOVELOOP:
+	ld	e,(hl)
+	ld	(hl),a
+	ld	a,e
+	dec	hl
+	djnz	MOVELOOP
+	pop	hl
+	ld	(hl),a
+	ret
+
+SIDEMOVE:
+	ld	ix,UP
+	ld	iy,OVER
+	ld	a,(FOCUS)
+	ld	e,a
+	ld	d,0
+	ld	hl,16
+	call	MULHD
+	ld	de,LINKS
+	add	hl,de
+	ld	b,4
+	push	hl
+UPOLOOP:
+	push	bc
+	push	hl
+	call	UPOVER
+	pop	hl
+	ld	de,4
+	add	hl,de
+	pop	bc
+	djnz	UPOLOOP
+	pop	hl
+	call	UPOVER
+	ret
+
+UPOVER:	ld	b,(hl)
+	inc	hl
+	ld	c,(hl)
+	call	GETSQUARE
+	ld	(ix + 0),a
+	inc	hl
+	ld	c,(hl)
+	call	GETSQUARE
+	ld	(ix + 1),a
+	inc	hl
+	ld	c,(hl)
+	call	GETSQUARE
+	ld	(ix + 2),a
+	ld	a,(iy + 2)
+	call	PUTSQUARE
+	dec	hl
+	ld	c,(hl)
+	ld	a,(iy + 1)
+	call	PUTSQUARE
+	dec	hl
+	ld	c,(hl)
+	ld	a,(iy + 0)
+	call	PUTSQUARE
+	ld	hl,UP
+	ld	de,OVER
+	ld	bc,3
+	ldir
+	ret
+
+PUTSQUARE:
+	push	hl
+	push	de
+	push	af
+	ld	e,b
+	ld	d,0
+	ld	hl,9
+	call	MULHD
+	ld	de,FACES
+	add	hl,de
+	pop	af
+	call	PUTOFFSET
+	pop	de
+	pop	hl
+	ret
+
+PUTOFFSET:
+	push	hl
+	push	de
+	ld	e,c
+	ld	d,0
+	add	hl,de
+	ld	(hl),a
+	pop	de
+	pop	hl
+	ret
+
+GETSQUARE:
+	push	hl
+	push	de
+	ld	e,b
+	ld	d,0
+	ld	hl,9
+	call	MULHD
+	ld	de,FACES
+	add	hl,de
+	call	GETOFFSET
+	pop	de
+	pop	hl
+	ret
+
+GETOFFSET:
+	push	hl
+	push	de
+	ld	e,c
+	ld	d,0
+	add	hl,de
+	ld	a,(hl)
+	pop	de
+	pop	hl
+	ret
+
+SPACE:	push	af
+	ld	a,' '
+CHAROUT:
+	call	COUT
+	pop	af
+	ret
+
+BRACK1:	push	af
+	ld	a,'<'
+	jr	CHAROUT
+
+BRACK2:	push	af
+	ld	a,'>'
+	jr	CHAROUT
+
+BRACE:	push	af
+	ld	a,'-'
+	jr	CHAROUT
+
+SCREWDRIVER:
+	ld	hl,FACES
+	ld	b,1
+SCREWIT:
+	ld	(hl),b
+	ld	d,h
+	ld	e,l
+	inc	de
+	push	bc
+	ld	bc,8
+	ldir
+	pop	bc
+	inc	hl
+	inc	b
+	ld	a,7
+	cp	b
+	jr	nz,SCREWIT
+	ret
+
+WRITE:	ld	hl,FCB
+	ld	(hl),0
+	ld	de,FCB + 1
+	ld	bc,35
+	ldir
+	ld	de,FCB
+	ld	hl,NAME
+	call	ZFNAME
+	call	Z3LOG
+	call	OPEN
+	jr	nz,WRITESECTOR
+	ld	de,FCB
+	ld	a,0
+	call	PFIND
+	jr	nz,NOTFOUND
+	call	OPEN
+	jr	nz,WRITESECTOR
+NOTFOUND:
+	call	PRINT
+	db	13,10,10,'File Not Found.',0
+OVERWRITE:
+	call	CIN
+	call	PRINT
+	db	13,'               ',0
+	jp	GOTKEY
+
+OPEN:	push	de
+	ld	c,15
+	call	BDOS
+	pop	de
+	inc	a
+	ret
+
+WRITESECTOR:
+	push	de
+	ld	c,26
+	ld	de,100h
+	call	BDOS
+	pop	de
+	push	de
+	ld	c,21
+	call	BDOS
+	pop	de
+	ld	c,16
+	call	BDOS
+	call	PRINT
+	db	13,10,10,'Written.',0
+	jr	OVERWRITE
+
+DONE:	ld	hl,1201h
+	call	GOTOXY
+	ld	sp,(STACK)
+	ret
+
+LETTERS:
+	db	'YWOBGR'
+NUMBERS:
+	db	'86,759'
+COLORS:
+	db	'Yellow'
+	db	'White '
+	db	'Orange'
+	db	'Blue  '
+	db	'Green '
+	db	'Red   '
+
+LINKS:
+L0:	db	3,0,1,2
+	db	4,0,1,2
+	db	2,6,7,0
+	db	5,0,1,2
+
+L1:	db	3,4,5,6
+	db	5,4,5,6
+	db	2,2,3,4
+	db	4,4,5,6
+
+L2:	db	1,6,7,0
+	db	5,6,7,0
+	db	0,2,3,4
+	db	4,2,3,4
+
+L3:	db	1,2,3,4
+	db	4,6,7,0
+	db	0,6,7,0
+	db	5,2,3,4
+
+L4:	db	3,2,3,4
+	db	1,4,5,6
+	db	2,4,5,6
+	db	0,4,5,6
+
+L5:	db	0,0,1,2
+	db	2,0,1,2
+	db	1,0,1,2
+	db	3,6,7,0
+
+SCREEN:
+db '       \_00 10 20    |     25 15 05 /',13,10
+db '    03  \_70 80 30   |   35 85 75 /  02',13,10
+db '  73 13  \_60 50 40  | 45 55 65 /  12 72',13,10
+db '63 83 23 _>----------|- - - - - -<  22 82 62',13,10
+db '  53 33 _/ 04 14 24  | 21 11 01 \  32 52',13,10
+db '    43 _/ 74 84 34   |   31 81 71 \  42',13,10
+db '      _/ 64 54 44    |     41 51 61 \',0
+
+HELP:	call	PRINT
+	db	'Z-Cube vers ',(vers / 10)+'0','.',(vers mod 10)+'0'
+	db	' -- A simulation of a 3 dimensional cube.',13,10
+	db	'  Y, B, G, W, R and O = Select the color of the '
+	db	'side to turn.',13,10
+	db	'  Return = Rotate clockwise.',13,10
+	db	'  Space = Rotate counter-clockwise.',13,10
+	db	'  ^W = Write cube to disk.',13,10
+	db	'  ^S = Screwdriver.',13,10
+	db	'  ^Q = Quit.',0
+	ret
+
+LINE:	db	0
+FOCUS:	db	0
+STACK:	dw	0000
+UP:	db	0,0,0
+OVER:	db	0,0,0
+FCB:	ds	36,0
+END
+

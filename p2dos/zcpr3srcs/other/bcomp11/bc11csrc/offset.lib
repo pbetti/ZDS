@@ -1,0 +1,84 @@
+; (ZPATCH routine), Copyright 1987 by Steven M. Cohen
+;
+; Figure the offset to use for .COM files, and all ZCPR3
+; system segments
+OFSFIG:			
+	LD	DE,FCB1+9
+	LD	IX,(Z3EADR)	; ENV ptr
+TSTCOM:	LD	HL,COM		; .COM file
+	CALL	SEVENB
+	JR	NZ,TSTENV	; no, move on to next
+	LD	HL,100H		; offset is 100H
+	RET
+;
+TSTENV:				; A Z3 environmental descriptor?
+	LD	HL,Z3EADR-4
+	CALL	SEVENB
+	JR	NZ,TSTZ3T	; no, move on to next
+	LD	HL,(Z3EADR)	; yes, offset IS (z3eadr)
+	RET
+;
+TSTZ3T: LD	HL,Z3T		; A z3 terminal descriptor?
+	CALL	SEVENB
+	JR	NZ,TSTRCP	; no, move on to next
+	LD	HL,(Z3EADR)
+	LD	DE,80H
+	ADD	HL,DE		; ENV PTR + 80H= terminal descriptor ptr
+	RET
+;
+TSTRCP: LD	HL,RCP		; A z3 Resident command package?
+	CALL	SEVENB
+	JR	NZ,TSTIOP	; no, move on to next
+	LD	L,(IX+0CH)	; get offset from ENVIRONMENT DESCRIPTOR
+	LD	H,(IX+0DH)
+	RET		
+;
+TSTIOP:	LD	HL,IOP		; A z3 input-output package?
+	CALL	SEVENB
+	JR	NZ,TSTFCP	; no, move on to next
+	LD	L,(IX+0FH)	; get offset from ENVIRONMENT DESCRIPTOR
+	LD	H,(IX+10H)
+	RET
+;
+TSTFCP:	LD	HL,FCP		; A z3 flow-command package?
+	CALL	SEVENB
+	JR	NZ,TSTNDR	; no, move on to next
+	LD	L,(IX+12H)	; get offset from ENVIRONMENT DESCRIPTOR
+	LD	H,(IX+13H)
+	RET
+;
+TSTNDR: LD	HL,NDR		; A z3 named directory file?
+	CALL	SEVENB		
+	JR	NZ,DEFTO0	; no, use default
+	LD	L,(IX+15H)	; get offset from ENVIRONMENT DESCRIPTOR
+	LD	H,(IX+16H)
+	RET
+DEFTO0:	LD	HL,0
+	RET
+;
+; 7 bit comparison of three-byte buffers
+;
+SEVENB:	ld	bc,0303h	; b=3 controls loop, c=3 to adjust for cpi's
+seven0:	push	de
+SEVENLP:
+	LD	A,(DE)		; get byte in A
+	INC	DE		; point to next
+	AND	07FH		; strip high bit
+	CPI			; compare and increment HL
+	JR	NZ,SLPXT	; not same, exit with nz flag
+	DJNZ	SEVENLP		; else exit is with z flag
+SLPXT:	POP	DE	
+	RET
+COM:	DB	'COM'			;command file extent
+ENV:	DB	'ENV'			;Z3 system segments
+RCP:	DB	'RCP'			;"     "       "
+IOP:	DB	'IOP'			;"     "       "
+FCP:	DB	'FCP'			;"     "       "
+NDR:	DB	'NDR'			;"     "       "
+Z3T:	DB	'Z3T'			;"     "       "
+type3:	db	'Z3ENV',3
+ "
+FCP:	DB	'FCP'			;"     "       "
+NDR:	DB	'NDR'			;"     "       "
+Z3T:	DB	'Z3T'			;"     "       "
+type3:	db	'Z3E

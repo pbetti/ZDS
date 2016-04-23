@@ -1,0 +1,1665 @@
+
+; ZCPR3 System Segment: Z3TCAP (Terminal Capabilities File) - 05/16/87
+;
+;		    Original author: Richard Conn
+;
+;-----------------------------------------------------------------------
+;		    recent updates, newest first
+;
+; v2.6  05/16/87  Added separate highlighting
+;		  for IBM PC color/mono systems.
+;		  Fixed Kaypro 4 - half bright
+;		  is invisible on most Kaypros  - Barron McIntire
+; v2.5	05/01/87  Added Commodore C128		- Irv Hoff
+; v2.4	04/27/87  Updated uniqueness, minor changes
+;						- David McCord
+; v2.3	04/22/87  Changes, added:  None, Datapoint, IBM, etc.
+;						- Irv Hoff
+; v2.2	02/20/87  Changes and more termimals	- David McCord
+; v2.1		  Added P2000C			- Bob Peddicord
+; v2.0	09/06/86  More terminals		- Terry Pinto
+; v1.9a 12/23/86  Mod for QVT102		- Arun Baheti
+; v1.9		  More terminals		- Al Hawley
+; v1.8	09/02/85  Mod Apple IIE 		- Jay Sage
+; v1.7	08/09/85  Mod for Kaypro II		- Wally Ottersbach
+; v1.6		  More terminals
+; v1.5	07/17/85  More terminals		- Richard Conn
+; v1.4	12/09/84  More terminals		- Joe Wright
+; v1.3	10/28/84  More terminals		- Joe Wright
+; v1.2	10/12/84  More terminals		- Joe Wright
+; v1.1	09/25/84  More terminals		- Joe Wright
+; v1.0	09/13/84  Changes and more terminals	- Joe Wright
+;
+;-----------------------------------------------------------------------
+;
+; CAUTION: In version 1.5 of the TCAP, Richard Conn  made a small change
+;	   in the  not-displayed-under-TCSELECT  "internal names" of the
+;	   terminals.  It was not adequately  documented  and was there-
+;	   fore overlooked.  Release (2.4) has been brought  up to date.
+;	   The "internal name" is  located with each terminal definition
+;	   (TCSELECT displays only the	index of names in the first part
+;	   of this file).  The	first eight  characters of the "internal
+;	   name" field must be unique for each terminal type  which per-
+;	   mits TERM3, Z-Msg and  future software  to reduce the size of
+;	   user databases (8 bytes vs. 20 per user per TCAP definition).
+;	   Make sure any additions conform to this 'uniqueness' require-
+;	   ment.  (Until someone updates  TCCHECK, it will report errors
+;	   with this format - ignore them.)	- David McCord
+;
+;
+; Z3TCAP is divided into two main parts, the index, which contains a set
+; of 16-byte entries describing the names of the terminals to follow and
+; the main body, which contains the details on the termimals themselves.
+; Origin does not make any difference as everything is relative, anyway.
+; The index  is always an integral number of 128-byte blocks.  Each ter-
+; minal entry in the main body is 128 bytes in size.
+;
+;-----------------------------------------------------------------------
+;
+	ORG	100H
+;
+;
+NO	EQU	0
+YES	EQU	NOT NO
+;
+;
+; If using the ZAS assembler, say yes to the following equate, else NO
+;
+ZAS	EQU	YES		; YES = ZAS assembler, NO for others
+;
+ESC	EQU	1BH		; Escape character
+;
+;
+; Z3TCAP index, structure is:
+;
+;	DS	16		; Name of Terminal
+;	...
+;	DB	'		 '  ; Blank Entry Marks End
+;	DS	16 * n		; Required to finish last 128-byte block
+;
+;
+TERMINAL:
+	DEFB	'(None requested)'	; If none is wanted
+	DEFB	'AA Ambassador   '
+	DEFB	'ADDS Consul 980 '
+	DEFB	'ADDS Regent 20  '
+	DEFB	'ADDS Viewpoint  '
+	DEFB	'ADM 2           '
+	DEFB	'ADM 3A          '
+	DEFB	'ADM 20          '
+	DEFB	'ADM 31          '
+	DEFB	'ADM 42          '
+	DEFB	'Apple //e ALS   '
+	DEFB	'Apple //e MS    '
+	DEFB	'Apple //e PCPI  '
+	DEFB	'Apple ///       '
+	DEFB	'Bantam 550      '
+	DEFB	'CDC 456         '
+	DEFB	'Commodore C128  '
+	DEFB	'Concept 100     '
+	DEFB	'Concept 108     '
+	DEFB	'CT82            '
+	DEFB	'Datapoint 1560  '
+	DEFB	'DEC VT52        '
+	DEFB	'DEC VT100       '
+	DEFB	'Dialogue 80     '
+	DEFB	'Direct 800/A    '
+	DEFB	'Epson GENEVA    '
+	DEFB	'Epson QX-10     '
+	DEFB	'General Terminal'
+	DEFB	'Hazeltine 1420  '
+	DEFB	'Hazeltine 1500  '
+	DEFB	'Hazeltine 1510  '
+	DEFB	'Hazeltine 1520  '
+	DEFB	'Heath H19       '
+	DEFB	'Heath H19 (ANSI)'
+	DEFB	'HP 2621         '
+	DEFB	'IBM 3101        '
+	DEFB	'IBM PC Color    '
+	DEFB	'IBM PC Mono     '
+	DEFB	'Kaypro II       '
+	DEFB	'Kaypro 4 or 10  '
+	DEFB	'Liberty Free50  '
+	DEFB	'Liberty Free100 '
+	DEFB	'Micro Bee       '
+	DEFB	'Microterm ACT IV'
+	DEFB	'Microterm ACT V '
+	DEFB	'Morrow MDT-20   '
+	DEFB	'Morrow MDT-60   '
+	DEFB	'Morrow MDT-70   '
+	DEFB	'NorthStar Advant'
+	DEFB	'Osborne I       '
+	DEFB	'Perkins Elm 1100'
+	DEFB	'Perkins Elm 1200'
+	DEFB	'Phillips 2000C  '
+	DEFB	'Qume QVT 102    '
+	DEFB	'SOROC 120       '
+	DEFB	'Super Bee       '
+	DEFB	'TAB 132         '
+	DEFB	'Teleray 1061    '
+	DEFB	'Teleray 3800    '
+	DEFB	'TERM-MITE ST1000'
+	DEFB	'TRS80-12 P&T 2.2'
+	DEFB	'TTY 4424        '
+	DEFB	'TVI 905         '
+	DEFB	'TVI 912         '
+	DEFB	'TVI 920         '
+	DEFB	'TVI 950         '
+	DEFB	'TVI 955         '
+	DEFB	'TVI 970         '
+	DEFB	'VC 404          '
+	DEFB	'VC 415          '
+	DEFB	'Visual 200      '
+	DEFB	'WYSE 50         '
+	DEFB	'WYSE 100        '
+	DEFB	'Xerox 820-I     '
+	DEFB	'Xerox 820-II    '
+	DEFB	'Xerox 8-16      '
+	DEFB	' 2.6            '	; Last Entry
+;
+;
+; Compute Space Remaining to Fill 128-byte Block
+;
+	 IF	ZAS
+ENDSP:	DEFS	128-[$-TERMINAL] AND 127
+	 ENDIF			; ZAS
+;
+	 IF	NOT ZAS
+ENDSP:	DEFS	128-($-TERMINAL) AND 127
+	 ENDIF			; NOT ZAS
+;
+TTABLE:
+;
+; Terminal data structure  (FIRST 8 CHARCTERS MUST BE UNIQUE!!)
+;
+;	DS	16	; Name of terminal
+;	DS	1	; Character for cursor UP
+;	DS	1	; Character for cursor DOWN
+;	DS	1	; Character for cursor RIGHT
+;	DS	1	; Character for cursor LEFT
+;	DS	1	; Delay after clear screen
+;	DS	1	; Delay after direct cursor addressing
+;	DS	1	; Delay after erase to EOL
+;	DS	N	; Ends in 0, clear screen
+;	DS	N	; Ends in 0, direct cursor addressing
+;	DS	N	; Ends in 0, erase to end of line
+;	DS	N	; Ends in 0, enter standout video
+;	DS	N	; Ends in 0, exit standout video
+;	DS	N	; Ends in 0, TI string
+;	DS	N	; Ends in 0, TE string
+;
+;
+; Terminal xxxx
+;
+; The leading space in the following text string allows the ZCPR3 IF TC
+; command to return FALSE when this entry is loaded.  Do not change.
+;
+	DEFB	' None           ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	0		   ; Clear screen
+	DEFB	0		   ; Direct cursor addressing
+	DEFB	0		   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'AA-Ambassador   ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	156		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	05		   ; Delay to erase line
+	DEFB	ESC,'[H',ESC,'[J',0 ; Clear screen
+	DEFB	ESC,'[%i%d;%dH',0  ; Direct cursor addressing
+	DEFB	ESC,'[K',0	   ; Erase to end of line
+	DEFB	ESC,'[7m',0	   ; Start standout video
+	DEFB	ESC,'[m',0	   ; SE String
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ADDS-Consul 980 ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,80H,'K'-40H,'@',0 ; Clear screen
+	DEFB	'K'-40H,'%+@',ESC,'E'-40H,'%2',0 ; Direct cursor addressing
+	DEFB	0		   ; Erase to end of line
+	DEFB	'Y'-40H,1EH,'N'-40H,0 ; Start standout video
+	DEFB	'O'-40H,0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ADDS-20 Regent  ' ; Name of terminal
+	DEFB	'Z'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'F'-40H		   ; Cursor RIGHT
+	DEFB	'U'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ADDS-V Viewpoint' ; Name of terminal
+	DEFB	'Z'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'F'-40H		   ; Cursor RIGHT
+	DEFB	'U'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	'N'-40H,0	   ; Start standout video
+	DEFB	'O'-40H,0	   ; End standout video
+	DEFB	ESC,'0A',0	   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ADM-2           ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	'X'-40H,0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ADM-3A          ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	0		   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ADM-20          ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	'%R',ESC,'=%+ %+ ',0 ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ADM-31          ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,'G6',0	   ; Start standout video
+	DEFB	ESC,'G0',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ADM-42          ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,'G4',0	   ; Start standout video
+	DEFB	ESC,'G0',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'A2E-ALS Apple   ' ; Name of terminal
+	DEFB	0		   ; Cursor UP
+	DEFB	0		   ; Cursor DOWN
+	DEFB	0		   ; Cursor RIGHT
+	DEFB	0		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	12,0		   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	29,0		   ; Erase to end of line
+	DEFB	15,0		   ; Start standout video
+	DEFB	14,0		   ; End standout video
+	DEFB	18,0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'A2E-MS Apple    ' ; Name of terminal
+	DEFB	0		   ; Cursor UP
+	DEFB	0		   ; Cursor DOWN
+	DEFB	0		   ; Cursor RIGHT
+	DEFB	0		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'Y',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,'(',0	   ; Start standout video
+	DEFB	ESC,')',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'A2E-PCPI Apple  ' ; Name of terminal
+	DEFB	11		   ; Cursor UP (was 31)
+	DEFB	10		   ; Cursor DOWN
+	DEFB	21		   ; Cursor RIGHT (was 28)
+	DEFB	8		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'*',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line (was 't')
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'A3 Apple ///    ' ; Name of terminal
+	DEFB	0		   ; Cursor UP
+	DEFB	0		   ; Cursor DOWN
+	DEFB	0		   ; Cursor RIGHT
+	DEFB	0		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	157,0		   ; Clear screen
+	DEFB	'%r'		   ; Direct cursor addressing
+	DEFB	153,'%+',128	   ;   (Reverse column and row)
+	DEFB	152,'%+',128,0
+	DEFB	159,0		   ; Erase to end of line
+	DEFB	146,0		   ; Start standout video
+	DEFB	145,0		   ; End standout video
+	DEFB	144,3,1,0	   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'B550 Bantam     ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'K',0	   ; Clear screen
+	DEFB	ESC,'X%+ ',ESC,'Y%+ ',0	; Direct cursor addressing
+	DEFB	ESC,'I',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'CDC-456         ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Y'-40H,'X'-40H,0  ; Clear screen
+	DEFB	ESC,'1%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	'V'-40H,0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'C128 Commodore  ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'C100 Concept    ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	16		   ; Delay to erase line
+	DEFB	'L'-40H,'L'-40H,0  ; Clear screen
+	DEFB	ESC,'a','%+ %+ ',0 ; Direct cursor addressing
+	DEFB	ESC,'U'-40H,0	   ; Erase to end of line
+	DEFB	ESC,'E',ESC,'D',0  ; Start standout video
+	DEFB	ESC,'d',ESC,'e',0  ; End standout video
+	DEFB	ESC,'U',ESC,'v  8p',ESC,'p',0DH,0 ; Terminal initialization
+	DEFB	ESC,'v    ',80H,80H,80H,80H,80H,80H
+	DEFB	ESC,'p',0DH,0AH,0  ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'C108 Concept    ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	16		   ; Delay to erase line
+	DEFB	ESC,'?',ESC,'E'-40H,0 ; Clear screen
+	DEFB	ESC,'a','%+ %+ ',0    ; Direct cursor addressing
+	DEFB	ESC,'S'-40H,0	   ; Erase to end of line
+	DEFB	ESC,'D',0	   ; Start standout video
+	DEFB	ESC,'d',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'CT82            ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	'%r','K'-40H,'%.%.',0 ; Direct cursor addressing
+	DEFB	'F'-40H,0	   ; Erase to end of line
+	DEFB	1EH,'V'-40H,0	   ; Start standout video
+	DEFB	1EH,'F'-40H,0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'DP1560 Datapoint' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,'A',0	   ; Start standout video
+	DEFB	ESC,'B',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'VT52 DEC        ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'H',ESC,'J',0  ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'VT100 DEC       ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	05		   ; Delay to position cursor
+	DEFB	03		   ; Delay to erase line
+	DEFB	ESC,'[;H',ESC,'[2J',0 ; Clear screen
+	DEFB	ESC,'[%i%d;%dH',0  ; Direct cursor addressing
+	DEFB	ESC,'[K',0	   ; Erase to end of line
+	DEFB	ESC,'[1m',0	   ; Start standout video
+	DEFB	ESC,'[m',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'D-80 Dialogue   ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	75		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'*',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'t',0	   ; Erase to end of line
+	DEFB	ESC,'j',0	   ; Start standout video
+	DEFB	ESC,'k',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'DIR-800 Direct  ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'[1;1H',ESC,'[2J',0	; Clear screen
+	DEFB	ESC,'[%i%d;%dH',0  ; Direct cursor addressing
+	DEFB	ESC,'[K',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'GENEVA Epson    ' ; Name of terminal
+	DEFB	00		   ; Cursor UP
+	DEFB	00		   ; Cursor DOWN
+	DEFB	00		   ; Cursor RIGHT
+	DEFB	00		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'*',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'QX-10 Epson     ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'GT-100A Gen Trm ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	ESC,'f%r%+ %+ ',0  ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	ESC,'b',0	   ; Start standout video
+	DEFB	ESC,'a',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'H1420 Hazeltine ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,1CH,0	   ; Clear screen
+	DEFB	ESC,'Q'-40H,'%r%.%+ ',0	; Direct cursor addressing
+	DEFB	ESC,'O'-40H,0	   ; Erase to end of line
+	DEFB	ESC,1FH,0	   ; Start standout video
+	DEFB	ESC,'Y'-40H,0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'H1500 Hazeltine ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'~',1CH,0	   ; Clear screen
+	DEFB	'~','Q'-40H,'%r%.%+ ',0	; Direct cursor addressing
+	DEFB	'~','O'-40H,0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'H1510 Hazeltine ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,1CH,0	   ; Clear screen
+	DEFB	ESC,'Q'-40H,'%r%.%+ ',0	; Direct cursor addressing
+	DEFB	ESC,'O'-40H,0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'H1520 Hazeltine ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'~',1CH,0	   ; Clear screen
+	DEFB	'~','Q'-40H,'%r%.%+ ',80H,0 ; Direct cursor addressing
+	DEFB	'~','O'-40H,0	   ; Erase to end of line
+	DEFB	'~',1FH,0	   ; Start standout video
+	DEFB	'~','Y'-40H,0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'H19-H Heath Mode' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'E',0	   ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	ESC,'p',0	   ; Start standout video
+	DEFB	ESC,'q',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'H19-A ANSI Mode ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'[2J',0	   ; Clear screen
+	DEFB	ESC,'[%d;%dH',0	   ; Direct cursor addressing
+	DEFB	ESC,'[K',0	   ; Erase to end of line
+	DEFB	ESC,'[7m',0	   ; Start standout video
+	DEFB	ESC,'[m',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'HP-2621         ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'H',ESC,'J',0  ; Clear screen
+	DEFB	ESC,'&a%r%dc%dY',0 ; Direct cursor addressing
+	DEFB	0		   ; Erase to end of line
+	DEFB	ESC,'&dD',0	   ; Start standout video
+	DEFB	ESC,'&d@',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'IBM-3101        ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'K',0	   ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'I',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'IBM PC Color    ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	05		   ; Delay to position cursor
+	DEFB	03		   ; Delay to erase line
+	DEFB	ESC,'[;H',ESC,'[2J',0 ; Clear screen
+	DEFB	ESC,'[%i%d;%dH',0  ; Direct cursor addressing
+	DEFB	ESC,'[K',0	   ; Erase to end of line
+	DEFB	ESC,'[1m',0	   ; Start standout video
+	DEFB	ESC,'[m',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'IBM PC Mono     ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	05		   ; Delay to position cursor
+	DEFB	03		   ; Delay to erase line
+	DEFB	ESC,'[;H',ESC,'[2J',0 ; Clear screen
+	DEFB	ESC,'[%i%d;%dH',0  ; Direct cursor addressing
+	DEFB	ESC,'[K',0	   ; Erase to end of line
+	DEFB	ESC,'[7m',0	   ; Start standout video
+	DEFB	ESC,'[m',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'KP-2 Kaypro II  ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	'X'-40H,0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'KP10 Kaypro 4/10' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	'X'-40H,0	   ; Erase to end of line
+	DEFB	ESC,'B0',0	   ; Start standout video
+	DEFB	ESC,'C0',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'FREE50 Liberty  ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'+',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'FREE100 Liberty ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'+',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'MBEE Micro Bee  ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'E',0	   ; Clear screen
+	DEFB	ESC,'F%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	ESC,'dP',0	   ; Start standout video
+	DEFB	ESC,'d@',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ACT-IV Microterm' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	'T'-40H,'%.%.',0   ; Direct cursor addressing
+	DEFB	1EH,0		   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ACT-V Microterm ' ; Name of terminal
+	DEFB	'Z'-40H		   ; Cursor UP
+	DEFB	'K'-40H		   ; Cursor DOWN
+	DEFB	'X'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	'T'-40H,'%.%.',0   ; Direct cursor addressing
+	DEFB	1EH,0		   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'MDT-20          ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	'%R',ESC,'=%+ %+ ',0 ; Direct cursor addressing (reversed row/column)
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',00	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'MDT-60          ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'MDT-70          ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ADVANT Northstar' ; Name of terminal
+	DEFB	'B'-40H+80H	   ; Cursor UP
+	DEFB	'J'-40H+80H	   ; Cursor DOWN
+	DEFB	'F'-40H+80H	   ; Cursor RIGHT
+	DEFB	'H'-40H+80H	   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'D'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	0EH,0		   ; Erase to end of line
+	DEFB	1,0		   ; Start standout video
+	DEFB	2,0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'OSBORNE I       ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'PE-1100 Perkin E' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	132		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'H',ESC,'J',0  ; Clear screen
+	DEFB	ESC,'X%+ ',ESC,'Y%+ ',0	; Direct cursor addressing
+	DEFB	ESC,'I',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'PE-1200 Perkin E' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	132		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	06		   ; Delay to erase line
+	DEFB	ESC,'H',ESC,'J',0  ; Clear screen
+	DEFB	ESC,'X%+ ',ESC,'Y%+ ',0	; Direct cursor addressing
+	DEFB	ESC,'I',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'P2000C Phillips ' ; Name of terminal
+	DEFB	'Z'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'F'-40H		   ; Cursor RIGHT
+	DEFB	'U'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	ESC,'0','q',0	   ; Start standout video (underlined and half int.)
+	DEFB	ESC,'0','@',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'QVT-102 Qume    ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'SOROC 120       ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'*',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'SBEE Super Bee  ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	03		   ; Delay to erase line
+	DEFB	ESC,'H',ESC,'J',0  ; Clear screen
+	DEFB	ESC,'F%r%3%3',0	   ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	ESC,'_1',0	   ; Start standout video
+	DEFB	ESC,'_0',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'TAB-132         ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'[;H',ESC,'[2J',0 ; Clear screen
+	DEFB	ESC,'[%i%d;%dH',0  ; Direct cursor addressing
+	DEFB	0		   ; Erase to end of line
+	DEFB	ESC,'[7m',0	   ; Start standout video
+	DEFB	ESC,'[m',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'T-1601 Teleray  ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	ESC,'RD',0	   ; Start standout video
+	DEFB	ESC,'R@',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'T-3800 Teleray  ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'K',0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'ST-1000 TermMITE' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	10		   ; Delay to position cursor
+	DEFB	10		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	ESC,'%rM%+ %+ ',0  ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,'I',254,0	   ; Start standout video
+	DEFB	ESC,'I',255,0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx - See Notes in Header
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'TRS80-12 P&T 2.2' ; Name of terminal
+	DEFB	1EH		   ; Cursor UP
+	DEFB	1FH		   ; Cursor DOWN
+	DEFB	1DH		   ; Cursor RIGHT
+	DEFB	1CH		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	0		   ; Delay to position cursor
+	DEFB	0		   ; Delay to erase line
+	DEFB	0CH,0		   ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	01H		   ; Erase to end of line
+	DEFB	0EH		   ; Start standout video
+	DEFB	0FH		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'TTY-4424        ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'[2;H',ESC,'[J',0 ; Clear screen
+	DEFB	ESC,'[%i%2;%2H',ESC,'[B',0 ; Direct cursor addressing
+	DEFB	ESC,'[K',0	   ; Erase to end of line
+	DEFB	ESC,'[7m',0	   ; Start standout video
+	DEFB	ESC,'[m',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'TVI905          ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'V'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'+',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'TVI912          ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'TVI920          ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'TVI950          ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'V'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'*',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'t',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'TVI955          ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'V'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'+',0	   ; Clear screen
+	DEFB	ESC,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'TVI970          ' ; Name of terminal
+	DEFB	0		   ; Cursor UP
+	DEFB	0		   ; Cursor DOWN
+	DEFB	0		   ; Cursor RIGHT
+	DEFB	0		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'[2J',0	   ; Clear screen
+	DEFB	ESC,'[%2;%2H',0	   ; Direct cursor addressing
+	DEFB	ESC,'[0K',0	   ; Erase to end of line
+	DEFB	ESC,'[2;7m',0	   ; Start standout video
+	DEFB	ESC,'[7;0m',0	   ; End standout video
+	DEFB	ESC,'[0;0z',0	   ; Terminal initialization
+	DEFB	ESC,'[0;1z',0	   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'VC-404          ' ; Name of terminal
+	DEFB	'Z'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'U'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	20		   ; Delay to erase line
+	DEFB	'X'-40H,0	   ; Clear screen
+	DEFB	'P'-40H,'%+ %+ ',0 ; Direct cursor addressing
+	DEFB	'V'-40H,0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'VC-415          ' ; Name of terminal
+	DEFB	'Z'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'U'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'L'-40H,0	   ; Clear screen
+	DEFB	'P'-40H,'%.%.',0   ; Direct cursor addressing
+	DEFB	'V'-40H,0	   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'V200 Visual 200 ' ; Name of terminal
+	DEFB	'E'-40H		   ; Cursor UP (WordStar Defaults)
+	DEFB	'X'-40H		   ; Cursor DOWN
+	DEFB	'D'-40H		   ; Cursor RIGHT
+	DEFB	'S'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	ESC,'v',0	   ; Clear screen
+	DEFB	ESC,'Y%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	ESC,'x'		   ; Erase to end of line (4 times)
+	DEFB	ESC,'x'
+	DEFB	ESC,'x'
+	DEFB	ESC,'x'
+	DEFB	0		   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'WYSE-50         ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'%ia%dR%dC',0  ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	'WYSE-100        ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	'Z'-40H,0	   ; Clear screen
+	DEFB	ESC,'%ia%dR%dC',0  ; Direct cursor addressing
+	DEFB	ESC,'T',0	   ; Erase to end of line
+	DEFB	ESC,')',0	   ; Start standout video
+	DEFB	ESC,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	; Next record
+	DEFB	'820-I Xerox     ' ; Name of terminal
+	DEFB	'A'-40H		   ; Cursor UP
+	DEFB	'B'-40H		   ; Cursor DOWN
+	DEFB	'C'-40H		   ; Cursor RIGHT
+	DEFB	'D'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	1BH,'*',0	   ; Clear screen
+	DEFB	1BH,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	1BH,'t',0	   ; Erase to end of line
+	DEFB	00		   ; Start standout video
+	DEFB	00		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	; Next record
+	DEFB	'820-II Xerox    ' ; Name of terminal
+	DEFB	'A'-40H		   ; Cursor UP
+	DEFB	'B'-40H		   ; Cursor DOWN
+	DEFB	'C'-40H		   ; Cursor RIGHT
+	DEFB	'D'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	1BH,'*',0	   ; Clear screen
+	DEFB	1BH,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	1BH,'t',0	   ; Erase to end of line
+	DEFB	1BH,')',0	   ; Start standout video
+	DEFB	1BH,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	; Next record
+	DEFB	'16/8 Xerox      ' ; Name of terminal
+	DEFB	'A'-40H		   ; Cursor UP
+	DEFB	'B'-40H		   ; Cursor DOWN
+	DEFB	'C'-40H		   ; Cursor RIGHT
+	DEFB	'D'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	1BH,'*',0	   ; Clear screen
+	DEFB	1BH,'=%+ %+ ',0	   ; Direct cursor addressing
+	DEFB	1BH,'t',0	   ; Erase to end of line
+	DEFB	1BH,')',0	   ; Start standout video
+	DEFB	1BH,'(',0	   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+; Terminal xxxx
+;
+	ORG	$/80H*80H+80H	   ; Next record
+	DEFB	' 2.4            ' ; Name of terminal
+	DEFB	'K'-40H		   ; Cursor UP
+	DEFB	'J'-40H		   ; Cursor DOWN
+	DEFB	'L'-40H		   ; Cursor RIGHT
+	DEFB	'H'-40H		   ; Cursor LEFT
+	DEFB	50		   ; Delay to clear screen
+	DEFB	00		   ; Delay to position cursor
+	DEFB	00		   ; Delay to erase line
+	DEFB	0		   ; Clear screen
+	DEFB	0		   ; Direct cursor addressing
+	DEFB	0		   ; Erase to end of line
+	DEFB	0		   ; Start standout video
+	DEFB	0		   ; End standout video
+	DEFB	0		   ; Terminal initialization
+	DEFB	0		   ; Terminal exit
+;
+	END
+

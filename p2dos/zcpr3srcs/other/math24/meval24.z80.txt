@@ -1,0 +1,181 @@
+;
+; Module Name:  MEVAL24
+; Author:  STEVEN M. COHEN
+; BASED ON RICHARD CONN'S SEVAL MODULE
+; adapted for 24-bit structure
+; March 10, 1987
+;
+	public	N24EVAL, RADIX
+
+;
+;  N24EVAL --
+; On input, DE points to a 3-byte buffer into which the number will be stored
+; HL points to a NULL-TERMINATED string of ASCII binary, 
+; decimal, or hexadecimal characters to convert to binary; this string may 
+; take any of the following forms --
+
+;	bbbbbbbbbbbbbbbbbbbbbbbb
+;    OR bbbbbbbbbbbbbbbbbbbbbbbb%-- b=0 or b=1; binary string
+;	ttttttttt or ttttttttt# -- 0<= t <= 9; decimal string
+;	hhhhhh or hhhhhhH -- 0<= h <= F; hexadecimal string
+;	
+;	One radix, either binary, decimal, or hexadecimal is selected
+;       as default.  For the selected radix the trailing identifier
+;	(%,#, or H) is not necessary (but allowed).  For the non-default
+;       radices, the trailing identifier is necessary.  
+;
+;	On return, DE = value, HL points to next byte after
+; 	string, A=E; BC is not affected.
+;	On return, CARRY Set means error, and HL pts to byte after error
+;
+;  RADIX --	
+;	The routine RADIX changes the default radix.  
+;  On input the return address holds
+;  the value 2,	10, or 16, which updates the internal byte DEFAULT
+;  according to the selected Radix. If the return address holds 0
+;  then RADIX supplies the default radix in A on output.
+;  Any different value results in
+;  the carry flag being set, and the byte DEFAULT is not affected.
+;  The RADIX routine only need be listed as an external in the calling
+;  program if the program allows for changing of the default RADIX.
+;  If it is not touched the default radix itself defaults to decimal.
+
+	EXT	CAPS	; CAPITALIZATION ROUTINE
+	EXT	EVALH24	; CONVERT HEX STRING
+	EXT	EVALD24	; CONVERT DEC STRING
+	EXT	EVALB24	; CONVERT BIN STRING
+;
+; Main routine
+;	
+N24EVAL:
+	PUSH	BC	; SAVE BC
+	PUSH	HL	; SAVE PTR TO 1ST CHAR
+;
+;  Find end of string
+;
+FEND:
+	XOR	A		; null the accumulator
+FLOOP:
+	CPI			; pointing to null terminator?
+	JR	NZ,FLOOP	; no do next
+	DEC	HL		; point to the null
+	DEC	HL		; point to just before null
+	LD	A,(HL)		; get this byte
+	POP	HL		; put beginning of string back
+	CALL	CAPS		; CAPITALIZE
+	CP	'H'		; HEX
+	JR	Z,EHEX
+;	CP	'X'
+;	JP	Z,EHEX
+;	CP	'O'		; OCTAL
+;	JP	Z,EOCT
+;	CP	'Q'
+;	JP	Z,EOCT
+	CP	'%'		; BINARY?
+	JR	Z,EBIN
+	CP	'#'		; DECIMAL?
+	JR	Z,EDEC		; YES
+	LD	A,(DEFAULT)	; NO, USE DEFAULT
+	CP	2		;
+	JR	Z,EBIN
+	CP	10
+	JR	Z,EDEC
+	CP	16
+	JR	Z,EHEX
+	SCF			; NONE of the above = trouble
+	RET			; get out with carry flag set
+;  Evaluate string as decimal
+EDEC:
+	CALL	EVALD24	; EVALUATE AS DECIMAL
+	LD	A,(HL)	; MAY PT TO # (DECIMAL CHAR)
+	CALL	CAPS
+	CP	'#'	; INCR HL IF SO
+	JR	NZ,DONE
+	INC	HL	; PT TO NEXT
+	JR	DONE
+
+;  Evaluate string as hexadecimal
+EHEX:
+	CALL	EVALH24	; EVAUATE AS HEXADECIMAL
+	LD	A,(HL)	; MUST PT TO H OR NULL
+	OR	A
+	JR	Z,DONE
+	CALL	CAPS
+	INC	HL	; PT TO NEXT
+	CP	'H'
+	JR	Z,DONE
+;	CP	'X'
+;	JP	Z,DONE
+
+;  String Error -- set flag
+ERROR:
+	LD	A,E	; LOW-ORDER IN A
+	SCF		; SET CARRY FLAG FOR ERROR
+	POP	BC	; RESTORE BC
+	RET
+
+;  Evaluate string as octal
+;EOCT:
+;	CALL	EVAL8	; EVALUATE AS OCTAL
+;	LD	A,(HL)	; MUST PT TO O OR Q
+;	CALL	CAPS
+;	INC	HL	; PT TO NEXT
+;	CP	'O'
+;	JP	Z,DONE
+;	CP	'Q'
+;	JP	Z,DONE
+;	JP	ERROR	; ERROR OTHERWISE
+;
+;  Evaluate string as binary
+EBIN:
+	CALL	EVALB24	; EVALUATE AS BINARY
+	LD	A,(HL)	; MUST PT TO % OR NULL
+	OR	A
+	JR	Z,DONE
+	CALL	CAPS
+	INC	HL	; PT TO NEXT
+	CP	'%'
+	JR	NZ,ERROR
+
+;  Done with evaluation -- no error
+DONE:
+	LD	A,(DE)	; LOW-ORDER IN A
+	OR	A	; CLEAR CARRY FLAG
+	POP	BC	; RESTORE BC
+	RET
+;
+; Radix routine - explanation above
+;
+RADIX:
+	EX	(SP),HL
+	LD	A,(HL)
+	INC	HL
+	EX	(SP),HL
+	OR	A		; request for Default radix?
+	JR	NZ,RADIX2	; NO, try binary
+	LD	A,(DEFAULT)
+	RET
+RADIX2:
+	CP	2		; change default to BINARY?
+	JR	NZ,RADIX10	; NO, try decimal
+	JR	CHRADIX		; make change
+RADIX10:
+	CP	10		; change default to DECIMAL?
+	JR	NZ,RADIX16	; NO, try HEX
+	JR	CHRADIX		; make change		
+RADIX16:
+	CP	16		; change default to HEX
+	JR	NZ,RADIXERR	; NO, an error
+CHRADIX:
+	LD	(DEFAULT),A	; install binary as default
+	RET
+RADIXERR:
+	SCF			; carry flag indicates error
+	RET
+DEFAULT:
+	DB	10		; storage for default radix
+	END
+y as default
+	RET
+RADIXERR:
+	SCF			; carry flag 

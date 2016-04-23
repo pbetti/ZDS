@@ -1,0 +1,454 @@
+                STRUCTURED PROGRAMMING IN SBASIC
+
+The "S" in S-BASIC stands for "structured."  If you are new to 
+programming you may be excused for wondering exactly what is 
+meant by "structured programming."  Sometimes it seems as if 
+there are as many definitions as there are writers who have 
+undertaken to define it.  Structured programming is sometimes 
+(superficially) described as "GOTO-less programming," since its 
+proponents strongly urge the use of WHILE and REPEAT loops in 
+place of unrestrained branches using the GOTO statement.  But 
+structured programming is based on more than simply avoiding 
+GOTOs.  Local variables, statement grouping, the decomposition of 
+programs into modules, "top-down" design, and "step-wise" 
+refinement are all important concepts.
+
+Among the earliest proponents of structured programming was the 
+noted computer scientist Edsger W. Dijkstra, whose classic paper 
+"Notes on Structured Programming," written in 1969, takes the 
+positon that "the art of programming is the art of mastering 
+complexity, of mastering multitude and avoiding its bastard chaos 
+as effectively as possible."  Dijkstra argues that 
+well-structured programs not only increase confidence in their 
+correctness, but are much easier to modify and maintain.  In 
+support of his position concerning program correctness and 
+clarity, he presents an example program -- coded in ALGOL 60 -- 
+to print the first 1000 prime numbers.  Since S-BASIC's syntax 
+borrows heavily from ALGOL 60, the program he describes is easily 
+translated into S-BASIC and provides a working example for the 
+beginning programmer.
+
+Before tackling Dijkstra's example, some general comments are 
+appropriate concerning S-BASIC program structure.  The S-BASIC 
+manual suggests the following order for program elements:
+
+        Common variables
+        Variables global to the total program
+	Functions and procedures
+	Variables global to main program only
+	Main body of program
+	Data statements
+
+Although the manual does not explicitly say so -- and although S- 
+BASIC is not particularly fussy and allows functions and 
+procedures, as well as variables, to be declared throughout a 
+program, not just at the beginning -- a function or procedure 
+must nevertheless be declared before it is actually used. This 
+means that a program cannot literally be presented in "top-down" 
+form (with the main body at the beginning, followed by supporting 
+routines), since every supporting function or procedure must be 
+declared before the point in the code where it is invoked.
+
+Additionally, although S-BASIC allows local variables and the 
+formal parameters to procedures and functions to have the same 
+names as a global variables, the compiler will complain if the 
+global variable is declared first.  So, for example, the 
+following will not compile:
+
+		var x, y = integer
+
+		procedure showresult (x=integer)
+			var y = integer
+			input "Enter value"; y
+			print x * y
+		end
+
+However, if the declaration of the global variables is moved to 
+follow, rather than precede, the procedure declaration, there 
+will be no problem, and the formal parameter x and the local 
+variable y will be treated as distinct from the global variables 
+x and y.  Of course, if a procedure or function must operate on 
+a global variable that is not passed as an argument, the variable 
+must be declared before the procedure or function -- which is why 
+the manual distinguishes between variables "global to the whole 
+program" and those "global to the main program only."  
+
+The most common type of data structure that must be "global to 
+the whole program" is arrays, since S-BASIC does not support 
+passing arrays as parameters to functions and procedures.  The 
+other situation in which a variable would conveniently be 
+declared "global to the whole program" is when the function or 
+procedure must modify the value of the variable.  In S-BASIC all 
+arguments to functions and procedures are passed by value, not by 
+reference, with the result that a procedure or function cannot 
+modify an external variable that is passed as an argument.  
+(Actually, there is a method of doing so, but it requires the 
+programmer to jump through hoops by passing the address of the 
+variable -- obtained using the LOCATION statement -- rather than 
+the variable itself.)  Where a routine needs to modify the value 
+of a single passed variable, the subroutine can be written as a 
+function that returns the modified value, which can then be 
+assigned to the external variable.  So, for example, a routine to 
+convert a character to upper case could be written as follows:
+
+         function uppercase(ch = char) = char
+         begin
+              if ch >= 'a' and ch <= 'z' then
+                   ch = ch - 32
+         end = ch
+
+It might then be invoked as follows:
+
+         var letter = char
+         input "Your choice (A-Z)"; letter
+         letter = uppercase(letter)
+
+But if the routine needs to modify several values this technique 
+won't work.
+
+Let's go ahead and tackle Dijkstra's example, which is to 
+instruct a computer to print a table of the first thousand prime 
+numbers, with 2 being considered as the first prime number.  
+Dijkstra explains that he chose the example because on the one 
+hand it is sufficiently difficult to serve as a model for some of 
+the problems encountered in programming, while at the same time 
+the mathematical background is sufficiently simple and familiar 
+as to not usurp the student's attention.
+
+The simplest form of the program is
+		
+	"print first thousand prime numbers"
+	end
+
+If "print first thousand prime numbers" were already part of S- 
+BASIC's instruction repertoire, the job would be finished.  But 
+it's not, so we must compose the program from more primitive 
+actions that achieve the desired effect.  The first step is to 
+separate the generation of the prime numbers and their printing.  
+This give us:
+
+	var "table p"
+	"fill table p with first thousand prime numbers"
+	"print table p"
+	end
+
+Again, if "fill table" and "print table" were included in S- 
+BASIC's instruction repertoire (and "table p" among the 
+implicitly available resources), then the problem would be 
+solved. Since this is not the case, the next refinement is to 
+express how the effect of these two actions can be accomplished 
+by further (sub)computations.  Apart from that, we have to 
+decide how the information to be contained in the still rather 
+undefined object "table p" is to be represented.
+
+Tackling the latter issue first (since it will necessarily affect 
+how we implement "fill table" and "print table") two alternatives 
+immediately present themselves.  On the one hand, we can arrange 
+the information in the form of a linear boolean array (with 
+consecutive elements associated with consecutive natural numbers) 
+indicating whether the natural number in question is a prime 
+number or not.  Number theory gives us an estimate of the number 
+of the 1,000th prime number and thereby a boundary of the length 
+of the array that will suffice.  Alternatively, we can choose an 
+integer array in which the successive prime numbers will be 
+listed.  This second approach makes it easy to answer the 
+question "what is the value of the k-th prime number, for k less 
+than or equal to 1000?"  With this decision made, we can rewrite 
+the previous outline as follows:
+
+	dim integer p(1000)
+	"fill table p with first thousand prime numbers"
+	"print table p"
+	end
+
+Even though "fill table" and "print table" are not part of S- 
+BASIC's instruction repertoire, a structured language allows us 
+to pretend that they are by declaring procedures or functions to 
+accomplish those tasks.  Of course, we'll have to flesh them out 
+at some point, but in terms of writing the program we can simply 
+take it on faith that the details will be hammered out in due 
+course.  Our next refinement, therefore, might be the following:
+
+	dim integer p(1000)
+
+	procedure fill.table
+	"for k from 1 through 1000 make p(k) equal to kth prime number"
+        end
+
+	procedure print.table
+        "print p(k) for k from 1 through 1000"
+        end
+
+	fill.table
+	print.table
+	end
+	
+Rather than repeat all the gory details of how Dijkstra arrived 
+at the final form of the program -- which involved a number of 
+false steps along the way -- it seems best simply to show the 
+final form of the procedure fill.table.  Here it is:
+
+    rem - for k from 1 through 1000 make p(k) equal kth prime number
+    procedure fill.table
+        var k, j, square, ord = integer
+        p(1) = 2
+        k = 1
+        j = 1
+        ord = 1
+        square = 4
+        while k < 1000 do
+            begin
+                var jprime = integer
+                repeat
+                    begin
+                        var n = integer
+                        j = j + 2
+                        while square <= j do
+                            begin
+                                mult(ord) = square
+                                ord = ord + 1
+                                square = p(ord) * p(ord)
+                            end
+                        n = 2
+                        jprime = true
+                        while n < ord and jprime = true do
+                            begin
+                                var r = integer
+                                while mult(n) < j do
+                                    mult(n) = mult(n) + p(n)
+                                r = j - mult(n)
+                                jprime = (r <> 0)
+                                n = n + 1
+                            end
+                    end
+                until jprime
+                k = k + 1
+                p(k) = j
+            end
+    end
+
+A few comments may help to understand what is going on.  To 
+increase the speed of computation, Dijkstra makes use of the 
+knowledge that, apart from 2, all further prime numbers are odd, 
+so that only odd numbers need to be checked. He also makes use of 
+the knowledge that when testing whether a number is prime, we 
+need only try prime factors.  What is more, the prime factors to 
+be tried can already be found in the filled portion of the array 
+p.  Finally, for any given number j, we can stop once the test 
+divisor exceeds the square root of j. (The value of this limit is 
+assigned to the variable "ord").  In what he describes as "an 
+unexpected turn," he assumes the absence of built-in division and 
+uses a supplemental integer array called "mult" to efficiently 
+determine whether p(n) divides j without a remainder.  (S-BASIC 
+does of course have built-in division, but somewhat surprisingly 
+has no operator or function to compute the remainder -- an 
+omission it shares with ALGOL 60.  So Dijkstra's approach is 
+well-suited for S-BASIC, even though it is not that difficult, as 
+we will see in a moment, to write our own functon to compute a 
+remainder.)
+
+Although this is a discussion of program structure rather than 
+the peculiarities of S-BASIC syntax, some brief observations are 
+nevetheless appropriate.  Notice that in the declaration of the 
+two arrays p and mult, the names are not separated by commas. 
+This is not a typographical error, but simply an example of the 
+syntactic inconsistencies that show up from time to time in 
+S-BASIC.  In particular, the syntax of arrays differs in a number 
+of ways (for no apparent good reason) from that of simple 
+variables.  For example, arrays that are to be positioned at 
+run-time are declared BASE and positioned using LOCATE..AT, while 
+variables are declared BASED and are positioned using BASE..AT.
+
+Note also the declaration of jprime (which was declared BOOLEAN 
+in the ALGOL 60 version of the program) as an integer, together 
+with the use of $CONSTANT to supply a value for "true". Although 
+S-BASIC has no explicit boolean data type, it fully supports 
+boolean operations and allows strings, characters, and integers 
+to be compared as though they were boolean variables.  For 
+integers, the value 0 is treated as "false", while -1 (FFFFH), 
+the bit-wise negation of zero, is treated as "true".  For 
+characters and strings, 'Y', 'y', 'T', and 't' are treated as 
+true, while 'N', 'n', 'F', and 'f' are treated as false.
+                        
+Finally, a couple of stylistic points.  First, you will observe 
+that I have chosen to use lower case throughout and have not 
+typed reserved words in upper case.  My personal view is that 
+lower case is both cleaner and easier to read.  In particular, 
+the common practice in some programming languages of using upper 
+case for reserved words serves no useful purpose that I can 
+discern.  However, you are certainly free to type reserved words 
+(or for that matter, the entire program) in upper case if you 
+wish: the compiler doesn't care.  Second, although S-BASIC is 
+line-oriented in the sense that statements are separated by 
+end-of-line rather than by, for example, semi-colons (as in ALGOL 
+60), the statements BEGIN and END need not necessarily occupy 
+their own lines. Thus, you are free, if you wish, to write the 
+inner loop of fill.table as follows instead of the way previously 
+shown:
+
+         while n < ord and jprime = true do begin
+              var r = integer
+              while mult(n) < j do
+                  mult(n) = mult(n) + p(n)
+              r = j - mult(n)
+              jprime = (r <> 0)
+              n = n + 1
+         end
+
+But back to our example program.  Dijkstra does not show the 
+coding of print.table, leaving that as an exercise for the 
+reader.  I have chosen to implement a four-across display, with a 
+pause every 20 lines.  The procedure print.table makes use of two 
+user-defined routines, one being a function (the syntax of which 
+is borrowed from the programming language PL/I) to compute 
+the remainder, and the other being a procedure to pause the 
+display and wait for the user to press any key to continue.  Since 
+S-BASIC is a block-structured language, and since the two 
+supporting subroutines are not needed outside print.table, I 
+could have declared them inside print.table.  Some would argue 
+that such an approach would be cleaner. For my own part, however, I
+find the nesting of procedures or functions within other procedures
+or functions to be confusing and difficult to read.
+
+Declaring the supporting routines outside print.table also avoids 
+potential problems with what the S-BASIC manual describes as the 
+"scope of recursion" (more accurately, the scope of variables 
+during recursion).  Like most modern programming languages, 
+S-BASIC supports recursion, that is, the ability of a procedure 
+or function to call itself.  In order for that to work, each new 
+invocation of the procedure or function must create a new set of 
+local variables.  The problem is that S-BASIC will create new 
+variables not only when a procedure or function calls itself, but 
+also in a number of other non-obvious situations, such as when 
+one nested procedure or function calls another.  Trying to keep 
+track of S-BASIC's arcane rules on recursion is sufficiently 
+difficult that the safer course is simply to avoid nested 
+procedures or functions altogether unless there is a very good 
+reason to use them.
+
+In any event, here is the final form of the program, including 
+print.table and its supporting routines:
+
+    comment
+        primes.bas
+        generate and display first 1000 prime numbers
+    end
+
+    $constant true = FFFFH
+
+    dim integer p(1000) mult(30)
+
+    rem - compute p mod q
+    function mod(p, q = integer) = integer
+    end = p - q * (p / q)
+
+    rem - wait for user to press any key
+    procedure pause
+        var ch = char
+        echo off
+        input3 "(more)"; ch
+        echo on
+        rem - allow program exit on Ctrl-C or ESC
+        if ch=3 or ch=27 then stop
+    end
+
+    rem - for k from 1 through 1000 make p(k) equal kth prime number
+    procedure fill.table
+        var k, j, square, ord = integer
+        p(1) = 2
+        k = 1
+        j = 1
+        ord = 1
+        square = 4
+        while k < 1000 do
+            begin
+                var jprime = integer
+                repeat
+                    begin
+                        var n = integer
+                        j = j + 2
+                        while square <= j do
+                            begin
+                                mult(ord) = square
+                                ord = ord + 1
+                                square = p(ord) * p(ord)
+                            end
+                        n = 2
+                        jprime = true
+                        while n < ord and jprime = true do
+                            begin
+                                var r = integer
+                                while mult(n) < j do
+                                    mult(n) = mult(n) + p(n)
+                                r = j - mult(n)
+                                jprime = (r <> 0)
+                                n = n + 1
+                            end
+                    end
+                until jprime
+                k = k + 1
+                p(k) = j
+            end
+    end
+
+    rem - print p(k) for k from 1 through 1000
+    procedure print.table
+        var i, col = integer
+        i = 1
+        col = 1
+        while i <= 1000 do
+            begin
+                rem - display four columns across
+                print p(i),
+                if col >= 4 then
+                    begin
+                        print
+                        col = 1
+                    end
+                else col = col + 1
+                rem - pause every 80 numbers (= 20 lines)
+                if mod(i,80) = 0 then
+                    begin
+                        pause
+                        print string$(75,'-')
+                    end
+                i = i + 1
+            end
+    end
+
+    rem - main program begins here
+
+    fill.table
+    print.table
+
+    end
+
+And that's it.  Of course, once the program is up and running, 
+there are any number of things you could do to make it more 
+polished, but such enhancements are easy to add if the initial 
+structure has been properly thought out.  For example, in a real 
+program, you would probably want an informative sign-on.  This is 
+easy to provide by simply declaring another procedure for that 
+purpose, something like this:
+
+    procedure signon
+        print "PRIMES vers. 1.0"
+        print
+        print "Generating first 1000 prime numbers"
+        print "(please be patient) ..."
+    end
+
+Then all you need to do is add a single line to the main program:
+
+    signon
+    fill.table
+    print.table
+    end
+
+The next improvement might be some form of "heart beat" to track 
+the progress of the program, since finding 1000 primes does take 
+some time on a 4 mHz Z-80 system, and an impatient user might 
+erroneously assume (after 30 seconds or so of inactivity) that 
+the program was "hung" in an endless loop.  But adding that 
+refinement is left, as they say, as an exercise for the reader!
+

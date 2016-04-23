@@ -1,0 +1,38 @@
+; PPIP-5ZD.Z80
+
+; Z80DOS routines
+
+GETSTP	EQU	54		; BDOS call to get stamp of last open
+USESTP	EQU	55		; BDOS call to use stamp on next call
+
+GETSTMP:
+	PUSH	HL		; Save the registers
+	PUSH	DE
+	PUSH	BC
+	LD	C,GETSTP	; Tell Z80DOS to put time from last open
+	CALL	BDOS		; In it's stamp save area
+	POP	BC
+	POP	DE
+	POP	HL
+	RET
+
+USESTMP:
+	PUSH	HL
+	PUSH	DE
+	PUSH	BC
+	LD	A,(CPYING)	; Check that we are doing a file to file
+	OR	A		; copy
+	JP	Z,NOUSEST	; Z= no, must be from console to file.
+	LD	C,USESTP	; Tell Z80DOS to use the time from it's
+	CALL	BDOS		; save stamp area and use it on next call
+NOUSEST:
+	POP	BC
+	POP	DE
+	POP	HL
+	RET
+
+
+;		 end of basic time and date routines
+;-----------------------------------------------------------------------
+;
+

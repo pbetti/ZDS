@@ -1,0 +1,72 @@
+	TITLE	"Z3GSH - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+;  Author  : Richard Conn
+;  Date	   :
+;  Version : 1.1
+;  Module  : Z3GSH
+;  Abstract: This module contains the routines GETSH, GETSH1 and
+;	GETSH2 which return the parameters relating to shell
+;	stack entries in various forms.  GETSH and GETSH1 are
+;	identical
+;  Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		GETSH, GETSH1, GETSH2
+
+;  External References
+
+	EXT		ENVPTR
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - GETSH2
+; Entry: - None
+; Exit : HL - Points to the Shell Stack
+;	 DE - Contains the size of each stack entry
+;	  A = B = Number of possible entries in shell stack
+;		Zero Flag Reset (NZ) if OK
+;		     Zero Flag Set (Z) on Error
+; Special Requirements: None
+;===============================================================
+
+GETSH2:	CALL	GETSH1		;get data in a different form
+	LD	E,B		;DE=size of entry
+	LD	D,0
+	LD	B,A		;B=A=number of entries
+	RET			;Zero Flag has already been set
+
+;===============================================================
+; NAME - GETSH & GETSH1
+; Entry: - None
+; Exit : HL - Points to the Shell Stack
+;	  B - Contains size of each entry
+;	  A - # of possible entries, Zero Reset (NZ) if OK
+;	      A = 0, Zero Flag Set (Z) if No Shell Stack
+; Uses : AF,BC,HL
+; Special Requirements: None
+;===============================================================
+
+GETSH:
+GETSH1:	PUSH	DE		;save DE
+	LD	HL,(ENVPTR)	;pt to environment
+	LD	DE,1EH		;pt to entry
+	ADD	HL,DE
+	LD	E,(HL)		;get address in DE
+	INC	HL
+	LD	D,(HL)
+	INC	HL
+	LD	A,(HL)		;get number of entries in A
+	INC	HL
+	LD	B,(HL)		;get size of entry in B
+	EX	DE,HL		;HL contains address
+	POP	DE		;restore DE
+	OR	A		;set flag
+	RET
+
+	END
+

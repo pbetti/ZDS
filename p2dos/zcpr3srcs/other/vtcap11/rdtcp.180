@@ -1,0 +1,107 @@
+; RDTCP reads file opened into buffer at address HL, 128 bytes at
+; a time and examines the first byte of every 16, looking for a  
+; blank character, then saves the first four bytes of the 16.     
+;
+; Used to read in the names of the terminals in a TCAP file into
+; memory and save the version number of the file.
+;
+; Process adds record number to each file creating a key index.
+;
+;	termid	ds	16	; terminal id string
+;	rec	ds	1	; record number
+;
+; Subroutine to read TCAP file into memory.
+;
+;       ENTRY:	HL=address of storage buffer
+;		DE=FCB of file to read
+;	EXIT:	none
+;
+;               Entry notes:  FCB must be initialized.                      
+;                             File must be opened for block read
+;
+; Syslib routines used: F$READ, SCANNER, DIVHD, SETDMA
+
+rdtcp:	push	hl		; save registers used
+	push	de
+	push	bc
+	ld	(fcb),de	; save FCB 
+	ld	(buffer),hl	; save final destination address
+
+initrd:	ld	hl,buf3
+	ld	(buf),hl	; save buffer address in scratch buffer    
+
+rtcap:	ld	hl,tbuf		; point to TBUF
+	call	setdma
+	ld	de,(fcb) 	; point to FCB
+	call	f$read		; read block into memory
+	jp	nz,f?read	  
+	ld	hl,tbuf		; point to TBUF 
+	ld	de,(buf)	; point to address of internal buffer
+	ld	bc,128		; size of buffer
+	ldir			; transfer block to internal buffer
+	ld	(buf),de	; save new buffer address - changes after LDIR
+	ld	hl,tbuf		; address of block to scan  
+	ld	de,term		; byte to search for (terminator)
+	ld	b,128		; length of block to scan
+	ld	c,1		; length of block to scan for
+	call	scanner		; scan HL for DE             
+	or	a		
+	jr	nz,rtcap	; if not found - read next block
+	ld	hl,(buf)	; get address of internal buffer
+	ld	bc,16		; length of terminal name in buffer
+
+rep:	sbc	hl,bc		; subtract 16 - point to begining of block
+	ld	a,(hl)		; get first character 
+	cp	' '		; is it blank
+	inc	hl		; if so - point to next byte
+	jr	nz,rep		; if first character blank - get next byte
+	ld	(ebuf),hl	; save buffer address
+
+; Create a key field index on the terminal name
+
+xfer:	ld	hl,buf3		; point to original buffer
+	ld	(buf),hl	; put in scratch buffer
+	ld	de,(buffer)  	; point to destination buffer
+	ld	(scbuf),de	; put in scratch buffer
+	ld	bc,16		; length of terminal id string
+	ld	a,0		; record counter
+
+loop:	ld	hl,(buf)	; put current buffer in HL
+	ld	bc,16		; length of terminal id string
+	ldir			; move in the terminal name
+
+; The next 7 instructions through zr1, are necessary to accomidate the
+; the INSTR routine. A binary 0 will mark the end of the string to search
+; and only enable us to search the first 16 bytes. We will change this
+; record number to FF and account for the difference in a special case
+; when searching for the (None requested) block.
+
+	cp	0		; do we have record number 0
+	jr	nz,zr0   	; no - skip over
+	ld	a,0ffh		; yes - change to FF
+	ld	(de),a		; save as record number
+	inc	a		; increment record counter
+	jr	zr1		; skip over save
+
+zr0:   	ld	(de),a		; first byte is the record number
+
+zr1:	inc	de		; advance destination pointer for record #
+	ld	(numb),a	; save record number temporarily
+	ld	a,' '		; put blank in A
+	ld	(de),a		; place in record
+	inc	de		; advance destination pointer for delete flag
+	ld	a,(numb)	; restore record number
+	inc	a		; increment record number
+	ld	(buf),hl	; save current pointer
+	ld  	(numb),a	; save counter
+	ld	a,(hl)		; get first character in A
+	cp	0		; have we reached the end of the index
+	ld 	a,(numb)	; restore counter
+	jp	nz,loop 	; if we have not reached end, then loop
+
+	pop	bc		; restore registers
+	pop	de
+	pop	hl
+	ret
+
+

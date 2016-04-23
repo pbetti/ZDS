@@ -1,0 +1,131 @@
+                       Assembly of ZCPR33 under M80/L80
+               by Roger Warren, Sysop Z-Node #9 (619-270-3148)
+                                 09 June 1987
+
+
+INTRODUCTION:
+
+    The author of these notes IN NO WAY means to discredit the ZAS assembler, 
+    under which ZCPR 3.3 assembles with no changes.  However, by habit and 
+    personal preference, the author tends to convert all source he uses to 
+    either M80 or MAC compatible forms so that the job of maintaining tools, 
+    etc. is easiest for him.  Be that as it may, notes on how to convert the 
+    RELEASE version of ZCPR 3.3 to a form that is digestable by M80 seem to be 
+    of general value to the community - so here they are.
+
+GENERAL NOTES:
+
+    There are but a few changes necessary to the ZCPR 3.3 code.  These are:
+
+     1) Changing [] pairs to ()
+     2) Changing certain of the EQUs to DEFLs (only required when a symbol is 
+        redefinded in the code)
+     3) Converting the arguments of MACLIB pseudo-ops to UPPERCASE
+     4) Changing the names of the FORMAL parameters in MACROS to be 6 or less 
+        characters in length.
+     5) Addition of an ASEG statement to the code.
+
+    These changes are relatively minor.  If the reader is familiar with M80,
+    he can probably effect the changes with the information listed above.  If, 
+    on the other hand, the reader is not too sure he wants to tackle the job 
+    on his/her own, read on.
+
+    Since the changes are few, they are included in this library in a 
+    DIFference format (the files with the extension .DIF)  These files, when 
+    applied to the RELEASE version of the ZCPR33 files via the program SSED, 
+    produce the M80 compatible files.
+
+    The programs DIF2 and SSED are used to generate the difference file and to 
+    merge that difference file to the original, producing the modified 
+    version.  These handy little programs and their documentation  are 
+    included in this library.
+
+    The following files must be modified:
+
+     ZCPR33.Z80  - the ZCPR33 source
+     Z3BASE.LIB  - the SYSTEM-dependent base equates
+     Z33MAC.LIB  - the ZCPR33 macro library
+     Z33HDR.LIB  - the user configuration options file
+
+    The files Z3BASE.LIB and Z33HDR.LIB present a small procedural problem, as 
+    the user will be EDITING these files to install his system.  These files 
+    *MUST*, therefore, be modifed BEFORE the user begins installation!  USE 
+    ONLY the Z3BASE.LIB and Z33HDR.LIB (not Z33HDR1.LIB, Z33HDR2.LIB, etc.) 
+    supplied in the RELEASE VERSION of ZCPR 3.3!
+
+    BE ABSOLUTELY CERTAIN that you operate on the ORIGINAL, UNMODIFIED ZCPR 
+    3.3 source code.  Strange and not-so-wonderful things may result if you 
+    apply the .DIF files to modifed source code.
+
+    Finally, remember to preserve your ORIGINAL source, just in case something 
+    goes wrong!  In the procedures listed below, the original files are 
+    renamed according to an arbitrary convention.  Choose your own favorite 
+    way of renaming or preserving....but make sure you DO it!
+
+DOING IT:
+
+    1) Get the following files into one directory/area:
+
+        ZCPR33.Z80
+        ZCPR33.DIF
+        Z3BASE.LIB
+        Z3BASE.DIF
+        Z33MAC.LIB
+        Z33MAC.DIF
+        Z33HDR.LIB
+        Z33HDR.DIF
+        SSED2.COM
+
+    2) Rename the files:
+
+        REN ZCPR33.ORI=ZCPR33.Z80
+        REN Z3BASE.ORI=Z3BASE.LIB
+        REN Z33MAC.ORI=Z33MAC.LIB
+        REN Z33HDR.ORI=Z33HDR.LIB
+
+    3) Modify them:
+
+        SSED2 ZCPR33.ORI <ZCPR33.DIF >ZCPR33.Z80
+        SSED2 Z3BASE.ORI <Z3BASE.DIF >Z3BASE.LIB
+        SSED2 Z33MAC.ORI <Z33MAC.DIF >Z33MAC.LIB
+        SSED2 Z33HDR.ORI <Z33HDR.DIF >Z33HDR.LIB
+
+       At this point you may modify the Z3BASE.LIB and Z33HDR.LIB  file to 
+       suit your preferences and/or system requirements.
+
+    4) Assemble:
+
+        M80 =ZCPR33.Z80 /Z/L
+
+       (the /L may be omitted if you *DON'T* want a listing file)
+
+    5) Make a .HEX file
+
+       To do this, you'll need a piece of information from your Z3BASE.LIB 
+       file - the ADDRESS of the CCP.  This will be the number equated to the 
+       label CCP in that file (it is BC00H in the original).  Record that 
+       piece of information and REPLACE the BC00 in the following command line 
+       with it:
+
+        L80 /P:BC00,ZCPR33,/X,ZCPR33/N,/E
+
+       During the L80 process, the program *MAY* give an error report similar 
+       to following:
+
+        Origin above loader memory.  Move anyway?
+
+       If it DOES, respond to the prompt with a N<cr>
+
+PARTING SHOTS:
+
+    If all went well, at this point you'll have a file ZCPR33.HEX on your disk 
+    that can now be merged into your sysgen image the same way you did with 
+    ZCPR 3.0!  What?  You're a first-timer or you forgot how to do it?  Well, 
+    for that information you must consult ZCPR3 The Manual (available from 
+    Echelon, Inc. 885 N. San Antonio Rd., Los Altos, CA  94022  415/9483820).
+    There is also machine-readable (and downloadable) information on 
+    installing ZCPR3 on several Z-Nodes.
+
+    All should go well if you DON'T set the REL equate to TRUE in the 
+    Z33HDR.LIB file.  Leave it off.  You don't need to use it anyway!
+

@@ -1,0 +1,386 @@
+;
+; DU3MAP.Z80
+; Modified 01/05/88 by Carson Wilson.  Now packs directory on read-in
+; by removing erased entries.  REDDIR now sets its own counter, TEMPCT,
+; to keep track of the number of directory entries left.  This value must
+; be given to GETGLP for each consecutive group.
+;
+; Command:  M
+; Map the directory
+
+map:
+	push	hl		;save ptr
+	ld	hl,(qcnt)	;get count
+	ld	a,h
+	or	l
+	pop	hl
+	jp	z,map1		;proceed if queue empty
+	call	ilprt		;print abort message
+	db	cr,lf,'Map not permitted -- Block Queue would be overlaid',0
+	jp	prmptr
+map1:
+	call	pagset		;set paging counter
+	ld	a,(pagflg)
+	dec	a		; allow a line for header <crw>
+	ld	(pagflg),a
+	xor	a
+	ld	(only1),a	;set flag for all groups (not only 1)
+
+; <crw>
+	ld	bc,(drm)	;max dir entry #
+	inc	bc		;make 1-relative
+	ld	(tempct),bc
+; <crw>
+
+	call	reddir		;read in directory
+	ld	c,0		;init start grp #
+	ld	a,(al0)		;read dir grp bits
+	call	colect		;collect count of dir grps..
+	ld	a,(al1)		;..in register c
+	call	colect
+	ld	b,0		;bc now has a default start grp #
+	call	hexin		;get specified group if any
+	push	hl		;save inbuf ptr
+	ld	a,e		;get start
+	or	d		;nothing?
+	jp	z,mapdf0	;..yes, dflt
+	ld	a,0ffh		;set flag for only 1 group
+	ld	(only1),a
+	ld	b,d		;get value in bc
+	ld	c,e
+mapdf0:
+	call	ilprt
+	defb	cr,lf
+	defb	dim
+	defb	'  Group  u#   Filename   Ex      '
+	defb	'  Group  u#   Filename   Ex  '
+	defb	bright
+	defb	cr,lf,0
+;
+mapdf:
+	call	ilprt
+	db	'  ',0
+	call	hexb		;print first group number
+	ld	a,'-'		;print separator
+	call	type
+	ld	a,' '		;set no duplicates
+	ld	(dupflg),a
+	call	getgrp		;get grp(c) to hl
+;
+mapcnt:
+	inc	bc		;next grp #
+	push	hl
+	ld	hl,(dsm)	;get highest grp #
+	inc	hl		;plus 1 for comparison
+	ld	a,l		;when bc reaches dsm+1..
+	cp	c		;..then we have exceeded..
+	jp	nz,mapc1	;..the disk capacity..
+	ld	a,h
+	cp	b
+;
+mapc1:
+	pop	hl
+	jp	z,mapend	;..and we are done
+	push	hl
+	call	getgrp		;get another
+	pop	de		;see if same
+	call	ctlcs		;abort?
+	jp	z,mapnd2
+	ld	a,d
+	cp	h
+	jp	nz,mapdif
+	ld	a,e
+	cp	l
+	jp	z,mapcnt	;same, continue
+;
+;different file encountered
+;
+mapdif:
+	dec	bc
+	call	hexb		;print ending group number
+	inc	bc
+	ex	de,hl
+	call	mapnam		;print file name
+	ld	a,(only1)	;only 1 name to be printed?
+	or	a		;0=no
+	jp	nz,mapnd1
+	jp	mapdf
+;
+;end of map
+;
+mapend:
+	dec	bc		;get last
+	call	hexb		;print last group number
+	call	mapnam		;print file name
+	call	wait		;delay for user
+mapnd1:
+	pop	hl
+	call	crlf		;new line
+;
+;end of map - reposition to previous group
+;
+mapnd2:
+	push	hl
+	ld	hl,(group)	;point to group in de
+	ex	de,hl
+	jp	posgp2
+;
+;print file name pointed to by hl
+;
+mapnam:
+	call	space		;leading space
+	ld	a,h
+	or	l		;none?
+	jp	z,noname
+	ld	a,(hl)		;see if alloc
+	cp	0e5h		;free?
+	ld	a,' '		;mark allocated
+	jp	nz,mpnsp1
+	ld	a,'('		;mark not allocated (erased file)
+;
+mpnsp1:
+	call	type		;print allocation indicator (space or '(')
+	push	hl		;save pointer
+	ld	a,(hl)
+	call	hex		;show user number
+	call	space
+	inc	hl		;skip user byte
+	push	bc
+	ld	b,8		;print file name
+	call	mapn2
+	ld	a,'.'		;print decimal separator
+	call	type
+	ld	b,3		;print file type
+	call	mapn2
+	ld	a,(dupflg)	;duplicate?
+	call	type		;space or star
+	pop	bc
+	ld	a,(hl)		;get ext
+	call	hex		;print extent number
+	pop	hl
+	ld	a,(hl)
+	cp	0e5h		;deleted entry?
+	ld	a,' '		;print ending space
+	jp	nz,mpnsp2
+	ld	a,')'		;print allocation flag
+;
+mpnsp2:
+	call	type		;")" if erased file or space if not
+	jp	flip
+;
+noname:
+	call	ilprt
+	db	'    ++ Free ++      ',0
+;
+flip:
+	ld	a,(twoup)	;flip flag for two entries per line
+	xor	1
+	ld	(twoup),a
+	jp	z,pager		;new line with paging if required
+;
+delim:
+	call	ilprt
+	db	'     ',0
+	ret
+;	jp	space
+;
+;print name pted to by hl, length in b
+;
+mapn2:
+	ld	a,(hl)
+	and	7fh		;strip possible 2.x attribute bit
+	inc	hl
+	cp	' '		;printable?
+	jp	c,mapn2h	;..no, in hex
+	cp	7eh		;7e is leadin on some crts
+	jp	c,mapn2a
+;
+mapn2h:
+	call	bhex		;print a as hex chars
+	jp	mapn2z
+;
+mapn2a:
+	call	type		;print as char
+;
+mapn2z:
+	djnz	mapn2
+	ret
+;
+;find which file group (bc) belongs to
+;
+getgrp:
+	ld	hl,(tempct)	; <crw>
+	ld	(filect),hl
+	ld	hl,0
+	ld	(mfptr),hl	;set multi-file (more than one user) ptr
+	ld	hl,(direct)	;pt to directory
+;
+getglp:
+	push	hl		;save pointer to name
+	ld	a,(hl)		;pick up dn byte
+	cp	0e5h		;erased?
+	jp	z,getgnf
+	ld	de,14		;now get record count
+	add	hl,de		;  s2 portion ..
+	ld	a,(hl)		;  is 0 in cp/m 1.4
+	and	0fh
+	ld	e,a
+	inc	hl
+	ld	a,(hl)
+	or	e
+	jp	z,getgnf
+	ld	e,16		;first set for 8-bit grps
+	ld	a,(dsm+1)
+	or	a
+	jp	z,smalgp
+	ld	e,8		;nope, big groups
+;
+smalgp:
+	ld	d,a		;save grp size indicator
+;
+getgl2:
+	inc	hl		;pointing into dm field
+	call	grpcmp		;compare bc gp # against 1 dm fld
+	jp	nz,notgot	;jump if not found
+;
+;found the file
+;
+	push	hl		;save group ptr
+	ld	hl,(mfptr)
+	ld	a,h		;any entries?
+	or	l
+	pop	hl		;get ptr
+	ex	(sp),hl		;save entry start and save ptr
+	jp	z,mpfrst	;if zero, then first entry
+	ld	a,'*'		;set multi flag
+	ld	(dupflg),a
+mpfrst:
+	ld	(mfptr),hl	;save pointer
+	ex	(sp),hl		;restore entry start and get ptr
+notgot:
+	dec	e		;count down
+	jp	nz,getgl2	;go test some more
+;
+getgnf:
+	pop	hl		;not this one
+	ld	de,32		;so go to next
+	add	hl,de
+	ex	de,hl
+	ld	hl,(filect)	;there is limit to everything
+	dec	hl
+	ld	(filect),hl
+	ld	a,h
+	or	l
+	ex	de,hl		;re-align
+	jp	nz,getglp
+;
+;set the allocation address, if any
+;
+	ld	hl,(mfptr)	;get address
+	ret
+;
+;read in the disk directory
+;
+reddir:
+	push	hl		;save ptr to next letter
+	call	norite		;positioning lost
+	ld	hl,(systrk)	;save current track
+	ld	(curtrk),hl
+	ld	hl,1		;set sector 1
+	ld	(cursec),hl
+	ld	hl,(drm)	;get dir size from dpb
+	inc	hl		;make 1-relative
+	call	rotrhl
+	call	rotrhl		;divide by 4 (4 names/sector)
+	ld	b,h		;bc=number of blocks to read
+	ld	c,l
+	ex	de,hl
+	ld	hl,(direct)	;dma addr
+	ex	de,hl		;... in de
+;
+;read disk directory loop
+;
+rdirlp:
+	push	bc		;save regs
+	push	de
+	ld	b,d		;bc=dma address
+	ld	c,e
+	ld	a,(bdos+2)	;check mem avail
+	dec	a		;are we rnning into bdos?
+	cp	d
+	jp	c,memful	;memory full error if so
+	call	setdma		;set dma address to that in bc
+	ld	hl,(curtrk)	;set track
+	ex	de,hl
+	call	settrk
+	ld	hl,(cursec)	;set sector
+	ex	de,hl
+	call	setsec
+	call	read		;read directory block
+	call	nxtsec		;increment to next sector
+	pop	de		; dma address
+
+;
+; Added code to skip erased entries to save space for hard disk users.
+; <crw> 1/4/88
+
+	ex	de,hl		; hl --> dir. sector
+	ld	b,3		; test first 3 sector entries
+eraskip:
+	ld	a,(hl)		; test user #
+	cp	0e5h		; erased?
+	jr	z,erask1	; yes, move next 3
+	ld	de,20h		; no, offset to next entry
+	add	hl,de
+	jr	erask2
+erask1:
+	call	erask3		; yes, move next 3 down 1, preserve hl
+erask2:
+	djnz	eraskip
+
+	ld	a,(hl)	
+	cp	0e5h		; last entry erased?
+	jr	nz,erask4	; no, point dma past entry
+	ld	bc,(tempct)
+	dec	bc		; yes, decrement count
+	ld	(tempct),bc
+	jr	erask5		; ..and point dma to entry
+;
+erask3:
+	ld	a,b		; save entry counter
+	ld	bc,(tempct)
+	dec	bc		; an entry is being removed
+	ld	(tempct),bc	; ..so decrement file count
+	push	hl		; save position
+	ex	de,hl		; de --> entry
+	ld	hl,20h		; offset of 1 dir. entry	
+	add	hl,de		; hl --> entry + 20
+	ld	bc,60h		; move next 3 entries down 20
+	ldir
+	pop	hl		; restore pointer 
+	ld	b,a		; restore counter 1-3
+	ret
+;
+erask4:
+	ld	de,20h
+	add	hl,de		; no, point dma past entry
+erask5:
+; end of mod. <crw>
+
+	ex	de,hl		;de=next dma address
+	pop	bc
+	dec	bc		;count down directory blocks
+	ld	a,b
+	or	c
+	jp	nz,rdirlp
+	ld	bc,tbuff	;reset dma address to tbuff
+	call	setdma
+	pop	hl		;get ptr to next char
+	ret
+
+tempct:
+	ds	2		; <crw>
+
+; END DU3MAP.Z80
+
+

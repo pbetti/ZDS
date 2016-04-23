@@ -1,0 +1,501 @@
+
+	TITLE HNDLR - Routine to interface with CP/M Plus
+.XLIST
+.Z80
+CSEG
+.comment \
+
+	*************************************************
+	* 	Derived from SUPERZAP PATCH             *
+	*						*
+	* M.D. Hendry		15th Feb 1987		*
+	*************************************************
+
+
+CP/M 3.x provides blocking/deblocking code in the BDOS, but 
+SUPERZAP assumes that this is the responsibility of the BIOS.
+This code sits between SUPERZAP and CP/M, and deals with the 
+problem.
+
+To allow the program to be used with hard disks, allowance has been made for
+physical sector sizes of up to 4096 bytes, and the following EQUates are set
+up for this maximum physical sector size.  Adjust them according to the table
+below if required.
+
+If a disc with too large a sector size is selected, it is regarded as
+non-existent - in other words the SELDSK routine returns HL = 0000.
+No harm is therefore done by trying to select such a disc.
+
+			===========================
+			 sector size		PSH
+			===========================
+				128		  0
+				256		  1
+				512		  2
+			       1024		  3
+			       2048		  4
+			       4096		  5
+			===========================
+
+	; SUPERZAP equates   (leave outside comment when
+	;			 used as patch)
+
+FREESP	EQU	018DH	; pointer to free space
+INIT	EQU	0266H	; initialisation entry point
+OFFSET	EQU	000FH	; offset to adjusted entry point
+LBIOS	EQU	0236H	; local bios copy address.
+
+	; The following entries are now used.\
+
+
+PUBLIC	VHOME,VSELDK,VSETRK,VSTSEC,VSTDMA,VREAD,VFREAD,VWRITE,VNORIT,VSCTRN
+PUBLIC	NEWEND
+
+
+MAXPSH	EQU	5
+BUFLEN	EQU	4096	; gives maximum sector size
+
+	; CP/M equates
+
+WBOOT	EQU	0	; warm boot vector
+CPM	EQU	5	; BDOS vector
+DEFDMA	EQU	80H	; default DMA address
+
+VERNUM	EQU	12	; BDOS version number routine
+SETERM	EQU	45	; BDOS set disc error mode routine
+GTSCB	EQU	49	; BDOS get / set SCB entries routine
+DIRCAL	EQU	50	; BDOS direct BIOS call routine
+
+
+VHOME:	LD	C,0		; set track 0
+	JR	VSETRK
+
+VSELDK:	LD	A,C		; preserve disc number
+	LD	(REQDR),A
+	LD	(BPBSEL+2),A	; store drive number
+	XOR	A
+	LD	(BPBSEL+4),A	; say first select of this drive
+	LD	DE,BPBSEL	; set up BIOSPB pointer
+	LD	C,DIRCAL
+	CALL	CPM		; make direct BIOS call
+				; which makes a copy of XDPH 
+				; in common memory & HL has address
+	LD	A,H		; but if drive is invalid
+	OR	L		; HL = 0
+	RET	Z		; so pass this message back
+	LD	DE,LOCALH	; make a local copy of this
+	PUSH	DE		; save address
+	LD	BC,23
+	LDIR
+	LD	HL,(LOCALH+12)	; get XDPB address
+	PUSH	HL
+	LD	DE,15
+	ADD	HL,DE		; point to PSH
+	LD	A,(HL)
+	LD	(SECSIZ),A	; store sector size
+	CP	MAXPSH+1	; is DSCBUF big enough?
+	JR	NC,ABORT	; no, jump
+	INC	HL
+	LD	A,(HL)		; get PSM
+	LD	(SECMSK),A	; store sector mask
+	POP	HL
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	LD	A,(SECSIZ)
+	INC	A
+AGAIN?:	DEC	A
+	JR	Z,DONE
+	SRL	D		; divide D by 2
+	RR	E		; divide E by 2 (with carry)
+	JR	AGAIN?
+DONE:	LD	(SECPT),DE	; store number of physical sectors
+				; per track
+	LD	HL,FLAG		; force a re-read after a
+	RES	3,(HL)		; change of disc is made - S.J.Y.
+	POP	HL		; return with HL pointing to LOCAL DPH
+	RET			; which is equal to the BIOS edition
+
+ABORT:	POP	HL
+	POP	HL
+	LD	HL,0
+	RET
+
+LOCALH:	DS	23
+
+VSETRK:	LD	(REQTRK),BC
+	RET
+
+VSTSEC:	LD	(REQSEC),BC
+	RET
+
+VSTDMA:	LD	(REQDMA),BC	; save DMA address for blocking
+SETDM1:	LD	(BPBSDM+2),BC	; and make direct BIOS calls to
+	LD	DE,BPBSDM	; SETDMA routine
+	LD	C,DIRCAL
+	CALL	CPM
+	RET
+
+;*******************************************
+;* Sector Read/Write Routines, including   *
+;* all blocking/deblocking                 *
+;*******************************************
+
+	;Write flags, passed in C register
+	;from BDOS
+
+WRNORM	EQU	0		; Normal write
+WRDIR	EQU	1		; Write to directory
+WRUAL	EQU	2		; Write unallocated
+
+VFREAD:	LD	HL,FLAG		; This is entry for forced read
+	RES	3,(HL)
+
+VREAD:	LD	A,WRUAL
+	LD	(WRTYPE),A
+	LD	HL,FLAG
+	SET	0,(HL)		; Say "Read"
+	LD	A,(SECSIZ)	; Get sector size (see table above)
+	OR	A		; 128 Bytes?
+	JP	Z,RD128		; yes jump
+	JR	ALLOC
+
+VNORIT:	LD	HL,FLAG		; to cancel automatic write after phys. sector
+	RES	2,(HL)		;  change from written sector - only forced
+	RET			;  write will apply
+
+VWRITE:	LD	A,C
+	LD	(WRTYPE),A
+	LD	HL,FLAG
+	RES	0,(HL)		; Say "Write"
+	LD	A,(SECSIZ)
+	OR	A		; 128 Byte sector?
+	JP	Z,WRI128	; yes, jump
+	LD	A,(WRTYPE)
+	CP	WRUAL		; write unallocated?
+	JR	NZ,CHKUNA	; no, jump
+	LD	A,(SECMSK)	; get sector mask
+	INC	A		; convert to number of log secs
+				; per physical
+	LD	(UNACNT),A	; set up count
+	LD	DE,UNADRV
+	LD	HL,REQDR
+	LD	BC,5
+	LDIR
+
+	; See if we are writing to an
+	; unallocated block
+
+CHKUNA:	LD	HL,UNACNT	; point to count
+	LD	A,(HL)		; load it
+	OR	A		; test it
+	JR	Z,ALLOC		; skip if zero
+
+	; more remain.  Is the current request in buffer?
+
+	DEC	(HL)		; else update counter
+	INC	HL		; move to UNADRV
+	LD	B,5		; set length
+	CALL	CKBKEQ		; does it match request?
+	JR	NZ,ALLOC	; no, jump
+
+	; yes, move to next sector for next time
+
+	LD	HL,(UNASEC)	; get sector
+	INC	HL		; bump sector
+	EX	DE,HL		; save in DE
+	LD	HL,(SECPT)	; get sectors per track
+	LD	H,0 		; zero MSB
+	LD	A,(SECSIZ)	; get sector size
+DOUBLE:	ADD	HL,HL		; double HL
+	DEC	A		; dec counter
+	JR	NZ,DOUBLE	; and repeat until done
+	SBC	HL,DE		; overflow?..
+	EX	DE,HL		; recover sector
+	JR	NZ,NOOVF	; ..no,jump
+
+	LD	HL,(UNATRK)	; yes, bump track
+	INC	HL
+	LD	(UNATRK),HL
+	LD	HL,0		; ..and zero sector
+NOOVF:	LD	(UNASEC),HL
+	LD	HL,FLAG
+	RES	1,(HL)		; no read necessary
+	JR	RWOPER		; do read/write
+
+	; not an unallocated record, requires pre-read
+
+ALLOC:	XOR	A
+	LD	(UNACNT),A	; clear UNACNT
+	LD	HL,FLAG
+	SET	1,(HL)		; say "Must Read"
+
+;*********************************************
+;*   Now actually perform the READ/WRITE     *
+;*********************************************
+
+RWOPER:	XOR	A		; no errors..
+	LD	(ERRF),A	; ..so far
+	LD	HL,(REQSEC)	; convert logical..
+	LD	A,(SECSIZ)
+	LD	B,A
+RWOPX:	SRL	H
+	RR	L
+	DJNZ	RWOPX
+	LD	(SYSSEC),HL	; ..to physical
+	LD	HL,FLAG
+	BIT	3,(HL)		; is buffer in use?..
+	SET	3,(HL)		; well it is now!
+	JR	Z,FILBUF	; ..no, so fill it
+
+	; see if what is in the buffer
+	; is what we want
+
+	LD	HL,BUFDRV	; point to buffer contents
+	LD	B,3		; set count
+	CALL	CKBKEQ		; same drive and track?
+	JR	NZ,NOMTCH	; no, jump
+	LD	A,(SYSSEC)	; yes, same physical sector?
+	CP	(HL)
+	JR	Z,MATCH		; yes, jump
+
+NOMTCH:	LD	HL,FLAG
+	BIT	2,(HL)		; written to this sector?
+	CALL	NZ,WRITSC	; yes, save it
+
+	; now set up the buffer
+
+FILBUF:	LD	A,(REQDR)
+	LD	(BUFDRV),A
+	LD	HL,(REQTRK)
+	LD	(BUFTRK),HL
+	LD	HL,(SYSSEC)
+	LD	(BUFSEC),HL
+	LD	A,(FLAG)
+	BIT	1,A		; is it already in memory?
+	CALL	NZ,READSC	; no, read it
+	LD	HL,FLAG
+	RES	2,(HL)		; no pending write
+MATCH:	LD	BC,128		; CP/M sector length
+	LD	DE,(REQDMA)	; where to put it
+	LD	A,(REQSEC)	; get sector number
+	LD	HL,SECMSK	; mask it
+	AND	(HL)
+	LD	HL,DSCBUF
+	JR	Z,ATST		; jump if first sec of buf
+MATCH0:	ADD	HL,BC		; else adjust pointer
+	DEC	A		; by adding (A)*128
+	JR	NZ,MATCH0
+ATST:	LD	A,(FLAG)
+	BIT	0,A		; reading?
+	JR	NZ,RWMOVE	; yes, jump
+	SET	2,A		; else set write flag
+	LD	(FLAG),A
+	EX	DE,HL		; and swap pointers
+RWMOVE:	LDIR			; copy data
+	LD	A,(ERRF)	; error?
+	OR	A
+	RET	NZ		; yes, return
+	LD	A,(WRTYPE)	; else recover write type
+	CP	WRDIR		; directory write?..
+	LD	A,0		; (say "no error")
+	RET	NZ		; ..no, return
+	LD	HL,FLAG		; else, forced write to disc
+	RES	2,(HL)
+	CALL	WRITSC
+	LD	A,(ERRF)	; return error flag..
+	RET			; ..to calling routine
+
+;*******************************************
+;* Check for same drive, track & sector.   *
+;* HL points to workspace to compare       *
+;* B holds number of bytes to check        *
+;*					   *
+;* Returns Z if same, NZ if different      *
+;*******************************************
+
+
+CKBKEQ:	LD	DE,REQDR
+CK1:	LD	A,(DE)
+	CP	(HL)
+	RET	NZ
+	INC	HL
+	INC	DE
+	DJNZ	CK1
+	RET
+
+;*******************************************
+;* Read or write a physical disc sector    *
+;*******************************************
+
+RDFLAG	EQU	0
+WRFLAG	EQU	1
+
+RD128:	LD	C,RDFLAG
+	JR	RW128
+
+WRI128:	LD	C,WRFLAG
+RW128:	PUSH	BC
+
+	LD	BC,(REQDMA)	; set DMA to selected address
+	CALL	SETDM1
+
+	LD	HL,(REQTRK)	; transfer local TRK
+	LD	(BPBTRK+2),HL	; to BIOS parameter block
+	LD	DE,BPBTRK
+	LD	C,DIRCAL	; for BIOS SETTRK call
+	CALL	CPM
+
+	LD	HL,(REQSEC)	; transfer local SEC
+	LD	(BPBSEC+2),HL	; to BIOS parameter block
+	LD	DE,BPBSEC
+	LD	C,DIRCAL	; for BIOS SETSEC call
+	CALL	CPM
+
+	LD	A,(REQDR)	; transfer drive
+	LD	(BPBSEL+2),A	; to BIOS parameter block
+	LD	A,1
+	LD	(BPBSEL+4),A	; say "not first select"
+	LD	DE,BPBSEL
+	LD	C,DIRCAL	; for BIOS SELDSK call
+	CALL	CPM
+
+	JR	RW1
+
+BPBSEL:	DB	9		; SELDSK call
+
+	DB	0		; A  register
+	DW	0		; BC register
+	DW	0		; DE register
+	DW	0		; HL register
+
+BPBTRK:	DB	10		; SETTRK call
+
+	DB	0		; A  register
+	DW	0		; BC register
+	DW	0		; DE register
+	DW	0		; HL register
+
+BPBSEC:	DB	11		; SETSEC call
+
+	DB	0		; A  register
+	DW	0		; BC register
+	DW	0		; DE register
+	DW	0		; HL register
+
+BPBSDM:	DB	12		; SETDMA call
+
+	DB	0		; A  register
+	DW	0		; BC register
+	DW	0		; DE register
+	DW	0		; HL register
+
+BPBSTR:	DB	16		; SECTRN call
+
+	DB	0		; A  register
+	DW	0		; BC register
+	DW	0		; DE register
+	DW	0		; HL register
+
+BPBRW:	DB	255		; function to be inserted
+
+	DB	0		; A  register
+	DW	01		; BC register (force write)
+	DW	0		; DE register
+	DW	0		; HL register
+
+READSC:	LD	C,RDFLAG
+	JR	RW
+
+WRITSC:	LD	C,WRFLAG
+RW:	PUSH	BC
+	LD	BC,DSCBUF	; set DMA to DSCBUF
+	CALL	SETDM1
+
+	LD	HL,(BUFTRK)	; transfer buffer track
+	LD	(BPBTRK+2),HL	; to BIOS parameter block
+	LD	DE,BPBTRK
+	LD	C,DIRCAL	; for BIOS SETTRK call
+	CALL	CPM
+
+	LD	HL,(BUFSEC)	; transfer buffer sector
+	LD	(BPBSEC+2),HL	; to BIOS parameter block
+	LD	DE,BPBSEC
+	LD	C,DIRCAL	; for BIOS SETSEC call
+	CALL	CPM
+
+	LD	A,(BUFDRV)	; transfer buffer drive
+	LD	(BPBSEL+2),A	; to BIOS parameter block
+	LD	A,1		; say "not first select"
+	LD	(BPBSEL+4),A
+	LD	DE,BPBSEL
+	LD	C,DIRCAL	; for BIOS SELDSK call
+	CALL	CPM
+
+RW1:	POP	BC		; recover read/write flag
+	LD	A,13		; preset for READ
+	BIT	0,C		; READ selected?
+	JR	Z,RW2		; yes,jump
+	LD	A,14		; else WRITE
+RW2:	LD	DE,BPBRW
+	LD	(DE),A		; select appropriate function
+	LD	C,DIRCAL
+	CALL	CPM
+	LD	(ERRF),A	; set error flag
+	RET
+
+$LISTS:	RET			; dummy routine (not used by SUPERZAP)
+
+VSCTRN:	LD	(BPBSTR+2),BC	; logical sector
+	LD	(BPBSTR+4),DE	; XLT address
+	LD	DE,BPBSTR	; BIOS PB address
+	LD	C,DIRCAL
+	CALL	CPM
+	RET
+
+WRTYPE:	DB	0		; disc write type
+ERRF:	DB	0		; error flag
+
+FLAG:	DB	0		; general purpose flag
+				; bit 3 set = buffer in use
+				; bit 2 set = buffer is written to
+				; bit 1 set = sector not in memory
+				; bit 0 set = read - unset = write
+
+SYSSEC:	DS	2		; store for system sector calculation
+
+SECSIZ:	DS	1		; sector size 0..5 ==> 128..4096
+SECMSK:	DS	1		; sector mask
+SECPT:	DS	2		; number of sectors per track
+
+	;	unallocated buffer contents
+
+UNACNT:	DB	0		; counter
+UNADRV:	DB	0		; 0..15 ==> A..P
+UNATRK:	DS	2		; physical track number
+UNASEC:	DS	2		; physical sector number
+
+	;	Current buffer contents
+
+BUFDRV:	DB	0		; 0..15 ==> A..P
+BUFTRK:	DS	2		; physical track number
+BUFSEC:	DS	2		; physical sector number
+
+	;	CP/M requests
+
+REQDR:	DB	0		; 0..15 ==> A..P
+REQTRK:	DS	2		; logical track number
+REQSEC:	DS	2		; logical sector number
+				; (128 byte sectors)
+REQDMA:	DW	DEFDMA		; requested DMA address
+
+SCBPB:	DS	4		; parameter block for BDOS call 49
+
+DSCBUF:	DS	0
+
+NEWEND	EQU	DSCBUF+BUFLEN
+
+	.LIST			; to create symbol table
+
+END
+

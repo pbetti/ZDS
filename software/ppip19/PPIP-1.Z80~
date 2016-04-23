@@ -1,0 +1,289 @@
+; PPIP-1.Z80
+
+; <<1>> 	    Argument processing module
+
+; This module functions similarly to the "C"-style command argument
+; processor.  Arguments from the command line are placed in a buffer and
+; each argument from 0 to ARGC-1 (total number of arguments found) is
+; accessible via an array of argument vectors (ARGV[ARGC]).  There is
+; one important difference here:  unlike "C," our ARGV[0] is the first
+; command line argument, NOT the program name.	Commas can be used to
+; create NULL arguments (,,).
+
+;-----------------------------------------------------------------------
+
+; Parse the command buffer and remove arguments to the argument buffer.
+
+; Entry:  none
+
+; Return:  ARGC = number of arguments
+;	   up to MAXARG arguments are placed in ARGBUF with points in ARGV
+;	   all registers affected
+
+PARSE:
+	XOR	A		; Initialize argument count
+	LD	(ARGC),A
+	LD	HL,CMDBUF	; Point to command buffer
+	LD	A,(HL)		; Get number of characters
+	OR	A		; Test for zero
+	RET	Z		; And return now if none
+	INC	HL		; Point to first char. of command
+	LD	B,MAXARG	; Initialize max arg. count
+BLANKS:
+	LD	A,(HL)		; Get a char. from command buffer
+	INC	HL		; Point to next
+	CP	'='		; Skip '=' (special case for CP/M mode)
+	JP	Z,BLANKS
+	CP	' '		; Skip leading spaces
+	JP	Z,BLANKS
+	RET	C		; Done if end of line is reached
+	DEC	HL		; Adjust pointer back to non-space char.
+	CALL	GETARG		; Get one argument
+	DEC	B		; Decrement number we can handle
+	JP	NZ,BLANKS	; Do more if max. count not reached
+	RET			; Else return
+
+;-----------------------------------------------------------------------
+
+; Get an argument from the command line and place it, zero-terminated,
+; into our buffer.
+
+; Entry:  HL = pointer to command line argument
+
+; Return:  ARGV[ARGC] = pointer to argument
+;	   ARGC += 1
+;	   HL = pointer to CHAR <= space
+;	   BC preserved, DE destroyed
+
+GETARG:
+	PUSH	BC		; Save reg.
+	PUSH	HL		; Save pointer into command buffer
+	LD	A,(ARGC)	; Get count number for this arg.
+	CALL	GETARGV		; Get storage addr. (argv[argc]) in HL
+	EX	DE,HL		; Put it in DE
+	INC	A		; Bump argument count
+	LD	(ARGC),A	; And store it for next time
+	POP	HL		; Retrieve command buffer pointer
+GETMOR:
+	LD	A,(HL)		; Get command character
+	CP	' '+1		; CHAR > space?
+	JP	C,GETDUN	; NO - then done
+	CP	'='		; Equals sign? (special case for CP/M mode)
+	JP	NZ,GETM1	; NO - go save the character
+GETDLM:
+	INC	HL		; Skip over the '='
+	JP	GETDUN		; And terminate the argument
+
+GETM1:
+	LD	(DE),A		; Save it in storage
+	INC	HL		; Point to next command character
+	INC	DE		; Point to next storage location
+	JP	GETMOR		; And get more
+
+GETDUN:
+	EX	DE,HL		; Swap pointers (HL = storage)
+	LD	(HL),0		; Terminate the argument
+	INC	HL		; Bump storage pointer loc. for next arg.
+	LD	A,(ARGC)	; Get count for NEXT argument
+	CALL	SAVARGV		; And save address for it
+	EX	DE,HL		; Put command buffer pointer back in HL
+	POP	BC		; Restore
+	RET			; All done getting one argument
+
+;-----------------------------------------------------------------------
+
+; Return the address that contains an argument vector.
+
+; Entry:  Acc. = argument number
+
+; Return:  HL = address of argument vector (&argv[argc])
+;	   other registers unaffected
+
+GETADDR:
+	PUSH	BC		; Get a register to use
+	LD	C,A		; And put argument number in BC
+	LD	B,0		; So BC = argc
+	LD	HL, ARGV	; Let HL = argv
+	ADD	HL,BC		; +  argc * 2  (2 = sizeof(int))
+	ADD	HL,BC		; To find argv+argc
+	POP	BC		; Restore
+	RET			; Done
+
+;-----------------------------------------------------------------------
+
+; Return an argument vector
+;
+; Entry:  Acc. = argument number
+;
+; Return:  HL = the argument vector (ARGV[ARGC])
+;	   other registers unaffected
+
+GETARGV:
+	PUSH	AF		; Save argument number
+	CALL	GETADDR		; Get argument vector address in HL
+	LD	A,(HL)		; Put the arg. vector into HL
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	POP	AF		; Restore argument number
+	RET
+
+;-----------------------------------------------------------------------
+
+; Save an argument vector
+;
+; Entry:  Acc. = argument number
+;	  HL   = argument vector
+
+; Return: no registers affected
+
+SAVARGV:
+	PUSH	DE		; Save caller's reg.
+	EX	DE,HL		; Put arg. vector in DE
+	CALL	GETADDR		; Get vector table address in HL
+	LD	(HL),E		; Store the arg. vector there
+	INC	HL
+	LD	(HL),D
+	EX	DE,HL		; Put address back into HL
+	POP	DE		; Restore
+	RET			; Done
+
+;-----------------------------------------------------------------------
+
+; Delete an argument
+;
+; Entry:  Acc. = argument number to delete
+
+; Returns: PSW destroyed
+;	   no other registers affected
+
+DELARG:
+	PUSH	BC		; Save caller's registers
+	PUSH	DE
+	PUSH	HL
+	LD	B,A		; Save argument number to delete
+	LD	A,(ARGC)	; Get argument count
+	OR	A		; Any args ?
+	JP	Z,DELAR2	; NO - then nothing to delete so quit
+	DEC	A		; Else, less one
+	LD	(ARGC),A	; Store it
+	LD	C,A		; And save a copy of new arg. count
+	LD	A,B		; Retrieve arg. number to delete
+DELAR1:
+	CP	C		; Compare index to argument count
+	JP	Z,DELAR2	; Ready to return if (i = argc-1)
+	CALL	GETADDR		; Get address of argument i
+	EX	DE,HL		; Into de
+	INC	A		; And address of argument i+1
+	CALL	GETADDR		; Into HL
+	LD	B,A		; Save i+1
+	LD	A,(HL)		; Get low part of argv[i+1]
+	LD	(DE),A		; Move it down to argv[i]
+	INC	DE		; Bump pointers
+	INC	HL
+	LD	A,(HL)		; Then do high byte the same way
+	LD	(DE),A
+	LD	A,B		; Get index back
+	JP	DELAR1		; And repeat
+
+DELAR2:
+	POP	HL		; Restore old environment
+	POP	DE
+	POP	BC
+	RET			; And done
+
+;-----------------------------------------------------------------------
+
+; Swap two arguments
+;
+; Entry:  Acc. = index to first argument
+
+; Return: The first argument is swapped with the one immediately after it.
+;	  Acc. += 1, other registers intact
+
+SWAPARG:
+	CALL	GETARGV		; Get first argument (i) in HL
+	EX	DE,HL		; Temp = i
+	INC	A		; Get second argument (j)
+	CALL	GETARGV
+	DEC	A		; I = j
+	CALL	SAVARGV
+	INC	A		; J = i
+	EX	DE,HL
+	CALL	SAVARGV
+	RET
+
+;-----------------------------------------------------------------------
+
+; Get options from the command line.  The options scheme used here is
+; very simple.	Valid options are stored in the OPTIONS table as two
+; bytes, (1) the option character and (2) the option status, either ON
+; or OFF.  Except for the 'M' command, if a valid option switch is
+; encountered in the command line the corresponding option's status is
+; simply toggled.  The 'M' command differs in that if the 'M' argument
+; is used, CRC verification is turned on and 'M' is turned on, rather
+; than being toggled.  Options are effectively deleted from the argument
+; list.
+
+; Entry:  call PARSE first to fill ARGBUF and ARGC
+
+; Return: all registers affected
+
+GETOPT:
+	LD	B,0		; Initialize arg. index to zero
+GETOP0:
+	LD	A,(ARGC)	; Get argument count
+	LD	C,A		; Hold it
+	LD	A,B		; Get arg index back
+	CP	C		; Compare index to arg. count
+	RET	NC		; Return if NOT (index < argc)
+	CALL	GETARGV		; Get argument address (in HL)
+	LD	A,(SWITCH)	; Get our switch character
+	CP	(HL)		; Compare with char. in argument
+	JP	Z,OPFOUND	; Break if option has been found
+	INC	B		; Else increment index
+	JP	GETOP0		; And loop
+
+OPFOUND:
+	LD	A,B		; Get index
+	CALL	DELARG		; Delete this argument from the list
+OPSRCH:
+	INC	HL		; Point to next argument character
+	LD	A,(HL)		; Retrieve it
+	OR	A		; End of argument ?
+	JP	Z,GETOP0	; YES - then next argument
+	LD	DE,OPTIONS	; Address the options table
+OPSRC1:
+	LD	A,(DE)		; Get an option character
+	INC	DE		; Point to next
+	OR	A		; Test for end of options
+	JP	Z,OPTBAD	; Break - UNRECOGNIZED
+	CP	(HL)		; Compare with argument character
+	JP	Z,OPTOK		; Break - RECOGNIZED
+	INC	DE		; Point to next option
+	JP	OPSRC1		; And try again
+
+OPTBAD:
+	LD	A,(HL)		; Get offending character
+	CALL	TYPE		; Type the bad option
+	CALL	ILPRT		; Plus error message
+	DB	' - unrecognized option',CR,LF,0
+	JP	OPSRCH		; And try next character in argument
+
+OPTOK:
+	CP	'M'		; IS IT MOVE?
+	JP	NZ,OPTOK1	; NO - DO AS NORMAL
+	LD	A,ON
+	LD	(VERIFY),A	; FORCE CRC VERIFICATION
+	JP	OPTOK2		; AND SET MOVE ON
+OPTOK1:
+	LD	A,(DE)		; Else get current status
+	CPL			; Switch it (on->off, off->on)
+OPTOK2:
+	LD	(DE),A		; Put it back where we got it
+	INC	DE		; Point to next option character
+	JP	OPSRCH		; And try to do another
+
+;	      end of argument handler module <<1>>
+;-----------------------------------------------------------------------
+

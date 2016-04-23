@@ -1,0 +1,286 @@
+
+; Module:	ZCNFGMDL - Model ZCNFG configuration file
+; Author:	Carson Wilson
+; Date:		4 Nov 89
+; Version:	1.3
+; Notes:	Use this "template" file to build the source for 
+;		 a .CFG file of your own.
+
+; This file contains only data structures, and is used by ZCNFG to tell 
+; what to display while patching a file, where to alter the file, and 
+; what sort of values to request from and display to the user.
+;
+; See ZCNFG.WS for a full explanation of .CFG file format.
+
+; EQUATES
+
+; Sample zero-based offsets of patch locations in the file to be 
+;  altered by ZCNFG.  Modify labels, locations, and descriptions
+;  for your particular application of ZCNFG.  (Used in CASE TABLES, 
+;  below).
+
+;Labels		Locations	  Descriptions
+Patch1	equ	00Bh		; Patch location 1
+Patch2	equ	00Ch		; Patch location 2
+Patch3	equ	00Dh		; Patch location 3
+Patch4	equ	010h		; Patch location 4
+Patch5	equ	015h		; Patch location 5
+Patch6	equ	016h		; Patch location 6
+Patch7	equ	017h		; Patch location 7
+
+; ZCNFG function definitions, used in CASE TABLES below.  Do not modify.
+
+Switch	equ	0	; Toggle bit n in a byte (n is specified)
+Text	equ	1	; Edit text with UC conversion
+DUSpec	equ	2	; Replace a ZCPR style DU specification (NOT DIR:!)
+HexRad	equ	3	; Edit byte/word using HEX radix
+DecRad	equ	4	; Edit byte/word using DECIMAL radix
+TextLC	equ	5	; Edit text, both UC and LC
+FileSp	equ	6	; Edit a Z3 filespec or filespec fragment
+Togl3	equ	7	; Toggle to one of three options: 001B, 010B, 100B
+ToglTF	equ	8	; Toggle a byte between 0ffh and 0
+
+; Sample ASCII definitions, used in SCREEN sections below.
+
+tab	equ	9		;horizontal tab
+lf	equ	10		;line feed
+cr	equ	13		;carriage return
+
+; =======================================
+;
+;	C O D E   B E G I N S
+;
+; =======================================
+;
+; NOTE: the next 13 bytes (up to BMenu, below) MUST remain in 
+;  the following locations:
+
+	rst	0	; For safety, so .CFG file won't execute
+
+	dw	AMenu	; For relocation of addresses, this
+			; ..points to the NEXT location.
+
+; ---------------------------------------------------------
+;
+;	MENU LIST SECTION
+;
+; You will probably need to modify the following menu list to give the
+;  desired number of menus (now configured for TWO, menus A and B).
+;
+; Each entry is a doubly linked node, pointing to the next entry
+;  in the list, the previous entry in the list, and a menu screen, 
+;  case table, and help screen.  If only one menu is to be used,
+;  it points only to itself.  See ZCNFG.WS for help.
+
+AMenu:	dw	BMenu, BMenu, AScrn, ACase, AHelp	; Entry for menu A
+BMenu:	dw	AMenu, AMenu, BScrn, BCase, BHelp	; Entry for menu B
+
+; -------------------------------------
+;
+;	CASE TABLE SECTION
+;
+; You should modify the records in the case table(s) below to specify
+;  which functions (see EQUATES, above) ZCNFG is to perform for each
+;  menu selection, and the locations ZCNFG is to patch.  You can use as
+;  many menu selections as you can devise unique selectors for (case doesn't
+;  count), though as a practical matter you will probably want to use more
+;  than one Case Table to implement large numbers of selections.
+
+; Sample case table for Menu A.  The first two bytes give the number of
+;  records followed by the length of each record.  The rest of the table
+;  consists of up to 255 identical records.
+
+ACase:	db	(ACaseX-ACase1)/(ACase2-ACase1)	; Number of cases
+	db	ACase2-ACase1			; Length of each record
+
+ACase1:
+	db	'1'	; Unique ASCII selector from SCREEN IMAGE
+	dw	DecRad	; ZCNFG function number
+	dw	Patch1	; Location in file to be patched by ZCNFG
+	db	1	; Number of bytes for ZCNFG to change
+	dw	AScrnM	; Location to change in SCREEN IMAGE
+	dw	AC1MM	; 0 or address of min/max data words or strings
+
+ACase2:
+	db	'2'	; Unique ASCII selector from SCREEN IMAGE
+	dw	ToglTF	; ZCNFG function number
+	dw	Patch2	; Location in file to be patched by ZCNFG
+	db	1	; Number of bytes for ZCNFG to change
+	dw	AScrnT	; Location to change in SCREEN IMAGE
+	dw	YNData	; 0 or address of min/max data words or strings
+
+ACase3:
+	db	'3'	; Unique ASCII selector from SCREEN IMAGE
+	dw	ToglTF	; ZCNFG function number
+	dw	Patch3	; Location in file to be patched by ZCNFG
+	db	1	; Number of bytes for ZCNFG to change
+	dw	AScrnC	; Location to change in SCREEN IMAGE
+	dw	YNData	; 0 or address of min/max data words or strings
+ACaseX:			; Label for calculation of list length
+
+
+; Sample case table for Menu B.  This has the same form as the case table
+;  for menu A, above. 
+
+BCase:	db	(BCaseX-BCase1)/(BCase2-BCase1)	; Number of cases
+	db	BCase2-BCase1			; Length of each record
+
+BCase1:
+	db	'A'	; Unique ASCII selector from SCREEN IMAGE
+	dw	Text	; ZCNFG function number
+	dw	Patch4	; Location in file to be patched by ZCNFG
+	db	3	; Number of bytes for ZCNFG to change
+	dw	BScrnA	; Location to change in SCREEN IMAGE
+	dw	0	; 0 or address of min/max data words or strings
+
+BCase2:
+	db	'B'	; Unique ASCII selector from SCREEN IMAGE
+	dw	Text	; ZCNFG function selector
+	dw	Patch5	; Location in file to be patched by ZCNFG
+	db	3	; Number of bytes for ZCNFG to change
+	dw	BScrnB	; Location to change in SCREEN IMAGE
+	dw	0	; 0 or address of min/max data words or strings
+
+BCase3:
+	db	'C'
+	dw	Text
+	dw	Patch6
+	db	3
+	dw	BScrnC
+	dw	0
+
+	db	'D'
+	dw	Text
+	dw	Patch7
+	db	3
+	dw	BScrnD
+	dw	0
+BCaseX:			; Label for calculation of list length
+
+; Sample case table support data structures.  These may be pointed to by the
+;  last element of a case table record if the ZCNFG function specified in
+;  the case table entry requires additional parameters.  For example, AC1MM 
+;  (stands for "ACase1, Min/Max") is pointed to by the last two bytes of 
+;  ACase record ACase1 above, and gives the minimum and maximum values to 
+;  be accepted by the ZCNFG function DecRad, also specified in ACase1.
+;  YNData (stands for "YES/NO Data") is pointed to by the last two bytes of 
+;  ACase2 and ACase3 above, and gives the strings to be printed by the 
+;  ZCNFG function ToglTF also specified in ACase2 and ACase3.
+
+AC1MM:			; Min/Max for ACase1, above
+	dw	0	; Min
+	dw	255	; Max
+
+YNData:			; Null-terminated data pair for ZCNFG's ToglTF function
+	db	'YES',0	; First entry is displayed if current value is 0FFh
+	db	' NO',0	; Second entry is displayed if current value is 000h
+
+; ------------------------------------------
+;
+;	SCREEN IMAGE SECTION
+
+; Sample screen image for Menu A.  This is what appears on the screen
+;  when the user initially invokes ZCNFG with this .CFG file.  This screen
+;  data is pointed to by its MENU LIST entry (above).  Before displaying
+;  the following ASCII information, ZCNFG substitutes the current values
+;  for the file being altered for the blank spaces at the secondary labels
+;  below.  For example, at label AScrnM ("Menu A, Screen location M") below, 
+;  ZCNFG substitutes the current ASCII value for the byte at location Patch1 
+;  in the file being patched before displaying the screen.  When the value
+;  at Patch1 is changed, ZCNFG updates the screen data before redisplaying
+;  the screen.
+
+; Note that the display is ENTIRELY UP TO YOU.  You should, however, be sure to
+;  indicate the letter or number corresponding to the "ASCII selector" in
+;  the case table entry for that option; otherwise the user will not know
+;  how to select the option!
+
+AScrn:
+	db	cr,lf,lf,tab,tab,tab,'Sample Installation Menu One'
+	db	cr,lf,lf
+
+	db	tab,'1) Set a value at this location .............. '
+AScrnM:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	tab,'2) Toggle a byte (000h/0FFh) at this location  '
+AScrnT:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	tab,'3) Toggle a byte (000h/0FFh) at this location  '
+AScrnC:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	lf,lf,lf,lf,lf,lf,lf	; Fill rest of screen
+
+	db	0			; Terminator
+
+; Sample screen image for Menu B.  This screen is printed when the user
+;  selects the second patch menu by using ZCNFG's "." or ">" command.
+; Menu B is an example of a "split screen" with more than one menu selection
+;  per line.  This technique is normally used only when large numbers of
+;  options (over 20 or so) must be displayed on a single screen.
+
+BScrn:
+	db	cr,lf,lf,tab,tab,tab,'Sample Installation Menu Two'
+	db	cr,lf,lf
+
+	db	' A) Set three characters ... '
+BScrnA:	db	'   '			; Display current value here
+	db	tab
+	db	' B) Set three characters ... '
+BScrnB:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' C) Set three characters ... '
+BScrnC:	db	'   '			; Display current value here
+	db	tab
+	db	' D) Set three characters ... '
+BScrnD:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	lf,lf,lf,lf,lf,lf,lf,lf	; Fill rest of screen
+
+	db	0			; Terminator
+
+; ---------------------------------------------------
+;
+;	HELP SCREEN SECTION
+;
+
+; Sample help screen for Menu A.  The following, up to the terminating
+;  binary 00, appears as-is when the user types "?" or "/" for help while
+;  ZCNFG is displaying the initial patch menu.
+
+AHelp:
+	db	cr,lf,lf,tab,tab,tab,'Sample Installation Menu One Help'
+	db	cr,lf,lf
+
+	db	'The options in this menu simply adjust whatever is at'
+	db	cr,lf
+	db	'the locations in an arbitrary file.  The "set a value" '
+	db	'command'
+	db	cr,lf
+	db	'will set the byte to any value, and the "toggle" commands'
+	db	cr,lf
+	db	'will switch the byte between 0FFh ("YES") and 000h ("NO").'
+	db	cr,lf,lf
+
+	db 0		; Terminator
+
+; Sample help screen for Menu B.  The following, up to the terminating
+;  binary 00, appears as-is when the user types "?" or "/" for help while
+;  ZCNFG is displaying the second patch menu.
+
+BHelp:
+	db	cr,lf,lf,tab,tab,tab,'Sample Installation Menu Two Help'
+	db	cr,lf,lf,lf
+
+	db 'The items in this menu are a little different.  They adjust a'
+	db cr,lf
+	db '3-character string at the patch locations specified by the'
+	db ' .CFG file.'
+	db	cr,lf
+
+	db	0	; Terminator
+

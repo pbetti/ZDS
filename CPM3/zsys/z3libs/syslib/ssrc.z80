@@ -1,0 +1,105 @@
+;	TITLE	"SSRC - Syslib 4.3c"
+	NAME	('SEARCH')
+;=======================================================================
+; Author  : Joe Wright
+; Date    : 15 Nov 90
+; Version : 1.0
+; Module  : SSRC
+; Abstract:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		SEARCH, SRCH, KEY, LL, RRE
+
+; External References
+
+	EXT		LOGSSB, SNREC, SCOMP, SPOINT, PTORD, PTREC
+
+;=======================================================================
+; NAME - SEARCH.  Perform Binary Search on loaded table
+; Entry: DE - points to the Caller's SSB.
+;	 HL - points to the key to be located in array.
+; Exit : (found) Zero Flag Set (Z)
+;		 HL = index to the record matching the key.
+;	(not found) Zero Flag Clear (NZ)
+;		 DE = index to position where search failed, anywhere
+;			from 1 to N+1.
+; Uses : AF,BC,DE,HL
+; Special Requirements: A proper Sort Selection Buffer (See SORT) and
+;  corresponding data array in memory.
+;=======================================================================
+
+SEARCH:	LD	(KEY),HL	; Save pointer to the key
+	CALL	LOGSSB
+
+SRCH:	LD	DE,1		; Initial Left index
+	LD	HL,(SNREC)	; Initial Right index
+SRCH0:	OR	A
+	SBC	HL,DE		; Test rr - ll
+	RET	C		; Not found, DE is 'next' index
+
+	ADD	HL,DE		; Restore rr
+	LD	(RRE),HL
+	LD	(LL),DE
+	ADD	HL,DE
+	RR	H
+	RR	L		; (ll+rr) div 2
+	CALL	COMP		; Compare the keys
+	RET	Z		; Found it, HL is its index.
+
+	JR	NC,RIGHT
+
+; LEFT - The key is lower, go left
+
+	DEC	HL		; New right index
+	LD	DE,(LL)		; Left index
+	JR	SRCH0		; ..Again
+
+; RIGHT - The Key is higher, go right
+
+RIGHT:	INC	HL		; New left index
+	EX	DE,HL		; To DE
+	LD	HL,(RRE)	; Right index
+	JR	SRCH0		; ..Again
+
+;.....
+; COMP - Compare DE.key - HL.key
+;	Return Zero  if DE.key = HL.key
+;	Return Carry if DE.key < HL.key
+
+COMP:	PUSH	HL		; Save the index
+	LD	A,(SPOINT)	; Are we using pointers?
+	OR	A
+	JR	Z,CMP0		; No pointers
+
+	CALL	PTORD		; Point into Order table
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		; Point to Record
+	JR	CMP1
+
+CMP0:	CALL	PTREC		; Point to Record
+
+CMP1:	LD	DE,(KEY)
+	CALL	CMPA
+	POP	HL		; Restore the index
+	RET
+
+; Fake a call to the compare routine in the SSB
+
+CMPA:	PUSH	HL
+	LD	HL,(SCOMP)
+	EX	(SP),HL
+	RET
+
+; Uninitialized data goes in the DSEG
+
+	DSEG
+
+KEY:	DEFS	2
+LL:	DEFS	2
+RRE:	DEFS	2
+
+	END
+

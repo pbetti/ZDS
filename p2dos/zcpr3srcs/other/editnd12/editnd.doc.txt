@@ -1,0 +1,514 @@
+Program: EDITND   - EDIT the resident Named Directory
+Author: Al Hawley, Ladera Z-Node, (213) 670-9465
+
+EDITND is copyright by A. E. Hawley January 30, 1987.
+It may be freely distributed, but it must not be sold 
+either separately or as part of a package without the 
+written consent of the author.  The author may be reached 
+via electronic mail at the Ladera Z-Node in Los Angeles,
+213-670-9465, or through the Lillipute Z-Node in Chicago 
+at 312-649-1730.
+
+EDITND is released for beta test through the Z-system 
+users group Z-SIG on January 30, 1987 by the author.
+
+PROGRAM FUNCTION:
+     Edit  the System Named Directory.  Change,  add,  or  delete ç
+directory  names and passwords.  The changes are to the  resident ç
+Named Directory buffer, and may be aborted (restored to original) ç
+if desired.
+     Why would you want to mess with the system NDR? Read on...
+
+
+     ZCPR3  as originally released included an impressive set  of ç
+utilities  (now called ZTOOLS).  These utilities create,  modify, ç
+and  make use of the ZCPR3 environment to provide the  user  with ç
+facilities  like  those  of many mini- and  main-frame  operating ç
+systems.  Named  Directories are used by many of the  tools,  and ç
+recognized as arguments by all. The manipulation of the currently ç
+resident Named DiRectory is the subject of this documentation and ç
+of two programs not in the original set of ZTOOLS.
+
+                        HOW WE DO IT NOW
+
+     MKDIR and LDR are the original tools provided by R. Conn for ç
+maintenance  of  the  Named DiRectory  (NDR).  The  former  is  a ç
+specialized  editor which creates or modifies files which contain ç
+NDR  information.  The  latter loads such files into  the  system ç
+named  directory buffer to provide names and passwords for  those ç
+Disk/User areas that the user has chosen to define. When the user ç
+wishes to redefine D/U name and password assignments,  he does so ç
+by executing LDR to load a new .NDR type file from mass  storage. ç
+He  might  wish to do this because the task at hand  has  changed ç
+(i.e. from edit-assemble-link to data base management or to modem ç
+communications)  or because a new floppy disk has been  installed ç
+for which the directory names are not relevant.
+
+                     WHAT'S WRONG WITH THAT?
+
+     As convenient as this arrangement is,  it does imply a major ç
+inconvenience  when the number of possible differently  organized ç
+floppy  disks becomes significant:  the user must anticipate each ç
+combination of disk-drive assignments and create an NDR file  for ç
+each  one.  A little reflection will convince you that the number ç
+of  NDR  files required grows geometrically with  the  number  of ç
+drives available and the number of (differently organized) floppy ç
+disks!  What  is  needed to alleviate this problem is a means  of ç
+editing  selected  portions  of  the  system  NDR   buffer.   Two ç
+approaches  suggest themselves:  1) replace the NDR entries for a ç
+drive  with data from the disk currently installed in that  drive ç
+and 2) edit individual entries (for ANY D/U) in the NDR.
+
+.pa
+
+                          ONE SOLUTION
+
+     Wilson  H.  Bent  was  the  first  to  recognize  the  first ç
+approach.  He  solved  the problem by providing the LDSK  utility ç
+which  capitalizes on the common use of zero length  files  which ç
+start with a '-' to identify directories for cataloging purposes. ç
+LDSK  selects  those  names from the disk in  the  user-specified ç
+drive to update the entries in the NDR for that drive.  The  idea ç
+was  carried  a  step further by me in DSKNDR  by  including  the ç
+ability  to also select the appropriate entries from an NDR  file ç
+on the target disk. DSKNDR also recognizes the size of the system ç
+NDR,  removing  the necessity of customizing it for those systems ç
+which  require  more than the 14 entries allowed in  the  minimum ç
+implementation.  See  the documentation for LDSK and  DSKNDR  for ç
+more  details  on each.  (Incidentally,  DSKNDR is a  full  ZCPR3 ç
+utility; the original version of LDSK was not.)
+
+                 ANOTHER SOLUTION, ANOTHER ZTOOL
+
+     The present program represents the second approach. It edits ç
+individual entries in the system resident NDR. The editing may be ç
+done from the invoking command line or in an interactive terminal ç
+session.  WHY WOULD ONE WANT TO DO THAT? For one case, the use of ç
+LDSK  or DSKNDR might result in duplicate directory names  (ROOT, ç
+for example).   EDITND  can be invoked to change one of the names ç
+to  something  unique.  LDSK does not provide  passwords;  DSKNDR ç
+retains  passwords if they are present in an NDR files  that  was  ç
+used.   In either case,  passwords may need to be added, deleted, ç
+or  changed.  In  another  (less general) case,   the Sysop for a ç
+Remote   Access  System  can use EDITND  to provide  a  temporary ç
+password  for  access to  a directory for a specific  user.   The ç
+operation  of a  RAS  is such  that the NDR may be  reloaded  for ç
+each user,  replacing such dynamic  assignment.  That's  why they ç
+are   temporary.   A   little imaginative reflection will  reveal ç
+other usage scenarios.
+
+     EDITND   was designed first,   THEN written.   Here are  the  ç
+main design goals:
+
+1) Make it a ZCPR3 utility;  use standard invokation & arguments. ç
+In particular,  ?,/, and // always invoke HELP; /ooo... specifies ç
+options.
+
+2) Usage is restricted (by the Wheel byte) to privileged users.
+
+3)  Invokation  from the command line with NO  undesired  console ç
+output. (for secure systems)
+
+4) HELP displays on demand.  Make sure that when the program name ç
+changes, the Help screen automatically stays relevant!
+
+5) Error messages displayed only if asked for by the user. (I get ç
+offended at programs that 'chatter' at me!)
+
+6)  Structured  and well commented source code.  When changes  or ç
+debugging are required, these factors really pay off!
+
+7) I know I'll forget some important function.  Therefore,  write ç
+the  code so that it's not necessary to re-write the  program  to ç
+incorporate   new   features.   Make  the  command  set   readily ç
+extendable.
+
+                        THE EDITND  PROGRAM
+
+     Edits the System Named Directory.  Changes, adds, or deletes ç
+directory  names and passwords.  The changes are to the  resident ç
+Named Directory buffer, but may be aborted (restored to original) ç
+if desired.
+     Multiple commands on the command line or in interactive mode ç
+are supported.  Commands on the invoking command line produce  no ç
+unsolicited console output,  so this program can execute silently ç
+in an alias or RAS environment.  In the interactive mode, command ç
+errors  are  explained  only  on  request.  The  HELP  screen  is ç
+automatically  maintained;  so  if  you change the  name  of  the ç
+program,  the version number, or the command separator character, ç
+the HELP information will remain relevant.
+
+                       HOW TO INVOKE EDITND 
+
+     EDITND <cr>         Enter Interactive Mode, prompt user
+
+     EDITND  <cr>        Same, but show current NDR first
+
+     EDITND <commands>   Execute the commands, then enters
+                         interactive mode. Commands are separated
+                         by '\' which is the default command
+                         delimiter.
+
+   EDITND <commands>\x   The 'x' command means 'exit to the
+                         operating system'. The interactive
+                         mode is never entered. Useful in an
+                         Alias, or when only a few changes are
+                         to be made. The '\' is the EDITND 
+                         command separator.
+
+     If  an  error condition occurs during execution of  commands ç
+from the invoking command line,  the error code is placed in  the ç
+ZCPR3 program error code byte.  There, it can be tested by IF.COM ç
+and appropriate action taken.
+
+.CP 15
+
+     The   following  command  lines display  the  EDITND    Help  ç
+screen  without   entering the  interactive  mode.   (i.e.   they ç
+display help and then immediately exit to ZCPR3)
+
+     EDITND  ?
+     EDITND  /
+     EDITND  //
+
+     From  interactive  mode,  the  HELP commands  (?,/,//)  work ç
+differently in several ways.  First, they do not cause an exit to ç
+the  operating  system.  Second,  they are sensitive to an  error ç
+condition  and  display the offending command  and  a  diagnostic ç
+error  message.   Third,  the  error  code  associated  with  the ç
+diagnostic is NOT sent to the ZCPR3 program error byte. 
+
+     A  complete  BNF-style  description  of  command  syntax  is ç
+included below.  In plainer (but not as precise) English, here is ç
+a summary of the commands with some examples:
+
+RULES FOR FORMING COMMANDS:
+
+You may type either upper or lower case. Mix 'em if you want.
+
+'\' is the character which separates commands
+
+leading and trailing spaces are ignored, except that at least
+  one space must separate command arguments. Comma is NOT a
+  substitute for a space in most cases.
+
+A comma is permitted in certain cases to imply a default DIR
+  preceding the comma, and a null (blank) argument after the
+  comma. If you supply a dirname before the comma or a PW after
+  the comma then these over-ride the default. See examples below.
+
+<cr> means carriage return. As usual, nothing will happen until
+  you enter a <cr> at the end of a command line.
+
+DU means Disk/User, like a8, B3, etc. (note NO COLON. Use of a
+  colon after the DU is entirely optional in EDITND )
+
+DIR means a directory name that exists in the NDR. Again, a
+  terminating colon is not required but is ok.
+
+<dir> means EITHER DU or DIR may be used for this command. A
+  colon MAY be used (DU: or DIR:) but is not required.
+
+.PA
+
+                     THE EDITND  COMMANDS 
+
+
+<cr>   Displays  the current NDR buffer contents.  If new entries ç
+       have been added,  they will not be in sorted order.  Don't ç
+       worry.  They will be when the program exits. If it bothers ç
+       you, the 's' command will put them in proper order.
+       This is an EMPTY command. A '\<cr>' at the end of a string ç
+       of  commands,  or  '\\' within a string of  commands  also ç
+       causes the current NDR to be displayed. (Just like PWD)
+
+X      eXit  to the operating system after making sure  that  the ç
+       NDR  is  in  order.   A  sort  is  done  automatically  if ç
+       required  to  put  the entries into the normal order.
+
+Q      Quit  to the operating system,   restoring the NDR to  its ç
+       original  condition.  Any changes made during the  session ç
+       are ignored.
+
+R      Reset  the NDR to its original condition.  Any changes are  ç
+       lost; you are starting over anew.
+
+Z      Zap the NDR. All entries are erased. You can add new ones, ç
+       if  you  wish.   The 'R' command gets  everything  (except ç
+       changes)  back,  and  the 'Q' command leaves  the  entries ç
+       restored.   If  you 'X' at  this point,  there will be  NO ç
+       entries in the NDR.
+
+S      Sorts  the NDR entries into the order that you're used to.        ç
+       You  only need to do this for your  own  convenience.  The        ç
+       program  will  automatically  sort  the  NDR  on  exit  if ç
+       required.
+
+/oo... The  slash  is the leading character for Option  commands, ç
+       where  'o' represents options from list on the next  page. ç
+       One  of the options is the letter 'O' (also '0',  in  case ç
+       your terminal makes them both look the same). If you issue ç
+       the  command  '/O<cr>' the same list will be displayed  on ç
+       your console.  Multiple options may be given in any order; ç
+       they are executed in the sequence in which you list  them. ç
+       No  spaces are allowed in the option list,  since a  space ç
+       terminates the list.
+
+
+.PA
+
+
+
+         COMMANDS to CHANGE, ADD, and DELETE NDR ENTRIES
+
+<dir>                   deletes the entry
+<dir>,                  deletes the password
+
+to change an entry, the DU or DIR must already exist in the NDR
+(if it shows in the NDR display, you can change it)
+<dir>,pw                changes password to PW
+<dir> new pw            changes both DIR and password
+<dir> new,pw            changes both DIR and password
+<dir> new,              changes DIR to 'new' & deletes password
+<dir> new               changes DIR to 'new' (NOTE: no comma!)
+                        and does not change any password
+
+to add a new entry, the new DU must be specified
+<newdu> name            adds a new entry, newdu:name, & no password
+<newdu> name pw         adds a new entry, newdu:name, password=pw
+<newdu> name,pw         comma is ok here instead of a space
+
+
+                OPTION COMMANDS (preceded by "/")
+
+       /       Display Help. If error, show error diagnostic
+       H       Toggle display of help after error diagnostic
+       B       Toggle audible notice of command error
+       E       Toggle visual notice of command error
+       S<ch>   Change command separator to character <ch>
+       O       Display this screen of option selections
+       C       Display the list of error codes
+
+Option commands start with '/' and end with a carriage return  or ç
+command  separator.  Multiple options from the list above may  be ç
+included in any order. For example,
+
+                            /hbeo<cr>       
+
+is  perfectly acceptable.   By default,   EDITND  will sound  the ç
+bell  and   display   a message on the console to  serve   notice  ç
+when   an  error  has  occurred.   If  you  then  ask  for   help  ç
+(?,/,or//)  a diagnostic message will be listed,  followed by the ç
+main body  of the  help  screen.  The example command above would ç
+turn  off   the bell,   warning message,  and the automatic  help ç
+display; then show the  above option list.  When no error exists,  ç
+the  help   command  shows the help screen  regardless  of  these ç
+options.   Note that  if you   assign  a  new   separator,    the  ç
+assignment    takes     place  immediately,    and   your    next  ç
+separator  must  be  the  one  you assigned!
+.pa
+
+*****************************************************************
+The  remainder  of  this  documentation describes  EDITND    from  ç
+a  programming  viewpoint,   and is not required in order to  use  ç
+the  program.  If you want to see how the program works in detail ç
+or  if you want to make changes in the  program,   the  following  ç
+material  will  supplement  the comments in  the  program  source ç
+itself.  I  hope  that   these  notes will  help  understand  the ç
+programming  techniques and  data  structures  used  and  thereby  ç
+inhibit  the  growth  of members  of  the  insect world.   Please ç
+coordinate   any   proposed revisions  with  the original  author ç
+and   help   prevent   multiple versions with  the  same  version ç
+number!
+                    Al Hawley, Ladera Z-Node, LA, CA
+                    (213) 670-9465 (modem), 649-3575 (voice)
+*****************************************************************
+
+
+               BNF TYPE COMMAND SYNTAX DESCRIPTION
+
+<Command line> = [ <cmd> [ \ <cmd>...]]<cr>
+
+<cmd> = <ltr> | <dcmd> | <ocmd>
+
+  <ltr> = q | r | s | w | x | z | ? | / |<ucltr>
+
+       <ucltr> = Q | R | S | W | X | Z | <mt>
+
+         <mt>  = <carriage return> | <\[<sp>...]\>
+
+  <dcmd> = <dir>[:] [, | ,<pw> | <name>,<pw> | <name><sp><pw>]
+
+         <dir> = "a directory name of 8 or less characters" | <du>
+
+         <du>  = <drive letter, a..p><one or two digits, 0-31>
+
+         <pw>  = "8 or less ascii characters except delimiters"
+
+        <name> = "8 or less characters (a new directory name)"
+
+         <sp>  = a space
+
+  <ocmd> = / [ <oc> [<oc>...] ]
+
+          <oc> = / | H | B | E | O | C | S<ch>
+
+          <ch> = "any printable character EXCEPT <ltr>|<oc>"
+.pa
+
+                     MAIN ROUTINE ALGORITHM:
+
+1) Set up local stack, save system stack pointer
+
+2) Initialize buffers, validate environment, save a copy of
+the system NDR for use during an abort. Abort to operating
+system with message if fatal error condition exists.
+
+3) Transfer the command tail into the local command line buffer.
+
+4) Do until (program exit condition)
+
+      Do until (command line buffer empty) OR (exit condition)
+          Transfer a command into single command buffer
+          Parse command with ARGV
+          Resolve  command logic using parameters to derive a key ç
+            for the CASE call to the execution routine.
+          If no error, execute the command via call to CASE
+          If error, save error code & command in a history buffer
+      End until (command line buffer empty) OR (exit condition)
+
+      Issue prompt and get command if no exit condition
+
+   End until (program exit condition)
+
+4) Perform any required cleanup operations:
+    Sort the system NDR if required
+    Restore the system NDR from the saved copy if this is an
+        abort and changes have been made.
+
+5) Restore the system stack pointer
+
+6) Return to the operating system
+
+END OF ALGORITHM
+.pa
+
+                   COMMAND PARSE & RESOLUTION
+
+ALGORITHM:
+        Parse  the  command by counting arguments  and  analysing ç
+each argument.  Based on the results,  assign a value to a  'key' ç
+which uniquely defines the function to be performed.
+        If the first argument defies recognition, record an error ç
+and ignore the balance of the command.
+        If  the  first argument comprises exactly  one  character ç
+execute   the  appropriate  function  and  ignore  any  remaining ç
+arguments. If the command character is not defined then record an ç
+error and ignore the command.
+        If  the first argument is a valid DU or DIR then  analyse ç
+the  remaining  arguments and reduce the command to  the  general ç
+form:  DU <dirname> <password>.  Substitute this reduced form  in ç
+the   NDR if DU already exists there,  else append to the NDR  if ç
+there is space available. If neither <dirname> nor <password> are ç
+given in the argument list, then any existing entry in the NDR is ç
+deleted.  When  a  ',' is present which results in  an  ambiguous ç
+interpretation, record an error and ignore the command (cases 4 & ç
+5). 
+        If  the  first  argument begins with '/' then  treat  the ç
+remainder of the characters in that argument as special commands. ç
+If  a  command requires an  argument,  the  argument  immediately ç
+follows the command letter. Process each command character in the ç
+order given. If no characters follow the '/' then consider this a ç
+command  to  display the help screen.  On encountering an  error, ç
+record the error and abort processing of the remaining options.
+.PA
+
+                        COMMAND ANALYSIS
+
+arg1,  arg2,  etc,  are  Pointers returned by ARGV to the  first, ç
+second, etc. arguments in the command.
+
+Group  0:  The first argument is not a defined  du,  dir,  single ç
+letter command, or a string starting with '/'.
+
+arg1            arg2-arg4       action/comment
+
+<unknown>       <don't care>    ignore command, record an error
+
+Group 1: empty command, or single-letter command
+
+arg1    arg2    arg3    arg4  case - action/comment
+
+--      --      --      --      0 - display NDR & passwords
+<ltr>   --      --      --      A - perform <ltr> function
+
+Group 2: the first arg is a valid du|dir form
+
+arg1    arg2    arg3    arg4  case - action/comment
+
+<dir>   --      --      --      1 - delete entry from NDR
+<dir>   name    --      --      2 - replace name/make new entry
+<dir>   name    <pw>    --      3 - new name, new password
+<dir>   ','     --      --      4 - delete (blank) password
+<dir>   ','     <pw>    --      5 - change password
+<dir>   name    ','     --      6 - new name, blank password
+<dir>   name    ','     <pw>    7 - new name, new password
+
+Group 3: The first arg begins with a '/'
+
+arg1            arg2-arg4       action/comment
+
+/[<str>]        (ignore)        case  9 - <str> is a sequence  of ç
+                                characters  which define settable ç
+                                options.   '/'   as   an   option ç
+                                character    invokes   the   help ç
+                                screen.
+
+.pa
+
+          CALCULATION OF CASE-KEY (ckey) FOR EACH CASE
+
+a1code = (if single ltr) ascii (else) 0
+a2code = (if arg2 = ',') 2 (else) 0
+a3code = (if arg3 = ',') 3 (else) 0
+
+        argnum  a1code  a2code  a3code  ckey=sum
+
+case 0     0       0       0       0       0
+case 1     1       0       0       0       1
+case 2     2       0       0       0       2
+case 3     3       0       0       0       3
+
+case 4     2       0       2       0       4
+case 5     3       0       2       0       5
+
+case 6     3       0       0       3       6
+case 7     4       0       0       3       7
+case 8  (not defined)
+case 9     >0      8       0       0       9 (argnum <- 1)
+case A     1    ascii-1    0       0     ascii
+
+
+                PROCESSING REQUIRED FOR EACH CASE
+
+notes:  1) appflg = FALSE if d/u IS in the NDR, else TRUE
+        2) xx -> yy means "make xx point to yy"
+        3) xx <= yy means "make xx equal to yy"
+
+        if appflg=F:                    if appflg=T:
+
+case 0  display ndr                     display ndr
+case 1  delete entry                    do nothing
+case 2  arg3->dirpw                     arg3->spaces
+case 3  replace NDR entry               append new NDR entry
+
+case 4  arg2->dirname, arg3->spaces     do nothing(err)
+case 5  arg2->dirname                   do nothing(err)
+
+case 6  arg3->spaces                    arg3->spaces
+case 7  arg3<=arg4                      arg3<=arg4
+
+case 9  argnum <- 1, do option(s) or display help
+case A  do ltr cmd                      do ltr cmd
+
+                        

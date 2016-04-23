@@ -1,0 +1,1671 @@
+; Program: SH		Variable expansion and history shell.
+; Version: 2.0
+; Authors: Richard Conn, Dreas Nielsen
+; Date: 
+;
+;
+; History--
+;	 Date	 Version	 Comments
+;	------	---------	----------
+;	3/5/84	  1.0		Original code.  Richard Conn.
+;	3/6/87	  1.1		Fixed failure to resolve a variable reference
+;				in first position on line and incorporated a
+;				scrolling line editor, including save and
+;				recall of last command.  Dreas Nielsen.
+;	5/1/87	  2.0		Removed internal commands (shcmt, shecho, and
+;				shexit), added commands to line editor, and
+;				added a 20-line history recall.  Dreas Nielsen.
+;
+;
+;
+;----------------  Equates for Key Values  ----------------
+;
+VERS	EQU	20
+lecnt	equ	20	;number of pointers on String Ptr Stack
+ctrlz	equ	'Z'-'@'	;^Z for EOF
+cmtch	equ	';'
+subch	equ	'%'	;substitution flag
+fcb	equ	5ch
+tbuff	equ	80h
+cr	equ	0dh
+lf	equ	0ah
+BDOS	EQU	5
+BS	EQU	8
+EOF	EQU	'Z'-'@'
+;
+;
+; ====  Input Control Keys  ====
+;
+; Line editor:
+;	^S or left-arrow key defined in TCAP : move left 1 char
+;	^D or right-arrow key defined in TCAP : move right 1 char
+;	^E : erase to [E]nd of line
+;	^U : delete char [U]nder cursor
+;	^W : delete [W]ord forward
+;	^X : kill entire line, OR EXIT if at beginning of empty line
+;	DEL : delete char before cursor
+;	TAB : move to end of line, or if at end, to beginning
+;	^A : move to beginning of previous word
+;	^F : move to beginning of next word
+;	^H : delete char before cursor
+;	^Q : [Q]uote next char--insert char literal
+;	^C : reboot if at beginning of line.
+; History control:
+;	^P or up-arrow key defined in TCAP : previous command line
+;	^N or down-arrow key defined in TCAP : next (old) command line.
+;	^R : previous command line (same as up-arrow)
+;
+; Cursor keys are evaluated first, and may override others if they
+; generate a corresponding code.  For instance, on '83 Kaypros the backspace
+; key will move left rather than deleting left.  Use of CP/M standard line
+; editing keys (^E, ^U, ^R, & ^X) will, it is hoped, reduce other such 
+; conflicts.
+;
+; Note that the ^P printer toggle does not work inside this input editor;
+; the keystroke now defaults to another function.
+;
+;
+TOGKEY	EQU	'I'-'@'		;Toggles between beginning & end of line.
+REPKEY	EQU	'R'-'@'		;Recalls previous command.
+DELBAK	EQU	127		;Deletes previous character.
+DELUND	EQU	'U'-'@'		;Deletes current character.
+CLREND	EQU	'E'-'@'		;Erases to the end of the line.
+FORWRD	EQU	'F'-'@'		;Move to next word forward.
+BAKWRD	EQU	'A'-'@'		;Move to next word backward.
+QUOTE	EQU	'Q'-'@'		;Quote next character.
+KILWRD	EQU	'W'-'@'		;Delete word forward.
+CTRLC	EQU	'C'-'@'		;Reboots at beginning of line.
+CTRLX	EQU	'X'-'@'		;Erases entire line.
+;
+HSTMAX	EQU	20		;Maximum number of entries in history file.
+;
+;
+; External Z3LIB and SYSLIB Routines
+;
+	ext	z3init,getsh2,shpush,shpop,qshell,getefcb,putcl,putcst,putzex
+	ext	getshm,putshm,root,getfn1,getcl2,getcrt,getvid,dnscan
+	ext	getud,putud,retud,logud,dutdir
+	ext	cin,cout,pstr,print,qprint,pafdc,sksp,caps,capstr
+	ext	initfcb,f$open,f$make,f$delete,f$close,codend
+;
+;
+;----------------  Code  ----------------
+;
+	db	'Z3ENV'		;This is a ZCPR3 Utility
+	db	1		;External Environment Descriptor
+z3eadr:
+	dw	00
+	DW	8000H		;Load address if using type-3 env. flag.
+START:
+	ld	hl,(z3eadr)	;pt to ZCPR3 environment
+	call	z3init		;initialize the ZCPR3 Environment
+;
+; Set Pointers
+;
+	call	codend		;find scratch area
+	LD	(LINEBUF),HL	;Set ptr to line-editor buffer.
+	LD	DE,128		;Line is max 127 chars plus null.
+	ADD	HL,DE
+	ld	(intline),hl	;set ptr to internal line buffer
+	ld	de,200h		;reserve 200H bytes for expansion
+	add	hl,de
+	ld	(varlist),hl	;Set ptr to variable list.
+	LD	DE,200		;128b for new line + ~40 for pointer list + extra.
+	ADD	HL,DE
+	LD	(HSTLIST),HL	;Set ptr to history list.
+;
+; Patch RAWOUT routine to use BIOS console output
+;
+	LD	HL,(1)
+	LD	DE,9
+	ADD	HL,DE
+	LD	(CONOUT),HL
+;
+; Check for Shell Stack
+;
+	call	getsh2		;get shell status
+	JR	nz,STRT		;skip over shell init
+	call	print
+	db	'No Shell Stack',0
+	ret
+;
+; Save stack pointer and set a new one
+;
+STRT:	LD	(SAVESP),SP
+	LD	HL,(6)		;BDOS jump address
+	LD	DE,2056		;size of ZCPR3
+	OR	A		;clear carry flag
+	SBC	HL,DE
+	LD	SP,HL
+;
+; See if this program was invoked as a shell
+;
+start0:
+	call	qshell		;find out from ZCPR3 environment
+	JP	Z,ISHELL	;do not push onto stack if invoked as a shell
+start1:
+	CALL	QPRINT
+	DB	'SH v.',[VERS / 10]+'0','.',[VERS mod 10]+'0',CR,LF,0
+;
+; Set Name of Shell Variable File if One is Given
+;
+	ld	de,fcb+1	;pt to name
+	ld	a,(DE)		;check for name or help
+	cp	'/'
+	jp	z,help
+	cp	' '		;no name if space
+	jr	z,SETSHN
+	call	getfn1		;pt to buffer in env
+	ld	BC,8		;8 bytes of name
+	EX	DE,HL
+	LDIR
+	LD	A,(HL)
+	CP	' '
+	JR	Z,SETSH2
+	LD	BC,3
+	LDIR
+	JR	SETSHN
+SETSH2:	call	setshdef	;set default file type
+;
+; Set Name of Shell from External FCB if Possible or From Default if Not
+;
+setshn:
+	call	XROOT		;get root address
+	ld	hl,shdisk	;pt to shell disk
+	ld	a,b		;get disk
+	add	'A'		;convert to letter
+	ld	(hl),a		;set disk letter
+	inc	hl		;pt to user 10's
+	ld	a,c		;get user number
+	ld	b,10		;subtract 10's
+	ld	d,'0'		;set char
+setshn1:
+	sub	b		;subtract
+	jr	c,setshn2
+	inc	d		;increment digit
+	jr	setshn1
+setshn2:
+	add	a,b		;get 1's
+	ld	(hl),d		;set 10's digit for user
+	inc	hl		;pt to 1's digit
+	add	'0'		;compute 1's digit
+	ld	(hl),a		;set 1's digit
+	call	getefcb		;get ptr to external fcb
+	JR	z,start2	;no external FCB, so use default name
+	inc	hl		;pt to program name
+	ld	de,shname	;pt to string
+	ld	BC,8		;8 chars
+	LDIR			;copy into buffer
+;
+; Push Name of Shell onto Stack
+;
+start2:
+	ld	hl,shdisk	;pt to name of shell
+	call	shpush		;push shell onto stack
+	jr	nz,start3
+;
+; Shell Successfully Installed
+;
+	call	print
+	db	'Shell Installed',CR,LF,0
+;
+; See if any commands pending in MCL buffer; exit if so
+;
+	CALL	GETCL2		;A=0 if no more chars.
+	OR	A
+	JP	Z,ISHELL	;Go init shell cmdline processing.
+;	
+EXIT:	LD	HL,(SAVESP)
+	LD	SP,HL
+	RET
+;
+;
+; Shell Stack Push Error
+;
+start3:
+	cp	2		;shell stack full?
+	JR	nz,start4
+;
+; Shell Stack is Full
+;
+	call	print
+	db	'Shell Stack Full',0
+	JR	EXIT
+;
+; Shell Stack Entry Size is too small for command line
+;
+start4:
+	call	print
+	db	'Shell Stack Entry Size',0
+	JR	EXIT
+;
+; Help message
+;
+HELP:
+	CALL	PRINT
+	DB	'Variable expansion and command history shell.',CR,LF
+	DB	'Syntax:   SH [shfile.ft]',CR,LF,0
+	JP	EXIT
+;
+;----------------------------------------------------------------
+;
+; Initialization routines if program has been invoked as a shell
+;
+ISHELL:
+
+; Load index register IX with base address of data structure for recording
+; editing position.
+;
+	LD	IX,EDIDAT
+;
+; Patch SYSLIB 'cout' routine so that chars printed can be recorded
+;
+	LD	HL,COUT
+	LD	A,0C3H		;1st byte of JP instruction
+	LD	(HL),A
+	INC	HL
+	LD	DE,ADVANCE	;patch routine
+	LD	A,E
+	LD	(HL),A
+	INC	HL
+	LD	A,D
+	LD	(HL),A
+;
+; Load command history file.
+;
+	CALL	HSTLOAD
+;
+; Get screen line length and cursor keys
+;
+	CALL	GETCRT
+	LD	A,(HL)
+	LD	(SCRWID),A
+	CALL	GETVID
+	JR	Z,SHELLR	;If no TCAP, use default cursor keys
+	LD	DE,16		;Point to arrow keys.
+	ADD	HL,DE
+	LD	A,(HL)
+	OR	A		;Is key defined?
+	JR	Z,SHELLR
+	LD	(UP),A
+	INC	HL
+	LD	A,(HL)
+	LD	(DN),A
+	INC	HL
+	LD	A,(HL)
+	LD	(RT),A
+	INC	HL
+	LD	A,(HL)
+	LD	(LFT),A
+;
+; Restart on Empty Line
+;
+shellr:
+	LD	(IX),0		;Chars out = 0
+;
+; Print Shell Prompt
+;
+shell:
+	call	retud		;get current user and disk
+	ld	a,b		;save disk
+	add	'A'
+	call	cout		;print disk letter
+	ld	a,c		;get user
+	call	pafdc		;print A as floating decimal
+	call	dutdir		;convert into DIR reference if possible
+	jr	z,shell1	;no match
+	ld	a,':'		;print colon
+	call	cout
+	ld	b,8		;8 chars max
+shell0:
+	ld	a,(hl)		;get char
+	inc	hl		;pt to next
+	cp	' '		;space?
+	JR	Z,SHELL1
+	CALL	cout
+	DJNZ	shell0
+shell1:
+	call	print
+	db	'>> ',0		;special prompt
+;
+; Accept User Input
+;
+shell3:
+	ld	a,1		;tell ZEX that prompt is up
+	call	putzex
+	LD	A,(SCRWID)	;Compute remaining chars in command line.
+	SUB	(IX)		; Subtract chars printed for prompt...
+	DEC	A		; ...and an extra position for the cursor.
+	LD	(IX+1),A
+	call	SCROLLIN
+	ld	a,0		;say that normal processing is running now
+	call	putcst
+	call	putzex
+	LD	HL,(LINEBUF)
+	call	sksp		;skip over leading spaces
+;
+; Process Command Line
+;
+shell4:
+	ld	a,(hl)		;get first char
+	or	a		;no line?
+	JR	NZ,SHELL5
+	CALL	PRINT
+	DB	CR,LF,0
+	JR	SHELLR
+SHELL5:	cp	cmtch		;comment line?
+	JR	Z,SHELLR
+	PUSH	HL
+	CALL	WRTHST
+	POP	HL
+	CALL	CAPSTR
+;
+; Expand Shell Command Line
+;
+	call	expand		;expand line pted to by HL
+	jr	z,clovfl	;abort if overflow
+;
+; Load Multiple Command Line
+;
+	call	putcl		;place command line pted to by HL into CL Buffer
+;
+; Resume ZCPR3 processing
+;
+	JP	EXIT
+;
+; Input Line is Longer than Command Line Buffer
+;
+clovfl:
+	call	print		;command line buffer has overflowed
+	db	cr,lf,'CL Ovfl ',0
+	jp	shellr
+;
+; Expand Shell Command Line (pted to by HL), performing variable
+;	Substitutions
+;
+;	On exit, Z=command line overflow and Line Pted to by HL
+;
+	PUBLIC	EXPAND
+expand:
+;
+; Init String Pointer Stack
+;
+	EX	DE,HL
+	ld	a,lecnt		;set local element count
+	ld	(locelt),a
+	ld	HL,locstk	;set local stack
+	ld	(locadr),hl
+	ld	hl,0		;set done code on stack
+	call	locpush		;push HL
+;
+; Set Ptrs
+;
+	ld	hl,(intline)	;pt to internal line
+	ex	de,hl		;DE pts to internal line, HL pt next char
+	ld	b,0		;256 chars max
+;
+; Analyze Next Char
+;
+	PUBLIC	EXP1
+exp1:
+	ld	a,(hl)		;get next char
+	cp	subch		;substitution char?
+	JR	nz,exp2		;handle normally
+;
+; Process Shell Variable
+;
+	call	expvar		;resolve variable
+	jr	nz,exp1		;resume if no error.
+;
+; Store Next Char and Advance
+;
+	PUBLIC	EXP2
+exp2:
+	ld	(de),a		;store char
+	inc	hl		;pt to next
+	inc	de
+	dec	b		;count down
+	JR	z,experr	;error if at 0
+	or	a		;done?
+	jr	nz,exp1
+	inc	b		;increment count (not counting last 0)
+	dec	de		;pt to 0 in case of abort
+;
+; Pop String Ptr Stack and Check for Analysis Complete
+;
+	call	locpop		;get ptr to previous string
+	ld	a,h		;done?
+	or	l
+	jr	nz,exp1		;resume
+	dec	a		;set NZ
+;
+; Expansion Complete
+;	On entry, Z Flag is Set Accordingly (Z=Error)
+;
+experr:
+	ld	hl,(intline)		;pt to internal line
+	ret
+
+;
+; Expand Variable
+;	Return with HL pting to next char, A=char, NZ if OK, Z if error
+;
+	PUBLIC	EXPVAR
+expvar:
+	ld	(varptr),hl	;save ptr to variable
+	inc	hl		;get next char
+	ld	a,(hl)		;get it
+	or	a		;EOL?
+	ret	z
+	cp	subch		;double sub char?
+	ret	z		;place one sub char in line if so
+;
+; Place Variable Into SHVAR
+;
+	push	bc		;save counter
+	push	de		;save ptr to next char
+	push	hl		;save ptr to shell variable
+	ld	hl,shvar	;pt to shell variable buffer
+	LD	DE,SHVAR
+	INC	DE
+	ld	BC,7		;8 chars max
+	ld	a,' '		;space fill
+	LD	(HL),A
+	LDIR
+	LD	de,SHVAR	;DE pts to shell variable buffer
+	pop	hl		;pt to shell variable
+	ld	b,8		;8 chars max
+;
+; Place Shell Variable into Buffer
+;
+expv1:
+	ld	a,(hl)		;get char
+	call	delck		;check for delimiter
+	jr	z,expv3		;done if delimiter
+	ld	(de),a		;save char
+	inc	hl		;pt to next
+	inc	de
+	djnz	expv1		;count down
+;
+; Flush Overflow of Shell Variable
+;
+expv2:
+	ld	a,(hl)		;get char
+	inc	hl		;pt to next
+	call	delck		;check for delimiter
+	jr	nz,expv2
+	dec	hl		;pt to delimiter
+;
+; Shell Variable in buffer SHVAR
+;	HL pts to delimiter after variable in user line
+;
+expv3:
+	call	locpush		;stack ptr to next char in current string
+	jr	z,expv4		;error in stack
+	call	GETVARS		;load shell variable list
+	LD	HL,SHVAR
+	CALL	VARDEF		;resolve named variable reference
+	jr	nz,expv5	;name found - resolve
+;
+; Shell Variable Not Resolved - Restore Ptr to it.
+;
+expv4:
+	call	locpop		;restore ptr
+	ld	hl,(varptr)	;pt to variable
+	xor	a		;Signal failure.
+;
+; Entry Point for OK Return.  (Z flag falls through)
+;
+expv5:
+	pop	de		;pt to target
+	pop	bc		;get counter
+	ld	a,(hl)		;get char
+	ret
+
+;
+; Push HL onto String Ptr Stack
+;	Return with Z if Stack Overflow
+;
+locpush:
+	ld	a,(locelt)	;get count
+	dec	a		;full?
+	ret	z
+	ld	(locelt),a	;set count
+	push	de		;save DE
+	ex	de,hl		;DE pts to old string
+	ld	hl,(locadr)	;get ptr to top of stack
+	ld	(hl),e		;store low
+	inc	hl
+	ld	(hl),d		;store high
+	inc	hl		;pt to next
+	ld	(locadr),hl
+	ex	de,hl		;restore HL
+	pop	de		;restore DE
+	xor	a		;return NZ
+	dec	a
+	ret
+;
+; Pop HL from String Ptr Stack
+;
+locpop:
+	push	de
+	ld	a,(locelt)	;increment element count
+	inc	a
+	ld	(locelt),a
+	ld	hl,(locadr)	;get address
+	dec	hl		;pt to high
+	ld	d,(hl)		;get high
+	dec	hl		;pt to low
+	ld	e,(hl)		;get low
+	ld	(locadr),hl	;set address
+	ex	de,hl		;restore ptr
+	pop	de
+	ret
+
+;
+; Check to see if char in A is a delimiter
+;	Return with Z if so
+;
+delck:
+	push	hl		;pt to table
+	push	bc		;save BC
+	ld	b,a		;char in B
+	ld	hl,dtable	;pt to delimiter table
+delck1:
+	ld	a,(hl)		;get delimiter
+	or	a		;done?
+	JR	z,notdel
+	cp	b		;compare
+	JR	z,yesdel
+	inc	hl		;pt to next
+	JR	delck1
+notdel:
+	ld	a,b		;get char
+	or	a		;set Z if null, else NZ
+yesdel:
+	ld	a,b		;restore char
+	pop	bc		;restore regs
+	pop	hl
+	ret
+
+;
+; Delimiter Table
+;
+dtable:
+	db	'<>;:,.=-_''" ',0
+;
+;
+;----------------------------------------------------------------
+;	---  SCROLLIN  ---
+;
+;	Scrolling Line Editor
+;
+;
+; Table of line-editor execution vectors.
+;
+	DB	'EDCMDS'
+EDCMDS:
+RT:	DB	'D'-'@'
+LFT:	DB	'S'-'@'
+UP:	DB	'P'-'@'
+DN:	DB	'N'-'@'
+	DB	REPKEY
+	DB	DELUND
+	DB	DELBAK
+	DB	BS
+	DB	TOGKEY
+	DB	CTRLX
+	DB	CLREND
+	DB	FORWRD
+	DB	BAKWRD
+	DB	KILWRD
+	DB	QUOTE
+	DB	CTRLC
+NUMEDS	EQU	$-EDCMDS
+;
+;  Table of line-editor functions
+;
+EDFUNCS:
+	DW	FORWARD		;Move ahead 1 char.
+	DW	BACKUP		;Move back 1 char.
+	DW	PRVHST		;Previous command.
+	DW	NXTHST		;Next (old) command.
+	DW	PRVHST		;Previous command.
+	DW	DELETE		;Delete char under cursor.
+	DW	BEHIND		;Delete char behind cursor.
+	DW	BEHIND		;Delete char behind cursor.
+	DW	TOGGLE		;Move to end or beginning of line.
+	DW	EREX		;Erase line or exit if at beginning.
+	DW	EREOL		;Erase to end of line.
+	DW	NXTWRD		;Move forward 1 word.
+	DW	PRVWRD		;Move backward 1 word.
+	DW	ERAWRD		;Erase word forward.
+	DW	LITCHAR		;Next char literal.
+	DW	QBOOT		;Warm boot if at beginning.
+;
+;
+;----------------
+;
+SCROLLIN:
+	LD	HL,(LINEBUF)
+	LD	(CURRPOS),HL
+	LD	(BEGLINE),HL
+	XOR	A
+	LD	(HL),A		;Empty line to start.
+	LD	(IX),A		;Cursor position at beginning.
+	LD	(IX+2),A	;0 characters entered.
+;
+SCRIN1:
+	CALL	CIN
+	CP	CR
+	JR	Z,SCREND
+;
+; Scan table of editing commands for a match.
+;
+	LD	HL,EDCMDS
+	LD	BC,NUMEDS
+	CPIR
+	JR	Z,SCRIN3
+	CALL	INSERT		;Not a command character, so insert it.
+	JR	SCRIN1
+;
+SCRIN3:				;Char is a command.
+	DEC	HL		;Point to pointer to command address.
+	LD	DE,EDCMDS
+	OR	A
+	SBC	HL,DE
+	SLA	L
+	LD	DE,EDFUNCS
+	ADD	HL,DE
+	LD	E,(HL)		;Get command address.
+	INC	HL
+	LD	D,(HL)
+	LD	HL,SCRIN1	;Put return address on stack.
+	EX	DE,HL
+	PUSH	DE
+	JP	(HL)		;Execute routine.
+;
+SCREND:
+	CALL	CURSBAK
+	LD	HL,(LINEBUF)
+	CALL	PSTR
+	RET			;Done editing.
+;
+;----------------
+;
+RETREAT:
+	PUSH	AF
+	LD	A,8
+	CALL	RAWOUT
+	DEC	(IX)
+	POP	AF
+	RET
+;
+;----------------
+;
+SCRPUT:			;prints 1 char, or 2 if control-char
+	CP	32
+	JR	C,PUT2
+	CALL	ADVANCE
+	RET
+PUT2:	LD	B,A
+	LD	A,'^'
+	CALL	ADVANCE
+	LD	A,B
+	SET	6,A
+	CALL	ADVANCE
+	RET
+;
+;----------------
+; Send cursor to beginning of line
+;
+CURSBAK:
+	LD	A,(IX)
+	OR	A
+	RET	Z
+	LD	B,A
+	LD	A,8
+CB1:	CALL	RETREAT
+	DJNZ	CB1
+	RET
+;
+;----------------
+; Send pointer to beginning of line, at beginning of window.
+;
+TOBEG:
+	CALL	CURSBAK
+	LD	HL,(LINEBUF)	;Reset 'begline' & 'currpos' to 'linebuf'.
+	LD	(BEGLINE),HL
+	LD	(CURRPOS),HL
+	CALL	UPDATE		;Redraw line.
+	RET
+;
+;----------------
+; Send cursor to end of line, at end of window if line is longer than window.
+;
+TOEND:				;Send cursor to end of line.
+	LD	HL,(CURRPOS)
+	LD	A,(IX+1)	;(printable chars allowed)
+	CP	(IX+2)		;(chars actually entered)
+	JR	NC,TOEND6	;Skip calculation of new beginning position
+TOEND1:	LD	A,(HL)		;Use HL for 'currpos'.
+	INC	HL
+	OR	A
+	JR	NZ,TOEND1
+	DEC	HL		;Now HL points to terminating null.
+TOEND2:	LD	B,(IX+1)	;Move 'currpos' back by 'printable' chars.
+TOEND3:	DEC	HL
+	LD	A,(HL)
+	CP	32		;Is it control char?
+	JR	NC,TOEND4
+	DEC	B		;If so, subtract an extra position.
+	JR	Z,TOEND5
+TOEND4:	DJNZ	TOEND3
+;
+TOEND5:	LD	(BEGLINE),HL	;Now save 'begline'.
+	CALL	CURSBAK		;Back up cursor.
+TOEND6:				;Write chars up to end of line.
+	LD	A,(HL)
+	OR	A
+	JR	Z,TOEND7
+	PUSH	HL
+	CALL	WRTCHAR
+	POP	HL
+	INC	HL
+	JR	TOEND6
+TOEND7:	LD	(CURRPOS),HL	;Now save modified 'currpos'
+	RET
+;
+;----------------
+; Toggle between beginning and end of line.  Go to end, or go to beginning
+; if already at end.
+;
+TOGGLE:	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+	JR	Z,TOG1
+	CALL	TOEND
+	RET
+TOG1:	CALL	TOBEG
+	RET
+;
+;----------------
+; Write the character in A, scrolling left if necessary.
+;
+WRTCHAR:
+	PUSH	AF		;Save character.
+	CP	32		;Is it a control character?
+	JR	NC,WRTC2	;If not, just check for cursor at end of window.
+	LD	A,(IX+1)	;Compute 'printable' - 'curspos'.
+	SUB	(IX)
+	CP	2		;Within 2 places of end?
+	JR	NC,WRTC3	;If not, just go print character.
+	OR	A		;Just one position?
+	JR	NZ,WRTC4
+	CALL	SCROLL
+WRTC4:	CALL	SCROLL
+	JR	WRTC3		;Done scrolling for control char.
+WRTC2:	LD	A,(IX)		;For non-ctrl-char: is cursor at end of window?
+	CP	(IX+1)
+	JR	NZ,WRTC3	;If not, don't scroll.
+	CALL	SCROLL
+WRTC3:	POP	AF		;Get character back.
+	CALL	SCRPUT
+	RET
+;
+;----------------
+; Scroll the window left by one character.
+;
+SCROLL:
+	PUSH	HL		;For when FORWRD calls WRTCHAR calls SCROLL.
+	CALL	CURSBAK
+	LD	DE,(CURRPOS)
+	LD	HL,(BEGLINE)	;Get & increment 'begline'.
+	INC	HL
+	LD	(BEGLINE),HL
+	DEC	DE		;Decrement 'currpos' for comparison
+SCROLL1:
+	PUSH	HL
+	OR	A
+	SBC	HL,DE		;is HL up to DE yet?
+	LD	A,H
+	OR	L
+	POP	HL
+	JR	Z,SCROLL2	;If so, quit.
+	LD	A,(HL)
+	CALL	SCRPUT		;Else print the char.
+	INC	HL
+	JR	SCROLL1
+SCROLL2:
+	CALL	UPDATE
+	POP	HL
+	RET
+;
+;----------------
+; Updates the line from the current position to the end of the window.
+; This will print characters until either the end of the line or the end
+; of the window is reached.  Up to 2 blanks will be printed following the
+; line, if there is room in the window, to obliterate previously printed
+; characters in case a control character has just been deleted.
+;
+UPDATE:
+	LD	HL,(CURRPOS)	;HL = next char to print.
+	LD	D,0		;B = # of chars printed.
+UPD1:
+	LD	A,(IX)		;Is 'curspos' = 'printable'?
+	CP	(IX+1)
+	JR	Z,UPDEND	;If Z, we've reached end of window.
+	LD	A,(HL)
+	OR	A		;Is character 0?
+	JR	Z,UPDFILL	;If Z, we've reached end of line.
+	CP	32		;Is it a control char?
+	JR	NC,UPD2		;If not, go on and print it.
+	LD	C,A		;Save char temporarily.
+	LD	A,(IX+1)	;Is there only one space left in window?
+	SUB	(IX)
+	CP	1
+	JR	NZ,UPD3		;If not, go print char(s)
+	LD	A,' '		;If so, print just a space...
+	CALL	ADVANCE
+	INC	D
+	JR	UPDEND		;...and go back up cursor.
+UPD3:	LD	A,C		;Get control char back.
+	INC	D		;Increment D for extra char to be printed.
+UPD2:	CALL	SCRPUT
+	INC	D
+	INC	HL		;Point to next char in buffer.
+	JR	UPD1
+UPDFILL:			;Pad with 1 or 2 spaces if possible.
+	LD	A,(IX)
+	CP	(IX+1)
+	JR	NC,UPDEND
+	LD	A,' '
+	CALL	ADVANCE
+	INC	D
+	LD	A,(IX)
+	CP	(IX+1)
+	JR	NC,UPDEND
+	LD	A,' '
+	CALL	ADVANCE
+	INC	D
+UPDEND:	LD	A,D
+	OR	A		;Any chars printed?
+	RET	Z
+	LD	B,D
+UPD4:	CALL	RETREAT		;Back up cursor to initial position.
+	DJNZ	UPD4
+	RET
+;
+;----------------
+; Move the cursor and current position pointer forward in sync.
+; Return the character at the next position.
+;
+FORWARD:
+	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+	RET	Z
+	INC	HL
+	LD	(CURRPOS),HL
+	CALL	WRTCHAR
+	LD	A,(HL)
+	OR	A
+	RET
+;
+;----------------
+; Back up the cursor and buffer pointer in sync, ensuring that the screen
+; is scrolled if necessary.
+;
+BACKUP:
+	LD	A,(IX)		;Is cursor at beginning of line?
+	OR	A
+	JR	NZ,BACK1	;If not, go on.
+	CALL	POSCHK		;Are we at beginning of buffer?
+	RET	Z		;Do nothing if so.
+	LD	DE,(CURRPOS)
+	DEC	DE
+	LD	(BEGLINE),DE
+	LD	(CURRPOS),DE
+	CALL	UPDATE		;Cursor doesn't move.
+	RET
+BACK1:
+	LD	DE,(CURRPOS)
+	DEC	DE		;Dec 'currpos'
+	LD	(CURRPOS),DE
+	LD	A,(DE)
+	CP	32		;Is it a control-char?
+	JR	NC,BACK2	;If not, back up just once.
+	CALL	RETREAT
+BACK2:	CALL	RETREAT
+	RET
+;
+;----------------
+; Erase to the end of the line, or pop shell and exit if at the beginning
+; of an empty line.  Set the history pointer & counter to the first.
+;
+EREX:	LD	A,(IX+2)
+	OR	A
+	JR	NZ,EREX1
+	CALL	POSCHK
+	JP	Z,SHEXIT
+EREX1:	CALL	ERASE
+	LD	HL,(VARLIST)	;Ptr to first (most recent) command line.
+	DEC	HL
+	DEC	HL
+	LD	(HSTPTR),HL
+	XOR	A
+	LD	(HSTNUM),A
+	RET
+;
+;----------------
+; Erase word forward.  If at beginning of word, erase trailing blank also.
+;
+ERAWRD:
+	LD	HL,(CURRPOS)
+	LD	A,(IX)
+	OR	A
+	JR	Z,ERAWD1
+	DEC	HL
+	LD	A,(HL)
+	CP	' '
+	JR	Z,ERAWD1
+	CP	';'
+	JR	NZ,ERAWD2
+ERAWD1:	XOR	A
+ERAWD2:	LD	(SPDEL),A
+ERAWD3:	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+	RET	Z
+	CP	';'
+	RET	Z
+	CP	' '
+	JR	Z,ERAWD4
+	CALL	DELETE
+	JR	ERAWD3
+SPDEL	EQU	$+1
+ERAWD4:	LD	A,0
+	OR	A
+	RET	NZ
+	CALL	DELETE
+	RET
+;
+;----------------
+; Reboot if at the beginning of the line, else insert a ^C.
+;
+QBOOT:	CALL	POSCHK
+	JP	Z,00		;reboot
+	LD	A,CTRLC
+	CALL	INSERT
+	RET
+;
+;----------------
+; Insert the character in A at the current position
+;
+INSERT:
+	OR	A
+	RET	Z		;Don't insert a null.
+	LD	C,A
+	LD	A,(IX+2)	;Max chars already?
+	CP	(IX+3)
+	RET	Z
+	LD	HL,(CURRPOS)
+INS1:	LD	A,(HL)		;Move all chars up.
+	LD	B,A		;Ring-around-the-rosy in the registers.
+	LD	A,C		;Using 'LDDR' is an alternative, but requires
+	LD	C,B		; that a pointer be kept to the end of the
+	LD	(HL),A		; line, and code is no smaller.
+	INC	HL
+	OR	A		;Have we just stored the null?
+	JR	NZ,INS1
+	CALL	FORWARD
+	INC	(IX+2)
+	CALL	UPDATE
+	RET
+;
+;----------------
+; Delete the character at the cursor
+;
+DELETE:
+	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+	RET	Z
+	LD	E,L
+	LD	D,H
+	INC	DE
+DEL1:	LD	A,(DE)
+	LD	(HL),A
+	INC	DE
+	INC	HL
+	OR	A
+	JR	NZ,DEL1
+	DEC	(IX+2)
+	CALL	UPDATE
+	RET
+;
+;----------------
+; Delete the character behind the cursor.
+;
+BEHIND:
+	CALL	POSCHK
+	RET	Z
+	CALL	BACKUP
+	CALL	DELETE
+	RET
+;
+;----------------
+; Skip forward to next word.
+;
+NXTWRD:
+	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+NXTW1:	RET	Z
+	CP	' '		;If in whitespace, go skip to its end
+	JR	Z,NXTW2
+	CP	';'
+	JR	Z,NXTW2
+	CALL	FORWARD
+	JR	NXTW1
+NXTW2:	CALL	FORWARD
+	RET	Z
+	CP	' '
+	JR	Z,NXTW2
+	CP	';'
+	JR	Z,NXTW2
+	CALL	FORWARD
+	CALL	BACKUP
+	RET
+;
+;----------------
+; Skip backward to beginning of previous word.
+;
+PRVWRD:
+	CALL	BACKUP
+	CALL	POSCK2
+	RET	Z
+	CP	' '
+	JR	Z,PRVWRD
+	CP	';'
+	JR	Z,PRVWRD
+PRVW1:	CALL	BACKUP
+	CALL	POSCK2
+	RET	Z
+	CP	' '
+	JR	Z,PRVW2
+	CP	';'
+	JR	NZ,PRVW1
+PRVW2:	CALL	FORWARD
+	RET
+;
+;----------------
+; Check to see if current position is at the beginning of the buffer.
+; Return Z if so, NZ otherwise.
+;
+POSCHK:
+	LD	HL,(CURRPOS)
+	LD	DE,(LINEBUF)
+	OR	A
+	SBC	HL,DE
+	LD	A,L
+	OR	H
+	RET
+;
+;----------------
+; Do POSCHK but always return character at current position.
+;
+POSCK2:
+	CALL	POSCHK
+	PUSH	AF
+	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	LD	B,A
+	POP	AF
+	LD	A,B
+	RET
+;
+;----------------
+; Quote next char (insert next char literally, even if it is a command
+; character).
+;
+LITCHAR:
+	CALL	CIN
+	CALL	INSERT
+	RET
+;
+;----------------
+; Replace command line with chars from the current history line.
+; The history line is pointed to by the pointer at HSTPTR.
+;
+REPLACE:
+	LD	HL,(HSTPTR)	;Get addr of current history (replacement) line.
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)		;DE = source
+	LD	HL,(LINEBUF)	;HL = dest.
+	LD	B,0FFH		;B = counter
+REPL1:	LD	A,(DE)
+	LD	(HL),A
+	INC	HL
+	INC	DE
+	INC	B
+	OR	A
+	JR	NZ,REPL1
+	PUSH	BC		;save count
+	CALL	CURSBAK
+	LD	A,(IX+1)	;Update line.
+	CALL	WIPE
+	POP	BC
+	LD	(IX+2),B
+	XOR	A
+	LD	(IX),A
+	LD	HL,(LINEBUF)
+	LD	(CURRPOS),HL
+	LD	(BEGLINE),HL
+	CALL	UPDATE
+	RET
+;
+;----------------
+; Erase entire line
+;
+ERASE:
+	CALL	CURSBAK
+	LD	A,(IX+1)
+	CALL	WIPE
+	XOR	A
+	LD	(IX),A
+	LD	(IX+2),A
+	LD	HL,(LINEBUF)
+	LD	(HL),A
+	LD	(CURRPOS),HL
+	LD	(BEGLINE),HL
+	RET
+;
+;----------------
+; Erase to end of line.
+;
+EREOL:
+	LD	HL,(CURRPOS)
+	XOR	A
+	LD	(HL),A
+	LD	DE,(LINEBUF)
+	SBC	HL,DE
+	LD	(IX+2),L
+	LD	A,(IX+1)
+	SUB	(IX)
+	OR	A
+	CALL	NZ,WIPE
+	RET
+;
+;----------------------  END OF EDITOR  --------------------------
+;
+;---------  SHELL VARIABLE FILE MANIPULATION ROUTINES  -----------
+;
+;
+VARLOAD:
+	PUSH	BC		;save regs
+	PUSH	DE
+	PUSH	HL
+	LD	HL,(VARLIST)	;clear varlist in case of error
+	LD	(HL),EOF
+;
+; Get proper name for variable file, or use default
+;
+	CALL	GETFN1
+	LD	A,(HL)
+	CP	' '		;is filename undefined?
+	JR	Z,V2
+	LD	DE,SHVNAM	;move filename into buffer
+	LD	BC,11
+	LDIR
+;
+; Load Variable File
+V2:
+	LD	DE,SHVNAM
+	LD	HL,(VARLIST)
+	CALL	GETFILE
+	POP	HL
+	POP	DE
+	POP	BC
+	RET
+;
+;----------------
+;
+; Resolve Named Variable Reference
+;
+; Enter with:
+;	HL = addr of variable name, in 8-character buffer filled out
+;		with spaces
+; Return with:
+;	If found, HL = addr of variable definition and NZ.
+;	If not found or vars not loaded, return Z.
+;
+	PUBLIC	VARDEF,NOMATCH
+VARDEF:
+	EX	DE,HL		;addr of name in DE
+	LD	HL,(VARLIST)	;pt to variable list
+VARDEF1:
+	LD	A,(HL)		;get char
+	CP	EOF		;end of list?
+	RET	Z		;Z = not found.
+	PUSH	DE		;Save pointer to variable name.
+	LD	B,8		;8 chars
+VARDEF2:
+	LD	A,(DE)		;get name
+	CP	(HL)		;match?
+	JR	NZ,NOMATCH
+	INC	HL		;pt to next
+	INC	DE
+	DJNZ	VARDEF2
+	POP	DE		;Clear stack.
+	XOR	A
+	DEC	A		;Signal success.
+	RET
+NOMATCH:
+	POP	DE		;Get pointer to name back.
+	XOR	A		;flush to end of string
+	LD	BC,1000H
+	CPIR
+	JR	VARDEF1		;resume search
+;
+;
+;----------------  HISTORY MANIPULATION ROUTINES  ----------------
+;
+HSTLOAD:
+	LD	DE,HSTNAM
+	LD	HL,(HSTLIST)
+	CALL	GETFILE
+	LD	A,0C9H		;"RET" instruction.
+	LD	(HSTLOAD),A
+;
+; Count number of entries in list and construct array of pointers.
+;
+	LD	DE,(VARLIST)	;DE = starting address of pointer array.
+	PUSH	DE
+	DEC	DE		;Set pointer to before previous history
+	DEC	DE
+	LD	(HSTPTR),DE
+	POP	DE
+	LD	HL,(HSTLIST)	;HL = starting address of history lines.
+	LD	B,0		;Initialize counter to zero
+HSTL1:	LD	A,(HL)
+	CP	EOF
+	JR	Z,HSTL2		;Exit loop if at end.
+	INC	B		;Increment count of command lines.
+	LD	A,L		;Store address of command line in list.
+	LD	(DE),A
+	INC	DE
+	LD	A,H
+	LD	(DE),A
+	INC	DE
+	PUSH	BC		;Find end of this entry (null).
+	LD	BC,0FFH
+	XOR	A		;Search for 00.
+	CPIR
+	POP	BC
+	JR	HSTL1
+HSTL2:	LD	A,B
+	LD	(HSTTOT),A
+	XOR	A
+	LD	(HSTNUM),A
+	RET
+;
+;----------------
+;
+; Write out the history list.
+; This first puts the current input line at the BEGINNING of the history
+; list.  If the current number of history lines is at the maximum, the
+; last one is deleted by having an EOF written in its first character.
+;
+WRTHST:
+	LD	A,(HSTTOT)	;Are the maximum already stored?
+	CP	HSTMAX
+	JR	NZ,WRH1
+	LD	HL,(VARLIST)	;Get address of beginning of oldest entry.
+	LD	DE,[HSTMAX-1]*2
+	ADD	HL,DE
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	LD	A,EOF
+	LD	(DE),A		;Store EOF in place of oldest entry.
+WRH1:				;Prefix first list with line just entered.
+	LD	HL,(HSTLIST)
+	LD	E,(IX+2)	;# of chars actually entered.
+	LD	D,0
+	INC	DE		;Add 1 for null at end of line
+	LD	C,E		;Put total in BC for LDIR counter.
+	LD	B,D
+	OR	A		;Clear carry flag.
+	SBC	HL,DE		;Calc. starting position of new line...
+	LD	(HSTLIST),HL	;...and save it.
+	EX	DE,HL		;This is also destination for LDIR.
+	LD	HL,(LINEBUF)	;And this is the beginning.
+	LDIR			;Move new line into place.
+;
+	CALL	RETUD		;...in case it's been changed since loading
+	LD	(CURRDU),BC
+	CALL	XROOT
+	CALL	LOGUD
+;
+	LD	DE,FCB
+	CALL	INITFCB		;delete old file and make new one
+	CALL	F$DELETE
+	CALL	F$MAKE
+	CP	0FFH		;error?
+	JR	Z,BACK
+	LD	HL,(HSTLIST)	;calculate # of sectors to write
+	LD	A,EOF
+	LD	BC,65535
+	CPIR			;HL = end of list
+	LD	DE,(HSTLIST)	;DE = beginning
+	XOR	A		;clear carry flag
+	SBC	HL,DE		;# of bytes in HL
+	SLA	L		;divide by 128 -- shift left 1 bit
+	RL	H		;...instead of right by 7
+	OR	L		;If bits left in L, add 1 to sector count
+	JR	Z,SECTCT
+	INC	H
+SECTCT:	LD	B,H
+;
+	LD	HL,FCB
+	LD	DE,(HSTLIST)	;this is first DMA addr.
+WRFILE:	CALL	SETDMA		;write all sectors
+	EX	DE,HL		;now output fcb addr is in DE
+	CALL	WRITE
+	JR	NZ,BACK		;write error
+	PUSH	DE
+	LD	DE,128
+	ADD	HL,DE
+	POP	DE
+	EX	DE,HL		;DE = DMA addr, HL = output fcb addr
+	DJNZ	WRFILE
+; close file
+	EX	DE,HL		;put fcb addr in DE
+	CALL	F$CLOSE
+	OR	A		;Z/NZ status retained
+BACK:	LD	BC,(CURRDU)
+	CALL	LOGUD
+	RET
+;
+;----------------
+; Replace current line with previous (older) command line if one exists.
+;
+PRVHST:
+	LD	A,(HSTTOT)
+	OR	A
+	RET	Z		;Do nothing if no history lines.
+	LD	B,A
+	LD	A,(HSTNUM)
+	CP	B
+	RET	Z		;Do nothing if already at last.
+	INC	A
+	LD	(HSTNUM),A
+	LD	DE,(HSTPTR)
+	INC	DE
+	INC	DE
+	LD	(HSTPTR),DE
+PRVH1:	CALL	REPLACE
+	RET
+;
+;----------------
+; Replace current line with next newest command line, if one.
+;
+NXTHST:
+	LD	A,(HSTTOT)
+	OR	A
+	RET	Z		;Do nothing if no history lines.
+	LD	A,(HSTNUM)
+	OR	A
+	JP	Z,ERASE		;Return via erase-line routine.
+	DEC	A
+	LD	(HSTNUM),A
+	LD	HL,(HSTPTR)
+	DEC	HL
+	DEC	HL
+	LD	(HSTPTR),HL
+	OR	A
+	JP	Z,ERASE
+	CALL	REPLACE
+	RET
+;
+;----------------  UTILITY FUNCTIONS  ----------------
+;
+RAWOUT:	
+	PUSH	AF
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	LD	C,A
+CONOUT	EQU	$+1
+	CALL	00
+	POP	HL
+	POP	DE
+	POP	BC
+	POP	AF
+	RET
+;
+;----------------
+;
+ADVANCE:			;Outputs the char in A and increments 'curspos'.
+	CALL	RAWOUT
+	INC	(IX)
+	RET
+;
+;----------------
+;
+GETVARS:			;Loads the shell variables first time it
+	CALL	VARLOAD		;is called.
+	PUSH	AF
+	LD	A,0C9H		;'RET' instruction
+	LD	(GETVARS),A
+	POP	AF
+	RET
+;
+;----------------
+;
+;----  GETFILE  ----
+;
+; This routine will look for a specified file in the ROOT directory
+; and load it.  If this directory does not exist, it will look at the bottom
+; of the path.  It is presumed that there is sufficient space for the
+; file in memory.  No bounds checking is done.  The default FCB is used.
+; Parameters:
+;	DE = ptr to name of file to load.
+;	HL = memory address of first byte.
+; If the file does not exist, the first byte of the memory area will
+; be set to a control-Z.
+;
+GETFILE:
+	PUSH	HL
+	XOR	A
+	LD	(FCB),A
+	EX	DE,HL
+	LD	DE,FCB+1
+	LD	BC,11
+	LDIR
+	CALL	RETUD
+	LD	(CURRDU),BC
+	CALL	XROOT
+	CALL	LOGUD
+	POP	HL
+	LD	DE,FCB
+	LD	(HL),EOF	;Store EOF in case file not found.
+	CALL	INITFCB
+	CALL	F$OPEN		;Try to open file.
+	JR	NZ,GF2		;no file, but that's OK
+	LD	BC,128		;Offset between DMA addresses.
+GF1:
+	EX	DE,HL		;Put DMA addr in DE
+	CALL	SETDMA
+	EX	DE,HL		;Put DMA addr back in HL.
+	ADD	HL,BC		;Increment DMA address.
+	CALL	READ
+	JR	Z,GF1		;if OK, read another
+;
+	CALL	F$CLOSE
+GF2:	LD	BC,(CURRDU)
+	CALL	LOGUD
+	RET	
+;
+;----------------
+;
+XROOT:				;find 'ROOT:' or end of path
+	LD	HL,RNAME	;does 'ROOT:' exist?
+	CALL	DNSCAN
+	RET	NZ		;ret if yes
+	CALL	ROOT		;otherwise find end of path
+	RET
+;
+;----------------
+;
+; Write a sequential record
+;
+WRITE:	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	C,21
+	CALL	BDOS
+	POP	DE
+	POP	HL
+	POP	BC
+	OR	A
+	RET
+;
+;----------------
+;
+; Read a sequential record
+;
+READ:	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	C,20
+	CALL	BDOS
+	POP	DE
+	POP	HL
+	POP	BC
+	OR	A		;set Z accordingly
+	RET
+;
+;----------------
+;
+; Set DMA buffer address
+;
+SETDMA:	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	C,26
+	CALL	BDOS
+	POP	DE
+	POP	HL
+	POP	BC
+	RET
+;
+;----------------
+;
+WIPE:				;Blanks the number of chars in A
+	LD	C,A
+	LD	B,A
+	LD	A,' '
+WIPE1:	CALL	RAWOUT
+	DJNZ	WIPE1
+	LD	B,C
+	LD	A,8
+WIPE2:	CALL	RAWOUT
+	DJNZ	WIPE2
+	RET
+;
+;
+; If File Type not Specified, Set Default
+;
+setshdef:
+	call	getfn1		;check for file type
+	ld	de,8		;pt to file byte
+	add	hl,de
+	ex	de,hl
+	ld	hl,shvtype	;default file type
+	ld	BC,3		;3 chars
+	ld	a,(de)		;get char
+	cp	' '		;set if space
+	RET	NZ
+	LDIR
+	ret
+;
+; Pop Current Shell
+;
+shexit:
+	call	print
+	db	cr,lf,'Exiting Shell',0
+	CALL	shpop		;clear shell stack entry
+	JP	EXIT
+
+;
+; Buffers
+;
+shvnam:
+	db	0
+	db	'SH      '	;name of shell variable file
+shvtype:
+	db	'VAR'
+shdisk:
+	db	'A'		;disk letter
+	db	'00'		;user number
+	db	':'		;separator
+shname:
+	db	'SH      ',0	;name of shell to go onto stack
+shvar:
+	db	'        '	;shell variable
+SAVESP:
+	DW	1		;Z3's stack pointer
+locelt:
+	ds	1		;string stack element count
+locadr:
+	ds	2		;ptr to next entry on stack
+locstk:
+	ds	lecnt*2		;string ptr stack
+varptr:
+	ds	2		;ptr to current variable in line
+varlist:
+	ds	2		;ptr to named variable list
+INTLINE:
+	DS	2		;Ptr to internal expansion line.
+RNAME:
+	DB	'ROOT',0	;name of root directory
+CURRDU:
+	DS	2		;Current directory.
+SCRWID:
+	DB	80		;default chars/line if no TCAP
+;
+; Storage for history-retrieval routines.
+;
+HSTNAM:
+	DB	'SH      H','S'+080H,'T'
+HSTLIST:
+	DS	2		;Ptr to beginning of history list.
+HSTTOT:
+	DB	0		;Current total of history entries.
+HSTNUM:
+	DB	0		;Number of current history.
+HSTPTR:
+	DS	2		;Ptr to ptr to current history line.
+;
+; Storage for scrolling line editor variables.  The following block of storage
+; is indexed by IX.
+;
+EDIDAT:
+	DB	0	;(IX) curspos - cursor offset from left marg.
+	DB	0	;(IX+1) printable - maximum printable chars on line
+	DB	0	;(IX+2) numchars - # of chars actually entered
+	DB	127	;(IX+3) maxchars - maximum # of chars allowed
+
+LINEBUF:
+	DW	00	;(IX+4,5) linebuf - ptr to internal editing line
+BEGLINE:
+	DW	00	;(IX+6,7) begline - ptr to beginning char of screen window
+CURRPOS:
+	DW	00	;(IX+8,9) currpos - current char position
+;
+;
+	END	START
+

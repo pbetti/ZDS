@@ -1,0 +1,130 @@
+;
+; video funcs
+;
+; link to DarkStar Monitor symbols...
+; rsym darkstar.sym
+
+;;
+;; need some comments .. :-(
+;;
+
+	;
+	; CURSOR AT HOME (NO CLEAR)
+; ATHOME:
+; 	LD	HL,$0000
+; 	XOR	A
+; 	LD	(COLBUF),A
+; 	CPL
+; 	LD	(RAM3BUF),A
+; 	LD	(CURPBUF),HL
+; 	CALL	SDCUAE
+; 	CALL	SDSTA
+; ; 	RET
+
+ZDHOMNC:
+	LD	HL, $0000
+	LD	(CURPBUF),HL
+	LD	C, $06
+	JR 	ZDDCHR
+
+; at home with clear
+
+ZDHOME:
+	LD	C, $0C
+	JR 	ZDDCHR
+
+CRSRON:	LD	C,$05
+	JR 	ZDDCHR
+
+CRSROF:	LD	C,$04
+	JR 	ZDDCHR
+
+CLREOS:	LD	C,$0E
+	JR 	ZDDCHR
+
+;CLREOL:	LD	C,$0F
+;	JR 	ZDDCHR
+
+CLRATR:	LD	C,$11
+	JR 	ZDDCHR
+
+CRTRST:	LD	C,$18
+	JR 	ZDDCHR
+
+PRGBUF:	LD	C,$1E
+	JR 	ZDDCHR
+
+ZDDCHR:	CALL	BBCONOUT
+	RET
+
+BLNKON:
+	CALL	ZDPRN
+	DB	$1B,$02,$0D,$00
+BLNKOF:
+	CALL	ZDPRN
+	DB	$1B,$01,$0D,$00
+REVON:
+	CALL	ZDPRN
+	DB	$1B,$1B,$0D,$00
+REVOF:
+	CALL	ZDPRN
+	DB	$1B,$1C,$0D,$00
+UNDRON:
+	CALL	ZDPRN
+	DB	$1B,$04,$0D,$00
+UNDROF:
+	CALL	ZDPRN
+	DB	$1B,$03,$0D,$00
+HLITON:
+	CALL	ZDPRN
+	DB	$1B,$06,$0D,$00
+HLITOF:
+	CALL	ZDPRN
+	DB	$1B,$05,$0D,$00
+GRPHON:
+	CALL	ZDPRN
+	DB	$1B,$09,$0D,$00
+GRPHOF:
+	CALL	ZDPRN
+	DB	$1B,$07,$0D,$00
+
+;CRSBLB:	JP	CURBLB
+;CRSBLL: JP	CURBLL
+;CRSBFB: JP	CURBFB
+;CRSBFL:	JP	CURBFL
+;CRSOFB:	JP	CUROFB
+;CRSFXB:	JP	CURFXB
+;CRSFXL:	JP	CURFXL
+
+ZDDSPNL:
+	CALL	ZDPRN
+	DEFB	CR,LF,0
+
+ZDPRN:	POP	HL			; string addr in HL
+ZDDSP:	LD	A,(HL)			; pick char pointed by HL
+	OR	A			; is the terminating NUL ?
+	RET	Z			; yes
+	PUSH	HL			; no
+	LD	C,A			;
+	CALL	BBCONOUT		; display it
+	POP	HL			;
+	INC	HL			;
+	JP	ZDDSP			;
+	;
+	; WAIT FOR A KEY
+GCHR:
+	CALL	BBCONIN			; take from console
+	RET
+
+	; set 40 col mode
+VMOD80:
+	IN	A,(CRTSERVDAT)		; read data port PIO2
+	RES	1,A			; Modo 40/80 colonne (80)
+	JR	VMODEX
+VMOD40:
+	IN	A,(CRTSERVDAT)		; read data port PIO2
+	SET	1,A			; Modo 40/80 colonne (80)
+VMODEX:	OUT	(CRTSERVDAT),A		; send to PIO2
+	RET
+
+; --------- EOF -----------

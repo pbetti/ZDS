@@ -1,0 +1,47 @@
+;	TITLE	"SISPRINT - Syslib 4.0"
+	NAME	('ISPRIN')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SISPRINT.Z80 Ver 1.1 by Richard Conn
+; Date    : 28 Jul 89
+; Version : 1.3
+; Module  : SISPRINT
+; Abstract: This module contains only the routine ISPRINT which
+;	evaluates the character in register A and returns with
+;	the Zero Flag Set (Z) if it is a printable ASCII charac-
+;	ter (i.e. in the range of 20H-7EH with the MSB of the byte
+;	masked off).  If not printable, the Zero Flag is Reset (NZ).
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+
+	PUBLIC		ISPRINT
+
+	.Z80
+	CSEG
+;=========================================================================
+; NAME - ISPRINT
+; Entry:  A = Character to evaluate
+; Exit :  F - Zero Flag Set (Z) if character is printable ASCII, else
+;		 Zero Flag is Reset (NZ).
+; Uses : F
+; Special Requirements:  None
+;=========================================================================
+
+ISPRINT: PUSH	BC		; Save BC
+	LD	C,A		; Save char in C
+	AND	7FH		; Mask out MSB
+	CP	' '		; Less than Space?
+	JR	C,NO
+	CP	7FH		; Less than Delete?
+	JR	NZ,YES
+NO:	DEFB	0F6H		; Set NO with "OR  0AFH"
+YES:	XOR	A		; Set YES Flag
+	LD	A,C		; Get Char
+	POP	BC		; Restore BC
+	RET
+
+	END
+

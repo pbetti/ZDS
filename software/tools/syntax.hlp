@@ -1,0 +1,173 @@
+   Here is a very brief introduction to the syntax and use of the assembler
+and linker.  The default operation of each tool can be changed using the
+corresponding configuration program, CONFIG for Z80ASM, 180FIG for SLR180,
+and LNKFIG for SLRNK.  Make copies of the master disk and then experiment
+with the configuration programs.  They are self-prompting and easy to use.
+
+   The basic syntax for the assemblers is: Z80ASM FILE/options or SLR180
+FILE/options.  The file name must have a type of Z80 (unless changed by
+CONFIG) for Z80ASM or type 180 (unless changed by 180FIG) for SLR180.  The
+most commonly used options are:
+
+	A	Generate, in one pass, an absolute output (COM file). This
+		is the preferred mode unless the source is not self-
+		contained and requires linkage to other modules.
+
+	H	Generate a HEX output file.  This is rarely needed (only for
+		patch files); normally the 'A' option is preferrable.
+
+	M	Generate a Microsoft relocatable format.  Use '/M6' or just
+		'/6' for six significant characters (this is what the
+		Conn libraries use) or '/M7' or just '/7' for seven
+		significant characters.
+
+	R	Generate an SLR-format relocatable file
+
+	F	Perform a two-pass assembly (slower, but all symbol values
+		resolved in the listing) and generate a listing file.  Use
+		this option only when a listing is needed.
+
+	L	Generate a one-pass assembly and listing.  Forward-
+		referenced symbols will not have their values included in
+		the listing.
+
+	S	Generate a symbol file (this is in a special format that
+		must be converted using MAKESYM.COM to make a symbol file
+		that can be used by symbolic debuggers such as SID and DSD.
+
+	X	Generate a crossreference listing.
+
+	U	Declare all undefined symbols to be external.
+
+   To assemble ZCPR33 to a COM file for installation using a disk utility or
+debugging program, I use the command line "Z80ASM ZCPR33/A".  Actually, I do
+not have to enter the 'A' because I configure my Z80ASM to default to
+absolute output mode.
+
+   Drives can be specified for the source, code output, and listing outputs
+in the same way as with the Digital Research ASM.COM assembler, namely,
+using three file-type letters.  Thus
+
+	SLR180 PROG.ABC/HF
+
+will read PROG.180 from drive A, send PROG.HEX (the 'H' option specifies HEX
+output) to drive B, and send the two-pass listing file PROG.LST to drive C. 
+Valid drive letters are 'A' to 'P' and '@', the latter indicating the
+currently logged drive.  If you want to suppress one of the outputs, use the
+letter 'Z' in positions two or three.  The third letter specifies the
+destination for listing, crossreference, and symbol table outputs.  The
+letter 'X' in the third position will send this output to the console, and
+the letter 'Y' will send it to the printer.  For example, the command
+
+	SLR180 PROG.@@Z/AF
+
+will force a two-pass assembly but will not produce a listing file.
+
+
+   The linker is more complex (as linkers always are).  Here is a sample
+command line for linking a typical ZCPR3 utility program called PROG.  Let's
+assume that we have assembled it to a 6-character standard Microsoft REL
+file using the command line
+
+	Z80ASM PROG/6	or    SLR180 PROG/6
+
+Then we link it with the Conn libraries as follows:
+
+	SLRNK PROG/N,/A:100,PROG,VLIB/S,Z3LIB/S,SYSLIB/S,/E
+
+The first item (PROG/N) declares the 'N'ame of the output COM file.  The
+second item sets the linkage addresses for 'A'll segments (code, data,
+common) to begin at 100H.  If you are using separate data segments, you
+could use an expression like "/P:100,/D:2000" to set the code ('P'rogram
+segment to 100H and the 'D'ata segment to 2000H.  The 'A' directive takes
+care of things automatically, though it follows the M80 convention (I
+believe) of putting DSEGs before CSEGs from each module.  This messes up the
+ZCPR3 environment header at the beginning of the program.  If you do declare
+separate DSEGs, you should do one linkage using a high value for the DSEG
+address.  Note the reported address of the end of the CSEG and relink using
+the next address in the '/D' directive.
+
+   The third item on the command line links in the main module, PROG.REL. 
+The next three items link in the library modules, where the '/S' option
+causes the libraries to be 'S'canned so that only the modules required by
+PROG will be linked in.  Without the 'S' switch, the entire libraries would
+be linked in, making for a huge output file.  The final item is the 'E'nd
+switch, telling the linker that we are done and that the output file should
+be written to disk.
+
+   The switch '/V' will put the linker in verbose mode, and it will display
+much more information about what it is doing on the screen.  Including an
+item of the form 'NAME/M' will result in a load map being written to a disk
+file of the name NAME.SYM.
+
+   Two words of caution are in order.  The slash options are generally
+processed before the files are processed.  Thus the command
+
+	SLRNK OUTNAME/N/A:100,PROGNAME/E
+
+will not work because the '/E' directive to 'End' the linkage will be
+processed before PROGNAME.REL has been read in.  However, the following
+command will work:
+
+	SLRNK /A:100,PROGNAME,OUTNAME/N/M
+
+My recommendation is to put the directives in their own individual tokens
+and to declare output file names first, addresses second, and input file
+names third.  SLRNK will tolerate some deviations from this, but the more
+advanced SLRNK+ virtual linker is fussier when it is generating SPR or PRL
+type files.  Thus I would recommend:
+
+	SLRNK OUTNAME/N,MAPNAME/M,/V,/A:100,INPUT,/E
+
+The second caution regards mixing SLR and Microsoft format REL files.  The
+linker will handle mixtures, but incompatibilites in the files can easily
+occur.  If the source code has labels of more than 6 characters, the
+Microsoft REL file will have truncated them to 6 characters, but the SLR REL
+format will include the first 16!  Conn's SYSLIB, Z3LIB, and Z3LIB libraries
+were linked to 6 characters although the official names of a number of the
+routines are longer than 6 characters.  I recommend picking up my SLR
+versions of the libraries and working entirely with SLR format REL files. 
+They are shorter and faster and will support meaningfully long names.
+
+
+     With the linker and the assembler, the individual items can be entered
+one item at a time in interactive mode.  The assembler, for example, can
+assemble multiple programs.  Just enter Z80ASM or SLR180 alone on the
+command line and then respond to the prompts.
+
+	B0:WORK>Z80ASM		; invoke assembler
+	%PROG1/A		; absolute assembly of PROG1
+	%PROG2/R		; SLR-format REL assembly of PROG2
+	%/Q			; quit assembling (control-c works too)
+	B0:WORK>		; back to system
+
+This is very efficient, since the assembler only has to load once, and the
+SLR assemblers are so fast that this time is often a large fraction of the
+total time required for the assembly.
+
+   The linker will handle only one linkage at a time, but the items can be
+entered interactively.
+
+	B0:WORK>SLRNK PROG1/N	; invoke linker (some items on command line)
+	%/A:100,PROG1		; more items at each prompt
+	%/V			; change to verbose mode
+	%VLIB/S			; link in VLIB
+	%/U			; list undefined symbols at this point
+	%Z3LIB/S,SYSLIB/S,/U	; link in rest of libraries
+	%/E			; end linkage
+	B0:WORK>		; back to system
+
+   Whole scripts of commands can be passed to the assemblers and linker in
+special files.  Thus the following commands
+
+	SLR180 ASCRIPT/I
+	SLRNK LSCRIPT/I
+
+will read in text files with the names ASCRIPT.SUB and LSCRIPT.SUB (the file
+type SUB can be reconfigured -- I prefer to use SLR so as not to confuse the
+files with SUBMIT files).  This is very handy for performing very lengthy
+sequences of operations, such as assembling all 200 programs that go into
+SYSLIB!  Let me tell you, it is amazing to watch SLR180 gobble them up!
+
+					Jay Sage
+

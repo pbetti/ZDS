@@ -1,0 +1,975 @@
+	title	Subroutines for Monitor
+	name	('MONSUB')
+;
+;	Last Edited	85-04-05	Wagner
+;
+;	Copyright (c) 1984, 1985 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, October 1990
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+	maclib	monopt.lib
+;
+	entry	wrhex,wrhexdig,wrword,wrbit,wrdec,wrstr,wraddr
+	entry	crlf,kbint,tkbint,space,space2
+	entry	isdigit,isletter,isspecial,iscontrol
+	entry	mul16,div16
+;
+	entry	rdregister,bytestring
+	entry	rdregval,rdword,rdstrword
+	entry	readstring,skipsep,skipsp,getch,testch,sgetch,stestch
+;
+	entry	string
+if	symbolic
+	ext	rdsymbol
+endif;SYMBOLIC
+	ext	expression
+	ext	monmain,cmderr
+	ext	rdchar,pollch,wrchar
+	ext	regi,regiff,regbc,altbc,regpc
+	ext	reg8nam,r16nam,iffstr
+	ext	variables
+if	hilo
+	ext	highval,lowval,maxval,topval
+endif;HILO
+	ext	listaddr
+if	extended
+	ext	peek,peekbuf,cbank,bankok,xltbank
+endif;EXTENDED
+;
+;	mul16:	multiply HL by DE giving HL
+;
+mul16:
+	push	af
+	push	bc
+	ld	c,l
+	ld	b,h
+	ld	hl,0
+	ld	a,15
+mlp:
+	sla	e
+	rl	d
+	jr	nc,mlp1
+	add	hl,bc
+mlp1:
+	add	hl,hl
+	dec	a
+	jr	nz,mlp
+	or	d
+	jp	p,mlex
+	add	hl,bc
+mlex:
+	pop	bc
+	pop	af
+	ret
+;
+;	div16:	unsigned divide HL by DE giving HL, remainder in DE
+;
+div16:
+	push	af
+	push	bc
+	ld	a,e
+	or	d
+	jp	z,cmderr
+	ld	c,l
+	ld	a,h
+	ld	hl,0
+	ld	b,16
+dvloop:
+	rl	c
+	rla
+	rl	l
+	rl	h
+	push	hl
+	sbc	hl,de
+	ccf
+	jr	c,drop
+	ex	(sp),hl
+drop:
+	ex	(sp),hl
+	pop	hl
+	djnz	dvloop
+	ex	de,hl
+	rl	c
+	ld	l,c
+	rla
+	ld	h,a
+	pop	bc
+	pop	af
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	wrdec:	write HL as unsigned decimal
+;
+;		entry: A = sign character
+;
+wrdec:
+	push	bc
+	push	de
+	push	hl
+	ld	c,a
+	ld	b,5		; 5 digits
+	xor	a
+	push	af		; mark end
+wrdloop:
+	ld	de,10
+	call	div16		; divide by 10
+	ld	a,e		; remainder
+	add	a,'0'
+	push	af		; save digit
+	dec	b
+	ld	a,h
+	or	l
+	jr	nz,wrdloop	; loop if more digits remain
+	ld	a,b
+	or	a
+	jr	z,wrdsw
+wrdsf:
+	call	space
+	djnz	wrdsf		; space fill
+wrdsw:
+	ld	a,c
+	call	wrchar		; write sign
+wrdwrit:
+	pop	af		; get digit
+	jr	z,wrdex		; ready if end marker
+	call	wrchar
+	jr	wrdwrit
+wrdex:
+	pop	hl
+	pop	de
+	pop	bc
+	ld	a,'.'
+	jp	wrchar		; mark as decimal
+;
+;	wrbit:	write A as bitstream
+;
+wrbit:
+	push	bc
+	ld	b,8
+wrbitloop:
+	rlca
+	push	af
+	and	1
+	add	a,'0'
+	call	wrchar
+	ld	a,b
+	cp	5
+	jr	nz,wrbit1
+	ld	a,'_'		; write separator
+	call	wrchar
+wrbit1:
+	pop	af
+	djnz	wrbitloop
+	pop	bc
+	ld	a,'"'
+	jp	wrchar		; mark as bitstream
+;
+;	wrstr:		write zero-terminated string
+;
+;		entry:	HL = string address
+;
+wrstr:
+	ld	a,(hl)
+	or	a
+	ret	z
+	inc	hl
+	call	wrchar
+	jr	wrstr
+;
+;	crlf:		write cr/lf, check for interrupt from terminal
+;
+crlf:
+	ld	a,cr
+	call	wrchar
+	ld	a,lf
+	call	wrchar
+kbint:
+	call	tkbint
+	ret	z
+	jp	monmain
+;
+tkbint:
+	call	pollch
+	ret	z
+kbdint:
+	call	rdchar
+	cp	'S'-40h
+	jr	z,kbdint
+	cp	'Q'-40h
+	ret	z
+	cp	' '
+kbdint10:
+	ret	nz		; abort if other than XON/XOFF or space
+	call	rdchar
+	cp	' '
+	ret	z
+	cp	'Q'-40h
+	ret	z
+	cp	'S'-40h
+	jr	kbdint10
+;
+;	space2:		write 2 spaces
+;
+space2:
+	call	space
+;
+;	space:		write 1 space
+;
+space:
+	ld	a,' '
+	jp	wrchar
+;
+;	wraddr:		write A/HL as 24-bit address
+;
+wraddr:
+if	extended
+	cp	-1		; default ?
+	jr	z,wrword	; then dont write bank
+	push	hl
+	ld	hl,cbank
+	cp	(hl)		; same as current bank ?
+	pop	hl
+	jr	z,wrword	; then dont write
+	call	wrhex		; write bank
+	ld	a,':'
+	call	wrchar
+endif;EXTENDED
+;
+;	return via wrword
+;
+;	wrword:		write HL as hex word
+;
+wrword:
+	ld	a,h
+	call	wrhex
+	ld	a,l
+;
+;	wrhex:		write A as hex number
+;
+wrhex:
+	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	call	wrhexdig
+	pop	af
+;
+;	wrhexdig:	write lower nibble of A as hex digit
+;
+wrhexdig:
+	and	LoMASK
+	add	a,'0'
+	cp	'9'+1
+	jp	c,wrchar
+	add	a,'A'-'0'-10
+	jp	wrchar
+;
+;------------------------------------------------------------------------------
+;
+;	rdword:		read hex/dec/bit-word from input buffer
+;
+;		entry:	IX = current position
+;
+;		exit:	IX = first non-digit character
+;			HL = word
+;			Carry-flag set if nothing found
+;
+rdword:
+	call	skipsp
+	push	ix		; save start pos
+	ld	b,0		; B = digit counter
+;
+;	first count the number of digits and determine base
+;
+rdcdigs:
+	call	getch		; get char
+	jr	z,rdwhex	; try hex if end of string
+	cp	'.'		; '.' means decimal
+	jr	z,rdwdec
+	cp	'"'		; '"' means bit
+	jr	z,rdwbit
+	call	isdigit
+	jr	nc,rdcwnxt	; digit, get next char
+	cp	'A'
+	jp	c,rdwhex	; no digit, try hex
+	cp	'F'+1
+	jp	nc,rdwhex	; no digit, try hex
+rdcwnxt:
+	inc	b		; increase no. of digits found
+	jr	rdcdigs
+;
+;	decimal number
+;
+rdwdec:
+	pop	ix		; go back to start
+	ld	a,b
+	or	a
+	jp	z,cmderr	; error if no digits
+	ld	hl,0
+rdwdlp:
+	call	getch
+	sub	'0'
+	cp	10
+	jp	nc,cmderr	; error if no decimal digit
+	ld	de,10
+	call	mul16		; multiply previous result by 10
+	ld	e,a
+	ld	d,0
+	add	hl,de		; add digit
+	djnz	rdwdlp
+	inc	ix		; skip dec-marker
+rdwready:
+	or	a		; clear carry
+	ret
+;
+;	bit string
+;
+rdwbit:
+	pop	ix		; back to start
+	ld	a,b
+	or	a
+	jp	z,cmderr	; error if no digits
+	ld	hl,0
+rdwblp:
+	call	getch
+	sub	'0'
+	cp	2
+	jp	nc,cmderr	; error if not 0/1
+	rra			; into carry
+	rl	l		; shift bit into lsb of HL
+	rl	h		; make it a 16-bit shift
+	djnz	rdwblp
+	inc	ix		; skip '"'
+	jr	rdwready
+;
+;	hex number or no number at all
+;
+rdwhex:
+	pop	ix		; back to start
+	ld	hl,0
+	ld	(temp),hl	; clear temporary result
+	ld	hl,temp		; set up for rld
+	ld	a,b
+	or	a
+	jr	nz,rdwhexlp	; ok if digits
+	scf			; mark no valid number
+	ret
+rdwhexlp:
+	call	getch
+	sub	'0'
+	cp	10
+	jr	c,rdwhexb	; ok if 0..9
+	sub	'A'-'0'-10	; else A..F
+rdwhexb:
+	rld			; shift temp left by 4
+	inc	hl
+	rld
+	dec	hl
+	djnz	rdwhexlp
+	ld	hl,(temp)	; load result
+	jr	rdwready
+;
+;	rdstrword:	read string word
+;
+;		entry:	IX = input pointer
+;
+;		exit:	HL = 2 last chars
+;			Carry set if no quoted string
+;
+rdstrword:
+	call	skipsp
+	ld	a,(ix+0)
+	cp	''''
+	scf
+	ret	nz		; ret if no string
+	ld	hl,0
+	inc	ix
+rdstrwlp:
+	ld	h,l		; shift result left by 8
+	call	getstrch	; get character
+	ld	l,a		; into result
+	ld	a,(ix+0)	; next char
+	cp	''''
+	jr	nz,rdstrwlp	; ok if not terminator
+	cp	(ix+1)		; next char a '''' too ?
+	jr	z,rdstrwlp	; then loop
+	inc	ix		; point after terminator
+	or	a		; clear carry
+	ret
+;
+;	getstrch:	get one string character into A
+;
+getstrch:
+	ld	a,(ix+0)
+	or	a
+	jp	z,cmderr	; error if end of line
+	inc	ix
+	cp	''''
+	ret	nz		; ready if no delimiter
+	ld	a,(ix+0)
+	cp	''''
+	jp	nz,cmderr	; error if not paired
+	inc	ix
+	ret
+;
+;	skipsp:		skip spaces in input string
+;
+skipsp:
+	ld	a,(ix+0)
+	cp	' '
+	jr	z,skipsp1
+	cp	'_'
+	jr	nz,testch
+skipsp1:
+	inc	ix
+	jr	skipsp
+;
+;	skipsep:	skip spaces and ',' in input string
+;
+skipsep:
+	ld	a,(ix+0)
+	cp	' '
+	jr	z,skipsep1
+	cp	'_'
+	jr	z,skipsep1
+	cp	','
+	jr	nz,testch
+skipsep1:
+	inc	ix
+	jr	skipsep
+;
+;	getch:		get a character from the input string, skip '_'
+;
+getch:
+	call	testch
+	ret	z		; dont increment if end of string
+	inc	ix
+	ret
+;
+;	testch:		test the character from the input string, skip '_'
+;
+testch:
+	call	stestch
+	ret	z
+	cp	'_'
+	ret	nz
+	inc	ix
+	jr	testch
+;
+;	sgetch:		get a character from the input string
+;
+sgetch:
+	call	stestch
+	ret	z		; dont increment if end of string
+	inc	ix
+	ret
+;
+;	stestch:	test the character from the input string
+;
+stestch:
+	ld	a,(ix+0)
+	or	a
+	ret	z
+	cp	'a'
+	ret	c
+	cp	'z'+1
+	jr	c,testcupc
+	or	a
+	ret
+testcupc:
+	add	a,'A'-'a'
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	readstring:	read input string
+;
+;		exit:	IX = start of string
+;			skipsp called
+;
+readstring:
+	ld	ix,string
+	push	bc
+	ld	hl,string
+	ld	b,0		; length
+rdstloop:
+	call	rdchar
+	and	NoMSB		; clear parity bit
+	cp	del		; DEL ?
+	jr	z,rdstdel
+	cp	bs		; BS ?
+	jr	z,rdstdel
+	cp	cr		; CR ?
+	jr	z,rdstend
+	cp	lf		; LF ?
+	jr	z,rdstloop	; ignore LF
+	cp	tab		; TAB ?
+	jr	nz,rdstsp
+	ld	a,' '		; replace by ' '
+rdstsp:
+	cp	' '
+	jr	c,rdstbeep	; beep if other control character
+rdstok:
+	ld	(hl),a		; store
+	ld	a,b
+	cp	.linlen-1
+	jr	z,rdstbeep	; beep if line filled
+	ld	a,(hl)
+	call	wrchar		; echo character
+	inc	hl
+	inc	b
+	jr	rdstloop
+rdstbeep:
+	ld	a,bel		; BEL
+	call	wrchar
+	jr	rdstloop
+rdstdel:
+	ld	a,b
+	or	a
+	jr	z,rdstloop	; no action if at start of line
+	ld	a,bs
+	call	wrchar		; BS
+	call	space
+	ld	a,bs		; BS
+	call	wrchar
+	dec	hl
+	dec	b
+	jr	rdstloop
+rdstend:
+	call	crlf		; echo crlf
+	xor	a
+	ld	(hl),a		; terminate
+	inc	hl
+	ld	(hl),a		; one more to be safe
+	dec	hl
+	ld	a,b
+	or	a
+	jr	z,rdstexit	; ret if zero length string
+rdsttrunc:
+	dec	hl		; point to last char
+	ld	a,(hl)
+	cp	' '		; truncate space at the end
+	jr	nz,rdstexit
+	ld	(hl),0
+	djnz	rdsttrunc	; again
+rdstexit:
+	pop	bc
+	jp	skipsp
+;
+;------------------------------------------------------------------------------
+;
+;	bytestring:	process input line into a string of bytes
+;
+;		entry:	IX = string pointer
+;
+;		exit:	IX = bytestring-pointer
+;			B = IX-1 = length of string
+;			Carry set if no values
+;
+bytestring:
+	ld	iy,string	; destination
+	ld	b,0		; number of bytes
+byteslp:
+	call	skipsep
+	jr	z,bytesend	; ready if end of input line
+	cp	''''
+	jr	z,bytesstr	; branch if string
+	push	bc
+	call	expression	; try expression
+	pop	bc
+	jp	c,cmderr	; error if something else
+	ld	(iy+0),l	; store lower byte only
+	inc	iy
+	inc	b
+	jr	byteslp
+bytesend:
+	ld	ix,string
+	ld	(ix-1),b
+	ld	a,b
+	or	a
+	ret	nz		; ok if nonzero length
+	scf			; signal nothing there
+	ret
+;
+bytesstr:
+	inc	ix
+bytesstrlp:
+	call	getstrch	; get character
+	ld	(iy+0),a	; into result
+	inc	iy
+	inc	b
+	ld	a,(ix+0)	; next char
+	cp	''''
+	jr	nz,bytesstrlp	; ok if not terminator
+	cp	(ix+1)		; next char a '''' too ?
+	jr	z,bytesstrlp	; then loop
+	inc	ix		; point after terminator
+	jr	byteslp
+;
+;------------------------------------------------------------------------------
+;
+;	rdregval:	read register value
+;
+;		exit:	HL = value
+;			DE = variable address
+;			 C = size (0 = 16-bit)
+;			Carry set if no register
+;
+rdregval:
+	ld	de,0
+	call	skipsp
+	scf
+	ret	z		; no reg if end of line
+	cp	'Y'		; Variables don't need a lead-in
+	jr	z,rdregvy
+if	hilo
+	cp	'H'		; special var High
+	jr	z,rdregvh
+	cp	'L'		; special var Low
+	jr	z,rdregvl
+	cp	'M'		; special var Max
+	jr	z,rdregvm
+	cp	'T'		; special var Top
+	jr	z,rdregvt
+endif;HILO
+if	extended
+	cp	'X'		; special var eXtended addr
+	jr	z,rdregvx
+endif;EXTENDED
+	cp	'$'
+	jr	z,rdregvpc
+	cp	'R'		; reg-val lead in character
+	scf
+	ret	nz		; no reg if no lead-in
+	inc	ix		; skip lead-in
+	call	rdregister
+	jp	c,cmderr	; error if no register
+rdregvrdy:
+	ld	e,(hl)		; get value
+	inc	hl
+	ld	d,(hl)
+	dec	hl		; restore address
+	ex	de,hl		; address into DE, value into HL
+	ld	c,0		; 16-bit
+	and	3fh
+	cp	20h
+	ret	nc		; ready if 16-bit reg
+	ld	c,a		; mark 8-bit
+	cp	17h		; R ?
+	call	z,rdregvr	; branch if R
+	xor	a		; clear carry
+	ld	h,a		; upper byte = 0 for 8-bit reg
+	ret
+;
+rdregvpc:
+	call	getch
+	ld	hl,regpc
+	ld	a,23h
+	jr	rdregvrdy
+;
+if	extended
+rdregvx:
+	ld	hl,cbank
+	push	ix
+	call	getch		; skip H/L
+	ld	a,1fh
+	push	af
+	jr	rdregvxck
+endif;EXTENDED
+if	hilo
+rdregvm:
+	ld	hl,maxval
+	jr	rdregvlh
+rdregvh:
+	ld	hl,highval
+	jr	rdregvlh
+rdregvt:
+	ld	hl,topval
+	jr	rdregvlh
+;
+rdregvl:
+	ld	hl,lowval
+rdregvlh:
+	push	ix
+	call	getch		; skip H/L
+endif;HILO
+rdregvck:
+	ld	a,3bh
+	push	af
+rdregvxck:
+	call	testch		; get next
+	call	isspecial
+	jr	c,rdregvn1	; no reg if not a special follows
+	pop	af
+	pop	de		; discard old IX
+	jr	rdregvrdy
+;
+rdregvy:
+	push	ix
+	call	getch		; skip Y
+	call	getch		; get digit
+	call	isdigit
+	jr	c,rdregvnone	; no reg if not a digit
+	sub	'0'
+	add	a,a
+	ld	e,a
+	ld	d,0
+	ld	hl,variables
+	add	hl,de
+	jr	rdregvck
+;
+rdregvn1:
+	pop	af
+rdregvnone:
+	pop	ix		; restore old character pointer
+	scf
+	ret			; ret with error indication
+;
+rdregvr:
+	ld	a,r
+	ld	l,a
+	ld	de,0		; R has no address
+	ret
+;
+;	rdregister:	read register name
+;
+;		entry:	IX = string pointer
+;
+;		exit:	Carry set if no register name
+;			HL = register address
+;			A = register designation (1x for 8-bit, 2x for 16-bit)
+;				10=B, 11=C, 12=D, 13=E, 14=H, 15=L, 16=I,
+;				17=R, 18=A, 19=F, 1A=IFF
+;				20=BC, 21=DE, 22=HL, 23=SP, 24=AF, 25=IX,
+;				26=IY, 27=PC
+;			    Bit 7 is set if alternate register
+;
+rdregister:
+	call	skipsp
+	scf
+	ret	z		; ready if end of string
+rdreg10:
+	push	ix		; save start pos
+	ld	b,0		; length
+	ld	d,0		; mark no alternate
+rdreg20:
+	call	getch
+	jr	z,rdreg30	; branch if end of line
+	cp	''''
+	jr	z,rdreg25	; branch if alternate-marker
+	call	isletter
+	jr	c,rdreg30	; branch if no letter
+	inc	b
+	jr	rdreg20		; loop if letter
+;
+rdreg25:
+	ld	d,80h		; mark alternate
+	call	testch
+	call	isspecial
+	jr	c,rdregnoiff	; no reg if no special follows
+	jr	rdreg35
+;
+rdreg30:
+	or	a
+	jr	z,rdreg35	; ok if end of line
+	call	isdigit
+	jr	nc,rdregnoiff	; not a register if digit follows
+rdreg35:
+	pop	ix		; back to the start
+	ld	a,b
+	or	a
+	scf
+	ret	z		; no reg if 0 chars
+	cp	3
+	jr	c,rdreg40	; ok if <= 2 chars
+	scf
+	ret	nz		; exit if > 3 chars
+	push	ix
+	ld	hl,iffstr
+	ld	b,3
+iffloop:
+	call	getch		; check for 'IFF'
+	cp	(hl)
+	jr	nz,rdregnoiff
+	inc	hl
+	djnz	iffloop
+	ld	a,d
+	or	a
+	jr	nz,rdregnoiff	; there is no alternate IFF
+	pop	hl		; discard old IX
+	ld	a,1ah
+	ld	hl,regiff	; return IFF
+	ret			; ready for IFF
+rdregnoiff:
+	pop	ix
+rdregnone:
+	scf			; mark no register
+	ret
+;
+rdreg40:
+	dec	a
+	jr	nz,rdreg16bit	; check for 16-bit reg if 2 chars
+	call	testch
+	ld	hl,reg8nam
+	ld	bc,10		; 10 chars in reg8nam
+	cpir
+	scf
+	ret	nz		; no register
+rdreg8bit:
+	ld	bc,reg8nam
+	or	a
+	sbc	hl,bc		; calculate offset
+	ld	a,l
+	dec	a		; offset in reg8nam
+	ld	hl,regbc	; start of registers
+	bit	7,d		; alternate reg ?
+	jr	z,rdreg8noalt	; branch if not alternate
+	cp	6		; I/R ?
+	jr	c,rdreg8alt	; ok if not
+	cp	8
+	ret	c		; exit, no alternate for I/R
+rdreg8alt:
+	ld	hl,altbc	; address alternate
+	inc	ix			; and skip ''''
+rdreg8noalt:
+	inc	ix		; skip reg name
+	xor	1		; swap 0/1
+	ld	c,a
+	ld	b,0
+	xor	1
+	cp	6		; I/R ?
+	jr	z,reg8i
+	cp	7
+	jr	nz,reg8na10
+	ld	hl,0		; R has no address
+	jr	reg8na20
+reg8i:
+	ld	hl,regi		; I has special address
+	jr	reg8na20
+reg8na10:
+	add	hl,bc		; address of register in save area
+reg8na20:
+	or	10h
+	or	d		; or in alt-flag
+	ret
+;
+rdreg16bit:
+	push	ix
+	call	getch
+	ld	c,a
+	call	getch
+	ld	e,a
+	cp	'C'		; PC ?
+	jr	nz,rdr1610
+	ld	a,c
+	cp	'P'
+	jr	nz,rdr1610	; branch if not PC
+	ld	a,d
+	or	a
+	jr	nz,rdregnoiff	; no alternate PC
+	ld	a,27h
+	ld	hl,regpc
+	pop	de		; discard old IX
+	ret			; ready for PC
+;
+rdr1610:
+	ld	hl,r16nam
+	ld	b,7
+rdr1620:
+	ld	a,c
+	cp	(hl)		; search name in r16nam
+	inc	hl
+	jr	nz,rdr1625
+	ld	a,e
+	cp	(hl)
+	jr	z,rdr16fnd	; branch on match
+rdr1625:
+	inc	hl
+	djnz	rdr1620
+	jp	rdregnoiff	; not found, not a register
+;
+rdr16fnd:
+	ld	a,7
+	sub	b
+	ld	c,a		; register number
+	ld	hl,regbc
+	ld	a,d
+	or	a
+	jr	z,rdr1640	; jump if not alternate
+	ld	a,c
+	cp	3
+	jr	c,rdr1635
+	cp	4
+	jp	nz,rdregnoiff	; no alternate for SP, IX, IY
+rdr1635:
+	ld	hl,altbc
+	inc	ix		; skip alt-marker
+rdr1640:
+	ld	b,0		; register number in BC
+	add	hl,bc		; point to register
+	add	hl,bc
+	ld	a,c		; reg number
+	or	20h		; mark 16-bit reg
+	or	d		; or in alt-flag
+	pop	de		; discard old ix
+	ret
+;
+;------------------------------------------------------------------------------
+;
+isdigit:
+	cp	'0'
+	ret	c
+	cp	'9'+1
+	ccf
+	ret
+;
+isletter:
+	cp	'A'
+	ret	c
+	cp	'Z'+1
+	ccf
+	ret
+;
+isspecial:
+	call	isdigit
+	ccf
+	ret	c
+	call	isletter
+	ccf
+	ret
+;
+iscontrol:
+	and	NoMSB
+	cp	del
+	ret	z		; is control char if = 7f
+	cp	' '
+	ccf			; set carry for char >= 20h
+	ret
+;
+;------------------------------------------------------------------------------
+;
+	dseg
+;
+temp:	ds	2
+strlen:	ds	1		; string length storage for bytestring
+string:	ds	.linlen+1
+
+	end
+----------------
+;
+	dseg
+;
+temp:	ds	2
+s

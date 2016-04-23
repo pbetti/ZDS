@@ -1,0 +1,50 @@
+;	TITLE	"SFILL3 - Syslib 4.0"
+	NAME	('HFILBC')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SFILL.Z80 Ver 1.1 by Richard Conn
+; Date    : 11 Jun 89
+; Version : 1.3
+; Module  : SFILL3
+; Abstract: This module provides the routine HFILBC which provides
+;	a means of filling up to 65536 locations in memory with a
+;	constant value.  The memory pointer points to the byte
+;	after the last one filled upon exitting.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		HFILBC
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - HFILBC
+; Entry: HL - Points to the first byte to fill
+;	 BC - Contains the number of locations to fill
+;	  A - Contains the value to fill
+; Exit : HL - Points to byte after last one filled
+; Uses : HL
+; Special Requirements: If Reg BC contains 0, 65536 locations
+;	will be filled.
+;===============================================================
+
+HFILBC:	PUSH	AF		; Save Registers
+	PUSH	BC
+	PUSH	DE
+	LD	D,A		; Fill character to D
+FILBC0:	LD	(HL),D		; Store the byte
+	INC	HL		; ..bump the pointer
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,FILBC0	; Until BC = 0
+	POP	DE
+	POP	BC		; Restore Registers
+	POP	AF
+	RET
+
+	END
+

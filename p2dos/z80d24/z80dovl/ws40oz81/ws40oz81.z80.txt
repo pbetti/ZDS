@@ -1,0 +1,160 @@
+;**************************************************
+;
+; WS40OZ81.Z80
+; Eugene Nolan
+; C/O DHN* RCPM 215-623-4040
+; 2/14/89
+;
+; Update to WS40OZ8D.Z80
+; Original file WOULD NOT stamp files whose
+; first directory entry was the first one in
+; a CPM 128 byte sector of the directory area.
+;
+; This file provides an overlay for WS 4.0 that
+; allows it to carry the creation date of files
+; from the input file to the output file.
+;
+; Assemble to a .HEX file and use
+;
+; MLOAD WS.COM=WS.OLD,WS40OZ81.HEX
+;
+; There are currently defined two areas inside the
+; WS.COM file that this overlay may be placed, the
+; first is at MORPAT, which is 128 bytes long, and
+; EXTRA, which is 512 bytes long. To tell which area
+; to use, run WSCHANGE on a FULLY installed WS and
+; use the general COMPUTER patch function to examine
+; these areas. This can be done by specifying the
+; labels MORPAT and EXTRA. If when examined, they
+; come up as 0's, that area is free and you may
+; chose which equate EXTRA or MORPAT to use, then
+; do the assembly and overlay.
+;
+; Included in this .LBR are the files MORPAT.HEX and
+; EXTRA.HEX that are ready to overlay if you choose to
+; use the MORPAT or EXTRA areas.
+;
+;  If both of these areas are found in use, you may want
+; to examine the areas PRNPAT and CRTPAT to see if they are
+; free ( haven't tried them myself), and set the equate MYOWN
+; to TRUE ( EXTRA and MORPAT to false) and fill in the
+; ORG at IF MYOWN. Don't make any claims to know if this
+; will work though.
+;  It should also be possible to use the BGNMEM variable to
+; tell WS that the beginning of free memory is higher and place
+; the overlay at the old location BGNMEM pointed to, but I couldn't
+; find out where the BGNMEM variable is located in memory. It is
+; alluded to in the MORPAT description in the PATCH.LST file, but
+; not anywhere else. See below for how to use it if you find it.
+
+
+
+	org	13afh			; Overlay inside WS.COM
+	jp	dater
+
+
+no	equ	0
+yes	equ	not no
+
+extra	equ	no			; Set to yes if you want to use
+					; WS's EXTRA area to store the
+					; date support code
+morpat	equ	yes			; Set to yes to use the MORPAT area
+
+myown	equ	no			; Set to yes if you have your own
+					; patch area
+
+bgnmem	equ	no			; Use this equate if you want to
+					; use the BGNMEM variable to
+					; set WS's free memory higher and
+					; place the overlay at the old BGNMEM
+					; location. Use MYOWN to set the
+					; ORG, and look for references to
+					; BGNMEM at the end of this file.
+
+	 if	extra
+	org	896h
+	 endif		; extra
+
+	 if	morpat
+	org	45bh
+	 endif		; morpat
+
+
+	 if	myown
+	org	XXXXh			; fill it in
+	 endif		; myown
+
+dater:
+	ld	a,c			; check if BDOS ftn = OPEN
+	cp	0fh
+	jr	z,isopen		; Z=yes
+	cp	16h
+	jr	z,ismake		; Ftn = MAKE
+
+jbdos:	jp	5
+
+ismake:	ld	a,e			; MAKE or WRITE RAN, check if FCB
+	cp	87h			; is that for the source file
+	jr	nz,jbdos
+	ld	a,d
+	cp	1ch
+	jr	nz,jbdos
+	ld	a,(wasopen)		; Check if source was opened ok
+	cp	0ffh
+	jr	z,jbdos			; Z = NO
+	push	hl
+	push	de
+	push	bc
+	ld	c,55			; Use Z80DOS's USESTAMP ftn
+	call	5
+	pop	bc
+	pop	de
+	pop	hl
+	jr	jbdos			; And do original operation
+
+isopen:	ld	a,e			; Check if trying to open source file
+	cp	0cdh			; by checking if this is the source FCB
+	jr	nz,jbdos
+	ld	a,d
+	cp	1bh
+	jr	nz,jbdos
+	call	5
+	ld	(wasopen),a
+	cp	0ffh			; If A = FF, then not found
+	ret	z
+	push	hl
+	push	de
+	push	bc
+	push	af
+	ld	c,54			; Use Z80DOS's GETSTAMP ftn to save
+	call	5			; time stamps of source
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+timbuf:	ds	5
+wasopen:
+	db	0ffh			; Flag to hold status of OPEN of
+					; original source file
+	
+	 if	extra			; If overlaying EXTRA area of memory
+	org	894h			; WS wants to know how much of it is
+					; used, so store where we stopped at
+					; EXTRA-2 ( RAM1ST)
+	dw	wasopen+1
+	endif			; extra
+
+
+	 if	bgnmem
+	org	XXXXh			; fill in the address of the BGNMEM
+					; variable itself here, then the
+					; overlay will fill in the new value
+					; for you automatically
+	dw	wasopen+1
+	 endif			; bgnmem
+
+;*******************************
+

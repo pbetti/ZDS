@@ -1,0 +1,79 @@
+	TITLE	"SFSIZE - Syslib 4.3a"
+	NAME	('FSIZE')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SFSIZE.Z80 Ver 1.1 by Richard Conn
+; Date	  : 17 Sep 89
+; Version : 1.2
+; Module  : SFSIZE
+; Abstract: This module contains the routine F$SIZE which computes
+;	the size of the file whose FCB is addressed.  This routine
+;	assumes the file is less than the Maximum size.  Only the
+;	first 12 bytes of the FCB are necessary.
+; Revision:
+; Version : 1.3
+;	Removed 16 bytes and improved arithmetic.  JWW  Aug 90
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC	F$SIZE
+
+; From SYSLIB Get..
+
+	EXT	INITFCB, @BDOS
+
+; Definitions
+
+GETFSIZ	EQU	35		; BDOS Get File Size command
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - F$SIZE
+; Entry: DE - Points to the first 12 bytes of an FCB
+; Exit : HL - Contains the file size in K
+; Uses : HL
+; Special Requirements: None
+;===============================================================
+
+F$SIZE:	PUSH	AF		; Save Registers
+	PUSH	BC
+	PUSH	DE
+
+	LD	HL,FCB		; Copy their 12 bytes into local FCB
+	EX	DE,HL
+	PUSH	DE		; Save FCB addr
+	LD	BC,12		; 12 Bytes
+	LDIR
+	POP	DE		; ..restore FCB addr
+	CALL	INITFCB		; Init it
+	LD	C,GETFSIZ	; Get File Size using Bdos function
+	CALL	@BDOS
+	LD	HL,(RANREC)	; Get Random Record Number
+	LD	DE,7
+	ADD	HL,DE		; Add seven records for good measure
+	RR	H		; Potential Cy to H7
+	RR	L		; /2
+	SRL	H		; Zero into H7
+	RR	L		; /4
+	SRL	H		; Zero into H7
+	RR	L		; /8
+
+	POP	DE
+	POP	BC
+	POP	AF
+	RET
+
+;  Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+FCB:	DEFS	32		; FCB buffer
+	DEFS	1		; Seq Record
+RANREC:	DEFS	2		; Random Record Number
+	DEFS	1		; Overflow byte
+
+	END
+

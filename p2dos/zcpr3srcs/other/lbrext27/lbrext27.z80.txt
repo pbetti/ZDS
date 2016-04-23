@@ -1,0 +1,1272 @@
+;Program: LBREXT
+;Version: 2.0
+;Author:  Bob Peddicord
+;Date:	  09/04/87
+
+ver	equ	27		; October 20, 1989
+
+
+;This program is something like Richard Conn's LGET. The main
+;differance  is that this program will extract "CRUNCHED" and
+;"SQUEEZED" files.  It has a brief help display,  invoked  by
+;typing // after the name. ex:lbrext //
+
+;The  only  option  is "U" to unsqueeze or uncrunch  a	file,
+;otherwise  the  program  will	just  extract  whatever   you
+;specify.
+
+;Wildcard  filename(s) may be specified Don't forget to put a
+;"," between filenames if specifying more then one filename.
+
+;Example: LBREXT dir:lbrname dir:filename.typ,dir:filename.typ... o
+
+;Version 2.7 Changes:
+;	Now expands LZH encoded files as well as tqueezed and crunched.
+;	Uses DSLIB's universal date stamp routines to make it work
+;	with all ZSDOS date stamping options as well as regular DateStamper.
+;	When extracting members with date stamps, the output file's "last
+;	acces" stamp is set to the current date and time.
+;	Now displays "mod" date rather than "create" date to complement
+;	newer versions of LPUT.
+;	A type specifiation on the LBR file is no longer ignored.  However,
+;	if none is given, LBR is still assumed.
+;	The check for user abort is now done once every 128 characters
+;	instead of before each character is extracted from the LBR.
+;	BIOS rather than DOS calls are used for this purpose.  Buffer
+;	allocation is more dynamic in that the type of decompre/sion required
+;	and the number of members being extracted determine the size
+;	of the input and output buffers.  All this makes operation signifi-
+;	cantly faster.
+;	The "overwrite" patch point has been moved from 102h to 111h
+;	following the ASCII string "ovwrt>".  Another patch point,
+;	labeled with the string "ucprs>" and located at 118h, determines
+;	whether or not files are uncompressed by default.
+;	the first two bytes of the member file itself, rather than the
+;	middle letter of the file type are checked to determine how or
+;	whether that file is compressed.
+;	Top of memory is determined from the extended env if available.
+;	Several bugs fixed including:
+;	- Endless loop when a member could not be found
+;	- Inability to uncrunch certain files in large LBR's
+;	- Failure to recognize "directory full" condition when opening
+;	  output files.
+;	The code has been reorganized and much unnecessary duplication
+;	has been removed.  It no longer requires DATE.REL FOR
+;	LINKING BUT REQUIRES THE Version 4 libraries and ZSLIB.  Also
+;	required is the special version of SLUOPEN which has been modified
+;	again to add a second 2-byte buffer, (called LUMDATE), which 
+;	contains the "modify" date of the member.  The linkage order is:
+;	LBREXT27, DSLIB, Z3LIB, ZSLIB, SLUOPEN, SYSLIB, UNLZH, USQREL,
+;	and UNCREL.
+;					Howard Goldstein
+;
+;Version 2.6 -	DateStamper-compatibilty, including CR23D-style
+;		imbedded datespecs.  Note that this version
+;		employs a modified version of the SYSLIB module
+;		LUOPEN, with the public 2-byte buffer called
+;		LUDATE holding the DRI-format date of the last 
+;		LBR member opened.  DSLIB and Sigi Kluger's
+;		DATE.REL (Z80ified version of the one from
+;		SIG/M v.226) are also required.  A patch point
+;		is provided at 102H, change this byte to FFH
+;		(from zero) if you want LBREXT to overwrite any
+;		existing files as its default mode.  The help
+;		screen now reflects the state of this new switch
+;		as well as the actual name of this program.
+;		Note: zero and FFH are the ONLY legal values for
+;		the patch point.  All previous LBREXT upgrades
+;		as of version 2.5 are supported, with the
+;		exception of the change in the file-list
+;		delimiter, which has reverted to the ZCPR3
+;		convention (the comma) used in LGET and LPUT,
+;		as well as in LBREXT before Version 2.4.
+;
+;		Many thanks to LBREXT's author, Bob Peddicord,
+;		for release permisssion -- and to Steven
+;		Greenberg (for UNCREL/USQREL, the GEL
+;		algorithm and the UNCR program from which a
+;		lot of LBREXT comes), Bridger Mitchell (for
+;		the CR23D programs and DateStamper itself)
+;		Rick Conn (for the LGET idea and the "old"
+;		Libraries), Ken Taschner and Hal Bower (for
+;		the upcoming "new" Libraries), Sigi (for
+;		DATE.REL -- I hope he's well these days),
+;		etc., etc....
+;					Bruce Morgen, March 24, 1988
+
+;Version 2.2 modifications:
+;Made buffer sizing automatic at runtime, fixed bug so that
+;files will be extracted to current directory if no output
+;DU or DIR is specified, used DSEG and new Z80-only Z3LIB
+;and SYSLIB beta versions to minimize COMfile size, slimmed
+;down buffer setup code somewhat, did some nit-picking
+;("ADD A,A" instead of "SLA A", "OR A" instead of "CP 0",
+;etc.) in critical spots that might contribute to overall
+;performance, although the optimized (at least for uncrunching
+;operations) buffer allocation is probably the biggest factor.
+;LBREXT is now competitive in speed (within 5-10%) with LGET
+;for normal and unsqueeze operations as well.  Included a
+;Z80fied version of Joe Wright's improved ARGV from LX 1.1 to
+;prevent the system crashes that plague LGET if "=" is used in
+;the command line.
+
+;Many thanks to the author for a much-needed tool!
+
+;					Bruce Morgen
+;					September 10, 1987
+
+;Version 2.1 modifications:
+;Restored proper ZCPR3 tool format, increased buffer size.
+
+;					Bob Peddicord
+
+
+eof	equ	1ah
+bdos	equ	5
+bell	equ	7
+bs	equ	8
+cr	equ	0dh
+lf	equ	0ah
+tbuff	equ	0080h
+lentsz	equ	17		; Size of dir entry:
+				; 11 - for FN.FT
+				; 2 - for Index
+				; 2 - for Length
+				; 2 - for CRC
+
+
+;DSLIB routines
+	extrn	timini,rclock,pstamp,bin2bcd
+;Extra labels in modified LUOPEN (SLUOPEN.REL) routine
+	extrn	ludate,lumdate
+;From Z33LIB for more authentic parsing
+	extrn	z33chk,z33fname
+;Z3LIB routines
+	extrn	z3init,zfname,z3log,getwhl,getefcb,gzmtop
+;ZSLIB routines
+	extrn	jul2bin,prdat3
+;SYSLIB routines
+	extrn	putud,getud,logud,retud
+	extrn	acase1,eprint,epstr,cout,crlf
+	extrn	pfn3,initfcb,caps
+	extrn	f$delete,f$close,f$write,f$make,setdma
+	extrn	luinit,luread,luopen,r$read,luclose
+	extrn	capine,condin,f$exist,pafdc,@afncmp
+	extrn	codend
+; ****** needed for unsqueezing/uncrunching ******
+	extrn	usqrel,unlzh,uncrel
+; Entry points for usqrel, unlzh and uncrel
+	public	getbyt,out,glzhun,plzhun
+
+;We begin....
+
+	jp	start
+	db	'Z3ENV'
+	db	1
+z3eadr:
+	dw	0fe00h
+
+; Options
+	db	'ovwrt>'
+odflt	db	0		; Overwrite existing file (default no)
+	db	'ucprs>'
+udflt:	db	0		; Uncopress files (default no)
+
+start:
+	ld	(savstk),sp
+	ld	sp,stack
+
+	ld	hl,(z3eadr)
+	call	z3init
+
+	ld	a,(udflt)	; Store user-patchable options
+	ld	(uflag),a	; ..in working storage
+	ld	a,(odflt)
+	ld	(oflag),a
+
+	call	putud
+	call	codend
+	ld	(cmdline),hl
+	ld	l,80h		; Pseudo-add for cmdline length
+	ld	(filebuf),hl
+	ld	de,3400+0ffh
+	add	hl,de
+	ld	l,0		; This makes it a page boundry
+	ld	a,h
+	ld	(fbufhi),a	; Ptr to absolute end of file buffer
+	ld	hl,tbuff+1
+	ld	de,(cmdline)
+	ld	bc,128
+	ldir
+	ld	hl,(cmdline)
+	ld	de,argtable
+	ld	a,3		; Init. table in DSEG for 3 args
+	ld	(de),a
+	ld	a,0ffh
+	call	argv
+	ld	a,(argcnt)	; Check count
+	cp	2
+	jp	nc,nohelp
+help:
+	call	eprint
+	db	'LbrExtract, Version ',[ver/10]+'0','.',[ver mod 10]+'0'
+	db	cr,lf
+	db	' Syntax: ',0
+	call	getefcb
+	jr	z,noefcb
+	ld	b,8
+comnlp:	inc	hl
+	ld	a,(hl)
+	and	7fh
+	cp	' '
+	call	nz,cout
+	djnz	comnlp
+	jr	cmnend
+noefcb:	call	eprint
+	db	'LBRE',0
+cmnend:
+	call	eprint
+	db	' dir:library'
+	db	' dir:afn1,dir:afn2,... o'
+	db	cr,lf
+	db	'Options:'
+	db	cr,lf
+	db	'   U - ',0
+	ld	a,(uflag)
+	call	prdont
+	call	eprint
+	DB	'Uncompress  squeezed/crunched/LZH-encoded files'
+	db	cr,lf
+	db	'   O - ',0
+	ld	a,(oflag)
+	call	prdont
+	call	eprint
+	db	'Overwrite existing files'
+	db	cr,lf,0
+	jp	badarg
+
+; Print the word "don't" if the flag passed in A is non-zero
+
+prdont:
+	or	a
+	ret	z
+	call	eprint
+	db	'Don''t ',0
+	ret
+
+nohelp:
+	cp	3
+	jr	c,noarg
+	ld	hl,(opptr)
+caseloop:
+	ld	a,(hl)
+	call	acase1
+	db	5
+	dw	errrtn
+	db	0
+	dw	noarg
+	db	'/'
+	dw	help1
+	db	' '
+	dw	help1
+	db	'U'
+	dw	unsq
+	db	'O'
+	dw	ovrwrt
+errrtn:
+	call	eprint
+	db	' Invalid Option:'
+	db	' '
+	db	0
+	call	cout
+	call	crlf
+	jp	help
+
+ovrwrt:
+	ld	de,oflag
+	jr	togopt
+unsq:
+	ld	de,uflag
+togopt:				; Toggle option and store
+	ld	a,(de)		; Get option flag
+	or	a
+	ld	a,0ffh		; Assume it needs to be turned on
+	jr	z,storopt
+	inc	a		; Nope, turn it off
+storopt:
+	ld	(de),a		; Store in memory
+help1:
+	inc	hl
+	jr	caseloop
+
+noarg:
+	ld	hl,(lbrnptr)	; Pt to lbr name
+	ld	de,ludfcb
+	call	zpars		; Parse it in
+	call	z3log		; Do z3 log
+	call	retud		; Get lbr DU
+	ld	(lbrdu),bc	; And save it
+	ld	de,lbrtyp
+	ld	a,(de)		; Get first char
+	cp	20h
+	jr	nz,noarg1	; If not blank, leave type alone
+	ld	hl,deflbr	; Set default type
+	ld	bc,3
+	ldir
+noarg1:	ld	de,lud
+	call	luinit		; Init it for later
+	jr	z,lbrfnd	; Go process file
+	call	eprint
+	db	'Library File ',0
+
+	ld	de,lbrname
+	call	ntfnd
+
+badarg:
+	call	getud
+	ld	sp,(savstk)
+	ret
+
+lbrfnd:
+	xor	a
+	ld	(filcnt),a	; Make sure counter is zero
+	ld	(comflg),a	; Ditto co/ma flag
+	ld	hl,(fileptr)	; Pt to file name wanted
+
+; this is the main loop for getting file names
+
+mloop:
+	ld	a,(hl)
+	or	a		; If 0 were at end of buffer
+	jr	z,badarg
+
+	ld	de,lfcb		; Parse in file wanted
+	call	zpars
+	ld	a,(hl)
+	cp	','		; See if more than 1 name
+	jr	nz,nosep
+	ld	(comflg),a	; Set comma found flag
+	inc	hl
+	ld	(fileptr),hl	; Save ptr for later
+nosep::
+	call	getud
+	call	getwhl		; See if wheel is set
+	call	nz,z3log	; Log in if wheel set, else use default
+	call	retud
+	ld	(outdrv),bc
+mloop2:
+	ld	bc,(lbrdu)	; Log into lbr du
+	call	logud
+
+	ld	hl,lfcb+1
+	ld	de,lud		; Pt to lbr buffers
+	ld	bc,(filebuf)	; Get filebuf location
+	call	ldbuf		; Load buffer
+	jr	nz,ovrflow	; No good we overflowed buffer
+	ld	hl,filcnt	; Get file count
+	or	(hl)		; Test it
+	jr	z,nofile	; No files found
+	ld	hl,(filebuf)	; Pt to file buffer
+
+; files were found
+
+filfnd:
+	ld	(filptr),hl	; Save buffer ptr
+	call	openit		; Try and open file
+
+; Return here after successful file extraction
+
+	ld	a,(filcnt)	; Get file count
+	dec	a		; Decrease by 1
+	jr	z,chkcom	; If zero, check for comma flag
+
+	ld	(filcnt),a	; Save it again
+	ld	hl,(filptr)	; Get buffer ptr back
+	ld	de,lentsz	; Pt to next file, all files 17 byte long
+	add	hl,de
+	ld	a,(hl)
+	or	a
+	jr	filfnd
+
+;-----------------------------------------------------------------------------
+nofile:
+	call	eprint
+	db	cr,lf
+	db	' No Files Found for ',0
+	ld	de,lfcb+1
+	call	pfn3		; Print the file name
+chkcom:
+	ld	a,(comflg)	; Get comma flag
+	or	a		; Check it
+	jp	z,badarg	; If not set no more files wanted
+	jp	lbrfnd		; Process other file(s)
+
+;-----------------------------------------------------------------------------
+
+ovrflow:
+	call	eprint
+	db	cr,lf
+	db	' Buffer Overflow',0
+	jp	badarg
+
+;-----------------------------------------------------------------------------
+
+openit:
+	ld	bc,(lbrdu)
+	call	logud
+	ld	de,lud
+	call	luopen		; Open file
+	jr	z,fopen
+	ex	de,hl		; DE pts to file name
+ntfnd:	call	pfn3		; Print file name
+	call	eprint
+	db	' Not Found',0
+	ret
+
+fopen:	ld	de,lfcb+1	; Move to local fcb
+	ld	bc,11
+	ldir
+	ld	hl,usrdat	; Prepare to zero fill current t/d
+	ld	b,15+6		; ..and file stamp buffer
+	push	hl
+
+fildt:	ld	(hl),a		; Zero fill; a=0 from above
+	inc	hl
+	djnz	fildt
+	pop	de		; DE pts to usrdat
+	ld	hl,(ludate)	; Julian date from lbr in hl
+	call	dcvt		; Convert and store in usrdat
+	ld	de,usrdat+10	; And again for modify date
+	ld	hl,(lumdate)
+	call	dcvt
+
+; Display input file name and date if available
+
+	call	eprint
+	db	' File: ',0	; Display file name
+	ld	de,lfcb+1
+	call	pfn3
+	ld	hl,usrdat+11	; Pt to modify month
+	ld	a,(hl)
+	or	a
+	jr	z,nodate	; No date if month=0
+	dec	hl		; Pt back to year
+	call	eprint
+	db	' (',0
+	call	prdat3
+	ld	a,')'
+	call	cout
+nodate:	call	eprint
+	db	' ---> ',0
+	call	proutdu		; Print output file's du
+
+	ld	a,(uflag)	; See if flag set
+	or	a
+	jr	z,normal
+	ld	hl,tbuff
+	call	setdma
+	ld	de,lud
+	call	luread		; Read in first record
+	or	a
+	jr	nz,normal		; Skip this if file is empty
+	ld	hl,(lud+2)	; Reset record number
+	dec	hl
+	ld	(lud+2),hl
+	ld	hl,(lud+4)
+	inc	hl
+	ld	(lud+4),hl
+
+	ld	hl,tbuff	; Pt to beginning of record
+	ld	a,(hl)
+	cp	76h		; Test for compression signature
+	jr	nz,normal
+	inc	hl
+	ld	a,(hl)
+	inc	hl
+	cp	0fdh
+	jr	c,normal	; Not a compressed file
+	ld	(typflg),a	; Store copression type
+	cp	0ffh
+	jr	nz,crnchd	; Crunched file, go get name
+	inc	hl		; Squeezed files have 2 extra bytes in header
+	inc	hl
+crnchd:	call	pname		; print original file name and store in LFCB
+
+; If member is crunched, pick up possible date info and print out comment
+; field
+
+	ld	a,(typflg)	; Determine type of compression
+	inc	a
+	jr	z,openout
+	ld	a,(hl)		; Get char
+	or	a		; Could be terminated by zero
+	jr	z,openout
+	cp	1		; DateStamper prefix?
+	jr	nz,cklfbr
+	inc	hl
+	ld	b,15		; Have DS prefix
+	ld	de,usrdat	; Move 15 bytes of DS data
+todslp:
+	ld	a,(hl)
+	cp	0ffh		; If 0ffh, flip to 00
+	jr	nz,todsbf
+	cpl
+todsbf:	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	todslp
+	ld	a,(hl)
+	or	a
+	jr	z,openout
+cklfbr:
+	cp	'['		; Could have comment stamp
+	jr	nz,openout
+	call	eprint
+	db	'   ',0		; 3 spaces
+	call	epstr		; Print up to null terminator
+	jr	openout
+
+
+normal:	xor	a
+	ld	(typflg),a	; Indicate that file is not compressed
+
+openout:
+	ld	bc,(outdrv)
+	call	logud		; Log into output du
+	ld	de,lfcb
+	call	initfcb
+	call	chkfile		; See if file exists
+	ret	z		; Return to call if zero flag set
+	call	f$make		; Make output file
+	inc	a		; Check return
+	jr	nz,setup
+	call	eprint
+	db	bell,'Directory full!',0
+	jp	badarg
+
+; Allocate input and output buffers
+; Input buffer begins at page following last member entry in FILBUF.
+; The buffers use all available memory from this point up less the
+; amount required by the tables for the decompression algorithm used
+; for this member.
+
+
+setup:	ld	a,(typflg)
+	inc	a
+	ld	c,16		; Unsqueeze requires 16 page table
+	jr	z,setup1
+	inc	a
+	ld	c,96		; Uncrunch requires 96 page table
+	jr	z,setup1
+	inc	a
+	ld	c,32		; UNLZH requires 32 page table
+	jr	z,setup1
+	ld	c,0		; No compression, no table
+
+setup1:	call	gzmtop		; Determine top of memory
+	ld	a,h
+	ld	hl,(buffer)	; Point to end of member list
+	ld	de,0ffh
+	add	hl,de		; Adjust to page boundary
+	ld	l,0
+	ld	(inbuf),hl	; Input buffer starts here
+	sub	h		; Deduct pages of memory used.
+	sub	c		; ..and memory to be used for tables
+	jr	c,nomem
+	jr	z,nomem
+	srl	a		; Divide in half.
+	jr	nz,setup2
+
+nomem:	call	eprint
+	db	bell,'Not enough memory',0
+	jr	errexit
+
+setup2:	ld	b,a		; Stash in B.
+	ld	(bufsiz),a	; And in storage for later.
+	push	hl
+	add	a,h
+	ld	h,a
+	ld	(outbuf),hl	; Ptr to output buffer
+	push	hl
+	add	a,b
+	ld	(obufhi),a	; Ptr to end of buffer
+	ld	h,a
+	exx
+	pop	de		; Output buffer address in de'
+	pop	hl		; Input buffer address in hl'
+	exx
+
+	xor	a		; Clear EOF flag
+	ld	(eoflag),a
+	inc	a
+	ld	(secnt),a	; This will cause the buffer to load
+
+; Extract file with appropriate decompression
+
+	ld	a,(typflg)
+	inc	a
+	jr	z,usq
+	inc	a
+	jr	z,uncr
+	inc	a
+	jr	z,unlz
+
+; Fall through to straight extract
+
+inloop:
+	call	getbyt		; Get byte
+	jp	c,done		; We're done if carry flag set
+	call	out		; Output byte
+	jr	inloop		; Otherwise loop
+
+usq:
+	call	usqrel
+	jr	expend		; Jump to common code
+
+unlz
+	call	unlzh
+	jr	expend
+
+uncr:
+	call	uncrel
+
+; Common code executed after member has been expanded
+
+expend:	jp	nc,done		; Success: tidy up and return
+	call	eprint
+	db	'File expansion error',0
+errexit:
+	call	eprint
+	db	', deleting partial output file ',0
+	call	proutdu		; Print output file's du
+	call	logud		; log into DU
+	ld	de,lfcb+1
+	call	pfn3
+	dec	de
+	call	f$close
+	call	f$delete	; Delete bad file
+	jp	badarg
+
+;-----------------------------------------------------------------------------
+
+; "a" <-- next byte from ("physical") input stream.
+;	  returns with carry set on eof.
+
+glzhun:
+getbyt:	exx			; Switch to i/o regs
+	ld	a,l		; Pointer to next avail char
+	add	a,a		; See if 00h or 80h
+	or	a		; (init carry flag [rtn stat] to clear)
+	call	z,posrld	; "possibly reload" the buffer if 00 or 80h
+	ld	a,(hl)		; Get byte to return (garbage if eof)
+	inc	hl		; Advance input pointer
+	exx			; Back to normal regs & rtn
+	ret			;
+;................................
+;
+posrld:				; "possibly reload" the input buffer
+				; I/o regs are active
+	call	condin		; Check for user abort
+	cp	3
+	jp	z,abtrtn
+
+	ld	a,(secnt)	; Decr sector count (for this buffer)
+	dec	a		;
+	ld	(secnt),a	;
+	and	a		; (clr carry)
+	call	z,reload	; Reload buffer if empty (resets hl)
+	ret	c		; (also sets carry if eof is encountered)
+	and	a		; Guarantee clr carry if not eof yet
+	ret			;
+;..............................................................................
+;
+; reload  the input buffer, & reset hl" to point to the beginning of it.  as-
+; sumes  input bfr starts page boundary and is of page multiple  length.  the
+; i/o registers are active.
+;
+reload:
+	ld	a,(eoflag)
+	or	a
+	jr	nz,zeread
+
+	push	de		;
+
+	ld	bc,(lbrdu)
+	call	logud		; Log to the input file user area
+
+	ld	a,(bufsiz)
+	ld	b,a		; loop counter, buffer length in pages
+	ld	hl,(inbuf)	; Beg of buffer
+	push	hl		; Save for later
+	ld	c,0		; Will count sectors actually read
+	ld	de,lud
+
+rldlp:	ld	l,0		; Lo byte of current dma
+	call	rdsec		; Read in 128 bytes (1/2 page)
+	jr	nz,rldrtn	; (return if eof enecountered)
+	inc	c		; Incr "sectors read" count
+	ld	l,80h		; To read in the next half page
+	call	rdsec		; Do that
+	jr	nz,rldrtn	; As above
+	inc	c		;
+	inc	h		; Next page
+	djnz	rldlp		; Loop till done
+	jr	rldlp1
+rldrtn:
+	ld	a,0ffh
+	ld	(eoflag),a
+rldlp1:
+	ld	a,c		; Put count of sectors read into "secnt"
+
+rldrt2:	ld	(secnt),a	;
+	pop	hl		; Reset input pointer to beg of input buffer
+	pop	de		; Restore regs
+	and	a		; Return w/ clr carry
+	ret	nz		;
+
+zeread:	scf			; Set flg indicating no sectors were read (eof)
+	ret			;
+;..............................................................................
+;
+; subr for [ non multi-] reload, reads 128 bytes to memory starting at de
+;
+rdsec:	call	setdma		;
+	call	luread		; Read a record
+	ret			; & return
+
+;______________________________________________________________________________
+;
+; output char in 'A' to the output buffer.
+;
+plzhun:
+out:	exx			; Switch to i/o regs
+	push	af		; Save caller"s char
+	ld	(de),a		; Put byte into the next avail position
+	inc	e		; Increment pointer
+	ld	a,e		; See if on a 256 byte boundary
+	or	a
+	jr	nz,retout	; Return if not
+
+	inc	d		; Incr pointer high byte
+	ld	a,(obufhi)	; Limit
+	cp	d		; Check
+	jr	nz,retout	; Ret if limit not reached
+
+				; If so, write the output buffer to disk
+	ld	a,(bufsiz)	; Number of 128 byte records to write
+	add	a,a
+	ld	b,a
+	call	wrtout		; Writes out 'b' 128 byte records
+	ld	de,(outbuf)	; Reset pointer to beginning of bfr & rtn.
+
+retout:	pop	af		; Restore caller"s char, flip regs & rtn
+	exx			;
+	ret			;
+;______________________________________________________________________________
+;
+; write partial or full output buffer to disk.
+; the #of records to be written is specified in "b".
+;
+wrtout:
+	push	bc
+	ld	bc,(outdrv)
+	call	logud		; Log to the output file user area
+	pop	bc
+
+	ld	a,b		; See if zero sectors spec"d
+	or	a		;
+	ret	z		; Simply return if so
+
+	push	hl		; Save input buffer ptr
+	ld	hl,(outbuf)	; Init dma addr to beg of output bfr
+	ld	de,lfcb		; Spec the output file
+
+wrtlp:	call	wrsec		; Write 128 bytes
+	dec	b		;
+	jr	z,endwrt	; Return if done
+	ld	l,80h		; Else incr by 1/2 page
+	call	wrsec		;
+	inc	h		; Inc hi-byte, 0 the lo to effect
+	ld	l,0		; Another 80h incr
+	djnz	wrtlp		; Loop till done
+
+endwrt:	pop	hl		;
+	ret			;
+;..............................................................................
+;
+wrterr:	call	eprint		; "disk full."
+	db	'Disk or directory full',0
+	jp	errexit		;
+;..............................................................................
+;
+; aux subr for above. writes 128 bytes from current val of de.
+;
+wrsec:
+	call	setdma		;
+	call	f$write		; Do it
+	or	a		;
+	ret	z		; Rtn, assuming no error
+
+	jr	wrterr		;
+;______________________________________________________________________________
+;
+; output the partial output buffer thru the current pointer (de"). if not  on
+; a  sector  boundary, fill the remainder with "1a""s. close files &  see  if
+; there are any more of them.
+;
+done:	exx			; Determine where nearest record boundary is
+	ld	a,e		; Get low byte of output pointer
+	exx			;
+	cpl			; Compute how far to next page boundary
+	inc	a		;
+	and	7fh		; Convert to distance to next half-page bndry
+	jr	z,onbndy	; If there already (should be the case on uncr)
+
+	ld	b,a		; Else set up to fill rest of sector w/ eof"s
+	ld	a,1ah		;
+
+fillp:
+	call	out		; Do that
+	djnz	fillp		;
+
+onbndy:	exx			; Compute #of sectors to write to disk
+	ex	de,hl		; Put output pointer in hl
+	ld	bc,(outbuf)	; (ok to clobber bc" now, uncr is done w/ it)
+	and	a		; (clr carry)
+	sbc	hl,bc		; How far into the buffer we are
+	add	hl,hl		; Effectively divide difference by 128
+	ld	b,h		; "b" now has #of recs to be written
+
+	call	wrtout		; Do that
+
+	exx
+
+	ld	de,lfcb		; Close output file
+	call	f$close
+	call	timini		; Determine type of date stamping
+	jr	z,noclok	; Branch ahead if none
+	ld	hl,usrdat+1	; Point to create month in date buffer
+	ld	a,(usrdat+11)	; Get modify month
+	or	(hl)
+	jr	z,noclok	; If both 0 then no date
+	ld	hl,curdt	; Get current date and time
+	push	hl
+	call	rclock
+	pop	hl
+	ld	de,usrdat+5	; ..and stuff it into access date field
+	ld	bc,5
+	ldir
+	ld	de,lfcb		; Point to output FCB
+	ld	hl,usrdat	; ..and to date buffer
+	call	pstamp		; Hl is pointing to usrdat
+noclok:
+	ld	bc,(lbrdu)
+	call	logud
+	ld	de,lud
+	call	luclose
+
+	ret
+
+;-----------------------------------------------------------------------------
+
+; PNAME - print squeezed/crunched name
+
+pname:
+	ld	de,lfcb+1
+	ld	b,9		; 8 chars for filename + 1 for period
+	call	dsp1
+	ld	b,3		; 3 chars for type
+dsp1:
+	ld	a,(hl)		; Get char
+	call	caps
+	call	cout		; Display char
+	inc	hl
+	cp	'.'		; Separator?
+	jr	z,dsp2
+	ld	(de),a		; Put it
+	inc	de
+	djnz	dsp1
+	ret
+dsp2:
+	ld	a,20h
+dsp3:	dec	b		; test counter
+	ret	z		; No fill if zero
+	ret	m		; ..or if negative
+	ld	(de),a		; Space fill
+	inc	de
+	jr	dsp3
+
+;-----------------------------------------------------------------------------
+
+proutdu:			; Print output file's du:
+
+	ld	bc,(outdrv)
+	ld	a,b
+	add	a,'A'
+	call	cout
+	ld	a,c
+	call	pafdc
+	ld	a,':'
+	jp	cout		; Display colon and return
+
+;-----------------------------------------------------------------------------
+
+chkfile:
+	ld	a,(oflag)
+	inc	a
+	jr	z,chkf1
+	call	f$exist		; See if file is there
+	jr	z,chkf1		; File not there
+	call	eprint
+	db	cr,lf,bell
+	db	'File exists, overwrite (y/n)?',bs,0
+
+	call	capine		; Get response
+	cp	3
+	jp	z,badarg
+	cp	'Y'
+	jr	nz,chkf2
+chkf1:
+	call	crlf
+	or	0ffh
+	ret
+chkf2:
+	call	crlf
+	xor	a
+	ret
+;-----------------------------------------------------------------------------
+
+; LDBUF - load lbr directory to memory buffer
+
+ldbuf:
+	push	hl
+	push	de
+	push	bc
+	ld	(file),hl	; Save ptr to file name
+	ld	(buffer),bc	; Save ptr to memory buffer
+	ld	hl,tbuff
+	call	setdma
+	ld	hl,ludfcb	; Offset to FCB
+	ex	de,hl		; DE = FCB
+	ld	c,(hl)		; Get length of directory
+	inc	hl
+	ld	b,(hl)
+	ld	hl,0		; Read directory in (record 0)
+loop:
+	call	r$read		; Random read
+	jr	nz,error	; File not found if error
+	push	hl		; Save key regs
+	push	de
+	push	bc
+	call	scan		; Scan for file name match and build buffer
+	pop	bc		; Restore key regs
+	pop	de
+	pop	hl
+	jr	z,error		; Buffer overflow
+	inc	hl		; Pt to next record
+	dec	bc		; Count down length of dir
+	ld	a,b		; Done?
+	or	c
+	jr	nz,loop
+	jr	lddone
+error:
+	or	0ffh		; Set 0FFH
+lddone:
+	pop	bc		; Restore regs
+	pop	de
+	pop	hl
+	ret
+;
+;  Scan TBUFF for file names
+;  If memory overflow, A=0 and Zero Flag Set
+;  If OK, A=0FFH
+;
+scan:
+	ld	hl,tbuff	; Pt to buffer
+	ld	c,4		; 4 entries possible
+scan1:
+	ld	a,(hl)		; Check for active entry
+	or	a		; 0=yes
+	jr	nz,scanxt
+	push	hl
+	inc	hl		; Pt to name
+	ld	a,(hl)
+	cp	20h		; Check for blank (directory entry)
+	jr	z,scanlp2
+	ex	de,hl
+	ld	hl,(file)	; Pt to file name
+	ld	b,11		; 11 bytes
+scanlp:
+	call	@afncmp		; Compare file names
+	jr	nz,scanlp2
+	pop	de		; We have a match - pt to entry with DE
+	ld	hl,(buffer)	; Get address of next buffer entry
+	ld	a,(filcnt)	; Get file count
+	inc	a		; Add 1 to it
+	ld	(filcnt),a	; And save it
+	push	de		; Save ptr
+	push	bc		; Save count
+	inc	de		; Pt to file name
+	ex	de,hl		; Source in HL
+	ld	bc,lentsz	; Entry size
+	ldir
+	ld	a,(fbufhi)	; Check for overflow
+	cp	d
+	jr	c,scanerr	; Buffer overflow
+	ld	(buffer),de	; Save ptr for next copy
+	pop	bc		; Get count
+	jr	scanlp2		; Continue
+scanerr:
+	xor	a		; Return with zero for error
+	pop	bc	; Fix stack
+	pop	de
+	ret
+scanlp2:
+	pop	hl		; Pt to current
+scanxt:
+	ld	de,32		; Pt to next
+	add	hl,de
+	dec	c		; Count down
+	jr	nz,scan1
+	or	0ffh		; Set no error
+	ret
+
+; abort routine for cancled output
+;
+abtrtn:
+	exx			; Return to normal registers
+	call	eprint
+	db	bell,'Abort requested',0
+	jp	errexit
+
+
+; SYSLIB Module Name: SARGV
+; Author: Richard Conn
+; SYSLIB Version Number: 3.6
+; Module Version Number: 1.1
+
+;	public	argv
+
+
+;	ARGV is a UNIX-style ARGC/ARGV string parser.  It is passed
+; a null-terminated string in HL and the address of a token pointer
+; table in DE as follows:
+
+;		LXI	H,STRING
+;		LXI	D,ARGV$TABLE
+;		MVI	A,0		; do not mark token end
+;		CALL	ARGV
+;		JNZ	TOKEN$OVFL	; indicates more tokens than allowed
+;		...
+;	ARGV$TABLE:
+;		DB	MAX$ENT ; max number of entries permitted
+;		DS	1	; number of entries stored by ARGV
+;		DS	2	; pointer to token 1
+;		DS	2	; pointer to token 2
+;		...
+;		DS	2	; pointer to token MAX$ENT
+
+;	Tokens are delimited by spaces and tabs.
+;	As well as '='.  27 Feb 86  jww
+;	On input, if A=0, the end of each token is not marked with a null.
+; If A<>0, a null is placed after the last byte of each token.
+;	If all went well, return with A=0 and Zero Flag set.  If there
+; are possibly more tokens than pointers, return with A=0FFH and NZ.
+
+argv:
+	push	bc		; Save regs
+	push	de
+	push	hl
+	ld	c,a		; Save mark flag
+	ex	de,hl
+	ld	b,(hl)		; Get max entry count
+	push	hl		; Save address of max entry count
+	inc	hl		; Pt to token count
+	inc	hl		; Pt to first pointer
+
+; On each loop, DE = address of next char in string and HL = address of
+; next pointer buffer; B = number of pointer buffers remaining and C =
+; mark flag (0 = no mark)
+
+argloop:
+	call	skspc		; Skip spaces and tabs in string pted to by DE
+	or	a		; End of string?
+	jr	z,argdone
+	ld	(hl),e		; Store low
+	inc	hl
+	ld	(hl),d		; Store high
+	inc	hl
+	dec	b		; Count down
+	jr	z,loop2
+	call	sknspc		; Skip until end of token
+	or	a		; Done?
+	jr	z,argdone
+	ld	a,c		; Get mark flag
+	or	a		; 0=no mark
+	jr	z,loop1
+	xor	a		; Mark with null
+	ld	(de),a		; Store null
+	inc	de		; Pt to next char
+loop1:
+	ld	a,b		; Check count
+	or	a
+	jr	nz,argloop	; Continue on
+loop2:
+	call	sknspc		; Skip over token
+	call	skspc		; Any tokens left?
+	or	a
+	jr	z,argdone	; None if EOL
+	or	0ffh		; Make A = 0FFH to indicate more to come
+argdone:
+	pop	hl		; Get address of max token count
+	push	af		; Save return flags
+	ld	a,(hl)		; Get max token count
+	sub	b		; Subtract counter
+	inc	hl		; Pt to return count
+	ld	(hl),a		; Set return count
+	pop	af		; Get return flag
+	pop	hl		; Restore regs
+	pop	de
+	pop	bc
+	ret
+
+;  Skip over space or tab characters
+
+skspc:
+	ld	a,(de)		; Get char
+	and	7fh		; Mask
+	inc	de		; Pt to next
+	cp	' '		; Continue if space
+	jr	z,skspc
+	cp	9		; Continue if tab
+	jr	z,skspc
+	dec	de		; Pt to character
+	ret
+
+;  Skip over non-space and non-tab characters
+;  Added '=' so that A:=B: construct yields two arguments.  v1.1  jww
+
+sknspc:
+	ld	a,(de)		; Get char
+	and	7fh		; Mask
+	ret	z		; Done if null
+	cp	' '
+	ret	z		; Done if space
+	cp	9
+	ret	z		; Done if tab
+	cp	'='
+	ret	z		; New delimiter
+	inc	de		; Pt to next
+	jr	sknspc
+
+;	end
+;  End of argv inclusion
+
+; Test for ZCPR 3.3, branch to the appropriate
+; parsing code and return to caller
+zpars:	call	z33chk
+	jp	z,z33fname	; Let CCP do it if Z33 resident
+	xor	a		; DIR:-first makes sense here
+	jp	zfname		; Let Z3LIB do it if BGii or Z30
+
+
+; Convert date from lbr into DateStamper format.  Enter withDRI-format
+; date in hl and pointer to storage buffer in DE.
+
+dcvt:	call	jul2bin		; Convert to binary, b=mo, c=yr, l=da
+	or	a		; Test day
+	ret	z		; invalid if day=0
+	ld	a,c		; Get year
+	call	bin2bcd
+	ld	(de),a		; Store
+	inc	de
+	ld	a,b		; Month
+	call	bin2bcd
+	ld	(de),a
+	inc	de
+	ld	a,l		; Day
+	call	bin2bcd
+	ld	(de),a
+	ret
+
+
+;  Buffers
+;-----------------------------------------------------------------------------
+
+deflbr:
+	db	'LBR'
+;-----------------------------------------------------------------------------
+
+	dseg			; B/m	September 10, 1987
+eoflag:
+	ds	1		; EOF flag
+oflag:
+	ds	1		; Overwrite option flag
+uflag:
+	ds	1		; Flag for uncompressing
+typflg:
+	ds	1		; Type of compression
+filcnt:
+	ds	1		; Number of files processed
+comflg:
+	ds	1		; Comma flag
+lbrdu:
+	ds	2		; Lbr directory
+outdrv:
+	ds	2		; Output directory
+filebuf:
+	ds	2		; Ptr to file buffer
+filptr:
+	ds	2		; Ptr to file within buffer
+fbufhi:
+	ds	1		; Hi byte of file buffer
+obufhi:
+	ds	1		; Hi byte of output buffer
+outbuf:
+	ds	2		; Ptr to output buffer
+inbuf:
+	ds	2		; Ptr to input buffer
+cmdline:
+	ds	2		; Ptr to command line
+
+bufsiz:	ds	1		; Buffer length in pages. b/m September 10, 1987
+
+file:	ds	2		; Pointer to FN.FT
+buffer:	ds	2		; Pointer to memory buffer
+;
+argtable:
+	ds	1
+argcnt:
+	ds	1
+lbrnptr:
+	ds	2
+fileptr:
+	ds	2
+opptr:
+	ds	2
+;*************** routines used for library processing **************
+lud:
+	ds	17
+ludfcb:
+	ds	1
+lbrname:
+	ds	8
+lbrtyp:
+	ds	27
+
+;*******************************************************************
+usrdat:
+	ds	15		; BCD times & dates go here
+curdt:
+	ds	6		; Current time and date
+lfcb:
+	ds	36		; Main fcb used
+savstk:
+	ds	2		; Save old stack
+secnt:
+	ds	2		; Counter for number of bytes in
+	ds	128		; B/m	September 10, 1987
+stack:	ds	0		; B/m	September 10, 1987
+
+	end
+                                                                                                          

@@ -1,0 +1,1341 @@
+
+;  PROGRAM:  Z33MAKE.Z80
+;	     based on MAKE26, by various authors	
+;  AUTHOR:   Fred Haines
+;  DATE:     November 24, 1987 
+;  PURPOSE:  to change the user number of designated files on a designated 
+;            drive to a different user number.  Z33MAKE may be assembled to
+;            load and run in high memory. 
+
+; Z33MAKE does not copy files and delete the originals; only the user number
+; byte in the disk directory is changed to reflect the new user number.
+; The program also has options to set file attributes of read-only, read-
+; write, system, directory, and archive.  Files can also be erased or unerased.
+
+; The code assumes that the track and sector are set by the BDOS search
+; functions and uses a simple BIOS write to update the directory.  Before using
+; this program, test it on a garbage disk to make sure that it works with your
+; system.
+					
+; Z33MAKE has been adapted from MAKE v2.6 by the addition of a Z33 type 3
+; header which allows it to be assembled to load and run in high memory.  The
+; history below refers to the versions of MAKE:
+
+;  VERSION 1.0	    -	 07/05/81   R.E.D.
+;	   1.1	    -	 07/15/81   R.E.D.
+;					
+;	   1.2 - 8/1/82 		
+;		ENHANCED FILE NAME DISPLAY.
+;			 KEN LOVETT	
+;	   1.3 - 8/6/83 		
+;		FIXED BUG WHICH CAUSED LAST CHAR IN FILE SPEC TO
+;		BE NON-SIGNIFICANT.	
+;			 KEN LOVETT	
+;	   2.0 - 8/7/83 		
+;		ADDED OPTIONS TO SET R/O, R/W, SYS, DIR FLAGS. ALSO
+;		ERASE AND UNERASE FILES.
+;			 KEN LOVETT	
+;					
+;	   2.1 - 6/20/85		
+;		Added (actually, just enabled - it was always there)
+;		full 32 (0-31) area capability, extended display routine
+;		to handle the higher user numbers, added a four-byte kludge
+;		of a display fix required by late-model Kaypros and merely
+;		harmless otherwise, other minor display stuff.		
+;			Bruce Morgen	
+;
+;	   2.2 - 07/02/85
+;		Major cleanup of the code (which was highly unstructured and
+;		thus hard to read).  Added check on user number of files so
+;		that the code will act only on files in the logged in area.
+;		There is still no checking to make sure that there is not
+;		already a file in the destination user area of the same name
+;		as the file that is being moved in.
+;			Jay Sage
+;
+;	   2.3 - 07/14/85
+;		In ZCPR3 systems the CCP processes the DU: and named directory
+;		forms of directory specification.  The drive value is returned
+;		in the usual way in the FCB, and the user number is placed in
+;		the S1 byte.  Version 22Z of MAKE allows the syntax:
+;
+;				MAKE DIR:AFN OPTION
+;
+;		The files to be operated on can be specified using the full
+;		ZCPR3 format.  The option can even take the DIR: form with a
+;		named directory.  The ZCPR3 equate determines whether a
+;		ZCPR3 version or a standard version will be assembled.
+;		For some reason, even though there is no change in allocation,
+;		performing any write to the directory sets the disk to R/O
+;		status.  I have changed the code I originally put it to
+;		reset the disk system whenever any write has occurred.  I had
+;		not noticed this problem because I use the ZRDOS replacement
+;		for the BDOS, and it automatically relogs changed disks.
+;			Jay Sage
+;
+;	   2.4 - 06/15/86
+;		Added ability to SET or RESET the ARCHIVE bit, and added
+;		the WHEEL conditional, which makes MAKE disappear
+;		(echoes: MAKE?) unless the wheel byte is set.
+;			Michael Conley
+;
+;	   2.5 - (an obsolete version # observed in the Chicago area dated
+;		 1984 - skipped to avoid confusion.
+;
+;	   2.6 - 07/22/86
+;		Added "All users" switch for any options not involving a
+;		user number.  A number sign after the selected option
+;		makes it operate on ALL user areas, not just the current
+;		one. (e.g.,  MAKE *.BAK E# -- would erase all .BAK files
+;		in all user areas.)
+;			Michael Conley
+;
+;	   Z33MAKE 1.0 - 11/24/87
+;		Added type 3 header for Z33, removed conditionals for
+;		CPM versions, changed wheel error message, and altered help 
+;		screen to reflect change to Z33 utility and display load
+;		address if linked to load and run in high memory.
+;			Fred Haines				
+
+;=============================================================================
+
+;		P R O G R A M    E Q U A T E S
+
+;=============================================================================
+
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+
+; User Setable Equates
+
+WHEEL	EQU	TRUE		;true to test wheel byte before running
+WHLADR	EQU	0FDFFH		;wheel byte location
+CIM	EQU	FALSE		;true if file to be linked for high memory
+LDADDR	EQU	98		;set to address at which program is to be
+				;linked times 1000h, i.e., 98 = 9800h
+
+; Standard Equates
+
+VERSION	EQU	10
+
+BDOS	EQU	0005H		;BDOS entry address
+DMAADDR	EQU	0080H		;default CP/M file buffer
+FCB	EQU	005CH		;default CP/M FCB
+TFCB	EQU	006CH		;temporary FCB
+Z3ENV	EQU	0FE00H		;ZCPR3 environment address filled in by Z3INS
+CR	EQU	0DH		;(z3env not presently needed anyway)
+LF	EQU	0AH
+TAB	EQU	09H
+BELL	EQU	07H
+
+;=============================================================================
+
+;		M A I N    P R O G R A M    C O D E
+
+;-----------------------------------------------------------------------------
+
+; TYPE 3 HEADER
+
+; Code modified as suggested by Charles Irvine to function correctly with 
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+
+ENTRY:
+	jr	start0		; Must use relative jump
+	defb	0		; Filler
+	db	'Z3ENV',3	; Type-3 environment
+
+Z33ENV:	
+	dw	z3env		; Filled in by Z33
+	dw	entry		; Intended load address
+
+START0:
+	ld	hl,0		; Point to warmboot entry
+	ld	a,(hl)		; Save the byte there
+	di			; Protect against interrupts
+	ld	(hl),0c9h	; Replace warmboot with a return opcode
+	rst	0		; Call address 0, pushing RETADDR onto stack
+
+RETADDR:
+	ld	(hl),a		; Restore byte at 0
+	dec	sp		; Get stack pointer to point
+	dec	sp		; ..to the value of RETADDR
+	pop	hl		; Get it into HL and restore stack
+	ei			; We can allow interrupts again
+	ld	de,retaddr	; This is where we should be
+	xor	a		; Clear carry flag
+	push	hl		; Save address again
+	sbc	hl,de		; Subtract -- we should have 0 now
+	pop	hl		; Restore value of RETADDR
+	jr	z,start		; If addresses matched, begin real code
+
+	ld	de,notz33msg-retaddr ; Offset to message
+	add	hl,de
+	ex	de,hl		; Switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; Return via BDOS print string function
+
+NOTZ33MSG:
+	defb	'Not Z33+$'	; Abort message if not Z33-compatible
+
+;-----------------------------------------------------------------------
+
+START:
+				;set up local stack pointer
+
+	LD	HL,0		;get CP/M stack pointer
+	ADD	HL,SP
+	LD	(OLDSTK),HL	;save it for later return
+	LD	SP,NEWSTK	;set up new local stack
+
+				;perform setup tasks
+
+	LD	A,(WHLADR)	;get wheel byte
+	OR	A		;is it set?
+	JP	Z,EREXIT	;no/don't run
+
+	CALL	SIGNON		;print signon message
+	CALL	CHKHLP		;see if help requested and go there if so
+
+	CALL	INIT		;set up data areas
+	CALL	SETDU		;handle current and specified DU areas
+	CALL	GETOPT		;get option from command line (abort if bad)
+	CALL	CHKRO		;abort if destination drive is R/O and option
+				;..requests change in files
+
+				;begin main work of program
+
+	CALL	SRCHF		;locate first directory entry (abort if none)
+
+LOOP:
+	CALL	SETPTR		;set DMAPTR to point to disk directory FCB
+	CALL	CHKFIL		;check for applicable file
+	CALL	NC,CALLOPT	;if applicable file, process option
+
+NEXTFIL:			;go on to next file
+	LD	HL,DIRCODE	;point to the directory code
+	INC	(HL)		;increase it one
+	LD	A,(HL)		;get new value
+	CP	04		;check for four FCB entries completed
+	JP	NZ,LOOP		;if not, go back and continue
+				;process this group of four files and go on
+				;to next
+	LD	HL,CHGFLAG	;point to change flag
+	LD	A,(HL)		;get it into A
+	LD	(HL),0		;reset it
+	OR	A		;set flags from original value
+	CALL	NZ,WRTDE	;if changes were made, write the buffer back
+
+				;sequence through files to get new buffer-full of FCB's
+
+SRNXT:
+	LD	DE,AMBFIL	;point to any-match FCB
+	LD	C,12H		;BDOS search-next function
+	CALL	BDOS
+	CP	0FFH		;see if end of entries
+	JP	Z,QUIT		;quit if no more files
+	CP	0		;loop until buffer is updated by BDOS
+	JP	NZ,SRNXT	;jump until dircode is zero
+	LD	(DIRCODE),A	;save the 0 in dircode
+	JP	LOOP		; and loop again
+
+;=============================================================================
+
+;	O P T I O N    P R O C E S S I N G    R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+; Set the file attribute to SYS.  If the file was not already SYS, then the
+; CHGFLAG is set to indicate the need later to write the modified sector out
+; to disk.
+
+SETSYS:
+	LD	HL,(DMAPTR)	;point to disk directory FCB entry
+	LD	DE,10		;offset 10 to DIR/SYS byte
+	ADD	HL,DE
+	LD	A,(HL)		;get the SYS/DIR byte
+	OR	A		;test current state of SYS bit
+	CALL	P,SETCHGFL	;if not already SYS, set the change flag
+	OR	80H		;make sure it is set
+	LD	(HL),A		;write modified byte back out
+	CALL	REPORT		;report the new file status
+	RET
+
+;-----------------------------------------------------------------------------
+
+; Set the file attribute to DIR.  If the file was not already DIR, then the
+; CHGFLAG is set to indicate the need later to write the modified sector out
+; to disk.
+
+SETDIR:
+	LD	HL,(DMAPTR)	;point to disk directory FCB entry
+	LD	DE,10		;offset 10 to SYS/DIR byte
+	ADD	HL,DE
+	LD	A,(HL)
+	OR	A		;sign flag shows state of SYS bit
+	CALL	M,SETCHGFL	;if not already DIR, set change flag
+	AND	7FH		;clear the DIR bit
+	LD	(HL),A		;write modified byte back to buffer
+	CALL	REPORT		;report the new file status
+	RET
+
+;-----------------------------------------------------------------------------
+
+; Set the file attribute to R/O.  If the file was not already R/O, then the
+; CHGFLAG is set to indicate the need later to write the modified sector out
+; to disk.
+
+SETRO:
+	LD	HL,(DMAPTR)	;point to disk directory FCB entry
+	LD	DE,9		;offset 9 to R/O-R/W byte
+	ADD	HL,DE
+	LD	A,(HL)
+	OR	A		;test current state of R/O bit
+	CALL	P,SETCHGFL	;if not already R/O, set the change flag
+	OR	80H		;make sure it is set
+	LD	(HL),A		;write modified byte back out
+	CALL	REPORT		;report the new file status
+	RET
+
+;-----------------------------------------------------------------------------
+
+; Set the file attribute to R/W.  If the file was not already R/W, then the
+; CHGFLAG is set to indicate the need later to write the modified sector out
+; to disk.
+
+SETRW:
+	LD	HL,(DMAPTR)	;point to disk directory FCB entry
+	LD	DE,9		;offset 9 to R/O-R/W byte
+	ADD	HL,DE
+	LD	A,(HL)
+	OR	A		;sign flag shows state of R/O-R/W bit
+	CALL	M,SETCHGFL	;if not already R/W, set change flag
+	AND	7FH		;clear the R/O bit
+	LD	(HL),A		;write modified byte back to buffer
+	CALL	REPORT		;report the new file status
+	RET
+;-----------------------------------------------------------------------------
+; Set the file attribute to ARC.  If the file was not already ARC, then the
+; CHGFLAG is set to indicate the need later to write the modified sector out
+; to disk.
+
+SETARC:
+	LD	HL,(DMAPTR)	;point to disk directory FCB entry
+	LD	DE,11		;offset 10 to ARCHIVE byte
+	ADD	HL,DE
+	LD	A,(HL)		;get the ARCHIVE byte
+	OR	A		;test current state of ARC bit
+	CALL	P,SETCHGFL	;if not already ARC, set the change flag
+	OR	80H		;make sure it is set
+	LD	(HL),A		;write modified byte back out
+	CALL	REPORT		;report the new file status
+	RET
+
+;-----------------------------------------------------------------------------
+
+; RESET the ARCHIVE file attribute.  If the file was already ARC, then the
+; CHGFLAG is set to indicate the need later to write the modified sector out
+; to disk.
+
+SETNRC:
+	LD	HL,(DMAPTR)	;point to disk directory FCB entry
+	LD	DE,11		;offset 10 to ARCHIVE byte
+	ADD	HL,DE
+	LD	A,(HL)
+	OR	A		;sign flag shows state of ARC bit
+	CALL	M,SETCHGFL	;if it was ARC, set change flag
+	AND	7FH		;clear the ARC bit
+	LD	(HL),A		;write modified byte back to buffer
+	CALL	REPORT		;report the new file status
+	RET
+
+;-----------------------------------------------------------------------------
+
+; Erase the file by writing E5 as the user number tag.  We know that the file
+; is not already erased because of the work of subroutine CHKFIL earlier.
+; Therefore, we must set the change flag to show the need to write the sector
+; back out to disk.
+
+ERASE:
+	LD	HL,(DMAPTR)
+	LD	(HL),0E5H
+	CALL	SETCHGFL	;show need to write sector back to disk
+	CALL	REPORT		;report the new file status
+	RET
+
+;-----------------------------------------------------------------------------
+
+; Unerase the file by writing the current user number into the tag byte in
+; place of the E5.  The comments under ERASE apply here, too.
+
+UNERA:
+	LD	A,(DEFUSR)	;get logged in user number
+	LD	HL,(DMAPTR)
+	LD	(HL),A		;put it into disk directory user # tag
+	CALL	SETCHGFL	;show need to write sector back to disk
+	CALL	REPORT		;report the new file status
+	RET
+
+;-----------------------------------------------------------------------------
+
+; Change the user number of the file.
+
+CHUSER:	LD	A,(OPTION)	;get user number
+	LD	HL,(DMAPTR)	;point to place to put it
+	LD	(HL),A		;put new user number in directory
+	CALL	SETCHGFL	;show need to write sector back out to disk
+	CALL	REPORT		;report the new file status
+	RET
+
+;-----------------------------------------------------------------------------
+
+; This code reports the attributes of the files acted on and, if required,
+; the erased or unerased status.  This code is called directly by the blank
+; option and indirectly by all the other option processors after they have
+; finished performing their changes on the files.
+
+REPORT:	CALL	PRTFN		;print the file name
+	CALL	ILPRT		;print spacer and equal sign
+	DB	' = ',0
+	CALL	PRTOPT		;print the option letter or number
+	LD	C,3		;put in three more blank spaces
+	CALL	PRTBLK
+	CALL	PRTATTR		;print file attributes
+	LD	A,(OPTION)	;see if files erased
+	CP	'E'
+	CALL	Z,PRTERA	;if so, print erased message
+	LD	A,(OPTION)
+	CP	'U'		;see if files unerased
+	CALL	Z,PRTUNE	;if so, print unerased message
+	RET
+
+
+;=============================================================================
+
+;		P R O G R A M    F L O W    R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+;				CALLOPT
+
+; This routine uses the value of OPTION to look up the processing routine
+; to which to branch.
+
+CALLOPT:
+	LD	HL,JMPTBL	;point to jump table
+	LD	A,(OPTION)	;get user number or option letter
+	LD	B,A		;save it in B
+
+LOOKUP:	LD	A,(HL)		;get option letter from table
+	INC	HL		;point to jump address
+	OR	A		;end of table?
+	JP	Z,JMPOPT2	;if so, jump
+	CP	B		;do we match a table entry
+	JP	Z,JMPOPT1	;if so, go to code to get jump address
+	INC	HL		;else jump over jump address to
+	INC	HL		;..next option character
+	JP	LOOKUP		;and try again
+
+JMPOPT1:
+	LD	A,(HL)		;get low part of jump address into A
+	INC	HL		;point to high part of address
+	LD	H,(HL)		;get it into H
+	LD	L,A		;jump address is in HL
+	JP	(HL)		;jump to it
+
+JMPOPT2:
+	LD	HL,CHUSER	;default to change user routine
+	JP	(HL)		;jump to it
+
+JMPTBL:	DB	' '
+	DW	REPORT
+
+	DB	'S'
+	DW	SETSYS
+
+	DB	'D'
+	DW	SETDIR
+
+	DB	'R'
+	DW	SETRO
+
+	DB	'W'
+	DW	SETRW
+
+	DB	'A'
+	DW	SETARC
+
+	DB	'N'
+	DW	SETNRC
+
+	DB	'E'
+	DW	ERASE
+
+	DB	'U'
+	DW	UNERA
+
+	DB	0		;end of table mark
+
+;-----------------------------------------------------------------------------
+
+;				QUIT
+
+; This code sends a CRLF to the console, restores the original CP/M stack,
+; and returns to CP/M.  If indicated by the reset flag, it resets the disk
+; system.  The logged DU area when the program was invoked is restored.  The
+; entry point QUIT2 is used by code (CHKHLP and CHKVER) that have not changed
+; the logged in directory.
+
+QUIT:	CALL	CRLF
+
+				;log in the original drive/user
+
+	LD	A,(DEFDRV)	;get original default drive
+	CALL	LOGDRV		;log it in
+	LD	A,(DEFUSR)	;get original default user
+	CALL	LOGUSR		;log it in
+
+				;see if we need to reset the disk system
+
+QUIT1:	LD	A,(RSTFLAG)
+	OR	A		;if reset flag is clear
+	JP	Z,QUIT2		;..we can skip disk system reset
+
+				;reset the disk system
+
+	LD	C,0DH
+	CALL	BDOS
+
+				;restore the original stack
+
+QUIT2:	LD	HL,(OLDSTK)	;get original stack pointer
+	LD	SP,HL		;set it up
+	RET			;back to CP/M
+
+EREXIT:				
+	CALL	ILPRT		;no wheel error message
+	DB	' Wheel is OFF',0
+	JP	QUIT2
+
+;=============================================================================
+
+;	F I L E    S E L E C T I O N    S U B R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+;				CHKFIL
+
+; This subroutine checks to see whether or not the FCB pointed to in the
+; DMA buffer is one that should be acted on.  If not, the routine returns
+; with the zero flag set.
+
+CHKFIL:	CALL	CHKUN		;check user number and erased status of file
+	RET	C		;return with carry set to skip file
+	CALL	CHKFN		;next check the file name for a match
+	RET			;return showing status of name match
+
+;-----------------------------------------------------------------------------
+
+;				CHKUN
+
+; This subroutine checks the user number status of a file and sets the carry
+; flag if the file should be skipped over.  If the option is UNERASE and the
+; file is not an erased file, it should be skipped.  If the option is not
+; unerase and the file is an erased file, then likewise it should be skipped.
+; Finally, if the file is in a user number other than the logged in user, it
+; should also be skipped.
+
+CHKUN:				;test file erased status
+
+	LD	HL,(DMAPTR)	;point to user number tag of file
+	LD	A,(HL)		;get the tag
+	CP	0E5H		;carry flag set if not erased
+	PUSH	AF		;save flag
+
+				;test program option status
+
+	LD	A,(OPTION)	;get the option
+	CP	'U'		;is it unerase?
+	JP	NZ,CHKUN1	;if not, skip to CHKUN1
+
+				;case of unerase option
+
+	POP	AF		;carry flag set if not erased
+	RET			;file not erased will be skipped
+
+				;case of option other than unerase
+
+CHKUN1:	POP	AF
+	CCF			;carry flag set if file erased
+	RET	C		;erased file will be skipped
+
+				;now check for user number in source area
+
+	LD	A,(ALLUSR)	;see if "all users" was requested
+	CP	'#'		;
+	JP	Z,CHKUN2	;if so, skip over compare...
+	LD	A,(SRCUSR)	;get source user number
+	CP	(HL)		;compare to file tag
+	RET	Z		;if OK, return (carry is clear)
+	SCF			;else set carry
+CHKUN2:
+	RET			;..and return
+
+;-----------------------------------------------------------------------------
+
+;				CHKFN
+
+; This subroutine compares the name of the file in the FCB in the DMA buffer
+; with the specification from the command line.
+
+CHKFN:				;set up pointers and character count
+
+	LD	HL,(DMAPTR)	;get pointer to FCB in DMA buffer
+	INC	HL		;point to first character in the name
+	LD	DE,FCB+1	;set DE to name in FCB from command line
+	LD	C,0BH		;load count for compare
+
+CP1:	LD	A,(DE)		;get fcb command line character
+	CP	'?'		;see if anything matches
+	JP	Z,MATCH		;if it is '?', consider it a match
+	SUB	A,(HL)		;get difference (see next instruction)
+	AND	7FH		;clear attribute bit
+	JP	Z,MATCH		;if zero, characters match
+	SCF			;else set carry
+	RET			;..and return
+
+MATCH:	INC	DE		;point to next characters
+	INC	HL
+	DEC	C		;decrease count of characters
+	JP	NZ,CP1		;loop until zero
+	RET			;carry is clear showing names match
+
+
+
+;=============================================================================
+
+;	D I S K    O P E R A T I O N    S U B R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+;				SRCHF
+
+; This subroutine uses the fully ambiguous file spec at AMBFIL to locate the
+; first directory entry on the disk.  The directory code (0-3) is saved. If
+; no directory entry is found, then the program gives a message and branches
+; to QUIT for a prompt return.
+
+SRCHF:	LD	DE,AMBFIL	;point to match any filename.typ
+	LD	C,11H		;bdos search first function
+	CALL	BDOS		;do it
+	LD	(DIRCODE),A	;save directory code
+	CP	0FFH		;see if end of entries
+	RET	NZ		;if something found, return
+	CALL	ILPRT		;else give a message
+	DB	BELL,CR,LF
+	DB	'No Files On Disk',CR,LF,0
+	JP	QUIT
+
+;-----------------------------------------------------------------------------
+
+;				WRTDE
+
+; This routine writes the directory buffer back to the disk.  I also sets the
+; reset flag so that the disk system will be reset on program termination.
+
+WRTDE:	LD	HL,RSTFLAG	;point to the flag
+	LD	(HL),0FFH	;set the flag
+	LD	C,1H		;set BIOS write to directory
+				; C = 0   write to allocated
+				; C = 1   write to directory
+				; C = 2   write to unallocated
+	CALL	WRITE		;do the write
+	OR	A		;check for error
+	RET	Z		;if none, return
+
+	CALL	ILPRT
+	DB	BELL
+	DB	CR,LF
+	DB	'Bad Sector Write Error',CR,LF,0
+
+	JP	QUIT
+
+;-----------------------------------------------------------------------------
+
+;				WRITE
+
+; This routine is filled in during the operation of the program and performs
+; a direct BIOS sector write operation on the currently selected track and
+; sector.
+
+WRITE:	JP	0000		;vector to bios write routine
+
+
+;=============================================================================
+
+;		P R I N T I N G    R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+;				PRTFN
+
+; This subroutine displays (at the beginning of the next line of the screen)
+; the name of the file pointed to in the DMA buffer.
+
+PRTFN:	CALL	CRLF		;print cr/lf
+	LD	HL,(DMAPTR)	;address of file fcb
+	INC	HL		;skip to file name
+	LD	DE,BLNKCNT	;point to blanks counter
+	EX	DE,HL		;exchange pointers
+	LD	(HL),0		;preset blank count to zero
+
+	LD	C,8		;length of file name
+	CALL	PRTSTR		;print the name first
+
+	LD	A,'.'		;print the period
+	CALL	CHAROUT
+
+	LD	C,3		;now print the file type
+	CALL	PRTSTR
+
+	LD	C,(HL)		;get number of blanks needed for fill
+	CALL	PRTBLK		;print the blanks
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				PRTOPT
+
+; This subroutine prints out the option as a letter or as a number as
+; appropriate.
+
+PRTOPT:	LD	A,(OPTION)	;get the option value
+	CP	20H		;if it's a user number, carry will be set
+	JP	NC,CHAROUT	;if not number, just print the character
+	LD	B,'0'-1		;preset for two-digit calculation later
+	CP	10		;see if single digit
+	JP	NC,TWODIG	;if not, print two digits
+	ADD	'0'		;else convert to ASCII
+	JP	CHAROUT		;and print it
+TWODIG:	INC	B		;count tens digit in B
+	SUB	10		;keep subtracting 10 until carry is set
+	JP	NC,TWODIG
+	ADD	10		;get remainder (units digit) back
+	LD	C,A		;save it in C
+	LD	A,B		;print tens digit
+	CALL	CHAROUT
+	LD	A,C		;print units digit
+	ADD	'0'
+	JP	CHAROUT
+
+;-----------------------------------------------------------------------------
+
+;				PRTATTR
+
+; This subroutine prints the attribute status (SYS or DIR and R/O or R/W)
+; of the file currently being worked on.
+
+PRTATTR:
+	LD	HL,(DMAPTR)	;point to file FCB
+	LD	DE,9		;offset to R/O-R/W byte
+	ADD	HL,DE
+	PUSH	HL		;save pointer for reuse below
+	LD	A,(HL)
+	RLA			;move R/O bit into carry
+	PUSH	AF		;save flags
+	CALL	C,PRTRO		;if carry, print read-only
+	POP	AF		;get flags back to test again
+	CALL	NC,PRTRW	;if not carry, print read-write
+
+	POP	HL		;get pointer back
+	INC	HL		;point to SYS/DIR byte
+	PUSH	HL		;save pointer for reuse below
+	LD	A,(HL)
+	RLA			;move SYS/DIR bit into carry
+	PUSH	AF		;save flags
+	CALL	C,PRTSYS	;if carry, print SYS
+	POP	AF		;get them back
+	CALL	NC,PRTDIR	;if not carry, print DIR
+	POP	HL
+	INC	HL
+	LD	A,(HL)
+	RLA			;move ARCHIVE bit into carry
+	PUSH	AF		;save flags
+	CALL	C,PRTARC	;if carry, print ARC
+	POP	AF		;get them back
+	CALL	NC,PRTNRC	;if not carry, print Non-ARC
+	RET
+
+;-----------------------------------------------------------------------------
+
+;	MESSAGE PRINTING ROUTINES
+
+PRTRO:	CALL	ILPRT		;file is read-only
+	DB	'  R/O',0
+	RET
+
+PRTRW:	CALL	ILPRT		;file is read-write
+	DB	'  R/W',0
+	RET
+
+PRTSYS:	CALL	ILPRT		;file has SYS attribute
+	DB	'  SYS',0
+	RET
+
+PRTDIR:	CALL	ILPRT		;file has DIR attribute
+	DB	'  DIR',0
+	RET
+
+PRTARC:	CALL	ILPRT		;file has ARC attribute
+	DB	'  ARCHIVE',0
+	RET
+
+PRTNRC:	CALL	ILPRT		;file has NO ARC attribute
+	DB	'  Non-ARC',0
+	RET
+
+PRTERA:	CALL	ILPRT		;file erased
+	DB	'   *** ERASED ***',0
+	RET
+
+PRTUNE:	CALL	ILPRT		;file unerased
+	DB	'   *** UNERASED ***',0
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				HELP
+
+; This code displays the built in help screen and then jumps to QUIT to
+; return to CP/M.
+
+HELP:	CALL	ILPRT
+	DB	'Syntax:  ',CR,LF
+	DB	'  MAKE [dir:]filename.typ o[#]',CR,LF
+	DB	'Options: ',CR,LF
+	DB	'  DIR:  move files to named directory DIR',CR,LF
+	DB	'  nn    move files to user nn (0-31)',CR,LF
+	DB	'  S     make files System',CR,LF
+	DB	'  D     make files Directory',CR,LF
+	DB	'  R     make files Read/Only',CR,LF
+	DB	'  W     make files Read/Write',CR,LF
+	DB	'  A     make files Archive',CR,LF
+	DB	'  N     make files Non-Archive',CR,LF
+	DB	'  E     erase specified files',CR,LF
+	DB	'  U     unerase specified files',CR,LF
+	DB	'  #     all user areas',CR,LF,0
+
+	JP	QUIT2
+
+
+;=============================================================================
+
+;	G E N E R A L - P U R P O S E   S U B R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+;				CRTOUT
+
+; This subroutine sends the character in register A to the console.  Registers
+; BC, DE, and HL are preserved.
+
+CHAROUT:
+
+	PUSH	HL		;save registers
+	PUSH	DE
+	PUSH	BC
+	LD	E,A		;get character into E
+	LD	C,06		;BDOS direct console I/O
+	CALL	BDOS
+	POP	BC		;restore registers
+	POP	DE
+	POP	HL
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				CRLF
+
+; This routine sends a carriage return and linefeed to the console.
+
+CRLF:	CALL	ILPRT
+	DB	CR,LF,0
+	RET
+
+
+;-----------------------------------------------------------------------------
+
+;				FILL
+
+; This subroutine fills memory starting at HL for a length B with the byte
+; in A.
+
+FILL:
+	LD	(HL),A
+	INC	HL
+	DEC	B
+	JP	NZ,FILL
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				ILPRT
+
+; This subroutine prints the string that follows its call.  The string must
+; be terminated with a null (0).
+
+ILPRT:	POP	HL		;get address following call into HL
+
+ILPRT1:	LD	A,(HL)		;get character from message
+	INC	HL		;point to next character
+	OR	A		;test for null indicating end of message
+	JP	Z,ILPRT2	;if end, fix up return address
+	LD	E,A		;have BDOS send character it to console
+	LD	C,2
+	PUSH	HL		;save pointer to string
+	CALL	BDOS
+	POP	HL		;restore pointer
+	JP	ILPRT1		;process it
+
+ILPRT2:	PUSH	HL		;set up return address to just past message
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				PRTSTR
+
+; This subroutine prints a string of characters pointed to by DE.  The number
+; of characters is in the C register.  Blanks are not printed; instead, the
+; blanks counter pointed to by HL is incremented.
+
+PRTSTR:	LD	A,(DE)		;get character
+	CP	' '		;see if it is a blank
+	CALL	Z,UPCOUNT	;if so, up the count
+	CALL	NZ,CHAROUT	;if not, output the character
+	INC	DE
+	DEC	C		;check count
+	JP	NZ,PRTSTR
+	RET
+
+UPCOUNT:
+	PUSH	AF		;save flags
+	INC	(HL)		;increase the blank counter
+	POP	AF		;restore flags
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				PRTBLK
+
+; This subroutine prints blank spaces given by the count in C.  The routine
+; will work even for a count of zero.
+
+PRTBLK:	INC	C		;turn 0 into 1
+PRTBL1:	DEC	C		;check count
+	RET	Z		;return if count exhausted
+	LD	A,' '		;set character to print
+	CALL	CHAROUT
+	JP	PRTBL1
+
+
+;=============================================================================
+
+;		S E T U P    S U B R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+;				SIGNON
+
+; This subroutine displays the program signon message.
+
+SIGNON:	CALL	ILPRT
+	DB	'Z33MAKE  Version '
+	DB	VERSION / 10 + '0'
+	DB	'.'
+	DB	VERSION MOD 10 + '0'
+	  IF CIM
+	DB	' (loaded at '
+	DB	LDADDR / 10 + '0'
+	DB	LDADDR MOD 10 + '0' 
+	DB	'00h)'
+	  ENDIF	; CIM
+	DB	CR,LF,0
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				CHKHLP
+
+; This subroutine checks to see if the user has invoked the program in a
+; way to request the built-in help screen.  The help screen is shown if the
+; command has no tail or if the tail begins with a slash.
+
+CHKHLP:	LD	A,(FCB+1)	;get first character of first parameter
+	CP	' '		;no name?
+	JP	Z,HELP		;if so, go to HELP
+	CP	'/'		;parameter starts with slash?
+	JP	Z,HELP		;if so, go to HELP
+	RET			;return with flag set appropriately
+
+;-----------------------------------------------------------------------------
+
+;				INIT
+
+; This subroutine initializes the data areas in the program so that GO
+; command will re-run the program correctly.
+
+INIT:	XOR	A		;zero the accumulator
+	LD	(CHGFLAG),A	;preset control flags
+	LD	(RSTFLAG),A
+	LD	(DIRCODE),A
+
+	LD	HL,AMBFIL2
+	LD	B,16
+	CALL	FILL		;clear the fcb
+
+	LD	A,'?'
+	LD	B,16
+	LD	HL,AMBFIL
+	CALL	FILL
+
+	LD	HL,(0001)	;get warmboot address (base of bios + 3)
+	LD	DE,27H		;offset for jump to bios write
+	ADD	HL,DE		;compute address for write routine
+	LD	(WRITE + 1),HL	;load our vector with this address
+
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				SETDU
+
+; This subroutine gets and saves the values of the currently logged in drive
+; and user area and the drive and user specified (if any) on the command line
+; for the files to be operated on.
+
+SETDU:				;get currently logged in user number
+
+	LD	C,20H		;BDOS get/set user number function
+	LD	E,0FFH		;get user flag
+	CALL	BDOS
+	LD	(DEFUSR),A
+	LD	(SRCUSR),A	;save for now as source user also
+
+				;get the currently logged in drive
+
+	LD	C,19H		;bdos get drive number function
+	CALL	BDOS		;get drive number
+	LD	(DEFDRV),A
+	INC	A		;change range 1-16 and
+	LD	(SRCDRV),A	;..save for now as source drive also
+
+				;now log in the drive and user in file spec
+
+	LD	A,(FCB)		;get drive spec from FCB
+	OR	A		;see if default specified
+	JP	Z,SETDU1
+	LD	(SRCDRV),A	;save source drive
+	SUB	1		;get in range 0-15
+	CALL	LOGDRV		;log in the drive
+	XOR	A		;and change FCB to show default drive
+	LD	(FCB),A
+
+SETDU1:
+
+	LD	A,(FCB+13)	;get user number from S1 byte
+	LD	(SRCUSR),A	;save as source user area
+	CALL	LOGUSR		;log in the user number
+
+	RET
+
+;-----------------------------------------------------------------------------
+
+; These two routines log in the drive or user number given in the A register.
+; No registers are preserved.
+
+
+LOGDRV:	LD	E,A
+	LD	C,0EH
+	CALL	BDOS
+	RET
+
+LOGUSR:	LD	E,A
+	LD	C,20H
+	CALL	BDOS
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				GETOPT
+
+; Process option specified on the command line.  If there is an error, the
+; routine jumps to HELP which in turn jumps to QUIT.  If a named directory
+; is specified for the destination on the command line, then its user number
+; is obtained from address TFCB+13.  The drive is checked to make sure that
+; the destination is on the same drive.
+
+GETOPT:
+
+				;check for destination specified using named directory
+
+	LD	A,(TFCB)	;check for drive number
+	OR	A		;if zero, no DIR: or DU: given
+	JP	Z,GETOPT1
+
+				;check for correct drive spec
+
+	LD	HL,SRCDRV	;point to source drive value
+	CP	(HL)
+	JP	NZ,BADDRV	;if not the same, jump to bad drive message
+
+				;get the user number
+
+	LD	A,(TFCB + 13)
+	LD	(OPTION),A	;store user number as option
+	JP	CHKNUM		;check for valid user number
+
+BADDRV:	CALL	ILPRT		;destination and source drives not same
+	DB	BELL
+	DB	CR,LF,LF
+	DB	'Source and Destination Drives',CR,LF
+	DB	'Must be the Same'
+	DB	CR,LF
+	DB	0
+	JP	QUIT
+
+GETOPT1:
+	LD	HL,TFCB		;point to parsed second parameter
+	LD	A,(HL)		;make sure it wasn't of form 'D:'
+	OR	A		;drive byte should be zero
+	JP	NZ,BADOPT
+	INC	HL		;now look at data entered
+
+	LD	A,(HL)		;get the first character
+	CALL	GETNUM		;try to read it as a number
+	JP	C,LETTER	;if not, must be a letter or bad
+	LD	B,A		;save digit in B
+	LD	(OPTION),A	;..and as interim option
+	INC	HL		;try next character
+	LD	A,(HL)
+	CP	' '		;if it is a blank
+	JP	Z,CHKNUM	;..go to test user number value
+
+	CALL	GETNUM		;see if second character is a number
+	JP	C,BADOPT	;if not, we have a bad option spec
+
+	LD	C,A		;save second digit
+	LD	A,B		;get first digit back
+	ADD	A,A		;double it three times to make 8x
+	ADD	A,A
+	ADD	A,A
+	ADD	A,B		;now add original in twice to make 10x
+	ADD	A,B
+	ADD	A,C		;finally, add in second digit
+	LD	(OPTION),A	;..and save the final result
+
+				;check for valid user number (in range and not same
+				;as logged in user number)
+
+CHKNUM:	LD	A,(OPTION)	;make sure we have the user number
+	CP	32		;test for valid user number range
+	JP	NC,BADNUM
+	LD	HL,SRCUSR	;see if same as source user
+	CP	(HL)
+	JP	Z,SAMENUM	;if so, give message
+	RET
+
+LETTER:				;check for valid letter option
+	PUSH	AF		;save option letter
+	INC	HL		;check whether option followed by '#'
+	LD	A,(HL)
+	CP	'#'
+	JP	NZ,LETTER0	;not "all users" switch, don't save it
+	LD	(ALLUSR),A
+LETTER0:
+	POP	AF		;get option character back
+	LD	HL,OPTLIST	;point to list of valid options
+	LD	C,(HL)		;get number of options in list
+LETTER1:			;loop through them checking
+	INC	HL
+	CP	(HL)		;compare to list entry
+	JP	Z,GOODOPT	;if it matches, we have a good option
+	DEC	C		;else, count down
+	JP	NZ,LETTER1	;..and try again
+	JP	HELP		;we get here if option is not valid
+
+GOODOPT:			;we have a good option letter
+	LD	(OPTION),A
+	RET
+
+BADOPT:				;we have a bad option specifier
+	CALL	ILPRT
+	DB	BELL,CR,LF
+	DB	TAB,'****  BAD OPTION SPECIFIER  ****',CR,LF,0
+	JP	HELP
+
+BADNUM:				;we have an illegal user number
+	CALL	ILPRT
+	DB	BELL,CR,LF
+	DB	TAB,'****  ILLEGAL USER NUMBER  ****',CR,LF,0
+	JP	HELP
+
+SAMENUM:			;give message about already in that user area
+	CALL	ILPRT
+	DB	BELL,CR,LF
+	DB	'destination user number is the',CR,LF
+	DB	'same as the source user number'
+	DB	CR,LF,0
+	JP	QUIT
+
+				;subroutine to check for number character
+				;returns with carry set if not a number
+
+GETNUM:	CP	'0'		;see if less than '0'
+	RET	C		;if so, set carry flag as signal
+	CP	'9'+1		;see if more than '9'
+	CCF			;reverse sense of carry flag
+	RET	C		;if >9, return with carry set
+	SUB	'0'		;convert to number value
+	RET			;carry is clear
+
+				;list of valid options
+
+OPTLIST:
+	DB	ENDLIST-OPTLIST	;number of options in list
+	DB	' SDRWANEU'	;valid options
+ENDLIST:
+
+;-----------------------------------------------------------------------------
+
+;				CHKRO
+
+; This routine checks to see if the destination drive is read-only.  If it
+; is, an appropriate error message is displayed and the program aborts with
+; a jump to QUIT.  If the option is display only (option = space char), then
+; this test is skipped.
+
+
+CHKRO:	LD	A,(OPTION)	;see if display option is in effect
+	CP	' '
+	RET	Z		;if so, skip rest of test
+
+	LD	C,1DH		;get R/O vector from BDOS
+	CALL	BDOS
+
+				;calculate number of left-shifts needed
+
+	LD	A,(SRCDRV)	;get the target drive number
+	CPL			;complement it (makes 255-SRCDRV)
+	ADD	17		;makes A = 16 - SRCDRV (value 1-16)
+
+				;shift word in HL to put bit of R/O vector for
+				;specified drive into high bit position
+
+CHKRO1:	DEC	A		;test for done
+	JP	Z,CHKRO2	;if so, jump
+	ADD	HL,HL		;shift HL to left
+	JP	CHKRO1		;and loop
+
+CHKRO2:	ADD	HL,HL		;move high bit into carry flag
+	RET	NC		;if not R/O, return
+	CALL	ILPRT		;else print R/O error message
+	DB	BELL,CR,LF
+	DB	'Drive is set to R/O',CR,LF,0
+
+	JP	QUIT		;abort program
+
+
+;=============================================================================
+
+;		M I S C E L L A N E O U S    R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+;				SETPTR
+
+; This subroutine uses the value of the directory code to calculate a pointer
+; to the FCB in the DMA buffer.  This is done by multiplying the directory code
+; by 32 and adding it to the DMA address (DMAADDR).  The result is saved in
+; DMAPTR.
+
+SETPTR:
+	LD	A,(DIRCODE)	;get the directory code
+	ADD	A,A		;offset by 32 bytes per entry
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	LD	E,A		;move value into DE
+	LD	D,0
+	LD	HL,DMAADDR	;get buffer address
+	ADD	HL,DE		;compute offset into buffer
+	LD	(DMAPTR),HL	;save the address into the buffer
+	RET
+
+;-----------------------------------------------------------------------------
+
+;				SETCHGFL
+
+; This subroutine sets the change-flag to show that the directory sector
+; has been modified and needs to be written out to disk.
+
+SETCHGFL:
+	PUSH	AF
+	LD	A,0FFH		;set the sector change flag
+	LD	(CHGFLAG),A
+	POP	AF
+	RET
+
+;=============================================================================
+
+;			D A T A    A R E A
+
+;-----------------------------------------------------------------------------
+
+OLDSTK:				;place to keep old stack pointer
+	DS	2
+
+BLNKCNT:			;count of blank characters in file name
+	DS	1
+
+CHGFLAG:			;flag for change requiring write
+	DS	1
+
+RSTFLAG:			;flag for need to reset disk system
+	DS	1
+
+AMBFIL:				;working fcb
+	DS	16
+
+AMBFIL2:			;space for rest of FCB
+	DS	19
+
+OPTION:				;storage for new user number or option
+	DS	1
+
+ALLUSR:				;storage for "all users" switch
+	DS	1
+
+DIRCODE:			;storage for directory code (0-3)
+	DS	1
+
+DMAPTR:				;address of FCB in DMA buffer
+	DS	2
+
+DEFDRV:				;current default drive
+	DS	1
+
+SRCDRV:				;source drive
+	DS	1
+
+DEFUSR:				;current default user number
+	DS	1
+
+SRCUSR:				;source user area from file spec
+	DS	1
+
+	DS	60		;room for local stack
+NEWSTK:
+
+	END
+

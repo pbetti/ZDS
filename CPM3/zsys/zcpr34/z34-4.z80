@@ -1,0 +1,1040 @@
+
+; ZCPR34-4.Z80
+
+; Revisions to ZCPR Version 3.3 to make Version 3.4 (C) Copyright Jay P. Sage,
+; 1988, all rights reserved.
+
+;=============================================================================
+;
+;	G E N E R A L    S U B R O U T I N E S    S E C T I O N
+;
+;=============================================================================
+
+whlchk:
+	push	hl
+	ld	hl,(z3env+29h)		; Get address of wheel byte
+	ld	a,(hl)			; Get the wheel byte itself
+	or	a			; Set the flags
+	pop	hl
+	ret
+
+;-----------------------------------------------------------------------------
+;
+;	CHARACTER I/O BDOS ROUTINES
+;
+;-----------------------------------------------------------------------------
+
+; Check for any character from the user console.  Return with the character
+; in A.  If the character is a control-C, then the zero flag will be set.
+
+	 if	subon or diron or eraon or lton
+
+break:
+	ld	c,0bh		; BDOS console status function
+	call	bdostest	; Call BDOS: Sets a=ff if char ready
+				; ..then, BDOSTEST increments this to 0
+	ret	nz		; No char ready
+				; Otherwise, fall through to CONIN
+
+	 endif	; subon or diron or eraon or lton
+
+;-----------------------------------------------------------------------------
+
+; Get uppercase character from console (with ^S processing).  All registers
+; except A and C are preserved.  The character is returned in A.
+
+conin:
+	ld	c,1		; BDOS conin function
+	call	bdossave
+				; Fall through to UCASE
+
+;--------------------
+
+; Convert character in A to upper case.  All registers except A are preserved.
+
+ucase:
+	and	7fh		; Mask out msb
+	cp	'a'		; Less than lower-case 'a'?
+	ret	c		; If so, return
+	cp	'z'+1		; Greater than lower-case 'z'?
+	ret	nc		; If so, return
+	and	5fh		; Otherwise capitalize
+	 if	subon or diron or eraon or lton
+	cp	ctrlc		; Check for abort
+	 endif	; subon or diron or eraon or lton
+	ret
+
+;----------------------------------------
+
+; Output CRLF
+
+crlf:
+	call	print
+	defb	cr,lf or 80h
+	ret
+
+;----------------------------------------
+
+; Print the character string immediately following the call to this routine.
+; The string terminates with a character whose high bit is set or with a null.
+; At entry point PRINTC the string is automatically preceded by a
+; carriage-return-linefeed sequence.  All registers are preserved except A.
+
+printc:
+	call	crlf		; New line
+
+print:
+	ex	(sp),hl		; Get pointer to string
+	call	printhl		; Print string
+	ex	(sp),hl		; Restore HL and set return address
+	ret
+
+;----------------------------------------
+
+; Print the character string pointed to by HL.  Terminate on character with
+; the high bit set or on a null character.  On return HL points to the byte
+; after the last character displayed.  All other registers except A are
+; preserved.
+
+printhl1:
+	call	conout		; Print character
+printhl:
+	ld	a,(hl)		; Get a character
+	inc	hl		; Point to next byte
+	rlc	a		; End of string null?
+	ret	z
+	srl	a		; Mask out msb (into C-flag)
+	jr	nc,printhl1	; More characters to come
+				; Falls through to conout for last character
+
+;----------------------------------------
+
+; Output character in A to the console.  All registers are preserved.
+
+conout:
+	push	bc
+	ld	c,2		; BDOS conout function
+output:				; Entry point for LCOUT (Z34-5.Z80)
+	push	de
+	ld	e,a
+	jr	bdossave2
+
+
+;-----------------------------------------------------------------------------
+;
+;	FILE I/O BDOS ROUTINES
+;
+;-----------------------------------------------------------------------------
+
+; Read a record from a file to be listed or typed
+
+	 if	lton		; Only needed for LIST and TYPE functions
+
+readf:
+	ld	de,tfcb
+	jr	read
+
+	 endif	; lton
+
+;----------------------------------------
+
+; Read a record from the command file named in CMDFCB
+
+readcmd:
+	ld	de,cmdfcb
+
+; Read a record from file whose FCB is pointed to by DE
+
+read:
+	ld	c,14h		; Read-sequential function
+				; Fall through to BDOSSAVE
+
+;--------------------
+
+; Call BDOS for read and write operations.  The flags are set appropriately.
+; The BC, DE, and HL registers are preserved.
+
+bdossave:
+	push	bc
+bdossave1:
+	push	de
+bdossave2:
+	push	hl
+	call	bdos
+	pop	hl
+	pop	de
+	pop	bc
+	or	a		; Set flags
+note:				; This return is used for NOTE command, too
+	ret
+
+
+;-----------------------------------------------------------------------------
+;
+;	MISCELLANEOUS BDOS ROUTINES
+;
+;-----------------------------------------------------------------------------
+
+; Set DMA address.  At the entry point DEFLTDMA the address is set to the
+; default value of 80H.  At the entry point DMASET it is set to the value
+; passed in the DE registers.
+
+defltdma:
+	ld	de,tbuff
+dmaset:
+	ld	c,1ah
+	jr	bdossave
+
+;-----------------------------------------------------------------------------
+
+; Log into the temporary directory.  Registers B, H, and L are preserved.
+
+;logtemp:
+;	ld	de,(tempusr)	; Set D = tempdr, E = tempusr
+	dec	d		; Fall through to LOGDE
+
+;----------------------------------------
+
+; Log drive and user according to DE
+
+logde:	call	setuser1
+	ld	a,d		; Fall through to SETDRIVE
+
+;----------------------------------------
+
+; Log in the drive value passed in the A register (A=0).
+
+setdrive:
+	ld	e,a
+	ld	c,0eh
+	jr	bdossave
+
+;----------------------------------------
+
+; Open a file.  At entry point OPENCMD the file is the one specified in
+; CMDFCB, and the current record is set to zero.  At entry point OPEN
+; the file whose FCB is pointed to by DE is used.
+
+opencmd:
+	xor	a		; Set current record to 0
+	ld	(cmdfcb+32),a
+	ld	de,cmdfcb	; Command file control block
+				; Fall through to open
+
+open:
+	ld	c,0fh		; BDOS open function
+				; Fall through to BDOSTEST
+
+;--------------------
+
+; Invoke BDOS for disk functions.  This routine increments the return code in
+; register A so that the zero flag is set if there was an error.  Registers
+; BC, DE, and HL are preserved.
+
+bdostest:
+	call	bdossave
+	inc	a		; Set zero flag for error return
+	ret
+
+;----------------------------------------
+
+; Close file whose FCB is pointed to by DE.
+
+	 if	saveon or subon
+close:
+	ld	c,10h
+	jr	bdostest
+	 endif	;saveon or subon
+
+;----------------------------------------
+
+; Search for first matching file.  At entry point SRCHFST1 the first default
+; FCB is used.  At entry point SRCHFST the FCB pointed to by DE is used.
+
+	 if	diron or eraon or renon or saveon
+srchfst1:
+	ld	de,tfcb		; Use first default FCB
+	 endif	;diron or eraon or renon or saveon
+
+srchfst:
+	ld	c,11h
+	jr	bdostest
+
+;-----------------------------------------------------------------------------
+
+; Search for next matching file whose FCB is pointed to by DE.
+
+	 if	diron or eraon	; Only needed by DIR and ERA functions
+srchnxt:
+	ld	c,12h
+	jr	bdostest
+	 endif	; diron or eraon
+
+;-----------------------------------------------------------------------------
+
+; Kill any submit file that is executing.
+
+	 if	subon
+
+subkil:
+	ld	hl,subflag	; Check for submit file in execution
+	ld	a,(hl)
+	or	a		; 0=no
+	ret	z		; If none executing, return now
+				; Kill submit file
+	xor	a
+	ld	(hl),a		; Zero submit flag
+	call	setuser		; Log in user 0
+	ld	de,subfcb	; Delete submit file
+				; ..by falling through to delete routine
+
+	 endif	; subon
+
+;--------------------
+
+; Delete file whose FCB is pointed to by DE.
+
+	 if	eraon or renon or saveon or subon
+delete:
+	ld	c,13h
+	jr	bdossave
+	 endif	;eraon or renon or saveon or subon
+
+;-----------------------------------------------------------------------------
+
+; Get and set user number.  Registers B, D, H, and L are preserved.  Register
+; E is also preserved at entry point SETUSER1.
+
+getuser:
+	ld	a,0ffh		; Get current user number
+setuser:
+	ld	e,a		; User number in E
+setuser1:
+	ld	c,20h		; Get/Set BDOS function
+	jr	bdossave
+
+
+;-----------------------------------------------------------------------------
+;
+;	GENERAL UTILITY ROUTINES
+;
+;-----------------------------------------------------------------------------
+
+
+; This subroutine checks to see if a program loaded at an address given by HL
+; has a Z3ENV header.  If the header is not present, the zero flag is reset.
+; If it is present, the zero flag is set, and on return HL points to the
+; environment-type byte and A contains that byte.
+
+z3chk:
+	ld	de,z3env+3	; Point to 'Z3ENV' string in ENV
+	inc	hl		; Advance three bytes to possible program
+	inc	hl		; ..header
+	inc	hl
+	ld	b,5		; Characters to compare
+z3chk1:				; Check for Z3 ID header
+	ld	a,(de)		; Get character from ENV descriptor
+	cp	(hl)		; Compare it to loaded file
+	ret	nz		; Quit now if mismatch
+	inc	hl		; If same, advance to next characters
+	inc	de		; ..and continue comparing
+	djnz	z3chk1		; (flags not affected by DJNZ)
+	ld	a,(hl)		; Return the environment type in A
+	ret			; Return Z if all 5 characters match
+
+;----------------------------------------
+
+; Subroutine to skip over spaces in the buffer pointed to by HL.  On return,
+; the zero flag is set if we encountered the end of the line or a command
+; separator character.
+
+sksp1:
+	inc	hl		; Point to the next character
+sksp:
+	ld	a,(hl)		; Get next character
+	cp	' '		; Space?
+	jr	z,sksp1		; If so, keep skipping
+				; ..else fall through
+
+;--------------------
+
+; Subroutine to check if character is the command separator or marks the end
+; of the line.
+
+tsteol:
+	ld	a,(hl)		; Get next character from command line
+	or	a		; End of command line?
+	ret	z		; Return with zero flag set
+	cp	cmdsep		; Command separator?
+	ret			; Return with flag set appropriately
+
+;----------------------------------------
+
+; Initialize complete FCB pointed to by DE
+
+initfcb:
+	xor	a
+	ld	(de),a		; Set default disk (dn byte is 0)
+	inc	de		; Point to file name field
+	call	ifcb		; Fill 1st part of FCB
+				; Fall through to IFCB to run again
+
+;--------------------
+
+; Initialize part of FCB whose file name field is pointed to by DE on entry.
+; The file name and type are set to space characters; the EX, S2, RC, and the
+; following CR (current record ) or DN (disk number) fields are set to zero.
+; The S1 byte is set to the current user number.  On exit, DE points to the
+; byte at offset 17 in the FCB (two bytes past the record count byte).
+
+ifcb:
+	ld	b,11		; Store 11 spaces for file name and type
+	ld	a,' '
+	call	fill
+	xor	a
+	ld	(de),a		; Set extent byte to zero
+	inc	de
+	ld	a,(curusr)
+	ld	(de),a		; Set S1 byte to current user
+	inc	de
+	ld	b,3		; Store 3 zeroes
+	xor	a		; Fall thru to fill
+
+;--------------------
+
+; Fill memory pointed to by DE with character in A for B bytes
+
+fill:
+	ld	(de),a		; Fill with byte in A
+	inc	de		; Point to next
+	djnz	fill
+	ret
+
+;----------------------------------------
+
+; Subroutine to display the 'no file' error message for the built-in
+; commands DIR, ERA, LIST, TYPE, and/or REN.
+
+	 if	diron or eraon
+
+prnnf:
+	call	printc		; No file message
+	dc	'No File'
+	ret
+	 endif ; diron or eraon
+
+;----------------------------------------
+
+; Calculate address of command table in package from Z3ENV.  On entry, E
+; contains the offset to the address of the package in the environment.  On
+; exit, DE points to the beginning of the package and HL points to the fifth
+; byte (where the command table starts in the RCP and FCP modules).  The zero
+; flag is set on return if the package is not supported.  
+
+	 if	fcpenv or rcpenv or ndrenv
+pkgoff:
+	ex	de,hl		; Package address to DE
+	ld	hl,5		; Offset to start of table
+	add	hl,de		; Pointer to 5th byte of package in HL
+	ld	a,d
+	or	e		; Set Z flag if not supported
+	ret			; Return with zero flag set appropriately
+
+	 endif	;fcpenv or rcpenv or ndrenv
+
+;----------------------------------------
+
+; This subroutine checks to see if we are in a false IF state.  If that is
+; the case, the routine returns with the zero flag set.  If there is no active
+; IF state or if it is true, then the zero flag is reset.
+
+	 if	fcps ne 0	; Omit code if FCP not implemented
+
+iftest:
+	ld	de,(ifptrfl)	; Current IF pointer into C, IF status into B
+	ld	a,e		; See if any IF in effect
+	sub	1		; ..and set C flag if none
+	ret	c		; ..then return zero flag reset
+	ld	a,e
+	and	d		; Mask the current IF status
+	ret
+
+	 endif	;fcps ne 0
+
+;----------------------------------------
+
+; Print the command prompt with DU and/or DIR, with specified trailing
+; character.  This routine prints trailing character using PRINT.  The
+; conditional assemblies are somewhat involved because of the possibilities
+; of either or both of the DU or DIR forms being omitted from the prompt.
+
+	 if	not [incldu or incldir]
+prompt	equ	printc		; ONLY print appropriate trailer
+	 else	;incldu or incldir
+
+prompt:
+	call	crlf
+
+; Get current user/drive into BC or HL for inclusion in prompt
+
+	 if	incldir		; If DIR in prompt
+	ld	bc,(curusr)	; Get current drive/user into BC
+	 else	; not incldir	... and incldu
+	ld	hl,(curusr)	; Get current drive/user into HL
+	 endif	; incldir
+
+; If INCLENV is enabled, the drive and user (DU) will be included in the
+; prompt based on the state of the DUOK flag in the environment.  If INCLENV
+; is disabled, the DU form will always be included if INCLDU is on.
+
+	 if	incldu
+
+	  if	inclenv
+	ld	a,(duokfl)	; If ENV disallows DU,
+	or	a		; ..then don't show it
+	jr	z,prompt2	; ..in the prompt, either
+	  endif	;inclenv
+
+	  if	incldir
+	ld	a,b		; Get current drive
+	add	a,'A'		; Convert to ascii A-P
+	call	conout
+	ld	a,c		; Get current user
+	  else	; not incldir
+	ld	a,h		; Get current drive
+	add	a,'A'		; Convert to ascii A-P
+	call	conout
+	ld	a,l		; Get current user
+	  endif	; incldir
+
+	  if	supres		; If suppressing user # report for user 0
+	or	a
+	jr	z,prompt2
+	  endif
+
+	  if	highuser	; If allowing users 16..31
+
+	ld	hl,10 shl 8 + '0'-1	; H=10, L='0'-1
+	cp	h		; User < 10 ?
+	jr	c,prompt1
+prompt0:
+	inc	l		; Advance character for user number tens digit
+	sub	h
+	jr	nc,prompt0
+	add	a,h
+	ld	h,a		; Keep low digit of user number in H
+	ld	a,l		; Display tens digit
+	call	conout
+	ld	a,h		; Ready to process units digit
+prompt1:
+
+	  else	;using only standard user numbers 0..15
+
+	ld	h,a		; Save user number
+	sub	10		
+	jr	c,prompt1	; If User < 10 
+	ld	h,a		; Save low digit
+	call	print		; Display a '1' for tens digit
+	dc	'1'
+prompt1:
+	ld	a,h
+
+	  endif	;highuser
+
+	add	a,'0'		; Output 1's digit (convert to ascii)
+	call	conout
+prompt2:
+
+	 endif	; incldu
+
+				; Display named directory
+
+	 if	incldir
+
+	inc	b		; Switch drive to range 1..16
+	call	du2dir		; See if there is a corresponding DIR form
+	jr	z,prompt4	; If not, end now
+
+	  if	incldu		; Separate DU and DIR with colon
+
+	   if	inclenv
+	ld	a,(duokfl)	; If not displaying DU, then
+	or	a		; ..don't send separator, either
+	ld	a,':'		; Make the separator
+	call	nz,conout	; ..and send if permitted
+	   else
+	call	print		; Put in colon separator
+	dc	':'
+	   endif ;inclenv
+
+	  endif	; incldu
+
+	ld	b,8		; Max of 8 chars in DIR name
+prompt3:
+	inc	hl		; Point to next character in DIR name
+	ld	a,(hl)		; ..and get it
+	cp	' '		; Done if space
+	jr	z,prompt4
+	call	conout		; Print character
+	djnz	prompt3		; Count down
+	 endif	; incldir
+
+prompt4:
+	jp	print		; Now print appropriate prompt trailer
+	 endif	;incldu or incldir
+
+;-----------------------------------------------------------------------------
+
+; Subroutine to convert DU value in BC into pointer to a matching entry in
+; the NDR.  If there is no match, the routine returns with the zero flag set.
+; If a match is found, the zero flag is reset, and the code returns with HL
+; pointing to the byte before the directory name.
+
+	 if	z3ndirs ne 0
+
+du2dir:
+
+	 if	ndrenv		; If getting NDR address from environment
+	ld	hl,(z3env+15h)	; Offset to NDR in Z3ENV
+	ld	a,h
+	or	l		; Is NDR implemented?
+	ret	z		; If no NDR, return with zero flag set
+	jr	du2dir2
+	 else
+	ld	hl,z3ndir-17	; Scan directory for match
+	 endif	;ndrenv
+
+du2dir1:			; Advance to next entry in NDR
+	ld	de,16+1		; Skip user (1 byte) and name/pw (16 bytes)
+	add	hl,de
+
+du2dir2:
+	ld	a,(hl)		; End of NDR?
+	or	a
+	ret	z		; If so, return with zero flag set
+
+	inc	hl		; Point to user number in NDR entry
+	cp	b		; Compare drive values
+	jr	nz,du2dir1	; If mismatch, back for another try
+	ld	a,(hl)		; Get user number
+	sub	c		; ..and compare
+	jr	nz,du2dir1	; If mismatch, back for another try
+	dec	a		; Force NZ to show successful match
+	ret
+
+	 endif	;z3ndirs ne 0
+
+;-----------------------------------------------------------------------------
+
+; This routine gets the next line of input for the command buffer.  The
+; following order of priority is followed:
+;	If ZEX is active, the next line is obtained from ZEX
+;	If a submit file is running, its last record provides the input
+;	If there is a command line on the shell stack, use it
+;	Finally, if none of the above, the input is obtained from the user
+
+readbuf:
+
+	ld	a,(zexrunfl)	; Get ZEX-running flag
+	or	a
+
+	 if	not (longsub and subnoise ne 0)
+
+	jr	nz,userinput	; If ZEX running, go directly to user input
+
+	 else
+
+	jp	nz,userinput	; Long jump over longsub routine
+
+	 endif
+
+	 if	subon		; If submit facility is enabled, check for it
+
+	ld	a,(subflag)	; Test for submit file running
+	or	a
+	jr	z,shellinput	; If not, go on to possible shell input
+
+	xor	a		; Log into user 0
+	call	setuser
+	call	defltdma	; Initialize DMA pointer
+	ld	de,subfcb	; Point to submit file FCB
+	call	open		; Try to open file
+	jr	z,readbuf1	; Branch if open failed
+
+	 if	 longsub
+
+	ld	c,23h		; "Compute file size" bdos call no.
+	call	bdossave	; DE still => subfcb; get file size in subfr
+	ld	hl,(subfr)	; Get file size
+	dec	hl		; Decrement to get last record no.
+	ld	(subfr),hl	; Replace in random record field
+	ld	c,21h		; "Read random" bdos call no.
+	call	bdossave	; DE still => subfcb; randm read last record
+	ld	hl,(tbuff)	; Get current "last record" from last record
+	dec	hl		; Point to next earlier record to read
+	ld	(tbuff),hl	; Save pointer in actual last record
+	inc	c		; ... and write back to file (c=22h)
+	call	bdossave	; DE still => subfcb; randm write last recrd
+	ld	(subfr),hl	; Now prepare to read new "last record"
+	dec	c		; (c=21h)
+	call	bdossave	; Random read record; DE still => subfcb
+	ld	(subfrc-1),a	; Zero FCB S2 byte (A=0 from previous read)
+
+	 else	;not longsub
+
+	ld	hl,subfrc	; Point to record count in submit FCB
+	ld	a,(hl)		; Get the number of records in file
+	dec	a		; Reduce to number of last record
+	ld	(subfcr),a	; ..and put into current record field
+	call	read		; Attempt to read submit file
+	jr	nz,readbuf1	; Branch if read failed
+
+	dec	(hl)		; Reduce file record count
+	dec	hl		; Point to S2 byte of FCB (yes, this is req'd!)
+	ld	(hl),a		; Stuff a zero in there (A=0 from call to READ)
+
+	 endif	;longsub
+
+	call	close		; Close the submit file one record smaller
+	jr	z,readbuf1	; Branch if close failed
+
+; Now we copy the line read from the file into the multiple command line buffer
+
+	ld	de,chrcnt	; Point to command length byte in command buffer
+	ld	hl,tbuff	; Point to sector read in from submit file
+
+	ld	bc,80h		; Assume full buffer (128 bytes)
+	ld	a,(z3env+1ah)	; Otherwise BUFLEN (z3cls)
+	cp	c		; Carry if small MCL
+	jr	nc,rdbuf	; Full size
+	ld	c,a		; Use lower value
+
+rdbuf:	ldir			; Transfer line from submit file to buffer
+
+; We now deal with various options that control the display of commands fed
+; to the command processor from a submit file.
+
+	 if	subnoise gt 0	; If subnoise = 0 we omit all this display code
+
+	 if	subnoise eq 1	; If subnoise = 1 we follow the quiet flag
+	ld	a,(quietfl)
+	or	a
+	jr	nz,readbuf0	; If quiet, skip echoing the command
+	 endif	;subnoise eq 1
+
+	call	prompt		; Print prompt
+	defb	sprmpt or 80h	; ..and SUBMIT prompt trailer
+	ld	hl,cmdlin	; Print command line
+	call	printhl
+
+	 endif	;subnoise gt 0
+
+readbuf0:
+	call	break		; Check for abort (any char)
+	ret	nz		; If no ^C, return to caller and run
+
+readbuf1:
+	call	subkil		; Kill submit file and abort
+	jp	restart		; Restart CPR
+
+	 endif	; subon
+
+shellinput:
+	 if	shstks ne 0
+
+	ld	hl,(z3env+1eh)	; Get address of shell stack
+	ld	a,h		; Make sure stack is active
+	or	l
+	jr	z,userinput	; If not, skip shell checking
+
+	ld	a,(hl)		; Check first byte
+	cp	' '+1		; See if any entry
+	jr	c,userinput	; Get user input if none
+
+	ld	de,cmdlin	; Point to first character of command line
+	ld	bc,(z3env+21h)	; SHSIZE to C
+	xor	a
+	ld	b,a		; Now BC has size
+	ldir			; Do copy
+	ex	de,hl		; HL points to end of line
+	inc	a		; Set command status flag to 1 to show
+	ld	(cmdstatfl),a	; ..that a shell has been invoked
+	jr	readbuf3	; Store ending zero and exit
+
+	 endif	;shstks ne 0
+
+userinput:
+
+	 if	zexnoise eq 0	; Never display prompt with ZEX
+	ld	a,(zexrunfl)	; See if ZEX is running
+	or	a
+	jr	nz,userin1	; If so, skip prompt
+	 endif	;zexnoise eq 0
+
+	 if	zexnoise eq 1	; Follow the quiet flag
+	ld	a,(zexrunfl)	; See if ZEX is running
+	or	a
+	jr	z,userin0	; If not, proceed with display of prompt
+	ld	a,(quietfl)	; Else, test quiet flag
+	or	a
+	jr	nz,userin1	; If quiet, skip the prompt
+	 endif	;zexnoise eq 1
+
+userin0:
+	call	prompt		; Print prompt
+	defb	cprmpt or 80h	; ..and prompt trailer
+
+userin1:
+	ld	c,0ah		; Read command line from user
+	ld	de,bufsiz	; Point to buffer size byte of command line
+	call	bdos
+
+				; Store null at end of line
+
+	ld	hl,chrcnt	; Point to character count
+	ld	a,(hl)		; ..and get its value
+	inc	hl		; Point to first character of command line
+	call	addah		; Make pointer to byte past end of command line
+readbuf3:
+	ld	(hl),0		; Store ending zero
+	ret
+
+;-----------------------------------------------------------------------------
+
+; Add A to HL (HL=HL+A)
+
+addah:
+	add	a,l
+	ld	l,a
+	ret	nc
+	inc	h
+	ret
+
+;-----------------------------------------------------------------------------
+
+; The routine NUMBER evaluates a string in the first FCB as either a decimal
+; or, if terminated with the NUMBASE hexadecimal marker, a HEX number.  If the
+; conversion is successful, the value is returned as a 16-bit quantity in BC.
+; If an invalid character is encountered in the string, the routine returns
+; with the carry flag set and HL pointing to the offending character.
+
+	 if	saveon
+
+number:
+	ld	hl,tfcb+8	; Set pointer to end of number string
+	ld	bc,8		; Number of characters to scan
+	ld	a,numbase	; Scan for HEX identifier
+	cpdr			; Do the search
+	jr	nz,decimal	; Branch if HEX identifier not found
+
+	inc	hl		; Point to HEX marker
+	ld	(hl),' '	; Replace HEX marker with valid terminator
+				; ..and fall through to HEXNUM
+
+	 endif	;saveon
+
+;----------------------------------------
+
+; At this entry point the character string in the first default FCB is
+; converted as a hexadecimal number (there must NOT be a HEX marker).
+
+hexnum:
+	ld	hl,tfcb+1	; Point to string in first FCB
+
+; At this entry point the character string pointed to by HL is converted
+; as a hexadecimal number (there must be NO HEX marker at the end).
+
+hexnum1:
+	ld	c,16		; HEX radix base
+
+	 if	saveon or accptdu
+				; DECIMAL only used by number and duscan
+	jr	radbin		; Invoke the generalized conversion routine
+
+;----------------------------------------
+
+; This entry point performs decimal conversion of the string in the first
+; default FCB.
+
+decimal:
+	ld	hl,tfcb+1	; Set pointer to number string
+
+; This entry point performs decimal conversion of the string pointed to
+; by HL.
+
+decimal1:
+	ld	c,10		; Decimal radix base
+				; Fall through to generalized
+				; ..radix conversion routine
+	 endif	;saveon or accptdu
+
+; This routine converts the string pointed to by HL using the radix passed in
+; C.  If the conversion is successful, the value is returned in DE.  HL points
+; to the character that terminated the number, and A contains that character.
+; If an invalid character is encountered, the routine returns with the carry
+; flag set, and HL points to the offending character.
+
+radbin:
+	ld	de,0		; Initialize result
+radbin1:
+	or	a		; Make sure carry is reset
+	call	sdelm		; Test for delimiter (returns Z if delimiter)
+	ret	z		; Return if delimiter encountered
+
+	sub	'0'		; See if less than '0'
+	ret	c		; Return with carry set if so
+	cp	10		; See if in range '0'..'9'
+	jr	c,radbin2	; Branch if it is valid
+	cp	'A'-'0'		; Bad character if < 'A'
+	ret	c		; ..so we return with carry set
+	sub	7		; Convert to range 10..15
+radbin2:
+	cp	c		; Compare to radix in C
+	ccf			; Carry should be set; this will clear it
+	ret	c		; If carry now set, we have an error
+
+	inc	hl		; Point to next character
+	push	hl		; Save character pointer
+	ld	b,c		; Multiplier (radix) to B
+	ld	hl,0		; Clear accumulator
+mpy:	add	hl,de		; Add it to HL..
+	djnz	mpy		; ..radix times
+	ld	e,a		; New digit
+	ld	d,b		; A zero from djnz above
+	add	hl,de		; New result
+	ex	de,hl		; ..to DE
+	pop	hl		; Get char pointer
+
+	jr	radbin1		; Loop until delimiter
+
+;-----------------------------------------------------------------------------
+
+; This routine checks for a delimiter character pointed to by HL.  It returns
+; with the character in A and the zero flag set if it is a delimiter.  All
+; registers are preserved except A.
+
+sdelm:
+	ld	a,(hl)		; Get the character
+	exx			; Use alternate register set (shorter code)
+	ld	hl,deldat	; Point to delimiter list
+	ld	bc,delend-deldat; Length of delimiter list
+	cpir			; Scan for match
+	exx			; Restore registers
+	ret			; Returns Z if delimiter
+
+deldat:				; List of delimiter characters
+	db	' =_.:;<>,'
+	db	0
+	 if	cmdsep ne ';'
+	db	cmdsep
+	 endif	;cmdsep ne ';'
+delend:
+
+;-----------------------------------------------------------------------------
+
+; Log into DU contained in FCB pointed to by DE.  Registers DE are preserved;
+; all others are changed.  Explicit values for the temporary drive and user
+; are extracted from the FCB.  If the record-count byte has an FF in it, that
+; is a signal that the directory specification was invalid.  We then invoke
+; the error handler.
+
+	 if	diron or eraon or lton or renon or saveon
+
+fcblog:
+	push	de		; Save pointer to FCB
+	ld	a,(de)		; Get drive
+	sub	1		; See if drive value was 0 and change to 0..15
+	jr	nc,fcblog1	; If not, branch ahead
+	ld	a,(curdr)	; Otherwise substitute current drive
+fcblog1:
+	ld	hl,13		; Offset to S1 field
+	add	hl,de
+	ld	d,a		; Get drive into D
+	ld	e,(hl)		; Get user into E
+	call	logde		; ..and log into it
+	pop	de		; Restore pointer to FCB
+
+; Now check to make sure that the directory specification was valid.
+
+	inc	hl		; Advance pointer to record-count byte
+	inc	hl
+	ld	a,(hl)		; See if it is nonzero
+	or	a
+	jp	nz,baddirerr	; If so, invoke error handler
+
+	ret			; Otherwise return
+
+	 endif	;diron or eraon or lton or renon or saveon
+
+;-----------------------------------------------------------------------------
+
+; This routine scans the command table pointed to by HL for the command name
+; stored in the command FCB.  If the command is not found, the routine returns
+; with the zero flag reset.  If the command is found, the address vector is
+; stored in EXECADR and the zero flag is set.
+
+cmdscan:
+	ld	b,(hl)		; Get command size
+	jr	cmdscan1
+
+scanskip:
+	inc	hl		; Skip to next command table entry
+	djnz	scanskip
+
+scanbad:
+	pop	bc		; Command size in B
+	inc	hl		; Skip over address vector
+
+cmdscan1:
+	inc	hl
+
+scannext:
+	ld	a,(hl)		; Check for end of table
+	sub	1		; Dec; C & NZ set if (HL)=0
+	ret	c		; Return NZ (command not found) if end
+
+	push	bc		; Save command size
+	ld	de,cmdfcb+1	; Point to name of requested command
+
+	 if	wheel
+				; Ignore commands with high bit set in first
+				; ..char of command name if wheel is false
+	call	whlchk		; Check the wheel status
+	ld	c,0ffh		; Make a mask that passes all characters
+	jr	z,scancmp	; Use this mask if wheel not set
+
+	 endif	; wheel
+
+	ld	c,7fh		; Use mask to block high bit if wheel set
+				; ..or not in use
+
+scancmp:
+	ld	a,(de)		; Compare against table entry
+
+	xor	(hl)
+	and	c		; Mask high bit of comparison
+	jr	nz,scanskip	; No match, so skip rest of command name
+
+	inc	de		; Advance to next characters to compare
+	inc	hl
+	res	7,c		; Mask out high bit on characters after first
+	djnz	scancmp		; Count down
+
+	ld	a,(de)		; See if next character in input command
+	cp	' '		; ..is a space
+	jr	nz,scanbad	; If not, user command is longer than commands
+				; ..in the command table
+
+				; Matching command found
+
+	pop	bc		; Adjust the stack
+	ld	a,(hl)		; Get address from table into HL
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	(execadr),hl	; Set execution address
+	xor	a		; Set zero flag to show that command found
+	ret
+
+; End ZCPR34-4.Z80
+

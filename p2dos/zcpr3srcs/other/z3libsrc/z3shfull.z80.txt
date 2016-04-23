@@ -1,0 +1,67 @@
+	TITLE	"Z3SHFULL - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3SHFULL.Z80 Ver 1.1 by Richard Conn
+; Date    : 8 Mar 87
+; Version : 1.2
+; Module  : Z3SHFULL
+; Abstract: This module contains the routine SHFULL which tests
+;	the Shell Stack to see if it is full.  A flag is returned
+;	to indicate the result of the test
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		SHFULL
+
+;  External References
+
+	EXT		GETSH
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - SHFULL
+; Entry: - None
+; Exit : A = 0, Zero Flag Set (Z) if shell stack full
+;	     A <> 0, Zero Flag Reset (NZ) if Not Full
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+SHFULL:	PUSH	HL		;save registers
+	PUSH	DE
+	PUSH	BC
+
+; Get Shell Data
+
+	CALL	GETSH		;get ptr to shell stack
+	JR	Z,NOSHELL	;error if no shell stack
+	LD	E,B		;size of element in DE
+	LD	D,0
+	LD	B,A		;number of elements in B
+	LD	C,0FFH		;set not full code
+
+; Check to see if shell stack is full
+
+FCHK:	LD	A,(HL)		;get next element
+	OR	A		;last element on stack?
+	JR	Z,FCHK1		;stack ok
+	ADD	HL,DE		;pt to next element
+	DJNZ	FCHK		;count down
+
+; No Shell Error - Say that Shell is Full
+
+NOSHELL: LD	C,0		;set full code
+FCHK1:	LD	A,C		;get full code
+	POP	BC		;restore registers
+	POP	DE
+	POP	HL
+	OR	A		;set flag
+	RET
+
+	END
+

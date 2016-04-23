@@ -1,0 +1,2293 @@
+
+	.printx	/ include DU35-02 /
+
+; DU35-02.Z80
+
+
+
+;This is the Save Group Routine; it copies the indicated group into the save
+;  buffer.
+
+saveg:
+	call	comg		;EXTRACT COMMON GROUP INFO -- GROUP NUMBER AND POS
+	push	hl
+	call	ilprt
+	db	'Reading from Group ',0
+	ld	hl,(group)	;GET CURRENT GROUP
+	ld	b,h		;VALUE IN BC
+	ld	c,l
+	call	hexb		;PRINT AS HEX
+	call	ilprt
+	db	cr,lf,0
+	ld	hl,(qlst)	;LAST PTR USED FOR READ
+	ld	(qptr),hl
+	pop	hl
+	ld	a,0		;SET COPY FUNCTION TO SAVE
+	ld	(cpyfct),a	;0=READ, 0FFH=WRITE
+;
+;Group Copy Routine -- if CPYFCT = 0, Read Group; if CPYFCT = 0FFH, Write Group
+;
+copyg:
+	push	hl		;SAVE PTR TO NEXT CHAR IN COMMAND LINE
+	call	norite		;POSITIONING LOST
+	ex	de,hl		;SAVE HL
+	ld	hl,(qptr)	;PT TO NEXT QUEUE POSITION
+	ex	de,hl		;... IN DE
+	ld	a,(blm)		;GET NUMBER OF BLOCKS/GROUP
+	inc	a		; ADD 1 TO BLM FOR CORRECT COUNT
+	ld	b,a		;COUNT IN B
+;
+copygl:
+	push	bc		;SAVE COUNT
+	push	de		;SAVE PTR TO NEXT BLOCK TO LOAD
+	ld	b,d		;SET BC=DE FOR SET DMA
+	ld	c,e
+	call	setdma		;SET ADDRESS TO LOAD
+	ld	a,(cpyfct)	;READ OR WRITE?
+	or	a		;0=READ
+	jp	nz,copyglw
+	call	read		;READ BLOCK
+	ld	hl,(qcnt)	;INCREMENT QUEUE ELEMENT COUNT
+	inc	hl
+	ld	(qcnt),hl
+	jp	copygl0
+copyglw:
+	ld	hl,(qcnt)	;QUEUE EMPTY?
+	ld	a,h
+	or	l
+	jp	z,qempty
+	call	pwrite		;WRITE BLOCK (NO CHECK)
+	ld	hl,(qcnt)	;DECREMENT QUEUE ELEMENT COUNT
+	dec	hl
+	ld	(qcnt),hl
+copygl0:
+	call	nxtsec		;COMPUTE NEXT SECTOR ADDRESS
+	ld	hl,(curtrk)	;GET NEXT TRACK ADDRESS
+	ex	de,hl		;... IN DE
+	call	settrk		;SET IT
+	ld	hl,(cursec)	;GET NEXT SECTOR ADDRESS
+	ex	de,hl		;... IN DE
+	call	setsec		;SET IT
+	pop	de		;GET PTR TO NEXT BLOCK
+	pop	bc		;GET COUNTER
+	ld	hl,80h		;OFFSET TO NEXT BLOCK
+	add	hl,de
+	ld	(qptr),hl
+	ex	de,hl		;DE PTS TO NEXT BLOCK
+	call	qwrap		;ALLOW WRAP AROUND IN QUEUE
+	ld	a,(cpyfct)	;0=READ
+	or	a		;NO QUEUE OVERFLOW CHECK IF WRITE
+	jp	nz,copygl1
+	ld	hl,(qnxt)	;CHECK FOR QUEUE OVERFLOW
+	ld	a,h		;MUST NOT BE EQUAL
+	cp	d
+	jp	nz,copygl1
+	ld	a,l
+	cp	e
+	jp	z,qsav2
+copygl1:
+	djnz	copygl		;LOOP UNTIL FINISHED
+	ld	hl,(qcnt)	;PRINT COUNT
+	call	prqcnt
+	ld	hl,(qptr)	;GET QUEUE PTR
+	ld	a,(cpyfct)	;RESET PROPER QUEUE PTR
+	or	a		;0=READ
+	jp	z,copygl2
+	ld	(qnxt),hl	;NEXT PTR USED FOR WRITE
+	jp	copygl3
+copygl2:
+	ld	(qlst),hl	;LAST PTR USED FOR READ
+copygl3:
+	ld	bc,tbuff	;RESET DMA ADDRESS
+	call	setdma
+	xor	a		;A=0
+	ld	(wrflg),a	;SET NO READ DONE
+	ld	hl,(tgrp)	;GET GROUP NUMBER
+	ex	de,hl		;... IN DE
+	pop	hl		;GET PTR TO NEXT CHAR
+	jp	posgrp		;POSITION TO GROUP IN DE AND CONTINUE PROCESSING
+
+;
+;COMMAND:  >
+;Restore the current sector
+;	Special Form >S gets next block from queue
+;	Special Form >G gets next group from queue
+;
+restor:
+	ld	a,(hl)		;CHECK FOR SPECIAL FORM
+	call	upcase		;CAPITALIZE
+	cp	'B'		;BLOCK SAVE?
+	jp	z,qrestor
+	cp	'G'		;GROUP SAVE?
+	jp	z,restrg
+	ld	a,(savefl)	;SAVE DONE PREVIOUSLY?
+	or	a
+	jp	z,nosave	;NONE TO SAVE
+	push	hl
+	ld	hl,(savbuf)	;COPY FROM SAVBUF
+	ld	de,tbuff	;INTO TBUFF
+	ld	b,128		;128 BYTES
+	call	move
+	pop	hl		;GET PTR TO NEXT CHAR
+	jp	prompt
+;
+;  Restore Sector from Queue
+;
+qrestor:
+	inc	hl		;PT TO NEXT CHAR
+	push	hl		;SAVE PTR ON STACK
+	ld	hl,(qcnt)	;GET ELEMENT COUNT
+	ld	a,h		;EMPTY?
+	or	l
+	jp	z,qempty	;ABORT IF EMPTY
+	dec	hl		;COUNT DOWN
+	ld	(qcnt),hl
+	call	prqcnt		;PRINT COUNT
+	ld	hl,(qnxt)	;PT TO NEXT ELEMENT IN QUEUE
+	ld	de,tbuff	;COPY INTO TBUFF
+	ld	b,128		;128 BYTES
+	call	move
+	ex	de,hl		;DE=PTR TO NEXT ELEMENT IN QUEUE
+	call	qwrap		;CHECK FOR WRAP AROUND
+	ex	de,hl		;HL PTS TO NEXT ELEMENT IN QUEUE
+	ld	(qnxt),hl	;SAVE PTR
+	pop	hl		;RESTORE PTR
+	jp	prompt
+qempty:
+	call	ilprt
+	db	'Error -- Queue Empty',cr,lf,0
+	pop	hl		;RESTORE NEXT CHAR PTR
+	jp	prmptr
+;
+;Write Group Loaded in GBUFF to Disk
+;
+restrg:
+	call	comg		;GET GROUP NUMBER FROM COMMAND LINE AND POS
+	push	hl
+	call	ilprt
+	db	'Writing to Group ',0
+	ld	hl,(group)	;GET GROUP NUMBER
+	ld	b,h		;VALUE IN BC
+	ld	c,l
+	call	hexb		;PRINT IN HEX
+	call	ilprt
+	db	cr,lf,0
+	ld	hl,(qnxt)	;NEXT PTR USED FOR WRITE
+	ld	(qptr),hl
+	pop	hl
+	ld	a,0ffh		;WRITE FUNCTION
+	ld	(cpyfct),a	;COPY FUNCTION FOR GROUP COPY ROUTINE
+	jp	copyg		;GROUP COPY ROUTINE
+;
+nosave:
+	call	ilprt
+	db	'++ No "<" Save Command Issued ++'
+	db	cr,lf,0
+	jp	prmptr
+;
+;Move 128 bytes from (HL) to (DE)
+;
+mov128:
+	ld	b,128
+;Move (HL) to (DE) length in B
+;
+move:
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	move
+	ret
+;
+norite:
+	xor	a		;GET 0
+	ld	(wrflg),a	;CAN'T WRITE NOW
+	ret
+;
+;No match in search, try next char
+;
+srnomt:
+	pop	hl
+	call	ctlcs		;ABORT?
+	jp	nz,search	;..YES
+	ld	hl,(inbuf)
+	ld	(hl),cr
+	jp	clcgrp		;SHOW WHERE STOPPED
+;
+;COMMAND:  =
+;Search for character string
+;
+search:
+	push	hl		;SAVE STRING POINTER
+;
+srchl:
+	call	rdbyte		;GET A BYTE
+	ld	b,a		;SAVE IT
+	ld	a,(hl)		;CHECK NEXT MATCH CHAR.
+	cp	'<'		;WILL IT BE HEX?
+	ld	a,b		;RESTORE DISK CHAR
+	jp	z,srchl1
+	and	7fh		;NEXT CHAR IS ASCII...STRIP BIT 7
+;
+srchl1:
+	push	af
+	call	getval		;GET SEARCH VALUE
+	ld	b,a
+	pop	af
+	cp	b		;MATCH?
+	jp	nz,srnomt	;NO MATCH
+	inc	hl
+	ld	a,(hl)		;DONE?
+	cp	cr		;END OF LINE?
+	jp	z,srequ
+	cp	eolch		;LOGICAL EOL?
+	jp	nz,srchl
+;
+;Got match
+;
+srequ:
+	call	ilprt
+	db	'= at ',0
+	ld	a,(bufad)
+	and	7fh
+	call	hex
+	call	crlf
+	jp	clcgrp
+;
+;Get value from input buffer
+;
+getval:
+	ld	a,(hl)		;GET NEXT CHAR
+	cp	'<'		;HEX ESCAPE?
+	ret	nz		;NO, RETURN
+;"<<" means one "<"
+	inc	hl
+	ld	a,(hl)
+	cp	'<'
+	ret	z
+;Got hex
+	push	de
+	call	hexin		;GET VALUE
+	cp	'>'		;PROPER DELIM?
+	ld	a,e		;GET VALUE
+	pop	de
+	jp	nz,what		;ERROR
+	ret
+;
+;Read a byte at a time from disk
+;
+rdbyte:
+	push	hl
+	ld	a,(ftsw)	;FIRST READ?
+	or	a
+	jp	nz,read1
+	ld	hl,(bufad)
+	ld	a,l
+	or	a		;IN BUFFER?
+	jp	m,nord		;YES, SKIP READ
+;
+;Have to read
+;
+	call	nxtsec		;ADVANCE TO NEXT BLOCK
+;
+read1:
+	xor	a
+	ld	(ftsw),a	;NOT FIRST READ
+	ld	hl,(cursec)
+	ex	de,hl
+	call	setsec
+	ld	hl,(curtrk)
+	ex	de,hl
+	call	settrk
+	call	read
+	call	clcsub
+	ld	hl,tbuff
+;
+nord:
+	ld	a,(hl)
+	inc	hl
+	ld	(bufad),hl
+	pop	hl
+	ret
+;
+;COMMAND:  V
+;View the file in ASCII starting at
+;current sector, stepping thru the disk
+;
+view:
+	ld	a,(wrflg)
+	or	a
+	jp	z,baddmp
+	call	decin		;GET DISPL IF ANY
+	push	hl
+	ld	a,e
+	or	a
+	jp	nz,viewlp
+	inc	e		;DFLT=1
+;
+viewlp:
+	ld	hl,tbuff	;TO DATA
+;
+vewchr:
+	call	ctlcs		;ABORT?
+	jp	z,vewend
+	ld	a,(hl)		;GET NEXT CHAR
+	cp	1ah		;EOF?
+	jp	z,veweof
+	and	7fh		;MASK
+	cp	7eh		;ESC CHAR FOR H1500
+	jp	nc,viewhx	;SHOW RUBOUT AND TILDE AS HEX
+	cp	' '
+	jp	nc,viewpr
+	cp	cr		;CR PASS
+	jp	z,viewpr
+	cp	lf		;LF PASS
+	jp	z,viewpr
+	cp	tab		;TAB PASS
+	jp	z,viewpr
+;
+viewhx:
+	ld	a,(hl)		;NOT ASCII...PRINT AS <NN>
+	call	bhex
+	jp	viewnp
+;
+viewpr:
+	call	type
+;
+viewnp:
+	inc	l
+	jp	nz,vewchr
+	dec	e
+	jp	z,vewend
+	push	de		;SAVE COUNT
+	call	nxtsec
+	ld	hl,(cursec)
+	ex	de,hl
+	call	setsec
+	ld	hl,(curtrk)
+	ex	de,hl
+	call	settrk
+	call	read
+	pop	de		;RESTORE COUNT
+	jp	viewlp
+;
+veweof:
+	call	ilprt
+	db	cr,lf,dim,' ++ EOF ++',bright,cr,lf,0
+;
+vewend:
+	pop	hl
+	call	crlf
+	jp	clcgrp
+;
+;COMMAND:  A or D
+;Dump in hex or ASCII
+;
+dump:
+	ld	a,(wrflg)
+	or	a
+	jp	nz,dumpok
+;
+baddmp:
+	call	ilprt
+	db	'++ Can''t dump, no sector read ++',cr,lf,0
+;
+expl:
+	call	ilprt
+	db	'Use G command following F,',cr,lf
+	db	'or R or S following T',cr,lf,0
+	jp	prmptr
+;
+dumpok:
+	ld	a,(hl)		;GET NEXT CHAR
+	cp	eolch		;LOGICAL EOL?
+	jp	z,dumpdf	;DFLT
+	cp	cr		;PHYSICAL EOL?
+	jp	nz,dmpndf
+;
+;Use default
+;
+dumpdf:
+	ld	bc,tbuff
+	ld	de,0ffh
+	jp	dump1
+;
+dmpndf:
+	call	disp
+	ld	b,d
+	ld	c,e
+	cp	cr
+	jp	z,dump1
+	cp	eolch
+	jp	z,dump1
+	inc	hl		;SKIP SEPCH
+	call	disp
+;
+;BC = start, DE = end
+;
+dump1:
+	push	hl		;SAVE COMMAND POINTER
+	ld	h,b
+	ld	l,c
+;
+dumplp:
+	call	dumphl		;PERFORM DUMP OF DIR ENTRY AT HL
+	pop	hl		;RESTORE HL
+	jp	prompt
+;
+; PERFORM DUMP AT HL
+;
+dumphl:
+	call	stndout		;DIM
+	ld	a,l
+	and	7fh
+	call	hex		;PRINT HEX VALUE
+	call	stndend		;BRIGHT
+	call	space
+	call	space
+	ld	a,(dumtyp)
+	cp	'A'
+	jp	z,dumpas
+	push	hl		;SAVE START
+;
+; DUMP 16 BYTES STARTING AT HL (CHECK FOR DE TERMINATION)
+;
+dhex:
+	ld	a,(hl)
+	call	hex		;PRINT HEX VALUE PTED TO BY HL
+	ld	a,l
+	and	3
+	cp	3		;EXTRA SPACE EVERY 4
+	call	z,space
+	ld	a,l
+	and	7
+	cp	7		;TWO EXTRA SPACES EVERY 8
+	call	z,space
+	ld	a,e		;CHECK FOR END OF BYTES TO DUMP
+	cp	l
+	jp	z,dpop
+	inc	hl
+	ld	a,l		;CHECK FOR END OF 16 BYTES
+	and	0fh
+	jp	nz,dhex
+;
+dpop:
+	call	ctlcs		;ABORT?
+	jp	z,prmptr
+	ld	a,(dumtyp)	;CHECK FOR ASCII ALSO
+	cp	'H'
+	jp	z,dnoas		;HEX ONLY
+	pop	hl		;GET START ADDR
+;
+;  DUMP ASCII CHARS - HL PTS TO FIRST BYTE
+;
+dumpas:
+	call	aster		;PRINT FIRST ASTERISK TO SEPARATE TEXT
+;
+dchr:
+	ld	a,(hl)		;GET CHAR
+	and	7fh
+	cp	' '
+	jp	c,dper
+	cp	7fh		;TRAP DEL
+	jp	c,dok
+;
+dper:
+	ld	a,'.'		;PRINT PRINTING CHAR
+;
+dok:
+	call	type		;PRINT CHAR
+	ld	a,e		;CHECK FOR END OF DUMP
+	cp	l
+	jp	z,dend
+	inc	hl
+	ld	a,l		;CHECK FOR END OF 16 BYTES
+	and	0fh
+	jp	nz,dchr
+;
+; END OF ASCII DUMP
+;
+dend:
+	call	aster		;PRINT ENDING ASTERISK
+	call	crlf		;NEW LINE
+	push	de
+	call	ctlcs		;ABORT?
+	pop	de
+	jp	z,prmptr
+	ld	a,e		;DONE WITH DUMP?
+	cp	l
+	jp	nz,dumphl
+	ret
+;
+; NO ASCII DUMP
+;
+dnoas:
+	pop	bc		;CLEAR STACK (START ADDRESS OF DUMP)
+	call	crlf		;NEW LINE
+	ld	a,e		;DONE WITH DUMP?
+	cp	l
+	jp	nz,dumphl
+	ret
+;
+;COMMAND:  G
+;Position
+;
+pos:
+	push	af
+	ld	a,(hl)
+	cp	eolch		;LOGICAL EOL?
+	jp	z,posinq
+	cp	cr		;PHYSICAL EOL?
+	jp	nz,posok
+;
+posinq:
+	pop	af
+	jp	inq
+;
+posok:
+	pop	af
+	cp	'T'		;TRACK?
+	jp	z,postkd
+	cp	'S'		;SECTOR?
+	jp	z,posscd
+	cp	'G'		;GROUP?
+	jp	z,posgph
+	jp	what		;ERROR OTHERWISE
+;
+;Position to Track
+;
+postkd:
+	call	decin		;GET NUMBER IN DECIMAL
+;
+postrk:
+	push	hl
+	ld	hl,(maxtrk)	;CHECK FOR BEYOND END OF DISK
+	call	subde
+	pop	hl
+	jp	c,outlim
+	call	settrk		;SET TRACK
+	call	norite		;TRACK DOESN'T READ
+	ld	a,1
+	ld	(notpos),a	;SHOW NOT POSITIONED
+	jp	clcgrp
+;
+;Position to Sector
+;
+posscd:
+	call	decin		;GET NUMBER IN DECIMAL
+	ld	a,d
+	or	e
+	jp	z,what		;DON'T ALLOW SECTOR 0
+;
+possec:
+	push	hl
+	ld	hl,(spt)	;CHECK FOR WITHIN RANGE
+	call	subde
+	pop	hl
+	jp	c,what
+	call	setsec		;SET SECTOR
+	call	read		;READ
+	xor	a
+	ld	(notpos),a	;POSITIONED OK
+;
+;Calculate Group Number/Group Displacement and Print
+;
+clcgrp:
+	call	clcsub
+	jp	inq
+;
+;Calculate group from track and sector
+;  On exit, GROUP = Group Number and GRPDIS = Displacement within Group
+;
+clcsub:
+	push	hl
+	ld	hl,(systrk)
+	ex	de,hl
+	ld	hl,(curtrk)
+	call	subde		;COMPUTE RELATIVE TRACK NUMBER (SKIP SYSTEM TRACKS)
+	ex	de,hl
+	ld	hl,(spt)	;MULTIPLY BY NUMBER OF SECTORS/TRACK
+	call	mult
+	ex	de,hl		;DE=TOTAL NUMBER OF SECTORS IN TRACKS
+	ld	hl,(cursec)	;GET SECTOR OFFSET FROM BEGINNING OF TRACK
+	dec	hl
+	add	hl,de		;HL=TOTAL NUMBER OF SECTORS WITH OFFSET
+	ld	a,(blm)
+	ld	b,a
+	ld	a,l
+	and	b
+	ld	(grpdis),a	;DISPLACEMENT WITHIN GROUP
+	ld	a,(bsh)
+	ld	b,a
+;
+clclop:
+	call	rotrhl
+	djnz	clclop
+	ld	(group),hl	;GROUP NUMBER
+	pop	hl
+	ret
+;
+;Position in the directory after a find
+;(Does not work in CP/M-2.x)
+;
+posdir:
+	push	hl		;SAVE INBUF
+	ld	hl,(bsh)
+	xor	a
+	ld	(findfl),a	;CANCEL POS REQ
+	ld	a,(dirpos)	;GET POSITION
+	rra
+	rra
+	push	af
+	and	h
+	ld	(grpdis),a
+	pop	af
+;
+posdlp:
+	rra
+	dec	l
+	jp	nz,posdlp
+	and	1		;GET GROUP
+	ld	l,a		;SETUP FOR POSGP2
+	ld	h,0
+	ld	(group),hl
+	ex	de,hl
+;
+posgp2:
+	call	gtksec		;CONVERT GROUP TO SECTOR/TRACK
+	call	settrk		;SET TRACK
+	ex	de,hl
+	call	setsec		;SET SECTOR
+	call	read		;READ BLOCK
+	xor	a
+	ld	(notpos),a	;NOW POSITIONED
+	pop	hl
+	jp	inq
+;
+;Position to Group
+;
+posgph:
+	call	hexin		;GET PARAMETER
+;
+;Position to Group Numbered in DE and Print Position
+;
+posgrp:
+	call	degroup		;GOTO GROUP
+	jp	c,outlim
+	jp	inq		;PRINT POSITION
+;
+;Position to Group Numbered in DE
+; Return with Carry Set if Out of Limits
+;
+degroup:
+	push	hl
+	ld	hl,(dsm)	;CHECK FOR WITHIN BOUNDS
+	call	subde
+	pop	hl
+	ret	c
+	push	hl		;SAVE HL
+	ex	de,hl
+	ld	(group),hl	;SET GROUP NUMBER
+	ex	de,hl
+	xor	a
+	ld	(grpdis),a	;SET ZERO DISPLACEMENT
+	call	gtksec		;CONVERT GROUP TO SECTOR/TRACK
+	call	settrk		;SET TRACK
+	ex	de,hl
+	call	setsec		;SET SECTOR
+	call	read		;READ BLOCK
+	xor	a		;SET NC AND FLAG
+	ld	(notpos),a	;NOW POSITIONED
+	pop	hl
+	ret
+;
+;Convert Group Number in DE to Sector and Track; also, GRPDIS = Offset in Grp
+;  On exit, DE = Track Number, HL = Sector Number
+;
+gtksec:
+	ld	h,d		;HL=GROUP NUMBER
+	ld	l,e
+	ld	a,(bsh)		;GET NUMBER OF SECTORS IN GROUP
+;
+gloop:
+	add	hl,hl
+	dec	a
+	jp	nz,gloop
+	ld	a,(grpdis)	;ADD IN DISPLACEMENT WITHIN GROUP
+	add	a,l		;CAN'T CARRY
+	ld	l,a
+;
+;Divide by number of sectors, quotient=track, remainder=sector
+;
+	ex	de,hl		;DE=TOTAL NUMBER OF SECTORS
+	ld	hl,(spt)	;GET NUMBER OF SECTORS/TRACK
+	call	neg		;HL = -SECTORS/TRACK
+	ex	de,hl
+	ld	bc,0		;SET TRACK COUNTER TO ZERO
+;
+divlp:
+	inc	bc		;INCREMENT TRACK COUNT
+	add	hl,de		;SUBTRACT SECTORS/TRACK FROM SECTORS TOTAL
+	jp	c,divlp
+	dec	bc		;ADJUST TRACK COUNT
+	ex	de,hl
+	ld	hl,(spt)	;ADD SECTORS/TRACK BACK IN TO ADJUST
+	add	hl,de		;HL=NUMBER OF SECTORS ON LAST TRACK OF GROUP
+	push	hl
+	ld	hl,(systrk)	;ADD IN NUMBER OF SYSTEM TRACKS
+	add	hl,bc
+	ex	de,hl		;DE=TRACK NUMBER
+	pop	hl
+	inc	hl		;HL=SECTOR NUMBER
+	ret
+;
+;COMMAND:  F
+;Find Directory Entry for specified file
+;
+posfil:
+	call	norite
+	ld	a,1
+	ld	(findfl),a	;SO WE POSITION LATER
+	ld	de,fcb
+	xor	a		;LOGGED IN DISK
+	ld	(de),a
+	inc	de
+	ld	b,8
+	call	mvname
+	ld	b,3
+	call	mvname
+	ld	a,'?'
+	ld	(de),a		;LOOK IN ALL EXTENTS
+	ld	a,'D'		;SET TYPE OF DUMP TO FULL
+	ld	(dumtyp),a
+	push	hl		;SAVE PTR TO NEXT CHAR
+	ld	de,fcb
+	ld	c,srchf
+	call	bdos
+	inc	a
+	jp	nz,flok
+	ld	(dirpos),a	;GRP 0 IF NOT FOUND
+	call	ilprt
+	db	'++ File Not Found ++',cr,lf,0
+	pop	hl		;RESTORE PTR TO NEXT CHAR
+	jp	prompt
+;
+flok:
+	dec	a
+	ld	(dirpos),a	;SAVE POS. IN DIR
+	and	3
+	ld	l,a
+	ld	h,0
+	add	hl,hl		;X32 BYTES/ENTRY
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	ld	de,tbuff
+	add	hl,de		;HL POINTS TO ENTRY
+	ld	de,32
+	ex	de,hl
+	add	hl,de
+	ex	de,hl
+	call	dumphl		;PRINT DIR ENTRY
+	ld	de,fcb		;LOOK FOR NEXT EXTENT
+	ld	c,srchn
+	call	bdos
+	inc	a
+	jp	nz,flok
+	pop	hl		;RESTORE PTR TO NEXT CHAR
+	jp	prompt
+;
+mvname:
+	ld	a,(hl)		;GET NEXT CHAR OF FILE NAME/TYPE
+	cp	'.'		;END OF FILE NAME?
+	jp	z,mvipad	;PAD OUT IF SO
+	cp	cr		;END OF ENTRY?
+	jp	z,pad		;PAD OUT IF SO
+	cp	eolch		;END OF ENTRY?
+	jp	z,pad		;PAD OUT IF SO
+	call	upcase		;CAPITALIZE
+	ld	(de),a		;STORE
+	inc	hl		;PT TO NEXT
+	inc	de
+	djnz	mvname
+	ld	a,(hl)		;CHECK FOR ERROR
+	cp	cr		;OK IF EOL
+	ret	z
+	cp	eolch		;OK IF LOGICAL EOL
+	ret	z
+	inc	hl
+	cp	'.'		;OK IF DECIMAL
+	ret	z
+	jp	what
+;
+mvipad:
+	inc	hl
+;
+pad:
+	ld	a,' '		;PRINT PADDING SPACES
+	ld	(de),a
+	inc	de
+	djnz	pad
+	ret
+;
+;COMMAND:  +
+;Advance to Next Logical Sector
+;
+plus:
+	ld	de,1		;DFLT TO 1 SECT
+	ld	a,(hl)		;GET NEXT CHAR
+	cp	cr		;CR?
+	jp	z,plusgo	;..YES, DFLT TO 1
+	cp	eolch
+	jp	z,plusgo
+	call	decin		;GET #
+	ld	a,d
+	or	e
+	jp	nz,plusgo
+	ld	de,1		;SET 1 IF VALUE OF ZERO
+;
+plusgo:
+	call	nxtsec		;ADVANCE TO NEXT LOGICAL SECTOR
+	dec	de		;MORE TO GO?
+	ld	a,d
+	or	e
+	jp	nz,plusgo	;..YES
+;
+;Ok, incremented to sector.  Setup and read
+;
+plusmi:
+	push	hl
+	ld	hl,(cursec)
+	ex	de,hl
+	call	setsec		;SET SECTOR
+	ld	hl,(curtrk)
+	ex	de,hl
+	call	settrk		;SET TRACK
+	pop	hl
+	call	read		;READ IT
+	jp	clcgrp		;CALCULATE GROUP AND DISPLAY
+;
+;COMMAND:  -
+;Back up to previous sector
+;
+minus:
+	ld	de,1		;SET DFLT
+	ld	a,(hl)		;GET CHAR
+	cp	cr		;CR?
+	jp	z,mingo		;..YES, DFLT=1
+	cp	eolch
+	jp	z,mingo
+	call	decin		;..NO, GET ##
+	ld	a,d
+	or	e
+	jp	nz,mingo
+	ld	de,1		;ASSUME 1
+;
+mingo:
+	call	lstsec		;BACK UP ONE SECTOR
+	dec	de		;COUNT DOWN ON NUMBER OF TIMES TO BACKUP
+	ld	a,d
+	or	e
+	jp	nz,mingo
+	jp	plusmi		;READ BLOCK
+;
+;Go to last sector
+; Wrap around to last sector of previous track or last sector of
+; last track, as necessary
+;
+lstsec:
+	push	hl
+	ld	hl,(cursec)	;BACK UP SECTOR
+	dec	hl
+	ld	a,h
+	or	l
+	jp	nz,lsec1
+	ld	hl,(curtrk)	;BEYOND SECTOR ZERO, SO BACK UP TRACK
+	ld	a,h
+	or	l
+	jp	nz,lsec0
+	ld	hl,(maxtrk)	;WRAP TO END OF DISK
+	ld	(curtrk),hl
+	ld	hl,(maxsec)
+	jp	lsec1
+;
+lsec0:
+	dec	hl
+	ld	(curtrk),hl
+	ld	hl,(spt)	;GET NUMBER OF SECTORS/TRACK
+;
+lsec1:
+	ld	(cursec),hl	;SET NEW CURRENT SECTOR
+	pop	hl
+	ret
+;
+;Go to next sector
+;  On exit, CURSEC = Current Sector and CURTRK = Current Track
+;
+nxtsec:
+	push	hl
+	push	de
+	ld	hl,(cursec)	;INCREMENT CURRENT SECTOR
+	inc	hl
+	ex	de,hl
+	ld	hl,(spt)	;CHECK TO SEE IF BEYOND END OF TRACK
+	call	subde
+	ex	de,hl
+	jp	nc,nextok
+	ld	hl,(curtrk)	;BEYOND END OF TRACK, SO INCR CURRENT TRACK
+	inc	hl
+	ex	de,hl
+	ld	hl,(maxtrk)	;SEE IF BEYOND END OF DISK
+	call	subde
+	jp	nc,trask
+	ld	de,0		;WRAP TO START OF DISK
+;
+trask:
+	ex	de,hl
+	ld	(curtrk),hl	;SET NEW CURRENT TRACK
+	ld	hl,1		;SET SECTOR 1
+;
+nextok:
+	ld	(cursec),hl	;SET NEW CURRENT SECTOR
+	pop	de
+	pop	hl
+	ret
+;
+;Tell what group, displacement, track, sector, physical sector
+;
+inq:
+	call	inqsub
+	jp	prompt
+;
+;Position inquiry subroutine
+;Executed via: G S or T (with no operands)
+;
+inqsub:
+	push	hl
+	ld	hl,(systrk)	;CHECK IF IN SYSTEM TRACKS
+	ex	de,hl
+	ld	hl,(curtrk)
+	call	subde
+	jp	c,nogrp
+	call	ilprt		;PRINT GROUP NUMBER IF NOT IN SYSTEM TRACKS
+	db	dim,'Group = ',bright,0
+	ld	hl,(group)
+	ld	b,h
+	ld	c,l
+	call	hexb		;PRINT GROUP NUMBER IN BC
+	ld	a,':'
+	call	type
+	ld	a,(grpdis)
+	call	hex		;PRINT GROUP DISPLACEMENT IN A
+	ld	a,','
+	call	type
+;
+nogrp:
+	call	ilprt		;PRINT TRACK NUMBER
+	db	dim,' Track = ',bright,0
+	ld	hl,(curtrk)
+	call	dec		;TRACK NUMBER IN DECIMAL
+	call	ilprt		;PRINT SECTOR NUMBER
+	db	dim,', Sector = ',bright,0
+	ld	hl,(cursec)
+	call	dec		;SECTOR NUMBER IN DECIMAL
+	call	ilprt		;PRINT PHYSCIAL SECTOR NUMBER
+	db	dim,', Physical Sector = ',bright,0
+	ld	hl,(physec)
+	call	dec		;PHYSICAL SECTOR NUMBER IN DECIMAL
+	call	ilprt
+	db	'              ',cr,lf,0	; remove prev. output
+						; ..in editor <crw>
+;	call	crlf
+	pop	hl
+	ret
+;
+;COMMAND:  C
+;Change Contents of Current Block
+;
+chg:
+	ld	a,(hl)		;GET TYPE (HEX, ASCII)
+	call	upcase
+	push	af		;SAVE "H" OR "A"
+	inc	hl
+	call	hexin		;GET DISP IN HEX
+	call	disp1		;VALIDATE DISP TO DE
+	inc	hl
+	ld	bc,0		;SHOW NO 'THRU' ADDR
+	cp	'-'		;TEST DELIM FR. DISP
+	jp	nz,chgnth	;NO THRU
+	push	de		;SAVE FROM
+	call	hexin
+	call	disp1		;GET THRU
+	inc	hl		;SKIP END DELIM
+	ld	b,d
+	ld	c,e		;BC = THRU
+	pop	de		;GET FROM
+	jp	chgah
+;
+chgnth:
+	cp	sepch
+	jp	nz,what
+;
+chgah:
+	pop	af
+	cp	'H'		;HEX?
+	jp	z,chghex
+	cp	'A'		;ASCII?
+	jp	nz,what
+;
+;Change ASCII
+;
+chgalp:
+	ld	a,(hl)		;GET CHAR
+	cp	cr
+	jp	z,prompt
+	cp	eolch
+	jp	z,prompt
+;
+;The following print of the deleted byte is commented out; if leading
+;  semicolons are removed, deleted bytes will be printed
+;
+;	LDAX	D	;GET BYTE THAT IS REPLACED
+;	CPI	' '
+;	JC	CHGAHX
+;	CPI	7EH	;DON'T PRINT ESC CHAR FOR H1500
+;	JNC	CHGAHX
+;	JMP	CHGA2
+;
+;CHGAHX:
+;	CALL	BHEX
+;	JMP	CHGA3
+;
+;CHGA2:
+;	CALL	TYPE
+;
+;End of print of delete bytes
+;
+chga3:
+	ld	(back),hl	;IN CASE "THRU"
+	call	getval		;GET ASCII OR <HEX> VALUE
+	ld	(de),a		;UPDATE BYTE
+	inc	hl		;PT TO NEXT INPUT CHAR
+;
+;See if 'THRU' requested
+;
+	ld	a,c
+	or	a
+	jp	z,chanth
+	cp	e		;DONE?..
+	jp	z,prompt	;..YES
+	ld	hl,(back)
+;
+chanth:
+	inc	e
+	jp	nz,chgalp
+	ld	a,(hl)
+	cp	cr
+	jp	z,prompt
+	cp	eolch
+	jp	z,prompt
+	jp	what
+;
+;Change hex
+;
+chghcm:
+	inc	hl
+;
+chghex:
+	ld	a,(hl)		;GET HEX DIGIT
+	cp	cr
+	jp	z,prompt
+	cp	eolch
+	jp	z,prompt
+	cp	sepch		;DELIM?
+	jp	z,chghcm
+	push	de
+	ld	(hexad),hl	;IN CASE 'THRU'
+	call	hexin		;POSITIONS TO DELIM
+	ld	a,e		;GET VALUE
+	pop	de		;..ADDR
+;
+;The following comments out the echo of the deleted byte; removing the
+;  leading semicolons restores the echo
+;
+;	PUSH	PSW	;SAVE VALUE
+;	LDAX	D	;GET OLD
+;	CALL	HEX	;ECHO IN HEX
+;	POP	PSW	;GET NEW
+;
+;End of echo of bytes
+;
+	ld	(de),a		;SAVE NEW BYTE
+	ld	a,c		;SEE IF 'THRU'
+	or	a
+	jp	z,chhnth	;..NO.
+	cp	e		;..YES, DONE?
+	jp	z,prompt
+	ld	hl,(hexad)	;..NO: MORE
+;
+chhnth:
+	inc	e
+	jp	nz,chghex
+	ld	a,(hl)
+	cp	cr
+	jp	z,prompt
+	cp	eolch
+	jp	z,prompt
+	jp	what
+;
+;COMMAND:  R
+;Read Current Block into TBUFF
+;COMMAND:  RG
+;Read Specified Group into GBUFF
+;
+doread:
+	ld	a,(notpos)	;POSITIONED?
+	or	a
+	jp	nz,cantrd
+	call	read		;READ BLOCK
+	jp	prompt
+;
+cantrd:
+	call	ilprt
+	db	'++ Can''t read - not positioned ++',cr,lf
+	db	'Position by:',cr,lf
+	db	tab,'Track then Sector, or',cr,lf
+	db	tab,'Group',cr,lf,0
+	jp	prompt
+;
+;COMMAND:  W
+;Write Current Block to Disk
+;COMMAND:  WG
+;Write Specified Group from GBUFF
+;
+dorite:
+	call	write		;DO WRITE
+	jp	prompt
+;
+;Print Byte in A as Hex Digits
+;
+bhex:
+	push	af
+	ld	a,'<'
+	call	type
+	pop	af
+	call	hex
+	ld	a,'>'
+	call	type
+	ret
+;
+;Print Number in BC as Hex Digits
+;  HEXB does not print MS Byte if DSM shows small disk size
+;  HEXB1 prints BC regardless
+;
+hexb:
+	ld	a,(dsm+1)
+	or	a
+	jp	z,hexx
+hexb1:
+	ld	a,b
+	call	hex
+;
+hexx:
+	ld	a,c
+;
+;Print Byte in A as 2 Hex Digits
+;
+hex:
+	push	af
+	rra			;GET HIGH NYBBLE
+	rra
+	rra
+	rra
+	call	nibbl		;PRINT IT
+	pop	af		;GET LOW NYBBLE
+;
+nibbl:
+	and	0fh		;MASK LOW NYBBLE
+	cp	10		;0-9?
+	jp	c,hexnu
+	add	a,7		;CONVERT TO A-F
+;
+hexnu:
+	add	a,'0'		;CONVERT TO ASCII
+	jp	type		;PRINT IT
+;
+;Decimal output routine
+;  Print Number in HL as decimal digits
+;
+dec:
+	push	bc
+	push	de
+	push	hl
+	xor	a		;SET NO LEADING DIGIT
+	ld	(ddig),a
+	ld	bc,10000
+	call	dprt
+	add	hl,bc
+	ld	bc,1000
+	call	dprt
+	add	hl,bc
+	ld	bc,100
+	call	dprt
+	add	hl,bc
+	ld	bc,10
+	call	dprt
+	add	hl,bc
+	ld	a,l		;ALWAYS PRINT LSD
+	add	a,'0'		;ASCII
+	call	type
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+dprt:
+	push	bc		;SAVE BC
+	ld	d,0ffh		;SET -1
+dprtl:
+	inc	d		;ADD 1 TO OUTPUT DIGIT
+	ld	a,l		;L-C
+	sub	c
+	ld	l,a
+	ld	a,h		;H-B
+	sbc	a,b
+	ld	h,a
+	jp	nc,dprtl
+	pop	bc		;RESTORE BC
+	ld	a,(ddig)	;GET LEADING DIGIT FLAG
+	or	d		;CHECK FOR ZERO STILL
+	ld	(ddig),a	;SET FLAG
+	ld	a,d		;GET DIGIT TO PRINT
+	ret	z		;ABORT IF BOTH ZERO
+	add	a,'0'		;ASCII
+	jp	type
+ddig:	ds	1		;TEMP FOR DEC USE ONLY
+;
+;Print <SP>
+;
+space:
+	ld	a,' '
+	jp	type
+;
+;Print a dim '|'
+;
+aster:
+	call	stndout		;DIM
+	ld	a,'|'
+	call	type
+	jp	stndend		;BRIGHT
+;
+;Inline print routine
+;  Print Chars ending in 0 pted to by Return Address; return to byte after
+;
+ilprt:
+	ex	(sp),hl		;PT TO STRING
+ilplp:
+	call	ctlcs		;ABORT?
+	jp	z,prmptr
+	ld	a,(hl)		;GET CHAR
+;	CPI	1	;PAUSE? -- ^A
+;	JNZ	ILPOK
+;	CALL	CONIN	;WAIT FOR ANY CHAR
+;	CPI	3	;ABORT?
+;	JZ	PRMPTR
+;	JMP	ILPNX
+;
+;ILPOK:
+	cp	dim		;GOTO DIM?
+	jp	z,ilpdim
+	cp	bright		;GOTO BRIGHT?
+	jp	z,ilpbri
+	call	type		;PRINT CHAR
+	jp	ilpnx
+ilpdim:
+	call	stndout		;ENTER STANDOUT MODE
+	jp	ilpnx
+ilpbri:
+	call	stndend		;EXIT STANDOUT MODE
+;
+ilpnx:
+	inc	hl		;PT TO NEXT
+	ld	a,(hl)		;GET IT
+	or	a		;DONE?
+	jp	nz,ilplp
+	inc	hl		;PT TO BYTE AFTER ENDING 0
+	ex	(sp),hl		;RESTORE HL AND RET ADR
+	ret
+;
+;DISP calls DECIN, and validates a sector
+;displacement, then converts it to an address
+;
+disp:
+	call	decin
+disp1:
+	push	af		;SAVE DELIMITER
+	ld	a,d
+	or	a
+	jp	nz,badisp
+	ld	a,e
+	or	a
+	jp	m,badisp
+	add	a,80h		;TO POINT TO BUFFER AT BASE+80H
+	ld	e,a
+	ld	d,base/256
+	pop	af		;GET DELIM
+	ret
+;
+badisp:
+	call	ilprt
+	db	'++ Bad Displacement (Not 0-7FH) ++'
+	db	cr,lf,0
+	jp	prmptr
+;
+;Input Number from Command Line -- Assume it to be Hex
+;  Number returned in DE
+;
+hexin:
+	ld	de,0		;INIT VALUE
+	ld	a,(hl)
+	cp	'#'		;DECIMAL?
+	jp	z,hdin		;MAKE DECIMAL
+;
+hinlp:
+	ld	a,(hl)		;GET CHAR
+	call	upcase		;CAPITALIZE
+	cp	cr		;EOL?
+	ret	z
+	cp	eolch		;EOL?
+	ret	z
+	cp	sepch
+	ret	z
+	cp	' '		;SPACE?
+	ret	z
+	cp	'-'		;'THRU'?
+	ret	z
+	cp	'>'
+	ret	z
+	inc	hl		;PT TO NEXT CHAR
+	cp	'0'		;RANGE?
+	jp	c,what
+	cp	'9'+1		;RANGE?
+	jp	c,hinnum
+	cp	'A'		;RANGE?
+	jp	c,what
+	cp	'F'+1		;RANGE?
+	jp	nc,what
+	sub	7		;ADJUST FROM A-F TO 10-15
+;
+hinnum:
+	sub	'0'		;CONVERT FROM ASCII TO BINARY
+	ex	de,hl
+	add	hl,hl		;MULT PREVIOUS VALUE BY 16
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	a,l		;ADD IN NEW DIGIT
+	ld	l,a
+	ex	de,hl
+	jp	hinlp
+;
+hdin:
+	inc	hl		;SKIP '#'
+;
+;Input Number in Command Line as Decimal
+;  Number is returned in DE
+;
+decin:
+	ld	de,0
+	ld	a,(hl)		; GET 1ST CHAR
+	cp	'#'		; HEX?
+	jp	nz,dinlp
+	inc	hl		; PT TO DIGIT
+	jp	hinlp		; DO HEX PROCESSING
+;
+dinlp:
+	ld	a,(hl)		;GET DIGIT
+	call	upcase		;CAPITALIZE
+	cp	'0'		;RANGE?
+	ret	c
+	cp	'9'+1		;RANGE?
+	ret	nc
+	sub	'0'		;CONVERT TO BINARY
+	inc	hl		;PT TO NEXT
+	push	hl
+	ld	h,d
+	ld	l,e
+	add	hl,hl		;X2
+	add	hl,hl		;X4
+	add	hl,de		;X5
+	add	hl,hl		;X10
+	add	a,l		;ADD IN DIGIT
+	ld	l,a
+	ld	a,h
+	adc	a,0
+	ld	h,a
+	ex	de,hl		;RESULT IN DE
+	pop	hl
+	jp	dinlp
+;
+;Read in a console buffer
+;
+rdbuf:
+	call	ilprt		;PRINT PROMPT
+	db	cr,lf,'DU3  ',0
+	ld	a,(drive)	;GET DRIVE NUMBER
+	add	a,'A'		;CONVERT TO ASCII
+	call	type
+	ld	a,(unum)	;DISPLAY USER NUMBER
+	ld	l,a		;VALUE IN HL
+	ld	h,0
+	call	dec		;PRINT IN DECIMAL
+	call	ilprt		;PRINT PROMPT
+	db	'? ',0
+;
+;ENTRY POINT TO READ BUFFER WITHOUT PROMPT
+;
+rdbuf1:
+	ld	hl,(inbuf)	;USE CP/M READLN
+	dec	hl
+	dec	hl
+	ex	de,hl
+	ld	c,10
+	push	de
+	call	bdos
+	pop	de
+	inc	de		;PT TO CHAR COUNT
+	ld	a,(de)		;GET CHAR COUNT
+	ld	b,a		;CHAR COUNT IN B
+	inc	de		;PT TO INPUT LINE
+	ex	de,hl		;... IN HL
+	add	a,l		;ADD CHAR COUNT TO HL
+	ld	l,a
+	ld	a,h
+	adc	a,0
+	ld	h,a
+	ld	a,cr		;STORE ENDING CR
+	ld	(hl),a		;SET CR
+	call	type		;ECHO IT
+	ld	a,lf		;ECHO..
+	call	type		;..LF
+	ld	hl,(inbuf)	;SET PTR TO FIRST CHAR IN LINE
+	ret
+;
+;Set paging flag for page routine
+;
+pagset:
+	ld	a,(pagsiz)	;GET SIZE OF PAGE
+	ld	(pagflg),a	;SET FLAG
+	ret
+;
+;Page output
+;
+pager:
+	ld	a,(pagflg)	;GET FLAG
+	cp	2		;2 LINES LEFT?
+	jp	z,wait		;SAME AS USER DELAY
+	dec	a		;COUNT DOWN
+	ld	(pagflg),a
+	jp	crlf
+;
+;Delay Routine
+;
+swait:
+	call	at
+	db	23,5		;POSITION CURSOR
+	jp	wait0
+wait:
+	call	crlf		;NEW LINE
+wait0:
+	push	hl
+	call	ilprt
+	db	dim,'Type Any Character to Continue or ^C to Abort - ',bright,0
+	pop	hl
+	call	conin		;GET RESPONSE
+	cp	'C'-40h		;^C?
+	jp	z,wait1
+	call	crlf		;NEW LINE
+	call	pagset		;RESET PAGE COUNT
+	ret
+wait1:
+	ld	a,(ihflg)	;INITIAL HELP?
+	or	a		;0=NO
+	jp	z,prmptr	;ABORT TO COMMAND PROMPT
+	jp	exit1		;ABORT TO CP/M
+;
+;CRLF Routine
+;
+crlf:
+	ld	a,cr
+	call	type
+	ld	a,lf
+	jp	type
+;
+;Convert to Upper Case
+;
+upcase:
+	and	7fh		;MASK OUT MSB
+	cp	60h		;LESS THAN SMALL A?
+	ret	c		;RETURN IF SO
+	and	5fh		;MAKE UPPER CASE
+	ret
+;
+;CON: Status Routine
+;
+const:
+	ld	a,bconst
+	jr	dobios
+;
+;CON: Input Routine
+;
+conin:
+	ld	a,bconin
+;
+dobios:
+	push	bc
+	push	de
+	push	hl
+	call	xbios
+	or	a
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+;
+;Console out with TAB expansion
+;  Char in A
+;
+type:
+	push	bc		;SAVE REGS
+	push	de
+	push	hl
+	ld	c,a		;FOR OUTPUT ROUTINE
+	cp	tab
+	jp	nz,type2
+;Tabulate
+typtab:
+	ld	a,' '		;PRINT SPACE
+	call	type
+	ld	a,(tabcol)	;GET COL COUNT
+	and	7		;DONE?
+	jp	nz,typtab
+	jp	typret
+;
+;Filter out control characters to
+;prevent garbage during view of file
+;
+type2:
+	cp	' '
+	jp	nc,typeq
+	cp	cr
+	jp	z,typeq
+	cp	lf
+	jp	nz,typncr
+;
+typeq:
+;
+;CON: Output Routine
+;
+	ld	a,bconout
+	call	dobios
+;
+;Update column used in tab expansion
+;
+	ld	a,c		;GET CHAR
+	cp	cr
+	jp	nz,typncr
+	ld	a,0		;RESET TAB COLUMN IF <CR>
+	ld	(tabcol),a
+	jp	typlst
+;
+typncr:
+	cp	' '		;CTL CHAR?
+	jp	c,typlst	;..NO CHANGE IN COL
+	ld	a,(tabcol)	;INCR TAB COUNT
+	inc	a
+	ld	(tabcol),a
+;
+typlst:
+	ld	a,(pflag)	;CHECK FOR PRINTER OUTPUT
+	and	1
+	call	nz,list		;FROM C REG
+;
+typret:
+	pop	hl		;RESTORE REGS
+	pop	de
+	pop	bc
+	ret
+;
+;LST: Output Routine
+;  Char in C
+;
+list:
+	ld	a,blist
+	jr	dobios
+;
+;Home Disk Routine
+;
+home:
+	ld	a,bhome
+	jr	dobios
+;
+;Set track # in DE
+;
+settrk:
+	push	hl
+	ld	hl,(maxtrk)	;CHECK FOR WITHIN BOUNDS
+	call	subde		;IF TRACK # IN DE > MAX, THEN ERROR
+	pop	hl
+	jp	c,outlim
+	ex	de,hl		;RESET CURRENT TRACK
+	ld	(curtrk),hl
+	ex	de,hl
+	ld	b,d		;BC=TRACK NUMBER
+	ld	c,e
+	ld	a,bsettrk
+	jr	dobios
+;
+;Set Sector Number in DE
+;
+setsec:
+	push	hl
+	push	de
+	ld	hl,(systrk)	;GET NUMBER OF SYSTEM TRACKS
+	ex	de,hl
+	ld	(cursec),hl	;SET CURRENT SECTOR
+	ld	hl,(curtrk)	;GET CURRENT TRACK
+	call	subde		;SEE IF WE ARE IN THE SYSTEM TRACKS
+	pop	bc		;BC=SECTOR NUMBER
+	ld	h,b		;HL=SECTOR NUMBER
+	ld	l,c
+	push	af		;SAVE FLAGS
+	call	v3check		;CHECK FOR VERSION NUMBER
+	jr	c,setse0	;CP/M 1.x or 2.x
+	dec	hl		;SCALE SECTOR # TO 0
+	ld	a,(phm)		;PHYSICAL SECTOR MASK
+	and	l		;A=LOG. SECTOR IN BUFFER
+	ld	(logsec),a	;SAVE FOR LATER
+	push	de
+	ld	a,(psh)		;PHYSICAL SECTOR SHIFT COUNT
+	or	a		;CHECK FOR NO SHIFT
+	jr	z,setse1	;JUMP IF NONE
+	ld	d,a		;LOOP COUNT IN 'D'
+setse2:
+	call	rotrhl		;SHIFT SECTOR NUMBER RIGHT		
+	dec	d		;DECREMENT LOOP COUNT
+	jr	nz,setse2	;LOOP UNTIL DONE
+setse1:
+	pop	de
+	inc	hl		;SCALE SECTOR # TO 1
+	ld	b,h		;REPEAT NUMBER IN BC
+	ld	c,l
+setse0:
+	pop	af
+	jp	nc,notsys	;IF NO CARRY FOR SUBDE, WE ARE NOT IN SYSTEM TRACKS
+	ld	a,(first0)	;SEE IF FIRST SEC 0
+	or	a
+	jp	nz,gstsec	;NO, JUMP AWAY
+	dec	hl		;YES, SO DECREMENT
+	jp	gstsec		;REQUESTED, THEN GO
+;
+;Not in System Tracks, so Skew Factor is effective
+;
+notsys:
+	ld	hl,(sectbl)	;GET PTR TO SECTOR TABLE
+	ex	de,hl		;... IN DE
+	dec	bc		;DECREMENT SECTOR NUMBER BY 1
+	ld	a,bsectrn
+	call	xbios
+	ld	a,(spt+1)	;IF SPT<256 (HI-ORD = 0)
+	or	a		; THEN FORCE 8-BIT TRANSLATION
+	jp	nz,gstsec	; ELSE KEEP ALL 16 BITS
+	ld	h,a
+gstsec:
+	ld	(physec),hl
+	ld	b,h
+	ld	c,l
+	ld	a,bsetsec
+	call	dobios
+	pop	hl		;RESTORE PTR TO NEXT CHAR
+	ret
+;
+;Out of Disk Track Limit
+;
+outlim:
+	call	ilprt
+	db	'++ Not Within Tracks 0-',0
+	push	hl
+	ld	hl,(maxtrk)	;PRINT MAX TRACK NUMBER
+	call	dec
+	pop	hl
+	call	ilprt
+	db	' ++',cr,lf,0
+	call	norite		;NOT POSITIONED
+	jp	prmptr
+;
+;Set DMA Address
+;
+setdma:
+	push	hl
+	ld	h,b
+	ld	l,c
+	ld	(dmaadr),hl
+	pop	hl
+	ld	a,bsetdma
+	jp	dobios
+;
+;Read Next Block into DMA Address
+;
+read:
+	ld	a,1		;SET FLAG
+	ld	(wrflg),a
+	push	hl		;SAVE PTR TO NEXT CHAR
+;
+	call	v3check		;CHECK FOR VERSION 3.x
+	jr	c,read2		;FOR 1.x OR 2.x
+	call	read3		;READ A PHYSICAL SECTOR
+	jr	nz,rderr	;IF ERROR ON READ
+	ex	de,hl		;SECTOR ADDRESS TO DE
+	ld	hl,(dmaadr)	;DMA ADDRESS TO HL
+	ex	de,hl		;REVERSE ADDRESSES FOR
+	call	mov128		;MOVE
+	pop	hl		;READ FINISHED
+	ret
+;
+read2:
+	ld	a,bread
+	call	dobios
+rderr:
+	pop	hl		;ERROR IF NZ SET
+	ret	z
+	call	ilprt
+	db	'++ READ Failed, Sector may be Invalid ++'
+	db	cr,lf,0
+	ret
+;
+;Write Block in DMA Address to Disk
+;
+write:
+	ld	a,(wrflg)	;READ ALREADY PERFORMED?
+	or	a		;ERROR IF NOT
+	jp	nz,pwrite
+;
+badw:
+	call	ilprt
+	db	'++ Cannot Write Unless Read Issued ++'
+	db	cr,lf,0
+	jp	expl
+;
+;Do Write
+;
+pwrite:
+	push	hl		;SAVE PTR TO NEXT CHAR
+	ld	c,1		;FORCE WRITE TYPE 1 IN CASE 2.x DEBLOCK USED
+	call	v3check		;CHECK FOR VERSION 3.x
+	jr	c,write1	;FOR	1.x OR 2.x
+	call	read3		;CPM3, GET PHYSICAL SECTOR
+	jr	nz,wrerr	;ERROR
+	ex	de,hl		;SECTOR ADDRESS TO DE
+	ld	hl,(dmaadr)	;DMA ADDRESS TO HL
+	call	mov128		;MOVE DATA TO BUFFER (DEBLOCK)
+write1:
+	ld	a,bwrite
+	call	dobios
+wrerr:
+	pop	hl		;ERROR IF NZ SET
+	ret	z
+	call	ilprt
+	db	'++ WRITE Failed ++',cr,lf,0
+	ret
+;
+;Deblock CPM3 BIOS system
+;
+read3:
+	ld	bc,dbuff	;CP/M VERSION 3 READ
+	push	bc		;SAVE FOR LATER
+	ld	a,bsetdma	;SET DMA ADDRESS
+	call	xbios
+	ld	a,bread
+	call	xbios
+	pop	hl		;BUFFER ADDRESS
+	or	a		;CHECK ERROR CODE
+	ret	nz		;ERROR
+	ld	bc,128		;LOGICAL SECTOR SIZE
+	ld	a,(logsec)	;GET LOGICAL SECTOR NUMBER
+	or	a		;NO OFFSET IF ZERO
+	ret	z		;HL=SECTOR ADDR., BC=LEN.
+read31:
+	add	hl,bc		;OFFSET TO DESIRED SECTOR
+	dec	a		;COUNT DOWN LOGICAL SECTOR NUMBER
+	jr	nz,read31	;LOOP UNTIL DONE
+	ret			;HL=SECTOR ADDR., BC=LEN.
+;
+;Check for CP/M 3.x, carry if not
+;
+v3check:
+	ld	a,(verflg)
+	cp	30h
+	ret
+;
+;BDOS calls (a), preserving registers
+;
+dos:
+	push	hl
+	push	de
+	push	bc
+	ld	c,a
+	call	bdos
+	or	a
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+;
+;BIOS calls, function #a. Pass registers, return BIOS values
+;
+xbios:
+	ld	(hlreg),hl
+	ld	(dereg),de
+	ld	(bcreg),bc
+	ld	l,a
+	ld	(func),hl
+	call	v3check
+	jr	c,xbios1
+	ld	de,func
+	ld	c,bxbios
+	jp	bdos
+xbios1:
+	dec	l		;SO 0 IS REBOOT
+	ld	a,l		;*3
+	add	a,a
+	add	a,l
+	ld	hl,(base+1)	;POINTER TO WARN BOOT
+	add	a,l
+	ld	l,a
+	adc	a,h
+	sub	l
+	ld	h,a
+	jp	(hl)
+;
+;COMMAND:  X
+;Exit to CP/M
+;
+;Since CP/M+ doesn't do a warm boot at jump 0000,
+;we have to reset the disk system.
+;
+exit:
+	call	dinit		;DEINIT TERMINAL
+	ld	c,resetdk	;RESET DISK SYSTEM
+	call	bdos
+	jp	base		;WARM BOOT
+;
+;Quick Exit to CP/M
+;
+exit1:
+	ld	hl,(dutstk)	;GET CP/M STACK PTR
+	ld	sp,hl		;SET SP
+	ret
+
+;
+;********************************
+;*				*
+;*    Utility Subroutines	*
+;*				*
+;********************************
+;
+grpcmp:
+	ld	a,c
+	inc	d
+	dec	d
+	jp	z,cmp8
+	cp	(hl)
+	inc	hl
+	ret	nz
+	ld	a,b
+;
+cmp8:
+	cp	(hl)
+	ret
+;
+;2's complement HL ==> HL
+;
+neg:
+	ld	a,l
+	cpl
+	ld	l,a
+	ld	a,h
+	cpl
+	ld	h,a
+	inc	hl
+	ret
+;
+;HL/2 ==> HL
+;
+rotrhl:
+	or	a
+	ld	a,h
+	rra
+	ld	h,a
+	ld	a,l
+	rra
+	ld	l,a
+	ret
+;
+;Collect the number of '1' bits
+;in A as a count in C
+;
+colect:
+	ld	b,8		;NUMBER OF BITS
+;
+colop:
+	rla
+	jp	nc,coskip
+	inc	c
+;
+coskip:
+	dec	b
+	jp	nz,colop
+	ret
+;
+;HL-DE ==> HL
+;  Carry Flag is Significant
+;
+subde:
+	ld	a,l
+	sub	e
+	ld	l,a
+	ld	a,h
+	sbc	a,d
+	ld	h,a
+	ret
+;
+;Quick Kludge multiply
+;HL*DE ==> HL
+;
+mult:
+	push	bc
+	push	de
+	ex	de,hl
+	ld	b,d
+	ld	c,e
+	ld	a,b
+	or	c
+	jp	nz,mulcon
+	ld	hl,0		;FILTER SPECIAL CASE
+	jp	mldone		;  OF MULTIPLY BY 0
+;
+mulcon:
+	dec	bc
+	ld	d,h
+	ld	e,l
+;
+multlp:
+	ld	a,b
+	or	c
+	jp	z,mldone
+	add	hl,de
+	dec	bc
+	jp	multlp
+;
+mldone:
+	pop	de
+	pop	bc
+	ret
+;
+;Routine to fill in disk params
+;with every drive change
+;
+logit:
+	ld	de,dpb		;   THEN MOVE TO LOCAL
+	ld	b,dpblen	;  WORKSPACE
+	call	move
+	ld	hl,grpdis
+	ld	a,(hl)
+	push	af
+	ld	a,(blm)
+	ld	(hl),a
+	push	hl
+	ld	hl,(dsm)
+	ex	de,hl
+	call	gtksec
+	ld	(maxsec),hl
+	ex	de,hl
+	ld	(maxtrk),hl
+	pop	hl
+	pop	af
+	ld	(hl),a
+	ret
+
+;***********************************
+;
+;  DU3 Command Table
+;
+;***********************************
+cmdtbl:
+	db	' '		;null command
+	dw	prompt
+;
+	db	':'
+	dw	mac
+;
+	db	'@'
+	dw	pcmd
+;
+	db	'+'
+	dw	 plus
+;
+	db	'-'
+	dw	minus
+;
+	db	'='
+	dw	search
+;
+	db	'<'
+	dw	save
+;
+	db	'>'
+	dw	restor
+;
+	db	'#'
+	dw	stats
+;
+	db	'?'
+	dw	help
+;
+	db	mulch
+	dw	repeat
+;
+	db	'!'
+	dw	uwait
+;
+	db	'A'
+	dw	dump
+;
+	db	'C'
+	dw	chg
+;
+	db	'D'
+	dw	dump
+;
+	db	'E'
+	dw	edit
+;
+	db	'F'
+	dw	posfil
+;
+	db	'G'
+	dw	pos
+;
+	db	'H'
+	dw	dump
+;
+	db	'L'
+	dw	login
+;
+	db	'M'
+	dw	map
+;
+	db	'N'
+	dw	newdsk
+;
+	db	'P'
+	dw	prntff
+;
+	db	'Q'
+	dw	queuer
+;
+	db	'R'
+	dw	doread
+;
+	db	'S'
+	dw	pos
+;
+	db	'T'
+	dw	pos
+;
+	db	'U'
+	dw	user
+;
+	db	'V'
+	dw	view
+;
+	db	'W'
+	dw	dorite
+;
+	db	'X'
+	dw	exit
+;
+	db	'Z'
+	dw	sleep
+;
+	db	0		; End of Table
+
+dmaadr:
+	dw	0080h		;DMA ADDRESS
+
+;*************************************
+
+	dseg			; <crw>
+
+;
+;Temporary storage area (uninitialized)
+;
+clock:
+	ds	1		;clock speed
+pagsiz:
+	ds	1		;page size
+muser:
+	ds	1		;max user
+mdisk:
+	ds	1		;max disk
+stksav:
+	ds	2		;SAVE HL VALUE
+dutstk:
+	ds	2		;OLD CP/M STACK POINTER; TOP OF DU3 STACK
+bufad:
+	ds	2		;FORCES INITIAL READ
+qcnt:
+	ds	2		;NUMBER OF SECTORS IN QUEUE
+qnxt:
+	ds	2		;PTR TO NEXT SECTOR IN QUEUE
+qlst:
+	ds	2		;PTR TO LAST SECTOR IN QUEUE
+qptr:
+	ds	2		;G-P QUEUE PTR
+hexad:
+	ds	2		;TO RE-FETCH A VALUE
+togo:
+	ds	2		;REPEAT COUNT (FFFF=CONT)
+twoup:
+	ds	1
+unum:
+	ds	1		;NUMBER OF CURRENT USER
+only1:
+	ds	1		;FLAG TO PRINT ONLY 1 MAP ENTRY (0=NO)
+mfptr:
+	ds	2		;MULTI FILE PTR FOR GETGRP
+pagflg:
+	ds	1		;LINE COUNTER FOR PAGING
+pflag:
+	ds	1		;1=PRINT
+group:
+	ds	2		;GROUP NUMBER
+grpdis:
+	ds	1		;DISPLACEMENT INTO GROUP
+savefl:
+	ds	1		;SAVE FLAG
+curtrk:
+	ds	2		;CURRENT TRACK NUMBER
+cursec:
+	ds	2		;CURRENT SECTOR NUMBER
+logsec:
+	ds	1		;LOGICAL SECTOR
+physec:
+	ds	2		;CURRENT PHYSICAL SECTOR NUMBER
+tabcol:
+	ds	1		;TAB COLUMN
+cpyfct:
+	ds	1		;GROUP COPY FUNCTION; 0=READ, 0FFH=WRITE
+filect:
+	ds	2		;FILE COUNT
+dirpos:
+	ds	1		;POSITION IN DIRECTORY
+findfl:
+	ds	1		;1=MUST POSITION AFTER FIND
+ftsw:
+	ds	1		;SEARCH W/O INCREMENT
+notpos:
+	ds	1		;INITIALLY NOT POSITIONED
+wrflg:
+	ds	1		;MAY NOT WRITE UNTIL '+', '-',
+;			 OR 'G' COMMAND
+tgrp:
+	ds	2		;TEMPORARY GROUP FLAG
+first0:
+	ds	1		;SETS TO 0 IF FIRST SEC # IS 0
+drive:
+	ds	1		;DRIVE NUMBER
+maxtrk:
+	ds	2		;MAX TRACK NUMBER
+maxsec:
+	ds	2		;MAX SECTOR NUMBER
+sectbl:
+	ds	2		;POINTER TO SECTOR SKEW TABLE
+;
+ihflg:
+	ds	1		;0=NOT AT INITIAL HELP, 0FFH=AT INITIAL HELP
+dupflg:
+	ds	1		;SPACE OR STAR TO INDICATE MULTIPLE USERS
+back:
+	ds	2		;TO BACK UP IN "CA0-7F,X"
+dumtyp:
+	ds	1
+verflg:
+	ds	2		;VERSION NUMBER
+;
+;CP/M3 BIOS parameter block
+;
+func:
+	ds	1
+areg:
+	ds	1
+bcreg:
+	ds	2
+dereg:
+	ds	2
+hlreg:
+	ds	2
+;
+;The disk parameter block
+;is moved here from CP/M
+;
+dpb	equ	$		;DISK PARAMETER BLOCK (COPY)
+spt:
+	ds	2
+bsh:
+	ds	1
+blm:
+	ds	1
+exm:
+	ds	1
+dsm:
+	ds	2
+drm:
+	ds	2
+al0:
+	ds	1
+al1:
+	ds	1
+cks:
+	ds	2
+systrk:
+	ds	2
+psh:
+	ds	1
+phm:
+	ds	1
+;
+;End of disk parameter block
+;
+savbuf:
+	ds	2
+inbuf:
+	ds	2		;INPUT LINE BUFFER
+dbuff:
+	ds	4096		;CPM3 PHYSICAL SECTOR DEBLOCK BUFFER
+pinbuf:
+	ds	2		;PREVIOUS CONTENTS OF INPUT BUFFER
+ctemp:
+	ds	2		;BUILD NEW COMMAND LINE BUFFER
+ctempx:
+	ds	2		;END OF CTEMP
+mtabl:
+	ds	2		;10 PAGES FOR 10 MACROS
+gbuff:
+	ds	2
+direct:
+	ds	2
+;
+	end
+
+; END DU314-02.Z80
+
+                         

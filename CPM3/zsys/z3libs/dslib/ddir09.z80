@@ -1,0 +1,89 @@
+	TITLE	"DDIR09 - Syslib 4.0"
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SDIR09.Z80 Ver 1.5 by Richard Conn
+; Date    : 27 Aug 88
+; Version : 1.0
+; Module  : DDIR09
+; Abstract: This module contains the routine DDIRPAK which re-
+;	structures the directory (by packing entries) to include
+;	only those entries marked by DDIRSEL (or DDIRNSEL).  A side
+;	effect of this routine is that the Flag Extent (Set by
+;	DIR:) be correct.  In most cases, a default of 0 is Ok,
+;	except when the Extent Size is greater than 16K.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		DDIRPAK
+
+; Definitions
+
+ESIZE	EQU	16+15		; Buffer Entry (+ Create, Access & Mod time)
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DDIRPAK
+; Entry: HL - Points to a Directory Buffer
+;	 BC - Contains the total number of files in Buffer
+; Exit : BC - Number of Selected files.  Buffer is restructured
+; Uses : BC
+; Special Requirements: Required side effect is that the Flag
+;	Extent (Set by DIR:) be correct.  In most cases, default
+;	of 0 is Ok, except when extent size is greater than 16K
+;===============================================================
+
+DDIRPAK: PUSH	HL		; Save Regs
+	PUSH	DE
+	PUSH	AF
+	PUSH	BC		; Save counter
+	LD	BC,0
+	LD	(FCOUNT),BC	; Init file count
+	LD	E,L		; Copy Buffer start to DE
+	LD	D,H
+
+DPLOOP:	POP	BC		; Get counter
+	LD	A,B		; Check for Done
+	OR	C
+	JR	Z,DPDONE
+	DEC	BC		; Count down
+	PUSH	BC		; Save counter
+	LD	BC,ESIZE	; Set number of bytes in entry
+	BIT	7,(HL)		; Does 1st byte indicate file is selected?
+	JR	Z,DPNEXT	; ..jump and advance to next if not
+
+; Found Selected Entry
+
+	RES	7,(HL)		; Clear MSB of selected entry
+	LDIR			; Copy the entry to current bottom of byffer
+	LD	BC,(FCOUNT)	; Increment File Count
+	INC	BC
+	LD	(FCOUNT),BC
+	JR	DPLOOP		; Continue
+
+; Skip to Next Entry
+
+DPNEXT:	ADD	HL,BC		; Skip over entry
+	JR	DPLOOP		; Continue
+
+; Compression Complete -- Set up returned values
+
+DPDONE:	LD	BC,(FCOUNT)	; Put File Count in BC
+	POP	AF		; Restore regs
+	POP	DE
+	POP	HL
+	RET
+
+
+; Data Storage
+
+	DSEG			; Put in the Data Segment
+
+FCOUNT:	DEFS	2		; File Count
+
+	END
+

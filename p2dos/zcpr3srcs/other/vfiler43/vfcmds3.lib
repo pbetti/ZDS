@@ -1,0 +1,674 @@
+;===========================================================================
+;
+; VFCMDS3.Z80 - Miscellaneous Commands
+;		  run-command (Z), login (L), options (O), alpha toggle (A),
+;		  file size (F), status (S), help (H),
+;		  built-in help ('?', '/')
+;
+;===========================================================================
+
+
+; * * * COMMAND: Z
+
+; Execute ZCPR3 command line
+
+runzcpr3:
+	call	erclr		; Position at error message line
+	ld	hl,(du$orig)	; Get original du:
+	call	prdu		; Print du
+	call	vprint		; Print prompt
+	db	dim,'>',bright,0
+
+	call	getzcmd		; Get zcpr3 command line (up to 253 chars).
+	jp	z,loop		; Abort if null command
+
+	ld	a,0ffh
+	ld	(shwait),a
+
+	call	chain		; Chain to it
+	jp	loop		; Continue
+
+; chain to command pted to by HL ending in zero
+
+chain:
+	call	putcl		; Store command line
+	jr	nz,chain2	; Br if successful.
+	call	ermsg
+	db	'CL Err',0
+	ret
+
+chain2:
+	ld	bc,(du$req)
+	call	dutdir		; Is this directory named?
+	jr	z,chain2a	; No, plug in du: reference
+
+; Name found, place it in the shell stack
+
+	push	hl		; Save name pointer
+	call	getsh2		; Point hl to top of shell stack
+	ld	de,8
+	add	hl,de		; Point to byte after file name
+	ld	(hl),' '	; Put a space in it
+	inc	hl
+	pop	de		; Name pointer in de
+	ld	b,8		; 8 characters max
+chn0:
+	ld	a,(de)		; Get a character
+	ld	(hl),a		; Store it away
+	cp	' '
+	jr	z,chn1		; Space is a terminator
+	inc	de
+	inc	hl
+	djnz	chn0		; Continue for 8 characters
+chn1:
+	ld	a,':'
+	ld	(hl),a		; Put colon at end of name
+	inc	hl
+	xor	a
+	ld	(hl),a		; Terminate with a null
+	jr	chain5
+
+chain2a:
+	ld	a,(du$req+1)	; Get current disk
+	add	a,'A'		; Convert to ascii
+	ld	(file$d),a	; Store in proper place
+	ld	a,(du$req)	; Get current user
+	ld	hl,file$u	; Store user number
+	ld	c,'0'		; Set char
+chain3:
+	sub	10		; Convert to ascii
+	jr	c,chain4
+	inc	c		; Increment 10's char
+	jr	chain3
+
+chain4:
+	ld	(hl),c		; Store 10's digit char
+	inc	hl		; Pt to 1's digit
+	add	a,10+'0'	; Add back for 1's digit
+	ld	(hl),a		; Store 1's digit char
+	call	getsh2		; Pt to shell buffer
+	ld	de,8		; Skip 8 chars (vfiler name)
+	add	hl,de
+	ld	(hl),' '	; Insert space
+	inc	hl
+	ld	de,file$d	; Place du
+	ex	de,hl
+	ld	b,5		; Store 5 chars (duu:0)
+	call	moveb
+chain5:
+	call	putopt		; Save options settings
+	jp	os$ccp1
+
+;---------------------------------------------------------------------------
+
+; * * * COMMAND: L or N
+
+; LOGDIR - Select drive and user area (system reset for disk change on-the-fly)
+
+logdir:
+	call	log		; Log in new directory and file mask
+	jp	runsh2
+
+log:
+	call	cprmpt		; Prompt to get drive/user selection
+	db	'Login [DIR][:MASK] ',0
+
+; Get file spec - directory and/or file mask.
+
+	call	getfspec	; Get file specification from user
+	jp	z,loop		; If no answer, back to loop
+
+;  Check for VFILER exit.
+
+log1:
+	call	caps		; Capitalize exit char.
+	cp	'X'		; Exit?
+	jr	nz,log2		; No - continue.
+
+	inc	hl		; Check for space or eol
+	ld	a,(hl)
+	dec	hl
+	and	7fh		; Mask msb
+	cp	' '+1
+	jp	c,os$ccp	; Abort
+
+;  Check for directory specification
+
+log2:
+	cp	':'		; Only mask specified?
+	jr	nz,log3		; Br if du specified too.
+
+	call	reset		; Reset disk system in case of disk change.
+	jr	log5		; Process mask.
+
+log3:
+	call	vfy$d$u		; Resolve, verify du or dir access.
+	jr	z,loge1		; Not defined?
+	jr	c,loge2		; Access error?
+
+	ld	(du$req),bc	; Save requested du:
+	call	reset		; Reset disk system
+
+;  Check for Mask specification (save it if new mask specified)
+
+	ld	hl,(cmdbuf)	; Get file spec location
+	inc	hl
+	inc	hl
+log4:
+	inc	hl		; Pt to file spec char.
+	ld	a,(hl)		; Get character
+	cp	':'		; Mask specified?
+	jr	z,log5		; Br if so.
+	or	a		; String terminator?
+	jr	nz,log4		; Loop if not.
+	jr	log7		; Exit if no mask specified.
+
+log5:
+	inc	hl		; Point at file mask.
+	ld	de,fcb		; And fcb.
+	call	fname		; Call syslib routine.
+
+	ld	a,(hl)		; Get terminating char.
+	cp	' '		; Terminated by ' '?
+	jr	z,log6		; Ok if so.
+	or	a		; String terminator?
+	call	nz,loge3	; Error. set default (*.*).
+
+log6:
+	xor	a		; 0 = put system mask.
+	call	filemask
+
+log7:
+	jp	crlf		; New line and exit
+
+; LOGDIR error messages
+
+loge1:
+	call	ermsg
+	db	'Directory Entry Invalid',0
+	jp	logdir		; Loop on error
+
+loge2:
+	call	ermsg
+	db	'Directory Access Denied',0
+	jp	logdir		; Loop on error
+
+loge3:
+	call	ermsg
+	db	'Invalid Mask. *.* is assumed.',0
+	ld	hl,fcb+1	; Force *.*
+	ld	(hl),' '
+	ret
+
+;---------------------------------------------------------------------------
+
+; * * * COMMAND: O
+
+; Allows the user to toggle a number of VFILER options
+
+	 if	optcmd
+
+optcol	equ	30		; Column for 'Y' or 'N' display
+sopt	equ	7		; Options to set using this code
+
+	 if	usedseg
+	dseg
+	 endif
+oldsys:	ds	1		; Place to save old NOSYS value
+oldalf:	ds	1		; Place to save old DEFALFA value
+	 if	usedseg
+	cseg
+	 endif
+
+setopt:
+	ld	a,(nosysa)	; Get current value of NOSYS flag
+	ld	(oldsys),a	; Save it for later comparison
+	ld	a,(defalfa)	; Get current value of DEFALFA flag
+	ld	(oldalf),a	; Save it for later comparison
+	call	vcls		; Start with a clean screen
+	call	vprint		; Display the options menu
+	db	'OPTIONS',cr,lf,lf
+	db	'  1. single replace query',cr,lf
+	db	'  2. group replace query',cr,lf
+	db	'  3. archive replace query',cr,lf
+	db	'  4. verify query',cr,lf
+	db	'  5. verify default',cr,lf
+	db	'  6. suppress SYS files',cr,lf
+	db	'  7. sort by file name'
+	db	0
+
+setopt1:
+	call	optdsp		; Display current option setting
+	call	gxymsg		; Prompt for option to toggle
+	db	sopt+4,1
+	db	'Option to Toggle (or RET): '
+	db	0
+	call	cin		; Get response
+	sub	'1'		; Convert answer to binary
+	jr	c,setopt2
+	cp	sopt		; If > sopt then quit
+	jr	nc,setopt2
+
+	ld	de,options	; Calculate address to toggle
+	ld	l,a
+	ld	h,0
+	add	hl,de
+	ld	a,(hl)		; Toggle the flag
+	cpl
+	ld	(hl),a
+	jr	setopt1		; Go back for more changes
+
+setopt2:			; Done with changes
+
+	call	putopt		; Record option setting in system
+	ld	hl,nosysa	; See if NOSYS flag changed
+	ld	a,(oldsys)
+	cp	(hl)
+	jp	nz,runsh2	; If changed, relog files
+	ld	hl,defalfa	; See if alpha-sort flag changed
+	ld	a,(oldalf)
+	cp	(hl)
+	call	nz,sort		; If so, resort the ring
+	jp	runsh4a		; Return to display files
+
+optdsp:
+	ld	de,options	; Point to first option address
+	ld	b,sopt		; Number of options
+	ld	hl,3*100h+optcol	; Go to option display col on line 3
+optdsp1:
+	call	gotoxy		; Go to right place on screen
+	call	prtyn		; Print 'Y' or 'N'
+	inc	de		; Point to next flag
+	inc	h		; Point to next line on screen
+	djnz	optdsp1
+	ret
+
+prtyn:
+	ld	a,(de)		; Get option flag value
+	or	a
+	ld	a,'N'
+	jr	z,prtyn1	; If flag not set, 'N' is correct
+	ld	a,'Y'
+prtyn1:
+	jp	cout		; Display character and return
+
+	 endif	;optcmd
+
+;---------------------------------------------------------------------------
+
+; * * * COMMAND: A
+
+; Toggle alphabetize switch and redisplay files
+
+alphasw:
+	ld	a,(defalfa)	; Toggle flag
+	cpl
+	ld	(defalfa),a
+	call	putopt		; Record new option settings
+	call	sort		; Sort files in new order.
+	jp	runsh4		; Rebuild display.
+
+;---------------------------------------------------------------------------
+
+; * * * COMMAND: F
+
+; determine and display file size in kilobytes -- round up to next disk
+; allocation block -- accumulate tagged file summation
+
+fsize:
+	call	sizer		; Compute file size of current file
+	push	hl		; Save value
+	call	fsnote		; Print file size message
+	ld	hl,(ringpos)	; Print file name
+	inc	hl
+	call	prfnskip	; Skip blanks in file name
+	call	vprint		; Print trailer
+	db	' is ',0
+	pop	hl		; Get size
+
+;  Print file size in HL and exit to screen
+
+fsize1:
+	call	shlfdc		; Print value in hl as floating
+	ld	a,'K'		; Print suffix
+	call	cout
+	jp	loop		; Resume
+
+; FSNOTE - Print File Size Info
+
+fsnote:
+	call	ermsg		; Use this routine
+	db	'Size of ',0
+	ret
+
+;  SIZER - Compute File Size at RINGPOS
+;    Return Size in HL
+
+sizer:
+	call	ringfcb		; Move name to 's$fcb'
+
+; Determine file record count and save in RCNT
+
+	ld	c,compsz
+	ld	de,s$fcb
+	call	bdos
+	ld	hl,(s$fcb+33)
+	ld	(rcnt),hl	; Save record count and..
+	ld	hl,0
+	ld	(s$fcb+33),hl	; Reset opsys
+
+; Round up to next disk allocation block
+
+	ld	a,(b$mask)	; Sectors/block - 1
+	push	af		; Save 'blm'
+	ld	l,a
+	ex	de,hl
+	ld	hl,(rcnt)	; Use here.
+	add	hl,de		; Round up to next block
+	ld	b,3+1		; Convert from..
+	call	shiftlp		; Records to kilobytes.
+	pop	af		; Retrieve 'blm'
+	rrca			; Convert..
+	rrca			; To..
+	rrca			; Kilobytes/block.
+	and	1fh
+	cpl			; Finish rounding
+	and	l
+	ld	l,a		; Hl contains # of kilobytes
+	ret
+
+;---------------------------------------------------------------------------
+
+; * * * COMMAND: S
+
+; Determine remaining storage on requested disk
+
+dstat:
+	call	cprmpt
+	db	'Status of Disk (Letter): ',0
+	call	keyin		; Get capitalized char.
+	cp	cr		; If carriage return, abort
+	jr	z,dstat1
+	ld	(free$drv),a	; Save (in msg)
+	sub	'A'		; Convert to number
+	jr	c,invdrv	; Exit if invalid
+	ld	hl,maxdr
+	cp	(hl)		; Must be less than max drive
+	jr	nc,invdrv
+	push	af		; Save drive no
+	call	reset		; Login as current.
+	pop	af
+	ld	bc,(du$req)	; Get current du
+	ld	b,a		; Get drive requested by caller
+	call	logud		; And set it up.
+	call	getdpb		; Set dpb values from requested drive.
+	call	frestor		; Determine free space remaining
+	call	print$fre	; Print value
+	ld	bc,(du$req)	; Get current du
+	call	logud		; And set it up.
+	call	getdpb		; Reset dpb values from current drive.
+	jp	loop
+
+dstat1:
+	call	atcmd		; Clear command prompt
+	jp	loop
+
+invdrv:
+	call	ermsg
+	db	'Invalid Drive',0
+	jp	loop
+
+;---------------------------------------------------------------------------
+
+; * * * COMMAND: H
+
+exthelp:
+	call	cprmpt
+	db	'Read Help File (Y/N)? ',0
+	call	dkeyin
+	cp	'Y'
+	jp	nz,loop
+	call	ermsg
+	db	dim,'Chaining to Help File ...',bright,0
+	ld	hl,morehelp	; Run help command
+	call	chain		; Chain to it
+	jp	loop
+
+
+; * * * COMMAND: '?' or '/' (built-in help)
+
+	 if	bihelp		; Built-in help?
+
+help:
+	ld	a,(helpdisp)	; Toggle flag
+	cpl
+	ld	(helpdisp),a
+	call	ringempt	; Check ring empty
+	jp	z,runsh2e	; Tell user
+	jp	runsh4		; Rebuild screen and restart
+
+; help screen display code
+
+; configuration values
+
+sp1	equ	5		; Column to start misc command
+sp2	equ	8		; Extra spacing to cursor commands
+
+ws1	equ	62		; Center column for WS diamond
+
+; Help screen string tables
+;
+; Format:	item 1 - leading space to fill
+;		item 2 - total space to fill with first string
+;		item 3 - first string, null-terminated
+;		item 4 - total space to fill with second string
+;		item 5 - second string, null-terminated
+;
+; If item 2 is a 0, then items 3 and 5 are omitted, and item 4 tells the total
+; additional space to skip.  This should include 3 extra spaces for the ' - '
+; which is otherwise printed between the two strings.
+
+htab1:				; Filer Commands
+
+	db	0,	1,'T',0,	8,'Tag',0
+	db	3,	1,'C',0,	8,'Copy',0
+	db	3,	1,'Y',0,	8,'Retag',0
+	db	3,	1,'Q',0,	11,'UnsQueeze',0
+	db	3,	1,'V',0,	5,'View',0
+
+	db	0,	1,'U',0,	8,'Untag',0
+	db	3,	1,'M',0,	8,'Move',0
+	db	3,	1,'J',0,	8,'Jump',0
+	db	3,	1,'A',0,	11,'Alpha Sort',0
+	db	3,	1,'P',0,	5,'Print',0
+
+	db	0,	1,'W',0,	8,'Wild Tag',0
+	db	3,	1,'D',0,	8,'Delete',0
+	db	3,	1,'R',0,	8,'Rename',0
+	db	3,	1,'F',0,	11,'File Size',0
+	db	3,	0,		9
+
+htab2:				; Misc and Cursor Commands
+
+	db	sp1,	0,		18
+	db	sp2,	3,'^R',0,	13,'Top of Screen',0
+
+	db	sp1,	1,'X',0,	14,'eXit VFILER',0
+	db	sp2,	3,'^C',0,	13,'End of Screen',0
+
+	db	sp1,	1,'L',0,	14,'Login DU:/DIR:',0
+	db	sp2,	3,'^T',0,	13,'First File',0
+
+	db	sp1,	1,'S',0,	14,'disk Status',0
+	db	sp2,	3,'^B',0,	13,'Last File',0
+
+	db	sp1,	1,'Z',0,	14,'ZCPR3 command',0
+	db	sp2-1,	4,'+/^F',0,	13,'Next Screen',0
+
+	db	sp1,	1,'H',0,	14,'Help VFILER',0
+	db	sp2-1,	4,'-/^A',0,	13,'Prev Screen',0
+
+	db	sp1,	1,'E',0,	14,'refresh scrEen',0
+	db	sp2-2,	5,'SP/CR',0,	13,'Next File',0
+
+	db	sp1,	1,'O',0,	14,'Option toggles',0
+	db	sp2,	3,'BS',0,	13,'Prev File',0
+
+helpmsg:
+	call	gxymsg
+	db	3,28
+	db	'-- Filer Commands --'
+	db	0
+
+	call	at
+	db	4,1
+	ld	hl,htab1
+	ld	de,3*100h+5
+	call	prttbl		; Print from the table
+
+	 if	revvideo
+
+	call	gxymsg
+	db	7,2
+	db	dim,'G',bright,' - ','Group: ',dim,'C',bright,'opy/'
+	db	dim,'M',bright,'ove/',dim,'D',bright,'elete/',dim
+	db	'A',bright,'rchive/',dim,'F',bright,'size/uns',dim
+	db	'Q',bright,'ueeze/',dim,'T',bright,'ag/',dim,'U'
+	db	bright,'ntag/',dim,'V',bright,'iew/',dim,'P',bright,'rint'
+	db	0
+
+	 else	; dimvideo
+
+	call	gxymsg
+	db	7,2
+	db	'G - ',dim,'Group: ',bright,'C',dim,'opy/'
+	db	bright,'M',dim,'ove/',bright,'D',dim,'elete/',bright
+	db	'A',dim,'rchive/',bright,'F',dim,'size/uns',bright
+	db	'Q',dim,'ueeze/',bright,'T',dim,'ag/',bright,'U'
+	db	dim,'ntag/',bright,'V',dim,'iew/',bright,'P',dim,'rint',bright
+	db	0
+
+	 endif	; revvideo
+
+	call	gxymsg
+	db	9,10
+	db	'-- Misc --'
+	db	0
+
+	call	gxymsg
+	db	9,45
+	db	'-- Cursor --'
+	db	0
+
+	call	at
+	db	10,1
+	ld	hl,htab2
+	ld	de,8*100h+2
+	call	prttbl
+
+	call	gxymsg
+	db	10,ws1-5
+	db	bright,'WS diamond',0
+
+	call	gxymsg
+	db	12,ws1-1
+	db	'^E',0
+
+	call	gxymsg
+	db	16,ws1-1
+	db	'^X',0
+
+	call	gxymsg
+	db	14,ws1-5
+	db	'^S ',dim,'<-+->',bright,' ^D',0
+
+	call	gxymsg
+	db	13,ws1
+	db	dim,'^',0
+
+	call	gxymsg
+	db	15,ws1
+	db	'v',bright,0
+
+	call	gxymsg
+	db	19,31
+	db	'-- Macros --'
+	db	0
+
+	call	gxymsg
+	db	20,5
+	db	'# : ',dim,'Display Menu',bright
+	db	0
+
+	call	gxymsg
+	db	20,28
+	db	'ESC : ',dim,'Lead-in Char',bright
+	db	0
+
+	call	gxymsg
+	db	20,55
+	db	'0-9 : ',dim,'Direct Macros',bright
+	db	0
+
+	ret
+
+; data and help-display subroutines
+
+	 if	usedseg
+	dseg
+	 endif
+cols:	ds	1
+	 if	usedseg
+	cseg
+	 endif
+
+prttbl:
+	ld	a,e		; Save number of columns
+	ld	(cols),a	; Save number of columns
+prttbl0:
+	ld	a,(cols)	; Get number of columns
+	ld	e,a
+prttbl1:
+	ld	a,(hl)		; Get number of spaces to insert
+	or	a		; Check for zero
+	ld	b,a		; Number of spaces in B
+	call	nz,prtspac	; If not zero, put in the spaces
+	inc	hl
+	ld	a,(hl)		; Length of first string
+	or	a		; Is it a null?
+	jr	z,prttbl3	; If so, jump to skip this section of text
+	call	prtstr		; Print the first string
+	call	vprint		; Print the spacer
+	db	' - ',0
+	call	stndout		; Highlight on
+	call	prtstr		; Print the second string
+	call	stndend		; Highlight off
+prttbl2:
+	dec	e		; Row finished?
+	jr	nz,prttbl1
+	call	crlf		; Go to next line
+	dec	d
+	jr	nz,prttbl0
+	ret
+
+prttbl3:			; Blank entry, so skip over it
+	inc	hl
+	ld	b,(hl)		; Get full character count
+	call	prtspac		; Print that many blanks
+	inc	hl		; Point to beginning of next table
+	jr	prttbl2
+	
+prtstr:
+	ld	b,(hl)		; Get length of space to fill
+	inc	hl		; Point to first character
+prtstr1:
+	ld	a,(hl)		; Get character
+	inc	hl		; Point to next one
+	or	a		; Test for terminating null
+	jp	z,prtspac	; If so, fill out with spaces
+	call	cout		; Else, print character
+	dec	b		; Decrement count
+	jr	prtstr1		; On to next character
+
+	 endif	; bihelp
+                                                                                              

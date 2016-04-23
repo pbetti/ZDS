@@ -1,0 +1,360 @@
+; PPIP-5.Z80
+
+; DateStamper routines
+
+READRND EQU	21H		; BDOS read-random function
+WRITERND EQU	22H		; BDOS write-random function
+RNDOFF	EQU	33		; FCB offset to random record number
+
+;-----------------------------------------------------------------------
+
+; This routine copies the time stamp from the source file (at SOURCE FCB
+; to the destination file (at DEST FCB).
+
+TDNAME:
+	DEFB	0		; Drive
+	DEFB	'!!!TIME&'	; Name
+	DEFB	'DAT'		; Type
+
+COPYDATE:
+	CALL	CHECKDS		; Check and initialize DatStamper code
+	RET	Z		; If not installed, return now
+	CALL	GOUSER0		; Log in user 0
+	LD	HL,TDNAME	; Initialize the T&D FCB with name
+	LD	DE,TDFCB
+	LD	BC,12		; Copy 12 characters
+	CALL	LDIR
+	LD	A,(SOURCE)	; Get drive of source file
+	LD	(TDFCB),A	; ..and put it into T&D FCB
+	LD	HL,(SSECTOR)	; Get sector/offset info for source
+	LD	A,(SINDEX)
+	CALL	SETINDEX	; Set TDSECTOR and TDINDEX values
+	XOR	A		; Flag for getting time stamp
+	CALL	GETSET		; Get or set the time stamp
+	LD	A,(DEST)	; Get drive of destination file
+	LD	(TDFCB),A	; ..and put it into T&D FCB
+	LD	HL,(DSECTOR)	; Get sector/offset info for destination
+	LD	A,(DINDEX)
+	CALL	SETINDEX
+	XOR	A		; Set flag for
+	DEC	A		; ..setting time stamp
+	CALL	GETSET		; Set destination time stamp
+	JP	Z,COPYDATE1	; Skip on error
+	CALL	ILPRT		; Note successful date copy
+	DEFB	' (date OK)',0
+COPYDATE1:
+	CALL	GOCURUSER	; Restore original user number
+	RET
+
+; Subroutine to get or set the time/date stamp for a file.
+; NOTE: on error this routine pops the original return address and
+; returns one level higher, thereby aborting the date copy routine.
+
+; Entry:	A = 0 and Z set if read
+;		A = FF and NZ if write
+;		TDSECTOR, TDINDEX, and the T&D FCB must be set
+
+GETSET:
+	PUSH	AF		; Save read/write flag
+	CALL	TDOPEN		; Open source T&D file
+	JP	Z,FFERROR	; Return two levels if error
+	POP	AF		; Get read/write flag again
+	PUSH	AF		; ..and save it again
+	CALL	RWTD		; Read or write T&D info
+	JP	Z,FFERROR	; Return two levels if error
+	POP	AF
+	CALL	NZ,TDCLOSE	; Close the T&D file if written to
+	RET
+FFERROR:
+	POP	AF		; Pop registers pushed above
+	CALL	GOCURUSER	; Restore original user number
+	POP	HL		; Pop address of calling program
+	RET			; Return to level above that
+
+;-----------------------------------------------------------------------
+
+; Routine to see if DateStamper is loaded.
+
+; Entry:	nothing
+; Return:	if DateStamper not loaded: A=0 and Z
+;		if loaded, A<>0, NZ, and HL has address of
+;		DS clock routine.
+
+CHECKDS:
+	LD	E,'D'		; DS identifier request
+	LD	C,GETVRS	; Get CP/M version
+	CALL	BDOS
+	CP	22H		; Must be 2.2
+	JP	NZ,CHECKDS1	; Branch if not
+	LD	A,H		; See if DS ID returned
+	CP	'D'
+	JP	NZ,CHECKDS1	; Branch if not
+	EX	DE,HL		; Get clock routine address into HL
+	LD	A,H		; Make sure there is a clock
+	OR	L
+	RET
+CHECKDS1:
+	XOR	A		; Return Z to show no DS
+	RET
+
+;-----------------------------------------------------------------------
+
+; Computes checksum of first 127 bytes of the T&D sector loaded at
+; TDBUFF.
+
+; Entry:	nothing
+; Exit: 	A = sum of 127 bytes
+;		HL -> 128th byte
+
+CHECKSUM:
+	LD	HL,TDBUFF	; Point to T&D buffer
+	LD	B,127		; Bytes to sum
+	XOR	A		; Initialize sum
+CHECKSUM1:
+	ADD	A,(HL)		; Add in byte
+	INC	HL		; Advance to next
+	DEC	B
+	JP	NZ,CHECKSUM1	; Loop through them all
+	RET
+
+;-----------------------------------------------------------------------
+
+; Set DMA to the address of the T&D buffer
+
+; Entry:	nothing
+; Exit: 	nothing
+
+SETTDDMA:
+	LD	DE,TDBUFF	; Point to T&D buffer
+	LD	C,SETDMA
+	JP	BDOSSAVE
+
+;-----------------------------------------------------------------------
+
+; BDOS call acting on T&D file control block
+
+; Entry:	normal BDOS information less DE
+; Exit: 	normal BDOS output information
+;		DE return code saved in BDOSDE
+
+BDOSTD:
+	LD	DE,TDFCB	; Set FCB pointer
+				; Fall through to bdossave
+
+;-----------------------------------------------------------------------
+
+; Routine to call BDOS and save the value returned by DateStamper in DE
+; in BDOSDE.  (Do not move this routine -- one above falls into it.)
+
+; Entry:	normal BDOS information
+; Exit: 	normal BDOS output information
+;		DE return code saved in BDOSDE
+
+BDOSSAVE:
+	CALL	BDOS
+	EX	DE,HL
+	LD 	(BDOSDE),HL
+	EX	DE,HL
+	RET
+
+;-----------------------------------------------------------------------
+
+; Save the currently logged user number in TEMPUSER and log in user 0.
+;
+; Entry:	nothing
+; Exit: 	nothing
+;		previous user number saved in TEMPUSER
+
+GOUSER0:
+	LD	E,0FFH		; Get-user flag
+	CALL	GETSETUSER
+	LD	(TEMPUSER),A	; Save current user
+	LD	E,0		; Set user 0
+GETSETUSER:
+	LD	C,SETUSR	; Get/Set user function
+	JP	BDOSSAVE
+
+;-----------------------------------------------------------------------
+
+; Restore user number saved in TEMPUSER
+;
+; Entry:	nothing
+; Exit: 	nothing
+
+GOCURUSER:
+	LD	A,(TEMPUSER)	; Get the save user number
+	LD	E,A		; ..into E
+	JP	GETSETUSER
+
+;-----------------------------------------------------------------------
+
+; Open the time and date file.	We must already be in user 0.
+
+; Entry:	A=0 for reading
+;		A=FF for writing (routine clears R/O status)
+; Exit: 	Z set if error
+
+TDOPEN:
+	LD	(RWFLAG),A	; Save read/write flag
+	LD	C,OPEN		; Open-file function
+	CALL	BDOSTD		; BDOS call on T&D FCB
+	INC	A		; Error FF -> 0
+	RET	Z		; Return with Z if error
+	LD	A,(RWFLAG)	; Check function
+	OR	A
+	JP	Z,OPENRET	; If reading, we can return now
+	LD	HL,TDFCB	; Point to T&D FCB
+	LD	DE,9		; Offset to R/O attribute byte
+	ADD	HL,DE
+	LD	A,(HL)
+	AND	7FH
+	LD	(HL),A		; Mark file R/W
+ATTRSET:			; Entry point for setting file attrib.
+	LD	C,SETATT
+	CALL	BDOSTD
+OPENRET:			; Entry point for no attribute change
+	PUSH	AF		; Save error flag
+	POP	AF
+	INC	A		; Error FF -> 0
+	RET
+
+;-----------------------------------------------------------------------
+
+; Close time and date file.  We must be in user 0 when this is called.
+;
+; Entry:	nothing
+; Exit: 	Z is set if there is an error
+
+TDCLOSE:
+	LD	DE,TDFCB	; Get FCB pointer
+	LD	HL,9		; Offset to R/O attribute byte
+	ADD	HL,DE
+	LD	A,80H
+	OR	(HL)
+	LD	(HL),A		; Set file to R/O
+	LD	C,CLOSE		; Close the file
+	CALL	BDOSTD
+	INC	A		; Error code FF -> 0
+	RET	Z		; Return Z if error
+	JP	ATTRSET		; Set file attributes
+
+;-----------------------------------------------------------------------
+
+; Read or write a time and date sector.  This routine will change the
+; DMA address, and the calling code must reset it.  Since the T&D file
+; is never more than one extent, the code does not bother setting and
+; resetting the user number.  On reading, the 15-byte time stamp string
+; is copied to the buffer pointed to by HL on entry.  On writing, the
+; contents of the buffer pointed to by HL are copied to the disk sector.
+
+; On entry:	A=0 to read or A=FF to write
+;		TDSECTOR and TDINDEX data must have been set up
+;		T&D file must be open in R/W mode
+
+; On exit:	T&D file is open
+;		with reading, data is in buffer
+;		on writing, data is in sector buffer
+
+RWTD:
+	LD	(RWFLAG),A	; Save the read/write flag
+	LD	DE,TDFCB	; Get FCB pointer
+	LD	HL,RNDOFF	; Offset to random record value
+	ADD	HL,DE
+	EX	DE,HL
+	LD 	HL,(TDSECTOR)	; Get sector offset in T&D file
+	EX	DE,HL
+	LD	(HL),E		; Store it in FCB
+	INC	HL
+	LD	(HL),D
+	CALL	SETTDDMA	; Set DMA for T&D operation
+	LD	C,READRND	; Read the sector
+	CALL	BDOSTD
+	OR	A		; Errors are > 0
+	JP	NZ,RWERROR
+	CALL	CHECKSUM	; Compute the checksum
+	CP	(HL)		; Is file OK?
+	JP	NZ,RWERROR
+	LD	A,(TDINDEX)	; Get index into the sector
+	ADD	A,A		; Multiply by 16
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	LD	HL,TDBUFF	; Address of start of buffer
+	ADD	A,L		; Add offset
+	LD	L,A
+	JP	NC,RWTD1	; If no carry, we are all set
+	INC	H		; Otherwise increment H
+RWTD1:
+	LD	A,(RWFLAG)	; See if read or write
+	OR	A
+	JP	NZ,RWTD2	; If nonzero, we have more to do
+
+; Reading date stamp
+
+	LD	DE,TIMESTR	; Get data buffer as destination
+	LD	BC,15		; Bytes to copy
+	CALL	LDIR
+	XOR	A
+	INC	A		; Make nonzero (since no error)
+	RET			; ..and return (just reading)
+
+RWTD2:
+	EX	DE,HL		; DE is destination
+	LD	HL,TIMESTR	; Get pointer to data to write
+	LD	BC,15		; Write 15 bytes
+	CALL	LDIR
+	CALL	CHECKSUM	; Compute the new checksum
+	LD	(HL),A		; ..and store it in sector
+	LD	C,WRITERND	; Write the sector out
+	CALL	BDOSTD
+	OR	A		; Check for error
+	JP	NZ,RWERROR
+	INC	A		; Make A nonzero to show no error
+	RET
+
+RWERROR:
+	XOR	A		; Make A zero to show error
+	RET
+
+;-----------------------------------------------------------------------
+
+; Calculate the sector number in the T&D file and the index within that sector.
+
+; Entry;	A = directory index for file
+;		HL = sector index returned by DateStamper in DE
+; Exit: 	T&D sector number stored in TDSECTOR
+;		T&D index stored in TDINDEX
+
+SETINDEX:
+	LD	B,A		; Save directory index in B
+	OR	A		; Clear carry for arithmetic below
+	LD	A,H		; Calculate HL/2
+	RRA
+	LD	H,A
+	LD	A,L
+	RRA
+	LD	L,A
+	LD	(TDSECTOR),HL	; Save T&D sector number
+	LD	A,B		; Get partial index back
+	JP	NC,SETINDEX1	; If no carry, we are all set
+	ADD	A,4		; If HL was odd, add 4 to offset
+SETINDEX1:
+	LD	(TDINDEX),A	; Store result
+	RET
+;
+; BLOCK MOVE ROUTINE
+;
+LDIR:
+	LD	A,(HL)
+	LD	(DE),A
+	DEC	BC
+	INC	HL
+	INC	DE
+	LD	A,C
+	OR	B
+	JP	NZ,LDIR
+	RET
+
+;		 end of basic time and date routines
+;-----------------------------------------------------------------------
+;

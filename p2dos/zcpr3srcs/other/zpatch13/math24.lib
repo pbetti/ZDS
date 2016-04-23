@@ -1,0 +1,132 @@
+; Macros to perform 24-bit simple arithmetic.
+; Steven M. Cohen
+; March 10, 1987
+;
+; In z80 code, of course, there is no way for a 24-bit value to be
+; stored in registers.  It most logically must be stored as a 3-byte
+; chunk of memory. That is all this first macro does - set aside a 
+; 3 byte chunk for a 24-bit value.  Doing it this way helps to flag such
+; quantities in the source code.
+;
+M24BQ	MACRO
+	DS	3		; 24-bit quantity
+	ENDM 
+;
+; Move a 24-bit quantity from one three-byte sector of memory to another
+;
+MOV24	MACRO	DEST,SRC
+	EXX			; do it in the alternate regs for safety
+	LD	HL,SRC
+	LD	DE,DEST
+	LDI			; move 3 bytes
+	LDI	
+	LDI
+	EXX			; back to regular regs.
+	ENDM
+;
+; Add one 24-bit quantity to another.  Store result in one of their addresses.
+;
+ADD24	MACRO	SUM,ADDEND
+	LOCAL	A24LP
+	EXX			; do it in the alternate regs
+	LD	HL,SUM		; sum (which is one also an addend)
+	LD	DE,ADDEND	; 2nd addend
+	LD	B,3		; process 3 bytes
+	XOR	A		; reset carry flag at beginning
+A24LP:	LD	A,(DE)		; a byte of addend to the accumulator
+	ADC	(HL)		; add to corresponding byte of sum+carry flag
+	LD	(HL),A		; put it back into sum
+	INC	DE		; get next of addend			
+	INC	HL		; get next of sum
+	DJNZ	A24LP
+	EXX			; bring back regular regs.
+	ENDM
+;
+; Subtract one 24-bit quantity from another.  Store result in the address of
+; the SUBTRAHEND. (SUBTRAHEND-MINUEND=REMAINDER)
+;
+SUB24	MACRO	REMAINDER,MINUEND
+	LOCAL	S24LP
+	EXX
+	LD	DE,REMAINDER  	;subtrahend (and remainder) in DE
+	LD	HL,MINUEND    	;minuend in HL	
+	LD	B,3	      	;process 3 bytes
+	XOR	A	        ;reset cy flag
+S24LP:	LD	A,(DE)		;a byte of subtrahend to accumulator
+	SBC	(HL)		;subtract minuend+carryflag
+	LD	(DE),A		;store in remainder
+	INC	DE		;next subtrahend
+	INC	HL		;next remainder
+	DJNZ	S24LP
+	EXX			;put back regular regs
+	ENDM
+;
+; Add a 16-bit quantity to a 24-bit quantity
+;
+ADD1624	MACRO	SUM,ADDEND
+	EXX				; do it in alternate regs
+	LD	HL,(SUM)		; 24 bit quantity where result goes
+	LD	DE,ADDEND		; 16 bit quantity
+	XOR	A			; zero the accumulator
+	ADC	HL,DE			; add low 16 bits of sum to addend
+	LD	(SUM),HL		; put it back in sum
+	LD	HL,(SUM+2)		; get highest byte of 24bit number
+	ADC	(HL)			; add 0+carry flag to it
+	LD	(HL),A			; put it into the sum
+	EXX				; bring back regular regs.
+	ENDM
+
+;
+; Subtract a 16-bit quantity given in the instruction from a 24-bit quantity
+;
+SUB1624 MACRO 	REMAINDER,MINUEND
+	EXX				; do it in the alternate regs
+	LD	HL,(REMAINDER)		; hl has 24 bit subtrahend
+	LD	DE,MINUEND		; de has 16 bit minuend
+	XOR	A			; zero accumulator
+	LD	B,A			; move to b
+	SBC	HL,DE			; subtract minuend from low 16 bits
+					; of subtrahend
+	LD	(REMAINDER),HL		; put in remainder
+	LD	HL,REMAINDER+2		; high bit of subtrahend
+	LD	A,(HL)			; to a
+	SBC	B			; subtract 0+carry flag
+	LD	(HL),A			; put into remainder
+	EXX				; back to regular regs
+	ENDM
+;
+INC24	MACRO	Q			; Q is the address of a 24-bit number
+	LOCAL	INC24LP
+	EXX				; do it in alternate regs			
+	LD	HL,Q			; into HL
+	LD	B,3			; process 3 bytes
+	SCF				; we add 1 by setting the carry flag
+INC24LP:
+	LD	A,0			; zero accum w/o disturbing carry
+	ADC	(HL)			; add 0+carry to quantity
+	LD	(HL),A			; put it back
+	INC	HL			; get next
+	DJNZ	INC24LP			
+	EXX				; back to regular regs
+	ENDM
+
+DEC24	MACRO	Q			; Q is the address of a 24-bit number
+	LOCAL	DEC24LP
+	EXX				; do it in the alternate regs
+	LD	HL,Q			; into hl
+        LD	B,3
+	SCF				; we subtract 1 by setting carry flag
+DEC24LP:
+	LD	C,0			; put a zero somewhere
+	LD	A,(HL)			; mov memory byte to a
+	SBC	A,C			; subtract 0+carry from quantity
+	LD	(HL),A			; put it back
+	INC	HL			; get next
+	DJNZ	DEC24LP
+	EXX				; back to regular regs.
+	ENDM
+
+arry from quantity
+	LD	(HL),A			; put it back
+	INC	HL			; get next
+	DJNZ	

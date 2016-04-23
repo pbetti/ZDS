@@ -1,0 +1,443 @@
+
+; ZCPR34-6.Z80
+
+; Revisions to ZCPR Version 3.3 to make Version 3.4 (C) Copyright Jay P. Sage,
+; 1988, all rights reserved.
+
+
+;=============================================================================
+;
+;   P A T H    S E A R C H    A N D    F I L E    L O A D I N G    C O D E
+;
+;=============================================================================
+
+; This block of code loads a file into memory.  The normal address at which
+; loading is to begin is passed to the routine in the HL register.  The name
+; of the file to load is passed in the command file control block.
+;
+; This code supports an advanced option that loads files to a dynamic address
+; specified in the header to the file using a new type-3 environment.  In a
+; type-3 environment, the execution/load address is stored in the word
+; following the environment descriptor address.  A value is passed to MLOAD in
+; the A register that controls this dynamic loading mechanism.  The value
+; specifies the lowest environment type value for which dynamic loading will
+; be performed.  This value will be 3 when MLOAD is called for normal COM file
+; execution and will be 0FFH when chained to from the GET command.  In the
+; latter case, the user-specified load address must be used.
+;
+; MLOAD guards against loading a file over the operating system.  It computes
+; the lower of the following two addresses: 1) the CPR entry point; 2) the
+; bottom of protected memory as indicated by the DOS entry address stored at
+; address 0006H.  If the load would exceed this limit, error handling is
+; engaged (except for the GET command when FULLGET is enabled).
+
+mload:
+	ld	(envtype),a	; Set up in-the-code modification below
+	ld	(execadr),hl	; Set up execution/load address
+	call	defltdma	; Set DMA address to 80H for file searches
+
+
+; This code sets the attributes of COM files which are acceptable.  If both
+; SYS and DIR type files are acceptable, there is no need to include this code,
+; and ATTCHK can be set to false.
+
+	 if	attchk		; Only if attribute checking enabled
+	ld	a,comatt	; Attributes specified in Z34HDR.LIB
+	ld	(systst),a	; Set flag
+	 endif	;attchk
+
+;-----------------------------------------------------------------------------
+
+; PATH BUILDING CODE
+
+; In ZCPR34 the minpath feature, optional in ZCPR30, is always used.  To
+; minimize the size of the CPR code, however, there is an option to place the
+; minpath in an external buffer (outside the CPR).  If the path is short
+; enough, the minpath can be placed at the bottom of the system stack.
+
+	ld	de,(z3env+9)	; Get address of path buffer from ENV
+	ld	hl,mpath	; Point to minpath buffer
+
+
+; If DRVPREFIX is enabled, the CPR will recognize an explicit directory
+; reference in a command.  The first element of the path will then be this
+; explicit directory.  If no explicit directory was given in the command,
+; then no entry is made into the search path.  If the WPREFIX option is
+; on, explicit directory prefixes will be recognized only when the wheel
+; byte is on.
+
+	 if	drvprefix	; Pay attention to du:com prefix?
+
+	 if	wprefix
+	call	whlchk		; See if wheel byte is on
+
+	 if	scancur		; Scan current directory at all times?
+	push	af		; Then save test of wheel byte
+	 endif	;scancur
+
+	jr	z,makepath2	; If not, skip ahead
+	 endif	;wprefix
+
+	ld	a,(colon)	; See if colon was present in command
+	or	a
+	jr	z,makepath2	; If not, skip ahead
+
+	ld	a,(cmdfcb)	; Get drive from command FCB
+	ld	(hl),a		; Put drive into minpath
+	inc	hl		; Advance pointer
+	ld	a,(cmdfcb+13)	; Get user number from command FCB
+	ld	(hl),a		; Put it into minpath
+	inc	hl		; Advance pointer to next path element
+makepath2:
+	 endif	; drvprefix
+
+	ld	(hl),0		; Store ending 0 in mpath
+
+; If SCANCUR is enabled in Z34HDR.LIB, then we always include the current
+; directory automatically, even without a '$$' element in the user's path.
+; If WPREFIX is enabled, however, we do not want to allow the current
+; directory to be included, but we must make sure that it is included in
+; the building of the root path, in case the user's symbolic path is empty.
+
+	 if	scancur		; Scan current directory at all times?
+
+	ld	bc,(curusr)	; C = current user, B = current drive
+	inc	b		; Set drive to range 1..16
+
+	 if	wprefix
+
+	 if	drvprefix	; Wheel test already done?
+	pop	af
+	 else	;not drvprefix
+	call	whlchk		; See if wheel byte is on
+	 endif	;drvprefix
+
+	jr	nz,addpath	; If it is, add element to path; if not,
+				; ..fall through to MAKEPATH3
+	 else	;not wprefix
+
+	jr	addpath		; Begin loop of placing entries into mpath
+
+	 endif	;wprefix
+
+	 else	;not scancur
+
+; If SCANCUR is off and ROOTONLY is in effect, we have to make sure that some
+; directory values are put into the root path in the case where the user's
+; path is completely empty.  To do so, we preset BC for directory A0.
+
+	 if	rootonly
+	ld	bc,0100h	; Setup for drive A (B=1), user 0 (C=0)
+	 endif	;rootonly
+
+	 endif	;scancur
+
+
+; Convert symbolic entries in user's path into absolute DU values in minpath.
+; Entries are read one-by-one from the symbolic path.  If the 'current' drive
+; or user indicator is present (default symbol is '$'), then the current
+; drive or user value is fetched.  Otherwise the explicit binary value from the
+; path is used.  After each absolute DU value is formed, the minpath as it
+; exists so far is scanned to see if this DU value is already there.  If it is
+; not, then the DU value is appended to the path.  Otherwise it is ignored.
+
+	jr	makepath3	; Begin scanning user's path
+
+; We have a new DU; add it to minpath
+
+addpath2:
+	ld	(hl),b		; Store drive
+	inc	hl
+	ld	(hl),c		; Store user
+	inc	hl
+	ld	(hl),a		; Store ending 0 (A=0 from above)
+
+makepath3:
+	ld	a,(de)		; Get next symbolic path entry
+	or	a		; If 0, we are at end of path
+	jr	z,makepath6
+
+	ld	bc,(curusr)	; C = current user, B = current drive
+	inc	b		; Set drive to range 1..16
+	cp	curind		; Check for current drive symbol (default '$')
+	jr	z,makepath4	; If so, leave current drive in B
+	ld	b,a		; Else move specified drive into B
+
+makepath4:
+	inc	de		; Point to user value in symbolic path
+	ld	a,(de)		; Get user
+	inc	de		; Point to next element in symbolic path
+	cp	curind		; Check for current user symbol (default '$')
+	jr	z,makepath5	; If so, leave current drive in C
+	ld	c,a		; Else move specified user into C
+
+makepath5:
+
+; At this point in the code we have a potential path element in BC.  We first
+; have to scan the minpath we have so far to see if that element is already
+; there.  In that case we ignore it; otherwise we add it to the end of the path.
+
+addpath:
+			; Skip path if directory given explicitly
+
+	 if	skippath
+
+	 if	wprefix
+	call	whlchk		; See if wheel byte is on
+	call	nz,skipchk	; If not, fall through
+	 else	;not wprefix
+	call	skipchk		; See if path should be skipped
+	 endif	;wprefix
+
+	jr	nz,makepath3	; If so, branch out of ADDPATH
+
+	 endif	;skippath
+
+	ld	hl,mpath	; Point to beginning of minpath
+
+addpath1:			; Point of reentry
+	ld	a,(hl)		; Get drive value
+	or	a		; Check for end of minpath
+	jr	z,addpath2	; If end, jump and add BC to minpath
+
+	inc	hl		; Increment pointer to user
+	cp	b		; Check for drive match
+	ld	a,(hl)		; Get user from minpath
+	inc	hl		; Point to next minpath entry
+	jr	nz,addpath1	; If drive was different, loop back again
+	cp	c		; Check for user match
+	jr	nz,addpath1	; If user is different, loop back again
+	jr	makepath3	; Branch if we have a duplicate
+
+; If the ECP facility is set up to use the root directory, then create a
+; root path.  BC presently contains the proper DU.
+
+makepath6:
+
+	 if	rootonly
+	ld	hl,rootpth	; Point to special path to contain root
+	ld	(hl),b		; Store disk
+	inc	hl
+	ld	(hl),c		; Store user
+	 endif	;rootonly
+
+;-----------------------------------------------------------------------------
+
+; This is the code for loading the specified file by searching the minpath.
+
+	ld	(cmdfcb),a	; Always use current disk specification in the
+				; ..command FCB (A=0 from (end-of-path) above)
+
+mload1:
+
+	ld	hl,mpath	; Point to beginning of minpath
+
+mload2:
+
+; Either the FASTECP or BADDUECP option may have set FIRSTCHAR to a space
+; character as a signal to go directly to extended command processing.  If
+; neither option is enabled but SKIPPATH is, then the FIRSTCHAR data is
+; stored in the routine below where path skipping is implemented.
+
+	 if	fastecp or badduecp
+
+	ld	a,(cmdstatfl)	; If ECP is running
+	bit	2,a		; ..we branch to look for ECP along path
+	jr	nz,mload2a
+firstchar equ	$+1		; Pointer for in-the-code modification
+	ld	a,0
+	cp	' '		; Was command invoked with leading space?
+	jr	z,ecprun	; If so, go directly to ECP code
+
+	 endif	;fastecp or badduecp
+
+mload2a:
+	ld	a,(hl)		; Get drive from path
+	or	a		; If end of path, command not found
+	jr	nz,mload3	; If not end of path, skip over ECP code
+
+;-----------------------------------------------------------------------------
+
+; EXTENDED COMMAND PROCESSING
+
+; At this point we have exhausted the search path.  We now engage the
+; extended command processor.
+
+ecprun:
+	 if	skippath
+	call	skipchk		; See if path should be skipped
+	jr	nz,jnzerror	; If so, invoke error handler
+	 endif	;skippath
+
+	ld	hl,cmdstatfl	; Point to command status flag
+	ld	a,(hl)		; ..and get value
+	and	110b		; Isolate ECP and error handler bits
+jnzerror:			; If either is set,
+	ld	a,ecnocmd	; Error code for command not found
+	jp	nz,error	; ..process as an error
+
+	set	2,(hl)		; Set ECP bit
+
+	ld	hl,ecpfcb	; Copy name of ECP to command FCB
+	ld	de,cmdfcb
+	ld	bc,12		; Only 12 bytes required
+	ldir
+
+	ld	hl,(cmdptr)	; Get pointer to current command line
+	call	parsetail	; Parse entire command as the command tail
+
+	 if	rootonly	; Look for ECP in root directory only
+	ld	hl,rootpth	; Point to path containing root directory only
+	jr	mload2		; Search for command
+	 else	; not rootonly
+	jr	mload1		; Search the entire minpath for the ECP
+	 endif	; rootonly
+
+;-----------------------------------------------------------------------------
+
+mload3:
+	ld	d,a		; Drive into D
+	inc	hl		; Point to user number
+	ld	e,(hl)		; User into E
+	ld	(tempusr),de	; Save the values, to be used at mload5
+	inc	hl		; Point to next entry in path
+	call	logde-1		; Log in path-specified user/drive
+
+	 if	attchk		; If allowing execution only of COM files with
+				; ..specific attributes
+
+	ld	de,cmdfcb	; Point to command FCB
+	call	srchfst		; Look for directory entry for file
+	jr	z,mload2a	; Continue path search if file not found
+	push	hl		; Save path pointer
+	call	getsbit		; Check system attribute bit
+	pop	hl		; Restore path pointer
+	jr	z,mload2a	; Continue if attributes do not match
+
+	 endif	; attchk
+
+	call	opencmd		; Open file for input
+	jr	z,mload2a	; If open failed, back to next path element
+
+	call	readcmd		; Read first record into default DMA address
+	jr	nz,mload5	; Branch if zero-length file
+	ld	(cmdfcb+32),a	; Set file current record back to zero
+	ld	hl,tbuff	; Pointer to start of code
+	call	z3chk
+	ld	hl,(execadr)	; Get initial loading address
+	jr	nz,mload4	; If not Z3 file, branch
+
+; The following test is modified by earlier code.  For normal COM file loading,
+; a 3 is inserted for the minimum environment type for dynamic load address
+; determination.  For the GET command, where the user-specified address should
+; be used, a value of 0FFH is put in here so the carry flag will always be set.
+
+envtype	equ	$+1		; Pointer for in-the-code modification
+	cp	3		; See if no higher than a type-2 environment
+	jr	c,mload4	; If lower than type 3 (or 255), branch
+	ld	hl,(tbuff+11)	; Load address in case type-3
+	jr	z,mload3b	; Type 3 command, do that
+
+; As not 1, 2 or 3, assume Type 4 command
+
+	 if	fullget
+	ld	a,0ffh
+	ld	(envtype),a	; Kill size test in mload4
+	 endif	; fullget
+
+; Type 4 header does its own calculations
+
+	ld	hl,cmdfcb+32	; Make HL point to record count byte
+	ld	(hl),2		; Set record count to 2 (had been reset to 0)
+	call	readcmd		; Record 2 into tbuff
+		; *** HL is preserved around READCMD (by BDOSSAVE) ***
+	jr	nz,mload5	; File too short
+	ld	(hl),a		; A=0 from READCMD into record count
+	ld	hl,(tbuff+11)	; Size info from code section
+	call	readcmd		; Record 0 into tbuff again
+	ld	a,fullget	; We need this flag
+	ld	b,h
+	ld	c,l		; Get size info into BC
+	ld	de,entry	; Beginning of CCP
+	ld	hl,z3env	; Pass EnvDisc address ?
+	call	tbuff+9		; Call Type 4 loader
+	call	readcmd		; Read record 1 to tbuff (point to record 2)
+
+mload3b:
+	ld	(execadr),hl	; Set new execution/load address
+				; -- returned by type 4 loader!
+
+; Load the file, making sure neither CPR nor protected memory is overwritten
+
+mload4:
+	 if	fullget
+	ld	a,(envtype)	; If ENVTYPE is FF (from GET command)
+	inc	a		; ..then skip memory limit checking
+	jr	z,mload4b
+	 endif	;fullget
+
+	ld	bc,entry	; CPR page in B
+	ld	a,(bdos+2)	; Protected page in A
+	cp	b		; If A is lower value,
+	jr	c,mload4a	; ..branch
+	ld	a,b		; Otherwise use lower value in B
+mload4a:
+	dec	a		; We need one extra page to be sure in case of
+				; ..type-3 loads to non-page boundaries
+	cp	h		; Are we going to overwrite protected memory?
+	ld	a,ectpafull	; Get ready with TPA overflow error code
+	jp	z,error		; Error if about to overwrite protected memory
+mload4b:
+	ex	de,hl		; Put address into DE and set DMA address
+	call	dmaset		; All but A & C preserved around DMASET
+	ex	de,hl		; Get address back into HL
+	call	readcmd
+	jr	nz,mload5	; Read error or eof?
+	ld	de,128		; Increment load address by 128
+	add	hl,de
+	jr	mload4		; Continue loading
+
+; In case a program would like to find out in what directory the command
+; processor found the program, temporary DU is stored in bytes 13 (user) and
+; 14 (drive) in the command FCB.
+
+mload5:
+
+tempusr	equ	$+1		; Pointers for in-the-code modification
+tempdr	equ	$+2
+	ld	hl,0
+	ld	(cmdfcb+13),hl
+
+logcurrent:			; Return to original logged directory
+	ld	de,(curusr)
+	jp	logde
+
+;----------------------------------------
+
+; This routine checks to see if building the path or running the ECP should
+; be skipped.  If there is a colon in the command (an explicit directory
+; given) but it was not a lone colon (indicating desire to skip resident
+; commands), then the routine returns with the zero flag reset.
+
+	 if	skippath
+
+skipchk:
+	ld	a,(colon)	; Was there a colon in the command?
+	or	a
+	ret	z		; Return with zero flag set if not
+
+	 if	fastecp or badduecp
+	ld	a,(firstchar)	; See if the first character was the colon
+	 else
+firstchar equ	$+1		; Put data here if other two options are
+	ld	a,0		; ..false (in-the-code modification)
+	 endif	;fastecp or badduecp
+
+	cp	':'
+	ret			; Return: Z if lone colon, NZ otherwise
+
+	 endif	;skippath
+
+
+; End ZCPR34-6.Z80
+

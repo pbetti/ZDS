@@ -1,0 +1,766 @@
+title	 	MAKE.RCP
+
+
+; NOTE TO JAY SAGE.  The error handler stuff is noted by (*RMB*), it
+;		follows your info in Z33PNOTE.001, but loses error code
+;		when run under Z33VERR09, SHOW12 finds the error code
+;		sometimes - depending the option tried.  Actually the EH info
+;		'will be covered in detail in another programming note.'
+;		Is this an alias for 'it can be shown that'?
+;		In all seriousness, the flaw probably lies in the EH used.
+
+
+
+;	FUTURE UPGRADES PLANNED: if requested.
+;	------------------------
+;	OVERWRITE CHECK ON CLB FILL, currently depends on user.
+;	DON'T TRANSFER COMMAND IF FILE NOT MODIFIED, a small speed increase.
+;	DISK/USER ON DEPENDENT FILE, probably not necessary with public files.
+
+
+
+;	MAKE.RCP history
+;------------------------------
+
+; 1.3	Released to the great unknown.  Enjoy.
+
+
+; 1.2	Shorten code; added PUBLIC10 support; increased Makefile Buffer
+;	to allow one-pass by using part of ring buffer; added tcap video
+;	support; adding error handler support( *RMB* ) but loses error code;
+;	new variable size ring buffer.
+
+; 1.1	Test release to Sage, McCord, and Thom, and ZSIG.
+
+
+
+
+.z80				; assembled under M80
+.xlist
+include Z3BASE.LIB		; need Z3CL, RCP, RCPS, Z3ENV, Z3MSG
+.list
+
+VERS	EQU	13
+RCPID	EQU	'M'
+
+;	(C) COPYRIGHT 1986, 1987 Non-Linear Thinkers.
+;		Released for non-profit use only.
+;
+;	Contact: 	R Bardarson
+;			259 El Bosque St.
+;			San Jose, CA 95134
+;			408-432-0821, Z-Node Central or SME Z-Node#3
+
+
+
+;   MAKE.RCP is a powerful resident command processor for ZCPR33.  It's
+; only function is to maintain a transient program, that is it ensures
+; that the latest version of a program is always created without
+; requiring operator intervention.  See MAKE.DOC, MKE.LBR for details.
+
+
+bdos	equ	5
+bufend	equ	rcp+128*rcps-1	; auto-sized end of makefile buffer
+chroff	equ	4		; filename offset to char with bit 7 set
+
+;cmderr	equ	1110b		; value to set CMDSTATFL on ferror (*RMB*)
+				; if error handler is SHOW12.
+cmderr	equ	110b		; value to set CMDSTATFL on ferror (*RMB*)
+				; this value invokes EH but loses poked
+				; ECFLAG value, if changed to 1110b, then
+				; Z33VERR09 re-installs itself.
+				; if 110b, then error code is lost.
+
+
+cnsize	equ	4		; number of chars in command name
+cr	equ	0dh
+ferror	equ	10		; value to set ECFLAG on error (*RMB*)
+legstr	equ	'/'		; start of legal character set
+legfin	equ	'['		; end of legal character set +1
+lf	equ	0ah
+lnkchr	equ	'#'		; semaphore == end of translation strings
+tcpnum	equ	3		; highlite is tcpnum string
+tcpoff	equ	151		; offset to TCAP terminal attributes
+
+
+
+; start with semi-standard RCP header code, including H command
+
+	aseg
+	org	rcp		; passed by Z3BASE
+	db	'Z3RCP'		; Flag for Package Loader
+	db	cnsize		; size of text entries
+ctab:
+	db	'H   '		; RCP command list and name
+	dw	clist
+ctab1:
+	db	'MAKE'		; Make utility
+	dw	make
+	db	'CHCK'		; Error checker - internally invoked
+	dw	check
+	db	0
+
+;  BANNER NAME OF RCP
+
+rcp$name:
+	db	'MAKERCP '
+	db	(vers/10)+'0','.',(vers mod 10)+'0',RCPID,cr,lf
+	db	'  '		; command name prefix
+	db	'MAKE'		; only command available to user
+	db	0		; terminator
+
+
+
+; MAIN DATA for MAKE, comparison strings and vectors 
+
+; The following strings are the outputs of various compilers/assemblers
+; when the translation is successful.  To add a string, examine the
+; output produced by MAKE after a successful translation.  If necessary
+; examine the output from a failed or marginal compilation.  Isolate the
+; CRITICAL portion which GUARANTEES that no errors have occured, and add
+; to the STRNG# db list (BE SURE TO END WITH A NULL!).  Then add a ptr
+; to the STRVEC list.
+
+
+strng1:	db	'NOFATALERRORS',0			; M80 3.43
+strng2:	db	'PASS20ERRORS',0			; SLR 1.09
+strng3:	db	'NOERRORSINPASS1NOERRORSINPASS2',0	; PL/I 1.3
+strng4:	db	'PROTECTVERSION30',0			; PROTECT 3.0
+strng5:	db	'PUBLICVERSION10P',0			; PUBLIC 1.0
+
+; vector of string ptrs
+strvec:	dw	strng1		; add new ptr's after this one DO NOT CHANGE!
+	dw	strng5
+	dw	strng4
+	dw	strng3
+	dw	strng2
+strcnt	equ	(($-strvec)/2)
+
+
+
+;  Command List Routine, only give MAKE as user accessible.
+
+clist:
+	ld	hl,rcp$name	; print RCP Name and command
+	call	print1
+	ret
+
+;  Print String (terminated in 0 ) pted to by HL
+
+print1:
+	ld	a,(hl)		; done?
+	inc	hl		; pt to next
+	or	a		; 0 terminator
+	ret	z
+
+	push	hl		; save char ptr
+	call	cout		; print char
+	pop	hl
+	jr	print1
+
+
+;  New Line
+
+crlf:
+	ld	a,cr
+	call	cout
+	ld	a,lf		;fall thru
+
+;  Character Output
+
+cout:
+	ld	e,a
+	ld	c,2		; use BDOS
+	call	bdos
+	ret
+
+
+
+;**********************************************************************
+
+; User entry point, with command of MAKE MAKEFILE
+
+make::				; initialization and reset
+	ld	(savstk),sp	; save stack
+	ld	sp,stck		; setup local stack
+	ld	hl,05dh		; copy name into buffcb
+	ld	de,buffcb+1
+	ld	bc,8
+	ldir
+	xor	a
+	ld	(lnkflg),a	; linker flag = OFF
+	ld	(buffcb),a	; default drive
+	ld	(buffcb+12),a	; extent
+	ld	(buffcb+32),a	; current record
+	ld	de,buffcb
+	ld	c,0fh		; open makefile
+	call	bdos
+	cp	0ffh
+	jp	z,filerr	; invoke error handler (*RMB*)
+
+	ld	hl,buffer-128	; offset HL to start
+	push	hl
+read:				; read makefile until end
+	pop	hl
+	ld	de,128
+	add	hl,de		; add 80h to dma
+	push	hl
+	push	hl		; save DMA location
+	ld	de,bufend	; check for overflow
+	xor	a		; clear flags
+	sbc	hl,de
+	bit	7,h		; h=00H means overflow
+	jp	z,ovferr
+
+	pop	de		; current DMA location
+	ld	c,1ah		; set DMA for makefile
+	call	bdos
+	ld	de,buffcb
+	ld	c,14h		; read makefile
+	call	bdos
+	or	a
+	jr	z,read
+
+	pop	hl		; holds end of buffer
+	ld	a,1ah		; EOF marker
+	ld	bc,128		; must be in last 128 bytes
+	cpdr			; search for EOF
+	jr	z,bufset	; found, hl holds last of makefile
+
+	dec	sp		; not found
+	dec	sp
+	pop	hl		; get it off the stack again
+bufset:
+	push	hl		; save
+	ld	de,buffer	; DE=start of buffer, HL=end of buffer
+	xor	a		; clear carry
+	sbc	hl,de		; calc length to move
+	inc	hl		; adjust count
+	ld	b,h
+	ld	c,l
+	pop	hl		; recover end of buffer
+	ld	de,bufend
+	lddr			; move makefile to end of ring buffer
+	inc	de		; adjust ptr
+	ld	(bufptr),de	; set makefile buffer ptr
+
+	ld	hl,z3env+151	; get terminal abilities
+	ld	b,tcpnum	; get highlite/normal tcap
+tcabil:
+	inc	hl
+	ld	a,(hl)
+	or	a
+	jr	nz,tcabil	; sort thru to end of string
+	djnz	tcabil		; get right string
+
+	inc	hl		; ptr to highlite
+	ld	(highlt),hl	; self-modifying code is best
+tcahgh:
+	ld	a,(hl)
+	inc	hl
+	or	a
+	jr	nz,tcahgh	; find end of highlite
+
+	ld	(normlt),hl	; ptr to normal
+
+
+; *****************************************************************
+
+; internal entry point from CHCK, if file has not been changed
+; also initial entry as fall-thru from MAKE
+
+make2::				; entry point from CHCK
+	ld	sp,stck		; setup local stack
+	ld	hl,z3cl+4
+	ld	(z3cl),hl	; reset clb ptr
+	ld	hl,ring
+	ld	(rngptr),hl	; reset ring buffer ptr
+	ld	hl,strng1
+	ld	(strvec),hl	; reset strings ptr starting value
+
+	ld	hl,chekng	; ... warm feeling of something happening ...
+	call	status
+
+
+; setup FCB for dependent file
+
+scan:
+	call	getchr		; return next chr in makefile in A
+	cp	lnkchr		; test for link flag
+	jr	nz,gobble
+	ld	(lnkflg),a
+
+	ld	hl,lnking	; ... warm feeling of something happening ...
+	call	status
+	jp	gobbl2		; no filename to setup for linkers
+
+gobble:
+	cp	legstr		; test for legal char set at start of line
+	jr	c,scan
+	cp	legfin
+	jr	nc,scan
+
+	ld	hl,fscb+1	; blank filename
+	ld	de,fscb+2
+	ld	bc,7
+	ld	(hl),20h
+	ldir
+
+	ld	hl,fscb		; HL has ptr
+name:
+	inc	hl
+	ld	(hl),a		; move filename to search FCB
+	call	getchr
+	cp	'.'		; test for end of name
+	jr	nz,name
+
+	ld	hl,fscb+9	; move type
+	ld	b,3		; expects a 3 char type
+type:
+	push	bc		; preserve count
+	call	getchr
+	pop	bc
+	ld	(hl),a
+	inc	hl		; HL has ptr
+	djnz	type
+
+	xor	a
+	ld	(fscb),a	; default drive
+	ld	(fscb+12),a	; extent
+
+	call	crlf
+	ld	hl,fscb+1	; display filename
+	call	print1
+
+
+gobbl2:
+	call	getchr		; return next chr in makefile in A
+	cp	legstr		; test for legal char set at start of line
+	jr	c,gobbl2
+	cp	legfin
+	jr	nc,gobbl2	; now at start of command portion
+
+
+; stuff CLB with makefile command
+
+	ld	hl,z3cl+4	; first time at start of CLB
+comman:
+	ld	(hl),a		; add to line buffer
+	inc	hl		; HL has ptr
+	call	getchr
+	cp	cr		; test for end of line
+	jr	z,end
+	cp	lf
+	jr	nz,comman	; get rest of line
+
+end:
+	ld	(hl),0		; mark end of command
+
+	ld	a,(lnkflg)	; check for linker string
+	or	a
+	jp	nz,xecute	; no further work for linker commands
+
+	ex	de,hl		; DE has end-of-command
+	ld	hl,append	; append to command
+	ld	bc,applen
+	ldir
+
+
+; search for file and test for modification
+
+	ld	de,fsbuf
+	ld	c,1ah		; set DMA for search
+	call	bdos
+
+	ld	hl,fscb+chroff	; high bit set => no change
+	ld	a,(hl)
+	or	80h
+	ld	(tstchr),a	; save for test and set attributes
+
+	ld	c,11h		; search for first
+	ld	de,fscb
+retry:
+	call	bdos
+	cp	0ffh
+	jp	z,nofile
+
+	ld	hl,fsbuf	; directory buffer from search
+	or	a
+	jr	z,cont
+
+	add	a,a		; *2
+	add	a,a		; *4
+	add	a,a		; *8
+	add	a,a		; *16
+	add	a,a		; *32 the size of disk FCB
+	ld	d,0
+	ld	e,a
+	add	hl,de		; index to dir entry
+
+cont:
+	ld	a,(hl)		; get file user area, for public files
+	ld	(filusr),a	; save file user area
+
+	push	hl		; save search FCB ptr
+	ld	de,chroff	; high bit set => no change
+	add	hl,de
+	ld	b,(hl)		; from BDOS call
+	ld	a,(tstchr)	; versus test char
+	pop	hl
+	xor	b		; multiple case test
+	jp	z,scan		; NO CHANGE goto scan and check next file
+	cp	80h					
+	jr	z,new		; modified file, invoke command
+	ld	c,12h		; wrong file, search for next
+	jp	retry
+
+new:
+	inc	hl		; copy file's other attributes
+	ld	de,fscb+1
+	ld	bc,11
+	ldir
+
+xecute:
+	call	crlf
+	ld	hl,excung	; ... warm feeling of something happening ...
+	call	status
+	call	crlf
+
+	ld	hl,z3cl+4	; display CLB
+	call	print1
+	call	crlf
+
+	ld	sp,(savstk)	; recover stack ptr
+	ld	a,(lnkflg)
+	or	a
+	ret	nz		; no CHeCKing on linker
+
+	inc	a
+	ld	(chkact),a	; activate CHCK
+
+	ld	hl,(1)		; compute CONOUT location
+	ld	de,3*3
+	add	hl,de
+	inc	hl
+	ld	(conloc),hl	; may need error checking to watch for
+				; multiple CONOUT changes caused by
+				; users command line
+
+	ld	e,(hl)		; get old vector
+	inc	hl
+	ld	d,(hl)
+	ld	(oldcon),de	; save usual conout routine
+
+	ld	de,redir	; redirect vector
+	ld	(hl),d
+	dec	hl
+	ld	(hl),e
+
+	ret			; GO DO IT
+
+
+
+getchr::		; return the next char in Makefile in A
+	push	hl
+	ld	hl,(bufptr)
+	ld	bc,bufend	; test value on end of file buffer
+	xor	a		; clear flags for SBC
+	sbc	hl,bc		; test for end of file buffer
+	jp	z,eoferr	; eof prior to linker end
+
+	ld	hl,(bufptr)
+	ld	a,(hl)		; get the chr
+	inc	hl
+	ld	(bufptr),hl	; adjust the ptr
+	pop	hl
+	ret
+
+
+	; display MAKE's state in highlite, for clarity
+status:
+	push	hl		; save status msg ptr
+	call	crlf
+	db	21h		; LD	HL,
+highlt:	dw			; location of highlite string in ENV
+	call	print1
+	pop	hl		; recover status msg
+	call	print1
+vidoff:
+	db	21h		; LD	HL,
+normlt:	dw
+	call	print1
+	ret
+
+
+
+; **********************************************************************
+
+check::
+	ld	(savstk),sp	; ... well everybody else does this ...
+	ld	sp,stck		; ... maybe they want to save their code ...
+
+	ld	a,(chkact)	; check for CHCK activity
+	or	a
+	jp	z,chkerr	; user typed CHCK, should also use EH
+
+	ld	hl,(conloc)	; put BIOS CONOUT vector back
+	ld	de,(oldcon)
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d		; no more crash worries
+	
+	xor	a		; de-activate CHCK
+	ld	(chkact),a
+
+	ld	hl,(rngptr)	; calculate length
+	ld	(hl),0		; mark end
+	ld	de,ring
+	sbc	hl,de
+	inc	hl
+	inc	hl
+	ld	(count),hl	; store for CPI
+
+
+; search thru ring buffer for main data strings.
+; if found then sucessful command, otherwise error
+
+
+	ld	b,strcnt
+next:
+	push	bc
+	ld	hl,ring		; search for strings
+	db	01h		; ld	bc,count
+count:	dw			; CPI count
+nomatch:
+	ld	de,(strvec)	; current string to for searching
+match:
+	ld	a,(de)
+	or	a		; 0 at end of comparison string
+	jr	z,update	; successful command execution
+	cpi
+	jp	po,newstr	; not found
+	jr	nz,nomatch	; next char doesn't match
+	inc	de
+	jr	match		; test next char of comparison string
+
+
+; get next comparison-string ptr
+
+newstr:
+	pop	bc		; count is also vector offset
+	ld	a,b
+	dec	a
+	add	a,a		; *2 for ptrs
+	ld	hl,strvec	; start of c-string ptrs
+	ld	d,0
+	ld	e,a
+	add	hl,de		; decreasing offset to next c-s ptr
+	ld	e,(hl)		; get ptr value
+	inc	hl
+	ld	d,(hl)
+	ld	(strvec),de	; store next c-s ptr and try again
+	djnz	next
+
+	ld	hl,ring		; not matched so printout ring buffer
+	jp	finis		; to enable adding new strings.
+
+
+update:				; succesful translation
+	ld	e,0ffh
+	call	user
+	ld	(curusr),a	; save current user area
+	ld	a,(filusr)	; get files' user area, for public files
+	ld	e,a		; and set it prior to setting atributes
+	call	user
+
+	ld	a,(tstchr)
+	ld	(fscb+chroff),a	; mark file as completed
+	ld	de,fscb
+	ld	c,1eh		; set attribute
+	call	bdos
+	push	af		; save result code, first restore user area
+
+	ld	a,(curusr)	; get current user area
+	ld	e,a		; restore initial user area
+	call	user
+
+	pop	af		; recover file result code
+	cp	0ffh		; oops
+	jp	nz,make2	; continue MAKEing
+	jp	upderr		; again invoke EH someday
+
+user:
+	ld	c,20h		; set/get user number
+	call	bdos
+	ret
+
+
+; BIOS CONOUT redirection routine to capture translator output in ring buffer
+
+redir:				; BIOS redirection
+	ex	af,af'
+	ld	a,c		; get character
+	exx			; get clean reg set
+
+	cp	'0'		; filter input
+	jp	c,rexit
+	cp	':'
+	jp	c,fend		; a number
+	cp	'A'
+	jp	c,rexit
+	cp	'['
+	jp	c,fend		; uppercase
+	cp	'a'
+	jp	c,rexit
+	cp	'{'
+	jp	nc,rexit
+	and	01011111b	; convert to uppercase
+
+; save output in ring buffer, when it fills then rotate 2nd half
+; need to save initial and final output only for translation error check
+
+fend:
+	ld	hl,(rngptr)	; add char to ring buffer
+	ld	(hl),a
+	inc	hl
+	ld	(rngptr),hl	; next char
+
+	xor	a		; clear flags
+	ld	bc,(bufptr)	; test for full ring
+	sbc	hl,bc		; ring extends to current buffer char
+	jp	nz,rexit	; not overflowed
+
+	ld	hl,(rngptr)
+	dec	hl
+	ld	(rngptr),hl	; reset end of ring
+
+	xor	a		; clear carry
+	ld	de,ring		; compute ring size
+	sbc	hl,de
+	rr	h		; divide by 2
+	rr	l
+	ld	b,h
+	ld	c,l		; save half size for LDIR
+	ld	de,ring
+	add	hl,de		; get middle of ring
+	ld	d,h
+	ld	e,l
+	inc	hl
+	ldir			; rotate
+
+rexit:
+	exx			; restore and continue
+	ex	af,af'
+	db	0c3h		; JP to old console output
+oldcon:	dw			; BIOS console output vector
+
+
+
+; DATA, SEMAPHORE & PTR AREAS
+
+buffcb:	ds	9		; drive & makefile name
+	db	'MKE'		; file type for makefiles
+	ds	24		; makefile FCB
+fscb:	ds	36		; search fcb
+fsbuf:	ds	128		; search dma
+
+chkact:	db	0		; checker active flag
+curusr:	db	0		; current user area
+filusr:	db	0		; public files' user area
+lnkflg:	db	0		; linker time flag
+tstchr:	db	0		; filename character
+
+bufptr:	dw			; ptr to chr in buffer
+conloc:	dw			; location of changed vector
+rngptr:	dw			; location of next byte to add
+
+append:	db	';CHCK',0	; CHeCK for errors and loop to make2:
+applen	equ	$-append
+
+chekng:	db	'Checking',0	; ..warm feeling messages ...
+excung:	db	'Executing',0
+lnking:	db	'Linker',0
+
+
+
+; various error messages
+
+chkerr:
+	ld	hl,cerror
+	jr	finis
+eoferr:
+	ld	hl,eerror
+	jr	finis
+filerr:				; (*RMB*) here is the Error Handler interface
+	ld	a,ferror
+	ld	(z3msg),a	; load ECFLAG - error return code flag
+	ld	a,cmderr
+	ld	(z3msg+3),a	; load CMDSTATFL - command status flag
+	jr	finis2
+nofile:
+	ld	hl,nerror
+	jr	finis
+ovferr:
+	ld	hl,oerror
+	jr	finis
+upderr:
+	call	crlf
+	xor	a
+	ld	(fscb+12),a	; mark end of search fcb
+	ld	hl,fscb+1
+	call	print1
+	ld	hl,uerror
+finis:
+	push	hl
+	call	crlf
+	pop	hl
+	call	print1
+	ld	a,7		; ring bell on error
+	call	cout
+	xor	a
+	ld	(z3cl+4),a	; clear CLB
+finis2:
+	ld	sp,(savstk)	; recover stack ptr
+	ret			; to Z33
+
+
+
+cerror:	db	'MAKE not active',0
+eerror:	db	'Missing linker semaphore',0
+nerror:	db	'Dependent file not found',0
+oerror:	db	'Makefile overflows buffer',0
+uerror:	db	'Not found, changed DIR: ??',0
+
+
+	ds	20h
+stck:	db	0
+savstk:	dw			; save the stack or else!
+
+buffer::			; file dma, then ring buffer, till end of RCP
+ring:				; after filling, move makefile buffer to end
+				; of ring, then ring grows as makefile read.
+
+
+	db	'(C) COPYRIGHT 1986, 1987 Non-Linear Thinkers.'
+
+
+	if2			; comment this out if not using M80
+bufsiz	equ	bufend-buffer
+	.radix	16
+	PRINTE	<MAKE loads at            >,%(RCP),<Hex>
+	PRINTE	<BUFFER/RING size is        >,%(BUFSIZ),<Hex>
+	.radix	10
+	endif
+
+PRINTE	MACRO	MSG1,N,MSG2
+	.PRINTX	% MSG1 N MSG2 %
+	ENDM
+ 
+	end
+earch fcb
+	ld	hl,fscb+1
+	call	print1
+	ld	hl,uerror
+finis:
+	push	hl
+	call	crl

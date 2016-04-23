@@ -1,0 +1,91 @@
+	TITLE	"DDIR07 - Syslib 4.0"
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SDIR07.Z80 Ver 1.5 by Richard Conn
+; Date    : 27 Aug 88
+; Version : 1.0
+; Module  : DDIR07
+; Abstract: This module contains the routine DDIRSEL which tags
+;	all entries in the Buffer table which match the specified
+;	select criteria.  If selected, the MSB of the User field
+;	(first byte) is set, otherwise it is reset.  The search
+;	criteria is a byte configured as:
+;		Bit 7 - Select Non-System Files
+;		Bit 6 - Select System Files
+;		Bit 5 - Select All Users
+;		Bits 4-0 - User Number
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		DDIRSEL
+
+;  External References
+
+	EXT		@AFNCMP, SDFCHK, SELFLG
+
+; Definitions
+
+ESIZE	EQU	16+15		; Entry size (+ Create, Access & Mod time)
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DDIRSEL
+; Entry: HL - Points to a Directory entry in the Buffer
+;	 DE - Points to an FCB
+;	 BC - Number of files in the Buffer
+;	  A - Selection Flag
+; Exit : - Nothing returned.  The MSB of selected entries is set
+; Uses : None
+; Special Requirements: None
+;===============================================================
+
+DDIRSEL: PUSH	HL		; Save regs
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+	LD	(SELFLG),A	; Save Select Flag
+	PUSH	BC		; Save count
+
+; Check for match
+
+DSMAT:	POP	BC		; Get count
+	LD	A,B		; Check for No entries
+	OR	C
+	JR	Z,DONE		; Done if none
+	DEC	BC		; Count down
+	PUSH	BC		; Save count
+	PUSH	HL		; Save ptrs
+	PUSH	DE
+	INC	HL		; Pt to FN
+	INC	DE
+	LD	B,11		; Check 11 chars (8 chars in FN, 3 in FT)
+	EX	DE,HL		; Let HL pt to FCB
+	CALL	@AFNCMP		; Compare with '?' match
+	POP	DE		; Get ptrs
+	POP	HL
+	JR	NZ,MATNXT	; ..jump if no match to next entry
+	CALL	SDFCHK		; Check flags
+	JR	NZ,MATNXT	; ..jump if no match to next entry
+				; We have a match -- Mark Entry
+	SET	7,(HL)		; Else Mark Entry (Set MSB)
+
+MATNXT:	LD	BC,ESIZE	; Number of Bytes/Entry
+	ADD	HL,BC		; Pt to next entry
+	JR	DSMAT		; Continue
+
+;.....
+; Done with scan
+
+DONE:	POP	AF		; Restore Regs
+	POP	BC
+	POP	DE
+	POP	HL
+	RET
+
+	END
+

@@ -1,0 +1,91 @@
+; Z80DOS - Z80 Disk Operating System
+;
+; Version 1.0 - 05 Sept. 87 by Carson Wilson
+;
+;
+; BIOSTIME.Z8D - Example BIOS inserts to implement Z80DOS time
+; routine at BIOS+72.  This is from the Morrow MD3 BIOS.  Address
+; of "jp time" will vary with system.
+;
+
+; <Detail of BIOS left out>
+
+timebuf	equ	50h	; Address of time storage at page zero
+			; or other available protected RAM area
+;
+; Begin BIOS code:
+;
+
+START:	JP BOOT		;BIOS
+WBOT:	JP WBOOT	;BIOS+3
+	JP CONST	;BIOS+6
+	JP CONIN	;+9
+	JP CONOUT	;+12
+	JP LST		;+15
+	JP PUN		;+18
+	JP PTR		;+21
+	JP HOME		;+24
+	JP SELDSK	;+27
+	JP SETTRK	;+30
+	JP SETSEC	;+33
+	JP SETDMA	;+36
+	JP READ		;+39
+	JP WRITE	;+42
+	JP LISTST	;+45
+	JP SECTRAN	;+48
+;
+	JP CVMSG	;+51 CHANGE VIRTUAL DRIVE MESG.
+;
+	JP RDBLK	;+54	DIRECT DISK READ
+	JP WRBLK	;+57	DIRECT DISK WR
+	JP DISCIO	;+60	DIRECT DISK I/O
+;
+	DB REV
+	DW RAMDATX
+	DW RAMYDAT
+	DW MTAB
+	DW XLTAB
+;
+; Insert jump to time routine at first available place in BIOS:
+;
+	jp time		;BIOS + 72 = get time
+;
+; BIOS + 72 will be the number for BIOStim in Z80DHDR.LIB.
+;
+
+; <Detail of BIOS left out>
+
+; Insert time routine between other routines in BIOS.
+
+;
+; Example time routine for systems without real time clock:
+;
+; Inputs: C <> 0: 5-byte entry pointed to by HL sets system time
+;		  HL points to 5-byte time buffer of the form:
+;
+;		HL + 0 = low  byte days since December 31, 1977 in hex
+;		HL + 1 = high byte  "	  "	  "    "     "	 "  "
+;		HL + 2 = BCD hours
+;		HL + 3 = BCD minutes
+;		HL + 4 = BCD seconds
+;
+;	  C = 0: On return HL points to 5-byte time entry
+;
+time:
+	ld	a,c		; Test flag
+	or	a
+	jr	nz,set		; C <> 0, set time
+	ld	hl,timebuf	; Point HL to buffer
+	ret
+set:
+	ld	de,timebuf	; Point to storage
+	ld	b,5		; Copy five bytes
+	ldir
+	ret
+;
+
+; <Detail of BIOS left out>
+
+; END BIOSTIME.Z8D
+
+

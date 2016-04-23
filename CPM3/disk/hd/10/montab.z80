@@ -1,0 +1,1443 @@
+	title	Z80 Assembler/Disassembler Tables
+	name	('MONTAB')
+;
+;	Last Edited	84-06-24	Wagner
+;
+;	Copyright (c) 1984 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, October 1990
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+	maclib	monopt.lib
+;
+	cseg
+;
+	entry	analop
+	entry	mnemtab,reg8nam,r16nam,ccnam
+	entry	opdesc,jumpmark,jumpaddr,caddress
+;
+	entry	srchmnemo,translate
+;
+if	extended
+	ext	peek,peekbuf
+endif;EXTENDED
+	ext	opnd1,opnd2,string
+	ext	cmderr
+;
+;------------------------------------------------------------------------------
+;
+;	Table for all mnemonics
+;
+mnemtab:
+	db	'NOP '		; 0
+mnnop	equ	0
+	db	'LD  '		; 1
+mnld	equ	1
+	db	'INC '		; 2
+mninc	equ	2
+	db	'DEC '		; 3
+mndec	equ	3
+	db	'EX  '		; 4
+mnex	equ	4
+	db	'DJNZ'		; 5
+mndjnz	equ	5
+	db	'JR  '		; 6
+mnjr	equ	6
+	db	'RLCA'		; 7
+mnrlca	equ	7
+	db	'RRCA'		; 8
+mnrrca	equ	8
+	db	'RLA '		; 9
+mnrla	equ	9
+	db	'RRA '		; 10
+mnrra	equ	10
+	db	'DAA '		; 11
+mndaa	equ	11
+	db	'CPL '		; 12
+mncpl	equ	12
+	db	'SCF '		; 13
+mnscf	equ	13
+	db	'CCF '		; 14
+mnccf	equ	14
+	db	'HALT'		; 15
+mnhalt	equ	15
+	db	'ADD '		; 16
+mnadd	equ	16
+	db	'ADC '		; 17
+mnadc	equ	17
+	db	'SUB '		; 18
+mnsub	equ	18
+	db	'SBC '		; 19
+mnsbc	equ	19
+	db	'AND '		; 20
+mnand	equ	20
+	db	'XOR '		; 21
+mnxor	equ	21
+	db	'OR  '		; 22
+mnor	equ	22
+	db	'CP  '		; 23
+mncp	equ	23
+	db	'RET '		; 24
+mnret	equ	24
+	db	'POP '		; 25
+mnpop	equ	25
+	db	'JP  '		; 26
+mnjp	equ	26
+	db	'CALL'		; 27
+mncall	equ	27
+	db	'PUSH'		; 28
+mnpush	equ	28
+	db	'RST '		; 29
+mnrst	equ	29
+	db	'OUT '		; 30
+mnout	equ	30
+	db	'EXX '		; 31
+mnexx	equ	31
+	db	'IN  '		; 32
+mnin	equ	32
+	db	'DI  '		; 33
+mndi	equ	33
+	db	'EI  '		; 34
+mnei	equ	34
+	db	'RLC '		; 35
+mnrlc	equ	35
+	db	'RRC '		; 36
+mnrrc	equ	36
+	db	'RL  '		; 37
+mnrl	equ	37
+	db	'RR  '		; 38
+mnrr	equ	38
+	db	'SLA '		; 39
+mnsla	equ	39
+	db	'SRA '		; 40
+mnsra	equ	40
+	db	'NEG '		; 41
+mnneg	equ	41
+	db	'SRL '		; 42
+mnsrl	equ	42
+	db	'BIT '		; 43
+mnbit	equ	43
+	db	'RES '		; 44
+mnres	equ	44
+	db	'SET '		; 45
+mnset	equ	45
+	db	'RETN'		; 46
+mnretn	equ	46
+	db	'IM  '		; 47
+mnim	equ	47
+	db	'RETI'		; 48
+mnreti	equ	48
+	db	'RRD '		; 49
+mnrrd	equ	49
+	db	'RLD '		; 50
+mnrld	equ	50
+	db	'LDI '		; 51
+mnldi	equ	51
+	db	'CPI '		; 52
+mncpi	equ	52
+	db	'INI '		; 53
+mnini	equ	53
+	db	'OUTI'		; 54
+mnouti	equ	54
+	db	'LDD '		; 55
+mnldd	equ	55
+	db	'CPD '		; 56
+mncpd	equ	56
+	db	'IND '		; 57
+mnind	equ	57
+	db	'OUTD'		; 58
+mnoutd	equ	58
+	db	'LDIR'		; 59
+mnldir	equ	59
+	db	'CPIR'		; 60
+mncpir	equ	60
+	db	'INIR'		; 61
+mninir	equ	61
+	db	'OTIR'		; 62
+mnotir	equ	62
+	db	'LDDR'		; 63
+mnlddr	equ	63
+	db	'CPDR'		; 64
+mncpdr	equ	64
+	db	'INDR'		; 65
+mnindr	equ	65
+	db	'OTDR'		; 66
+mnotdr	equ	66
+	db	'??? '		; 67
+mnbadop equ	67
+;
+;------------------------------------------------------------------------------
+;
+;	Tables for register and condition code names
+;
+reg8nam:defb	'BCDEHLIRAF'
+;		 0123456789
+;
+regb	equ	10h
+regc	equ	11h
+regd	equ	12h
+rege	equ	13h
+regh	equ	14h
+regl	equ	15h
+rega	equ	18h
+regi	equ	16h
+regr	equ	17h
+;
+r16nam:	defb	'BCDEHLSPAFIXIY'
+;		 0 1 2 3 4 5 6
+;
+regbc	equ	20h
+regde	equ	21h
+reghl	equ	22h
+regsp	equ	23h
+regaf	equ	24h
+regix	equ	25h
+regiy	equ	26h
+;
+atbc	equ	30h
+atde	equ	31h
+athl	equ	32h
+atsp	equ	33h
+atix	equ	34h
+atiy	equ	35h
+atixi	equ	3dh
+atiyi	equ	3eh
+;
+ccnam:	defb	'NZZ NCC POPEP M '
+;		 0 1 2 3 4 5 6 7
+;
+ccdnz	equ	80h
+ccdz	equ	81h
+ccdnc	equ	82h
+ccdc	equ	83h
+ccdpo	equ	84h
+ccdpe	equ	85h
+ccdp	equ	86h
+ccdm	equ	87h
+;
+opnim8	equ	40h
+opnim16 equ	50h
+opnbit	equ	60h
+opnjr	equ	70h
+opnatc	equ	90h
+opnafa	equ	0b0h
+opnad16 equ	0a0h
+opnad8	equ	0c0h
+opnrst	equ	0d0h
+;
+opnjprg equ	0e0h		; internal use only, not a real operand
+opnjp16 equ	052h		; internal use only, becomes 50h
+opncl16 equ	051h		;   "       "   "      "     "
+opnjpsp equ	0f0h
+;
+;	jump marks
+;
+jm16	equ	010h		; jump immediate 16-bit (11 means call immed.)
+jmsp	equ	020h		; jump stack (ret)
+jmreg	equ	030h		; jump register
+;
+;------------------------------------------------------------------------------
+;
+;	Table of legal opcodes after DD/FD-prefix
+;
+preftab:
+	db	09h,19h,21h,22h,23h,29h,2ah,2bh,34h,35h,36h
+	db	39h,46h,4eh,56h,5eh,66h,6eh,70h,71h,72h,73h
+	db	74h,75h,77h,7eh,86h,8eh,096h,09eh,0a6h,0aeh
+	db	0b6h,0beh,0cbh,0e1h,0e3h,0e5h,0e9h,0f9h
+lpreftab equ	$-preftab
+;
+;------------------------------------------------------------------------------
+;
+;	Table for opcodes 00..3F
+;
+tab00$3f:
+	db	mnnop,0,0	; 00
+	db	mnld,regbc,opnim16
+	db	mnld,atbc,rega
+	db	mninc,regbc,0
+	db	mninc,regb,0
+	db	mndec,regb,0
+	db	mnld,regb,opnim8
+	db	mnrlca,0,0
+;
+	db	mnex,regaf,opnafa ; 08
+	db	mnadd,reghl,regbc
+	db	mnld,rega,atbc
+	db	mndec,regbc,0
+	db	mninc,regc,0
+	db	mndec,regc,0
+	db	mnld,regc,opnim8
+	db	mnrrca,0,0
+;
+	db	mndjnz,opnjr,0	; 10
+	db	mnld,regde,opnim16
+	db	mnld,atde,rega
+	db	mninc,regde,0
+	db	mninc,regd,0
+	db	mndec,regd,0
+	db	mnld,regd,opnim8
+	db	mnrla,0,0
+;
+	db	mnjr,opnjr,0	; 18
+	db	mnadd,reghl,regde
+	db	mnld,rega,atde
+	db	mndec,regde,0
+	db	mninc,rege,0
+	db	mndec,rege,0
+	db	mnld,rege,opnim8
+	db	mnrra,0,0
+;
+	db	mnjr,ccdnz,opnjr ; 20
+	db	mnld,reghl,opnim16
+	db	mnld,opnad16,reghl
+	db	mninc,reghl,0
+	db	mninc,regh,0
+	db	mndec,regh,0
+	db	mnld,regh,opnim8
+	db	mndaa,0,0
+;
+	db	mnjr,ccdz,opnjr	; 28
+	db	mnadd,reghl,reghl
+	db	mnld,reghl,opnad16
+	db	mndec,reghl,0
+	db	mninc,regl,0
+	db	mndec,regl,0
+	db	mnld,regl,opnim8
+	db	mncpl,0,0
+;
+	db	mnjr,ccdnc,opnjr ; 30
+	db	mnld,regsp,opnim16
+	db	mnld,opnad16,rega
+	db	mninc,regsp,0
+	db	mninc,athl,0
+	db	mndec,athl,0
+	db	mnld,athl,opnim8
+	db	mnscf,0,0
+;
+	db	mnjr,ccdc,opnjr	; 38
+	db	mnadd,reghl,regsp
+	db	mnld,rega,opnad16
+	db	mndec,regsp,0
+	db	mninc,rega,0
+	db	mndec,rega,0
+	db	mnld,rega,opnim8
+	db	mnccf,0,0
+;
+ltab00$3f equ	($-tab00$3f)/3
+;
+;------------------------------------------------------------------------------
+;
+;	Table for Opcodes 40..BF (Groups of 8)
+;
+tab40$bf:
+	db	mnld,regb,1fh
+	db	mnld,regc,1fh
+	db	mnld,regd,1fh
+	db	mnld,rege,1fh
+	db	mnld,regh,1fh
+	db	mnld,regl,1fh
+	db	mnld,athl,1fh
+	db	mnld,rega,1fh
+	db	mnadd,rega,1fh
+	db	mnadc,rega,1fh
+	db	mnsub,1fh,0
+	db	mnsbc,rega,1fh
+	db	mnand,1fh,0
+	db	mnxor,1fh,0
+	db	mnor,1fh,0
+	db	mncp,1fh,0
+;
+ltab40$bf equ	($-tab40$bf)/3
+;
+;------------------------------------------------------------------------------
+;
+;	Table for Opcodes C0..FF
+;
+tabc0$ff:
+	db	mnret,ccdnz,opnjpsp ; c0
+	db	mnpop,regbc,0
+	db	mnjp,ccdnz,opnjp16
+	db	mnjp,opnjp16,0
+	db	mncall,ccdnz,opncl16
+	db	mnpush,regbc,0
+	db	mnadd,rega,opnim8
+	db	mnrst,opnrst+0,0
+;
+	db	mnret,ccdz,opnjpsp ; c8
+	db	mnret,opnjpsp,0
+	db	mnjp,ccdz,opnjp16
+	db	mnbadop,0,0
+	db	mncall,ccdz,opncl16
+	db	mncall,opncl16,0
+	db	mnadc,rega,opnim8
+	db	mnrst,opnrst+1,0
+;
+	db	mnret,ccdnc,opnjpsp ; d0
+	db	mnpop,regde,0
+	db	mnjp,ccdnc,opnjp16
+	db	mnout,opnad8,rega
+	db	mncall,ccdnc,opncl16
+	db	mnpush,regde,0
+	db	mnsub,opnim8,0
+	db	mnrst,opnrst+2,0
+;
+	db	mnret,ccdc,opnjpsp ; d8
+	db	mnexx,0,0
+	db	mnjp,ccdc,opnjp16
+	db	mnin,rega,opnad8
+	db	mncall,ccdc,opncl16
+	db	mnbadop,0,0
+	db	mnsbc,rega,opnim8
+	db	mnrst,opnrst+3,0
+;
+	db	mnret,ccdpo,opnjpsp ; e0
+	db	mnpop,reghl,0
+	db	mnjp,ccdpo,opnjp16
+	db	mnex,atsp,reghl
+	db	mncall,ccdpo,opncl16
+	db	mnpush,reghl,0
+	db	mnand,opnim8,0
+	db	mnrst,opnrst+4,0
+;
+	db	mnret,ccdpe,opnjpsp ; e8
+	db	mnjp,athl,opnjprg
+	db	mnjp,ccdpe,opnjp16
+	db	mnex,regde,reghl
+	db	mncall,ccdpe,opncl16
+	db	mnbadop,0,0
+	db	mnxor,opnim8,0
+	db	mnrst,opnrst+5,0
+;
+	db	mnret,ccdp,opnjpsp ; f0
+	db	mnpop,regaf,0
+	db	mnjp,ccdp,opnjp16
+	db	mndi,0,0
+	db	mncall,ccdp,opncl16
+	db	mnpush,regaf,0
+	db	mnor,opnim8,0
+	db	mnrst,opnrst+6,0
+;
+	db	mnret,ccdm,opnjpsp ; f8
+	db	mnld,regsp,reghl
+	db	mnjp,ccdm,opnjp16
+	db	mnei,0,0
+	db	mncall,ccdm,opncl16
+	db	mnbadop,0,0
+	db	mncp,opnim8,0
+	db	mnrst,opnrst+7,0
+;
+ltabc0$ff equ	($-tabc0$ff)/3
+;
+;------------------------------------------------------------------------------
+;
+;	Table for prefix-codes ED
+;
+tabedpref:
+	db	40h,mnin,regb,opnatc
+	db	41h,mnout,opnatc,regb
+	db	42h,mnsbc,reghl,regbc
+	db	43h,mnld,opnad16,regbc
+	db	44h,mnneg,0,0
+	db	45h,mnretn,opnjpsp,0
+	db	46h,mnim,opnbit+0,0
+	db	47h,mnld,regi,rega
+;
+	db	48h,mnin,regc,opnatc
+	db	49h,mnout,opnatc,regc
+	db	4ah,mnadc,reghl,regbc
+	db	4bh,mnld,regbc,opnad16
+	db	4dh,mnreti,opnjpsp,0
+	db	4fh,mnld,regr,rega
+;
+	db	50h,mnin,regd,opnatc
+	db	51h,mnout,opnatc,regd
+	db	52h,mnsbc,reghl,regde
+	db	53h,mnld,opnad16,regde
+	db	56h,mnim,opnbit+1,0
+	db	57h,mnld,rega,regi
+;
+	db	58h,mnin,rege,opnatc
+	db	59h,mnout,opnatc,rege
+	db	5ah,mnadc,reghl,regde
+	db	5bh,mnld,regde,opnad16
+	db	5eh,mnim,opnbit+2,0
+	db	5fh,mnld,rega,regr
+;
+	db	60h,mnin,regh,opnatc
+	db	61h,mnout,opnatc,regh
+	db	62h,mnsbc,reghl,reghl
+	db	67h,mnrrd,0,0
+;
+	db	68h,mnin,regl,opnatc
+	db	69h,mnout,opnatc,regl
+	db	6ah,mnadc,reghl,reghl
+	db	6fh,mnrld,0,0
+;
+	db	72h,mnsbc,reghl,regsp
+	db	73h,mnld,opnad16,regsp
+;
+	db	78h,mnin,rega,opnatc
+	db	79h,mnout,opnatc,rega
+	db	7ah,mnadc,reghl,regsp
+	db	7bh,mnld,regsp,opnad16
+;
+	db	0a0h,mnldi,0,0
+	db	0a1h,mncpi,0,0
+	db	0a2h,mnini,0,0
+	db	0a3h,mnouti,0,0
+	db	0a8h,mnldd,0,0
+	db	0a9h,mncpd,0,0
+	db	0aah,mnind,0,0
+	db	0abh,mnoutd,0,0
+;
+	db	0b0h,mnldir,0,0
+	db	0b1h,mncpir,0,0
+	db	0b2h,mninir,0,0
+	db	0b3h,mnotir,0,0
+	db	0b8h,mnlddr,0,0
+	db	0b9h,mncpdr,0,0
+	db	0bah,mnindr,0,0
+	db	0bbh,mnotdr,0,0
+;
+ltabedpref equ	($-tabedpref)/4
+;
+;	table entry for HALT opcode
+;
+tab76:
+	db	mnhalt,0,0
+;
+;------------------------------------------------------------------------------
+;
+;	Table for CB-Prefix Opcodes (Groups of 8)
+;
+tabcb00$ff:
+	db	mnrlc,1fh,0	; 00
+	db	mnrrc,1fh,0	; 08
+	db	mnrl,1fh,0	; 10
+	db	mnrr,1fh,0
+	db	mnsla,1fh,0
+	db	mnsra,1fh,0
+	db	mnbadop,0,0
+	db	mnsrl,1fh,0
+;
+	db	mnbit,60h,1fh
+	db	mnbit,61h,1fh
+	db	mnbit,62h,1fh
+	db	mnbit,63h,1fh
+	db	mnbit,64h,1fh
+	db	mnbit,65h,1fh
+	db	mnbit,66h,1fh
+	db	mnbit,67h,1fh
+;
+	db	mnres,60h,1fh
+	db	mnres,61h,1fh
+	db	mnres,62h,1fh
+	db	mnres,63h,1fh
+	db	mnres,64h,1fh
+	db	mnres,65h,1fh
+	db	mnres,66h,1fh
+	db	mnres,67h,1fh
+;
+	db	mnset,60h,1fh
+	db	mnset,61h,1fh
+	db	mnset,62h,1fh
+	db	mnset,63h,1fh
+	db	mnset,64h,1fh
+	db	mnset,65h,1fh
+	db	mnset,66h,1fh
+	db	mnset,67h,1fh
+;
+ltabcb00$ff equ	($-tabcb00$ff)/3
+;
+;	Operand description:
+;
+;		00	no operand
+;		1x	8-bit register name
+;			(x = pointer to 'reg8nam')
+;		2x	16-bit register name
+;			(x = pointer to 'reg16nam')
+;		3x	memory register, x=pointer to 'reg16nam'
+;			bit 3 = 1: signed offset follows
+;		40	immediate 8-bit follows
+;		50	immediate 16-bit follows
+;		6x	x = bit number/ int-mode-number
+;		70	jump offset follows (16-bit immediate value)
+;		8x	condition code
+;			(x = pointer to 'ccnam')
+;		90	(C)
+;		A0	address follows
+;		B0	AF'
+;		C0	8-bit (port-)address follows
+;		Dx	restart (8-bit immediate value follows)
+;
+;	analop:		analyse opcode
+;
+;		entry:	A/HL = first opcode byte address
+;
+;		exit:	B = opcode length
+;			C = menmonic table pointer
+;			HL = next opcode address
+;			opdesc contains operand description
+;
+;		uses:	all regs
+;
+analop:
+	ld	(caddress),hl
+if	extended
+	call	peek
+	push	hl
+	ld	ix,peekbuf
+else
+	push	hl
+	push	hl
+	pop	ix
+endif;EXTENDED
+	ld	iy,opdesc
+	ld	b,1		; default length
+	xor	a
+	ld	(prefix),a	; clear prefix
+	ld	(condit),a
+	ld	(jumpmark),a
+	call	analop1		; analyse
+	ld	(iy+0),0	; terminate opdesc
+	pop	hl
+	ld	e,b
+	ld	d,0
+	add	hl,de
+	ret
+;
+analop1:
+	ld	a,(ix+0)	; load opcode
+	ld	c,3		; offset of IX to HL in "r16nam"
+	cp	0ddh
+	jr	z,prefx		; IX-prefix
+	cp	0fdh		; IY-prefix
+	jr	nz,anal10	; jump if no prefix
+	inc	c
+prefx:
+	ld	a,c
+	ld	(prefix),a
+	ld	a,(ix+2)	; get offset
+	ld	(offset),a	; store it
+	ld	hl,preftab
+	ld 	a,(ix+1)	; check next byte
+	ld	bc,lpreftab
+	cpir			; allowed combination ?
+	jp	nz,operr	; error if not
+	cp	0cbh		; shift/bit op ?
+	jr	nz,prefx10	; ok if not
+	ld 	a,(ix+3)	; get opcode (byte 2 is offset)
+	cp	36h		; 36 is not allowed
+	jp	z,operr
+	and	7
+	cp	6		; only .6/.E allowed
+	jp	nz,operr	; error if not
+prefx10:
+	ld	b,2		; 2 bytes opcode
+	inc	ix		; get next byte
+	ld 	a,(ix+0)	; opcode
+;
+;	next byte can't be dd/fd prefix, so fall through
+;
+anal10:
+	cp	0cbh
+	jr	z,exshiftop	; extended shift / bit operation
+	cp	0edh
+	jr	z,specop	; special operation
+	ld	hl,tab00$3f
+	cp	040h
+	jr	c,anal20	; direct table access for 00..3f
+	cp	0c0h
+	jr	c,anal30	; branch for 40..bf
+	ld	hl,tabc0$ff	; direct table for c0..ff
+	sub	0c0h		; offset
+anal20:
+	ld	e,a
+	add	a,a
+	add	a,e		; opcode * 3
+	ld	e,a
+	ld	d,0
+	add	hl,de		; table location
+anal25:
+	ld	c,(hl)		; mnemonic
+	inc	hl
+	ld	a,(hl)		; first operand
+	or	a
+	ret	z		; ready if no operand
+	call	analopnd	; analyse operand
+	inc	hl
+	ld	a,(hl)		; second operand
+	or	a
+	ret	z		; ready if no second operand
+	jp	analopnd	; analyse second operand
+;
+anal30:				; here for opcodes 40..BF
+	cp	76h
+	ld	c,mnhalt	; HALT is a special case
+	ret	z
+	sub	40h
+	rrca
+	rrca			; divide opcode by 8
+	rrca
+	and	LoMASK
+	ld	hl,tab40$bf
+	jr	anal20		; normal procedure now
+;
+;	Opcode prefix CB:	Extended shifts, bit operations
+;
+exshiftop:
+	inc	ix		; opcode is next byte
+	inc	b
+	ld	a,(prefix)	; prefix ?
+	or	a
+	jr	z,exshif1	; ok if not
+	inc	ix		; skip offset if prefix
+exshif1:
+	ld	a,(ix+0)	; load opcode
+	rrca
+	rrca			; divide by 8
+	rrca
+	and	1fh
+	ld	hl,tabcb00$ff
+	jr	anal20		; normal procedure from here
+;
+;	Opcode prefix ED:	Special operations
+;
+specop:
+	inc	ix		; opcode is next byte
+	inc	b
+	ld 	a,(ix+0)
+	ld	c,ltabedpref
+	ld	hl,tabedpref
+specoplp:
+	cp	(hl)
+	inc	hl
+	jr	z,anal25	; continue normally if found
+	inc	hl
+	inc	hl
+	inc	hl
+	dec	c
+	jr	nz,specoplp
+;
+;	fall through to operr for undefined ED-opcode
+;
+operr:
+	ld	c,mnbadop
+	ld	b,1		; length of bad opcode is 1
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	analopnd:	analyse operand
+;
+;		entry:	A = operand code
+;
+analopnd:
+	ld	(iy+0),a	; store
+	inc	iy
+	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	and	LoMASK
+	dec	a
+	add	a,a
+	ld	e,a
+	ld	d,0
+	pop	af
+	push	hl
+	ld	hl,analopntab
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl
+	ex	(sp),hl
+aopret:
+	ret			; enter table
+;
+analopntab:
+	dw	aopr8		; 10
+	dw	aopr16		; 20
+	dw	aopa16		; 30
+	dw	aopim8		; 40
+	dw	aopim16		; 50
+	dw	aopret		; 60
+	dw	aopjr		; 70
+	dw	aopccd		; 80
+	dw	aopret		; 90
+	dw	aopim16		; a0
+	dw	aopret		; b0
+	dw	aopim8		; c0
+	dw	aoprst		; d0
+	dw	aopjprg		; e0
+	dw	aopjpsp		; f0
+;
+aopccd:
+	ld	a,80h
+	ld	(condit),a
+	ret
+;
+aopr8:
+	and	LoMASK
+	cp	0fh
+	ret	nz		; ready if not undetermined
+	ld	a,(ix+0)	; get opcode again
+	and	7		; get register
+	cp	7		; A ?
+	jr	nz,aopr81
+	inc	a		; internally, A is 8
+aopr81:
+	or	10h
+	ld	(iy-1),a	; replace
+	cp	16h		; (HL)
+	ret	nz		; ready if not (HL)
+	ld	(iy-1),32h	; replace by (HL)
+memopnd:
+	ld	a,(prefix)
+	or	a
+	ret	z		; ok if no prefix
+	add	a,(iy-1)	; else add prefix offset to (HL)
+	ld	(iy-1),a
+	ld 	a,(ix+0)	; get opcode again
+	cp	0e9h		; JP (rr) ?
+	ret	z		; no offset for JP (rr)
+	set	3,(iy-1)	; else mark offset follows
+	ld	a,(offset)	; copy offset
+	ld	(iy+0),a
+	inc	iy		; point to next
+	inc	b		; offset takes one byte
+	ret
+;
+aopjr:
+	ld	a,(ix+0)	; opcode again
+	cp	10h		; DJNZ ?
+	jr	nz,aopjr1
+	ld	a,80h
+	ld	(condit),a	; DJNZ is conditional
+aopjr1:
+	ld	a,(ix+1)
+	ld	(iy+0),a
+	inc	iy		; point to next
+	inc	b		; offset takes one byte
+	push	hl
+	ld	hl,(caddress)	; current addr
+	inc	hl
+	inc	hl		; +2
+	ld	e,a
+	ld	d,0		; calculate absolute jump address
+	rlca
+	jr	nc,aopjr10
+	ld	d,-1		; extend sign
+aopjr10:
+	add	hl,de
+	ex	de,hl
+	pop	hl
+	xor	a
+	jr	mkjm16		; mark as 16-bit jump
+;
+aopa16:
+	and	7
+	cp	2
+	ret	nz		; ready if not HL
+	jr	memopnd
+;
+aopr16:
+	and	7
+	cp	2
+	ret	nz		; ready if not HL
+	ld	a,(prefix)
+	add	a,(iy-1)
+	ld	(iy-1),a
+	ret
+;
+aopim16:
+	ld	e,(ix+1)	; copy value
+	ld	(iy+0),e
+	ld	d,(ix+2)
+	ld	(iy+1),d
+	inc	iy
+	inc	iy
+	inc	b
+	inc	b		; 2 bytes for opcode
+	and	7		; jump ?
+	ret	z		; ready if not
+	push	af
+	ld	a,(iy-3)
+	and	0f0h		; clear lower nibble in operand-description
+	ld	(iy-3),a
+	pop	af
+mkjm16:
+	ld	(jumpaddr),de
+	or	jm16
+mkjmp:
+	push	hl
+	ld	hl,condit
+	or	(hl)
+	ld	(jumpmark),a
+	pop	hl
+	ret
+;
+aopim8:
+	ld 	d,(ix+1)
+	ld	a,(prefix)	; prefix ?
+	or	a
+	jr	z,aopim81	; ok if not
+	ld	d,(ix+2)	; value is in next byte if prefix
+aopim81:
+	ld	(iy+0),d	; copy value
+	inc	iy
+	inc	b		; one byte for opcode
+	ret
+;
+aoprst:
+	and	7
+	ld	d,a
+	inc	d
+	ld	a,-8
+aoprstlp:
+	add	a,8
+	dec	d
+	jr	nz,aoprstlp
+	ld	(iy+0),a
+	inc	iy
+	ld	e,a
+	ld	a,1		; call marker
+	jr	mkjm16		; go mark jump
+;
+aopjprg:
+	ld	a,(iy-2)	; previous operand
+	jr	aopjj
+;
+aopjpsp:
+	ld	a,jmsp
+aopjj:
+	ld	(iy-1),0	; clear field, not an operand
+	jr	mkjmp
+;
+;----------------------------------------------------------
+;
+;	Routines for Assembly
+;
+;----------------------------------------------------------
+;
+;	srchmnemo:	search mnemonic
+;
+;		entry:	HL = pointer to mnemonic
+;
+;		exit:	Carry set if not found
+;			A = mnemonic index
+;
+srchmnemo:
+	ld	de,mnemtab
+	ld	b,mnbadop	; number of entries
+	ld	c,0		; index
+srcmnloop:
+	push	bc
+	push	hl		; save start
+	ld	b,4
+	ld	c,0
+srcmncmp:
+	ld	a,(de)
+	sub	(hl)
+	or	c
+	ld	c,a		; all bytes must match
+	inc	hl
+	inc	de
+	djnz	srcmncmp
+	pop	hl
+	pop	bc
+	or	a
+	ld	a,c
+	ret	z		; ready if found
+	inc	c
+	djnz	srcmnloop
+	scf
+	ret			; exit with carry set
+;
+;------------------------------------------------------------------------------
+;
+;	translate:	translate op description into opcode
+;
+;		entry:	A = mnemonic index
+;			IX = opnd1
+;			IY = opnd2
+;
+translate:
+	ld	c,a		; mnemo into C
+	xor	a
+	ld	(prefix),a
+	ld	(prefix2),a
+	dec	a
+	ld	(regpref),a	; registers have preference this time
+	call	trymatch	; try to match mnemo and operands
+	jr	nc,transl10
+	xor	a
+	ld	(regpref),a	; no register preference this time
+	call	trymatch
+	ret	c		; return if no match
+;
+;	we have a match, now assemble the opcode
+;
+transl10:
+	ld	a,e
+	cp	4		; ED-prefix-table ?
+	jr	nz,matchnoed
+	dec	hl		; then opcode is one before mnemo
+	ld	a,(hl)
+	inc	hl
+	ld	(opcode),a	; correct opcode
+matchnoed:
+	ld	b,1		; B = length of opcode
+	ld	ix,string
+	ld	a,(prefix)	; is there an IX/IY prefix ?
+	or	a
+	jr	z,match10
+	ld	(ix+0),a	; yes, store & increase length
+	inc	ix
+	inc	b
+match10:
+	ld	a,(prefix2)
+	or	a		; opcode prefix ?
+	jr	z,match20
+	ld	(ix+0),a
+	inc	ix
+	inc	b
+match20:
+	ld	a,(opcode)	; get opcode
+	ld	(ix+0),a	; store it
+	dec	d		; opcode offset
+	jr	z,match25	; ok if 1
+	inc	hl
+	ld	a,(hl)
+	dec	hl
+	cp	1fh		; operand 1 undetermined ?
+	ld	a,(opnd1+1)
+	jr	z,match22
+	ld	a,(opnd2+1)	; else insert reg-num of second opnd into op
+match22:
+	call	make8bit
+	and	LoMASK
+	or	(ix+0)
+	ld	(ix+0),a
+match25:
+	ld	a,(prefix)	; check again for IX/IY prefix
+	or	a
+	jr	z,match40	; ok if no prefix
+	push	hl
+	ld	hl,preftab
+	ld	a,(string+1)	; opcode
+	push	bc		; check opcode against table of allowed codes
+	ld	bc,lpreftab
+	cpir
+	pop	bc
+	pop	hl
+	scf
+	ret	nz		; error if prefix with illegal opcode
+	ld	a,(hl)		; check mnemo
+	cp	mnjp		; is it JP (IX/IY) ?
+	jr	z,match40	; then no offset
+	inc	hl		; first opnd
+	ld	iy,opnd1
+	ld	a,(hl)
+	inc	hl		; second opnd
+	cp	athl
+	jr	z,match30
+	cp	1fh
+	jr	z,match30
+	ld	a,(hl)
+	cp	athl
+	jr	z,match29
+	cp	1fh
+	jr	nz,match39	; no offset if not (..)
+match29:
+	ld	iy,opnd2
+match30:
+	ld	a,(iy+2)	; offset marker
+	or	a
+	jr	z,match35	; use 0 if no offset given
+	ld	a,(iy+3)	; else use specified offset
+match35:
+	ld	d,a		; save
+	ld	a,(prefix2)
+	or	a		; another prefix ?
+	jr	z,match36	; ok if not
+	ld	a,(ix+0)	; else copy opcode
+	ld	(ix+0),d
+	ld	d,a
+match36:
+	ld	(ix+1),d
+	inc	ix
+	inc	b
+match39:
+	dec	hl
+	dec	hl
+match40:
+	inc	hl		; first operand
+	ld	a,(hl)
+	or	a
+	ret	z		; ready if no operands
+	ld	iy,opnd1
+	call	insopnd
+	inc	hl
+	ld	a,(hl)
+	or	a
+	ret	z		; ready if no second operand
+	ld	iy,opnd2
+	call	insopnd
+	or	a		; clear carry
+	ret
+;
+;	insert operand
+;
+insopnd:
+	cp	40h
+	ret	c		; no change if register
+	jr	z,insopni8
+	cp	60h
+	jr	c,insopni16	; jump if 16-bit immediate
+	cp	70h
+	ret	c		; ready if IM/BIT
+	jr	z,insopnjr	; jump if jump offset
+	cp	0a0h
+	ret	c		; ready if condition code or (C)
+	jr	z,insopni16
+	cp	0c0h
+	ret	c		; ready if AF'
+	ret	nz		; ready if not 8-bit port address
+insopni8:
+	ld	a,(iy+5)	; lower byte of value
+insopnst:
+	ld	(ix+1),a	; store in opcode
+	inc	ix
+	inc	b
+	ret
+insopni16:
+	call	insopni8
+	ld	a,(iy+6)
+	jr	insopnst
+insopnjr:
+	ld	hl,(caddress)	; current address
+	inc	hl
+	inc	hl		; + 2
+	ld 	e,(iy+5)
+	ld	d,(iy+6)	; jump address specified
+	ex	de,hl
+	or	a
+	sbc	hl,de		; calculate offset
+	jr	c,insopnjr1	; branch if negative offset
+	ld	a,h
+	or	a
+	jp	nz,cmderr	; abort if offset > 255
+	ld	a,l
+	and	80h
+	jp	nz,cmderr	; abort if offset > 127
+	ld	a,l
+	jr	insopnst	; go store offset
+insopnjr1:
+	inc	h
+	jp	nz,cmderr	; abort if offset < -256
+	ld	a,l
+	and	80h
+	jp	z,cmderr	; abort if offset < -128
+	ld	a,l
+	jr	insopnst	; go store offset
+;
+;	make8bit:	change operand to conform to 8-bit register
+;
+make8bit:
+	or	a
+	scf
+	ret	z		; ret if opnd empty
+	cp	20h
+	jr	nc,make810	; branch if 16-bit
+	cp	16h
+	ccf
+	ret	nc		; ready if B..L
+	cp	18h		; A ?
+	scf
+	ret	nz		; error if I or R
+	dec	a
+	or	a
+	ret			; A is 17h for opcode
+make810:
+	cp	32h		; must be (HL)
+	scf
+	ret	nz		; error if not
+	ld	a,16h		; (HL) is 16h for opcode
+	or	a
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	trymatch:	try to match mnemo and operands
+;
+;		entry:	C = mnemo
+;			IX = operand 1 description
+;			IY = operand 2 description
+;
+trymatch:
+	ld	e,3		; E = length of a table element
+	ld	d,1		; D = offset of opcodes within table
+	xor	a
+	ld	(opcode),a	; init opcode
+	ld	(prefix2),a	; init opcode prefix
+	ld	hl,tab00$3f
+	ld	b,ltab00$3f
+	call	srchtab
+	ret	nc
+	ld	d,8
+	ld	b,ltab40$bf
+	call	srchtab
+	ret	nc
+	ld	d,1
+	ld	b,ltabc0$ff
+	call	srchtab
+	ret	nc
+	xor	a
+	ld	(opcode),a	; reset opcode
+	ld	a,0cbh
+	ld	(prefix2),a
+	ld	d,8
+	ld	hl,tabcb00$ff
+	ld	b,ltabcb00$ff
+	call	srchtab
+	ret	nc
+	ld	a,0edh
+	ld	(prefix2),a
+	ld	d,1
+	ld	e,4
+	ld	hl,tabedpref+1
+	ld	b,ltabedpref
+	call	srchtab
+	ret	nc
+	xor	a
+	ld	(prefix2),a
+	ld	a,076h		; HALT opcode
+	ld	(opcode),a
+	ld	e,3
+	ld	b,1
+	ld	hl,tab76
+;
+;	return via srchtab
+;
+srchtab:
+	ld	a,(hl)
+	cp	c		; compare mnemo
+	jr	nz,srcht10
+	call	opmatch		; try to match operands if same
+	ret	nc		; ready if match
+srcht10:
+	ld	a,d		; else continue: save opcode offset
+	ld	d,0
+	add	hl,de		; next table element
+	ld	d,a
+	push	hl
+	ld	hl,opcode
+	add	a,(hl)		; increase opcode
+	ld	(hl),a
+	pop	hl
+	djnz	srchtab		; next
+	scf			; no match
+	ret			; return with carry set
+;
+;	opmatch:	try to match operands
+;
+;		entry:	HL = opcode descriptor
+;			IX, IY = operands
+;
+opmatch:
+	xor	a
+	ld	(prefix),a
+	push	bc
+	push	de
+	push	hl		; save everything
+	push	ix
+	inc	hl		; first operand
+	ld	b,(hl)
+	call	tryopnd
+	jr	c,opmatchret	; return with error if no match
+	inc	hl
+	ld	b,(hl)		; second operand
+	push	iy
+	pop	ix
+	call	tryopnd
+opmatchret:
+	pop	ix
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+;
+;	tryopnd:	try to match operand
+;
+;		entry:	B = operand descriptor byte
+;			IX = operand
+;
+tryopnd:
+	ld	a,b
+	or	a
+	jr	nz,tryopnd10
+tryopndnull:
+	or	(ix+1)
+	or	(ix+4)
+	or	(ix+7)
+	ret	z		; match if no operand
+	scf
+	ret			; else no match
+;
+tryopnd10:
+	cp	40h
+	jr	nc,tryopnd20	; branch if not register
+	cp	(ix+1)		; compare
+	jr	z,tryopndisreg	; ok if match
+	cp	1fh
+	scf
+	ret	nz		; no match if not undetermined 8-bit reg
+	ld	a,(ix+1)
+	call	make8bit
+	ret	c		; error if no 8-bit reg
+tryopndisreg:
+	ld	a,(ix+0)
+	or	a
+	ret	z		; match if no prefix
+	ld	(prefix),a	; store prefix
+	ret			; ready
+;
+tryopnd20:
+	jr	z,tryopndimm	; branch if immediate 8-bit (40)
+	and	0f0h
+	cp	60h
+	jr	c,tryopndimm	; branch if immediate 16-bit (5x)
+	jr	z,tryopndbitim	; branch if bit/int-mode (6x)
+	cp	80h
+	jr	c,tryopndimm	; immediate (70)
+	jr	z,tryopndcc	; cond-code (8x)
+	cp	0a0h		; address ?
+	jr	c,tryopndcmp	; (C) (90)
+	jr	z,tryopndaddr	; address (A0)
+	cp	0c0h		; 8-bit address ?
+	jr	c,tryopndcmp	; AF (B0)
+	jr	z,tryopndaddr	; 8-bit-address	(C0)
+	cp	0d0h
+	ld	a,0
+	jr	nz,tryopndnull	; > D0 is no real operand
+;
+;	Dx: restart
+;
+	ld	a,(ix+4)
+	cp	50h		; must be immediate value
+	scf
+	ret	nz
+	ld	a,(ix+6)
+	or	a
+	scf
+	ret	nz		; error if > 255
+	ld	a,(ix+5)
+	ld	c,0
+tryopndrst:
+	sub	8
+	jr	c,tryopndrst1
+	inc	c
+	jr	tryopndrst
+tryopndrst1:
+	add	a,8
+	scf
+	ret	nz		; error if not divisible by 8
+	ld	a,c
+	or	0d0h
+	cp	b
+	ret	z
+	scf
+	ret
+;
+tryopndcc:
+	ld	a,(ix+7)
+tryopndcc1:
+	cp	b
+	ret	z
+	scf
+	ret
+;
+tryopndcmp:
+	ld	a,(ix+1)
+	jr tryopndcc1
+;
+tryopndimm:
+	ld	a,(ix+4)
+	cp	50h
+	jr	z,tryopndimrp
+	scf
+	ret
+;
+tryopndaddr:
+	ld	a,(ix+4)
+	cp	0a0h
+	jr	z,tryopndimrp
+	scf
+	ret
+;
+tryopndimrp:
+	ld	a,(regpref)	; register preference ?
+	or	a
+	ret	z		; match ok if not
+	ld	a,(ix+1)	; is it a register ?
+	or	a
+	ret	z		; ret with match if not a register
+	scf
+	ret			; ret with no match if register operand
+;
+tryopndbitim:
+	ld	a,(ix+4)
+	cp	50h
+	scf
+	ret	nz		; must be value
+	ld	a,(ix+6)
+	or	a
+	scf
+	ret	nz		; must be < 255
+	ld	a,(ix+5)
+	cp	8
+	ccf
+	ret	c		; must be <= 7
+	or	60h
+	jr	tryopndcc1
+;
+;------------------------------------------------------------------------------
+;
+	dseg
+;
+prefix:	ds	1
+offset:	ds	1
+condit:	ds	1
+caddress:
+	ds	2
+;
+jumpaddr:
+	ds	2
+jumpmark:
+	ds	1
+;
+opdesc:	ds	8
+;
+prefix2 equ	offset
+opcode	equ	condit
+regpref equ	opdesc
+
+	end
+
+;
+jumpaddr:
+	ds	2
+jumpmark:

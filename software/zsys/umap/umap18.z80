@@ -1,0 +1,583 @@
+; UMAP.Z80
+;
+;	Shows current directory usage on disk:  the number files and the
+;	number of used directory entries for each user and for the disk
+;	as a whole, and the number of remaining directory entries.  Also
+;	shows remaining disk space in kilobytes.
+;
+Vers	equ	18		; version number
+SubVers	equ	' '		; modification level
+;
+; USAGE:
+;
+;	UMAP {dir:} {{/}option}
+;
+; Although a DU or DIR specification may be given, only the drive is
+; significant.  If no drive is given, the current drive is assumed.
+;
+; OPTIONS:  A single option may be given with or without a slash and
+; with or without a drive specification.
+;
+;	U	Show complete directory statistics for each user area
+;		on the disk.
+;
+;	V	Show a list of vacant user areas (those with no active 
+;		files).
+;
+; With no option, only total directory usage is shown.
+;
+; HISTORY:
+;
+; Version 1.8 -- October 10, 1991 -- Gene Pizzetta
+;	Howard Goldstein reported a stack problem when UMAP was run
+;	under BYE.  The stack size has been increased to (hopefully)
+;	solve the problem.  Also, replaced Z3LIB's PRTNAME with 
+;	GCOMNAM from ZSLIB, so disk name displays properly with GO
+;	command.  A couple of minor display changes.
+;
+; Version 1.7 -- April 20, 1991 -- Gene Pizzetta
+;	With U option, now shows directory name, if any, for each user
+;	area, per a suggestion from Howard Schwartz.
+;
+; Version 1.6 -- April 14, 1991 -- Gene Pizzetta
+;	Modified display of vacant users per a suggestion from Jay
+;	Sage, which also resulted in simpler code.  A few other display
+;	changes were made.  Added configuration byte for extra space
+;	between vacant users.
+;
+; Version 1.5 -- April 10, 1991 -- Howard Goldstein
+;	Cleaned up code.  No functional changes.
+;
+; Version 1.4 -- March 27, 1991 -- Gene Pizzetta
+;	With V option, now prints only users 0-15 on first line,
+;	users 16-31 on second line.
+;
+; Version 1.3 -- March 26, 1991 -- Gene Pizzetta
+;	Minor changes in display for aesthetical considerations: free
+;	entries and free space are printed on separate line.  At the
+;	suggestion of Rob Wood, added V option for vacant user area
+;	display.  Added type 3 and type 4 assemblies.
+;
+; Version 1.2 -- March 25, 1991 -- Gene Pizzetta
+;	Now re-initializes the drive byte in the FCB with a question mark
+;	so UMAP will work with the GO command under ZRDOS.  It seems that
+;	ZRDOS resets the byte to zero, for no known reason.  Thanks to
+;	Rob Wood for discovering this idiosyncrasy.  Added ability to
+;	count entries beyond user 31.  ZSDOS does not return them.  DRI's
+;	CP/M-Plus does.  It's there if it works on your system.
+;
+; Version 1.1 -- February 23, 1991 -- Gene Pizzetta
+;	Removed VLIB routines to save a lot of bytes.  Added disk space
+;	display.
+;
+; Version 1.0 -- February 18, 1991 -- Gene Pizzetta
+;	Initial release.  The idea for this program came from USRMAP,
+;	author unknown, and was written at the urging of Howard Schwartz.
+;
+;	Gene Pizzetta
+;	481 Revere Street
+;	Revere, MA 02151
+;
+;	Newton Centre Z-Node:  (617) 965-7259
+;	Ladera Z-Node Central:  (213) 670-9465
+;	GEnie:  E.PIZZETTA
+;	Voice:  (617) 284-0891
+;
+; System addresses . . .
+;
+Bdos	equ	5
+CpmFcb	equ	5Ch
+AltFcb	equ	6Ch
+CpmDma	equ	80h
+;
+; BDOS Functions
+;
+SelDsk	equ	14
+SrchF	equ	17
+SrchN	equ	18
+RetDsk	equ	25
+;
+; ASCII characters . . .
+;
+CtrlC	equ	03h		; ^C
+BS	equ	08h		; backspace
+TAB	equ	09h		; tab
+LF	equ	0Ah		; linefeed
+CR	equ	0Dh		; carriage return
+CpmEof	equ	1Ah		; CP/M end-of-file character (^Z)
+;
+; Following routines are from Z3LIB and SYSLIB
+;
+	.request	zslib,z3lib,syslib
+;
+	ext	gcomnam,comnam					; ZSLIB
+	ext	z3init,zsyschk,puter2,getcrt			; Z3LIB
+	ext	cin,cout,eprint,epstr,crlf,padc,phldc,phl4hc	; SYSLIB
+	ext	dparams,extent,dirmax,dfree,dutdir
+;
+; TYP3HDR.Z80, Version 1.1
+; This code has been modified as suggested by Charles Irvine so that it will
+; function correctly with interrupts enabled.
+;
+Entry:	jr	Start0		; must use relative jump
+	db	0		; filler
+	db	'Z3ENV',3	; type-3 environment
+Z3EAdr:	dw	0		; filled in by Z33
+	dw	entry		; intended load address
+;
+; Configuration area
+;
+	db	'UMAP'		; for ZCNFG
+	db	Vers/10+'0',Vers mod 10+'0','  '
+UFlag:	db	0		; FFh=show user stats, 0=don't
+VFlag:	db	0		; FFh=show only vacant users
+SpcFlg:	db	0		; FFh=extra space in vacant user display
+;
+Start0:	ld	hl,0		; point to warmboot entry
+	ld	a,(hl)		; save the byte there
+	di			; protect against interrupts
+	ld	(hl),0C9h	; replace warmboot with a return opcode
+	rst	0		; call address 0, pushing RETADDR onto stack
+RetAddr:
+	ld	(hl),a		; restore byte at 0
+	dec	sp		; get stack pointer to point
+	dec	sp		; ..to the value of RETADDR
+	pop	hl		; get it into HL and restore stack
+	ei			; we can allow interrupts again
+	ld	de,RetAddr	; this is where we should be
+	xor	a		; clear carry flag
+	push	hl		; save address again
+	sbc	hl,de		; subtract -- we should have 0 now
+	pop	hl		; restore value of RETADDR
+	jr	z,Start		; if addresses matched, begin real code
+
+	ld	de,NotZ33Msg-RetAddr ; offset to message
+	add	hl,de
+	ex	de,hl		; switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; return via BDOS print string function
+;
+NotZ33Msg:
+	db	'Not Z33+$'	; abort message if not Z33-compatible
+;
+Start:	ld	hl,(Z3EAdr)	; set up environment
+	call	zsyschk		; is this a Z-system?
+	ret	nz		; (nope)
+	call	z3init
+	ld	(OldStk),sp	; save old stack pointer
+	ld	sp,OldStk	; ..and set up new stack
+;
+	ld	hl,DftNam	; point to default name
+	call	gcomnam		; ..and get disk name
+	ld	hl,BegFil	; zero-out data area
+	ld	b,EndFil-BegFil
+	ld	a,0
+Start1:	ld	(hl),a
+	inc	hl
+	djnz	Start1
+	call	getcrt		; get CRT info address
+	inc	hl		; point to maximum lines
+	ld	a,(hl)
+	dec	a		; make lines one less
+	ld	(LinMax),a	; ..and store it
+	ld	(LinCnt),a	; initialize line counter
+	ld	hl,(UFlag)	; initialize option defaults
+	ld	(OpUFlg),hl	; OpUFlg and OpVFlg
+;
+	ld	a,(CpmFcb+1)	; check default FCB
+	cp	'/'		; leading slash?
+	jr	nz,ChkOpt	; (no)
+	ld	a,(CpmFcb+2)	; skip over leading slash
+ChkOpt:	cp	'/'		; another slash?
+	jp	z,Usage		; (yes, show usage)
+	cp	'V'		; option?
+	jr	z,SetV		; (yes)
+	cp	'U'
+	jr	z,SetU
+	ld	a,(AltFcb+1)	; check alternate FCB
+	cp	'/'		; leading slash?
+	jr	nz,ChkAlt	; (no)
+	ld	a,(AltFcb+2)	; skip over slash
+ChkAlt:	cp	'V'		; option?
+	jr	z,SetV		; (yes)
+	cp	'U'		; option?
+	jr	nz,Start2	; (no, check drive)
+Setu:	ld	a,(OpUFlg)
+	cpl			; toggle U flag
+	ld	(OpUFlg),a
+	jr	Start2
+SetV:	ld	a,(OpVFlg)
+	cpl			; toggle V flag
+	ld	(OpVFlg),a
+	inc	a		; did we set it?
+	jr	nz,Start2	; (no)
+	ld	(OpUFlg),a
+Start2:	ld	a,(CpmFcb+15)	; valid directory?
+	or	a
+	jp	nz,InvDir	; (no, can't do it)
+	ld	a,(CpmFcb)	; do we have a drive?
+	or	a
+	jr	z,Start3	; (no)
+	dec	a		; make A=0
+	ld	e,a		; ..put it in E
+	ld	c,SelDsk	; ..and select it
+	call	Bdos
+Start3:	ld	c,RetDsk	; get current drive
+	call	Bdos
+	ld	(TarDrv),a	; store it
+	add	'A'		; make printable
+	call	eprint
+	db	'Directory usage on Drive ',0
+	call	cout		; print drive, colon, and new line
+;	ld	a,':'
+;	call	cout
+	ld	a,(OpVFlg)
+	or	a
+	call	z,crlf		; no new line if option V
+	call	dparams		; get disk parameters
+	ld	de,OurFcb
+;
+; ZRDOS resets the drive byte to 0.  To compensate for that "feature"
+; we have to stuff a question mark into it so UMAP will still work
+; if called with the GO command.
+;
+	ld	a,'?'
+	ld	(de),a
+	ld	c,SrchF		; get first file
+	call	bdos
+	cp	0FFh
+	jr	z,Finish	; (no files)
+	call	AddIt		; add to count table
+DirLp:	ld	c,SrchN		; get next file
+	call	bdos
+	cp	0FFh
+	jr	z,Finish	; (no more)
+	call	AddIt		; add to count table
+	jr	DirLp		; ..and loop
+;
+Finish:	ld	a,(OpUFlg)	; check for U option
+	or	a
+	jr	nz,DoAll	; (yes, show detailed report)
+	ld	a,(OpVFlg)	; check for V option
+	or	a
+	push	af		; save flags
+	call	nz,DoVac	; (yes, do it)
+	pop	af
+	ld	a,' '		; print leading space
+	call	z,cout		; if not option V
+	call	eprint
+	db	'Files:',0
+	ld	hl,(FilCnt)	; show total number of files
+	call	phldc
+	call	Pr3Spc
+	call	eprint
+	db	'Used entries:',0
+	ld	hl,(EntCnt)	; show total number of used entries
+	call	phldc
+	call	Pr3Spc
+	call	AtLast		; show free entries and free space
+	jr	Exit
+
+DoAll:	call	PrtIt		; show detailed usage by user area
+Exit:	xor	a		; reset error code
+ErExit:	call	puter2		; set error code
+	ld	sp,(OldStk)	; restore old stack
+	ret			; ..and return to CCP
+;
+InvDir:	call	eprint
+	db	' Invalid directory.',0
+	ld	a,2		; error code
+	jr	ErExit
+;
+; Subroutines . . .
+;
+; AddIt -- adds file to counts
+;
+AddIt:	rrca			; calculate FCB offset
+	rrca
+	rrca
+	ld	c,a		; offset to DE
+	ld	b,0
+	ld	ix,CpmDma	; point to DMA buffer
+	add	ix,bc		; add offset
+	ld	a,(ix)		; get user number of file
+	cp	0E5h		; deleted file?
+	ret	z		; (yes, skip it)
+	ld	iy,CntTbl	; point to table
+	cp	32		; user above 31?
+	jr	nc,AddOvr	; (yes, special handling)
+	add	a,a		; multiply user by 4 for table offset
+	add	a,a
+	ld	c,a		; offset to BC
+	ld	b,0
+	add	iy,bc
+;
+AddUsr:	ld	l,(iy)		; get entry count into HL
+	ld	h,(iy+1)
+	inc	hl		; ..increment it
+	ld	(iy),l		; ..and return to storage
+	ld	(iy+1),h
+	ld	a,(ix+14)	; get data module number
+	or	a
+	jr	nz,AddEnd	; (not zero, so skip)
+	ld	a,(extent)	; get extent mask
+	cp	(ix+12)		; compare to extent byte
+	jr	c,AddEnd	; (not first extent)
+	ld	l,(iy+2)	; get file count into HL
+	ld	h,(iy+3)
+	inc	hl		; ..increment it
+	ld	(iy+2),l	; ..and return to storage
+	ld	(iy+3),h
+	ld	hl,(FilCnt)	; increment file total
+	inc	hl
+	ld	(FilCnt),hl
+AddEnd:	ld	hl,(EntCnt)	; increment entry total
+	inc	hl
+	ld	(EntCnt),hl
+	ret
+;
+; ZSDOS does not return entries with user numbers over 31, except the
+; E5 erased entries.  In case some DOS's do return them, we will count
+; them here.  It would be a nice feature, if it worked.
+;
+AddOvr:	ld	hl,(OvrCnt)	; "over 31" (approaching middle age)
+	inc	hl
+	ld	(OvrCnt),hl
+	jr	AddEnd		; increment entry count and return
+;
+; PrtIt -- prints file counts
+;
+PrtIt:	call	PagChk		; increment line count
+	call	PrLine		; print a line of "=" and incr line count
+	call	eprint
+	db	'      User       Files   Entries',cr,lf,0
+	call	PagChk
+	ld	b,32		; establish counter
+	ld	iy,CntTbl	; point to table (user 0)
+PrtLp:	ld	a,(iy)		; any entries?
+	or	(iy+1)
+	jr	z,PrtLp1	; (nope, don't print it)
+	call	eprint
+	db	'     ',0
+	ld	a,32
+	sub	b		; user to A
+	call	padc		; ..and print it
+	call	getndr		; print directory name, if any
+	ld	l,(iy+2)	; print number of files
+	ld	h,(iy+3)
+	call	phldc
+	call	Pr4Spc
+	ld	l,(iy)		; print number of entries
+	ld	h,(iy+1)
+	call	phldc
+	call	crlf
+	call	PagChk
+PrtLp1:	ld	de,4		; offset to next table entry
+	add	iy,de
+	djnz	PrtLp		; loop till done
+	ld	hl,(OvrCnt)	; do we include the "over 31" crowd?
+	ld	a,h
+	or	l
+	jr	z,Skip32	; (no)
+	call	eprint
+	db	'      32+                 ',0
+	call	phldc
+	call	crlf
+	call	PagChk
+Skip32:call	PrLine		; and print totals
+Totals:	call	eprint
+	db	'     Totals      ',0
+	ld	hl,(FilCnt)	; print total files
+	call	phldc
+	call	Pr4Spc
+	ld	hl,(EntCnt)	; print total entries
+	call	phldc
+AtLast:	ex	de,hl		; put total entries to DE
+	ld	hl,(dirmax)	; get maximum directory entries
+	or	a		; reset carry
+	sbc	hl,de		; calculate remaining entries
+	ld	a,(OpUFlg)
+	or	a
+	jr	z,ShwFre
+	push	hl
+	call	crlf
+	call	PagChk
+	pop	hl
+ShwFre:	call	eprint
+	db	'Free entries:',0
+	call	phldc
+	call	Pr3Spc
+	call	eprint
+	db	'Free space:',0
+	call	dfree
+	ex	de,hl
+	call	phldc
+	ld	a,'k'
+	call	cout
+	ret
+;
+; DoVac -- shows only vacant user areas (with no files).
+;
+DoVac:	call	eprint
+	db	' -- Vacant user areas:',0
+	ld	b,0		; set user to 0
+	ld	hl,CntTbl	; point to table (user 0)
+VacLp:	call	crlf
+	call	Pr3Spc
+VacLp1:	ld	a,(hl)		; any entries?
+	inc	hl
+	or	(hl)
+	ld	a,b		; user to A
+	call	z,padc		; (if no entries, print user number)
+	jr	z,VacLp2
+	call	eprint		; if entries, print dot
+	db	'  .',0
+VacLp2:	ld	a,(SpcFlg)
+	or	a
+	ld	a,' '		; (if SPCFLG is set..
+	call	nz,cout		; ..print extra space)
+	inc	hl		; increment pointer 3 times
+	inc	hl		; ..to data for next user
+	inc	hl
+	inc	b		; increment user
+	ld	a,b
+	cp	16		; (if it's user 16..
+	jr	z,VacLp		; ..we need another CRLF)
+	cp	32		; last user?
+	jr	c,VacLp1	; (no, keep going)
+DoVac2:	call	crlf		; we're done
+	ret
+;
+; Pr3Spc -- print 3 spaces
+;
+Pr3Spc:	call	eprint
+	db	'   ',0
+	ret
+;
+; Pr4Spc -- print 4 spaces
+;
+Pr4Spc:	call	eprint
+	db	'    ',0
+	ret
+;
+; PrLine -- prints a line of "="
+;
+PrLine:	call	eprint
+	db	'    =============================',CR,LF,0
+				; fall thru to PagChk
+;
+; PagChk -- increments line counter and checks for screen fill
+;
+PagChk:	ld	hl,LinCnt	; decrement line counter
+	dec	(hl)
+	ret	nz		; (not end of screen)
+	call	eprint
+	db	'[more] ',0
+	call	cin		; wait for key
+	call	eprint
+	db	cr,'       ',cr,0
+	cp	CtrlC
+	jp	nz,PagCh1	; (user abort)
+	pop	hl		; adjust stack for next jump
+	jp	Totals		; print totals and exit
+;
+PagCh1:	ld	a,(LinMax)	; re-set line counter
+	ld	(LinCnt),a
+	ret
+;
+; GetNdr -- gets and prints named directory or spaces.  Expects user in A.
+; Preserves all registers.
+;
+GetNdr:	push	hl		; save registers
+	push	bc
+	push	af
+	ld	c,a		; user in C
+	ld	a,(TarDrv)
+	ld	b,a		; drive in B
+	ld	a,':'
+	call	cout
+	call	dutdir
+	jr	nz,IsNdr
+	call	eprint
+	db	'        ',0
+NdrRet:	pop	af		; restore registers
+	pop	bc
+	pop	hl
+	ret
+;
+IsNdr:	ld	b,8
+PrtNdr:	ld	a,(hl)
+	call	cout
+	inc	hl
+	djnz	PrtNdr
+	jr	NdrRet
+;
+; Help screen
+;
+Usage:	call	eprint
+DftNam:	db	'UMAP   Version '
+	db	Vers/10+'0','.',Vers mod 10+'0',SubVers,'  (loaded at ',0
+	ld	hl,entry
+	call	phl4hc
+	call	eprint
+	db	'h)',cr,lf
+	db	'Shows directory usage.',cr,lf
+	db	'Usage:',cr,lf,'   ',0
+	ld	hl,comnam	; print disk name
+	call	epstr
+	call	eprint
+	db	' {dir:} {{/}option}',cr,lf
+	db	'Only drive is significant.',cr,lf
+	db	'If no DIR or DU is given, current drive is assumed.',cr,lf
+	db	'Options (use only one):',cr,lf
+	db	'   U   ',0
+	ld	a,(UFlag)
+	or	a
+	call	nz,PrDont
+Usage1:	call	eprint
+	db	'Show user area statistics.',cr,lf
+	db	'   V   ',0
+	ld	a,(VFlag)
+	or	a
+	call	nz,PrDont
+	call	eprint
+	db	'Show vacant user areas.',0
+	jp	Exit
+;
+PrDont:	call	eprint
+	db	'Don''t ',0
+	ret
+;
+; Initialized data . . .
+;
+; OurFcb -- File control block for Search First and Search Next, with
+; question marks in the drive byte, the extent byte, the data module
+; byte (S2), and the filename and filetype.
+;
+OurFcb:	db	'?','???????????','?',0,'?'
+;
+	DSEG
+;
+; Uninitialized storage . . .
+;
+TarDrv:	ds	1		; target drive
+OpUFlg:	ds	1		; non-zero=show user stats
+OpVFlg:	ds	1		; non-zero=show vacant users
+LinMax:	ds	1		; maximum screen lines
+LinCnt:	ds	1		; current line count
+BegFil	equ	$		; beginning of zero fill area
+FilCnt:	ds	2		; current file total
+EntCnt:	ds	2		; current entry total
+OvrCnt:	ds	2		; entries for users above 31
+;
+; CntTbl -- A table with four bytes (two words) for each of 32 user areas.
+; The first word for each user is the number of used directory entries.
+; The second word for each user is the number of files.
+;
+CntTbl:	ds	32*4
+EndFil	equ	$		; end of zero fill area
+	ds	80		; stack
+OldStk:	ds	2		; old stack pointer
+;
+	end
+

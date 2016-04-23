@@ -1,0 +1,48 @@
+	TITLE	"Z3IFEND - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3IFEND.Z80 Ver 1.1 by Richard Conn
+; Date    : 29 Mar 89
+; Version : 1.2
+; Module  : Z3IFEND
+; Abstract: This module contains the routine IFEND which decre-
+;	ments to the previous IF
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		IFEND
+
+;  External References
+
+	EXT		GETMSG
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - IFEND
+; Entry: - None
+; Exit : A <> 0, Zero Flag Reset (NZ) if OK
+;	     A = 0, Zero Flag Set (Z) if No active IF
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+IFEND:	PUSH	HL		; Save regs
+	CALL	GETMSG
+	INC	HL		; Pt to IF byte
+	LD	A,(HL)		; Get it
+	OR	A		; No IF active?
+	JR	Z,IFERR		; ..Exit A=0, Z set if error
+	RRCA			; Move right 1 bit
+	AND	7FH		; Mask MSB 0
+	LD	(HL),A		; Store active bit
+	OR	0FFH		; ..return NZ for Ok
+IFERR:	POP	HL		; Restore regs
+	RET
+
+	END
+

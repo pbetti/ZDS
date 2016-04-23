@@ -1,0 +1,162 @@
+; UMAPCF.Z80
+;
+; ZCNFG configuration module for UMAP.COM.  The assembled version of
+; this file must be named UMAPxx.CFG, where xx is the version number
+; of UMAP, to be automatically recognized by ZCNFG.
+;
+; Version 1.3 -- October 10, 1991 -- Gene Pizzetta
+;	For UMAP 1.8.  A few display changes.
+;
+; Version 1.2 -- April 14, 1991 -- Gene Pizzetta
+;	For UMAP 1.6.  Added S option.
+;
+; Version 1.1 -- March 26, 1991 -- Gene Pizzetta
+;	For UMAP 1.3.  Added V option and macro case table.
+;
+; Version 1.0 -- February 18, 1991 -- Gene Pizzetta
+;	For UMAP 1.0.
+;
+; Patch locations . . .
+;
+UFlag	equ	015h		; user stats flag
+VFlag	equ	016h		; vacant user flag
+SpcFlg	equ	017h		; extra space flag
+;
+; ZCNFG function definitions . . .
+;
+Switch	equ	0		; toggle bit n in a byte (n is specified)
+Text	equ	1		; edit text with UC conversion
+DUSpec	equ	2		; replace a ZCPR style DU spec (NOT DIR:!)
+HexRad	equ	3		; edit byte/word using HEX radix
+DecRad	equ	4		; edit byte/word using DECIMAL radix
+TextLC	equ	5		; edit text, both UC and LC
+FileSp	equ	6		; edit a Z3 filespec or filespec fragment
+Togl3	equ	7		; toggle one of three options: 001B, 010B, 100B
+ToglTF	equ	8		; toggle a byte between 0ffh and 0
+;
+; ASCII characters . . .
+;
+HON	equ	1
+HOF	equ	2
+TAB	equ	9		; tab
+LF	equ	10		; linefeed
+CR	equ	13		; carriage return
+;
+; Macro definitions
+;	C	= character to identify menu item
+;	OFFSET	= offset in program's configuration block
+;	FUNC	= ZCNFG function
+;	SCRN	= screen location for data
+;	DATA	= function data address (if required)
+;
+CASE	macro	c,func,offset,bytes,scrn,data
+	db	'&C'
+	dw	func, offset
+	db	bytes
+	dw	scrn, data
+	endm
+;
+; Code . . .
+;
+	rst	0		; for safety, so .CFG file won't execute
+;
+	dw	MenuA		; for relocation of addresses, this
+				; ..points to the NEXT location.
+;
+; Menu list section . . .
+;
+MenuA:	dw	MenuA, MenuA, ScrnA, CaseA, HelpA	; single menu
+;
+; Case table section . . .
+;
+CaseA:	db	(CaseAX-CaseA1)/(CaseA2-CaseA1)	; number of cases
+	db	CaseA2-CaseA1	; length of each record
+;
+;	Macro name
+;	|	Single char menu selector
+;	|	|	Function (see above)
+;	|	|	|	Offset in config block
+;	|	|	|	|	Number of bytes
+;	|	|	|	|	|	Screen location
+;	|	|	|	|	|	|
+;Case1:	CASE	0,	ToglTF,	QtFlag,	1,	ScrnA1,	NoYes
+;							|
+;			 Address of data used by function
+;
+; The first two entries in table are labeled for calculation at CaseA:.
+;
+CaseA1:	CASE	U,	ToglTF,	UFlag,	1,	ScrnA1,	YesNo
+CaseA2:	CASE	V,	ToglTF,	VFlag,	1,	ScrnA2,	YesNo
+	CASE	S,	ToglTF,	SpcFlg,	1,	ScrnA3,	YesNo
+CaseAX:				; for calculation of list length
+;
+; Case table support . . .
+;
+YesNo:	db	'Yes',0		; displayed if value is FFh (ToglTF)
+	db	' No',0		; displayed if value is 00h (ToglTF)
+;
+; Screen image section . . .
+;
+ScrnA:	db	cr,lf,lf,tab,tab,tab,'    UMAP Installation Menu'
+	db	cr,lf,lf,lf
+;
+	db	tab,tab,'   Do NOT set both U and V options to "Yes"'
+	db	cr,lf,lf,lf
+;
+	db	tab,tab,'(U) ',1,'Show full user stats as default? . . . ',2
+ScrnA1:	db	'   '		; current value
+	db	cr,lf,lf
+;
+	db	tab,tab,'(V) ',1,'Show vacant user areas as default? . . ',2
+ScrnA2:	db	'   '		; current value
+	db	cr,lf,lf
+;
+	db	tab,tab,'(S) ',1,'Extra spaces in vacant user display? . ',2
+ScrnA3:	db	'   '		; current value
+;
+	db	cr,lf,lf,lf	; fill rest of screen
+;
+	db	0		; terminator
+;
+; Help screen section . . .
+;
+HelpA:	db	CR,LF,LF
+;
+	db	'Do not set both  the  U  and  the  V  options  to  "Yes"; '
+	db	'they are mutually',CR,LF
+	db	'exclusive.  If both options are made the default, then the '
+	db	'"no option" mode',CR,LF
+	db	'will be lost.  If either of the options is  made  the  default '
+	db	' mode, using',CR,LF
+	db	'either command line option will turn the mode off.'
+	db	CR,LF,LF
+;
+	db	HON,'Option U -- Show user area usage.',HOF,'  As distributed, '
+	db	'UMAP displays only brief',CR,LF
+	db	'total directory statistics, unless the  "U"  option is given '
+	db	'on the command',CR,LF
+	db	'line.  If you would prefer complete user area directory  statistics '
+	db	' as the',CR,LF
+	db	'default, select "Yes" here.'
+	db	CR,LF,LF
+;
+	db	HON,'Option V -- Show vacant user  areas.',HOF,'  If  you use '
+	db	'UMAP chiefly to determine',CR,LF
+	db	'which user areas are free, you may wish to select "Yes" so '
+	db	'that vacant user',CR,LF
+	db	'areas are displayed by default.'
+	db	CR,LF,LF
+;
+	db	HON,'Option S -- Space vacant  user  display.',HOF,'  If  "No", '
+	db	' UMAP with the V option',CR,LF
+	db	'displays vacant user areas in compact form on the left side '
+	db	'of  the screen.',CR,LF
+	db	'"Yes" will  add  extra  space to the display, spreading it '
+	db	'the width of the',CR,LF
+	db	'screen.  It''s your choice.'
+	db	CR,LF
+;
+	db	0		; Terminator
+;
+	end
+

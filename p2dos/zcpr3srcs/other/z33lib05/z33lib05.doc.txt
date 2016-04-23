@@ -1,0 +1,241 @@
+; This is a collection of the module headers from the source code for the
+; Z33LIB routines that have been written to date.  For the time being, they
+; will have to serve as the documentation for Z33LIB.  Z33LIB will probably
+; be released as a commercial product at a later date.  This version is
+; provided for educational and guidance purposes.
+;
+; Version 0.5 corrects an error in the HIGHUSER routine.  There are no
+; other functional changes.
+;
+;					Jay Sage and
+;					Howard Goldstein
+;					October 24, 1987
+
+
+; FCB1CHK
+;
+; This routine checks the first default file control block to see if the token
+; parsed there was a valid file specification.  If there was an error
+; (signalled by a nonzero value in the record-count byte), then this routine
+; returns NZ and register A nonzero.  A zero value and Z flag signals a valid
+; FCB.
+
+
+; FCB2CHK
+;
+; This routine checks the second default file control block to see if the token
+; parsed there was a valid file specification.  If there was an error
+; (signalled by a nonzero value in the record-count byte), then this routine
+; returns NZ and register A nonzero.  A zero value and Z flag signals a valid
+; FCB.
+
+
+; FCBCHK
+;
+; This routine checks the file control block pointed to by DE to see if it
+; contains a validly parsed file specification.  ZCPR33 sets the record-count
+; byte to a nonzero value if there was an error in resolving the file spec.
+; If the FCB is valid, this routine returns Z and A=0.  No other registers are
+; affected.
+
+
+; GCMDDU
+;
+; This routine examines the external commmand file control block to determine
+; the directory (drive/user) in which the file was located during the path
+; search.  The values are returned in the BC register pair, with the drive in
+; B being in the range 0..15.  No other registers are affected.
+
+
+; GDEFDU
+;
+; This routine gets the values of the current default (logged) drive/user area
+; into BC by reading the CURDR and CURUSR bytes in the message buffer.  No
+; registers other than BC are affected.
+
+
+; GETCCP
+
+; This routine calculates the starting address of the CCP based on the BIOS
+; warmboot vector.  The result is returned in HL.  No other registers are
+; affected.
+
+
+; GETECP
+
+; This routine locates the name of the ECP in the command processor and returns
+; its address in HL.  All other registers are preserved.
+
+
+; GETER1
+;
+; This routine supercedes the same routine in Z3LIB.  It examines the error
+; command line to determine if an error command is present or not.  If none
+; is present, A=0 and the Z flag is set.  If an error command line is present,
+; then A<>0, and NZ is returned.  No other register is affected.
+
+
+; GETER3
+;
+; This routine returns the value of the command error flag in register A and
+; sets the flags accordingly.  No other registers are affected.
+
+
+; GETSFCB
+
+; This routine locates the submit FCB in the command processor and returns
+; its address in DE.  If SUBMIT is not enabled or if ZCPR33 is not in memory,
+; then the routine returns with the Z flag set.  All other registers are
+; preserved.
+
+
+; GETSRUN 
+
+; This routine determines whether or not a SUBMIT job is currently running.
+; If one is, the routine returns NZ.  Only register AF is affected.
+
+
+; GETSUB
+
+; This routine gets the XSUB input redirection flag into the A register.  No
+; other registers are affected.
+
+
+; HALTSUB
+
+; This routine stops a submit job by deleting the $$$.SUB file.  It uses the
+; submit FCB in the command processor so that it adapts automatically to the
+; correct drive and file name and type.  No registers are affected.
+
+; HIGHUSER
+;
+; This routine tests to see whether or not the command processor supports
+; user numbers above 15.  If ZCPR33 is not running or if high user support
+; is disabled, then HIGHUSER returns with the zero flag set.  No registers
+; except AF are affected.
+
+
+; PARSE2
+;
+; This routine calls the REPARSE entry point in the command processor to
+; reparse the command line pointed to by HL.  It is the user's responsibility
+; to be sure that the command processor has not been overwritten in memory.
+; No registers are changed.  The two default file control blocks are filled.
+
+
+; PDEFDU
+;
+; This routine puts the drive/user values in BC into the CURDR and CURUSR bytes
+; in the message buffer, making that directory the default directory.  No
+; registers are affected.
+
+
+; PUTER1
+;
+; This routine supercedes the same routine in Z3LIB, and its purpose is to
+; disable the function.  In ZCPR33 there is no way to turn external error
+; handling on and off other than loading or clearing the error command line.
+; The flag formerly used for this purpose is now used for the command error
+; flag, which indicates the kind of command error that was detected.  This
+; replacement routine does nothing
+
+
+; PUTER3
+;
+; This routine stores the value in register A into the command error flag.  No
+; registers are affected.
+
+
+; PUTERC
+;
+; This routine supercedes the same routine in Z3LIB and differs only in that
+; it limits the length of the error command line to 28 bytes, since the four
+; bytes at the end of the command line space have been assigned other purposes.
+; On entry, HL points to a null-terminated command string.  This string is
+; copied to the error command line, if it will fit.  If it will not fit, then
+; the error command line is cleared, and on return A=0 and the Z flag is set.
+; On exit, HL points to the character in the new command line just after the
+; last one copied.  Other registers are preserved.
+
+
+; PUTSUB
+
+; This routine stores the contents of the A register into the XSUB input
+; redirection flag.  No registers are affected.
+
+
+; QERROR 
+
+; This routine returns Z if the command status flag in the message buffer has
+; the error bit set.  Only register AF is affected.
+
+
+; REPARSE
+;
+; This routine calls the REPARSE entry point in the command processor to
+; reparse the command line starting one token later.  It is the user's
+; responsibility to be sure that the command processor has not been overwritten
+; in memory.  No registers are changed.  The two default file control blocks
+; are filled.
+
+
+; RESEPB
+;
+; This routine reress the external program bit in the command status flag.
+; No registers are affected.
+
+
+; RETCST
+;
+; This routine returns the address of the command status flag in HL.
+; None of the other registers is affected.
+
+
+; SCAN
+;
+; This routine first initializes the FCB pointed to by DE and then calls the
+; SCAN entry point in the command processor to parse a single token pointed to
+; by HL into it.  It is the user's responsibility to be sure that the command
+; processor has not been overwritten in memory.  No registers are changed.
+
+
+; SETEPB
+;
+; This routine sets the external program bit in the command status flag.
+; No registers are affected.
+
+
+; STOPXSUB
+
+; This routine resets the XSUB input redirection flag in the message buffer.
+; No registers are affected.
+
+
+; SUBON
+
+; This routine tests to see if SUBMIT processing is enabled in the command
+; processor.  If so, it returns NZ.  It will return Z if SUBMIT is not enabled
+; or if the ZCPR33 command processor cannot be detected.  Only register AF
+; is affected.
+
+
+; Z33CHK
+
+; This routine checks to see that the version of the CCP that is running is
+; version 3.X.  Two tests must be passed.  First, the version byte must be
+; 3xH.  Secondly, the byte at offset 3 must be a relative jump instruction
+; (opcode 18H).  If both tests pass, the routine returns with the zero flag
+; set (Z).  Otherwise the flag is reset (NZ).
+
+
+; Z33FNAME
+;
+; This routine first initializes the FCB pointed to by DE and then calls the
+; SCAN entry point in the command processor to parse a single token pointed to
+; by HL into it.  It is the user's responsibility to be sure that the command
+; processor has not been overwritten in memory.  The routine returns with HL
+; pointing to the character the delimited the token.  Valid delimiters are
+; space, comma, semicolon, equals, greater than, less than, underscore or any
+; control character less than space.  No other registers are affected.
+
+                     

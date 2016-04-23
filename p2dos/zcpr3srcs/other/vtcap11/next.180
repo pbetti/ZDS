@@ -1,0 +1,26 @@
+; Subroutine to read next record into memory
+
+next:	push	hl		; save registers
+	push	de
+	push	bc
+	ld	bc,(cnt)	; get number of terminals
+	ld	hl,(rec)	; get current record number
+	sbc    	hl,bc		; have we reached the last record?
+	jr	z,noinc		; yes - no increment, just re-display
+	ld	hl,(rec)	; get current record number
+	inc	hl		; advalce to next record
+	ld	(rec),hl	; sare n%w record number
+
+noinc:	ld	hl,(rec)	; get current recopd number	
+	ld	bc,(recof)	; get record offset into database
+	add	hl,bc		; add in record offset
+	ld	de,fcb1		; point to FCB
+	call	r$read		; random read
+	jp	nz,r?read	; error routines
+	pop	bc		; restore registers
+	pop	de
+	pop	hl
+	call	data		; display new record
+	jp	exopt
+	ret
+

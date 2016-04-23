@@ -1,0 +1,86 @@
+;
+; Module Name:  MEVALH24
+; Author:  Steven Cohen
+; based on Richard Conn's EVAL16
+;
+	public	EVALH24
+;
+;  EVALH24
+;
+;	Convert a string of ASCII hexadecimal digits 
+; into a binary value; string is converted until invalid digit is
+; encountered.  
+;
+;       INPUT:  DE POINTS TO a 3-byte buffer in which the converted
+; 		value is to be stored.
+;		HL POINTS TO the first byte of the string to be converted
+;       OUTPUT: HL points to error character if any
+;		A contains the lowest order 8 bits of the value
+;		carry flag set indicates error
+;
+
+	EXT	CAPS	; CAPITALIZATION ROUTINE
+	EXT	DOUBLE24,ZEROBUF
+
+EVALH24:
+	PUSH	BC	; SAVE BC
+	CALL	ZEROBUF
+;
+;  Get next digit and check for '0' - '9'
+;
+E16L:
+	LD	A,(HL)	; GET BYTE
+	CALL	CAPS	; CAPITALIZE
+	CP	'0'	; CHECK FOR RANGE
+	JR	C,DONE
+	CP	'F'+1	; CHECK FOR RANGE
+	JR	NC,DONE
+	CP	'9'+1	; CHECK FOR 0-9
+	JR	C,PRODEC
+	CP	'A'	; CHECK FOR OUT OF RANGE
+	JR	C,DONE
+PRODEC:
+	SUB	'0'	; CONVERT TO BINARY
+	CP	10
+	JR	C,MUL2
+	SUB	7	; ADJUST FOR 'A'-'F'
+
+;  Proceed with processing
+;PROC:
+
+;  Multiply buffer by 16
+MUL2:
+	PUSH	DE
+	PUSH	HL
+	PUSH	AF	; SAVE VALUE
+	EX	DE,HL
+	LD	B,4
+E16LP:  CALL	DOUBLE24
+	DJNZ	E16LP
+;	EX	DE,HL
+;
+;  Add in A
+;
+ADDIN:
+	LD	A,(HL)	; get low-order digit
+	LD	B,A	; preserve in B
+	POP	AF	; GET LATEST DIGIT
+	OR	B	; or in latest digit
+	LD	(HL),A	; put it in buffer
+	POP	HL
+	POP	DE
+;
+;  Continue
+;
+	INC	HL	; PT TO NEXT CHARACTER
+	JR	E16L
+;
+;  Done -- Result already in buffer pted to by DE; Set A=its lowest byte
+;
+DONE:
+	LD	A,(DE)	; A=first byte of numeric buffer
+	POP	BC	; RESTORE BC
+
+	RET
+	END
+ed to by DE; Set A=its low

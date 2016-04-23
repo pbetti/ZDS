@@ -1,0 +1,251 @@
+                        ZCPR33 APPLICATION NOTES
+
+Note Number:	002
+Author:		Jay Sage
+Date:		June 8, 1987
+
+
+     Making Effective Use of ARUNZ as an Extended Command Processor
+                 (Especially on a Remote Access System)
+
+
+   From my recent experience using several ZCPR33 remote access systems,
+most sysops are not aware of the way ARUNZ can be used as an extended
+command processor to make the operation of their system much, much
+easier for their users.  Because a single 4K ALIAS.CMD file can contain
+hundreds of aliases, the cost in disk space to provide a highly error-
+tolerant environment to the user is very small.  These techniques can
+also be used to great advantage on a personal system to make the sytem
+highly tolerant of errors.
+
+     The kinds of aliases can be grouped loosely into three categories,
+each of which I will cover below.  At the end I will describe a method
+for making these aliases execute at top speed.
+
+
+Alternate Command Forms
+-----------------------
+
+     The most obvious use of aliases is to provide alternative names for
+commands.  We will use an example to illustrate the principle.  Consider
+the task of finding out if a certain file is somewhere on the system and
+where.  Some systems use FINDF, the original ZCPR3 program for this
+purpose; others use one of the standard CP/M programs (WIS or WHEREIS);
+and others have begun to use the new, enhanced ZSIG program called FF. 
+This can be very confusing to new users or to users who call many
+different systems.  The solution is to provide aliases for all the
+alternatives.  Suppose FF is the real program in use.  Then the
+following line in ALIAS.CMD will allow all the forms to be used equally:
+
+	FINDF=WIS=WHEREIS ff $*
+
+(I am following a convention of writing the alias names in upper case
+and the script in lower case.  This is only for ease in reading; ARUNZ
+is not case sensitive.)  In fact, while I am at it, I usually throw in a
+few other forms that someone might try and that are sufficiently
+unambiguous that one can guess with some confidence that this is the
+function the user intended:
+
+	FIND.FILE=FILE.FIND=WIS=WHERE.IS ff $*
+
+     Since (for ARUNZ version 0.9D and later) the characters after a
+period are optional-match characters (they must match only if characters
+are present), the first name will match FIND, FINDF, and FINDFILE (and
+others).  The last form will match both WHERE and WHEREIS (and others). 
+Note that this single alias, which occupies 40 bytes in ALIAS.CMD
+(including the CRLF), responds to 8 commonly used commands for finding
+files on a system.  Thus the cost is a mere 5 bytes per command!!
+
+     ZCPR33 introduced the ability to bypass path searching and go
+straight to the extended command processor by prefixing a command with a
+space or slash.  As users begin to avail themselves of this feature to
+speed up command processing, it may happen that someone will enter the
+command as "/FF" or " FF", thinking that "FF" is an alias for the real
+command.  With the script above this will fail.  Therefore, I am now
+recommending including the real command as an alias for itself to cover
+this situation.  The final form for our file-finding alias (with an
+extra change thrown in to allow the short form "WH") is thus:
+
+	FIND.FILE=FILE.FIND=WIS=WH.EREIS=FF ff $*
+
+     I have extended the use of command aliasing even to include the
+results of common typing mistakes.  Richard Jacobson (Mr. Lillipute),
+who calls my system quite often, either has a Wyse keyboard with very
+bad bounce (as he claims) or is a lousy typist (and refuses to admit
+it).  When he wants to display a directory, his command is more likely
+to come out DDIR or DIRR than it is to come out correctly as DIR.  So I
+added those two forms to my alias, so it now reads:
+
+	XD.IR=DDIR=DIR.R dir $*
+
+Is seven extra bytes too much to sacrifice for a friend!
+
+
+Alternate Directory Changing References
+---------------------------------------
+
+     It is obviously very hard for users to remember the DU forms for
+directories on a remote system, and that is why named directories are
+provided.  But even names are not always easy to remember precisely. 
+Aliases can help by providing alternative names for logging into
+directories, provided ZCPR33 has been assembled with the BADDUECP option
+enabled so that invalid directory-change references are passed on to the
+extended command processor.  My system has a directory called Z3SHELLS
+(I think).  Since even I have trouble remembering that it is not Z3SHELL
+or SHELLS or SHELL, I would have a line in ALIAS.CMD that reads:
+
+	Z3SHELL:=SHELL:=SHELLS: z3shells:
+
+     A further problem is that users often (and I occasionally) forget
+to type the colon on the end.  It is very easy for ARUNZ to pick this up
+as well and add the colon for you.  Just include the following alias:
+
+	Z3SHELL=Z3SHELLS=SHELL=SHELLS z3shells:
+
+All of these aliases can be combined into the single script:
+
+	Z3SHELL.:=Z3SHELL.S:=SHELL.:=SHELL.S: z3shells:
+
+All seven forms are covered by an entry of 49 bytes, a cost of 7 bytes
+each.
+
+     On my system I provide a complete set of aliases for all possible
+directories so that any legal directory can be entered with or without
+colons and using either the DIR of the DU form.  Thus, if Z3SHELLS is
+B4, the script above would be:
+
+	Z3SHELL.:=Z3SHELL.S:=SHELL.:=SHELL.S:=B4.: z3shells:
+
+     Before ZCPR33 came along and provided this service itself, I would
+allow callers to use the DU form to log into directories beyond the max-
+drive/max-user limits by including aliases of the above form.  If the
+maximum user area were 3 in the above example, the commands "B4:" and
+"B4" would still have worked (even under ZCPR30) because ARUNZ mapped
+them into a DIR form of reference.  Although this is no longer
+necessary, a complete alias line like the one above covers all bases. 
+The user can even enter any of the commands with a leading space or
+slash and they will still work.
+
+     Finally, I usually provide a catch-all directory change alias to
+pick up directory change commands that don't even come close to
+something legal.  At the end of ALIAS.CMD (i.e., after all the other
+directory-change aliases described above, so that they get first shot) I
+include the line"
+
+	?:=??:=???:=????:=?????:=??????:=???????:=????????: echo
+	  d%>irectory %<$0%> is not an allowed directory.  %<t%>he^m^j
+	  valid directories are:;pwd
+
+Thus when the user enters the command "BADDIR:", he get the PWD display
+of the system's directories prefixed by the message
+
+	Directory BADDIR: is not an allowed directory.  The
+	valid directories are:
+
+Note the use of Z33RCP's advanced ECHO command with case shifting ('%<
+to switch to upper case and '%>' to switch to lower case) and control
+character inclusion (caret followed by the character).
+
+
+Abbreviated Commands
+--------------------
+
+     This category is closely releated to the first category described
+above.  Consider transferring files.  One commonly enters a command like
+
+	KMD SK FN.FT
+
+Of course, some systems still use XMODEM, so it is handy to have an
+alias (according to the first category above) that reads:
+
+	XMODEM=KMD kmd $*
+
+But why require the user to type KMD or XMODEM at all?  Why not allow
+the option letters alone.  I provide the following set of aliases so
+that users can invoke file transfer operations by entering the KMD
+option letters alone as commands (along with other forms):
+
+	S=SEND=DOWN.LOAD kmd s $1
+	SK=SENDK=DOWNK kmd sk $1
+	SP=SENDP=DOWNP kmd sp $1
+	SPK=SENDPK=DOWNPK kmd spk $1
+	SB=SENDB=BATCH=DOWNB kmd sb $*
+	SBK=SENDBK=BATCHK=DOWNBK kmd sbk $*
+	R=REC.EIVE=UP.LOAD kmd r $1
+	RP kmd rp $1
+	L=LIBSEND=SENDL=DOWNL kmd l $1 $2
+	LK=LIBSENDK=SENDLK=DOWNLK kmd l $1 $2
+
+Most of the longer alternative forms will never be used, but I decided
+to be a 'big spender' and squander a hundred bytes!  Many of my users
+(and I, myself) use the option letter alternatives -- with a leading
+space or slash -- all the time.  I usually spruce up the aliases with
+messages, so the SK alias might have a command script of:
+
+	echo s%>ending file %<$1 (1k %>protocol);kmd sk $*
+
+Even fancier scripts can be concocted.  One word of caution.  If you
+allow the 'R' and 'SP' aliases, you cannot have the reset and space
+commands in your RCP with the standard names.  I have them but have
+changed the names to 'RES' and 'SPAC' respectively.
+
+
+How to Implement ARUNZ
+----------------------
+
+     I would like to close with some tips on how to implement the scheme
+described above.  Setting up ARUNZ as the extended command processor is
+described in the ZCPR33 Users Guide and in the documentation with ARUNZ. 
+Basically, one renames ARUNZ.COM to CMDRUN.COM and places it in the root
+directory (the last one listed in the symbolic path).  ARUNZ can be
+configured to look for ALIAS.CMD either along the entire path, in the
+root directory, or in a specifically designated directory.  I recommend
+one of the latter two alternatives.
+
+     The main trick I would like to call to everyone's attention is a
+way to make ARUNZ perform at top speed as an extended command processor. 
+That is to arrange your disk so that the ARUNZ.COM and ALIAS.CMD files
+are listed near the beginning of the disk directory and are stored near
+the beginning of the disk data area.
+
+     If you are starting with a fresh diskette (or hard disk), this is
+easy.  Just copy these two files onto the disk first.  The question is,
+what do you do if the disk already has files on it?  Here is what I do. 
+Run DU3 and go to group 0 (command 'G0'), where the directory starts. 
+Note which files are at the beginning of the directory, and note which
+files have low group numbers allocated to them.
+
+     To make things concrete, suppose we find two unimportant files
+called NOTIMP1 and NOTIMP2 that meet these requirements and consume
+enough allocation groups to accommodate ARUNZ.COM and ALIAS.COM.  First
+we have to get these files out of the way.  We do this by copying them
+to new names with commands like:
+
+	PPIP NOTIMP1A=NOTIMP1;GO NOTIMP2A=NOTIMP2
+
+(If they are in different user areas, then we include the user numbers
+in the commands.)  Then we erase the original files to free up the
+directory and disk space:
+
+	ERA NOTIMP1;ERA NOTIMP2
+
+Next we copy ARUNZ.COM and ALIAS.COM into their place.  Suppose, to deal
+with the most complex case, that these files are already in the current
+directory and that ARUNZ.COM is already called CMDRUN.COM.  We use the
+following commands to move them into place:
+
+	PPIP CMDRUN1.COM=CMDRUN.COM;GO ALIAS1.CMD=ALIAS.CMD
+	REN CMDRUN.COM=CMDRUN1.COM;REN ALIAS.CMD=ALIAS1.CMD
+
+With the rename commands, we answer 'Y' when prompted about deleting the
+existing files.  Finally, we rename the two files that we moved out of
+the way:
+
+	REN NOTIMP1=NOTIMP1A;REN NOTIMP2=NOTIMP2A
+
+If CMDRUN.COM and/or ALIAS.CMD had previously been stored in high group
+numbers, you should now notice a very dramatic improvement in system
+response (at least when you go to the ECP directly by entering commands
+with a leading space or slash).  I get almost RAM-disk performance on my
+system.
+

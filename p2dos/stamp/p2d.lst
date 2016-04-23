@@ -1,0 +1,550 @@
+   1:			; 	TITLE	"CP/M+ (P2DOS) Time for ZSDOS"
+   2:			;===============================================================;
+   3:			;  P2D - ZSDOS Driver for P2DOS (CP/M Plus compatible) Stamps	;
+   4:			;---------------------------------------------------------------;
+   5:			; Copyright (C) 1988  by Harold F. Bower and Cameron W. Cotrill	;
+   6:			;---------------------------------------------------------------;
+   7:			; Portions of this code were derived from code written by	;
+   8:			;	 H.A.J. Ten Brugge					;
+   9:			;								;
+  10:			; FUNCTION:   To convert from DateStamper(tm) "type"  date/time	;
+  11:			; string  to  the  5-byte date/time  string required for P2DOS.	;
+  12:			; This code provides the time functions for ZSDOS to operate in	;
+  13:			; a P2DOS (CP/M Plus compatible) type Date/Time stamping mode.	;
+  14:			;								;
+  15:			; Universal Time String	    :	YY MM DD HH MM SS  (all BCD)	;
+  16:			;								;
+  17:			; CP/M+ (P2DOS) Time String :	nnnn HH MM SS			;
+  18:			;    nnnn = binary number of days since start (1 = 1 Jan 1978)	;
+  19:			;				HH MM SS = time in BCD		;
+  20:			;								;
+  21:			; Version:							;
+  22:			;	1.0 - Initial Release			16 Sep 88	;
+  23:			;===============================================================;
+  24:			
+  25:	000B          	VER	EQU	11		; Initial Release
+  26:			
+  27:	0000          	FALSE	EQU	0
+  28:	FFFF          	TRUE	EQU	NOT FALSE
+  29:			
+  30:			; 	MACLIB	RSXFLAG		; Get the definition of RSX equate flag
+  31:							; TRUE=Assemble as RSX, FALSE=Hi-memory module
+  32:							;== ALSO VERSION DEPENDENT ADDRESSES
+  33:			
+  34:	0053          	DOSID	EQU	'S'		; ID tag for ZSDOS
+  35:	0011          	DOSVER	EQU	11H		; ZSDOS version number for this module
+  36:	0000          		PAGE
+  37:			;===============================================================+
+  38:			; Stamp CREATE/UPDATE Time Field in T&D. (Extracted from PZDOS)	|
+  39:			; ------------------------					|
+  40:			;   Read the Real Time Clock via SGSTIM vector in Universal	|
+  41:			;   format to buffer, convert to CP/M+ (P2DOS) format, and	|
+  42:			;   move to appropriate field in DIR Buffer.			|
+  43:			;---------------------------------------------------------------|
+  44:			; Enter: A = Directory Offset (0, 20H, 40H) of subject file	|
+  45:			;	BC = Address of WRFCB routine in ZSDOS			|
+  46:			;	DE = Pointer to DIR Buffer.  (Offset in A)		|
+  47:			;								|
+  48:			; Exit : A = 1 if OK, Else A = 0FFH if error.  Flags undefined	|
+  49:			;								|
+  50:			; Effects: Current DMA Buffer altered				|
+  51:			;===============================================================+
+  52:	0000          		ORG	$0000
+  53:			
+  54:	0000  2E00    	STAMPC:	LD	L,0		; Set to Create field in Stamp
+  55:	0002  1802    		JR	STTIM		; ..and join common code
+  56:			
+  57:			;.....
+  58:	0004  2E04    	STAMPU:	LD	L,4		; Set to Update field in Stamp
+  59:	0006  CD8701  	STTIM:	CALL	SETREC		; Use DE offset to rec in A.  Save L in E
+  60:	0009  4B      		LD	C,E		; Move Create/Update offset to C (B=0)
+  61:	000A  09      		ADD	HL,BC		; Destination of 4-byte T&D now in HL
+  62:	000B  11AF01  		LD	DE,DSTIME	; Set address to read time
+  63:	000E  E5      		PUSH	HL		; ..save destination addr
+  64:	000F  D5      		PUSH	DE		; ..and source addr
+  65:	0010  48      		LD	C,B		; Set C=0 for Clock Read
+  66:	0011  CDB501  		CALL	RWCLK		; Read the clock module
+  67:	0014  D1      		POP	DE		; Restore source addr
+  68:	0015  E1      		POP	HL		; ..and destination addr
+  69:	0016  3D      		DEC	A		; Was the clock read Ok? (1-->0 if Ok)
+  70:	0017  2030    		JR	NZ,NOTIM0	; ..jump Error exit if Not
+  71:	0019  CD4C00  		CALL	U2PTIM		; Cv Univ. time at (DE) to CP/M+ time at (HL)
+  72:	001C  1821    		JR	WRFCB0		; Write FCB, Set return flags and exit
+  73:			
+  74:			;===============================================================+
+  75:			; Get File Stamps in Universal Format				|
+  76:			; ---------------						|
+  77:			;   Read the Create and Update Stamps and convert to Universal	|
+  78:			;   format in the proper fields at the specified address.  Null	|
+  79:			;   the Last Access Time field.					|
+  80:			;---------------------------------------------------------------|
+  81:			; Enter: A = Directory Offset (0, 20H, 40H) of subject file	|
+  82:			;	DE = Pointer to DIR Buffer.  (Offset in A)		|
+  83:			;	HL = DMA Address to receive 15 byte Stamp frame		|
+  84:			;								|
+  85:			; Exit : A = 1 if OK, Else A = 0FFH if error.  Flags undefined	|
+  86:			;								|
+  87:			; Effects : DMA Buffer contains the 15-byte frame if successful	|
+  88:			;===============================================================+
+  89:			
+  90:	001E  CD8701  	GSTAMP:	CALL	SETREC		; Calculate T&D address (HL saved in DE)
+  91:	0021  CDF100  		CALL	P2UTIM		; Convert P-tim at (HL) to U-tim at (DE)
+  92:	0024  0605    		LD	B,5		; Zero Last Access field for this type
+  93:	0026  12      	GSLOOP:	LD	(DE),A		; ..by poking a zero..(A=0 from P2UTIM)
+  94:	0027  13      		INC	DE
+  95:	0028  10FC    		DJNZ	GSLOOP		; ..in each location
+  96:	002A  CDF100  		CALL	P2UTIM		; Convert Modified field (P@HL to U@DE)
+  97:	002D  1815    		JR	OKRET		; Set OK return status
+  98:			
+  99:			;===============================================================+
+ 100:			; Put File Stamps in Universal Format				|
+ 101:			; ---------------						|
+ 102:			;   Convert Create and Update Time fields from Universal format	|
+ 103:			;   to CP/M+ (P2DOS) form and insert in DIRectory buffer.  Call	|
+ 104:			;   WRFCB routine to write Directory on exit.			|
+ 105:			;---------------------------------------------------------------|
+ 106:			; Enter: A = Directory Offset (0, 20H, 40H) of subject file	|
+ 107:			;	BC = Address of WRFCB Routine in ZSDOS			|
+ 108:			;	DE = Pointer to DIR Buffer.  (Offset in A)		|
+ 109:			;	HL = DMA Address containing 15 byte Stamp frame		|
+ 110:			;								|
+ 111:			; Exit : A = 1 if OK, Else A = 0FFH if error.  Flags undefined	|
+ 112:			;								|
+ 113:			; Effects : Addressed DIR buffer updated on disk if successful	|
+ 114:			;===============================================================+
+ 115:			
+ 116:	002F  CD8701  	PSTAMP:	CALL	SETREC		; Calculate the Stamp area addr for file
+ 117:							; DE-->DMA buff, HL-->P2DOS Create field
+ 118:	0032  CD4C00  		CALL	U2PTIM		; Convert Create field to destination
+ 119:	0035  2012    		JR	NZ,NOTIM0	; ..error exit if invalid date
+ 120:	0037  13      		INC	DE		; Advance to Update field
+ 121:	0038  13      		INC	DE
+ 122:	0039  13      		INC	DE
+ 123:	003A  13      		INC	DE
+ 124:	003B  13      		INC	DE
+ 125:	003C  CD4C00  		CALL	U2PTIM		; Convert Update field to destination
+ 126:	003F  2008    	WRFCB0:	JR	NZ,NOTIM0	; ..error exit if invalid date
+ 127:	0041  CD0000  	WRFCB:	CALL	$-$		; Address set on entry
+ 128:	0044  3E01    	OKRET:	LD	A,1		; Else set OK flags and return
+ 129:	0046  C9      		RET
+ 130:			
+ 131:			;.....
+ 132:			
+ 133:	0047  F1      	NOTIM:	POP	AF		; Clear the stack
+ 134:	0048  F1      	NO$TD:	POP	AF
+ 135:	0049  F6FF    	NOTIM0:	OR	0FFH		; ..and set error flags
+ 136:	004B  C9      		RET			; Back to caller
+ 137:			
+ 138:			;---------------------------------------------------------------;
+ 139:			; Convert Universal T&D to addrsd buffer in CP/M+ (P2DOS) form.	;
+ 140:			;								;
+ 141:			; Enter: DE = Address of start of Universal T&D string		;
+ 142:			;	 HL = Address of buffer to receive CP/M+ (P2DOS) T&D	;
+ 143:			; Exit :  A = 0, Zero Flag Set (Z), Time string set if Ok..	;
+ 144:			;	  A = FF, Zero Reset (NZ), Time string unchanged on Err	;
+ 145:			;	 DE --> Seconds byte in Universal field (Not moved)	;
+ 146:			;	 HL --> Seconds byte in CP/M+ (P2DOS) field (Not filled);
+ 147:			; Uses : All primary registers.					;
+ 148:			;---------------------------------------------------------------;
+ 149:			
+ 150:	004C  E5      	U2PTIM:	PUSH	HL		; Save destination address
+ 151:	004D  1A      		LD	A,(DE)		; Get BCD Year
+ 152:	004E  47      		LD	B,A		; ..to B
+ 153:	004F  13      		INC	DE		; Advance to Month
+ 154:	0050  1A      		LD	A,(DE)		; Get BCD Month
+ 155:	0051  B0      		OR	B		; Is it Invalid (YY=MM=00)?
+ 156:	0052  285C    		JR	Z,NODATE	; ..jump to error exit if Invalid stamp
+ 157:	0054  78      		LD	A,B		; Get BCD Year again from B
+ 158:	0055  CD6601  		CALL	BCDHEX		; Convert year to Binary
+ 159:	0058  FE4E    		CP	78		; Is it 20th Century?
+ 160:	005A  3002    		JR	NC,YR19		; ..jump if so
+ 161:	005C  C664    		ADD	A,100		; Else move to 21st Century
+ 162:	005E  016C07  	YR19:	LD	BC,1900		; Set base century
+ 163:	0061  81      		ADD	A,C		; Add current year to Base
+ 164:	0062  4F      		LD	C,A
+ 165:	0063  3E00    		LD	A,00
+ 166:	0065  88      		ADC	A,B
+ 167:	0066  47      		LD	B,A
+ 168:	0067  1A      		LD	A,(DE)		; Get BCD Month
+ 169:	0068  13      		INC	DE
+ 170:	0069  CD6601  		CALL	BCDHEX		; ..convert to Binary
+ 171:	006C  67      		LD	H,A
+ 172:	006D  1A      		LD	A,(DE)		; Get Day
+ 173:	006E  13      		INC	DE		; Point to U-Hours
+ 174:	006F  D5      		PUSH	DE		; ..and save addr on stack
+ 175:	0070  CD6601  		CALL	BCDHEX		; ..convert Day to Binary
+ 176:	0073  6F      		LD	L,A		; Day to L (binary)
+ 177:			
+ 178:			; Check validity of day, month, year.  (CHKDAT..From DATE.ASM)
+ 179:			; Enter:  L = binary day
+ 180:			;	  H = binary month
+ 181:			;        BC = binary year
+ 182:			
+ 183:	0074  7C      		LD	A,H		; Month must be..
+ 184:	0075  3D      		DEC	A		; Convert valid Month to 0-11 range
+ 185:	0076  FE0C    		CP	12		; Is it a valid Month?
+ 186:	0078  3039    		JR	NC,BADDAT	; ..jump error if invalid
+ 187:	007A  E5      		PUSH	HL		; Save year
+ 188:	007B  5F      		LD	E,A
+ 189:	007C  1600    		LD	D,0
+ 190:	007E  21A301  		LD	HL,DM		; Set lookup table for months
+ 191:	0081  19      		ADD	HL,DE
+ 192:	0082  56      		LD	D,(HL)		; Get days in this month
+ 193:	0083  E1      		POP	HL
+ 194:	0084  FE01    		CP	1		; Is this February? (2-1)
+ 195:	0086  CC6001  		CALL	Z,LEAPYR	; ..check for leap year if so
+ 196:	0089  2001    		JR	NZ,CHKDT0	; ..jump if not
+ 197:	008B  14      		INC	D		; else make 29 days
+ 198:	008C  7D      	CHKDT0:	LD	A,L		; Check for day within range
+ 199:	008D  3D      		DEC	A		; Have day > 0, check for <= max day
+ 200:	008E  BA      		CP	D
+ 201:	008F  3022    		JR	NC,BADDAT	; ..anything else is error
+ 202:			
+ 203:			; Calculate 16-bit Binary Date since 1978 in Days
+ 204:			; Entry: BC = Year (1978..2077) (really works til 2157)
+ 205:			;	  H = Month (1..12)
+ 206:			;	  L = Days (1..31)
+ 207:			; Exit : DE = Days	First day (0001H) : Su 01 Jan 1978
+ 208:			;			Last day  (8EADH) :    31 Dec 2077
+ 209:			;		   Real Last day  (FFFFH) : Su 05 Jun 2157
+ 210:			
+ 211:	0091  E5      		PUSH	HL		; Save Month (H) and Day (L)
+ 212:	0092  2600    		LD	H,0		; Null out Month leaving just days
+ 213:	0094  EB      		EX	DE,HL		; ..move to DE
+ 214:	0095  69      		LD	L,C		; Move current Year to HL
+ 215:	0096  60      		LD	H,B
+ 216:	0097  01BA07  		LD	BC,1978		; Start with base year in BC
+ 217:	009A  B7      	DAYS0:	OR	A
+ 218:	009B  ED42    		SBC	HL,BC		; Is this the starting year?
+ 219:	009D  09      		ADD	HL,BC
+ 220:	009E  2820    		JR	Z,DAYS1		; ..jump if so
+ 221:	00A0  E5      		PUSH	HL
+ 222:	00A1  216D01  		LD	HL,365		; Add days in non-leap year
+ 223:	00A4  19      		ADD	HL,DE		; ..to total days count in DE
+ 224:	00A5  EB      		EX	DE,HL		; ...and put new Days total in DE
+ 225:	00A6  E1      		POP	HL
+ 226:	00A7  CD6001  		CALL	LEAPYR		; Is this a Leap year?
+ 227:	00AA  03      		INC	BC		; ..(advance to next year)
+ 228:	00AB  20ED    		JR	NZ,DAYS0	; ..loop if not Leap Year
+ 229:	00AD  13      		INC	DE		; Else add a day
+ 230:	00AE  18EA    		JR	DAYS0		; ..then loop
+ 231:			
+ 232:			; Error routines.  Set destination P2Dos field to all Zeros
+ 233:			
+ 234:	00B0  13      	NODATE:	INC	DE		; Advance source ptr for same routine
+ 235:	00B1  13      		INC	DE
+ 236:	00B2  3E      		DEFB	03EH		; ..fall thru to 2nd POP with LD  A,0D1H
+ 237:			
+ 238:	00B3  D1      	BADDAT:	POP	DE		; Restore Universal string (--> Hrs)
+ 239:	00B4  E1      		POP	HL		; Restore Destination Addr for P2DOS Date
+ 240:	00B5  0604    		LD	B,4		; Fill Destination field with Nulls
+ 241:	00B7  AF      	BADDA1:	XOR	A
+ 242:	00B8  77      	BLOOP:	LD	(HL),A
+ 243:	00B9  23      		INC	HL
+ 244:	00BA  10FC    		DJNZ	BLOOP		; ..loop til filled
+ 245:	00BC  13      		INC	DE		; ..Advance to Exit pointer conditions
+ 246:	00BD  13      		INC	DE
+ 247:	00BE  3D      		DEC	A		; Set error Flags (A=FF, Zero Clear (NZ))
+ 248:	00BF  C9      		RET
+ 249:			
+ 250:			; DE=Binary Day total (Year & Day only).  Mo & Da on stack, BC=Current Year
+ 251:			
+ 252:	00C0  E1      	DAYS1:	POP	HL		; Restore Month & Day
+ 253:	00C1  EB      		EX	DE,HL		; Binary date to HL, Mo & Day to DE
+ 254:	00C2  E5      		PUSH	HL		; ..and save Binary date
+ 255:	00C3  21A301  		LD	HL,DM		; Address days-of-month table
+ 256:	00C6  1E01    		LD	E,1
+ 257:	00C8  7A      	DAYS2:	LD	A,D		; Check for matching month
+ 258:	00C9  BB      		CP	E
+ 259:	00CA  2816    		JR	Z,DAYS4		; ..exit when match
+ 260:	00CC  7E      		LD	A,(HL)		; Get days in this month
+ 261:	00CD  E3      		EX	(SP),HL		; Put table on stack, Binary date to HL
+ 262:	00CE  85      		ADD	A,L		; Add this month's days to Cum Binary Date
+ 263:	00CF  6F      		LD	L,A
+ 264:	00D0  3E00    		LD	A,00
+ 265:	00D2  8C      		ADC	A,H
+ 266:	00D3  67      		LD	H,A
+ 267:	00D4  7B      		LD	A,E		; Check this month
+ 268:	00D5  FE02    		CP	2		; ..for Feb
+ 269:	00D7  CC6001  		CALL	Z,LEAPYR	; If so, Is it a Leap Year?
+ 270:	00DA  2001    		JR	NZ,DAYS3A	; ..jump if Not Leap Year and/or Not Feb
+ 271:	00DC  23      		INC	HL		; Else bump Cum Bin Date by 29 Feb
+ 272:	00DD  E3      	DAYS3A:	EX	(SP),HL		; Put Cum Bin date to stack, Mo Table to HL
+ 273:	00DE  23      		INC	HL		; Point to next month
+ 274:	00DF  1C      		INC	E		; Bump index counter
+ 275:	00E0  18E6    		JR	DAYS2		; ..and loop
+ 276:			
+ 277:	00E2  C1      	DAYS4:	POP	BC		; Exit here..Put Cum Binary Date to BC
+ 278:	00E3  D1      		POP	DE		; Restore Universal string (--> Hrs)
+ 279:	00E4  E1      		POP	HL		; ..and Destination addr from stack
+ 280:	00E5  71      		LD	(HL),C		; Put binary date in string
+ 281:	00E6  23      		INC	HL
+ 282:	00E7  70      		LD	(HL),B
+ 283:	00E8  23      	SAVEM:	INC	HL
+ 284:	00E9  EB      		EX	DE,HL		; Pointers to correct regs
+ 285:	00EA  EDA0    		LDI			; Move BCD Hours..
+ 286:	00EC  EDA0    		LDI			; ..and BCD Minutes
+ 287:	00EE  EB      		EX	DE,HL		; Restore regs for exit conditions
+ 288:	00EF  AF      		XOR	A		; Set OK flags and return
+ 289:	00F0  C9      		RET
+ 290:			
+ 291:			;---------------------------------------------------------------;
+ 292:			; Convert CP/M+ (P2DOS) Time to Universal Time string		;
+ 293:			;								;
+ 294:			; Enter: HL = Points to CP/M+ (P2DOS) T&D entry			;
+ 295:			;	 DE = Addr of destination Universal T&D entry		;
+ 296:			; Exit :  A = 0, Zero Flag Set (Z) Dest Date conv if OK, else..	;
+ 297:			;	  A = FF, Zero Clear (NZ) Dest Nulled if Error		;
+ 298:			;	 HL --> Seconds byte of Source P2DOS T&D (Not moved)	;
+ 299:			;	 DE --> Seconds byte of Dest Universal T&D (Not filled)	;
+ 300:			; Uses : All primaty registers.					;
+ 301:			;---------------------------------------------------------------;
+ 302:			
+ 303:	00F1  D5      	P2UTIM:	PUSH	DE		; Save Universal T&D address on stack
+ 304:	00F2  5E      		LD	E,(HL)		; Get binary date to DE
+ 305:	00F3  23      		INC	HL
+ 306:	00F4  56      		LD	D,(HL)
+ 307:	00F5  23      		INC	HL
+ 308:	00F6  EB      		EX	DE,HL		; Put Binary Day/date in HL, P2Dos ptr in DE
+ 309:	00F7  7C      		LD	A,H		; Check for valid entry
+ 310:	00F8  B5      		OR	L		; Is date present?
+ 311:	00F9  2008    		JR	NZ,P2UTI0	; ..jump if Not Null entry
+ 312:	00FB  E1      		POP	HL		; Get Universal T&D Dest addr back
+ 313:	00FC  0605    		LD	B,5
+ 314:	00FE  CDB700  		CALL	BADDA1		; ..and null the U-Time field
+ 315:	0101  EB      		EX	DE,HL		; Put ptrs in correct regs
+ 316:	0102  C9      		RET			; ..and return to caller
+ 317:			
+ 318:	0103  D5      	P2UTI0:	PUSH	DE		; Save P2D Time pointer (--> Min)
+ 319:	0104  01BA07  		LD	BC,1978		; Beginning year
+ 320:	0107  116D01  	DMJ0:	LD	DE,365		; Set days in normal year
+ 321:	010A  CD6001  		CALL	LEAPYR		; ..check for leap year
+ 322:	010D  2001    		JR	NZ,DMJ1		; ..jump if not
+ 323:	010F  13      		INC	DE
+ 324:	0110  B7      	DMJ1:	OR	A		; When # of days left..
+ 325:	0111  ED52    		SBC	HL,DE		; ..is less than days in year..
+ 326:	0113  3805    		JR	C,DMJ2		; ..year is in HL, so exit
+ 327:	0115  2803    		JR	Z,DMJ2		; ...or her if last day of Year
+ 328:	0117  03      		INC	BC		; Bump starting year
+ 329:	0118  18ED    		JR	DMJ0		; ..and back for another try
+ 330:			
+ 331:			; When get here, binary year is in BC, remaining days in HL
+ 332:			
+ 333:	011A  19      	DMJ2:	ADD	HL,DE		; Compensate for above underflow
+ 334:	011B  3E01    		LD	A,1		; Start with month # 1 (Jan)
+ 335:	011D  1600    		LD	D,0		; ..prepare for 16-bit math
+ 336:	011F  E5      		PUSH	HL		; Save days remaining
+ 337:	0120  21A301  		LD	HL,DM		; ..and address month table
+ 338:	0123  5E      	DMJ3:	LD	E,(HL)		; Get days in current Mo to E
+ 339:	0124  FE02    		CP	2		; Is it Feb?
+ 340:	0126  CC6001  		CALL	Z,LEAPYR	; ..Check for leap year if Feb
+ 341:	0129  2001    		JR	NZ,DMJ4		; Jump if not leap year
+ 342:	012B  1C      		INC	E		; ..else compensate
+ 343:	012C  E3      	DMJ4:	EX	(SP),HL		; Swap pointer (HL) with Days Remaining (stk)
+ 344:	012D  B7      		OR	A
+ 345:	012E  ED52    		SBC	HL,DE		; Subtract days in Month from Remaining days
+ 346:	0130  3807    		JR	C,DMJ5		; ..Exit if we've gone too far
+ 347:	0132  2805    		JR	Z,DMJ5		; ...or just far enough (last day of month)
+ 348:	0134  E3      		EX	(SP),HL
+ 349:	0135  23      		INC	HL		; Point to next month in table
+ 350:	0136  3C      		INC	A		; ..bump month counter
+ 351:	0137  18EA    		JR	DMJ3		; ..and Try again
+ 352:			
+ 353:			; Arrive here with Binary year on Stack Top, Relative month in A (Jan = 1),
+ 354:			;   Days in that month in E, and binary year in BC.
+ 355:			
+ 356:	0139  19      	DMJ5:	ADD	HL,DE		; Compensate for underflow
+ 357:	013A  E3      		EX	(SP),HL		; ..and put back on stack
+ 358:	013B  E1      		POP	HL		; Restore Day in L
+ 359:	013C  CD7401  		CALL	BINBCD		; Convert Month (in A) to BCD
+ 360:	013F  60      		LD	H,B		; ..moving Year to HL
+ 361:	0140  47      		LD	B,A
+ 362:	0141  7D      		LD	A,L		; Convert Day
+ 363:	0142  69      		LD	L,C
+ 364:	0143  CD7401  		CALL	BINBCD		; ..to BCD
+ 365:	0146  4F      		LD	C,A
+ 366:	0147  116400  		LD	DE,100		; Subtract centuries, one by one..
+ 367:	014A  B7      	DMJ7A:	OR	A
+ 368:	014B  ED52    		SBC	HL,DE
+ 369:	014D  30FB    		JR	NC,DMJ7A	; ..until we go too far
+ 370:	014F  19      		ADD	HL,DE		; Then correct for underflow
+ 371:	0150  7D      		LD	A,L		; Get Years (tens and ones)
+ 372:	0151  CD7401  		CALL	BINBCD		; ..to BCD
+ 373:			
+ 374:	0154  D1      		POP	DE		; Restore P2D Time Pointer (--> Min)
+ 375:	0155  E1      		POP	HL		; Get Universal time string addr
+ 376:	0156  77      		LD	(HL),A		; Store Years..
+ 377:	0157  23      		INC	HL
+ 378:	0158  70      		LD	(HL),B		; ..Months
+ 379:	0159  23      		INC	HL
+ 380:	015A  71      		LD	(HL),C		; ..Days
+ 381:	015B  CDE800  		CALL	SAVEM		; Store Hours and Minutes & Set flags
+ 382:	015E  EB      		EX	DE,HL		; Put U-tim exit addr in DE
+ 383:	015F  C9      		RET			; ..and finish up elsewhere
+ 384:			
+ 385:			;.....
+ 386:			; Calculate Leap Year correction (xxxxxx00B for Leap Years)
+ 387:			; Enter: BC = Binary year
+ 388:			; Exit :  Z = 1 (set (Z)) Correction necessary
+ 389:			;	  Z = 0 (clear (NZ)) No correction needed
+ 390:			
+ 391:	0160  CB41    	LEAPYR:	BIT	0,C		; Get lower part of date
+ 392:	0162  C0      		RET	NZ		; ..return if not Leap year
+ 393:	0163  CB49    		BIT	1,C		; Test other bit
+ 394:	0165  C9      		RET			; ..and return
+ 395:			
+ 396:			;.....
+ 397:			; Convert BCD to HEX
+ 398:			; Enter: A = BCD digit to be converted
+ 399:			; Exit : A = HEX (binary) conversion
+ 400:			;		 All registers preserved
+ 401:			
+ 402:	0166  B7      	BCDHEX:	OR	A
+ 403:	0167  C8      		RET	Z		; Zero is same
+ 404:	0168  C5      		PUSH	BC		; Save register
+ 405:	0169  0600    		LD	B,0		; Set counter
+ 406:	016B  04      	BCDHX0:	INC	B		; Bump counter
+ 407:	016C  D601    		SUB	1		; Count down BCD..
+ 408:	016E  27      		DAA
+ 409:	016F  20FA    		JR	NZ,BCDHX0	; ..til all gone
+ 410:	0171  78      		LD	A,B
+ 411:	0172  C1      		POP	BC
+ 412:	0173  C9      		RET
+ 413:			
+ 414:			;.....
+ 415:			; Convert byte in A register to two packed BCD digits.
+ 416:			
+ 417:	0174  C5      	BINBCD:	PUSH	BC		; Affect only A register
+ 418:	0175  06FF    		LD	B,0FFH		; Preset counter
+ 419:	0177  04      	BINBCL:	INC	B		; Bump output count
+ 420:	0178  D60A    		SUB	10
+ 421:	017A  30FB    		JR	NC,BINBCL	; Loop bumping counter til no more 10s
+ 422:	017C  C60A    		ADD	A,10		; ..correct for underflow
+ 423:	017E  4F      		LD	C,A		; Save low nybble here for a while
+ 424:	017F  78      		LD	A,B		; ..and bring hi one here..
+ 425:	0180  87      		ADD	A,A		; Move it into position
+ 426:	0181  87      		ADD	A,A
+ 427:	0182  87      		ADD	A,A
+ 428:	0183  87      		ADD	A,A
+ 429:	0184  81      		ADD	A,C		; Add in Low nybble
+ 430:	0185  C1      		POP	BC		; Restore regs
+ 431:	0186  C9      		RET
+ 432:			
+ 433:			;---------------------------------------------------------------+
+ 434:			; Calculate offset within T&D Record if one exists.		;
+ 435:			;								;
+ 436:			; Enter: A = Sector Pointer (0,20H,40H,60H)			;
+ 437:			;	BC = Points to the ZSDOS WRFCB routine			;
+ 438:			;	DE = Points to Directory Sector Buffer			;
+ 439:			; Exit : A = 0, Zero Flag Set (Z), If Ok, else A <> 0, (NZ)	;
+ 440:			;	HL = First byte of Create Date for record if OK		;
+ 441:			; Uses : HL (Entry DE), AF, BC.  Entry HL preserved in DE	;
+ 442:			;---------------------------------------------------------------+
+ 443:			
+ 444:	0187  ED434200	SETREC:	LD	(WRFCB+1),BC	; Save Directory Write Routine address
+ 445:	018B  EB      		EX	DE,HL		; DIR sector to HL for adr calcs
+ 446:	018C  016000  		LD	BC,060H		; Offset to T&D Fields
+ 447:	018F  09      		ADD	HL,BC
+ 448:	0190  4F      		LD	C,A		; ..Sector pointer to register
+ 449:	0191  7E      		LD	A,(HL)		; Get byte
+ 450:	0192  D621    		SUB	21H		; Is TimeStamping present?
+ 451:	0194  C24800  		JP	NZ,NO$TD	; ..quit here if not
+ 452:	0197  79      		LD	A,C		; Restore Sector pointer from storage
+ 453:	0198  0F      		RRCA			; Shift 2 times
+ 454:	0199  0F      		RRCA
+ 455:	019A  4F      		LD	C,A		; ..save temporarily
+ 456:	019B  0F      		RRCA			; Shift 2 more times
+ 457:	019C  0F      		RRCA
+ 458:	019D  81      		ADD	A,C		; ..and add in again
+ 459:	019E  4F      		LD	C,A		; Set for offset (C=0,10,20)
+ 460:	019F  09      		ADD	HL,BC		; Add offset
+ 461:	01A0  23      		INC	HL		; ..and bump to Create Time Start
+ 462:	01A1  AF      		XOR	A		; Set good return status
+ 463:	01A2  C9      		RET
+ 464:			
+ 465:			;===================================================;
+ 466:			;===|		D A T A     A R E A  		|===;
+ 467:			;===================================================;
+ 468:			; Put in CSEG to make single module
+ 469:			
+ 470:			;.....
+ 471:			; Days-in-Month table
+ 472:			
+ 473:	01A3  1F1C1F1E	DM:	DEFB	31,28,31,30,31,30,31,31,30,31,30,31
+	      1F1E1F1F
+	      1E1F1E1F
+ 474:			
+ 475:			;.....
+ 476:			; Time/Date String in Universal Format
+ 477:			
+ 478:	01AF  00000000	DSTIME:	DEFB	0,0,0,0,0,0
+	      0000
+ 479:			
+ 480:			;******************************************************************
+ 481:			; Clock Driver for ZSDOS
+ 482:			;
+ 483:			; This routine interfaces the ZSDOS Time interface to a physical
+ 484:			; clock driver routine.  The ZSDOS interface is:
+ 485:			;
+ 486:			;	Entry conditions:
+ 487:			;		C  = Read/Write Code (1=Write, 0=Read)
+ 488:			;		DE = Address to Put/Set Time
+ 489:			;
+ 490:			; The Error return code on Clock Set is overwritten during instal-
+ 491:			; lation if a ZSDOS clock driver (with two jumps) is detected, with
+ 492:			; a relative jump to the clock set vector.  This short routine also
+ 493:			; places the time address in the HL registers to be compatible with
+ 494:			; DateStamper clock specifications.
+ 495:			;******************************************************************
+ 496:			
+ 497:	01B5  EB      	RWCLK:	EX	DE,HL		; Set registers for DS clock interface
+ 498:	01B6  79      		LD	A,C
+ 499:	01B7  B7      		OR	A		; Read (0) or Write (<>0)
+ 500:	01B8  2803    		JR	Z,CLK		; Read clock if Zero..
+ 501:			
+ 502:			; The following Error Return code is overwritten if ZSDOS clock added
+ 503:			
+ 504:	01BA  AF      		XOR	A		; Set error return
+ 505:	01BB  3D      		DEC	A
+ 506:	01BC  C9      		RET
+ 507:			
+ 508:			;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 509:			;		C l o c k     D r i v e r
+ 510:			;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 511:			; Actual clock driver or vector to external routine added here
+ 512:			
+ 513:	01BD          	CLK:
+ 514:			
+ 515:	01BD          	TOP	EQU	$
+ 516:			
+ 517:	01BD          		END
+
+
+
+Statistics:
+
+    51	symbols
+   445	bytes
+
+
+
+Symbol Table:
+
+badda1            b7     dmj3             123     page               0+    
+baddat            b3     dmj4             12c     pstamp            2f+    
+bcdhex           166     dmj5             139     rwclk            1b5     
+bcdhx0           16b     dmj7a            14a     savem             e8     
+binbcd           174     dosid          =  53+    setrec           187     
+binbcl           177     dosver         =  11+    stampc             0+    
+bloop             b8     dstime           1af     stampu             4+    
+chkdt0            8c     false          =   0     sttim              6     
+clk              1bd     gsloop            26     top            = 1bd+    
+days0             9a     gstamp            1e+    true           =ffff+    
+days1             c0     leapyr           160     u2ptim            4c     
+days2             c8     nodate            b0     ver            =   b+    
+days3a            dd     notd              48     wrfcb             41     
+days4             e2     notim             47+    wrfcb0            3f     
+dm               1a3     notim0            49     yr19              5e     
+dmj0             107     okret             44     
+dmj1             110     p2uti0           103     
+dmj2             11a     p2utim            f1     

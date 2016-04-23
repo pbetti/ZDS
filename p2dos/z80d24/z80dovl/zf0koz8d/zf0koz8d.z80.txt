@@ -1,0 +1,68 @@
+;************************************************
+;
+;	ZF0KOZ8D.Z80
+;	7/21/88
+;	Gene Nolan
+;
+;	This is an overlay file for ZF10KD5/R4.COM
+;	that adds support for Z80DOS time-stamping.
+;	It will allow ZF10K to carry the create
+;	and alteration date of the source file(s)
+;	to the destination file(s) for single and
+;	mass: file copies,archive,move, and unsqueeze
+;
+;	Assemble to a .HEX file and use MLOAD:
+;
+;	MLOAD ZF10KD5=ZF10KD5.COM,ZF0KOZ8D
+;
+;		    or
+;
+;	MLOAD ZF10KR4=ZF10KR4.COM,ZF0KOZ8D
+;
+;
+;
+;	NOTE: This file will work as is with both the
+;		D5 and R4 .COM files (NOT THE + files)
+;
+;***********************************************
+
+
+	org	1690h		; ZF10KD5/R4 opens source file here
+	call	openem
+
+	org	1A9Ch		; ZF10KD5/R4 does writes to destination here
+	call	wrtseq
+
+	org	1ACFh		; ZF10KD5/R4 close's destination file here
+	call	closem
+
+	org	1A50h		; NSWPD5/R4 MAKE's the destination file here
+	call	makem
+
+	org	3F40h		; Patch above to here
+
+openem:
+	call	5		; Call BDOS
+	cp	0ffh		; Open ok?
+	ret	z		; Z=no
+	push	af
+	push	de
+	push	hl
+	ld	c,54		; Z80DOS call for GETSTAMP
+	call	5
+	pop	hl
+	pop	de
+	pop	af
+	ret
+
+wrtseq:				; Vector MAKE,WRITE SEQ,CLOSE to here
+closem:
+makem:	push	de
+	push	bc
+	ld	c,55		; Z80DOS call for use stamp
+	call	5
+	pop	bc
+	pop	de
+	jp	5		; And do requested function
+
+	end

@@ -1,0 +1,68 @@
+	TITLE	"Z3PFNX - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3PFNX.Z80 Ver 1.1 by Richard Conn
+; Date    : 29 Mar 89
+; Version : 1.2
+; Module  : Z3PFNX
+; Abstract: This module contains the routine PUTFNX which sets
+;	the nth filename.typ to a specified FCB-entry.  (FCB+1
+;	is addressed)
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		PUTFNX
+
+;  External References
+
+	EXT		ENVPTR
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PUTFNX
+; Entry: HL - Points to FCB to set (addresses FCB+1)
+;	  A - Contains number of FN.FT to set (1 to 4)
+; Exit :  A <> 0, Zero Flag Reset (NZ) if Ok
+;	      A = 0, Zero Flag Set (Z) if A not in 1..4
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+PUTFNX:	DEC	A		;check range
+	CP	4		;0 to 3 is valid
+	JR	NC,PFNXER
+	INC	A		;set offset to 1-4 again
+	PUSH	DE
+	PUSH	HL
+	LD	HL,(ENVPTR)	;pt to environment
+	LD	DE,52H		;pt to file name entry
+	ADD	HL,DE
+	LD	DE,11		;offset to next name
+PFNX1:	DEC	A		;count down
+	JR	Z,PFNX2
+	ADD	HL,DE		;pt to next
+	JR	PFNX1
+
+PFNX2:	POP	DE		;get ptr to FCB+1
+	PUSH	DE
+	PUSH	BC		;save BC
+	LD	B,11		;11 bytes from DE to HL
+PFNX3:	LD	A,(DE)		;copy
+	LD	(HL),A
+	INC	HL		;pt to next
+	INC	DE
+	DJNZ	PFNX3		;count down
+	POP	BC		;restore regs
+	POP	HL
+	POP	DE
+	DEFB	0F6H		; Set NZ status for Ok w/"OR  0AFH"
+PFNXER:	XOR	A		; Error Return Status if entered here
+	RET
+
+	END
+

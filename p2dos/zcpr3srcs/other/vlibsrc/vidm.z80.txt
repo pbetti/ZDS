@@ -1,0 +1,74 @@
+	TITLE	"VIDM - Vlib 4.1"
+	NAME	('VIDM')
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+; Date    : 4 Mar 89
+; Version : 1.0
+; Module  : VIDM
+; Abstract:  This module contains the routine ISCUR which checks
+;	a character to see if it is a TCAP or Wordstar cursor
+;	character.  It returns a status flag, and values of 1..4
+;	for Up, Down, Right and Left respectively if matched.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		ISCUR
+
+;  External References
+
+	EXT		VIDPTR
+
+; Constants
+
+CTRLE	EQU	'E'-'@'
+CTRLX	EQU	'X'-'@'
+CTRLD	EQU	'D'-'@'
+CTRLS	EQU	'S'-'@'
+
+	.Z80
+	CSEG
+;===============================================================
+; ISCUR - Check for Cursor movement char
+;  Entry:  A = Char to check
+;  Exit :  A = Char, Zero Flag Set (Z) if Error
+;	   A = 1..4, Zero flag Reset (NZ) if Operation OK
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+ISCUR:	PUSH	HL		; Save regs
+	PUSH	DE
+	PUSH	BC
+	LD	HL,(VIDPTR)	; Point to TCAP area
+	LD	DE,16		; Offset to Cursor keys
+	ADD	HL,DE
+	LD	DE,WSSTR	; Point to WS cursor keys
+	LD	BC,4*256+0	; Check 4 locns, relative char in C (=0)
+LOOP:	INC	C		; Bump to next symbolic char
+	CP	(HL)		; Do we have a match?
+	JR	Z,EXIT		; ..jump if so
+	INC	HL		; Advance to next
+	EX	DE,HL		; Check next
+	CP	(HL)		; Match WS string?
+	JR	Z,EXIT		; ..jump if so
+	INC	HL		; Advance to next
+	EX	DE,HL
+	DJNZ	LOOP		; ..loop til done
+	LD	C,A		; Store orig char in result reg
+EXIT:	LD	A,B		; Get status reg (<>0 if cursor)
+	OR	A		; ..and set zero flag appropriately
+	LD	A,C		; Get symbolic char
+	POP	BC		; Restore regs
+	POP	DE
+	POP	HL
+	RET
+
+WSSTR:	DEFB	CTRLE, CTRLX, CTRLD, CTRLS	; WS movement keys (1..4)
+						; Up, Down, Right, Left
+
+	END
+

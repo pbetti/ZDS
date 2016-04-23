@@ -1,0 +1,93 @@
+;	TITLE	"SCPSTR - Syslib 4.0"
+	NAME	('PSTR')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SPSTR.Z80 Richard Conn
+; Date    : 11 Jun 89
+; Version : 1.3
+; Module  : SCPSTR
+; Abstract: This module contains the routines PSTR which prints
+;	the character string addressed by the HL register pair
+;	to the CON: device until a terminating Null character is
+;	encountered.  The routine returns with HL pointing to
+;	the character immediately after the terminating Null.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		PSTR
+
+; From SYSLIB Get..
+
+	EXT		CCOUT, COUT
+
+; Definitions
+
+BEL	EQU	 7		; Bell
+BS	EQU	 8		; Backspace
+TAB	EQU	 9		; Tab
+LF	EQU	10		; Line Feed
+CR	EQU	13		; Carriage Return
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PSTR
+; Entry: HL - Points to a Null-terminated character string
+; Exit : HL - Points to the character after the ending Null
+;		 on the CON: device
+; Uses : HL
+; Special Requirements: None
+;===============================================================
+
+PSTR:	PUSH	BC		; Save the BC register
+	PUSH	AF		; Save Reg A and Flags
+PSL0:	LD	C,0		; Set Position count
+PSL:	LD	A,(HL)		; Get byte
+	INC	HL		; Pt to next
+	OR	A		; 0 = Done
+	JR	NZ,GO		; ..jump if Not, else finished
+	POP	AF		; Restore All Registers
+	POP	BC
+	RET
+
+GO:	CP	TAB		; Is it a TAB?
+	JR	Z,PST		; ..expand if so
+
+;  Print char
+
+	INC	C		; Incr position
+	CALL	CCOUT		; Print with Ctrl Char expansion
+	CP	CR		; Is it a CR?
+	JR	Z,PSL0		; ..reset position and loop if so
+	CP	LF		; Is it a LF?
+	JR	Z,PLF		; ..decrement count & check if so
+	CP	BEL		; Is it a BEL?
+	JR	Z,PLF		; ..decrement count & check if so
+	CP	BS		; Is it a BS?
+	JR	NZ,PSL		; ..get next char if Not
+			;..fall thru..
+;  <BS> -- Cursor went backward
+
+	DEC	C		; Back up count by 2 for BS
+PLF:	DEC	C		; Back up 1 for LF and BEL
+	JP	M,PSL0		; ..reset count if first col
+	JR	PSL		; Else get next char
+
+;  Expand <TAB>
+
+PST:	LD	A,C		; Get count
+	CPL			; 1's Complement
+	AND	7		; Modulo-8
+	INC	A		; Make 2's Complemet
+	LD	B,A		; Count in B
+	LD	A,' '		; Print <sp>
+PSTL:	CALL	COUT		; Print to the CON: device
+	INC	C		; Increment Col count
+	DJNZ	PSTL		; Count down
+	JR	PSL
+
+	END
+

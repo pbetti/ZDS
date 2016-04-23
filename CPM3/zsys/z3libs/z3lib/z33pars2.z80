@@ -1,0 +1,68 @@
+	TITLE	"Z33PARS2 - Z3lib 4.0"
+;=================================================================
+;    Copyright (C) 1989 by Jay Sage.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Jay Sage	 modified by Harold F. Bower
+; Date    : Mar 88
+; Version : 1.1
+; Module  : Z33PARS2
+; Abstract: This module contains the routine PARSE2 which calls
+;	the REPARSE entry point in the Command Processor to re-
+;	parse the command line addressed by HL.  It is the User's
+;	responsibility to be sure that the Command Processor has
+;	not been overwritten in memory.  No registers are changed
+;	and the two default File Control Blocks are filled.
+; Revision: 4/28/88 - put return addr on stack with CALL. - HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		PARSE2
+
+; External References
+
+	EXT		GETCCP, SETEPB, RESEPB
+
+; Definitions
+
+OFFPARSE	EQU	16	; Offset to REPARSE entry point
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PARSE2
+; Entry: HL - Points to command line to re-parse
+; Exit : - None.  The line is reparsed and default FCBs are filled 
+; Uses : - None.
+; Special Requirements : The Command Processor must not have been
+;	overwritten.
+;===============================================================
+
+PARSE2:	PUSH	HL		; Preserve registers
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+	CALL	SETEPB		; Set External Program Bit
+	EX	DE,HL		; ..put pointer to command line in DE
+	CALL	PARS2A		; Set return addr on stack by CALLing around
+
+; Return here after the call to reparsing code
+
+	CALL	RESEPB		; Reset External Program bit
+	POP	AF		; Restore regs and exit
+	POP	BC
+	POP	DE
+	POP	HL
+	RET
+
+PARS2A:	CALL	GETCCP		; Get addr of Command Processor start
+	LD	BC,OFFPARSE+2	; Offset to Command line ptr hi-byte
+	ADD	HL,BC
+	LD	(HL),D		; Store high byte
+	DEC	HL
+	LD	(HL),E		; ..and low byte
+	DEC	HL		; Address entry point to parser routine
+	JP	(HL)		; ..and call reparsing routine
+
+	END
+

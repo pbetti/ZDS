@@ -1,0 +1,80 @@
+;	TITLE	"SFAPPND1 - Syslib 4.0"
+	NAME	('FAPPL')
+;================================================================
+; Author  : Harold F. Bower
+;		Derived from SFAPPEND.Z80 Ver 1.1 by Richard Conn
+; Date    : 14 Jun 89
+; Version : 1.3
+; Module  : SFAPPND1
+; Abstract:  This module contains the routine F$APPL which opens a
+;	specified file for appending.  With F$APPL, Subsequent
+;	F$WRITE calls will append to the file starting at the last
+;	record.  Is is used as:
+;	  ...
+;	  LD	DE,FCB
+;	  CALL	F$APPL
+;	    < Fill TBUFF >
+;	  LD	DE,FCB
+;	  CALL	F$WRITE	; Last record of original file rewritten
+;	  ...
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		F$APPL
+
+; From SYSLIB Get..
+
+	EXT		INITFCB, @BDOSA, F$OPEN
+
+; Definitions
+
+RREAD	EQU	33		; Random read function
+GETFS	EQU	35		; Get file size function
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - F$APPL
+; Entry: DE - Points to 36-byte File Control Block (FCB)
+; Exit :  A = 0 and Zero flag Set (Z) if NO Error
+;	      A = 1 and Zero Reset (NZ) if File Not Found
+;	      A = 2 and Zero Reset (NZ) if File Full
+;	      A = 3 and Zero Reset (NZ) if File Empty
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+F$APPL:	CALL	INITFCB		; Init the FCB
+	CALL	F$OPEN		; Open file pted to by DE
+	INC	A
+	LD	A,1		; ..(preset No File error code)
+	JR	Z,DONE		; ...jump error exit if bad
+	LD	A,GETFS		; Get File Size
+	CALL	@BDOSA
+	LD	HL,35		; Check for Full File
+	ADD	HL,DE
+	LD	A,(HL)		; Get Value
+	OR	A		; Must be Zero
+	LD	A,2		; ..(preset Full File code)
+	JR	NZ,DONE		; ...jump if error
+	DEC	HL		; Get Record Number of Last Record
+	LD	B,(HL)
+	DEC	HL
+	LD	C,(HL)		; BC = Record Number
+	LD	A,B		; Check for Zero
+	OR	C
+	LD	A,3		; ..(preset No Records code)
+	JR	Z,DONE		; ...jump if error
+	DEC	BC		; Decrement to last record
+	LD	(HL),C		; Store Record Number - 1
+	INC	HL
+	LD	(HL),B
+	LD	A,RREAD		; Read Last Record at random
+	CALL	@BDOSA
+	XOR	A		; No Error
+DONE:	OR	A		; Set status flags
+	RET			; ..and return
+
+	END
+

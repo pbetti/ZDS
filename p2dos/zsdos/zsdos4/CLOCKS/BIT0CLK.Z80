@@ -1,0 +1,167 @@
+	TITLE	"5832 - Heath 89 BitZer0 Clock 7/06/85"
+	SUBTTL	" Description of Clock Module"
+;==========================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from vers of 7/06/85
+; Vers 0.5 current as of 16 Oct 88
+;==========================================================
+
+VERS	EQU	05
+	.Z80
+	NAME	BITZERO
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; Ptr to statyr
+
+CLKNAM:	DEFB	'Heath89 - BitZero-5832  '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'   Heath/Zenith 89/90 5832 clock',CR,LF
+	DEFB	'   (QuickData, BITZERO)',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	NPARAMS		; # of parameters
+	DEFW	STRS
+
+NP0:
+XMHZ	EQU	$+1
+	DEFB	BYTE
+	DEFW	MHZ
+XCTLPRT	EQU $+1
+	DEFB	BYTE
+	DEFW	CTRLPT
+XDATPRT	EQU $+1
+	DEFB	BYTE		; Byte/word flag
+	DEFW	DATAPT		; Configurable value
+
+NPARAMS	EQU	($-NP0)/3
+
+; descriptions of configurable parameters
+
+STRS:	DEFB	'MHz CPU Speed ',0
+	DEFB	'Control Port  ',0
+	DEFB	'Data Port     ',0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Heath 89/90 BITZERO Clock"
+
+RDBIT	EQU	020H
+HLDBIT	EQU	010H
+YEARRG	EQU	12
+
+CTRLPT	EQU	60H
+DATAPT	EQU	61H
+NDELY	EQU	3*15H
+
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	LD	A,HLDBIT
+YOUT1	EQU	$+1
+	OUT	(CTRLPT),A
+YDELY	EQU	$+1
+	LD	B,NDELY
+$$WAIT:	DJNZ	$$WAIT
+	LD	BC,256*((RDBIT OR HLDBIT) + YEARRG) + 0
+
+LOOP:	LD	A,B
+	CP	RDBIT OR HLDBIT + 1
+	JR	NZ,CKDONE
+	LD	E,(HL)		; Save buffer 'seconds'
+CKDONE:	CP	RDBIT OR HLDBIT - 1
+	JR	Z,HLDOFF	; All done
+	CP	RDBIT OR HLDBIT + 6
+	JR	NZ,NOTDY
+	DEC	B
+	LD	A,B
+YOUT2	EQU	$+1
+NOTDY:	OUT	(CTRLPT),A
+	EX	(SP),HL
+	EX	(SP),HL
+	CP	RDBIT OR HLDBIT + 5
+YIN1	EQU	$+1
+	IN	A,(DATAPT)
+	JR	NZ,NOT24
+	AND	03H
+NOT24:	RLD
+	DEC	B
+	DEC	C
+	BIT	0,C
+ODEVEN:	JR	NZ,LOOP
+	INC	HL
+	JR	LOOP
+
+HLDOFF:	XOR	A
+YOUT3	EQU	$+1
+	OUT	(CTRLPT),A
+	DEC	HL		; Point at seconds
+	INC	A		; Set Ok return status of 01
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	SETBYT	XDATPRT,YIN1
+	SETBYT	XCTLPRT,YOUT1
+	SETBYT	,YOUT2
+	SETBYT	,YOUT3
+
+	SETBYT	XMHZ,		; Set command delay based on clock freq
+	ADD	A,A		; *16
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	SETBYT	,YDELY
+	RET
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

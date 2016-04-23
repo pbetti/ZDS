@@ -1,0 +1,106 @@
+	TITLE	"VID89 - Vlib 4.1"
+	NAME	('VID89')
+;=====================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;---------------------------------------------------------------------
+; Author  : Harold F. Bower
+;	      Derived from VID8.Z80 & VID9.Z80 Ver 1.1 by Richard Conn
+; Date	  : 12 Jan 89
+; Version : 1.2
+; Module  : VID89
+; Abstract: This module containd the routine VIDOUT which outputs an
+;	addressed string to the current CON: device, character-by-char
+;	Delays after end-of-string are accomodated as in Z3ENV Termcap.
+;	   It also contains the routine VIDELAY which pauses for the
+;	number of milliseconds contained in the A register.  The value
+;	of processor speed in the Z3ENV is used in delay values with
+;	4 MHz used if no Z3ENV is detected.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		VIDOUT, VIDELAY
+
+; ..from Z3LIB Get..
+	EXT		ENVPTR
+; ..from SYSLIB Get..
+	EXT		COUT
+
+	.Z80
+	CSEG
+;===============================================================
+; VIDOUT - Put control string to Console
+;  Entry: HL = Address of null-terminated string to print
+;	   D = Number of milliseconds to delay at end
+;  Exit :  A = Number of milliseconds delay
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+VIDOUT:	LD	A,(HL)		; Get character
+	OR	A		; Is it Zero (End of Line)?
+	JR	Z,VID2		; ..jump to delay if so
+	INC	HL		; Else advance to next char
+	CP	'\'		; Is it a literal value?
+	JR	NZ,VID1		; ..jump if not
+	LD	A,(HL)		; Else get literal char
+	INC	HL		; ..and advance pointer
+VID1:	CALL	COUT		; Output char
+	JR	VIDOUT		; ..and loop
+
+VID2:	LD	A,D		; Get output delay
+			;..fall thru to..
+;===============================================================
+; VIDELAY
+;  Entry:  A = Number of milliseconds to delay
+;  Exit : - Nothing returned
+;  Uses : - None
+; Special Requirements: None
+;===============================================================
+
+VIDELAY: OR	A		; Any delay?
+	RET	Z		; ..quit here if not
+	PUSH	AF		; Save regs
+	PUSH	BC
+	PUSH	HL
+	LD	C,A		; Save count in C
+	LD	HL,(ENVPTR)	; Get ENVPTR addr in HL
+	LD	A,H
+	OR	L		; Is it valid?
+	LD	B,4		; ..(assume 4 MHz if not)
+	JR	Z,VID3		; ..jump if invalid and use 4MHz
+	PUSH	DE		; Don't disturb regs
+	LD	DE,2BH		; Offset to processor speed
+	ADD	HL,DE
+	POP	DE		; ..and restore regs
+	LD	A,(HL)		; Get processor speed
+	OR	A		; Is it zero?
+	JR	Z,VID3		; ..jump if so and use default 4MHz
+	LD	B,A		; Else save processor speed in B
+VID3:	PUSH	BC		; Save count values
+	CALL	DELAY		; ..and delay for 1 mS
+	POP	BC		; Restore counts
+	DEC	C		; Count down
+	JR	NZ,VID3
+	POP	HL		; Restore regs
+	POP	BC
+	POP	AF
+	RET
+
+;  Delay 1 ms at Clock speed
+
+DELAY:	CALL	DEL1		; Delay 1 ms at 1MHz
+	DJNZ	DELAY		; Count down clock speed
+	RET
+
+;  Delay 1 ms at 1MHz
+
+DEL1:	LD	C,19		; 19 loops of 54 cycles each ~ 1000 cycles
+DEL1A:	EX	(SP),HL		; 19 cycles
+	EX	(SP),HL		; +19 = 38 cycles
+	DEC	C		; + 4 = 42 cycles
+	JR	NZ,DEL1A	; +12 = 54 cycles
+	RET
+
+	END
+

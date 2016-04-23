@@ -1,0 +1,102 @@
+;	TITLE	"Z3PRS3B - Z3lib 4.0"
+	NAME	('DUSCAN')
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3PRS3.Z80 Ver 1.1 by Richard Conn
+; Date    : 29 Jul 89
+; Version : 1.4
+; Module  : Z3PRS3B
+; Abstract: This module contains the routines DUSCAN which scans
+;	a token for DU:.
+; Revision:
+;	1.4 - 16 Aug 90 - corrected DU comparison instr.  HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		DUSCAN
+
+; From Z3LIB Get..
+
+	EXT		GETDUOK, GETMDISK, GETMUSER, @SDELM, @DIGCK
+
+; From SYSLIB Get..
+
+	EXT		RETUD, CAPS
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DUSCAN
+; Entry: HL - Points to Disk Name (8 chars max)
+; Exit : BC - B = Disk, C = User if Valid  (undefined if Error)
+;	  A <> 0, Zero Flag Reset (NZ) if Valid, else
+;	      A = 0, Zero Flag Set (Z) if NOT Valid
+; Uses : AF,BC
+; Special Requirements: None
+;===============================================================
+
+DUSCAN:	PUSH	HL		; Save regs
+	PUSH	DE
+	CALL	GETDUOK		; Ok for DU form?
+	JR	Z,ERROR		; ..jump and Abort if not
+	CALL	RETUD		; Get current Disk and User
+	CALL	@SDELM		; Did we find a delimiter?
+	JR	Z,DUSOK		; ..exit if so
+	CALL	CAPS		; ..in Caps
+	SUB	'A'		; Convert possible drive spec to number
+	JR	C,DUS1		; If less than 'A', must be digit
+
+; Set Disk Number (A=0) & check legality
+
+	LD	B,A		; Store Drive letter
+	INC	HL		; Pt to next char
+	CALL	@SDELM		; Check for delimiter
+	JR	Z,DUCHEK	; ..exit if delimiter found
+
+; Set User Number
+
+DUS1:	LD	DE,2*256+0	; Get Up to 2 digits
+DUS1A:	CALL	@SDELM		; Delimiter?
+	JR	Z,DUS2		; ..jump if so
+	CALL	@DIGCK		; Check for digit, converting to binary
+	JR	C,ERROR		; ..jump if not digit
+	LD	C,A		; .and save
+	LD	A,E		; ..while mult old digit
+	ADD	A,A		; ...by 10
+	ADD	A,A		; * 4
+	ADD	A,E		; * 5
+	ADD	A,A		; * 10
+	ADD	A,C		; Add in New digit
+	LD	E,A
+	INC	HL		; Advance to next byte
+	DEC	D		; Count down
+	JR	NZ,DUS1A	; ..loop if more to go
+	CALL	@SDELM		; Delimiter?
+	JR	NZ,ERROR	; ..jump to Error if not
+DUS2:	LD	C,E		; Move User to exit reg
+DUCHEK:	LD	L,C		; Move extracted DU to HL
+	LD	H,B
+	CALL	RETUD		; ..and get current to BC
+	PUSH	HL		; Save the newly-gathered DU
+	OR	A
+	SBC	HL,BC		; Are they the same?
+	POP	BC		; .(restore new to BC)
+	JR	Z,DUSOK		; ..exit Ok if same
+
+	CALL	GETMDISK	; Get max allowable
+	DEC	A		; ..and compensate for base 0
+	CP	B		; Compare against Max Disk + 1
+	JR	C,ERROR		; ..jump if Invalid disk number
+	CALL	GETMUSER	; Get max allowable user #
+	CP	C		; .in legal range?
+	JR	C,ERROR		; ..jump if Not
+DUSOK:	DEFB	0F6H		; Fall thru with "OR A,0AFH"
+ERROR:	XOR	A		; Set error status if entered here
+	POP	DE
+	POP	HL
+	RET
+
+	END
+

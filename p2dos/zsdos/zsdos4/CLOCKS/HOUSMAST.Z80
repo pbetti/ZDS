@@ -1,0 +1,156 @@
+	TITLE	"HouseMaster - (HOUSEMASTER)"
+	SUBTTL	"Description of Clock Module"
+;==========================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from ver of 12/16/85
+; Vers 0.1 current as of 17 Oct 88
+;==========================================================
+
+VERS	EQU	01
+	.Z80
+	NAME	HOUSEM
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; Ptr to statyr
+
+CLKNAM:	DEFB	'Housemaster  24hr  Z80  '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'  Housemaster 5832 - AY-3-8910',CR,LF
+	DEFB	'  (24hr format - S.E.Weidner)',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		; Dummy parameters
+	DEFW	0
+
+
+	PAGE
+	SUBTTL	"Clock Code - HouseMaster Clock"
+
+RDBIT	EQU	0FH
+WTBIT	EQU	0EH
+HLDBIT	EQU	040H
+
+YEARRG	EQU	12
+
+CLKWT	EQU	210		; Housemaster	reg 14(a)
+CLKRD	EQU	211		; Left chip porst reg15(b)
+
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	LD	A,7		; Init ports
+	OUT	(CLKRD),A	; A as out
+	LD	A,7FH		; B as in
+	OUT	(CLKWT),A	; On ay-3-8910 chip 1
+	LD	BC,256*(HLDBIT OR YEARRG) + 0		; B equ cnt
+LOOP:	LD	A,WTBIT
+	OUT	(CLKRD),A
+	LD	A,B		; Set reg
+	OUT	(CLKWT),A
+	CP	41H
+	JR	NZ,CKDONE
+	LD	E,(HL)		; Save secs in e
+CKDONE:	CP	HLDBIT-1
+	JR	Z,HLDOFF	; All done
+	CP	046H
+	JR	NZ,NOTDY
+	DEC	B		; Skip dayofweek reg
+	JR	CLRRD		; Clear read & loop
+
+NOTDY:	CP	45H
+	JR	Z,GETCH		; Hours
+	CP	48H		; Set z if 24hr byte
+GETCH:	LD	A,RDBIT
+	OUT	(CLKRD),A
+	EX	(SP),HL
+	EX	(SP),HL
+	IN	A,(CLKRD)
+	JR	NZ,NOT24
+	AND	03H		; Mask am/pm/24hr/leap yr bits
+NOT24:	AND	0FH
+	DEC	B		; Count down reg
+	DEC	C		; Toggle odd/even bit
+	BIT	0,C
+	JR	Z,ODEVEN
+	RLCA			; Shift tens nybble
+	RLCA
+	RLCA
+	RLCA
+PUTNYB:	LD	(HL),A		; Install byte
+CLRRD:	LD	A,WTBIT		; Clear read control
+	OUT	(CLKRD),A
+	XOR	A
+	OUT	(CLKWT),A
+	JR	LOOP
+
+ODEVEN:	OR	(HL)		; Or in tens byte
+	LD	(HL),A
+	INC	HL
+	JR	LOOP
+
+HLDOFF:	LD	A,WTBIT		; Turn off hold
+	OUT	(CLKRD),A
+	XOR	A
+	OUT	(CLKWT),A
+	DEC	HL		; -> secs
+	LD	A,01		;== Set Ok return status
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	RET			; Just return if arrive here
+
+	DEFB	0,0,0		; Filler
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present.
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

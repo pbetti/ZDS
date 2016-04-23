@@ -1,0 +1,2462 @@
+   1:			
+   2:				TITLE	'CP/M V3.1 Loader'
+   3:			
+   4:			
+   5:			;	Copyright (C) 1982
+   6:			;	Digital Research
+   7:			;	Box 579, Pacific Grove
+   8:			;	California, 93950
+   9:			
+  10:			;  Revised:
+  11:			;    01 Nov 82  by Bruce Skidmore
+  12:			
+  13:			;
+  14:			; [JCE] Have the date and copyright messages in only one source file
+  15:			;
+  16:			@BDATE	MACRO
+  17:				DEFB	'101814'
+  18:				ENDM
+  19:			
+  20:			@LCOPY	MACRO
+  21:				DEFB	'Copyright 2014, '
+  22:				DEFB	'P. Betti        '
+  23:				ENDM
+  24:			
+  25:			@SCOPY	MACRO
+  26:				DEFB	'(C) 98 Caldera'
+  27:				ENDM
+  28:			;
+  29:	0000'         	BASE	EQU	$
+  30:	FF00'         	ABASE	EQU	BASE-0100H
+  31:			
+  32:	000D'         	CR	EQU	0DH
+  33:	000A'         	LF	EQU	0AH
+  34:			
+  35:	FF5C'         	FCB	EQU	ABASE+005CH	;default FCB address
+  36:	FF80'         	BUFF	EQU	ABASE+0080H	;default buffer address
+  37:			
+  38:			;
+  39:			;	System Equates
+  40:			;
+  41:	000D'         	RESETSYS 	EQU	13		;reset disk system
+  42:	0009'         	PRINTBUF 	EQU	09		;print string
+  43:	000F'         	OPEN$FUNC 	EQU	15		;open function
+  44:	0014'         	READ$FUNC 	EQU	20		;read sequential
+  45:	001A'         	SETDMA$FUNC	EQU	26		;set dma address
+  46:			;
+  47:			;	Loader Equates
+  48:			;
+  49:	FF80'         	COMTOP	EQU	ABASE+80H
+  50:	FF81'         	COMLEN	EQU	ABASE+81H
+  51:	FF82'         	BNKTOP	EQU	ABASE+82H
+  52:	FF83'         	BNKLEN	EQU	ABASE+83H
+  53:	FF84'         	OSENTRY EQU	ABASE+84H
+  54:			
+  55:				CSEG
+  56:			
+  57:	0000' 318601  		LD	SP,STACKBOT
+  58:			
+  59:	0003' CD000A  		CALL	BOOTF		;first call is to Cold Boot
+  60:			
+  61:	0006' 0E0D    		LD	C,RESETSYS	;Initialize the System
+  62:	0008' CD9201  		CALL	BDOS
+  63:			
+  64:	000B' 0E09    		LD	C,PRINTBUF	;print the sign on message
+  65:	000D' 112501  		LD	DE,SIGNON
+  66:	0010' CD9201  		CALL	BDOS
+  67:			
+  68:	0013' 0E0F    		LD	C,OPEN$FUNC	;open the CPM3.SYS file
+  69:	0015' 11AB00  		LD	DE,CPMFCB
+  70:	0018' CD9201  		CALL	BDOS
+  71:	001B' FEFF    		CP	0FFH
+  72:	001D' 11CF00  		LD	DE,OPENERR
+  73:	0020' CAA200  		JP	Z,ERROR
+  74:			
+  75:	0023' 1180FF  		LD	DE,BUFF
+  76:	0026' CD8F00  		CALL	SETDMA$PROC
+  77:			
+  78:	0029' CD9500  		CALL	READ$PROC	;read the load record
+  79:			
+  80:	002C' 2180FF  		LD	HL,BUFF
+  81:	002F' 118601  		LD	DE,MEM$TOP
+  82:	0032' 0E06    		LD	C,6
+  83:	0034'         	CLOOP:
+  84:	0034' 7E      		LD	A,(HL)
+  85:	0035' 12      		LD	(DE),A
+  86:	0036' 13      		INC	DE
+  87:	0037' 23      		INC	HL
+  88:	0038' 0D      		DEC	C
+  89:	0039' C23400  		JP	NZ,CLOOP
+  90:			
+  91:	003C' CD9500  		CALL	READ$PROC	;read display info
+  92:			
+  93:	003F' 0E09    		LD	C,PRINTBUF	;print the info
+  94:	0041' 1180FF  		LD	DE,BUFF
+  95:	0044' CD9201  		CALL	BDOS
+  96:			
+  97:			;
+  98:			;	Main System Load
+  99:			;
+ 100:			
+ 101:			;
+ 102:			;	Load Common Portion of System
+ 103:			;
+ 104:	0047' 3A8701  		LD	A,(RES$LEN)
+ 105:	004A' 67      		LD	H,A
+ 106:	004B' 3A8601  		LD	A,(MEM$TOP)
+ 107:	004E' CD7300  		CALL	LOAD
+ 108:			;
+ 109:			;	Load Banked Portion of System
+ 110:			;
+ 111:	0051' 3A8901  		LD	A,(BANK$LEN)
+ 112:	0054' B7      		OR	A
+ 113:	0055' CA5F00  		JP	Z,EXECUTE
+ 114:	0058' 67      		LD	H,A
+ 115:	0059' 3A8801  		LD	A,(BANK$TOP)
+ 116:	005C' CD7300  		CALL	LOAD
+ 117:			;
+ 118:			;	Execute System
+ 119:			;
+ 120:	005F'         	EXECUTE:
+ 121:	005F' 215DFF  		LD	HL,FCB+1
+ 122:	0062' 7E      		LD	A,(HL)
+ 123:	0063' FE24    		CP	'$'
+ 124:	0065' C26F00  		JP	NZ,EXECUTE$SYS
+ 125:	0068' 23      		INC	HL
+ 126:	0069' 7E      		LD	A,(HL)
+ 127:	006A' FE42    		CP	'B'
+ 128:	006C' CCA900  		CALL	Z,BREAK
+ 129:	006F'         	EXECUTE$SYS:
+ 130:	006F' 318A01  		LD	SP,OSENTRY$ADR
+ 131:	0072' C9      		RET
+ 132:			
+ 133:			;
+ 134:			;	Load Routine
+ 135:			;
+ 136:			;	Input:   A = Page Address of load top
+ 137:			;		 H = Length in pages of module to read
+ 138:			;
+ 139:	0073'         	LOAD:
+ 140:	0073' B7      		OR	A		;clear carry
+ 141:	0074' 57      		LD	D,A
+ 142:	0075' 1E00    		LD	E,0
+ 143:	0077' 7C      		LD	A,H
+ 144:	0078' 17      		RLA
+ 145:	0079' 67      		LD	H,A		;h = length in records of module
+ 146:	007A'         	LOOP:
+ 147:	007A' EB      		EX	DE,HL
+ 148:	007B' 0180FF  		LD	BC,-128
+ 149:	007E' 09      		ADD	HL,BC		;decrement dma address by 128
+ 150:	007F' EB      		EX	DE,HL
+ 151:	0080' D5      		PUSH	DE
+ 152:	0081' E5      		PUSH	HL
+ 153:	0082' CD8F00  		CALL	SETDMA$PROC
+ 154:	0085' CD9500  		CALL	READ$PROC
+ 155:	0088' E1      		POP	HL
+ 156:	0089' D1      		POP	DE
+ 157:	008A' 25      		DEC	H
+ 158:	008B' C27A00  		JP	NZ,LOOP
+ 159:	008E' C9      		RET
+ 160:			
+ 161:			;
+ 162:			;	Set DMA Routine
+ 163:			;
+ 164:	008F'         	SETDMA$PROC:
+ 165:	008F' 0E1A    		LD	C,SETDMA$FUNC
+ 166:	0091' CD9201  		CALL	BDOS
+ 167:	0094' C9      		RET
+ 168:			
+ 169:			;
+ 170:			;	Read Routine
+ 171:			;
+ 172:	0095'         	READ$PROC:
+ 173:	0095' 0E14    		LD	C,READ$FUNC	;Read the load record
+ 174:	0097' 11AB00  		LD	DE,CPMFCB	;into address 80h
+ 175:	009A' CD9201  		CALL	BDOS
+ 176:	009D' B7      		OR	A
+ 177:	009E' 11FA00  		LD	DE,READERR
+ 178:	00A1' C8      		RET	Z
+ 179:			;
+ 180:			;	Error Routine
+ 181:			;
+ 182:	00A2'         	ERROR:
+ 183:	00A2' 0E09    		LD	C,PRINTBUF	;print error message
+ 184:	00A4' CD9201  		CALL	BDOS
+ 185:	00A7' F3      		DI
+ 186:	00A8' 76      		HALT
+ 187:			
+ 188:	00A9'         	BREAK:
+ 189:	00A9' FF      		DEFB	0FFH
+ 190:	00AA' C9      		RET
+ 191:			
+ 192:	00AB'         	CPMFCB:
+ 193:	00AB' 0043504D		DEFB	0,'CPM3    SYS',0,0,0,0,0,0
+	      33202020
+	      20535953
+	      00000000
+	      0000
+ 194:	00BD' 00000000		DEFW	0,0,0,0,0,0,0,0,0
+	      00000000
+	      00000000
+	      00000000
+	      0000
+ 195:			
+ 196:	00CF'         	OPENERR:
+ 197:	00CF' 0D0A    		DEFB	CR,LF
+ 198:	00D1' 43504D4C		DEFB	'CPMLDR error:  failed to open CPM3.SYS'
+	      44522065
+	      72726F72
+	      3A202066
+	      61696C65
+	      6420746F
+	      206F7065
+	      6E204350
+	      4D332E53
+	      5953
+ 199:	00F7' 0D0A24  		DEFB	CR,LF,'$'
+ 200:			
+ 201:	00FA'         	READERR:
+ 202:	00FA' 0D0A    		DEFB	CR,LF
+ 203:	00FC' 43504D4C		DEFB	'CPMLDR error:  failed to read CPM3.SYS'
+	      44522065
+	      72726F72
+	      3A202066
+	      61696C65
+	      6420746F
+	      20726561
+	      64204350
+	      4D332E53
+	      5953
+ 204:	0122' 0D0A24  		DEFB	CR,LF,'$'
+ 205:			
+ 206:	0125'         	SIGNON:
+ 207:	0125' 0D0A    		DEFB	CR,LF
+ 208:	0127' 43502F4D		DEFB	'CP/M V3.1 Loader',CR,LF
+	      2056332E
+	      31204C6F
+	      61646572
+	      0D0A
+ 209:	0139' 436F7079		DEFB	'Copyright (C) 1998, Caldera Inc.    '
+	      72696768
+	      74202843
+	      29203139
+	      39382C20
+	      43616C64
+	      65726120
+	      496E632E
+	      20202020
+ 210:	015D' 0D0A3230		DEFB	CR,LF,'2014 (c) Piergiorgio Betti'
+	      31342028
+	      63292050
+	      69657267
+	      696F7267
+	      696F2042
+	      65747469
+ 211:	0179' 0D0A24  		DEFB	CR,LF,'$'
+ 212:			
+ 213:	017C'         		@BDATE		;[JCE] Build date
+ 213:	017C' 31303138		defb	'101814'
+	      3134
+ 213:	0182'         		endm
+ 213:			
+ 214:	0182' 00000000		DEFB	0,0,0,0
+ 215:	0186'         	STACKBOT:
+ 216:			
+ 217:	0186'         	MEM$TOP:
+ 218:	0186'         		DEFS	1
+ 219:	0187'         	RES$LEN:
+ 220:	0187'         		DEFS	1
+ 221:	0188'         	BANK$TOP:
+ 222:	0188'         		DEFS	1
+ 223:	0189'         	BANK$LEN:
+ 224:	0189'         		DEFS	1
+ 225:	018A'         	OSENTRY$ADR:
+ 226:	018A'         		DEFS	2
+ 227:			
+ 228:			;	title	'CP/M 3.0 LDRBDOS Interface, Version 3.1 Nov, 1982'
+ 229:			;*****************************************************************
+ 230:			;*****************************************************************
+ 231:			;**                                                             **
+ 232:			;**   B a s i c    D i s k   O p e r a t i n g   S y s t e m    **
+ 233:			;**								**
+ 234:			;**            I n t e r f a c e   M o d u l e                  **
+ 235:			;**                                                             **
+ 236:			;*****************************************************************
+ 237:			;*****************************************************************
+ 238:			;
+ 239:			;	Copyright (c) 1978, 1979, 1980, 1981, 1982
+ 240:			;	Digital Research
+ 241:			;	Box 579, Pacific Grove
+ 242:			;	California
+ 243:			;
+ 244:			;       Nov 1982
+ 245:			;
+ 246:			;
+ 247:			;	equates for non graphic characters
+ 248:			;
+ 249:			
+ 250:	007F'         	RUBOUT	EQU	7FH	; char delete
+ 251:	0009'         	TAB	EQU	09H		; tab char
+ 252:	000D'         	CR	EQU	0DH		; carriage return
+ 253:	000A'         	LF	EQU	0AH		; line feed
+ 254:	0008'         	CTLH	EQU	08H		; backspace
+ 255:			
+ 256:			
+ 257:			;
+ 258:	018C' 00000000	SERIAL:	DEFB	0,0,0,0,0,0
+	      0000
+ 259:			;
+ 260:			;	Enter here from the user's program with function number in c,
+ 261:			;	and information address in d,e
+ 262:			;
+ 263:			
+ 264:	0192'         	BDOS:
+ 265:	0192'         	BDOSE:	; Arrive here from user programs
+ 266:	0192' EB      		EX	DE,HL
+ 267:	0193' 22E408  		LD	(INFO),HL
+ 268:	0196' EB      		EX	DE,HL		; info=de, de=info
+ 269:			
+ 270:	0197' 79      		LD	A,C
+ 271:	0198' FE0E    		CP	14
+ 272:	019A' DAAA01  		JP	C,BDOSE2
+ 273:	019D' 32E708  		LD	(FX),A		; Save disk function #
+ 274:	01A0' AF      		XOR	A
+ 275:	01A1' 32BC08  		LD	(DIRCNT),A
+ 276:	01A4' 3AE308  		LD	A,(SELDSK)
+ 277:	01A7' 32C308  		LD	(OLDDSK),A	; Save seldsk
+ 278:			
+ 279:	01AA'         	BDOSE2:
+ 280:	01AA' 7B      		LD	A,E
+ 281:	01AB' 32BF08  		LD	(LINFO),A	; linfo = low(info) - don't equ
+ 282:	01AE' 210000  		LD	HL,0
+ 283:	01B1' 220E03  		LD	(ARET),HL	; Return value defaults to 0000
+ 284:	01B4' 22E608  		LD	(RESEL),HL	; resel = 0
+ 285:				; Save user's stack pointer, set to local stack
+ 286:	01B7' 39      		ADD	HL,SP
+ 287:	01B8' 224502  		LD	(ENTSP),HL	; entsp = stackptr
+ 288:			
+ 289:	01BB' 319702  		LD	SP,LSTACK	; local stack setup
+ 290:			
+ 291:	01BE' 215308  		LD	HL,GOBACK	; Return here after all functions
+ 292:	01C1' E5      		PUSH	HL		; jmp goback equivalent to ret
+ 293:	01C2' 79      		LD	A,C
+ 294:	01C3' FE32    		CP	NFUNCS
+ 295:	01C5' D2CF01  		JP	NC,HIGH$FXS	; Skip if invalid #
+ 296:	01C8' 4B      		LD	C,E		; possible output character to c
+ 297:	01C9' 21E101  		LD	HL,FUNCTAB
+ 298:	01CC' C3D401  		JP	BDOS$JMP
+ 299:			
+ 300:				; look for functions 100 ->
+ 301:	01CF'         	HIGH$FXS:
+ 302:	01CF' DE64    		SBC	A,100
+ 303:	01D1' DAA006  		JP	C,LRET$EQ$FF	; Skip if function < 100
+ 304:			
+ 305:	01D4'         	BDOS$JMP:
+ 306:			
+ 307:	01D4' 5F      		LD	E,A
+ 308:	01D5' 1600    		LD	D,0		; de=func, hl=.ciotab
+ 309:	01D7' 19      		ADD	HL,DE
+ 310:	01D8' 19      		ADD	HL,DE
+ 311:	01D9' 5E      		LD	E,(HL)
+ 312:	01DA' 23      		INC	HL
+ 313:	01DB' 56      		LD	D,(HL)		; de=functab(func)
+ 314:	01DC' 2AE408  		LD	HL,(INFO)	; info in de for later xchg
+ 315:	01DF' EB      		EX	DE,HL
+ 316:	01E0' E9      		JP	(HL)		; dispatched
+ 317:			
+ 318:			
+ 319:			;	dispatch table for functions
+ 320:			
+ 321:	01E1'         	FUNCTAB:
+ 322:	01E1' ED02ED02		DEFW	FUNC$RET, FUNC1, FUNC2, FUNC3
+	      C002ED02
+ 323:	01E9' ED02ED02		DEFW	FUNC$RET, FUNC$RET, FUNC6, FUNC$RET
+	      ED02ED02
+ 324:	01F1' ED02E402		DEFW	FUNC$RET, FUNC9, FUNC10, FUNC11
+	      ED02ED02
+ 325:	000C'         	DISKF	EQU	($-FUNCTAB)/2	; disk funcs
+ 326:	01F9' ED020508		DEFW	FUNC12,FUNC13,FUNC14,FUNC15
+	      1C082208
+ 327:	0201' ED02ED02		DEFW	FUNC16,FUNC17,FUNC18,FUNC19
+	      ED02ED02
+ 328:	0209' 4008ED02		DEFW	FUNC20,FUNC21,FUNC22,FUNC23
+	      ED02ED02
+ 329:	0211' ED024608		DEFW	FUNC24,FUNC25,FUNC26,FUNC27
+	      4C08ED02
+ 330:	0219' ED02ED02		DEFW	FUNC28,FUNC29,FUNC30,FUNC31
+	      ED02ED02
+ 331:	0221' ED02ED02		DEFW	FUNC32,FUNC33,FUNC34,FUNC35
+	      ED02ED02
+ 332:	0229' ED02ED02		DEFW	FUNC36,FUNC37,FUNC38,FUNC39
+	      ED02ED02
+ 333:	0231' ED02ED02		DEFW	FUNC40,FUNC42,FUNC43
+	      ED02
+ 334:	0237' ED02ED02		DEFW	FUNC44,FUNC45,FUNC46,FUNC47
+	      ED02ED02
+ 335:	023F' ED02ED02		DEFW	FUNC48,FUNC49,FUNC50
+	      ED02
+ 336:	0032'         	NFUNCS	EQU	($-FUNCTAB)/2
+ 337:			
+ 338:			
+ 339:	0245'         	ENTSP:	DEFS	2	; entry stack pointer
+ 340:			
+ 341:				;	40 level stack
+ 342:			
+ 343:	0247' C7C7C7C7		DEFW	0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H
+	      C7C7C7C7
+	      C7C7C7C7
+	      C7C7C7C7
+ 344:	0257' C7C7C7C7		DEFW	0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H
+	      C7C7C7C7
+	      C7C7C7C7
+	      C7C7C7C7
+ 345:	0267' C7C7C7C7		DEFW	0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H
+	      C7C7C7C7
+	      C7C7C7C7
+	      C7C7C7C7
+ 346:	0277' C7C7C7C7		DEFW	0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H
+	      C7C7C7C7
+	      C7C7C7C7
+	      C7C7C7C7
+ 347:	0287' C7C7C7C7		DEFW	0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H,0C7C7H
+	      C7C7C7C7
+	      C7C7C7C7
+	      C7C7C7C7
+ 348:	0297'         	LSTACK:
+ 349:			
+ 350:			
+ 352:				TITLE	"CP/M 3.0 LDRBDOS Interface, Version 3.1 July, 1982"
+ 353:			;*****************************************************************
+ 354:			;*****************************************************************
+ 355:			;**                                                             **
+ 356:			;**   B a s i c    D i s k   O p e r a t i n g   S y s t e m    **
+ 357:			;**								**
+ 358:			;**               C o n s o l e   P o r t i o n                 **
+ 359:			;**                                                             **
+ 360:			;*****************************************************************
+ 361:			;*****************************************************************
+ 362:			;
+ 363:			;       July, 1982
+ 364:			;
+ 365:			;
+ 366:			;	console handlers
+ 367:			
+ 368:	0297'         	CONOUT:
+ 369:				;compute character position/write console char from C
+ 370:				;compcol = true if computing column position
+ 371:	0297' 3AF302  		LD	A,(COMPCOL)
+ 372:	029A' B7      		OR	A
+ 373:	029B' C2A302  		JP	NZ,COMPOUT
+ 374:				;write the character, then compute the column
+ 375:				;write console character from C
+ 376:	029E' C5      		PUSH	BC		;recall/save character
+ 377:	029F' CD0C0A  		CALL	CONOUTF		;externally, to console
+ 378:	02A2' C1      		POP	BC		;recall the character
+ 379:	02A3'         	COMPOUT:
+ 380:	02A3' 79      		LD	A,C		;recall the character
+ 381:				;and compute column position
+ 382:	02A4' 21DF08  		LD	HL,COLUMN	;A = char, HL = .column
+ 383:	02A7' FE7F    		CP	RUBOUT
+ 384:	02A9' C8      		RET	Z		;no column change if nulls
+ 385:	02AA' 34      		INC	(HL)		;column = column + 1
+ 386:	02AB' FE20    		CP	' '
+ 387:	02AD' D0      		RET	NC		;return if graphic
+ 388:				;not graphic, reset column position
+ 389:	02AE' 35      		DEC	(HL)		;column = column - 1
+ 390:	02AF' 7E      		LD	A,(HL)
+ 391:	02B0' B7      		OR	A
+ 392:	02B1' C8      		RET	Z		;return if at zero
+ 393:				;not at zero, may be backspace or eol
+ 394:	02B2' 79      		LD	A,C		;character back to A
+ 395:	02B3' FE08    		CP	CTLH
+ 396:	02B5' C2BA02  		JP	NZ,NOTBACKSP
+ 397:				;backspace character
+ 398:	02B8' 35      		DEC	(HL)		;column = column - 1
+ 399:	02B9' C9      		RET
+ 400:			
+ 401:	02BA'         	NOTBACKSP:
+ 402:				;not a backspace character, eol?
+ 403:	02BA' FE0A    		CP	LF
+ 404:	02BC' C0      		RET	NZ		;return if not
+ 405:				;end of line, column = 0
+ 406:	02BD' 3600    		LD	(HL),0		;column = 0
+ 407:	02BF' C9      		RET
+ 408:			;
+ 409:			;
+ 410:	02C0'         	TABOUT:
+ 411:				;expand tabs to console
+ 412:	02C0' 79      		LD	A,C
+ 413:	02C1' FE09    		CP	TAB
+ 414:	02C3' C29702  		JP	NZ,CONOUT	;direct to conout if not
+ 415:				;tab encountered, move to next tab pos
+ 416:	02C6'         	TAB0:
+ 417:	02C6' 0E20    		LD	C,' '
+ 418:	02C8' CD9702  		CALL	CONOUT		;another blank
+ 419:	02CB' 3ADF08  		LD	A,(COLUMN)
+ 420:	02CE' E607    		AND	111B		;column mod 8 = 0 ?
+ 421:	02D0' C2C602  		JP	NZ,TAB0		;back for another if not
+ 422:	02D3' C9      		RET
+ 423:			;
+ 424:	02D4'         	PRINT:
+ 425:				;print message until M(BC) = '$'
+ 426:	02D4' 21E008  		LD	HL,OUTDELIM
+ 427:	02D7' 0A      		LD	A,(BC)
+ 428:	02D8' BE      		CP	(HL)
+ 429:	02D9' C8      		RET	Z		;stop on $
+ 430:				;more to print
+ 431:	02DA' 03      		INC	BC
+ 432:	02DB' C5      		PUSH	BC
+ 433:	02DC' 4F      		LD	C,A		;char to C
+ 434:	02DD' CDC002  		CALL	TABOUT		;another character printed
+ 435:	02E0' C1      		POP	BC
+ 436:	02E1' C3D402  		JP	PRINT
+ 437:			;
+ 438:			;
+ 439:	02C0'         	FUNC2 	EQU	TABOUT
+ 440:				;write console character with tab expansion
+ 441:			;
+ 442:	02E4'         	FUNC9:
+ 443:				;write line until $ encountered
+ 444:	02E4' EB      		EX	DE,HL		;was lhld info
+ 445:	02E5' 4D      		LD	C,L
+ 446:	02E6' 44      		LD	B,H		;BC=string address
+ 447:	02E7' C3D402  		JP	PRINT		;out to console
+ 448:			;
+ 449:	02EA'         	STA$RET:
+ 450:				;store the A register to aret
+ 451:	02EA' 320E03  		LD	(ARET),A
+ 452:	02ED'         	FUNC$RET:
+ 453:	02ED' C9      		RET			;jmp goback (pop stack for non cp/m functions)
+ 454:			;
+ 455:	02EE'         	SETLRET1:
+ 456:				;set lret = 1
+ 457:	02EE' 3E01    		LD	A,1
+ 458:	02F0' C3EA02  		JP	STA$RET
+ 459:			;
+ 460:	02ED'         	FUNC1 	EQU 	FUNC$RET
+ 461:			;
+ 462:	02ED'         	FUNC3 	EQU 	FUNC$RET
+ 463:			;
+ 464:	02ED'         	FUNC6 	EQU 	FUNC$RET
+ 465:			;
+ 466:	02ED'         	FUNC10 	EQU	FUNC$RET
+ 467:	02ED'         	FUNC11 	EQU	FUNC$RET
+ 468:			;
+ 469:			;	data areas
+ 470:			;
+ 471:			
+ 472:			
+ 473:	02F3' 00      	COMPCOL:DEFB	0	;true if computing column position
+ 474:			;	end of BDOS Console module
+ 475:			
+ 476:			;**********************************************************************
+ 477:			;*****************************************************************
+ 478:			;
+ 479:			;	Error Messages
+ 480:			
+ 481:	0024'         	MD	EQU	24H
+ 482:			
+ 483:	02F4' 0D0A4244	ERR$MSG:DEFB	CR,LF,'BDOS ERR: ',MD
+	      4F532045
+	      52523A20
+	      24
+ 484:	0301' 53656C65	ERR$SELECT: DEFB	'Select',MD
+	      637424
+ 485:	0308' 5065726D	ERR$PHYS: DEFB	'Perm.',MD
+	      2E24
+ 486:			
+ 487:			;*****************************************************************
+ 488:			;*****************************************************************
+ 489:			;
+ 490:			;	common values shared between bdosi and bdos
+ 491:			
+ 492:			
+ 493:	030E'         	ARET:	DEFS	2	; address value to return
+ 494:	030E'         	LRET	EQU	ARET		; low(aret)
+ 495:			
+ 496:			;*****************************************************************
+ 497:			;*****************************************************************
+ 498:			;**                                                             **
+ 499:			;**   b a s i c    d i s k   o p e r a t i n g   s y s t e m    **
+ 500:			;**                                                             **
+ 501:			;*****************************************************************
+ 502:			;*****************************************************************
+ 503:			
+ 504:			;	literal constants
+ 505:			
+ 506:	00FF'         	TRUE	EQU	0FFH		; constant true
+ 507:	0000'         	FALSE	EQU	000H		; constant false
+ 508:	FFFF'         	ENDDIR	EQU	0FFFFH		; end of directory
+ 509:	0001'         	LBYTE	EQU	1		; number of bytes for "byte" type
+ 510:	0002'         	LWORD	EQU	2		; number of bytes for "word" type
+ 511:			
+ 512:			;	fixed addresses in low memory
+ 513:			
+ 514:	0080'         	TBUFF	EQU	0080H		; default buffer location
+ 515:			
+ 516:			;	error message handlers
+ 517:			
+ 518:	0310'         	SEL$ERROR:
+ 519:				; report select error
+ 520:	0310' 01F402  		LD	BC,ERR$MSG
+ 521:	0313' CDD402  		CALL	PRINT
+ 522:	0316' 010103  		LD	BC,ERR$SELECT
+ 523:	0319' C32503  		JP	GOERR1
+ 524:			
+ 525:	031C'         	GOERR:
+ 526:	031C' 01F402  		LD	BC,ERR$MSG
+ 527:	031F' CDD402  		CALL	PRINT
+ 528:	0322' 010803  		LD	BC,ERR$PHYS
+ 529:	0325'         	GOERR1:
+ 530:	0325' CDD402  		CALL	PRINT
+ 531:	0328' F3      		DI
+ 532:	0329' 76      		HALT
+ 533:			
+ 534:	032A'         	BDE$E$BDE$M$HL:
+ 535:	032A' 7B      		LD	A,E
+ 536:	032B' 95      		SUB	L
+ 537:	032C' 5F      		LD	E,A
+ 538:	032D' 7A      		LD	A,D
+ 539:	032E' 9C      		SBC	A,H
+ 540:	032F' 57      		LD	D,A
+ 541:	0330' D0      		RET	NC
+ 542:	0331' 05      		DEC	B
+ 543:	0332' C9      		RET
+ 544:			
+ 545:	0333'         	BDE$E$BDE$P$HL:
+ 546:	0333' 7B      		LD	A,E
+ 547:	0334' 85      		ADD	A,L
+ 548:	0335' 5F      		LD	E,A
+ 549:	0336' 7A      		LD	A,D
+ 550:	0337' 8C      		ADC	A,H
+ 551:	0338' 57      		LD	D,A
+ 552:	0339' D0      		RET	NC
+ 553:	033A' 04      		INC	B
+ 554:	033B' C9      		RET
+ 555:			
+ 556:	033C'         	SHL3BV:
+ 557:	033C' 0C      		INC	C
+ 558:	033D'         	SHL3BV1:
+ 559:	033D' 0D      		DEC	C
+ 560:	033E' C8      		RET	Z
+ 561:	033F' 29      		ADD	HL,HL
+ 562:	0340' 8F      		ADC	A,A
+ 563:	0341' C33D03  		JP	SHL3BV1
+ 564:			
+ 565:	0344'         	COMPARE:
+ 566:	0344' 1A      		LD	A,(DE)
+ 567:	0345' BE      		CP	(HL)
+ 568:	0346' C0      		RET	NZ
+ 569:	0347' 23      		INC	HL
+ 570:	0348' 13      		INC	DE
+ 571:	0349' 0D      		DEC	C
+ 572:	034A' C8      		RET	Z
+ 573:	034B' C34403  		JP	COMPARE
+ 574:			
+ 575:			;
+ 576:			;	local subroutines for bios interface
+ 577:			;
+ 578:			
+ 579:	034E'         	MOVE:
+ 580:				; Move data length of length c from source de to
+ 581:				; destination given by hl
+ 582:	034E' 0C      		INC	C		; in case it is zero
+ 583:	034F'         	MOVE0:
+ 584:	034F' 0D      		DEC	C
+ 585:	0350' C8      		RET	Z		; more to move
+ 586:	0351' 1A      		LD	A,(DE)
+ 587:	0352' 77      		LD	(HL),A		; one byte moved
+ 588:	0353' 13      		INC	DE
+ 589:	0354' 23      		INC	HL		; to next byte
+ 590:	0355' C34F03  		JP	MOVE0
+ 591:			
+ 592:	0358'         	SELECTDISK:
+ 593:				; Select the disk drive given by register D, and fill
+ 594:				; the base addresses curtrka - alloca, then fill
+ 595:				; the values of the disk parameter block
+ 596:	0358' 4A      		LD	C,D		; current disk# to c
+ 597:				; lsb of e = 0 if not yet logged - in
+ 598:	0359' CD1B0A  		CALL	SELDSKF		; hl filled by call
+ 599:				; hl = 0000 if error, otherwise disk headers
+ 600:	035C' 7C      		LD	A,H
+ 601:	035D' B5      		OR	L
+ 602:	035E' C8      		RET	Z		; Return with C flag reset if select error
+ 603:				; Disk header block address in hl
+ 604:	035F' 5E      		LD	E,(HL)
+ 605:	0360' 23      		INC	HL
+ 606:	0361' 56      		LD	D,(HL)
+ 607:	0362' 23      		INC	HL		; de=.tran
+ 608:	0363' 23      		INC	HL
+ 609:	0364' 23      		INC	HL
+ 610:	0365' 229508  		LD	(CURTRKA),HL
+ 611:	0368' 23      		INC	HL
+ 612:	0369' 23      		INC	HL		; hl=.currec
+ 613:	036A' 229708  		LD	(CURRECA),HL
+ 614:	036D' 23      		INC	HL
+ 615:	036E' 23      		INC	HL		; hl=.buffa
+ 616:	036F' 23      		INC	HL
+ 617:	0370' 23      		INC	HL
+ 618:	0371' 23      		INC	HL
+ 619:	0372' 23      		INC	HL
+ 620:				; de still contains .tran
+ 621:	0373' EB      		EX	DE,HL
+ 622:	0374' 22BD08  		LD	(TRANV),HL	; .tran vector
+ 623:	0377' 219D08  		LD	HL,DPBADDR	; de= source for move, hl=dest
+ 624:	037A' 0E0D    		LD	C,ADDLIST
+ 625:	037C' CD4E03  		CALL	MOVE		; addlist filled
+ 626:				; Now fill the disk parameter block
+ 627:	037F' 2A9D08  		LD	HL,(DPBADDR)
+ 628:	0382' EB      		EX	DE,HL		; de is source
+ 629:	0383' 21AA08  		LD	HL,SECTPT	; hl is destination
+ 630:	0386' 0E11    		LD	C,DPBLIST
+ 631:	0388' CD4E03  		CALL	MOVE		; data filled
+ 632:				; Now set single/double map mode
+ 633:	038B' 2AAF08  		LD	HL,(MAXALL)	; largest allocation number
+ 634:	038E' 7C      		LD	A,H		; 00 indicates < 255
+ 635:	038F' 21C208  		LD	HL,SINGLE
+ 636:	0392' 36FF    		LD	(HL),TRUE	; Assume a=00
+ 637:	0394' B7      		OR	A
+ 638:	0395' CA9A03  		JP	Z,RETSELECT
+ 639:				; high order of maxall not zero, use double dm
+ 640:	0398' 3600    		LD	(HL),FALSE
+ 641:	039A'         	RETSELECT:
+ 642:				; C flag set indicates successful select
+ 643:	039A' 37      		SCF
+ 644:	039B' C9      		RET
+ 645:			
+ 646:	039C'         	HOME:
+ 647:				; Move to home position, then offset to start of dir
+ 648:	039C' CD180A  		CALL	HOMEF
+ 649:	039F' AF      		XOR	A		; constant zero to accumulator
+ 650:	03A0' 2A9508  		LD	HL,(CURTRKA)
+ 651:	03A3' 77      		LD	(HL),A
+ 652:	03A4' 23      		INC	HL
+ 653:	03A5' 77      		LD	(HL),A		; curtrk=0000
+ 654:	03A6' 2A9708  		LD	HL,(CURRECA)
+ 655:	03A9' 77      		LD	(HL),A
+ 656:	03AA' 23      		INC	HL
+ 657:	03AB' 77      		LD	(HL),A		; currec=0000
+ 658:	03AC' 23      		INC	HL
+ 659:	03AD' 77      		LD	(HL),A		; currec high byte=00
+ 660:			
+ 661:	03AE' C9      		RET
+ 662:			
+ 663:	03AF'         	PASS$ARECORD:
+ 664:	03AF' 21C808  		LD	HL,ARECORD
+ 665:	03B2' 5E      		LD	E,(HL)
+ 666:	03B3' 23      		INC	HL
+ 667:	03B4' 56      		LD	D,(HL)
+ 668:	03B5' 23      		INC	HL
+ 669:	03B6' 46      		LD	B,(HL)
+ 670:	03B7' C9      		RET
+ 671:			
+ 672:	03B8'         	RDBUFF:
+ 673:				; Read buffer and check condition
+ 674:	03B8' CDAF03  		CALL	PASS$ARECORD
+ 675:	03BB' CD270A  		CALL	READF		; current drive, track, sector, dma
+ 676:			
+ 677:			
+ 678:	03BE'         	DIOCOMP:; Check for disk errors
+ 679:	03BE' B7      		OR	A
+ 680:	03BF' C8      		RET	Z
+ 681:	03C0' 4F      		LD	C,A
+ 682:	03C1' FE03    		CP	3
+ 683:	03C3' DA1C03  		JP	C,GOERR
+ 684:	03C6' 0E01    		LD	C,1
+ 685:	03C8' C31C03  		JP	GOERR
+ 686:			
+ 687:	03CB'         	SEEKDIR:
+ 688:				; Seek the record containing the current dir entry
+ 689:			
+ 690:	03CB' 2AE808  		LD	HL,(DCNT)	; directory counter to hl
+ 691:	03CE' 0E02    		LD	C,DSKSHF
+ 692:	03D0' CD2B05  		CALL	HLROTR		; value to hl
+ 693:			
+ 694:	03D3' 0600    		LD	B,0
+ 695:	03D5' EB      		EX	DE,HL
+ 696:			
+ 697:	03D6' 21C808  		LD	HL,ARECORD
+ 698:	03D9' 73      		LD	(HL),E
+ 699:	03DA' 23      		INC	HL
+ 700:	03DB' 72      		LD	(HL),D
+ 701:	03DC' 23      		INC	HL
+ 702:	03DD' 70      		LD	(HL),B
+ 703:	03DE' C9      		RET
+ 704:			
+ 705:	03DF'         	SEEK:
+ 706:				; Seek the track given by arecord (actual record)
+ 707:			
+ 708:	03DF' 2A9508  		LD	HL,(CURTRKA)
+ 709:	03E2' 4E      		LD	C,(HL)
+ 710:	03E3' 23      		INC	HL
+ 711:	03E4' 46      		LD	B,(HL)		; bc = curtrk
+ 712:	03E5' C5      		PUSH	BC		; s0 = curtrk
+ 713:	03E6' 2A9708  		LD	HL,(CURRECA)
+ 714:	03E9' 5E      		LD	E,(HL)
+ 715:	03EA' 23      		INC	HL
+ 716:	03EB' 56      		LD	D,(HL)
+ 717:	03EC' 23      		INC	HL
+ 718:	03ED' 46      		LD	B,(HL)		; bde = currec
+ 719:	03EE' 2AC808  		LD	HL,(ARECORD)
+ 720:	03F1' 3ACA08  		LD	A,(ARECORD+2)
+ 721:	03F4' 4F      		LD	C,A		; chl = arecord
+ 722:	03F5'         	SEEK0:
+ 723:	03F5' 7D      		LD	A,L
+ 724:	03F6' 93      		SUB	E
+ 725:	03F7' 7C      		LD	A,H
+ 726:	03F8' 9A      		SBC	A,D
+ 727:	03F9' 79      		LD	A,C
+ 728:	03FA' 98      		SBC	A,B
+ 729:	03FB' E5      		PUSH	HL		; Save low(arecord)
+ 730:	03FC' D20C04  		JP	NC,SEEK1	; if arecord >= currec then go to seek1
+ 731:	03FF' 2AAA08  		LD	HL,(SECTPT)
+ 732:	0402' CD2A03  		CALL	BDE$E$BDE$M$HL	; currec = currec - sectpt
+ 733:	0405' E1      		POP	HL
+ 734:	0406' E3      		EX	(SP),HL
+ 735:	0407' 2B      		DEC	HL
+ 736:	0408' E3      		EX	(SP),HL		; curtrk = curtrk - 1
+ 737:	0409' C3F503  		JP	SEEK0
+ 738:	040C'         	SEEK1:
+ 739:	040C' 2AAA08  		LD	HL,(SECTPT)
+ 740:	040F' CD3303  		CALL	BDE$E$BDE$P$HL	; currec = currec + sectpt
+ 741:	0412' E1      		POP	HL		; Restore low(arecord)
+ 742:	0413' 7D      		LD	A,L
+ 743:	0414' 93      		SUB	E
+ 744:	0415' 7C      		LD	A,H
+ 745:	0416' 9A      		SBC	A,D
+ 746:	0417' 79      		LD	A,C
+ 747:	0418' 98      		SBC	A,B
+ 748:	0419' DA2304  		JP	C,SEEK2		; if arecord < currec then go to seek2
+ 749:	041C' E3      		EX	(SP),HL
+ 750:	041D' 23      		INC	HL
+ 751:	041E' E3      		EX	(SP),HL		; curtrk = curtrk + 1
+ 752:	041F' E5      		PUSH	HL		; save low (arecord)
+ 753:	0420' C30C04  		JP	SEEK1
+ 754:	0423'         	SEEK2:
+ 755:	0423' E3      		EX	(SP),HL
+ 756:	0424' E5      		PUSH	HL		; hl,s0 = curtrk, s1 = low(arecord)
+ 757:	0425' 2AAA08  		LD	HL,(SECTPT)
+ 758:	0428' CD2A03  		CALL	BDE$E$BDE$M$HL	; currec = currec - sectpt
+ 759:	042B' E1      		POP	HL
+ 760:	042C' D5      		PUSH	DE
+ 761:	042D' C5      		PUSH	BC
+ 762:	042E' E5      		PUSH	HL		; hl,s0 = curtrk,
+ 763:				; s1 = high(arecord,currec), s2 = low(currec),
+ 764:				; s3 = low(arecord)
+ 765:	042F' EB      		EX	DE,HL
+ 766:	0430' 2AB708  		LD	HL,(OFFSET)
+ 767:	0433' 19      		ADD	HL,DE
+ 768:	0434' 44      		LD	B,H
+ 769:	0435' 4D      		LD	C,L
+ 770:	0436' 22D308  		LD	(TRACK),HL
+ 771:	0439' CD1E0A  		CALL	SETTRKF		; call bios settrk routine
+ 772:				; Store curtrk
+ 773:	043C' D1      		POP	DE
+ 774:	043D' 2A9508  		LD	HL,(CURTRKA)
+ 775:	0440' 73      		LD	(HL),E
+ 776:	0441' 23      		INC	HL
+ 777:	0442' 72      		LD	(HL),D
+ 778:				; Store currec
+ 779:	0443' C1      		POP	BC
+ 780:	0444' D1      		POP	DE
+ 781:	0445' 2A9708  		LD	HL,(CURRECA)
+ 782:	0448' 73      		LD	(HL),E
+ 783:	0449' 23      		INC	HL
+ 784:	044A' 72      		LD	(HL),D
+ 785:	044B' 23      		INC	HL
+ 786:	044C' 70      		LD	(HL),B		; currec = bde
+ 787:	044D' C1      		POP	BC		; bc = low(arecord), de = low(currec)
+ 788:	044E' 79      		LD	A,C
+ 789:	044F' 93      		SUB	E
+ 790:	0450' 6F      		LD	L,A		; hl = bc - de
+ 791:	0451' 78      		LD	A,B
+ 792:	0452' 9A      		SBC	A,D
+ 793:	0453' 67      		LD	H,A
+ 794:	0454' CD7004  		CALL	SHR$PHYSHF
+ 795:	0457' 44      		LD	B,H
+ 796:	0458' 4D      		LD	C,L
+ 797:			
+ 798:	0459' 2ABD08  		LD	HL,(TRANV)
+ 799:	045C' EB      		EX	DE,HL		; bc=sector#, de=.tran
+ 800:	045D' CD300A  		CALL	SECTRAN		; hl = tran(sector)
+ 801:	0460' 4D      		LD	C,L
+ 802:	0461' 44      		LD	B,H		; bc = tran(sector)
+ 803:	0462' 22D508  		LD	(SECTOR),HL
+ 804:	0465' CD210A  		CALL	SETSECF		; sector selected
+ 805:	0468' 2A8F08  		LD	HL,(CURDMA)
+ 806:	046B' 4D      		LD	C,L
+ 807:	046C' 44      		LD	B,H
+ 808:	046D' C3240A  		JP	SETDMAF
+ 809:			
+ 810:	0470'         	SHR$PHYSHF:
+ 811:	0470' 3AB908  		LD	A,(PHYSHF)
+ 812:	0473' 4F      		LD	C,A
+ 813:	0474' C32B05  		JP	HLROTR
+ 814:			
+ 815:			
+ 816:			;	file control block (fcb) constants
+ 817:			
+ 818:	00E5'         	EMPTY	EQU	0E5H		; empty directory entry
+ 819:	0080'         	RECSIZ	EQU	128		; record size
+ 820:	0020'         	FCBLEN	EQU	32		; file control block size
+ 821:	0004'         	DIRREC	EQU	RECSIZ/FCBLEN	; directory fcbs / record
+ 822:	0002'         	DSKSHF	EQU	2		; log2(dirrec)
+ 823:	0003'         	DSKMSK	EQU	DIRREC-1
+ 824:	0005'         	FCBSHF	EQU	5		; log2(fcblen)
+ 825:			
+ 826:	000C'         	EXTNUM	EQU	12	; extent number field
+ 827:	001F'         	MAXEXT	EQU	31		; largest extent number
+ 828:	000D'         	UBYTES	EQU	13		; unfilled bytes field
+ 829:			
+ 830:	000F'         	NAMLEN	EQU	15	; name length
+ 831:	000F'         	RECCNT	EQU	15		; record count field
+ 832:	0010'         	DSKMAP	EQU	16		; disk map field
+ 833:	0020'         	NXTREC	EQU	FCBLEN
+ 834:			
+ 835:			;	utility functions for file access
+ 836:			
+ 837:	0477'         	DM$POSITION:
+ 838:				; Compute disk map position for vrecord to hl
+ 839:	0477' 21AC08  		LD	HL,BLKSHF
+ 840:	047A' 4E      		LD	C,(HL)		; shift count to c
+ 841:	047B' 3AC608  		LD	A,(VRECORD)	; current virtual record to a
+ 842:	047E'         	DMPOS0:
+ 843:	047E' B7      		OR	A
+ 844:	047F' 1F      		RRA
+ 845:	0480' 0D      		DEC	C
+ 846:	0481' C27E04  		JP	NZ,DMPOS0
+ 847:				; a = shr(vrecord,blkshf) = vrecord/2**(sect/block)
+ 848:	0484' 47      		LD	B,A		; Save it for later addition
+ 849:	0485' 3E08    		LD	A,8
+ 850:	0487' 96      		SUB	(HL)		; 8-blkshf to accumulator
+ 851:	0488' 4F      		LD	C,A		; extent shift count in register c
+ 852:	0489' 3AC508  		LD	A,(EXTVAL)	; extent value ani extmsk
+ 853:	048C'         	DMPOS1:
+ 854:				; blkshf = 3,4,5,6,7, c=5,4,3,2,1
+ 855:				; shift is 4,3,2,1,0
+ 856:	048C' 0D      		DEC	C
+ 857:	048D' CA9504  		JP	Z,DMPOS2
+ 858:	0490' B7      		OR	A
+ 859:	0491' 17      		RLA
+ 860:	0492' C38C04  		JP	DMPOS1
+ 861:	0495'         	DMPOS2:
+ 862:				; Arrive here with a = shl(ext and extmsk,7-blkshf)
+ 863:	0495' 80      		ADD	A,B		; Add the previous shr(vrecord,blkshf) value
+ 864:				; a is one of the following values, depending upon alloc
+ 865:				; bks blkshf
+ 866:				; 1k   3     v/8 + extval * 16
+ 867:				; 2k   4     v/16+ extval * 8
+ 868:				; 4k   5     v/32+ extval * 4
+ 869:				; 8k   6     v/64+ extval * 2
+ 870:				; 16k  7     v/128+extval * 1
+ 871:	0496' C9      		RET			; with dm$position in a
+ 872:			
+ 873:	0497'         	GETDMA:
+ 874:	0497' 2AE408  		LD	HL,(INFO)
+ 875:	049A' 111000  		LD	DE,DSKMAP
+ 876:	049D' 19      		ADD	HL,DE
+ 877:	049E' C9      		RET
+ 878:			
+ 879:	049F'         	GETDM:
+ 880:				; Return disk map value from position given by bc
+ 881:	049F' CD9704  		CALL	GETDMA
+ 882:	04A2' 09      		ADD	HL,BC		; Index by a single byte value
+ 883:	04A3' 3AC208  		LD	A,(SINGLE)	; single byte/map entry?
+ 884:	04A6' B7      		OR	A
+ 885:	04A7' CAAD04  		JP	Z,GETDMD	; Get disk map single byte
+ 886:	04AA' 6E      		LD	L,(HL)
+ 887:	04AB' 60      		LD	H,B
+ 888:	04AC' C9      		RET			; with hl=00bb
+ 889:	04AD'         	GETDMD:
+ 890:	04AD' 09      		ADD	HL,BC		; hl=.fcb(dm+i*2)
+ 891:				; double precision value returned
+ 892:	04AE' 7E      		LD	A,(HL)
+ 893:	04AF' 23      		INC	HL
+ 894:	04B0' 66      		LD	H,(HL)
+ 895:	04B1' 6F      		LD	L,A
+ 896:	04B2' C9      		RET
+ 897:			
+ 898:	04B3'         	INDEX:
+ 899:				; Compute disk block number from current fcb
+ 900:	04B3' CD7704  		CALL	DM$POSITION	; 0...15 in register a
+ 901:	04B6' 32C008  		LD	(DMINX),A
+ 902:	04B9' 4F      		LD	C,A
+ 903:	04BA' 0600    		LD	B,0
+ 904:	04BC' CD9F04  		CALL	GETDM		; value to hl
+ 905:	04BF' 22C808  		LD	(ARECORD),HL
+ 906:	04C2' 7D      		LD	A,L
+ 907:	04C3' B4      		OR	H
+ 908:	04C4' C9      		RET
+ 909:			
+ 910:	04C5'         	ATRAN:
+ 911:				; Compute actual record address, assuming index called
+ 912:			
+ 913:			;	arecord = shl(arecord,blkshf)
+ 914:			
+ 915:	04C5' 3AAC08  		LD	A,(BLKSHF)
+ 916:	04C8' 4F      		LD	C,A
+ 917:	04C9' 2AC808  		LD	HL,(ARECORD)
+ 918:	04CC' AF      		XOR	A
+ 919:	04CD' CD3C03  		CALL	SHL3BV
+ 920:	04D0' 22C808  		LD	(ARECORD),HL
+ 921:	04D3' 32CA08  		LD	(ARECORD+2),A
+ 922:			
+ 923:	04D6' 22CB08  		LD	(ARECORD1),HL	; Save low(arecord)
+ 924:			
+ 925:			;	arecord = arecord or (vrecord and blkmsk)
+ 926:			
+ 927:	04D9' 3AAD08  		LD	A,(BLKMSK)
+ 928:	04DC' 4F      		LD	C,A
+ 929:	04DD' 3AC608  		LD	A,(VRECORD)
+ 930:	04E0' A1      		AND	C
+ 931:	04E1' 47      		LD	B,A		; Save vrecord & blkmsk in reg b & blk$off
+ 932:	04E2' 32BB08  		LD	(BLK$OFF),A
+ 933:	04E5' 21C808  		LD	HL,ARECORD
+ 934:	04E8' B6      		OR	(HL)
+ 935:	04E9' 77      		LD	(HL),A
+ 936:	04EA' C9      		RET
+ 937:			
+ 938:			
+ 939:	04EB'         	GETEXTA:
+ 940:				; Get current extent field address to hl
+ 941:	04EB' 2AE408  		LD	HL,(INFO)
+ 942:	04EE' 110C00  		LD	DE,EXTNUM
+ 943:	04F1' 19      		ADD	HL,DE		; hl=.fcb(extnum)
+ 944:	04F2' C9      		RET
+ 945:			
+ 946:	04F3'         	GETRCNTA:
+ 947:				; Get reccnt address to hl
+ 948:	04F3' 2AE408  		LD	HL,(INFO)
+ 949:	04F6' 110F00  		LD	DE,RECCNT
+ 950:	04F9' 19      		ADD	HL,DE
+ 951:	04FA' C9      		RET
+ 952:			
+ 953:	04FB'         	GETFCBA:
+ 954:				; Compute reccnt and nxtrec addresses for get/setfcb
+ 955:	04FB' CDF304  		CALL	GETRCNTA
+ 956:	04FE' EB      		EX	DE,HL		; de=.fcb(reccnt)
+ 957:	04FF' 211100  		LD	HL,[NXTREC-RECCNT]
+ 958:	0502' 19      		ADD	HL,DE		; hl=.fcb(nxtrec)
+ 959:	0503' C9      		RET
+ 960:			
+ 961:	0504'         	GETFCB:
+ 962:				; Set variables from currently addressed fcb
+ 963:	0504' CDFB04  		CALL	GETFCBA		; addresses in de, hl
+ 964:	0507' 7E      		LD	A,(HL)
+ 965:	0508' 32C608  		LD	(VRECORD),A	; vrecord=fcb(nxtrec)
+ 966:	050B' EB      		EX	DE,HL
+ 967:	050C' 7E      		LD	A,(HL)
+ 968:	050D' 32C408  		LD	(RCOUNT),A	; rcount=fcb(reccnt)
+ 969:	0510' CDEB04  		CALL	GETEXTA		; hl=.fcb(extnum)
+ 970:	0513' 3AAE08  		LD	A,(EXTMSK)	; extent mask to a
+ 971:	0516' A6      		AND	(HL)		; fcb(extnum) and extmsk
+ 972:	0517' 32C508  		LD	(EXTVAL),A
+ 973:	051A' C9      		RET
+ 974:			
+ 975:	051B'         	SETFCB:
+ 976:				; Place values back into current fcb
+ 977:	051B' CDFB04  		CALL	GETFCBA		; addresses to de, hl
+ 978:	051E' 0E01    		LD	C,1
+ 979:			
+ 980:	0520' 3AC608  		LD	A,(VRECORD)
+ 981:	0523' 81      		ADD	A,C
+ 982:	0524' 77      		LD	(HL),A		; fcb(nxtrec)=vrecord+seqio
+ 983:	0525' EB      		EX	DE,HL
+ 984:	0526' 3AC408  		LD	A,(RCOUNT)
+ 985:	0529' 77      		LD	(HL),A		; fcb(reccnt)=rcount
+ 986:	052A' C9      		RET
+ 987:			
+ 988:	052B'         	HLROTR:
+ 989:				; hl rotate right by amount c
+ 990:	052B' 0C      		INC	C		; in case zero
+ 991:	052C' 0D      	HLROTR0:DEC	C
+ 992:	052D' C8      		RET	Z		; return when zero
+ 993:			
+ 994:	052E' 7C      		LD	A,H
+ 995:	052F' B7      		OR	A
+ 996:	0530' 1F      		RRA
+ 997:	0531' 67      		LD	H,A		; high byte
+ 998:	0532' 7D      		LD	A,L
+ 999:	0533' 1F      		RRA
+1000:	0534' 6F      		LD	L,A		; low byte
+1001:	0535' C32C05  		JP	HLROTR0
+1002:			
+1003:	0538'         	HLROTL:
+1004:				; Rotate the mask in hl by amount in c
+1005:	0538' 0C      		INC	C		; may be zero
+1006:	0539' 0D      	HLROTL0:DEC	C
+1007:	053A' C8      		RET	Z		; return if zero
+1008:			
+1009:	053B' 29      		ADD	HL,HL
+1010:	053C' C33905  		JP	HLROTL0
+1011:			
+1012:	053F'         	SET$CDISK:
+1013:				; Set a "1" value in curdsk position of bc
+1014:	053F' 3AE308  		LD	A,(SELDSK)
+1015:	0542' C5      		PUSH	BC		; Save input parameter
+1016:	0543' 4F      		LD	C,A		; Ready parameter for shift
+1017:	0544' 210100  		LD	HL,1		; number to shift
+1018:	0547' CD3805  		CALL	HLROTL		; hl = mask to integrate
+1019:	054A' C1      		POP	BC		; original mask
+1020:	054B' 79      		LD	A,C
+1021:	054C' B5      		OR	L
+1022:	054D' 6F      		LD	L,A
+1023:	054E' 78      		LD	A,B
+1024:	054F' B4      		OR	H
+1025:	0550' 67      		LD	H,A		; hl = mask or rol(1,curdsk)
+1026:	0551' C9      		RET
+1027:			
+1028:	0552'         	TEST$VECTOR:
+1029:	0552' 3AE308  		LD	A,(SELDSK)
+1030:	0555' 4F      		LD	C,A
+1031:	0556' CD2B05  		CALL	HLROTR
+1032:	0559' 7D      		LD	A,L
+1033:	055A' E601    		AND	1B
+1034:	055C' C9      		RET			; non zero if curdsk bit on
+1035:			
+1036:	055D'         	GETDPTRA:
+1037:				; Compute the address of a directory element at
+1038:				; positon dptr in the buffer
+1039:			
+1040:	055D' 2A9108  		LD	HL,(BUFFA)
+1041:	0560' 3ACE08  		LD	A,(DPTR)
+1042:				; hl = hl + a
+1043:	0563' 85      		ADD	A,L
+1044:	0564' 6F      		LD	L,A
+1045:	0565' D0      		RET	NC
+1046:				; overflow to h
+1047:	0566' 24      		INC	H
+1048:	0567' C9      		RET
+1049:			
+1050:	0568'         	CLR$EXT:
+1051:				; fcb ext = fcb ext & 1fh
+1052:			
+1053:	0568' CDEB04  		CALL	GETEXTA
+1054:	056B' 7E      		LD	A,(HL)
+1055:	056C' E61F    		AND	00011111B
+1056:	056E' 77      		LD	(HL),A
+1057:	056F' C9      		RET
+1058:			
+1059:			
+1060:	0570'         	SUBDH:
+1061:				; Compute hl = de - hl
+1062:	0570' 7B      		LD	A,E
+1063:	0571' 95      		SUB	L
+1064:	0572' 6F      		LD	L,A
+1065:	0573' 7A      		LD	A,D
+1066:	0574' 9C      		SBC	A,H
+1067:	0575' 67      		LD	H,A
+1068:	0576' C9      		RET
+1069:			
+1070:	0577'         	GETBUFFA:
+1071:	0577' D5      		PUSH	DE
+1072:	0578' 110A00  		LD	DE,10
+1073:	057B' 19      		ADD	HL,DE
+1074:	057C' 5E      		LD	E,(HL)
+1075:	057D' 23      		INC	HL
+1076:	057E' 56      		LD	D,(HL)
+1077:	057F' EB      		EX	DE,HL
+1078:	0580' D1      		POP	DE
+1079:	0581' C9      		RET
+1080:			
+1081:			
+1082:	0582'         	RDDIR:
+1083:				; Read a directory entry into the directory buffer
+1084:	0582' CDCB03  		CALL	SEEKDIR
+1085:	0585' 3ABA08  		LD	A,(PHYMSK)
+1086:	0588' B7      		OR	A
+1087:	0589' CA9405  		JP	Z,RDDIR1
+1088:	058C' 3E03    		LD	A,3
+1089:	058E' CDED08  		CALL	DEBLOCK$DIR
+1090:	0591' C3A005  		JP	SETDATA
+1091:			
+1092:	0594'         	RDDIR1:
+1093:	0594' CDA605  		CALL	SETDIR		; directory dma
+1094:	0597' 229108  		LD	(BUFFA),HL
+1095:	059A' CDDF03  		CALL	SEEK
+1096:	059D' CDB803  		CALL	RDBUFF		; directory record loaded
+1097:			
+1098:	05A0'         	SETDATA:
+1099:				; Set data dma address
+1100:	05A0' 2AE108  		LD	HL,(DMAAD)
+1101:	05A3' C3AC05  		JP	SETDMA		; to complete the call
+1102:			
+1103:	05A6'         	SETDIR:
+1104:				; Set directory dma address
+1105:			
+1106:	05A6' 2AA308  		LD	HL,(DIRBCBA)
+1107:	05A9' CD7705  		CALL	GETBUFFA
+1108:			
+1109:	05AC'         	SETDMA:
+1110:				; hl=.dma address to set (i.e., buffa or dmaad)
+1111:	05AC' 228F08  		LD	(CURDMA),HL
+1112:	05AF' C9      		RET
+1113:			
+1114:	05B0'         	END$OF$DIR:
+1115:				; Return zero flag if at end of directory, non zero
+1116:				; if not at end (end of dir if dcnt = 0ffffh)
+1117:	05B0' 21E808  		LD	HL,DCNT
+1118:	05B3' 7E      		LD	A,(HL)		; may be 0ffh
+1119:	05B4' 23      		INC	HL
+1120:	05B5' BE      		CP	(HL)		; low(dcnt) = high(dcnt)?
+1121:	05B6' C0      		RET	NZ		; non zero returned if different
+1122:				; high and low the same, = 0ffh?
+1123:	05B7' 3C      		INC	A		; 0ffh becomes 00 if so
+1124:	05B8' C9      		RET
+1125:			
+1126:	05B9'         	SET$END$DIR:
+1127:				; Set dcnt to the end of the directory
+1128:	05B9' 21FFFF  		LD	HL,ENDDIR
+1129:	05BC' 22E808  		LD	(DCNT),HL
+1130:	05BF' C9      		RET
+1131:			
+1132:			
+1133:	05C0'         	READ$DIR:
+1134:				; Read next directory entry, with c=true if initializing
+1135:			
+1136:	05C0' 2AB108  		LD	HL,(DIRMAX)
+1137:	05C3' EB      		EX	DE,HL		; in preparation for subtract
+1138:	05C4' 2AE808  		LD	HL,(DCNT)
+1139:	05C7' 23      		INC	HL
+1140:	05C8' 22E808  		LD	(DCNT),HL	; dcnt=dcnt+1
+1141:			
+1142:				; while(dirmax >= dcnt)
+1143:	05CB' CD7005  		CALL	SUBDH		; de-hl
+1144:	05CE' DAB905  		JP	C,SET$END$DIR
+1145:				; not at end of directory, seek next element
+1146:				; initialization flag is in c
+1147:			
+1148:	05D1' 3AE808  		LD	A,(DCNT)
+1149:	05D4' E603    		AND	DSKMSK		; low(dcnt) and dskmsk
+1150:	05D6' 0605    		LD	B,FCBSHF	; to multiply by fcb size
+1151:			
+1152:	05D8'         	READ$DIR1:
+1153:	05D8' 87      		ADD	A,A
+1154:	05D9' 05      		DEC	B
+1155:	05DA' C2D805  		JP	NZ,READ$DIR1
+1156:				; a = (low(dcnt) and dskmsk) shl fcbshf
+1157:	05DD' 32CE08  		LD	(DPTR),A	; ready for next dir operation
+1158:	05E0' B7      		OR	A
+1159:	05E1' C0      		RET	NZ		; Return if not a new record
+1160:			
+1161:	05E2' C5      		PUSH	BC		; Save initialization flag c
+1162:	05E3' CD8205  		CALL	RDDIR		; Read the directory record
+1163:	05E6' C1      		POP	BC		; Recall initialization flag
+1164:	05E7' C9      		RET
+1165:	05E8'         	COMPEXT:
+1166:				; Compare extent# in a with that in c, return nonzero
+1167:				; if they do not match
+1168:	05E8' C5      		PUSH	BC		; Save c's original value
+1169:	05E9' F5      		PUSH	AF
+1170:	05EA' 3AAE08  		LD	A,(EXTMSK)
+1171:	05ED' 2F      		CPL
+1172:	05EE' 47      		LD	B,A
+1173:				; b has negated form of extent mask
+1174:	05EF' 79      		LD	A,C
+1175:	05F0' A0      		AND	B
+1176:	05F1' 4F      		LD	C,A		; low bits removed from c
+1177:	05F2' F1      		POP	AF
+1178:	05F3' A0      		AND	B		; low bits removed from a
+1179:	05F4' 91      		SUB	C
+1180:	05F5' E61F    		AND	MAXEXT		; Set flags
+1181:	05F7' C1      		POP	BC		; Restore original values
+1182:	05F8' C9      		RET
+1183:			
+1184:	05F9'         	GET$DIR$EXT:
+1185:				; Compute directory extent from fcb
+1186:				; Scan fcb disk map backwards
+1187:	05F9' CDFB04  		CALL	GETFCBA		; hl = .fcb(vrecord)
+1188:	05FC' 0E10    		LD	C,16
+1189:	05FE' 41      		LD	B,C
+1190:	05FF' 0C      		INC	C
+1191:	0600' C5      		PUSH	BC
+1192:				; b=dskmap pos (rel to 0)
+1193:	0601'         	GET$DE0:
+1194:	0601' C1      		POP	BC
+1195:	0602' 0D      		DEC	C
+1196:	0603' AF      		XOR	A		; Compare to zero
+1197:	0604'         	GET$DE1:
+1198:	0604' 2B      		DEC	HL
+1199:	0605' 05      		DEC	B		; Decr dskmap position
+1200:	0606' BE      		CP	(HL)
+1201:	0607' C20E06  		JP	NZ,GET$DE2	; fcb(dskmap(b)) ~= 0
+1202:	060A' 0D      		DEC	C
+1203:	060B' C20406  		JP	NZ,GET$DE1
+1204:				; c = 0 -> all blocks = 0 in fcb disk map
+1205:	060E'         	GET$DE2:
+1206:	060E' 79      		LD	A,C
+1207:	060F' 32C008  		LD	(DMINX),A
+1208:	0612' 3AC208  		LD	A,(SINGLE)
+1209:	0615' B7      		OR	A
+1210:	0616' 78      		LD	A,B
+1211:	0617' C21B06  		JP	NZ,GET$DE3
+1212:	061A' 1F      		RRA			; not single, divide blk idx by 2
+1213:	061B'         	GET$DE3:
+1214:	061B' C5      		PUSH	BC
+1215:	061C' E5      		PUSH	HL		; Save dskmap position & count
+1216:	061D' 6F      		LD	L,A
+1217:	061E' 2600    		LD	H,0		; hl = non-zero blk idx
+1218:				; Compute ext offset from last non-zero
+1219:				; block index by shifting blk idx right
+1220:				; 7 - blkshf
+1221:	0620' 3AAC08  		LD	A,(BLKSHF)
+1222:	0623' 57      		LD	D,A
+1223:	0624' 3E07    		LD	A,7
+1224:	0626' 92      		SUB	D
+1225:	0627' 4F      		LD	C,A
+1226:	0628' CD2B05  		CALL	HLROTR
+1227:	062B' 45      		LD	B,L
+1228:				; b = ext offset
+1229:	062C' 3AAE08  		LD	A,(EXTMSK)
+1230:	062F' B8      		CP	B
+1231:	0630' E1      		POP	HL
+1232:	0631' DA0106  		JP	C,GET$DE0
+1233:				; Verify computed extent offset <= extmsk
+1234:	0634' CDEB04  		CALL	GETEXTA
+1235:	0637' 4E      		LD	C,(HL)
+1236:	0638' 2F      		CPL
+1237:	0639' E61F    		AND	MAXEXT
+1238:	063B' A1      		AND	C
+1239:	063C' B0      		OR	B
+1240:				; dir ext = (fcb ext & (~ extmsk) & maxext) | ext offset
+1241:	063D' C1      		POP	BC		; Restore stack
+1242:	063E' C9      		RET			; a = directory extent
+1243:			
+1244:			
+1245:	063F'         	SEARCH:
+1246:				; Search for directory element of length c at info
+1247:	063F' 2AE408  		LD	HL,(INFO)
+1248:	0642' 22EA08  		LD	(SEARCHA),HL	; searcha = info
+1249:	0645' 79      		LD	A,C
+1250:	0646' 32EC08  		LD	(SEARCHL),A	; searchl = c
+1251:			
+1252:	0649' CDB905  		CALL	SET$END$DIR	; dcnt = enddir
+1253:	064C' CD9C03  		CALL	HOME		; to start at the beginning
+1254:			
+1255:	064F'         	SEARCHN:
+1256:				; Search for the next directory element, assuming
+1257:				; a previous call on search which sets searcha and
+1258:				; searchl
+1259:			
+1260:	064F' 0E00    		LD	C,FALSE
+1261:	0651' CDC005  		CALL	READ$DIR	; Read next dir element
+1262:	0654' CDB005  		CALL	END$OF$DIR
+1263:	0657' CAA006  		JP	Z,LRET$EQ$FF
+1264:				; not end of directory, scan for match
+1265:	065A' 2AEA08  		LD	HL,(SEARCHA)
+1266:	065D' EB      		EX	DE,HL		; de=beginning of user fcb
+1267:			
+1268:	065E' CD5D05  		CALL	GETDPTRA	; hl = buffa+dptr
+1269:	0661' 3AEC08  		LD	A,(SEARCHL)
+1270:	0664' 4F      		LD	C,A		; length of search to c
+1271:	0665' 0600    		LD	B,0		; b counts up, c counts down
+1272:			
+1273:	0667' 7E      		LD	A,(HL)
+1274:	0668' FEE5    		CP	EMPTY
+1275:	066A' CA4F06  		JP	Z,SEARCHN
+1276:			
+1277:	066D'         	SEARCHLOOP:
+1278:	066D' 79      		LD	A,C
+1279:	066E' B7      		OR	A
+1280:	066F' CA9906  		JP	Z,ENDSEARCH
+1281:				; Scan next character if not ubytes
+1282:	0672' 78      		LD	A,B
+1283:	0673' FE0D    		CP	UBYTES
+1284:	0675' CA9206  		JP	Z,SEARCHOK
+1285:				; not the ubytes field, extent field?
+1286:	0678' FE0C    		CP	EXTNUM		; may be extent field
+1287:	067A' CA8706  		JP	Z,SEARCHEXT	; Skip to search extent
+1288:	067D' 1A      		LD	A,(DE)
+1289:	067E' 96      		SUB	(HL)
+1290:	067F' E67F    		AND	7FH		; Mask-out flags/extent modulus
+1291:	0681' C24F06  		JP	NZ,SEARCHN	; Skip if not matched
+1292:	0684' C39206  		JP	SEARCHOK	; matched character
+1293:	0687'         	SEARCHEXT:
+1294:	0687' 1A      		LD	A,(DE)
+1295:				; Attempt an extent # match
+1296:	0688' C5      		PUSH	BC		; Save counters
+1297:	0689' 4E      		LD	C,(HL)		; directory character to c
+1298:	068A' CDE805  		CALL	COMPEXT		; Compare user/dir char
+1299:	068D' C1      		POP	BC		; Recall counters
+1300:	068E' B7      		OR	A		; Set flag
+1301:	068F' C24F06  		JP	NZ,SEARCHN	; Skip if no match
+1302:	0692'         	SEARCHOK:
+1303:				; current character matches
+1304:	0692' 13      		INC	DE
+1305:	0693' 23      		INC	HL
+1306:	0694' 04      		INC	B
+1307:	0695' 0D      		DEC	C
+1308:	0696' C36D06  		JP	SEARCHLOOP
+1309:	0699'         	ENDSEARCH:
+1310:				; entire name matches, return dir position
+1311:	0699' AF      		XOR	A
+1312:	069A' 320E03  		LD	(LRET),A	; lret = 0
+1313:				; successful search -
+1314:				; return with zero flag reset
+1315:	069D' 47      		LD	B,A
+1316:	069E' 04      		INC	B
+1317:	069F' C9      		RET
+1318:	06A0'         	LRET$EQ$FF:
+1319:				; unsuccessful search -
+1320:				; return with zero flag set
+1321:				; lret,low(aret) = 0ffh
+1322:	06A0' 3EFF    		LD	A,255
+1323:	06A2' 47      		LD	B,A
+1324:	06A3' 04      		INC	B
+1325:	06A4' C3EA02  		JP	STA$RET
+1326:			
+1327:	06A7'         	OPEN:
+1328:				; Search for the directory entry, copy to fcb
+1329:	06A7' 0E0F    		LD	C,NAMLEN
+1330:	06A9' CD3F06  		CALL	SEARCH
+1331:	06AC' C8      		RET	Z		; Return with lret=255 if end
+1332:			
+1333:				; not end of directory, copy fcb information
+1334:	06AD'         	OPEN$COPY:
+1335:	06AD' CDEB04  		CALL	GETEXTA
+1336:	06B0' 7E      		LD	A,(HL)
+1337:	06B1' F5      		PUSH	AF		; save extent to check for extent
+1338:				; folding - move moves entire dir FCB
+1339:	06B2' CD5D05  		CALL	GETDPTRA
+1340:	06B5' EB      		EX	DE,HL		; hl = .buff(dptr)
+1341:	06B6' 2AE408  		LD	HL,(INFO)	; hl=.fcb(0)
+1342:	06B9' 0E20    		LD	C,NXTREC	; length of move operation
+1343:	06BB' CD4E03  		CALL	MOVE		; from .buff(dptr) to .fcb(0)
+1344:			
+1345:				; Note that entire fcb is copied, including indicators
+1346:			
+1347:	06BE' CDF905  		CALL	GET$DIR$EXT
+1348:	06C1' 4F      		LD	C,A
+1349:	06C2' F1      		POP	AF
+1350:	06C3' 77      		LD	(HL),A		; restore extent
+1351:			
+1352:				; hl = .user extent#, c = dir extent#
+1353:				; above move set fcb(reccnt) to dir(reccnt)
+1354:				; if fcb ext < dir ext then fcb(reccnt) = fcb(reccnt) | 128
+1355:				; if fcb ext = dir ext then fcb(reccnt) = fcb(reccnt)
+1356:				; if fcb ext > dir ext then fcb(reccnt) = 0
+1357:			
+1358:	06C4'         	SET$RC:	; hl=.fcb(ext), c=dirext
+1359:	06C4' 0600    		LD	B,0
+1360:	06C6' EB      		EX	DE,HL
+1361:	06C7' 210300  		LD	HL,[RECCNT-EXTNUM]
+1362:	06CA' 19      		ADD	HL,DE
+1363:	06CB' 1A      		LD	A,(DE)
+1364:	06CC' 91      		SUB	C
+1365:	06CD' CADD06  		JP	Z,SET$RC2
+1366:	06D0' 78      		LD	A,B
+1367:	06D1' D2D706  		JP	NC,SET$RC1
+1368:	06D4' 3E80    		LD	A,128
+1369:	06D6' 46      		LD	B,(HL)
+1370:			
+1371:	06D7'         	SET$RC1:
+1372:	06D7' 77      		LD	(HL),A
+1373:	06D8' 78      		LD	A,B
+1374:	06D9' 32C108  		LD	(ACTUAL$RC),A
+1375:	06DC' C9      		RET
+1376:	06DD'         	SET$RC2:
+1377:	06DD' 32C108  		LD	(ACTUAL$RC),A
+1378:	06E0' 7E      		LD	A,(HL)
+1379:	06E1' B7      		OR	A
+1380:	06E2' C0      		RET	NZ		; ret if rc ~= 0
+1381:	06E3' 3AC008  		LD	A,(DMINX)
+1382:	06E6' B7      		OR	A
+1383:	06E7' C8      		RET	Z		; ret if no blks in fcb
+1384:	06E8' 3AE708  		LD	A,(FX)
+1385:	06EB' FE0F    		CP	15
+1386:	06ED' C8      		RET	Z		; ret if fx = 15
+1387:	06EE' 3680    		LD	(HL),128	; rc = 128
+1388:	06F0' C9      		RET
+1389:			
+1390:	06F1'         	RESTORE$RC:
+1391:				; hl = .fcb(extnum)
+1392:				; if actual$rc ~= 0 then rcount = actual$rc
+1393:	06F1' E5      		PUSH	HL
+1394:	06F2' 3AC108  		LD	A,(ACTUAL$RC)
+1395:	06F5' B7      		OR	A
+1396:	06F6' CA0207  		JP	Z,RESTORE$RC1
+1397:	06F9' 110300  		LD	DE,[RECCNT-EXTNUM]
+1398:	06FC' 19      		ADD	HL,DE
+1399:	06FD' 77      		LD	(HL),A
+1400:	06FE' AF      		XOR	A
+1401:	06FF' 32C108  		LD	(ACTUAL$RC),A
+1402:			
+1403:	0702'         	RESTORE$RC1:
+1404:	0702' E1      		POP	HL
+1405:	0703' C9      		RET
+1406:			
+1407:	0704'         	OPEN$REEL:
+1408:				; Close the current extent, and open the next one
+1409:				; if possible.
+1410:			
+1411:	0704' CDEB04  		CALL	GETEXTA
+1412:	0707' 7E      		LD	A,(HL)
+1413:	0708' 4F      		LD	C,A
+1414:	0709' 0C      		INC	C
+1415:	070A' CDE805  		CALL	COMPEXT
+1416:	070D' CA2607  		JP	Z,OPEN$REEL3
+1417:			
+1418:	0710' 3E1F    		LD	A,MAXEXT
+1419:	0712' A1      		AND	C
+1420:	0713' 77      		LD	(HL),A		; Incr extent field
+1421:	0714' 0E0F    		LD	C,NAMLEN
+1422:	0716' CD3F06  		CALL	SEARCH		; Next extent found?
+1423:				; not end of file, open
+1424:	0719' CDAD06  		CALL	OPEN$COPY
+1425:			
+1426:	071C'         	OPEN$REEL2:
+1427:	071C' CD0405  		CALL	GETFCB		; Set parameters
+1428:	071F' AF      		XOR	A
+1429:	0720' 32C608  		LD	(VRECORD),A
+1430:	0723' C3EA02  		JP	STA$RET		; lret = 0
+1431:	0726'         	OPEN$REEL3:
+1432:	0726' 34      		INC	(HL)		; fcb(ex) = fcb(ex) + 1
+1433:	0727' CDF905  		CALL	GET$DIR$EXT
+1434:	072A' 4F      		LD	C,A
+1435:				; Is new extent beyond dir$ext?
+1436:	072B' BE      		CP	(HL)
+1437:	072C' D23307  		JP	NC,OPEN$REEL4	; no
+1438:	072F' 35      		DEC	(HL)		; fcb(ex) = fcb(ex) - 1
+1439:	0730' C3EE02  		JP	SETLRET1
+1440:	0733'         	OPEN$REEL4:
+1441:	0733' CDF106  		CALL	RESTORE$RC
+1442:	0736' CDC406  		CALL	SET$RC
+1443:	0739' C31C07  		JP	OPEN$REEL2
+1444:			
+1445:	073C'         	SEQDISKREAD:
+1446:				; Sequential disk read operation
+1447:				; Read the next record from the current fcb
+1448:			
+1449:	073C' CD0405  		CALL	GETFCB		; sets parameters for the read
+1450:			
+1451:	073F' 3AC608  		LD	A,(VRECORD)
+1452:	0742' 21C408  		LD	HL,RCOUNT
+1453:	0745' BE      		CP	(HL)		; vrecord-rcount
+1454:				; Skip if rcount > vrecord
+1455:	0746' DA5807  		JP	C,RECORDOK
+1456:			
+1457:				; not enough records in the extent
+1458:				; record count must be 128 to continue
+1459:	0749' FE80    		CP	128		; vrecord = 128?
+1460:	074B' C2EE02  		JP	NZ,SETLRET1	; Skip if vrecord<>128
+1461:	074E' CD0407  		CALL	OPEN$REEL	; Go to next extent if so
+1462:				; Check for open ok
+1463:	0751' 3A0E03  		LD	A,(LRET)
+1464:	0754' B7      		OR	A
+1465:	0755' C2EE02  		JP	NZ,SETLRET1	; Stop at eof
+1466:			
+1467:	0758'         	RECORDOK:
+1468:				; Arrive with fcb addressing a record to read
+1469:			
+1470:	0758' CDB304  		CALL	INDEX		; Z flag set if arecord = 0
+1471:			
+1472:	075B' CAEE02  		JP	Z,SETLRET1	; Reading unwritten data
+1473:			
+1474:				; Record has been allocated
+1475:	075E' CDC504  		CALL	ATRAN		; arecord now a disk address
+1476:			
+1477:	0761' 3ABA08  		LD	A,(PHYMSK)
+1478:	0764' B7      		OR	A		; if not 128 byte sectors
+1479:	0765' C2D708  		JP	NZ,READ$DEBLOCK	; go to deblock
+1480:			
+1481:	0768' CDA005  		CALL	SETDATA		; Set curdma = dmaad
+1482:	076B' CDDF03  		CALL	SEEK		; Set up for read
+1483:	076E' CDB803  		CALL	RDBUFF		; Read into (curdma)
+1484:	0771' C31B05  		JP	SETFCB		; Update FCB
+1485:			
+1486:	0774'         	CURSELECT:
+1487:	0774' 3AE308  		LD	A,(SELDSK)
+1488:	0777' 3C      		INC	A
+1489:	0778' CA1003  		JP	Z,SEL$ERROR
+1490:	077B' 3D      		DEC	A
+1491:	077C' 21C708  		LD	HL,CURDSK
+1492:	077F' BE      		CP	(HL)
+1493:	0780' C8      		RET	Z
+1494:			
+1495:				; Skip if seldsk = curdsk, fall into select
+1496:	0781'         	SELECT:
+1497:				; Select disk info for subsequent input or output ops
+1498:	0781' 77      		LD	(HL),A		; curdsk = seldsk
+1499:			
+1500:	0782' 57      		LD	D,A		; Save seldsk in register D for selectdisk call
+1501:	0783' 2A8D08  		LD	HL,(DLOG)
+1502:	0786' CD5205  		CALL	TEST$VECTOR	; test$vector does not modify DE
+1503:	0789' 5F      		LD	E,A
+1504:	078A' D5      		PUSH	DE		; Send to seldsk, save for test below
+1505:	078B' CD5803  		CALL	SELECTDISK
+1506:	078E' E1      		POP	HL		; Recall dlog vector
+1507:	078F' D21003  		JP	NC,SEL$ERROR	; returns with C flag set if select ok
+1508:				; Is the disk logged in?
+1509:	0792' 2D      		DEC	L		; reg l = 1 if so
+1510:	0793' C8      		RET	Z		; yes - drive previously logged in
+1511:			
+1512:	0794' 2A8D08  		LD	HL,(DLOG)
+1513:	0797' 4D      		LD	C,L
+1514:	0798' 44      		LD	B,H		; call ready
+1515:	0799' CD3F05  		CALL	SET$CDISK
+1516:	079C' 228D08  		LD	(DLOG),HL	; dlog=set$cdisk(dlog)
+1517:	079F' C9      		RET
+1518:			
+1519:	07A0'         	SET$SELDSK:
+1520:	07A0' 3ABF08  		LD	A,(LINFO)
+1521:	07A3' 32E308  		LD	(SELDSK),A
+1522:	07A6' C9      		RET
+1523:			
+1524:	07A7'         	RESELECTX:
+1525:	07A7' AF      		XOR	A
+1526:	07A8' 32CD08  		LD	(HIGH$EXT),A
+1527:	07AB' C3D707  		JP	RESELECT1
+1528:	07AE'         	RESELECT:
+1529:				; Check current fcb to see if reselection necessary
+1530:	07AE' 3E80    		LD	A,80H
+1531:	07B0' 47      		LD	B,A
+1532:	07B1' 3D      		DEC	A
+1533:	07B2' 4F      		LD	C,A		; b = 80h, c = 7fh
+1534:	07B3' 2AE408  		LD	HL,(INFO)
+1535:	07B6' 110700  		LD	DE,7
+1536:	07B9' EB      		EX	DE,HL
+1537:	07BA' 19      		ADD	HL,DE
+1538:	07BB' 7E      		LD	A,(HL)
+1539:	07BC' A0      		AND	B
+1540:				; fcb(7) = fcb(7) & 7fh
+1541:	07BD' 7E      		LD	A,(HL)
+1542:	07BE' A1      		AND	C
+1543:	07BF' 77      		LD	(HL),A
+1544:				; high$ext = 80h & fcb(8)
+1545:	07C0' 23      		INC	HL
+1546:	07C1' 7E      		LD	A,(HL)
+1547:	07C2' A0      		AND	B
+1548:	07C3' 32CD08  		LD	(HIGH$EXT),A
+1549:				; fcb(8) = fcb(8) & 7fh
+1550:	07C6' 7E      		LD	A,(HL)
+1551:	07C7' A1      		AND	C
+1552:	07C8' 77      		LD	(HL),A
+1553:				; fcb(ext) = fcb(ext) & 1fh
+1554:	07C9' CD6805  		CALL	CLR$EXT
+1555:			
+1556:				; if fcb(rc) & 80h
+1557:				;    then fcb(rc) = 80h, actual$rc = fcb(rc) & 7fh
+1558:				;    else actual$rc = 0
+1559:			
+1560:	07CC' CDF304  		CALL	GETRCNTA
+1561:	07CF' 7E      		LD	A,(HL)
+1562:	07D0' A0      		AND	B
+1563:	07D1' CAD707  		JP	Z,RESELECT1
+1564:	07D4' 7E      		LD	A,(HL)
+1565:	07D5' A1      		AND	C
+1566:	07D6' 70      		LD	(HL),B
+1567:			
+1568:	07D7'         	RESELECT1:
+1569:	07D7' 32C108  		LD	(ACTUAL$RC),A
+1570:			
+1571:	07DA' 210000  		LD	HL,0
+1572:	07DD' 22CF08  		LD	(FCBDSK),HL	; fcbdsk = 0
+1573:	07E0' 3EFF    		LD	A,TRUE
+1574:	07E2' 32E608  		LD	(RESEL),A	; Mark possible reselect
+1575:	07E5' 2AE408  		LD	HL,(INFO)
+1576:	07E8' 7E      		LD	A,(HL)		; drive select code
+1577:	07E9' E61F    		AND	00011111B		; non zero is auto drive select
+1578:	07EB' 3D      		DEC	A		; Drive code normalized to 0..30, or 255
+1579:	07EC' 32BF08  		LD	(LINFO),A	; Save drive code
+1580:	07EF' FEFF    		CP	0FFH
+1581:	07F1' CAFB07  		JP	Z,NOSELECT
+1582:				; auto select function, seldsk saved above
+1583:	07F4' 7E      		LD	A,(HL)
+1584:	07F5' 32CF08  		LD	(FCBDSK),A	; Save drive code
+1585:	07F8' CDA007  		CALL	SET$SELDSK
+1586:			
+1587:	07FB'         	NOSELECT:
+1588:	07FB' CD7407  		CALL	CURSELECT
+1589:	07FE' 3E00    		LD	A,0
+1590:	0800' 2AE408  		LD	HL,(INFO)
+1591:	0803' 77      		LD	(HL),A
+1592:	0804' C9      		RET
+1593:			
+1594:			;
+1595:			;	individual function handlers
+1596:			;
+1597:			
+1598:	02ED'         	FUNC12	EQU	FUNC$RET
+1599:			
+1600:	0805'         	FUNC13:
+1601:			
+1602:				; Reset disk system - initialize to disk 0
+1603:	0805' 210000  		LD	HL,0
+1604:	0808' 228D08  		LD	(DLOG),HL
+1605:			
+1606:	080B' AF      		XOR	A
+1607:	080C' 32E308  		LD	(SELDSK),A
+1608:	080F' 3D      		DEC	A
+1609:	0810' 32C708  		LD	(CURDSK),A
+1610:			
+1611:	0813' 218000  		LD	HL,TBUFF
+1612:	0816' 22E108  		LD	(DMAAD),HL	; dmaad = tbuff
+1613:	0819' C3A005  		JP	SETDATA		; to data dma address
+1614:			
+1615:	081C'         	FUNC14:
+1616:				; Select disk info
+1617:	081C' CDA007  		CALL	SET$SELDSK	; seldsk = linfo
+1618:	081F' C37407  		JP	CURSELECT
+1619:			
+1620:	0822'         	FUNC15:
+1621:				; Open file
+1622:	0822' CDA707  		CALL	RESELECTX
+1623:	0825' CDA706  		CALL	OPEN
+1624:	0828' CD2C08  		CALL	OPENX		; returns if unsuccessful, a = 0
+1625:	082B' C9      		RET
+1626:			
+1627:	082C'         	OPENX:
+1628:	082C' CDB005  		CALL	END$OF$DIR
+1629:	082F' C8      		RET	Z
+1630:	0830' CDFB04  		CALL	GETFCBA
+1631:	0833' 7E      		LD	A,(HL)
+1632:	0834' 3C      		INC	A
+1633:	0835' C23C08  		JP	NZ,OPENXA
+1634:	0838' 1B      		DEC	DE
+1635:	0839' 1B      		DEC	DE
+1636:	083A' 1A      		LD	A,(DE)
+1637:	083B' 77      		LD	(HL),A
+1638:	083C'         	OPENXA:
+1639:				; open successful
+1640:	083C' E1      		POP	HL		; Discard return address
+1641:	083D' 0E40    		LD	C,01000000B
+1642:	083F' C9      		RET
+1643:			
+1644:	02ED'         	FUNC16	EQU	FUNC$RET
+1645:			
+1646:	02ED'         	FUNC17	EQU	FUNC$RET
+1647:			
+1648:	02ED'         	FUNC18	EQU	FUNC$RET
+1649:			
+1650:	02ED'         	FUNC19	EQU	FUNC$RET
+1651:			
+1652:	0840'         	FUNC20:
+1653:				; Read a file
+1654:	0840' CDAE07  		CALL	RESELECT
+1655:	0843' C33C07  		JP	SEQDISKREAD
+1656:			
+1657:	02ED'         	FUNC21	EQU	FUNC$RET
+1658:			
+1659:	02ED'         	FUNC22	EQU	FUNC$RET
+1660:			
+1661:	02ED'         	FUNC23	EQU	FUNC$RET
+1662:			
+1663:	02ED'         	FUNC24	EQU	FUNC$RET
+1664:			
+1665:	0846' 3AE308  	FUNC25:	LD	A,(SELDSK)
+1666:	0849' C3EA02  		JP	STA$RET
+1667:			
+1668:	084C' EB      	FUNC26:	EX	DE,HL
+1669:	084D' 22E108  		LD	(DMAAD),HL
+1670:	0850' C3A005  		JP	SETDATA
+1671:			
+1672:	02ED'         	FUNC27	EQU	FUNC$RET
+1673:			
+1674:	02ED'         	FUNC28 	EQU FUNC$RET
+1675:			
+1676:	02ED'         	FUNC29	EQU	FUNC$RET
+1677:			
+1678:	02ED'         	FUNC30	EQU	FUNC$RET
+1679:			
+1680:	02ED'         	FUNC31	EQU	FUNC$RET
+1681:			
+1682:	02ED'         	FUNC32	EQU	FUNC$RET
+1683:			
+1684:	02ED'         	FUNC33	EQU	FUNC$RET
+1685:			
+1686:	02ED'         	FUNC34	EQU	FUNC$RET
+1687:			
+1688:	02ED'         	FUNC35	EQU	FUNC$RET
+1689:			
+1690:	02ED'         	FUNC36	EQU	FUNC$RET
+1691:			
+1692:	02ED'         	FUNC37	EQU	FUNC$RET
+1693:			
+1694:	02ED'         	FUNC38	EQU	FUNC$RET
+1695:			
+1696:	02ED'         	FUNC39	EQU	FUNC$RET
+1697:			
+1698:	02ED'         	FUNC40	EQU	FUNC$RET
+1699:			
+1700:	02ED'         	FUNC42	EQU	FUNC$RET
+1701:			
+1702:	02ED'         	FUNC43	EQU	FUNC$RET
+1703:			
+1704:	02ED'         	FUNC44	EQU	FUNC$RET
+1705:			
+1706:	02ED'         	FUNC45	EQU	FUNC$RET
+1707:			
+1708:	02ED'         	FUNC46	EQU	FUNC$RET
+1709:			
+1710:	02ED'         	FUNC47	EQU	FUNC$RET
+1711:			
+1712:	02ED'         	FUNC48	EQU	FUNC$RET
+1713:			
+1714:	02ED'         	FUNC49	EQU	FUNC$RET
+1715:			
+1716:	02ED'         	FUNC50	EQU	FUNC$RET
+1717:			
+1718:	02ED'         	FUNC100 EQU	FUNC$RET
+1719:			
+1720:	02ED'         	FUNC101 EQU	FUNC$RET
+1721:			
+1722:	02ED'         	FUNC102 EQU	FUNC$RET
+1723:			
+1724:	02ED'         	FUNC103 EQU	FUNC$RET
+1725:			
+1726:	02ED'         	FUNC104 EQU	FUNC$RET
+1727:			
+1728:	02ED'         	FUNC105 EQU	FUNC$RET
+1729:			
+1730:	02ED'         	FUNC106 EQU	FUNC$RET
+1731:			
+1732:	02ED'         	FUNC107 EQU	FUNC$RET
+1733:			
+1734:	02ED'         	FUNC108 EQU	FUNC$RET
+1735:			
+1736:	02ED'         	FUNC109 EQU	FUNC$RET
+1737:			
+1738:			
+1739:	0853'         	GOBACK:
+1740:				; Arrive here at end of processing to return to user
+1741:	0853' 3AE708  		LD	A,(FX)
+1742:	0856' FE0F    		CP	15
+1743:	0858' DA8308  		JP	C,RETMON
+1744:	085B' 3AC308  		LD	A,(OLDDSK)
+1745:	085E' 32E308  		LD	(SELDSK),A	; Restore seldsk
+1746:	0861' 3AE608  		LD	A,(RESEL)
+1747:	0864' B7      		OR	A
+1748:	0865' CA8308  		JP	Z,RETMON
+1749:			
+1750:	0868' 2AE408  		LD	HL,(INFO)
+1751:	086B' 3600    		LD	(HL),0		; fcb(0)=0
+1752:	086D' 3ACF08  		LD	A,(FCBDSK)
+1753:	0870' B7      		OR	A
+1754:	0871' CA7508  		JP	Z,GOBACK1
+1755:				; Restore fcb(0)
+1756:	0874' 77      		LD	(HL),A		; fcb(0)=fcbdsk
+1757:	0875'         	GOBACK1:
+1758:				; fcb(8) = fcb(8) | high$ext
+1759:	0875' 23      		INC	HL
+1760:	0876' 3ACD08  		LD	A,(HIGH$EXT)
+1761:	0879' B6      		OR	(HL)
+1762:	087A' 77      		LD	(HL),A
+1763:				; fcb(rc) = fcb(rc) | actual$rc
+1764:	087B' CDF304  		CALL	GETRCNTA
+1765:	087E' 3AC108  		LD	A,(ACTUAL$RC)
+1766:	0881' B6      		OR	(HL)
+1767:	0882' 77      		LD	(HL),A
+1768:				; return from the disk monitor
+1769:	0883'         	RETMON:
+1770:	0883' 2A4502  		LD	HL,(ENTSP)
+1771:	0886' F9      		LD	SP,HL
+1772:	0887' 2A0E03  		LD	HL,(ARET)
+1773:	088A' 7D      		LD	A,L
+1774:	088B' 44      		LD	B,H
+1775:	088C' C9      		RET
+1776:			;
+1777:			;	data areas
+1778:			;
+1779:	088D' 0000    	DLOG:	DEFW	0		; logged-in disks
+1780:	088F'         	CURDMA:	DEFS	LWORD		; current dma address
+1781:	0891'         	BUFFA:	DEFS	LWORD		; pointer to directory dma address
+1782:			
+1783:			;
+1784:			;	curtrka - alloca are set upon disk select
+1785:			;	(data must be adjacent, do not insert variables)
+1786:			;	(address of translate vector, not used)
+1787:	0893'         	CDRMAXA:DEFS	LWORD		; pointer to cur dir max value (2 bytes)
+1788:	0895'         	CURTRKA:DEFS	LWORD		; current track address (2)
+1789:	0897'         	CURRECA:DEFS	LWORD		; current record address (3)
+1790:	0899'         	DRVLBLA:DEFS	LWORD		; current drive label byte address (1)
+1791:	089B'         	LSN$ADD:DEFS	LWORD		; login sequence # address (1)
+1792:				; +1 -> bios media change flag (1)
+1793:	089D'         	DPBADDR:DEFS	LWORD		; current disk parameter block address
+1794:	089F'         	CHECKA:	DEFS	LWORD		; current checksum vector address
+1795:	08A1'         	ALLOCA:	DEFS	LWORD		; current allocation vector address
+1796:	08A3'         	DIRBCBA:DEFS	LWORD		; dir bcb list head
+1797:	08A5'         	DTABCBA:DEFS	LWORD		; data bcb list head
+1798:	08A7'         	HASH$TBLA:
+1799:	08A7'         		DEFS	LWORD
+1800:	08A9'         		DEFS	LBYTE
+1801:			
+1802:	000D'         	ADDLIST EQU	$-DPBADDR	; address list size
+1803:			
+1804:			;
+1805:			; 	       buffer control block format
+1806:			;
+1807:			; bcb format : drv(1) || rec(3) || pend(1) || sequence(1) ||
+1808:			;	       0         1         4          5
+1809:			;
+1810:			;	       track(2) || sector(2) || buffer$add(2) ||
+1811:			;	       6           8            10
+1812:			;
+1813:			;	       link(2)
+1814:			;	       12
+1815:			;
+1816:			
+1817:			;	sectpt - offset obtained from disk parm block at dpbaddr
+1818:			;	(data must be adjacent, do not insert variables)
+1819:	08AA'         	SECTPT:	DEFS	LWORD		; sectors per track
+1820:	08AC'         	BLKSHF:	DEFS	LBYTE		; block shift factor
+1821:	08AD'         	BLKMSK:	DEFS	LBYTE		; block mask
+1822:	08AE'         	EXTMSK:	DEFS	LBYTE		; extent mask
+1823:	08AF'         	MAXALL:	DEFS	LWORD		; maximum allocation number
+1824:	08B1'         	DIRMAX:	DEFS	LWORD		; largest directory number
+1825:	08B3'         	DIRBLK:	DEFS	LWORD		; reserved allocation bits for directory
+1826:	08B5'         	CHKSIZ:	DEFS	LWORD		; size of checksum vector
+1827:	08B7'         	OFFSET:	DEFS	LWORD		; offset tracks at beginning
+1828:	08B9'         	PHYSHF:	DEFS	LBYTE		; physical record shift
+1829:	08BA'         	PHYMSK:	DEFS	LBYTE		; physical record mask
+1830:	0011'         	DPBLIST EQU	$-SECTPT	; size of area
+1831:			;
+1832:			;	local variables
+1833:			;
+1834:	08BB'         	BLK$OFF:DEFS	LBYTE		; record offset within block
+1835:	08BC'         	DIRCNT:DEFS	LBYTE		; direct i/o count
+1836:			
+1837:	08BD'         	TRANV:	DEFS	LWORD	; address of translate vector
+1838:	08BF'         	LINFO:	DEFS	LBYTE		; low(info)
+1839:	08C0'         	DMINX:	DEFS	LBYTE		; local for diskwrite
+1840:			
+1841:	08C1'         	ACTUAL$RC:
+1842:	08C1'         		DEFS	LBYTE		; directory ext record count
+1843:			
+1844:	08C2'         	SINGLE:	DEFS	LBYTE	; set true if single byte allocation map
+1845:			
+1846:			
+1847:	08C3'         	OLDDSK:	DEFS	LBYTE	; disk on entry to bdos
+1848:	08C4'         	RCOUNT:	DEFS	LBYTE		; record count in current fcb
+1849:	08C5'         	EXTVAL:	DEFS	LBYTE		; extent number and extmsk
+1850:			
+1851:	08C6'         	VRECORD:DEFS	LBYTE		; current virtual record
+1852:			
+1853:	08C7'         	CURDSK:
+1854:			
+1855:	08C7' FF      	ADRIVE:	DEFB	0FFH	; current disk
+1856:	08C8'         	ARECORD:DEFS	LWORD		; current actual record
+1857:	08CA'         		DEFS	LBYTE
+1858:			
+1859:	08CB'         	ARECORD1: DEFS	LWORD	; current actual block# * blkmsk
+1860:			
+1861:			;******** following variable order critical *****************
+1862:			
+1863:	08CD'         	HIGH$EXT: DEFS	LBYTE	; fcb high ext bits
+1864:			;xfcb$read$only:	ds	byte
+1865:			
+1866:			;	local variables for directory access
+1867:	08CE'         	DPTR:	DEFS	LBYTE		; directory pointer 0,1,2,3
+1868:			
+1869:			;
+1870:			;	local variables initialized by bdos at entry
+1871:			;
+1872:	08CF'         	FCBDSK:	DEFS	LBYTE		; disk named in fcb
+1873:			
+1874:	08D0'         	PHY$OFF:DEFS	LBYTE
+1875:	08D1'         	CURBCBA:DEFS	LWORD
+1876:			
+1877:	08D3'         	TRACK:	DEFS	LWORD
+1878:	08D5'         	SECTOR:	DEFS	LWORD
+1879:			
+1880:	08D7'         	READ$DEBLOCK:
+1881:	08D7' 3E01    		LD	A,1
+1882:	08D9' CDF308  		CALL	DEBLOCK$DTA
+1883:	08DC' C31B05  		JP	SETFCB
+1884:			
+1885:	08DF' 00      	COLUMN:	DEFB	0
+1886:	08E0' 24      	OUTDELIM: DEFB	'$'
+1887:			
+1888:	08E1' 8000    	DMAAD:	DEFW	0080H
+1889:	08E3' 00      	SELDSK:	DEFB	0
+1890:	08E4' 0000    	INFO:	DEFW	0
+1891:	08E6' 00      	RESEL:	DEFB	0
+1892:	08E7' 00      	FX:	DEFB	0
+1893:	08E8' 0000    	DCNT:	DEFW	0
+1894:	08EA' 0000    	SEARCHA:DEFW	0
+1895:	08EC' 00      	SEARCHL:DEFB	0
+1896:			
+1897:			
+1898:			; 	**************************
+1899:			; 	Blocking/Deblocking Module
+1900:			;	**************************
+1901:			
+1902:	08ED'         	DEBLOCK$DIR:
+1903:			
+1904:	08ED' 2AA308  		LD	HL,(DIRBCBA)
+1905:			
+1906:	08F0' C3F608  		JP	DEBLOCK
+1907:			
+1908:	08F3'         	DEBLOCK$DTA:
+1909:	08F3' 2AA508  		LD	HL,(DTABCBA)
+1910:			
+1911:	08F6'         	DEBLOCK:
+1912:			
+1913:				; BDOS Blocking/Deblocking routine
+1914:				; a = 1 -> read command
+1915:				; a = 2 -> write command
+1916:				; a = 3 -> locate command
+1917:				; a = 4 -> flush command
+1918:				; a = 5 -> directory update
+1919:			
+1920:	08F6' F5      		PUSH	AF		; Save z flag and deblock fx
+1921:			
+1922:				; phy$off = low(arecord) & phymsk
+1923:				; low(arecord) = low(arecord) & ~phymsk
+1924:	08F7' CD5909  		CALL	DEBLOCK8
+1925:	08FA' 3AC808  		LD	A,(ARECORD)
+1926:	08FD' 5F      		LD	E,A
+1927:	08FE' A0      		AND	B
+1928:	08FF' 32D008  		LD	(PHY$OFF),A
+1929:	0902' 7B      		LD	A,E
+1930:	0903' A1      		AND	C
+1931:	0904' 32C808  		LD	(ARECORD),A
+1932:			
+1933:	0907' 22D108  		LD	(CURBCBA),HL
+1934:	090A' CD7705  		CALL	GETBUFFA
+1935:	090D' 228F08  		LD	(CURDMA),HL
+1936:			
+1937:	0910' CD6009  		CALL	DEBLOCK9
+1938:				; Is command flush?
+1939:	0913' F1      		POP	AF
+1940:	0914' F5      		PUSH	AF
+1941:	0915' FE04    		CP	4
+1942:	0917' D22109  		JP	NC,DEBLOCK1	; yes
+1943:				; Is referenced physical record
+1944:				;already in buffer?
+1945:	091A' CD4403  		CALL	COMPARE
+1946:	091D' CA3109  		JP	Z,DEBLOCK45	; yes
+1947:	0920' AF      		XOR	A
+1948:	0921'         	DEBLOCK1:
+1949:	0921' CD6909  		CALL	DEBLOCK10
+1950:				; Read physical record buffer
+1951:	0924' 3E02    		LD	A,2
+1952:	0926' CD7109  		CALL	DEBLOCK$IO
+1953:			
+1954:	0929' CD6009  		CALL	DEBLOCK9	; phypfx = adrive || arecord
+1955:	092C' CD4E03  		CALL	MOVE
+1956:	092F' 3600    		LD	(HL),0		; zero pending flag
+1957:			
+1958:	0931'         	DEBLOCK45:
+1959:				; recadd = phybuffa + phy$off*80h
+1960:	0931' 3AD008  		LD	A,(PHY$OFF)
+1961:	0934' 3C      		INC	A
+1962:	0935' 118000  		LD	DE,80H
+1963:	0938' 2180FF  		LD	HL,0FF80H
+1964:	093B'         	DEBLOCK5:
+1965:	093B' 19      		ADD	HL,DE
+1966:	093C' 3D      		DEC	A
+1967:	093D' C23B09  		JP	NZ,DEBLOCK5
+1968:	0940' EB      		EX	DE,HL
+1969:	0941' 2A8F08  		LD	HL,(CURDMA)
+1970:	0944' 19      		ADD	HL,DE
+1971:				; If deblock command = locate
+1972:				; then buffa = recadd; return
+1973:	0945' F1      		POP	AF
+1974:	0946' FE03    		CP	3
+1975:	0948' C24F09  		JP	NZ,DEBLOCK6
+1976:	094B' 229108  		LD	(BUFFA),HL
+1977:	094E' C9      		RET
+1978:	094F'         	DEBLOCK6:
+1979:	094F' EB      		EX	DE,HL
+1980:	0950' 2AE108  		LD	HL,(DMAAD)
+1981:	0953' 018000  		LD	BC,80H
+1982:				; If deblock command = read
+1983:	0956' C34B0A  		JP	MOVE$TPA	; then move to dma
+1984:			
+1985:	0959'         	DEBLOCK8:
+1986:	0959' 3ABA08  		LD	A,(PHYMSK)
+1987:	095C' 47      		LD	B,A
+1988:	095D' 2F      		CPL
+1989:	095E' 4F      		LD	C,A
+1990:	095F' C9      		RET
+1991:			
+1992:	0960'         	DEBLOCK9:
+1993:	0960' 2AD108  		LD	HL,(CURBCBA)
+1994:	0963' 11C708  		LD	DE,ADRIVE
+1995:	0966' 0E04    		LD	C,4
+1996:	0968' C9      		RET
+1997:			
+1998:	0969'         	DEBLOCK10:
+1999:	0969' 110400  		LD	DE,4
+2000:	096C'         	DEBLOCK11:
+2001:	096C' 2AD108  		LD	HL,(CURBCBA)
+2002:	096F' 19      		ADD	HL,DE
+2003:	0970' C9      		RET
+2004:			
+2005:	0971'         	DEBLOCK$IO:
+2006:				; a = 0 -> seek only
+2007:				; a = 1 -> write
+2008:				; a = 2 -> read
+2009:	0971' F5      		PUSH	AF
+2010:	0972' CDDF03  		CALL	SEEK
+2011:	0975' F1      		POP	AF
+2012:	0976' 3D      		DEC	A
+2013:	0977' F4B803  		CALL	P,RDBUFF
+2014:				; Move track & sector to bcb
+2015:	097A' CD6909  		CALL	DEBLOCK10
+2016:	097D' 23      		INC	HL
+2017:	097E' 23      		INC	HL
+2018:	097F' 11D308  		LD	DE,TRACK
+2019:	0982' 0E04    		LD	C,4
+2020:	0984' C34E03  		JP	MOVE
+2021:			
+2022:	09FF'         		ORG	BASE+((($-BASE)+255) AND 0FF00H)-1
+2023:	09FF' 00      		DEFB	0
+2024:			
+2025:			; Bios equates
+2026:			
+2027:	0A00'         	BIOS$PG EQU	$
+2028:			
+2029:	0A00'         	BOOTF	EQU	BIOS$PG+00	; 00. cold boot
+2030:	0A0C'         	CONOUTF EQU	BIOS$PG+12	; 04. console output function
+2031:	0A18'         	HOMEF	EQU	BIOS$PG+24	; 08. disk home function
+2032:	0A1B'         	SELDSKF EQU	BIOS$PG+27	; 09. select disk function
+2033:	0A1E'         	SETTRKF EQU	BIOS$PG+30	; 10. set track function
+2034:	0A21'         	SETSECF EQU	BIOS$PG+33	; 11. set sector function
+2035:	0A24'         	SETDMAF EQU	BIOS$PG+36	; 12. set dma function
+2036:	0A30'         	SECTRAN EQU	BIOS$PG+48	; 16. sector translate
+2037:	0A4B'         	MOVEF	EQU	BIOS$PG+75	; 25. memory move function
+2038:	0A27'         	READF	EQU	BIOS$PG+39	; 13. read disk function
+2039:	0A4B'         	MOVE$OUT EQU	MOVEF
+2040:	0A4B'         	MOVE$TPA EQU	MOVEF
+2041:			
+2042:	0A00'         		END
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   321	symbols
+     0	bytes
+
+     1	macro calls
+   112	macro bytes
+     0	invented symbols
+
+
+
+Symbol Table:
+
+@bdate             0     
+@lcopy            17     
+@scopy            51     
+abase          =ffffff00'
+actual$rc        8c1'    
+addlist        =   d     
+adrive           8c7'    
+alloca           8a1'    
+arecord          8c8'    
+arecord1         8cb'    
+aret             30e'    
+atran            4c5'    
+bank$len         189'    
+bank$top         188'    
+base           =   0'    
+bde$e$bde$m$hl   32a'    
+bde$e$bde$p$hl   333'    
+bdos             192'    
+bdos$jmp         1d4'    
+bdose            192'    
+bdose2           1aa'    
+bios$pg        = a00'    
+blk$off          8bb'    
+blkmsk           8ad'    
+blkshf           8ac'    
+bnklen         =ffffff83'
+bnktop         =ffffff82'
+bootf          = a00'    
+break             a9'    
+buff           =ffffff80'
+buffa            891'    
+cdrmaxa          893'    
+checka           89f'    
+chksiz           8b5'    
+cloop             34'    
+clr$ext          568'    
+column           8df'    
+comlen         =ffffff81'
+compare          344'    
+compcol          2f3'    
+compext          5e8'    
+compout          2a3'    
+comtop         =ffffff80'
+conout           297'    
+conoutf        = a0c'    
+cpmfcb            ab'    
+cr             =   d     
+ctlh           =   8     
+curbcba          8d1'    
+curdma           88f'    
+curdsk           8c7'    
+curreca          897'    
+curselect        774'    
+curtrka          895'    
+dcnt             8e8'    
+deblock          8f6'    
+deblock$dir      8ed'    
+deblock$dta      8f3'    
+deblock$io       971'    
+deblock1         921'    
+deblock10        969'    
+deblock11        96c'    
+deblock45        931'    
+deblock5         93b'    
+deblock6         94f'    
+deblock8         959'    
+deblock9         960'    
+diocomp          3be'    
+dirbcba          8a3'    
+dirblk           8b3'    
+dircnt           8bc'    
+dirmax           8b1'    
+dirrec         =   4     
+diskf          =   c     
+dlog             88d'    
+dm$position      477'    
+dmaad            8e1'    
+dminx            8c0'    
+dmpos0           47e'    
+dmpos1           48c'    
+dmpos2           495'    
+dpbaddr          89d'    
+dpblist        =  11     
+dptr             8ce'    
+drvlbla          899'    
+dskmap         =  10     
+dskmsk         =   3     
+dskshf         =   2     
+dtabcba          8a5'    
+empty          =  e5     
+end$of$dir       5b0'    
+enddir         =ffff     
+endsearch        699'    
+entsp            245'    
+err$msg          2f4'    
+err$phys         308'    
+err$select       301'    
+error             a2'    
+execute           5f'    
+execute$sys       6f'    
+extmsk           8ae'    
+extnum         =   c     
+extval           8c5'    
+false          =   0     
+fcb            =ffffff5c'
+fcbdsk           8cf'    
+fcblen         =  20     
+fcbshf         =   5     
+func$ret         2ed'    
+func1          = 2ed'    
+func10         = 2ed'    
+func100        = 2ed'    
+func101        = 2ed'    
+func102        = 2ed'    
+func103        = 2ed'    
+func104        = 2ed'    
+func105        = 2ed'    
+func106        = 2ed'    
+func107        = 2ed'    
+func108        = 2ed'    
+func109        = 2ed'    
+func11         = 2ed'    
+func12         = 2ed'    
+func13           805'    
+func14           81c'    
+func15           822'    
+func16         = 2ed'    
+func17         = 2ed'    
+func18         = 2ed'    
+func19         = 2ed'    
+func2          = 2c0'    
+func20           840'    
+func21         = 2ed'    
+func22         = 2ed'    
+func23         = 2ed'    
+func24         = 2ed'    
+func25           846'    
+func26           84c'    
+func27         = 2ed'    
+func28         = 2ed'    
+func29         = 2ed'    
+func3          = 2ed'    
+func30         = 2ed'    
+func31         = 2ed'    
+func32         = 2ed'    
+func33         = 2ed'    
+func34         = 2ed'    
+func35         = 2ed'    
+func36         = 2ed'    
+func37         = 2ed'    
+func38         = 2ed'    
+func39         = 2ed'    
+func40         = 2ed'    
+func42         = 2ed'    
+func43         = 2ed'    
+func44         = 2ed'    
+func45         = 2ed'    
+func46         = 2ed'    
+func47         = 2ed'    
+func48         = 2ed'    
+func49         = 2ed'    
+func50         = 2ed'    
+func6          = 2ed'    
+func9            2e4'    
+functab          1e1'    
+fx               8e7'    
+get$de0          601'    
+get$de1          604'    
+get$de2          60e'    
+get$de3          61b'    
+get$dir$ext      5f9'    
+getbuffa         577'    
+getdm            49f'    
+getdma           497'    
+getdmd           4ad'    
+getdptra         55d'    
+getexta          4eb'    
+getfcb           504'    
+getfcba          4fb'    
+getrcnta         4f3'    
+goback           853'    
+goback1          875'    
+goerr            31c'    
+goerr1           325'    
+hash$tbla        8a7'    
+high$ext         8cd'    
+high$fxs         1cf'    
+hlrotl           538'    
+hlrotl0          539'    
+hlrotr           52b'    
+hlrotr0          52c'    
+home             39c'    
+homef          = a18'    
+index            4b3'    
+info             8e4'    
+lbyte          =   1     
+lf             =   a     
+linfo            8bf'    
+load              73'    
+loop              7a'    
+lret           = 30e'    
+lret$eq$ff       6a0'    
+lsn$add          89b'    
+lstack           297'    
+lword          =   2     
+maxall           8af'    
+maxext         =  1f     
+md             =  24     
+mem$top          186'    
+move             34e'    
+move$out       = a4b'    
+move$tpa       = a4b'    
+move0            34f'    
+movef          = a4b'    
+namlen         =   f     
+nfuncs         =  32     
+noselect         7fb'    
+notbacksp        2ba'    
+nxtrec         =  20     
+offset           8b7'    
+olddsk           8c3'    
+open             6a7'    
+open$copy        6ad'    
+open$func      =   f     
+open$reel        704'    
+open$reel2       71c'    
+open$reel3       726'    
+open$reel4       733'    
+openerr           cf'    
+openx            82c'    
+openxa           83c'    
+osentry        =ffffff84'
+osentry$adr      18a'    
+outdelim         8e0'    
+pass$arecord     3af'    
+phy$off          8d0'    
+phymsk           8ba'    
+physhf           8b9'    
+print            2d4'    
+printbuf       =   9     
+rcount           8c4'    
+rdbuff           3b8'    
+rddir            582'    
+rddir1           594'    
+read$deblock     8d7'    
+read$dir         5c0'    
+read$dir1        5d8'    
+read$func      =  14     
+read$proc         95'    
+readerr           fa'    
+readf          = a27'    
+reccnt         =   f     
+recordok         758'    
+recsiz         =  80     
+res$len          187'    
+resel            8e6'    
+reselect         7ae'    
+reselect1        7d7'    
+reselectx        7a7'    
+resetsys       =   d     
+restore$rc       6f1'    
+restore$rc1      702'    
+retmon           883'    
+retselect        39a'    
+rubout         =  7f     
+search           63f'    
+searcha          8ea'    
+searchext        687'    
+searchl          8ec'    
+searchloop       66d'    
+searchn          64f'    
+searchok         692'    
+sector           8d5'    
+sectpt           8aa'    
+sectran        = a30'    
+seek             3df'    
+seek0            3f5'    
+seek1            40c'    
+seek2            423'    
+seekdir          3cb'    
+sel$error        310'    
+seldsk           8e3'    
+seldskf        = a1b'    
+select           781'    
+selectdisk       358'    
+seqdiskread      73c'    
+serial           18c'    
+set$cdisk        53f'    
+set$end$dir      5b9'    
+set$rc           6c4'    
+set$rc1          6d7'    
+set$rc2          6dd'    
+set$seldsk       7a0'    
+setdata          5a0'    
+setdir           5a6'    
+setdma           5ac'    
+setdma$func    =  1a     
+setdma$proc       8f'    
+setdmaf        = a24'    
+setfcb           51b'    
+setlret1         2ee'    
+setsecf        = a21'    
+settrkf        = a1e'    
+shl3bv           33c'    
+shl3bv1          33d'    
+shr$physhf       470'    
+signon           125'    
+single           8c2'    
+sta$ret          2ea'    
+stackbot         186'    
+subdh            570'    
+tab            =   9     
+tab0             2c6'    
+tabout           2c0'    
+tbuff          =  80     
+test$vector      552'    
+track            8d3'    
+tranv            8bd'    
+true           =  ff     
+ubytes         =   d     
+vrecord          8c6'    

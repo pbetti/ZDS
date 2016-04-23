@@ -1,0 +1,237 @@
+; Z3BASE - Dynamic Configuration
+;
+; ZCPR33 is copyright 1987 by Echelon, Inc.  All rights reserved.  End-user
+; distribution and duplication permitted for non-commercial purposes only.
+; Any commercial use of ZCPR33, defined as any situation where the duplicator
+; recieves revenue by duplicating or distributing ZCPR33 by itself or in
+; conjunction with any hardware or software product, is expressly prohibited
+; unless authorized in writing by Echelon.
+;
+; This is a special version of Z3BASE, inspired by Joe Wright's Z3BASE
+; for Z-Com.  All segment addresses are automatically derived when the
+; CCP equate is set.  The benefit of this is that reconfiguration of the
+; system after initial installation is greatly eased.
+;
+; Although this version of Z3BASE is being distributed with ZCPR 3.3, any
+; previous version of Z3BASE can be used to assemble the Z33 Command
+; Processor.  No new symbols are needed.  So, if you have an existing
+; Z3BASE, go ahead and use it.
+;
+; Instructions:
+;
+; The user should first design the ZCPR3 memory usage using the chart
+; below.  (Echelon recommends the chart be filled out, even though it is
+; not read by the assembler, so that your system will be self-documenting.)
+; Then set the CCP equate for the beginning address of ZCPR3.  Next, examine
+; and change the SEGn equates which follow in the file to ensure that the
+; system segments and buffers are placed at the proper addresses.
+;
+; This file has been customized for use with AMPRO hard disk systems.  The
+; target configuration has support for hard disks up to 49 Meg, extended
+; IOP support, and 28-entry NDR.
+;
+;****************************************************************
+;*								*
+;*  Z3BASE.LIB -- Base Addresses for ZCPR 3.3/Z-System		*
+;*								*
+;* 	Segments:						*
+;*								*
+;*	Segment		Function				*
+;*	-------		--------				*
+;*	ZSDOS		ZSDOS 1.1				*
+;*	CBIOSZ		ZDS BIOS with additional		*
+;*			ZCPR3 initialization routines		*
+;*	ZCPR3		Echelon Z80 Command Processor		*
+;*			Replacement, Version 3.3 (ZCPR3)	*
+;*	*.ENV		All Environment Descriptors		*
+;*	*.FCP		All Flow Command Packages		*
+;*	*.NDR		All Named Directory Definition Files	*
+;*	*.RCP		All Resident Command Packages		*
+;*	*.IOP		All Input/Output Packages		*
+;*								*
+;*								*
+;* Memory Map of System (for CCP EQU 0BC00H):			*
+;*								*
+;*	Address Range	  Size	Function			*
+;*	-------------	-------	--------			*
+;*	    0 -   FF	256 b	Standard CP/M Buffers except	*
+;*	  100 - C2FF	~48 K	Transient Program Area		*
+;*	 C200 - C9FF	  2 K	ZCPR 3.3 Command Processor	*
+;*	 CA00 - D7FF	3.5 K	ZSDOS				*
+;*	 D800 - E1FF	2.5 K	BIOS with disk buffers		*
+;*	 E200 - E9FF	  2 K	Resident Command Package	*
+;*	 0000 - 0000	1.5 K	Input/Output Package		*
+;*	 EA00 - EBFF	 .5 K	Flow Command Package		*
+;*	 EC00 - ECFF	256 b	Environment Descriptor		*
+;*				Bytes 00H-7FH:  Z3 Parameters	*
+;*				Bytes 80H-FFH:  Z3 TCAP		*
+;*	 ED00 - ED7F	128 b	ZCPR3 Shell Stack		*
+;*	 ED80 - EDCF	 80 b	ZCPR3 Message Buffers		*
+;*	 EDD0 - EDF3	 36 b	ZCPR3 External FCB		*
+;*	 EDF4 - EDFE	 11 b	ZCPR3 External Path	        *
+;*       EDFF  		  1 b	Wheel Byte			*
+;*	 EE00 - EEFF    256 B	Memory-Based Named Directory	*
+;*	 EF00 - EFCF	208 B	Multiple Command Line Buffer	*
+;*	 EFD0 - EFFF	 48 b	ZCPR3 External Stack		*
+;****************************************************************
+
+; include	macro	filename
+;
+; 	 if	zas
+; 	.in		filename
+; 	 else	;slr assembler
+; 	include	filename
+; 	 endif	;zas
+;
+; 	 endm
+
+; FALSE	equ	0
+; TRUE	equ	NOT FALSE
+
+Z3REV	EQU	33	; ZCPR3 REV NUMBER
+; MSIZE	EQU	54	; SIZE OF CPM SYSTEM
+
+BASE	EQU	0
+
+; CCP	EQU	0BC00H 	; ZCPR3 COMMAND PROCESSOR
+
+SEG1	EQU	ZBUFBAS	; where the things starts
+
+;
+; RCP definition.  Set RCPS to 0 to eliminate RCP
+;
+
+RCPS	EQU	16		; 16 128-byte Blocks (2K bytes)
+
+	 IF	RCPS NE 0
+RCP	EQU	SEG1		; RESIDENT COMMAND PACKAGE
+	 ELSE
+RCP	EQU	0
+	 ENDIF
+
+SEG2	EQU	SEG1+(RCPS*128)
+
+;
+; IOP definition.  Set IOPS to 0 to eliminate IOP
+;
+; IOPS	EQU	12		; 12 128-byte Blocks (1.5K bytes)
+IOPS	EQU	0		; 12 128-byte Blocks (1.5K bytes)
+
+	 IF	IOPS NE 0
+IOP	EQU	SEG2		; REDIRECTABLE I/O PACKAGE
+	 ELSE
+IOP	EQU	0
+	 ENDIF
+
+SEG3	EQU	SEG2+(IOPS*128)
+
+;
+; FCP definition.  Set FCPS to 0 to eliminate FCP
+;
+
+FCPS	EQU	4	; 4 128-byte Blocks (0.5K bytes)
+
+	 IF	FCPS NE 0
+FCP	EQU	SEG3
+	 ELSE
+FCP	EQU	0
+	 ENDIF
+
+ZDSSTPR	EQU	(FCP-ZDSSTSZ)	; Z80 Darkstar P2DOS Stamper
+
+SEG10	EQU	SEG3+(FCPS*128)
+
+;
+; The ZCPR3 External Environment Descriptor is mandatory for ZCPR 3.3.
+; Echelon recommends you work this out so that your ENV begins at address
+; FE00h, but this is only a recommendation and not mandatory.
+;
+
+Z3ENV	EQU	SEG10	; ENVIRONMENT DESCRIPTORS
+Z3ENVS	EQU	2	; SIZE OF ENVIRONMENT DESCRIPTOR IN 128-BYTE BLOCKS
+
+SEG4	EQU	SEG10+(Z3ENVS*128)
+
+;
+; Shell Stack definition.  Set SHSTKS to 0 to eliminate Shell Stack
+;
+
+SHSTKS	EQU	4	; NUMBER OF SHSIZE-BYTE SHELL STACK ENTRIES
+SHSIZE	EQU	32	; SIZE OF A SHELL STACK ENTRY
+			;   (STACK SIZE = SHSTKS * SHSIZE)
+	 IF SHSTKS NE 0
+SHSTK	EQU	SEG4
+	 ELSE
+SHSTK	EQU	0
+	 ENDIF
+
+SEG5	EQU	SEG4+(SHSTKS*SHSIZE)
+
+;
+; The ZCPR3 Message Buffers are mandatory for ZCPR 3.3.
+;
+Z3MSG	EQU	SEG5		; ZCPR3 MESSAGE BUFFER
+
+SEG6	EQU	SEG5+80
+
+;
+; The ZCPR3 External FCB is mandatory for ZCPR 3.3.
+;
+
+EXTFCB	EQU	SEG6		; ZCPR3 EXTERNAL FCB
+
+SEG7	EQU	SEG6+36
+
+;
+; The Path is mandatory for ZCPR 3.3.  No more than 5 path elements can be
+; used with this Z3BASE.LIB file.
+;
+
+EXPATH	EQU	SEG7		; EXTERNAL PATH
+EXPATHS	EQU	5		; 5 2-byte Path Elements
+				;  (PATH SIZE = EXPATHS*2 + 1)
+
+SEG8	EQU	SEG7+(EXPATHS*2)+1
+
+;
+; The ZCPR3 Wheel Byte is mandatory for ZCPR 3.3.
+;
+
+Z3WHL	EQU	SEG8		; WHEEL BYTE ADDRESS
+
+SEG9	EQU	SEG8+1
+
+;
+; ZCPR3 Named Directory Buffer definition.  Set Z3NDIRS to 0 to eliminate
+; the named directory buffer.  If Z3NDIRS is changed, also change the seg11
+; equate below.
+;
+Z3NDIRS	EQU	28		; 28 18-byte Named Directory Elements permitted
+				;   (NDIR SIZE = Z3NDIRS*18 + 1 for trailing 0)
+	 IF	Z3NDIRS NE 0
+Z3NDIR	EQU	SEG9		; ZCPR3 NAMED DIRECTORY AREA
+	 ELSE
+Z3NDIR	EQU	0
+	 ENDIF
+
+SEG11	EQU	SEG9+256	; add 512 for 28-entry NDR
+				; add 256 for 14-entry NDR ("standard")
+				; add 0 if Z3NDIRS is set to 0
+
+;
+; The ZCPR3 External Command Line Buffer is mandatory for ZCPR 3.3.
+;
+
+Z3CL	EQU	SEG11	; ZCPR3 COMMAND LINE BUFFER
+Z3CLS	EQU	208	; SIZE OF COMMAND LINE BUFFER
+
+SEG12	EQU	SEG11+Z3CLS
+
+;
+; The ZCPR3 External Stack is mandatory for ZCPR 3.3.
+;
+
+EXTSTK	EQU	SEG12	; ZCPR3 EXTERNAL STACK
+
+; end of Z3BASE.LIB
+

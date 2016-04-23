@@ -1,0 +1,1845 @@
+   1:			
+   2:			;
+   3:			; Test Program to intreact with the CPM3 type BIOS for my IDE intreface board
+   4:			;	Author John Monahan		www.S100Computers.com
+   5:			;==============================================================================
+   6:			;	CPM3 BIOS for IDE Controller board using LBA Mode sector addressing
+   7:			;
+   8:				; INCLUDE Z-80 MACRO LIBRARY:
+   9:			; 	MACLIB	Z80
+  10:			
+  11:			;------------------------------------------------------------------
+  12:			; Hardware Configuration
+  13:			;	10/16/2009	V1.0	Initial version, just Disk ID routine checked out OK.
+  14:			;	10/16/2009	V1.1	Sector R/W started. Problems with sec 0 & 1. 
+  15:			;	10/16/2009	V1.2	Added sequential sector reads 
+  16:			;	10/17/2009	V1.3	Reformed interface to recognize CPM style TRK#/Sec#
+  17:			;	10/17/2009	V1.4	Utilize all 15 heads instead of 8 (16bit /8 divide)
+  18:			;	10/19/2009	V1.5	Use HEADS equate, remove delay routine
+  19:			;	10/23/2009	V1.6	Byte order (big endian/little endian) converted to Intel
+  20:			;				format of low byte then high byte of sector data. This was 
+  21:			;				necessary to be compatable with every other IDE drive out there.
+  22:			;
+  23:			;
+  24:			
+  25:			;Ports for 8255 chip. Change these to specify where the 8255 is addressed,
+  26:			;and which of the 8255's ports are connected to which IDE signals.
+  27:			;The first three control which 8255 ports have the control signals,
+  28:			;upper and lower data bytes.  The last one is for mode setting for the
+  29:			;8255 to configure its ports, which must correspond to the way that
+  30:			;the first three lines define which ports are connected.
+  31:			
+  32:	00E0          	IDEPORTA	EQU	0E0H		;lower 8 bits of IDE interface
+  33:	00E1          	IDEPORTB	EQU	0E1H		;upper 8 bits of IDE interface
+  34:	00E2          	IDEPORTC	EQU	0E2H		;control lines for IDE interface
+  35:	00E3          	IDEPORTCTRL	EQU	0E3H		;8255 configuration port
+  36:			
+  37:	0092          	READCFG8255	EQU	10010010B	;Set 8255 IDEportC out, IDEportA/B input
+  38:	0080          	WRITECFG8255	EQU	10000000B	;Set all three 8255 ports output
+  39:			
+  40:			;IDE control lines for use with IDEportC.  Change these 8
+  41:			;constants to reflect where each signal of the 8255 each of the
+  42:			;IDE control signals is connected.  All the control signals must
+  43:			;be on the same port, but these 8 lines let you connect them to
+  44:			;whichever pins on that port.
+  45:			
+  46:	0001          	IDEA0LINE	EQU	01H		;direct from 8255 to IDE interface
+  47:	0002          	IDEA1LINE	EQU	02H		;direct from 8255 to IDE interface
+  48:	0004          	IDEA2LINE	EQU	04H		;direct from 8255 to IDE interface
+  49:	0008          	IDECS0LINE	EQU	08H		;inverter between 8255 and IDE interface
+  50:	0010          	IDECS1LINE	EQU	10H		;inverter between 8255 and IDE interface
+  51:	0020          	IDEWRLINE	EQU	20H		;inverter between 8255 and IDE interface
+  52:	0040          	IDERDLINE	EQU	40H		;inverter between 8255 and IDE interface
+  53:	0080          	IDERSTLINE	EQU	80H		;inverter between 8255 and IDE interface
+  54:			;
+  55:			;Symbolic constants for the IDE Drive registers, which makes the
+  56:			;code more readable than always specifying the address pins
+  57:			
+  58:	0008          	REGDATA		EQU	IDECS0LINE
+  59:	0009          	REGERR		EQU	IDECS0LINE + IDEA0LINE
+  60:	000A          	REGSECCNT	EQU	IDECS0LINE + IDEA1LINE
+  61:	000B          	REGSECTOR	EQU	IDECS0LINE + IDEA1LINE + IDEA0LINE
+  62:	000C          	REGCYLINDERLSB	EQU	IDECS0LINE + IDEA2LINE
+  63:	000D          	REGCYLINDERMSB	EQU	IDECS0LINE + IDEA2LINE + IDEA0LINE
+  64:	000E          	REGSHD		EQU	IDECS0LINE + IDEA2LINE + IDEA1LINE		;(0EH)
+  65:	000F          	REGCOMMAND	EQU	IDECS0LINE + IDEA2LINE + IDEA1LINE + IDEA0LINE	;(0FH)
+  66:	000F          	REGSTATUS	EQU	IDECS0LINE + IDEA2LINE + IDEA1LINE + IDEA0LINE
+  67:	0016          	REGCONTROL	EQU	IDECS1LINE + IDEA2LINE + IDEA1LINE
+  68:	0017          	REGASTATUS	EQU	IDECS1LINE + IDEA2LINE + IDEA1LINE + IDEA0LINE
+  69:			
+  70:			;IDE Command Constants.  These should never change.
+  71:			
+  72:	0010          	COMMANDRECAL	EQU	10H
+  73:	0020          	COMMANDREAD	EQU	20H
+  74:	0030          	COMMANDWRITE	EQU	30H
+  75:	0091          	COMMANDINIT	EQU	91H
+  76:	00EC          	COMMANDID	EQU	0ECH
+  77:	00E0          	COMMANDSPINDOWN	EQU	0E0H
+  78:	00E1          	COMMANDSPINUP	EQU	0E1H
+  79:			;
+  80:			;
+  81:			; IDE Status Register:
+  82:			;  bit 7: Busy	1=busy, 0=not busy
+  83:			;  bit 6: Ready 1=ready for command, 0=not ready yet
+  84:			;  bit 5: DF	1=fault occured insIDE drive
+  85:			;  bit 4: DSC	1=seek complete
+  86:			;  bit 3: DRQ	1=data request ready, 0=not ready to xfer yet
+  87:			;  bit 2: CORR	1=correctable error occured
+  88:			;  bit 1: IDX	vendor specific
+  89:			;  bit 0: ERR	1=error occured
+  90:			;
+  91:			;
+  92:	000D          	CR		EQU	0DH
+  93:	000A          	LF		EQU	0AH
+  94:	001B          	ESC		EQU	1BH
+  95:	001C          	CLEAR		EQU	1CH		;SD Systems Video Board, Clear to EOL. (Use 80 spaces if EOL not available
+  96:								;on other video cards)
+  97:			;	
+  98:	003D          	MAXSEC		EQU	3DH		;Sectors per track for CF my Memory drive, Kingston CF 8G. (CPM format, 0-3CH)
+  99:								;translates to LBA format of 1 to 3D sectors, for a total of 61 sectors/track.
+ 100:								;This CF card actully has 3F sectors/track. Will use 3D for my CPM3 system because
+ 101:								;my Seagate drive has 3D sectors/track. Don't want different CPM3.SYS files around
+ 102:			;					;so this program will also work with a Seagate 6531 IDE drive
+ 103:			
+ 104:	0001          	RDCON		EQU	1		;For CP/M I/O
+ 105:	0002          	WRCON		EQU	2
+ 106:	0009          	PRINT		EQU	9
+ 107:	000B          	CONST		EQU	11		;CONSOLE STAT
+ 108:	0005          	BDOS		EQU	5
+ 109:	FFFE          	OFSCOR		EQU	-2
+ 110:			
+ 111:	FFFF          	TRUE		EQU	-1
+ 112:	0000          	FALSE		EQU	0
+ 113:			
+ 114:	FFFF          	CPM		EQU	TRUE		; TRUE if output via CPM, FALSE if direct to hardware
+ 115:	FFFF          	DEBUG		EQU	TRUE
+ 116:	FFFF          	CPMTRASL	EQU	TRUE		;Translate Trk,Sec,Head to CPM TRACK# & SEC#
+ 117:			
+ 118:	FFFF          		IF	CPM
+ 119:	0000          	ABORT	EQU	0H
+ 120:				ELSE	
+ 122:				ENDIF	
+ 123:			;
+ 124:			;
+ 125:	0100          		ORG	100H
+ 126:			;
+ 127:	0100          	BEGIN:
+ 128:	0100  31FD0D  		LD	SP,STACK
+ 129:	0103  110F07  		LD	DE,SIGNON	;print a welcome message
+ 130:	0106  CD0604  		CALL	PSTRING
+ 131:				
+ 132:	0109  CD200C  		CALL	IDEINIT		;initialize the board and drive. If there is no drive abort
+ 133:	010C  CA1B01  		JP	Z,INITOK
+ 134:	010F  116F07  		LD	DE,INITERROR
+ 135:	0112  CD0604  		CALL	PSTRING
+ 136:	0115  CD2704  		CALL	SHOWERRORS
+ 137:	0118  C30000  		JP	ABORT
+ 138:				
+ 139:			
+ 140:	011B          	INITOK:
+ 141:	011B  CDDA02  		CALL	DRIVEID		;get the drive id info. If there is no drive abort
+ 142:	011E  CA2D01  		JP	Z,INITOK1
+ 143:	0121  118A07  		LD	DE,IDERROR
+ 144:	0124  CD0604  		CALL	PSTRING
+ 145:	0127  CD2704  		CALL	SHOWERRORS
+ 146:	012A  C30000  		JP	ABORT
+ 147:			
+ 148:	012D          	INITOK1:
+ 149:	012D  11BE07  		LD	DE, MSGMDL	;print the drive's model number
+ 150:	0130  CD0604  		CALL	PSTRING
+ 151:	0133  213410  		LD	HL,IDBUFFER + 54 + OFSCOR
+ 152:	0136  0614    		LD	B,20		;character count in words
+ 153:	0138  CDB603  		CALL	PRINTNAME	;Print [HL], [B] X 2 characters
+ 154:	013B  CDC503  		CALL	ZCRLF
+ 155:							; print the drive's serial number
+ 156:	013E  11C607  		LD	DE, MSGSN
+ 157:	0141  CD0604  		CALL	PSTRING
+ 158:	0144  211210  		LD	HL,IDBUFFER + 20 + OFSCOR
+ 159:	0147  060A    		LD	B, 10		;Character count in words
+ 160:	0149  CDB603  		CALL	PRINTNAME
+ 161:	014C  CDC503  		CALL	ZCRLF
+ 162:							;Print the drive's firmware revision string
+ 163:	014F  11CE07  		LD	DE, MSGREV
+ 164:	0152  CD0604  		CALL	PSTRING
+ 165:	0155  212C10  		LD	HL,IDBUFFER + 46 + OFSCOR
+ 166:	0158  0604    		LD	B, 4
+ 167:	015A  CDB603  		CALL	PRINTNAME	;Character count in words
+ 168:	015D  CDC503  		CALL	ZCRLF
+ 169:							;print the drive's cylinder, head, and sector specs
+ 170:	0160  11D607  		LD	DE, MSGCY
+ 171:	0163  CD0604  		CALL	PSTRING
+ 172:	0166  210010  		LD	HL,IDBUFFER + 2 + OFSCOR
+ 173:	0169  CDCB04  		CALL	PRINTPARM
+ 174:	016C  11E207  		LD	DE,MSGHD
+ 175:	016F  CD0604  		CALL	PSTRING
+ 176:	0172  210410  		LD	HL,IDBUFFER + 6 + OFSCOR
+ 177:	0175  CDCB04  		CALL	PRINTPARM
+ 178:	0178  11EC07  		LD	DE, MSGSC
+ 179:	017B  CD0604  		CALL	PSTRING
+ 180:	017E  210A10  		LD	HL,IDBUFFER + 12 + OFSCOR
+ 181:	0181  CDCB04  		CALL	PRINTPARM
+ 182:	0184  CDC503  		CALL	ZCRLF
+ 183:							;Default position will be first block 
+ 184:	0187  210000  		LD	HL,0
+ 185:	018A  22B80D  		LD	(@SEC),HL	;Default to Track 0, Sec 0
+ 186:	018D  22BA0D  		LD	(@TRK),HL
+ 187:	0190  210020  		LD	HL,BUFFER	;Set DMA address to buffer
+ 188:	0193  22B30D  		LD	(@DMA),HL
+ 189:			
+ 190:	0196          	MAINLOOP: 			;A 1 line prompt
+ 191:	0196  CDC503  		CALL	ZCRLF	
+ 192:	0199  CD7303  		CALL	DISPLAYPOSITION	;Display current Track,sector,head#
+ 193:	019C  CDC503  		CALL	ZCRLF
+ 194:			
+ 195:	019F  111D08  		LD	DE,CMDSTRING	;List command options
+ 196:	01A2  CD0604  		CALL	PSTRING
+ 197:	01A5  CDFA03  		CALL	ZCI
+ 198:	01A8  FE1B    		CP	ESC		;Abort if ESC
+ 199:	01AA  CA0000  		JP	Z,ABORT
+ 200:	01AD  CD9705  		CALL	UPPER
+ 201:	01B0  CDC503  		CALL	ZCRLF
+ 202:			
+ 203:	01B3  FE52    	MAIN1:	CP	'R'		;read a sector @ LBA to buffer
+ 204:	01B5  C2CD01  		JP	NZ,MAIN2
+ 205:			
+ 206:	01B8  CD6B0C  		CALL	READSECTOR
+ 207:			
+ 208:	01BB  CAC401  		JP	Z,MAIN1B	;Z means the sector read was OK
+ 209:	01BE  CDC503  		CALL	ZCRLF
+ 210:	01C1  C39601  		JP	MAINLOOP
+ 211:	01C4  11E308  	MAIN1B:	LD	DE, MSGRD	;Sector read OK
+ 212:	01C7  CD0604  		CALL	PSTRING
+ 213:	01CA  C39601  		JP	MAINLOOP
+ 214:			
+ 215:	01CD  FE57    	MAIN2:	CP	'W'		;write a sector @ LBA buffer
+ 216:	01CF  C20702  		JP	NZ,MAIN3		
+ 217:	01D2  119D08  		LD	DE,MSGSURE	;Are you sure?
+ 218:	01D5  CD0604  		CALL	PSTRING
+ 219:	01D8  CDFA03  		CALL	ZCI
+ 220:	01DB  CD9705  		CALL	UPPER
+ 221:	01DE  FE59    		CP	'Y'
+ 222:	01E0  C20402  		JP	NZ,MAIN2C
+ 223:	01E3  CDC503  		CALL	ZCRLF
+ 224:				
+ 225:	01E6  210030  		LD	HL,$3000
+ 226:	01E9  22B30D  		LD	(@DMA),HL
+ 227:			
+ 228:	01EC  CDA80C  		CALL	WRITESECTOR
+ 229:			
+ 230:	01EF  210020  		LD	HL,BUFFER
+ 231:	01F2  22B30D  		LD	(@DMA),HL
+ 232:			
+ 233:	01F5  CAFE01  		JP	Z,MAIN2B	;Z means the sector write was OK
+ 234:	01F8  CDC503  		CALL	ZCRLF
+ 235:	01FB  C39601  		JP	MAINLOOP
+ 236:	01FE  11F408  	MAIN2B:	LD	DE, MSGWR	;Sector written OK
+ 237:	0201  CD0604  		CALL	PSTRING
+ 238:	0204  C39601  	MAIN2C:	JP	MAINLOOP
+ 239:			
+ 240:	0207  FE4C    	MAIN3:	CP	'L'		;set the logical block address
+ 241:	0209  C21E02  		JP	NZ,MAIN4		
+ 242:	020C  110609  		LD	DE,GETLBA	
+ 243:	020F  CD0604  		CALL	PSTRING
+ 244:	0212  CD2605  		CALL	GHEX32LBA	;Get new CPM style Track & Sector number and put them in RAM at at @SEC & @TRK 
+ 245:	0215  DA1802  		JP	C,MAIN3B	;Ret C set if abort/error
+ 246:			;	CALL	XLATE		;Convert to actual hardware track,sec,head
+ 247:	0218  CDC503  	MAIN3B:	CALL	ZCRLF
+ 248:	021B  C39601  		JP	MAINLOOP
+ 249:			
+ 250:	021E  FE55    	MAIN4:	CP	'U'		;cause the drive to spin up
+ 251:	0220  C22902  		JP	NZ,MAIN5		
+ 252:	0223  CD0103  		CALL	SPINUP
+ 253:	0226  C39601  		JP	MAINLOOP
+ 254:			
+ 255:	0229  FE44    	MAIN5:	CP	'D'		;cause the drive to spin down
+ 256:	022B  C23402  		JP	NZ,MAIN6			
+ 257:	022E  CD1003  		CALL	SPINDOWN
+ 258:	0231  C39601  		JP	MAINLOOP
+ 259:			
+ 260:	0234  FE51    	MAIN6:	CP	'Q'		;quit
+ 261:	0236  C23C02  		JP	NZ,MAIN7		
+ 262:	0239  C30000  		JP	0
+ 263:			
+ 264:	023C  FE48    	MAIN7:	CP	'H'
+ 265:	023E  C24702  		JP	NZ,MAIN8
+ 266:	0241  CDA805  		CALL	HEXDUMP
+ 267:	0244  C39601  		JP	MAINLOOP	;Display what is in buffer
+ 268:			
+ 269:	0247  FE53    	MAIN8:	CP	'S'
+ 270:	0249  C25202  		JP	NZ,MAIN9
+ 271:	024C  CD1B03  		CALL	SEQUENTIALREADS
+ 272:	024F  C39601  		JP	MAINLOOP
+ 273:			
+ 274:	0252  FE46    	MAIN9:	CP	'F'	;	Format (Fill sectors with E5's for CPM directory empty)
+ 275:	0254  C27E02  		JP	NZ,MAIN10
+ 276:	0257  11E00B  		LD	DE,FORMATMSG
+ 277:	025A  CD0604  		CALL	PSTRING
+ 278:	025D  119D08  		LD	DE,MSGSURE	;Are you sure?
+ 279:	0260  CD0604  		CALL	PSTRING
+ 280:	0263  CDFA03  		CALL	ZCI
+ 281:	0266  CD9705  		CALL	UPPER
+ 282:	0269  FE59    		CP	'Y'
+ 283:	026B  C29601  		JP	NZ,MAINLOOP
+ 284:			;
+ 285:	026E  210020  		LD	HL,BUFFER	;fill buffer with 0E5's (512 of them)
+ 286:	0271  0600    		LD	B,0
+ 287:	0273  3EE5    	FILL0:	LD	A,0E5H		;<-- Sector fill character (0E5's for CPM)
+ 288:	0275  77      		LD	(HL),A
+ 289:	0276  23      		INC	HL
+ 290:	0277  77      		LD	(HL),A
+ 291:	0278  23      		INC	HL
+ 292:	0279  10F8    		DJNZ	FILL0
+ 293:	027B  CDC503  		CALL	ZCRLF
+ 294:			
+ 295:	027E  FE49    	MAIN10:	CP	'I'
+ 296:	0280  C29601  		JP	NZ,MAINLOOP
+ 297:	0283  CDB105  		CALL	IHEXDUMP
+ 298:	0286  C39601  		JP	MAINLOOP	;Display what is in buffer
+ 299:			;
+ 300:	0289          	NEXTFORMAT:
+ 301:	0289  210020  		LD	HL,BUFFER
+ 302:	028C  22B30D  		LD	(@DMA),HL
+ 303:	028F  CDA80C  		CALL	WRITESECTOR	;Will return error if there was one
+ 304:	0292  CA9B02  		JP	Z,MAIN9B	;Z means the sector write was OK
+ 305:	0295  CDC503  		CALL	ZCRLF
+ 306:	0298  C39601  		JP	MAINLOOP
+ 307:	029B  CDD203  	MAIN9B:	CALL	ZEOL		;Clear line cursor is on
+ 308:	029E  CD7303  		CALL	DISPLAYPOSITION	;Display actual current Track,sector,head#
+ 309:	02A1  CDDD03  		CALL	ZCSTS		;Any keyboard character will stop display
+ 310:	02A4  FE01    		CP	01H		;CPM Says something there
+ 311:	02A6  C2BD02  		JP	NZ,WRNEXTSEC1
+ 312:	02A9  CDFA03  		CALL	ZCI		;Flush character
+ 313:	02AC  11AE0B  		LD	DE,CONTINUEMSG
+ 314:	02AF  CD0604  		CALL	PSTRING
+ 315:	02B2  CDFA03  		CALL	ZCI
+ 316:	02B5  FE1B    		CP	ESC
+ 317:	02B7  CA9601  		JP	Z,MAINLOOP
+ 318:	02BA  CDC503  		CALL	ZCRLF
+ 319:	02BD          	WRNEXTSEC1:
+ 320:	02BD  2AB80D  		LD	HL,(@SEC)
+ 321:	02C0  23      		INC	HL
+ 322:	02C1  22B80D  		LD	(@SEC),HL	;0 to MAXSEC CPM Sectors
+ 323:	02C4  7D      		LD	A,L
+ 324:	02C5  FE3D    		CP	MAXSEC
+ 325:	02C7  C28902  		JP	NZ,NEXTFORMAT
+ 326:			
+ 327:	02CA  210000  		LD	HL,0		;Back to CPM sector 0
+ 328:	02CD  22B80D  		LD	(@SEC),HL
+ 329:	02D0  2ABA0D  		LD	HL,(@TRK)	;Bump to next track
+ 330:	02D3  23      		INC	HL
+ 331:	02D4  22BA0D  		LD	(@TRK),HL
+ 332:	02D7  C38902  		JP	NEXTFORMAT	;Note will go to last sec on disk unless stopped
+ 333:							;Will actully hang if we get to end of disk!
+ 334:			;
+ 335:				;Do the IDEntify drive command, and return with the buffer
+ 336:				;filled with info about the drive
+ 337:				
+ 338:	02DA          	DRIVEID:
+ 339:	02DA  CD190D  		CALL	IDEWAITNOTBUSY
+ 340:	02DD  D8      		RET	C		;If Busy return NZ
+ 341:	02DE  16EC    		LD	D,COMMANDID
+ 342:	02E0  1E0F    		LD	E,REGCOMMAND
+ 343:	02E2  CD9C0D  		CALL	IDEWR8D		;issue the command
+ 344:	02E5  0604    		LD	B,4
+ 345:	02E7  CDF902  		CALL	VARDELAY
+ 346:	02EA  CD670D  		CALL	IDEWAITDRQONLY	;Wait for DRQ=1
+ 347:	02ED  DA2704  		JP	C,SHOWERRORS
+ 348:				
+ 349:	02F0  0600    		LD	B,0		;256 words
+ 350:	02F2  210010  		LD	HL,IDBUFFER	;Store data here
+ 351:	02F5  CD860C  		CALL	MORERD16	;Get 256 words of data from REGdata port to [HL]
+ 352:	02F8  C9      		RET	
+ 353:			;
+ 354:	02F9          	VARDELAY: 
+ 355:	02F9  3E02    		LD	A,2
+ 356:	02FB  CD550C  		CALL	DELAYX		;Long delay, drive has to get up to speed
+ 357:	02FE  10F9    		DJNZ	VARDELAY
+ 358:	0300  C9      		RET	
+ 359:			
+ 360:			;
+ 361:	0301          	SPINUP:
+ 362:	0301  16E1    		LD	D,COMMANDSPINUP
+ 363:	0303  1E0F    	SPUP2:	LD	E,REGCOMMAND
+ 364:	0305  CD9C0D  		CALL	IDEWR8D
+ 365:	0308  CD190D  		CALL	IDEWAITNOTBUSY
+ 366:	030B  DA2704  		JP	C,SHOWERRORS
+ 367:	030E  B7      		OR	A		;Clear carry
+ 368:	030F  C9      		RET	
+ 369:			
+ 370:			
+ 371:				;Tell the drive to spin down
+ 372:	0310          	SPINDOWN:
+ 373:	0310  CD190D  		CALL	IDEWAITNOTBUSY
+ 374:	0313  DA2704  		JP	C,SHOWERRORS
+ 375:	0316  16E0    		LD	D,COMMANDSPINDOWN
+ 376:	0318  C30303  		JP	SPUP2
+ 377:			
+ 378:	031B          	SEQUENTIALREADS: 
+ 379:	031B  CD190D  		CALL	IDEWAITNOTBUSY	;sequentially read sectors one at a time from current position
+ 380:	031E  DA2704  		JP	C,SHOWERRORS
+ 381:			;
+ 382:	0321  CDC503  		CALL	ZCRLF
+ 383:	0324          	NEXTSEC:
+ 384:	0324  CD6B0C  		CALL	READSECTOR	;If there are errors they will show up in READSECTOR
+ 385:	0327  CA3603  		JP	Z,SEQOK
+ 386:	032A  11AE0B  		LD	DE,CONTINUEMSG
+ 387:	032D  CD0604  		CALL	PSTRING
+ 388:	0330  CDFA03  		CALL	ZCI
+ 389:	0333  FE1B    		CP	ESC		;Abort if ESC
+ 390:	0335  C8      		RET	Z
+ 391:	0336          	SEQOK:
+ 392:	0336  CDD203  		CALL	ZEOL		;Clear line cursor is on
+ 393:	0339  CD7303  		CALL	DISPLAYPOSITION	;Display current Track,sector,head#
+ 394:	033C  CDDD03  		CALL	ZCSTS		;Any keyboard character will stop display
+ 395:	033F  FE01    		CP	01H		;CPM Says something there
+ 396:	0341  C25603  		JP	NZ,NEXTSEC1
+ 397:	0344  CDFA03  		CALL	ZCI		;Flush character
+ 398:	0347  11AE0B  		LD	DE,CONTINUEMSG
+ 399:	034A  CD0604  		CALL	PSTRING
+ 400:	034D  CDFA03  		CALL	ZCI
+ 401:	0350  FE1B    		CP	ESC
+ 402:	0352  C8      		RET	Z
+ 403:	0353  CDC503  		CALL	ZCRLF
+ 404:	0356          	NEXTSEC1:
+ 405:	0356  2AB80D  		LD	HL,(@SEC)
+ 406:	0359  23      		INC	HL
+ 407:	035A  22B80D  		LD	(@SEC),HL	
+ 408:	035D  7D      		LD	A,L		;0 to 62 CPM Sectors
+ 409:	035E  FE3C    		CP	MAXSEC-1
+ 410:	0360  C22403  		JP	NZ,NEXTSEC
+ 411:			
+ 412:	0363  210000  		LD	HL,0		;Back to CPM sector 0
+ 413:	0366  22B80D  		LD	(@SEC),HL
+ 414:	0369  2ABA0D  		LD	HL,(@TRK)	;Bump to next track
+ 415:	036C  23      		INC	HL
+ 416:	036D  22BA0D  		LD	(@TRK),HL
+ 417:	0370  C32403  		JP	NEXTSEC		;Note will go to last sec on disk unless stopped
+ 418:			;
+ 419:			;
+ 420:			;---------------- Support Routines -------------------------------------------
+ 421:			;
+ 422:	0373          	DISPLAYPOSITION: 		;Display current track,sector & head position
+ 423:	0373  11F807  		LD	DE,MSGCPMTRK	;Display in LBA format
+ 424:	0376  CD0604  		CALL	PSTRING		;---- CPM FORMAT ----
+ 425:	0379  3ABB0D  		LD	A,(@TRK+1)	;High TRK byte
+ 426:	037C  CDF304  		CALL	PHEX
+ 427:	037F  3ABA0D  		LD	A,(@TRK)	;Low TRK byte
+ 428:	0382  CDF304  		CALL	PHEX	
+ 429:	0385  110308  		LD	DE,MSGCPMSEC
+ 430:	0388  CD0604  		CALL	PSTRING		;SEC = (16 bits)
+ 431:	038B  3AB90D  		LD	A,(@SEC+1)	;High Sec
+ 432:	038E  CDF304  		CALL	PHEX
+ 433:	0391  3AB80D  		LD	A,(@SEC)	;Low sec
+ 434:	0394  CDF304  		CALL	PHEX
+ 435:				;---- LBA FORMAT ----
+ 436:	0397  110F08  		LD	DE, MSGLBA
+ 437:	039A  CD0604  		CALL	PSTRING		;(LBA = 00 (<-- Old "Heads" = 0 for these drives).
+ 438:	039D  3AB70D  		LD	A,(@DRIVE$TRK+1);High "cylinder" byte
+ 439:	03A0  CDF304  		CALL	PHEX
+ 440:	03A3  3AB60D  		LD	A,(@DRIVE$TRK)	;Low "cylinder" byte
+ 441:	03A6  CDF304  		CALL	PHEX	
+ 442:	03A9  3AB50D  		LD	A,(@DRIVE$SEC)
+ 443:	03AC  CDF304  		CALL	PHEX
+ 444:	03AF  111B08  		LD	DE, MSGBRACKET	;)$
+ 445:	03B2  CD0604  		CALL	PSTRING		
+ 446:	03B5  C9      		RET	
+ 447:			
+ 448:			;
+ 449:	03B6          	PRINTNAME: 			;Send text up to [B]	
+ 450:	03B6  23      		INC	HL		;Text is low byte high byte format
+ 451:	03B7  4E      		LD	C,(HL)
+ 452:	03B8  CDEB03  		CALL	ZCO	
+ 453:	03BB  2B      		DEC	HL
+ 454:	03BC  4E      		LD	C,(HL)
+ 455:	03BD  CDEB03  		CALL	ZCO
+ 456:	03C0  23      		INC	HL
+ 457:	03C1  23      		INC	HL
+ 458:	03C2  10F2    		DJNZ	PRINTNAME
+ 459:	03C4  C9      		RET	
+ 460:			;
+ 461:	03C5          	ZCRLF:
+ 462:	03C5  F5      		PUSH	AF
+ 463:	03C6  0E0D    		LD	C,CR
+ 464:	03C8  CDEB03  		CALL	ZCO
+ 465:	03CB  0E0A    		LD	C,LF
+ 466:	03CD  CDEB03  		CALL	ZCO
+ 467:	03D0  F1      		POP	AF
+ 468:	03D1  C9      		RET	
+ 469:			;
+ 470:	03D2          	ZEOL:				;CR and clear current line
+ 471:	03D2  0E0D    		LD	C,CR
+ 472:	03D4  CDEB03  		CALL	ZCO
+ 473:	03D7  0E1C    		LD	C,CLEAR		;Note hardware dependent, (Use 80 spaces if necessary)
+ 474:	03D9  CDEB03  		CALL	ZCO
+ 475:	03DC  C9      		RET	
+ 476:			
+ 477:	03DD          	ZCSTS:
+ 478:	FFFF          		IF	CPM
+ 479:	03DD  C5      		PUSH	BC
+ 480:	03DE  D5      		PUSH	DE
+ 481:	03DF  E5      		PUSH	HL
+ 482:	03E0  0E0B    		LD	C,CONST
+ 483:	03E2  CD0500  		CALL	BDOS		;Returns with 1 in [A] if character at keyboard
+ 484:	03E5  E1      		POP	HL
+ 485:	03E6  D1      		POP	DE
+ 486:	03E7  C1      		POP	BC
+ 487:	03E8  FE01    		CP	1
+ 488:	03EA  C9      		RET	
+ 489:				ELSE	
+ 496:				ENDIF	
+ 497:				
+ 498:			; 
+ 499:	03EB          	ZCO:				;Write character that is in [C]
+ 500:	FFFF          		IF	CPM
+ 501:	03EB  F5      		PUSH	AF
+ 502:	03EC  C5      		PUSH	BC
+ 503:	03ED  D5      		PUSH	DE
+ 504:	03EE  E5      		PUSH	HL
+ 505:	03EF  59      		LD	E,C
+ 506:	03F0  0E02    		LD	C,WRCON
+ 507:	03F2  CD0500  		CALL	BDOS
+ 508:	03F5  E1      		POP	HL
+ 509:	03F6  D1      		POP	DE
+ 510:	03F7  C1      		POP	BC
+ 511:	03F8  F1      		POP	AF
+ 512:	03F9  C9      		RET	
+ 513:				ELSE	
+ 522:				ENDIF	
+ 523:			
+ 524:	03FA          	ZCI:				;Return keyboard character in [A]
+ 525:	FFFF          		IF	CPM
+ 526:	03FA  C5      		PUSH	BC
+ 527:	03FB  D5      		PUSH	DE
+ 528:	03FC  E5      		PUSH	HL
+ 529:	03FD  0E01    		LD	C,RDCON
+ 530:	03FF  CD0500  		CALL	BDOS
+ 531:	0402  E1      		POP	HL
+ 532:	0403  D1      		POP	DE
+ 533:	0404  C1      		POP	BC
+ 534:	0405  C9      		RET	
+ 535:				ELSE	
+ 541:				ENDIF	
+ 542:			;
+ 543:			;
+ 544:			;				;Print a string in [DE] up to '$'
+ 545:	0406          	PSTRING:
+ 546:	FFFF          		IF	CPM
+ 547:	0406  0E09    		LD	C,PRINT
+ 548:	0408  C30500  		JP	BDOS		;PRINT MESSAGE, 
+ 549:				ELSE	
+ 565:				ENDIF	
+ 566:			;
+ 567:			;
+ 568:	040B          	SHOWST:	
+ 569:	040B  C9      		RET
+ 570:	040C  F5      		PUSH	AF
+ 571:	040D  D9      		EXX
+ 572:	040E  212604  		LD	HL,STABUF
+ 573:	0411  BE      		CP	(HL)
+ 574:	0412  D9      		EXX
+ 575:	0413  280F    		JR	Z,SHOWST1
+ 576:	0415  322604  		LD	(STABUF),A
+ 577:	0418  11160C  		LD	DE,MSTATUS
+ 578:	041B  CD0604  		CALL	PSTRING
+ 579:	041E  CD1105  		CALL	ZBITS
+ 580:	0421  CDC503  		CALL	ZCRLF
+ 581:	0424          	SHOWST1:	
+ 582:	0424  F1      		POP	AF
+ 583:	0425  C9      		RET	
+ 584:			
+ 585:	0426          	STABUF:	DS	1	
+ 586:			;
+ 587:			;
+ 588:	0427          	SHOWERRORS:
+ 589:	0000          		IF	NOT DEBUG
+ 593:				ELSE	
+ 594:	0427  CDC503  		CALL	ZCRLF
+ 595:	042A  1E0F    		LD	E,REGSTATUS	;Get status in status register
+ 596:	042C  CD8E0D  		CALL	IDERD8D
+ 597:	042F  7A      		LD	A,D
+ 598:	0430  CB47    		BIT	0,A		
+ 599:	0432  C26904  		JP	NZ,MOREERROR	;Go to  REGerr register for more info
+ 600:			;				;All OK if 01000000
+ 601:	0435  F5      		PUSH	AF		;save for return below
+ 602:	0436  CB7F    		BIT	7,A		
+ 603:	0438  CA4404  		JP	Z,NOT7
+ 604:	043B  11060A  		LD	DE,DRIVEBUSY	;Drive Busy (bit 7) stuck high.   Status = 
+ 605:	043E  CD0604  		CALL	PSTRING
+ 606:	0441  C3BF04  		JP	DONEERR
+ 607:	0444  CB77    	NOT7:	BIT	6,A		
+ 608:	0446  C25204  		JP	NZ,NOT6
+ 609:	0449  11310A  		LD	DE,DRIVENOTREADY;Drive Not Ready (bit 6) stuck low.  Status = 
+ 610:	044C  CD0604  		CALL	PSTRING
+ 611:	044F  C3BF04  		JP	DONEERR
+ 612:	0452  CB6F    	NOT6:	BIT	5,A		
+ 613:	0454  C26004  		JP	NZ,NOT5
+ 614:	0457  115B0A  		LD	DE,DRIVEWRFAULT;Drive write fault.    Status =
+ 615:	045A  CD0604  		CALL	PSTRING
+ 616:	045D  C3BF04  		JP	DONEERR
+ 617:	0460  117B0A  	NOT5:	LD	DE,UNKNOWNERROR
+ 618:	0463  CD0604  		CALL	PSTRING
+ 619:	0466  C3BF04  		JP	DONEERR
+ 620:			;
+ 621:	0469          	MOREERROR: 			;Get here if bit 0 of the status register indicated a problem
+ 622:	0469  1E09    		LD	E,REGERR	;Get error code in REGerr
+ 623:	046B  CD8E0D  		CALL	IDERD8D
+ 624:	046E  7A      		LD	A,D
+ 625:	046F  F5      		PUSH	AF
+ 626:			
+ 627:	0470  CB67    		BIT	4,A		;Sector Not Found
+ 628:	0472  CA7E04  		JP	Z,NOTE4
+ 629:	0475  111E0B  		LD	DE,SECNOTFOUND
+ 630:	0478  CD0604  		CALL	PSTRING
+ 631:	047B  C3BF04  		JP	DONEERR
+ 632:			;
+ 633:	047E  CB7F    	NOTE4:	BIT	7,A		;Bad Block
+ 634:	0480  CA8C04  		JP	Z,NOTE7
+ 635:	0483  11A90A  		LD	DE,BADBLOCK
+ 636:	0486  CD0604  		CALL	PSTRING
+ 637:	0489  C3BF04  		JP	DONEERR
+ 638:	048C  CB77    	NOTE7:	BIT	6,A		;Uncorrectable error
+ 639:	048E  CA9A04  		JP	Z,NOTE6
+ 640:	0491  11CD0A  		LD	DE,UNRECOVERERR
+ 641:	0494  CD0604  		CALL	PSTRING
+ 642:	0497  C3BF04  		JP	DONEERR
+ 643:	049A  CB57    	NOTE6:	BIT	2,A		;Invalid command
+ 644:	049C  CAA804  		JP	Z,NOTE2
+ 645:	049F  11420B  		LD	DE,INVALIDCMD
+ 646:	04A2  CD0604  		CALL	PSTRING
+ 647:	04A5  C3BF04  		JP	DONEERR
+ 648:	04A8  CB4F    	NOTE2:	BIT	1,A		;Track 0 not found
+ 649:	04AA  CAB604  		JP	Z,NOTE1
+ 650:	04AD  11650B  		LD	DE,TRK0ERR
+ 651:	04B0  CD0604  		CALL	PSTRING
+ 652:	04B3  C3BF04  		JP	DONEERR
+ 653:	04B6  118D0B  	NOTE1:	LD	DE,UNKNOWNERROR1
+ 654:	04B9  CD0604  		CALL	PSTRING
+ 655:	04BC  C3BF04  		JP	DONEERR
+ 656:			;
+ 657:	04BF  F1      	DONEERR:POP	AF
+ 658:	04C0  F5      		PUSH	AF
+ 659:	04C1  CD1105  		CALL	ZBITS
+ 660:	04C4  CDC503  		CALL	ZCRLF
+ 661:	04C7  F1      		POP	AF
+ 662:	04C8  B7      		OR	A		;Set Z flag
+ 663:	04C9  37      		SCF			;Set Carry flag
+ 664:	04CA  C9      		RET	
+ 665:				ENDIF	
+ 666:			
+ 667:			;
+ 668:			;------------------------------------------------------------------
+ 669:			; Print a 16 bit number, located @ [HL]
+ 670:			;
+ 671:	04CB          	PRINTPARM:
+ 672:	04CB  E5      		PUSH	HL
+ 673:	04CC  D1      		POP	DE
+ 674:	04CD  7E      		LD	A,(HL)
+ 675:	04CE  23      		INC	HL
+ 676:	04CF  46      		LD	B,(HL)
+ 677:	04D0  48      		LD	C,B
+ 678:	04D1  CDF304  		CALL	PHEX
+ 679:	04D4  4F      		LD	C,A
+ 680:	04D5  CDF304  		CALL	PHEX
+ 681:	04D8  0E20    		LD	C,' '
+ 682:	04DA  CDEB03  		CALL	ZCO
+ 683:	04DD  0E28    		LD	C,'('
+ 684:	04DF  CDEB03  		CALL	ZCO
+ 685:	04E2  D5      		PUSH	DE
+ 686:	04E3  E1      		POP	HL
+ 687:	04E4  4E      		LD	C,(HL)
+ 688:	04E5  23      		INC	HL
+ 689:	04E6  46      		LD	B,(HL)
+ 690:	04E7  CDD305  		CALL	BN2A16
+ 691:	04EA  CD0604  		CALL	PSTRING
+ 692:	04ED  0E29    		LD	C,')'
+ 693:	04EF  CDEB03  		CALL	ZCO
+ 694:	04F2  C9      		RET	
+ 695:			;
+ 696:			; Print an 8 bit number, located in [A]
+ 697:			
+ 698:	04F3  F5      	PHEX:	PUSH	AF
+ 699:	04F4  C5      		PUSH	BC
+ 700:	04F5  F5      		PUSH	AF
+ 701:	04F6  0F      		RRCA	
+ 702:	04F7  0F      		RRCA	
+ 703:	04F8  0F      		RRCA	
+ 704:	04F9  0F      		RRCA	
+ 705:	04FA  CD0405  		CALL	ZCONV
+ 706:	04FD  F1      		POP	AF
+ 707:	04FE  CD0405  		CALL	ZCONV
+ 708:	0501  C1      		POP	BC
+ 709:	0502  F1      		POP	AF
+ 710:	0503  C9      		RET	
+ 711:			;
+ 712:	0504  E60F    	ZCONV:	AND	0FH		;HEX to ASCII and print it
+ 713:	0506  C690    		ADD	A,90H
+ 714:	0508  27      		DAA	
+ 715:	0509  CE40    		ADC	A,40H
+ 716:	050B  27      		DAA	
+ 717:	050C  4F      		LD	C,A
+ 718:	050D  CDEB03  		CALL	ZCO
+ 719:	0510  C9      		RET	
+ 720:			;;
+ 721:			;DISPLAY BIT PATTERN IN [A]
+ 722:			;
+ 723:	0511  F5      	ZBITS:	PUSH	AF
+ 724:	0512  C5      		PUSH	BC
+ 725:	0513  D5      		PUSH	DE
+ 726:	0514  5F      		LD	E,A		
+ 727:	0515  0608    		LD	B,8
+ 728:	0517  CB23    	BQ2:	DEFB	0CBH,23H	;SLA A	
+ 729:	0519  3E18    		LD	A,18H
+ 730:	051B  8F      		ADC	A,A
+ 731:	051C  4F      		LD	C,A
+ 732:	051D  CDEB03  		CALL	ZCO
+ 733:	0520  10F5    		DJNZ	BQ2
+ 734:	0522  D1      		POP	DE
+ 735:	0523  C1      		POP	BC
+ 736:	0524  F1      		POP	AF
+ 737:	0525  C9      		RET	
+ 738:			
+ 739:			
+ 740:				;Get numbers for LBA (in the form of CPM style Track# & Sector#)
+ 741:	0526          	GHEX32LBA:
+ 742:	0526  117209  		LD	DE,ENTERSECL	;Enter sector number, low
+ 743:	0529  CD0604  		CALL	PSTRING
+ 744:	052C  CD5905  		CALL	GETHEX		;get 2 HEX digits
+ 745:	052F  D8      		RET	C
+ 746:	0530  32B80D  		LD	(@SEC),A	;Note: no check data is < MAXSEC
+ 747:	0533  CDC503  		CALL	ZCRLF
+ 748:			
+ 749:	0536  11B209  		LD	DE,ENTERTRKH	;Enter high byte track number
+ 750:	0539  CD0604  		CALL	PSTRING
+ 751:	053C  CD5905  		CALL	GETHEX		;get 2 HEX digits
+ 752:	053F  D8      		RET	C
+ 753:	0540  32BB0D  		LD	(@TRK+1),A
+ 754:	0543  CDC503  		CALL	ZCRLF
+ 755:			
+ 756:	0546  119209  		LD	DE,ENTERTRKL	;Enter low byte track number
+ 757:	0549  CD0604  		CALL	PSTRING
+ 758:	054C  CD5905  		CALL	GETHEX		;get 2 more HEX digits
+ 759:	054F  D8      		RET	C
+ 760:	0550  32BA0D  		LD	(@TRK),A
+ 761:	0553  CDC503  		CALL	ZCRLF
+ 762:	0556  AF      		XOR	A
+ 763:	0557  B7      		OR	A		;To return NC
+ 764:	0558  C9      		RET	
+ 765:			;
+ 766:			;
+ 767:	0559          	GETHEX:
+ 768:	0559  CD8D05  		CALL	GETCMD		;Get a character from keyboard & ECHO
+ 769:	055C  FE1B    		CP	ESC
+ 770:	055E  CA8B05  		JP	Z,HEXABORT
+ 771:	0561  FE2F    		CP	'/'		;check 0-9, A-F
+ 772:	0563  DA8B05  		JP	C,HEXABORT
+ 773:	0566  FE47    		CP	'F'+1
+ 774:	0568  D28B05  		JP	NC,HEXABORT
+ 775:	056B  CDA005  		CALL	ASBIN		;Convert to binary
+ 776:	056E  07      		RLCA			;Shift to high nibble
+ 777:	056F  07      		RLCA	
+ 778:	0570  07      		RLCA	
+ 779:	0571  07      		RLCA	
+ 780:	0572  47      		LD	B,A		;Store it
+ 781:	0573  CD8D05  		CALL	GETCMD		;Get 2nd character from keyboard & ECHO
+ 782:	0576  FE1B    		CP	ESC
+ 783:	0578  CA8B05  		JP	Z,HEXABORT
+ 784:	057B  FE2F    		CP	'/'		;check 0-9, A-F
+ 785:	057D  DA8B05  		JP	C,HEXABORT
+ 786:	0580  FE47    		CP	'F'+1
+ 787:	0582  D28B05  		JP	NC,HEXABORT
+ 788:	0585  CDA005  		CALL	ASBIN		;Convert to binary
+ 789:	0588  B0      		OR	B		;add in the first digit
+ 790:	0589  B7      		OR	A		;To return NC
+ 791:	058A  C9      		RET	
+ 792:	058B          	HEXABORT:
+ 793:	058B  37      		SCF			;Set Carry flag 
+ 794:	058C  C9      		RET	
+ 795:			;
+ 796:			;
+ 797:	058D  CDFA03  	GETCMD:	CALL	ZCI		;GET A CHARACTER, convert to UC, ECHO it
+ 798:	0590  CD9705  		CALL	UPPER
+ 799:	0593  FE1B    		CP	ESC
+ 800:	0595  C8      		RET	Z		;Don't echo an ESC
+ 801:	0000          		IF	NOT CPM
+ 808:				ENDIF	
+ 809:	0596  C9      		RET	
+ 810:			;
+ 811:			;				;Convert LC to UC
+ 812:	0597  FE61    	UPPER:	CP	'a'		;must be >= lowercase a
+ 813:	0599  D8      		RET	C		; else go back...
+ 814:	059A  FE7B    		CP	'z'+1		;must be <= lowercase z
+ 815:	059C  D0      		RET	NC		; else go back...
+ 816:	059D  D620    		SUB	'a'-'A'		;subtract lowercase bias
+ 817:	059F  C9      		RET	
+ 818:			;
+ 819:				;ASCII TO BINARY CONVERSION ROUTINE
+ 820:	05A0  D630    	ASBIN:	SUB	30H 
+ 821:	05A2  FE0A    		CP	0AH 
+ 822:	05A4  F8      		RET	M
+ 823:	05A5  D607    		SUB	07H 
+ 824:	05A7  C9      		RET	
+ 825:			;
+ 826:			;
+ 827:			;
+ 828:	05A8          	HEXDUMP:			;print a hexdump of the data in the 512 byte buffer (@DMA)
+ 829:	05A8  210020  		LD	HL,BUFFER
+ 830:	05AB  11FF21  		LD	DE,BUFFER+511
+ 831:	05AE  C36606  		JP	MEMDUMP
+ 832:				
+ 833:	05B1          	IHEXDUMP:			;print a hexdump of the data in the 512 byte buffer (@DMA)
+ 834:	05B1  210010  		LD	HL,IDBUFFER
+ 835:	05B4  11FF11  		LD	DE,IDBUFFER+511
+ 836:	05B7  C36606  		JP	MEMDUMP
+ 837:				
+ 838:			;;
+ 839:			;; Routines for binary to decimal conversion
+ 840:			;;
+ 841:			;; (C) Piergiorgio Betti <pbetti@lpconsul.net> - 2006
+ 842:			;;
+ 843:			;; The active part is taken from:
+ 844:			;; David Barrow - Assembler routines for the Z80
+ 845:			;; CENTURY COMMUNICATIONS LTD - ISBN 0 7126 0506 1
+ 846:			;;
+ 847:			
+ 848:			
+ 849:			;;
+ 850:			;; BIN2A8 - Convert an 8 bit value to ASCII
+ 851:			;;
+ 852:			;; INPUT	C = Value to be converted
+ 853:			;; OUTPUT	DE = Converted string address
+ 854:			;
+ 855:	05BA  E5      	BIN2A8: PUSH	HL
+ 856:	05BB  F5      		PUSH	AF
+ 857:	05BC  0600    		LD	B,0
+ 858:	05BE  ED43EA05		LD	(IVAL16),BC
+ 859:	05C2  21EA05  		LD	HL,IVAL16
+ 860:	05C5  11EC05  		LD	DE,OVAL16
+ 861:	05C8  3E01    		LD	A,1			; one byte conversion
+ 862:	05CA  CDF405  		CALL	LNGIBD
+ 863:	05CD  11EC05  		LD	DE,OVAL16
+ 864:	05D0  F1      		POP	AF
+ 865:	05D1  E1      		POP	HL
+ 866:	05D2  C9      		RET
+ 867:				;
+ 868:			;;
+ 869:			;; BN2A16 - Convert a 16 bit value to ASCII
+ 870:			;;
+ 871:			;; INPUT	BC = Value to be converted
+ 872:			;; OUTPUT	DE = Converted string address
+ 873:			;
+ 874:	05D3  E5      	BN2A16: PUSH	HL
+ 875:	05D4  F5      		PUSH	AF
+ 876:	05D5  ED43EA05		LD	(IVAL16),BC
+ 877:	05D9  21EA05  		LD	HL,IVAL16
+ 878:	05DC  11EC05  		LD	DE,OVAL16
+ 879:	05DF  3E02    		LD	A,2			; two byte conversion
+ 880:	05E1  CDF405  		CALL	LNGIBD
+ 881:	05E4  11EC05  		LD	DE,OVAL16
+ 882:	05E7  F1      		POP	AF
+ 883:	05E8  E1      		POP	HL
+ 884:	05E9  C9      		RET
+ 885:				;
+ 886:			;; Generic storage
+ 887:			
+ 888:	05EA          	IVAL16:	DEFS	2
+ 889:	05EC          	OVAL16:	DEFS	6
+ 890:			
+ 891:			;;
+ 892:			;;
+ 893:			;; LNGIBD - Convert long integer of given precision to ASCII
+ 894:			;;
+ 895:			;; INPUT	HL addresses the first byte of the binary value
+ 896:			;;		which must be stored with the low order byte in
+ 897:			;;		lowest memory.
+ 898:			;;		DE addresses the first byte of the destination
+ 899:			;;		area which must be larger enough to accept the
+ 900:			;;		decimal result (2.42 * binary lenght + 1).
+ 901:			;;		A = binary byte lenght (1 to 255)
+ 902:			
+ 903:			;;
+ 904:	000A          	CVBASE	EQU	10		; CONVERSION BASE
+ 905:	05F2          	VPTR	EQU	HILO		; STORAGE AREA EQU
+ 906:			
+ 907:			
+ 908:	05F2          	HILO:	DEFS	2		; STORAGE AREA
+ 909:			
+ 910:	05F4  4F      	LNGIBD:	LD	C,A
+ 911:	05F5  0600    		LD	B,0
+ 912:	05F7  2B      		DEC	HL
+ 913:	05F8  22F205  		LD	(VPTR),HL
+ 914:	05FB  3EFF    		LD	A,-1
+ 915:	05FD  12      		LD	(DE),A
+ 916:	05FE  09      		ADD	HL,BC
+ 917:				;
+ 918:	05FF  7E      	NXTMSB:	LD	A,(HL)
+ 919:	0600  B7      		OR	A
+ 920:	0601  C21006  		JP	NZ,MSBFND
+ 921:	0604  2B      		DEC	HL
+ 922:	0605  0D      		DEC	C
+ 923:	0606  C2FF05  		JP	NZ,NXTMSB
+ 924:				;
+ 925:	0609  EB      		EX	DE,HL
+ 926:	060A  3630    		LD	(HL),'0'
+ 927:	060C  23      		INC	HL
+ 928:	060D  3624    		LD	(HL),'$'
+ 929:	060F  C9      		RET
+ 930:				;
+ 931:	0610  47      	MSBFND:	LD	B,A
+ 932:	0611  3E80    		LD	A,$80
+ 933:				;
+ 934:	0613  B8      	NXTMSK:	CP	B
+ 935:	0614  DA1E06  		JP	C,MSKFND
+ 936:	0617  CA1E06  		JP	Z,MSKFND
+ 937:	061A  0F      		RRCA
+ 938:	061B  C31306  		JP	NXTMSK
+ 939:				;
+ 940:	061E  47      	MSKFND:	LD	B,A
+ 941:	061F  C5      		PUSH	BC
+ 942:	0620  2AF205  		LD	HL,(VPTR)
+ 943:	0623  0600    		LD	B,0
+ 944:	0625  09      		ADD	HL,BC
+ 945:	0626  A6      		AND	(HL)
+ 946:	0627  C6FF    		ADD	A,$FF
+ 947:	0629  6B      		LD	L,E
+ 948:	062A  62      		LD	H,D
+ 949:				;
+ 950:	062B  7E      	NXTOPV:	LD	A,(HL)
+ 951:	062C  3C      		INC	A
+ 952:	062D  CA3F06  		JP	Z,OPVDON
+ 953:	0630  3D      		DEC	A
+ 954:	0631  8F      		ADC	A,A
+ 955:				;
+ 956:	0632  FE0A    		CP	CVBASE
+ 957:	0634  DA3906  		JP	C,NOCOUL
+ 958:	0637  D60A    		SUB	CVBASE
+ 959:	0639  3F      	NOCOUL:	CCF
+ 960:				;
+ 961:	063A  77      		LD	(HL),A
+ 962:	063B  23      		INC	HL
+ 963:	063C  C32B06  		JP	NXTOPV
+ 964:				;
+ 965:	063F  D24706  	OPVDON:	JP	NC,EXTDON
+ 966:	0642  3601    		LD	(HL),1
+ 967:	0644  23      		INC	HL
+ 968:	0645  36FF    		LD	(HL),-1
+ 969:				;
+ 970:	0647  C1      	EXTDON:	POP	BC
+ 971:	0648  78      		LD	A,B
+ 972:	0649  0F      		RRCA
+ 973:	064A  D21E06  		JP	NC,MSKFND
+ 974:	064D  0D      		DEC	C
+ 975:	064E  C21E06  		JP	NZ,MSKFND
+ 976:				;
+ 977:				; REVERSE DIGIT ORDER. ADD ASCII DIGITS HI-NIBBLES
+ 978:	0651  3624    		LD	(HL),'$'
+ 979:				;
+ 980:	0653  2B      	NXTCNV:	DEC	HL
+ 981:	0654  7D      		LD	A,L
+ 982:	0655  93      		SUB	E
+ 983:	0656  7C      		LD	A,H
+ 984:	0657  9A      		SBC	A,D
+ 985:	0658  D8      		RET	C
+ 986:				;
+ 987:	0659  1A      		LD	A,(DE)
+ 988:	065A  F630    		OR	$30
+ 989:	065C  47      		LD	B,A
+ 990:	065D  7E      		LD	A,(HL)
+ 991:	065E  F630    		OR	$30
+ 992:	0660  70      		LD	(HL),B
+ 993:	0661  12      		LD	(DE),A
+ 994:				;
+ 995:	0662  13      		INC	DE
+ 996:	0663  C35306  		JP	NXTCNV
+ 997:			
+ 998:			;;
+ 999:			;; MEMDUMP - prompt user and dump memory area
+1000:			;
+1001:	0666          	MEMDUMP:
+1002:	0666          	MDP6:	
+1003:	0666  E5      		PUSH	HL
+1004:	0667  010020  		LD	BC,BUFFER
+1005:	066A  ED42    		SBC	HL,BC
+1006:	066C  CDF206  		CALL	HL2ASCB
+1007:	066F  E1      		POP	HL
+1008:	0670  7D      		LD	A,L
+1009:	0671  CDCD06  		CALL	DMPALIB
+1010:	0674  E5      		PUSH	HL
+1011:	0675  7E      	MDP2:	LD	A,(HL)
+1012:	0676  CDE206  		CALL	H2AJ1
+1013:	0679  CD0507  		CALL	CHKEOR
+1014:	067C  3826    		JR	C,MDP1
+1015:	067E  CDF506  		CALL	SPACER
+1016:	0681  7D      		LD	A,L
+1017:	0682  E60F    		AND	$0F
+1018:	0684  20EF    		JR	NZ,MDP2
+1019:	0686  E1      	MDP7:	POP	HL
+1020:	0687  7D      		LD	A,L
+1021:	0688  E60F    		AND	$0F
+1022:	068A  CDD206  		CALL	DMPALIA
+1023:	068D  7E      	MDP5:	LD	A,(HL)
+1024:	068E  4F      		LD	C,A
+1025:	068F  FE20    		CP	$20
+1026:	0691  3802    		JR	C,MDP3
+1027:	0693  1802    		JR	MDP4
+1028:	0695  0E2E    	MDP3:	LD	C,$2E
+1029:	0697  CDEB03  	MDP4:	CALL	ZCO
+1030:	069A  CDAC06  		CALL	CHKBRK
+1031:	069D  7D      		LD	A,L
+1032:	069E  E60F    		AND	$0F
+1033:	06A0  20EB    		JR	NZ,MDP5
+1034:	06A2  18C2    		JR	MDP6
+1035:	06A4  93      	MDP1:	SUB	E
+1036:	06A5  CDCD06  		CALL	DMPALIB
+1037:	06A8  18DC    		JR	MDP7
+1038:			
+1039:			;;
+1040:	06AA  D1      	CBKEND:	POP	DE
+1041:	06AB  C9      		RET
+1042:	06AC          	CHKBRK:
+1043:	06AC  CD0507  		CALL	CHKEOR
+1044:	06AF  38F9    		JR	C,CBKEND
+1045:	06B1  CDDD03  		CALL	ZCSTS
+1046:	06B4  B7      		OR	A
+1047:	06B5  C8      		RET	Z
+1048:	06B6  CDBD06  		CALL	COIUPC
+1049:	06B9  FE13    		CP	$13
+1050:	06BB  20ED    		JR	NZ,CBKEND
+1051:			; 	JP	COIUPC
+1052:			;;
+1053:			;;
+1054:			;; COIUPC- convert reg A uppercase
+1055:	06BD          	COIUPC:
+1056:	06BD  CDFA03  		CALL	ZCI 
+1057:	06C0  FE60    		CP	$60
+1058:	06C2  FACC06  		JP	M,COIRE
+1059:	06C5  FE7B    		CP	$7B
+1060:	06C7  F2CC06  		JP	P,COIRE
+1061:	06CA  CBAF    		RES	5,A
+1062:	06CC  C9      	COIRE:	RET
+1063:			;;
+1064:			;; DMPALIB - beginning align (spacing) for a memdump
+1065:	06CD          	DMPALIB:
+1066:	06CD  E60F    		AND	$0F
+1067:	06CF  47      		LD	B,A
+1068:	06D0  87      		ADD	A,A
+1069:	06D1  80      		ADD	A,B
+1070:			;;
+1071:			;; DMPALIB - ascii align (spacing) for a memdump
+1072:	06D2          	DMPALIA:
+1073:	06D2  47      		LD	B,A 
+1074:	06D3  04      		INC	B
+1075:	06D4  CDF506  	ALIBN:	CALL	SPACER
+1076:	06D7  10FB    		DJNZ	ALIBN
+1077:	06D9  C9      		RET
+1078:			;;
+1079:			;; HL2ASC - convert & display HL 2 ascii
+1080:	06DA          	HL2ASC:
+1081:	06DA  CDC503  		CALL	ZCRLF
+1082:	06DD  7C      	H2AEN1:	LD	A,H
+1083:	06DE  CDE206  		CALL	H2AJ1
+1084:	06E1  7D      		LD	A,L
+1085:	06E2  F5      	H2AJ1:	PUSH	AF
+1086:	06E3  0F      		RRCA
+1087:	06E4  0F      		RRCA
+1088:	06E5  0F      		RRCA
+1089:	06E6  0F      		RRCA
+1090:	06E7  CDEB06  		CALL	H2AJ2
+1091:	06EA  F1      		POP	AF
+1092:	06EB  CDFB06  	H2AJ2:	CALL	NIB2ASC
+1093:	06EE  CDEB03  		CALL	ZCO
+1094:	06F1  C9      		RET
+1095:			; H2AJ3:	CALL	H2AJ1           ; entry point to display HEX and a "-"
+1096:	06F2          	HL2ASCB:
+1097:	06F2  CDDA06  		CALL	HL2ASC
+1098:	06F5  0E20    	SPACER:	LD	C,$20
+1099:	06F7  CDEB03  		CALL	ZCO
+1100:	06FA  C9      		RET
+1101:			;;
+1102:			;; NIB2ASC convert lower nibble in reg A to ascii in reg C
+1103:			;
+1104:	06FB          	NIB2ASC:
+1105:	06FB  E60F    		AND	$0F
+1106:	06FD  C690    		ADD	A,$90
+1107:	06FF  27      		DAA
+1108:	0700  CE40    		ADC	A,$40
+1109:	0702  27      		DAA
+1110:	0703  4F      		LD	C,A
+1111:	0704  C9      		RET
+1112:			;;
+1113:			;; inc HL and do a 16 bit compare between HL and DE
+1114:	0705          	CHKEOR:
+1115:	0705  23      		INC	HL
+1116:	0706  7C      		LD	A,H
+1117:	0707  B5      		OR	L
+1118:	0708  37      		SCF
+1119:	0709  C8      		RET	Z
+1120:	070A  7B      		LD	A,E
+1121:	070B  95      		SUB	L
+1122:	070C  7A      		LD	A,D
+1123:	070D  9C      		SBC	A,H
+1124:	070E  C9      		RET
+1125:			
+1126:			;-----------------------------------------------
+1127:				
+1128:			;
+1129:			;
+1130:	070F  49444520	SIGNON:	DEFB	'IDE Disk Drive Test Program (V1.6) (Using CPM3 BIOS Routines)',CR,LF
+	      4469736B
+	      20447269
+	      76652054
+	      65737420
+	      50726F67
+	      72616D20
+	      2856312E
+	      36292028
+	      5573696E
+	      67204350
+	      4D332042
+	      494F5320
+	      526F7574
+	      696E6573
+	      290D0A
+1131:	074E  43504D20			DEFB	'CPM Track,Sectors --> LBA mode',LF,CR,'$'
+	      54726163
+	      6B2C5365
+	      63746F72
+	      73202D2D
+	      3E204C42
+	      41206D6F
+	      64650A0D
+	      24
+1132:	076F  496E6974	INITERROR:	DEFB	'Initilizing Drive Error.',CR,LF,'$'
+	      696C697A
+	      696E6720
+	      44726976
+	      65204572
+	      726F722E
+	      0D0A24
+1133:	078A  4572726F	IDERROR:	DEFB	'Error obtaining Drive ID.',CR,LF,'$'
+	      72206F62
+	      7461696E
+	      696E6720
+	      44726976
+	      65204944
+	      2E0D0A24
+1134:	07A6  44726976	INITDROK:	DEFB	'Drive Initilized OK.',CR,LF,LF,'$'
+	      6520496E
+	      6974696C
+	      697A6564
+	      204F4B2E
+	      0D0A0A24
+1135:	07BE  4D6F6465	MSGMDL:		DEFB	'Model: $'
+	      6C3A2024
+1136:	07C6  532F4E3A	MSGSN:		DEFB	'S/N:   $'
+	      20202024
+1137:	07CE  5265763A	MSGREV:		DEFB	'Rev:   $'
+	      20202024
+1138:	07D6  43796C69	MSGCY:		DEFB	'Cylinders: $'
+	      6E646572
+	      733A2024
+1139:	07E2  2C204865	MSGHD:		DEFB	', Heads: $'
+	      6164733A
+	      2024
+1140:	07EC  2C205365	MSGSC:		DEFB	', Sectors: $'
+	      63746F72
+	      733A2024
+1141:	07F8  43504D20	MSGCPMTRK:	DEFB	'CPM TRK = $'
+	      54524B20
+	      3D2024
+1142:	0803  2043504D	MSGCPMSEC:	DEFB	' CPM SEC = $'
+	      20534543
+	      203D2024
+1143:	080F  2020284C	MSGLBA:		DEFB	'  (LBA = 00$'
+	      4241203D
+	      20303024
+1144:	081B  2924    	MSGBRACKET:	DEFB	')$'
+1145:			
+1146:			
+1147:	081D  456E7465	CMDSTRING:	DEFB	'Enter Command:- ',CR,LF
+	      7220436F
+	      6D6D616E
+	      643A2D20
+	      0D0A
+1148:	082F  28522965			DEFB	'(R)ead   (W)rite   (L)BA   (U)p   (D)own   (H)exdump',CR,LF
+	      61642020
+	      20285729
+	      72697465
+	      20202028
+	      4C294241
+	      20202028
+	      55297020
+	      20202844
+	      296F776E
+	      20202028
+	      48296578
+	      64756D70
+	      0D0A
+1149:	0865  28532965			DEFB	'(S)equental Sec Read (F)ormat sectors (I)d dump (Q)uit $'
+	      7175656E
+	      74616C20
+	      53656320
+	      52656164
+	      20284629
+	      6F726D61
+	      74207365
+	      63746F72
+	      73202849
+	      29642064
+	      756D7020
+	      28512975
+	      69742024
+1150:	089D  0D0A5761	MSGSURE:	DEFB	CR,LF,'Warning: this will change data on the drive, '
+	      726E696E
+	      673A2074
+	      68697320
+	      77696C6C
+	      20636861
+	      6E676520
+	      64617461
+	      206F6E20
+	      74686520
+	      64726976
+	      652C20
+1151:	08CC  61726520			DEFB	'are you sure? (Y/N)...$'
+	      796F7520
+	      73757265
+	      3F202859
+	      2F4E292E
+	      2E2E24
+1152:	08E3  53656374	MSGRD:		DEFB	'Sector Read OK',CR,LF,'$'
+	      6F722052
+	      65616420
+	      4F4B0D0A
+	      24
+1153:	08F4  53656374	MSGWR:		DEFB	'Sector Write OK',CR,LF,'$'
+	      6F722057
+	      72697465
+	      204F4B0D
+	      0A24
+1154:	0906  456E7465	GETLBA:		DEFB	'Enter CPM style TRK & SEC values (in hex).',CR,LF,'$'
+	      72204350
+	      4D207374
+	      796C6520
+	      54524B20
+	      26205345
+	      43207661
+	      6C756573
+	      2028696E
+	      20686578
+	      292E0D0A
+	      24
+1155:	0933  44726976	SECRWERROR:	DEFB	'Drive Error, Status Register = $'
+	      65204572
+	      726F722C
+	      20537461
+	      74757320
+	      52656769
+	      73746572
+	      203D2024
+1156:	0953  44726976	ERRREGDATA:	DEFB	'Drive Error, Error Register = $'
+	      65204572
+	      726F722C
+	      20457272
+	      6F722052
+	      65676973
+	      74657220
+	      3D2024
+1157:	0972  53746172	ENTERSECL:	DEFB	'Starting sector number,(xxH) = $'
+	      74696E67
+	      20736563
+	      746F7220
+	      6E756D62
+	      65722C28
+	      78784829
+	      203D2024
+1158:	0992  54726163	ENTERTRKL:	DEFB	'Track number (LOW byte, xxH) = $'
+	      6B206E75
+	      6D626572
+	      20284C4F
+	      57206279
+	      74652C20
+	      78784829
+	      203D2024
+1159:	09B2  54726163	ENTERTRKH:	DEFB	'Track number (HIGH byte, xxH) = $'
+	      6B206E75
+	      6D626572
+	      20284849
+	      47482062
+	      7974652C
+	      20787848
+	      29203D20
+	      24
+1160:	09D3  48656164	ENTERHEAD:	DEFB	'Head number (01-0f) = $'
+	      206E756D
+	      62657220
+	      2830312D
+	      30662920
+	      3D2024
+1161:	09EA  4E756D62	ENTERCOUNT:	DEFB	'Number of sectors to R/W = $'
+	      6572206F
+	      66207365
+	      63746F72
+	      7320746F
+	      20522F57
+	      203D2024
+1162:	0A06  44726976	DRIVEBUSY:	DEFB	'Drive Busy (bit 7) stuck high.   Status = $'
+	      65204275
+	      73792028
+	      62697420
+	      37292073
+	      7475636B
+	      20686967
+	      682E2020
+	      20537461
+	      74757320
+	      3D2024
+1163:	0A31  44726976	DRIVENOTREADY:	DEFB	'Drive Ready (bit 6) stuck low.  Status = $'
+	      65205265
+	      61647920
+	      28626974
+	      20362920
+	      73747563
+	      6B206C6F
+	      772E2020
+	      53746174
+	      7573203D
+	      2024
+1164:	0A5B  44726976	DRIVEWRFAULT:	DEFB	'Drive write fault.    Status = $'
+	      65207772
+	      69746520
+	      6661756C
+	      742E2020
+	      20205374
+	      61747573
+	      203D2024
+1165:	0A7B  556E6B6E	UNKNOWNERROR:	DEFB	'Unknown error in status register.   Status = $'
+	      6F776E20
+	      6572726F
+	      7220696E
+	      20737461
+	      74757320
+	      72656769
+	      73746572
+	      2E202020
+	      53746174
+	      7573203D
+	      2024
+1166:	0AA9  42616420	BADBLOCK:	DEFB	'Bad Sector ID.    Error Register = $'
+	      53656374
+	      6F722049
+	      442E2020
+	      20204572
+	      726F7220
+	      52656769
+	      73746572
+	      203D2024
+1167:	0ACD  556E636F	UNRECOVERERR:	DEFB	'Uncorrectable data error.  Error Register = $'
+	      72726563
+	      7461626C
+	      65206461
+	      74612065
+	      72726F72
+	      2E202045
+	      72726F72
+	      20526567
+	      69737465
+	      72203D20
+	      24
+1168:	0AFA  4572726F	READIDERROR:	DEFB	'Error setting up to read Drive ID',CR,LF,'$'
+	      72207365
+	      7474696E
+	      67207570
+	      20746F20
+	      72656164
+	      20447269
+	      76652049
+	      440D0A24
+1169:	0B1E  53656374	SECNOTFOUND:	DEFB	'Sector not found. Error Register = $'
+	      6F72206E
+	      6F742066
+	      6F756E64
+	      2E204572
+	      726F7220
+	      52656769
+	      73746572
+	      203D2024
+1170:	0B42  496E7661	INVALIDCMD:	DEFB	'Invalid Command. Error Register = $'
+	      6C696420
+	      436F6D6D
+	      616E642E
+	      20457272
+	      6F722052
+	      65676973
+	      74657220
+	      3D2024
+1171:	0B65  54726163	TRK0ERR:	DEFB	'Track Zero not found. Error Register = $'
+	      6B205A65
+	      726F206E
+	      6F742066
+	      6F756E64
+	      2E204572
+	      726F7220
+	      52656769
+	      73746572
+	      203D2024
+1172:	0B8D  556E6B6E	UNKNOWNERROR1:	DEFB	'Unknown Error. Error Register = $'
+	      6F776E20
+	      4572726F
+	      722E2045
+	      72726F72
+	      20526567
+	      69737465
+	      72203D20
+	      24
+1173:	0BAE  0D0A546F	CONTINUEMSG:	DEFB	CR,LF,'To Abort enter ESC. Any other key to continue. $'
+	      2041626F
+	      72742065
+	      6E746572
+	      20455343
+	      2E20416E
+	      79206F74
+	      68657220
+	      6B657920
+	      746F2063
+	      6F6E7469
+	      6E75652E
+	      2024
+1174:	0BE0  46696C6C	FORMATMSG:	DEFB	'Fill sectors with 0H (e.g for CPM directory sectors).$'
+	      20736563
+	      746F7273
+	      20776974
+	      68203048
+	      2028652E
+	      6720666F
+	      72204350
+	      4D206469
+	      72656374
+	      6F727920
+	      73656374
+	      6F727329
+	      2E24
+1175:	0C16  53746174	MSTATUS:	DEFB	'Status = $'
+	      7573203D
+	      2024
+1176:			;
+1177:			;
+1178:			;
+1179:			;================================================================================================
+1180:			;===========  IDE Drive BIOS Routines written in a format that can be used with CPM3  ===========
+1181:			;================================================================================================
+1182:			
+1183:	0C20          	IDEINIT:;Initilze the 8255 and drive then do a hard reset on the drive, 
+1184:	0C20  3E92    		LD	A,READCFG8255	;10010010b
+1185:	0C22  D3E3    		OUT	(IDEPORTCTRL),A	;Config 8255 chip, READ mode
+1186:			
+1187:	0C24  3E80    		LD	A,IDERSTLINE
+1188:	0C26  D3E2    		OUT	(IDEPORTC),A	;Hard reset the disk drive
+1189:			
+1190:	0C28  06F0    		LD	B,0F0H		;<<<<< fine tune later
+1191:	0C2A          	RESETDELAY:
+1192:	0C2A  10FE    		DJNZ	RESETDELAY	;Delay (reset pulse width)
+1193:	0C2C  AF      		XOR	A
+1194:	0C2D  D3E2    		OUT	(IDEPORTC),A	;No IDE control lines asserted
+1195:				
+1196:	0C2F  16E0    		LD	D,11100000B	;Data for IDE SDH reg (512bytes, LBA mode,single drive,head 0000)
+1197:							;For Trk,Sec,head (non LBA) use 10100000
+1198:							;Note. Cannot get LBA mode to work with an old Seagate Medalist 6531 drive.
+1199:							;have to use the non-LBA mode. (Common for old hard disks).
+1200:			
+1201:	0C31  1E0E    		LD	E,REGSHD	;00001110,(0EH) for CS0,A2,A1,  
+1202:	0C33  CD9C0D  		CALL	IDEWR8D		;Write byte to select the MASTER device
+1203:			;
+1204:	0C36  06FF    		LD	B,0FFH		;<<< May need to adjust delay time
+1205:	0C38          	WAITINIT: 
+1206:	0C38  1E0F    		LD	E,REGSTATUS	;Get status after initilization
+1207:	0C3A  CD8E0D  		CALL	IDERD8D		;Check Status (info in [D])
+1208:	0C3D  D5      		PUSH	DE
+1209:	0C3E  7A      		LD	A,D
+1210:	0C3F  CD0B04  		CALL	SHOWST
+1211:	0C42  D1      		POP	DE
+1212:	0C43  CB7A    		BIT	7,D
+1213:	0C45  CA530C  		JP	Z,DONEINIT	;Return if ready bit is zero
+1214:	0C48  3E02    		LD	A,2
+1215:	0C4A  CD550C  		CALL	DELAYX		;Long delay, drive has to get up to speed
+1216:	0C4D  10E9    		DJNZ	WAITINIT
+1217:	0C4F  CD2704  		CALL	SHOWERRORS	;Ret with NZ flag set if error (probably no drive)
+1218:	0C52  C9      		RET	
+1219:	0C53          	DONEINIT:
+1220:	0C53  AF      		XOR	A
+1221:	0C54  C9      		RET	
+1222:			;	
+1223:	0C55  32BC0D  	DELAYX:	LD	(DELAYSTORE),A
+1224:	0C58  C5      		PUSH	BC
+1225:	0C59  01FFFF  		LD	BC,0FFFFH	;<<< May need to adjust delay time to allow cold drive to
+1226:	0C5C  3ABC0D  	DELAY2:	LD	A,(DELAYSTORE)	;    get up to speed.
+1227:	0C5F  3D      	DELAY1:	DEC	A
+1228:	0C60  C25F0C  		JP	NZ,DELAY1
+1229:	0C63  0B      		DEC	BC
+1230:	0C64  79      		LD	A,C
+1231:	0C65  B0      		OR	B
+1232:	0C66  C25C0C  		JP	NZ,DELAY2
+1233:	0C69  C1      		POP	BC
+1234:	0C6A  C9      		RET	
+1235:			;	
+1236:			;	
+1237:			;
+1238:				;Read a sector, specified by the 4 bytes in LBA
+1239:				;Z on success, NZ call error routine if problem
+1240:	0C6B          	READSECTOR:
+1241:	0C6B  CDED0C  		CALL	WRLBA		;Tell which sector we want to read from.
+1242:							;Note: Translate first in case of an error otherewise we 
+1243:							;will get stuck on bad sector 
+1244:	0C6E  CD190D  		CALL	IDEWAITNOTBUSY	;make sure drive is ready
+1245:	0C71  DA2704  		JP	C,SHOWERRORS	;Returned with NZ set if error
+1246:			
+1247:	0C74  1620    		LD	D,COMMANDREAD
+1248:	0C76  1E0F    		LD	E,REGCOMMAND
+1249:	0C78  CD9C0D  		CALL	IDEWR8D		;Send sec read command to drive.
+1250:	0C7B  CD400D  		CALL	IDEWAITDRQ	;wait until it's got the data
+1251:	0C7E  DA2704  		JP	C,SHOWERRORS
+1252:			;		
+1253:	0C81  2AB30D  		LD	HL,(@DMA)	;DMA address
+1254:	0C84  0600    		LD	B,0		;Read 512 bytes to [HL] (256X2 bytes)
+1255:	0C86          	MORERD16:
+1256:	0C86  3E08    		LD	A,REGDATA	;REG register address
+1257:	0C88  D3E2    		OUT	(IDEPORTC),A	
+1258:			
+1259:	0C8A  F640    		OR	IDERDLINE	;08H+40H, Pulse RD line
+1260:	0C8C  D3E2    		OUT	(IDEPORTC),A	
+1261:			
+1262:	0C8E  DBE0    		IN	A,(IDEPORTA)	;Read the lower byte first (Note early versions had high byte then low byte
+1263:	0C90  77      		LD	(HL),A		;this made sector data incompatible with other controllers).
+1264:	0C91  23      		INC	HL
+1265:	0C92  DBE1    		IN	A,(IDEPORTB)	;THEN read the upper byte
+1266:	0C94  77      		LD	(HL),A
+1267:	0C95  23      		INC	HL
+1268:				
+1269:	0C96  3E08    		LD	A,REGDATA	;Deassert RD line
+1270:	0C98  D3E2    		OUT	(IDEPORTC),A
+1271:	0C9A  10EA    		DJNZ	MORERD16
+1272:			
+1273:	0C9C  1E0F    		LD	E,REGSTATUS
+1274:	0C9E  CD8E0D  		CALL	IDERD8D
+1275:	0CA1  7A      		LD	A,D
+1276:	0CA2  CB47    		BIT	0,A
+1277:	0CA4  C42704  		CALL	NZ,SHOWERRORS	;If error display status
+1278:	0CA7  C9      		RET	
+1279:			
+1280:				;Write a sector, specified by the 3 bytes in LBA (@ IX+0)",
+1281:				;Z on success, NZ to error routine if problem
+1282:	0CA8          	WRITESECTOR:
+1283:	0CA8  CDED0C  		CALL	WRLBA		;Tell which sector we want to read from.
+1284:							;Note: Translate first in case of an error otherewise we 
+1285:							;will get stuck on bad sector 
+1286:	0CAB  CD190D  		CALL	IDEWAITNOTBUSY	;make sure drive is ready
+1287:	0CAE  DA2704  		JP	C,SHOWERRORS
+1288:			
+1289:	0CB1  1630    		LD	D,COMMANDWRITE
+1290:	0CB3  1E0F    		LD	E,REGCOMMAND
+1291:	0CB5  CD9C0D  		CALL	IDEWR8D		;tell drive to write a sector
+1292:	0CB8  CD400D  		CALL	IDEWAITDRQ	;wait unit it wants the data
+1293:	0CBB  DA2704  		JP	C,SHOWERRORS
+1294:			;
+1295:	0CBE  2AB30D  		LD	HL,(@DMA)
+1296:	0CC1  0600    		LD	B,0		;256X2 bytes
+1297:			
+1298:	0CC3  3E80    		LD	A,WRITECFG8255
+1299:	0CC5  D3E3    		OUT	(IDEPORTCTRL),A
+1300:	0CC7  7E      	WRSEC1:	LD	A,(HL)
+1301:	0CC8  23      		INC	HL
+1302:	0CC9  D3E0    		OUT	(IDEPORTA),A	;Write the lower byte first (Note early versions had byte then low byte
+1303:	0CCB  7E      		LD	A,(HL)		;this made sector data incompitable with other controllers).
+1304:	0CCC  23      		INC	HL
+1305:	0CCD  D3E1    		OUT	(IDEPORTB),A	;THEN High byte on B
+1306:	0CCF  3E08    		LD	A,REGDATA
+1307:	0CD1  F5      		PUSH	AF
+1308:	0CD2  D3E2    		OUT	(IDEPORTC),A	;Send write command
+1309:	0CD4  F620    		OR	IDEWRLINE	;Send WR pulse
+1310:	0CD6  D3E2    		OUT	(IDEPORTC),A
+1311:	0CD8  F1      		POP	AF
+1312:	0CD9  D3E2    		OUT	(IDEPORTC),A
+1313:	0CDB  10EA    		DJNZ	WRSEC1
+1314:				
+1315:	0CDD  3E92    		LD	A,READCFG8255	;Set 8255 back to read mode
+1316:	0CDF  D3E3    		OUT	(IDEPORTCTRL),A	
+1317:			
+1318:	0CE1  1E0F    		LD	E,REGSTATUS
+1319:	0CE3  CD8E0D  		CALL	IDERD8D
+1320:	0CE6  7A      		LD	A,D
+1321:	0CE7  CB47    		BIT	0,A
+1322:	0CE9  C42704  		CALL	NZ,SHOWERRORS	;If error display status
+1323:	0CEC  C9      		RET	
+1324:			;
+1325:				;Write the logical block address to the drive's registers
+1326:				;Note we do not need to set the upper nibble of the LBA
+1327:				;It will always be 0 for these small drives
+1328:			;				
+1329:	0CED          	WRLBA:	
+1330:	0CED  3AB80D  		LD	A,(@SEC)	;LBA mode Low sectors go directly 
+1331:	0CF0  3C      		INC	A		;Sectors are numbered 1 -- MAXSEC (even in LBA mode)
+1332:	0CF1  32B50D  		LD	(@DRIVE$SEC),A	;For Diagnostic Diaplay Only
+1333:	0CF4  57      		LD	D,A
+1334:	0CF5  1E0B    		LD	E,REGSECTOR	;Send info to drive
+1335:	0CF7  CD9C0D  		CALL	IDEWR8D
+1336:							;Note: For drive we will have 0 - MAXSEC sectors only
+1337:	0CFA  2ABA0D  		LD	HL,(@TRK)		
+1338:	0CFD  7D      		LD	A,L
+1339:	0CFE  32B60D  		LD	(@DRIVE$TRK),A
+1340:	0D01  55      		LD	D,L		;Send Low TRK#
+1341:	0D02  1E0C    		LD	E,REGCYLINDERLSB
+1342:	0D04  CD9C0D  		CALL	IDEWR8D
+1343:			
+1344:	0D07  7C      		LD	A,H
+1345:	0D08  32B70D  		LD	(@DRIVE$TRK+1),A
+1346:	0D0B  54      		LD	D,H		;Send High TRK#
+1347:	0D0C  1E0D    		LD	E,REGCYLINDERMSB
+1348:	0D0E  CD9C0D  		CALL	IDEWR8D
+1349:			
+1350:	0D11  1601    		LD	D,1		;For now, one sector at a time
+1351:	0D13  1E0A    		LD	E,REGSECCNT
+1352:	0D15  CD9C0D  		CALL	IDEWR8D
+1353:	0D18  C9      		RET	
+1354:			;
+1355:			;
+1356:	0D19          	IDEWAITNOTBUSY: 		;ie Drive READY if 01000000
+1357:	0D19  06FF    		LD	B,0FFH
+1358:	0D1B  3EFF    		LD	A,0FFH		;Delay, must be above 80H for 4MHz Z80. Leave longer for slower dr
+1359:	0D1D  32BC0D  		LD	(DELAYSTORE),A
+1360:			
+1361:	0D20          	MOREWAIT:
+1362:	0D20  1E0F    		LD	E,REGSTATUS	;wait for RDY bit to be set
+1363:	0D22  CD8E0D  		CALL	IDERD8D
+1364:	0D25  7A      		LD	A,D
+1365:	0D26  CD0B04  		CALL 	SHOWST
+1366:	0D29  E6C0    		AND	11000000B
+1367:	0D2B  EE40    		XOR	01000000B
+1368:	0D2D  CA3E0D  		JP	Z,DONENOTBUSY	
+1369:	0D30  10EE    		DJNZ	MOREWAIT
+1370:	0D32  3ABC0D  		LD	A,(DELAYSTORE)	;Check timeout delay
+1371:	0D35  3D      		DEC	A
+1372:	0D36  32BC0D  		LD	(DELAYSTORE),A
+1373:	0D39  C2200D  		JP	NZ,MOREWAIT
+1374:	0D3C  37      		SCF			;Set carry to indicqate an error
+1375:	0D3D  C9      		RET	
+1376:	0D3E          	DONENOTBUSY:
+1377:	0D3E  B7      		OR	A		;Clear carry it indicate no error
+1378:	0D3F  C9      		RET	
+1379:			
+1380:				;Wait for the drive to be ready to transfer data. (DRQ=1,BUSY=0)
+1381:				;Returns the drive's status in Acc
+1382:	0D40          	IDEWAITDRQ:
+1383:	0D40  06FF    		LD	B,0FFH
+1384:	0D42  3EFF    		LD	A,0FFH		;Delay, must be above 80H for 4MHz Z80. Leave longer for slower drives
+1385:	0D44  32BC0D  		LD	(DELAYSTORE),A
+1386:			
+1387:	0D47          	MOREDRQ:
+1388:	0D47  1E0F    		LD	E,REGSTATUS	;wait for DRQ bit to be set
+1389:	0D49  CD8E0D  		CALL	IDERD8D
+1390:	0D4C  7A      		LD	A,D
+1391:	0D4D  CD0B04  		CALL 	SHOWST
+1392:	0D50  E688    		AND	10001000B
+1393:	0D52  FE08    		CP	00001000B
+1394:	0D54  CA650D  		JP	Z,DONEDRQ
+1395:	0D57  10EE    		DJNZ	MOREDRQ
+1396:	0D59  3ABC0D  		LD	A,(DELAYSTORE)	;Check timeout delay
+1397:	0D5C  3D      		DEC	A
+1398:	0D5D  32BC0D  		LD	(DELAYSTORE),A
+1399:	0D60  C2470D  		JP	NZ,MOREDRQ
+1400:	0D63  37      		SCF			;Set carry to indicate error
+1401:	0D64  C9      		RET	
+1402:	0D65          	DONEDRQ:
+1403:	0D65  B7      		OR	A		;Clear carry
+1404:	0D66  C9      		RET	
+1405:			;
+1406:				;Wait for the drive to be ready to transfer data. (DRQ=1)
+1407:				;Returns the drive's status in Acc
+1408:	0D67          	IDEWAITDRQONLY:
+1409:	0D67  06FF    		LD	B,0FFH
+1410:	0D69  3EFF    		LD	A,0FFH		;Delay, must be above 80H for 4MHz Z80. Leave longer for slower drives
+1411:	0D6B  32BC0D  		LD	(DELAYSTORE),A
+1412:			
+1413:	0D6E          	MOREDRQONLY:
+1414:	0D6E  1E0F    		LD	E,REGSTATUS	;wait for DRQ bit to be set
+1415:	0D70  CD8E0D  		CALL	IDERD8D
+1416:	0D73  7A      		LD	A,D
+1417:	0D74  CD0B04  		CALL 	SHOWST
+1418:	0D77  E608    		AND	00001000B
+1419:	0D79  FE08    		CP	00001000B
+1420:	0D7B  CA8C0D  		JP	Z,DONEDRQONLY
+1421:	0D7E  10C7    		DJNZ	MOREDRQ
+1422:	0D80  3ABC0D  		LD	A,(DELAYSTORE)	;Check timeout delay
+1423:	0D83  3D      		DEC	A
+1424:	0D84  32BC0D  		LD	(DELAYSTORE),A
+1425:	0D87  C26E0D  		JP	NZ,MOREDRQONLY
+1426:	0D8A  37      		SCF			;Set carry to indicate error
+1427:	0D8B  C9      		RET	
+1428:	0D8C          	DONEDRQONLY:
+1429:	0D8C  B7      		OR	A		;Clear carry
+1430:	0D8D  C9      		RET	
+1431:			;
+1432:			;------------------------------------------------------------------
+1433:			; Low Level 8 bit R/W to the drive controller.  These are the routines that talk
+1434:			; directly to the drive controller registers, via the 8255 chip.  
+1435:			; Note the 16 bit I/O to the drive (which is only for SEC R/W) is done directly
+1436:			; ; in the routines READSECTOR & WRITESECTOR for speed reasons.
+1437:			;
+1438:	0D8E          	IDERD8D:;READ 8 bits from IDE register in [E], return info in [D]
+1439:	0D8E  7B      		LD	A,E
+1440:	0D8F  D3E2    		OUT	(IDEPORTC),A	;drive address onto control lines
+1441:			
+1442:	0D91  F640    		OR	IDERDLINE	;RD pulse pin (40H)
+1443:	0D93  D3E2    		OUT	(IDEPORTC),A	;assert read pin
+1444:			
+1445:	0D95  DBE0    		IN	A,(IDEPORTA)
+1446:	0D97  57      		LD	D,A		;return with data in [D]
+1447:			
+1448:	0D98  AF      		XOR	A
+1449:	0D99  D3E2    		OUT	(IDEPORTC),A	;Zero all port C lines
+1450:	0D9B  C9      		RET	
+1451:			;
+1452:			;
+1453:	0D9C          	IDEWR8D:;WRITE Data in [D] to IDE register in [E]
+1454:	0D9C  3E80    		LD	A,WRITECFG8255	;Set 8255 to write mode
+1455:	0D9E  D3E3    		OUT	(IDEPORTCTRL),A
+1456:			
+1457:	0DA0  7A      		LD	A,D		;Get data put it in 8255 A port
+1458:	0DA1  D3E0    		OUT	(IDEPORTA),A
+1459:			
+1460:	0DA3  7B      		LD	A,E		;select IDE register
+1461:	0DA4  D3E2    		OUT	(IDEPORTC),A
+1462:			
+1463:	0DA6  F620    		OR	IDEWRLINE	;lower WR line
+1464:	0DA8  D3E2    		OUT	(IDEPORTC),A
+1465:	0DAA  00      		NOP	
+1466:			
+1467:	0DAB  AF      		XOR	A		;Deselect all lines including WR line
+1468:	0DAC  D3E2    		OUT	(IDEPORTC),A
+1469:			
+1470:	0DAE  3E92    		LD	A,READCFG8255	;Config 8255 chip, read mode on return
+1471:	0DB0  D3E3    		OUT	(IDEPORTCTRL),A
+1472:	0DB2  C9      		RET	
+1473:			;
+1474:			;
+1475:			;
+1476:			; -------------------------- RAM usage ----------------------------------------
+1477:	0DB3  0020    	@DMA:		DEFW	BUFFER
+1478:	0DB5  00      	@DRIVE$SEC:	DEFB	0H
+1479:	0DB6  0000    	@DRIVE$TRK:	DEFW	0H
+1480:			;
+1481:	0DB8  0000    	@SEC:		DEFW	0H
+1482:	0DBA  0000    	@TRK:		DEFW	0H
+1483:			;
+1484:	0DBC  00      	DELAYSTORE:	DEFB	0H
+1485:			;
+1486:	0DBD          			DEFS	40H
+1487:	0DFD  0000    	STACK:		DEFW	0H
+1488:			
+1489:	1000          		ORG	1000H		;Buffer for Drive ID
+1490:	1000          	IDBUFFER:	DEFS	512
+1491:			
+1492:	2000          		ORG	2000H		;Buffer for sector data
+1493:			;
+1494:							;a 512 byte buffer 
+1495:	2000  3C2D2D53	BUFFER:		DEFB	'<--Start buffer area'	
+	      74617274
+	      20627566
+	      66657220
+	      61726561
+1496:	2014          			DEFS	476
+1497:	21F0  456E6420			DEFB	'End of buffer-->'
+	      6F662062
+	      75666665
+	      722D2D3E
+1498:			;
+1499:			;
+1500:			;END
+1501:			
+**** myide.asm ****
+
+
+
+Statistics:
+
+   231	symbols
+  3288	bytes
+
+
+
+Symbol Table:
+
+@dma             db3     idea0line      =   1     nextsec1         356     
+@drivesec        db5     idea1line      =   2     nib2asc          6fb     
+@drivetrk        db6     idea2line      =   4     nocoul           639     
+@sec             db8     idecs0line     =   8     not5             460     
+@trk             dba     idecs1line     =  10     not6             452     
+abort          =   0     ideinit          c20     not7             444     
+alibn            6d4     ideporta       =  e0     note1            4b6     
+asbin            5a0     ideportb       =  e1     note2            4a8     
+badblock         aa9     ideportc       =  e2     note4            47e     
+bdos           =   5     ideportctrl    =  e3     note6            49a     
+begin            100+    iderd8d          d8e     note7            48c     
+bin2a8           5ba+    iderdline      =  40     nxtcnv           653     
+bn2a16           5d3     iderror          78a     nxtmsb           5ff     
+bq2              517     iderstline     =  80     nxtmsk           613     
+buffer          2000     idewaitdrq       d40     nxtopv           62b     
+cbkend           6aa     idewaitdrqonly   d67     ofscor         =fffe     
+chkbrk           6ac     idewaitnotbusy   d19     opvdon           63f     
+chkeor           705     idewr8d          d9c     oval16           5ec     
+clear          =  1c     idewrline      =  20     phex             4f3     
+cmdstring        81d     ihexdump         5b1     print          =   9     
+coire            6cc     initdrok         7a6+    printname        3b6     
+coiupc           6bd     initerror        76f     printparm        4cb     
+commandid      =  ec     initok           11b     pstring          406     
+commandinit    =  91+    initok1          12d     rdcon          =   1     
+commandread    =  20     invalidcmd       b42     readcfg8255    =  92     
+commandrecal   =  10+    ival16           5ea     readiderror      afa+    
+commandspindown=  e0     lf             =   a     readsector       c6b     
+commandspinup  =  e1     lngibd           5f4     regastatus     =  17+    
+commandwrite   =  30     main1            1b3+    regcommand     =   f     
+const          =   b     main10           27e     regcontrol     =  16+    
+continuemsg      bae     main1b           1c4     regcylinderlsb =   c     
+cpm            =ffff     main2            1cd     regcylindermsb =   d     
+cpmtrasl       =ffff+    main2b           1fe     regdata        =   8     
+cr             =   d     main2c           204     regerr         =   9     
+cvbase         =   a     main3            207     regseccnt      =   a     
+debug          =ffff     main3b           218     regsector      =   b     
+delay1           c5f     main4            21e     regshd         =   e     
+delay2           c5c     main5            229     regstatus      =   f     
+delaystore       dbc     main6            234     resetdelay       c2a     
+delayx           c55     main7            23c     secnotfound      b1e     
+displayposition  373     main8            247     secrwerror       933+    
+dmpalia          6d2     main9            252     seqok            336     
+dmpalib          6cd     main9b           29b     sequentialreads  31b     
+donedrq          d65     mainloop         196     showerrors       427     
+donedrqonly      d8c     maxsec         =  3d     showst           40b     
+doneerr          4bf     mdp1             6a4     showst1          424     
+doneinit         c53     mdp2             675     signon           70f     
+donenotbusy      d3e     mdp3             695     spacer           6f5     
+drivebusy        a06     mdp4             697     spindown         310     
+driveid          2da     mdp5             68d     spinup           301     
+drivenotready    a31     mdp6             666     spup2            303     
+drivewrfault     a5b     mdp7             686     stabuf           426     
+entercount       9ea+    memdump          666     stack            dfd     
+enterhead        9d3+    moredrq          d47     trk0err          b65     
+entersecl        972     moredrqonly      d6e     true           =ffff     
+entertrkh        9b2     moreerror        469     unknownerror     a7b     
+entertrkl        992     morerd16         c86     unknownerror1    b8d     
+errregdata       953+    morewait         d20     unrecovererr     acd     
+esc            =  1b     msbfnd           610     upper            597     
+extdon           647     msgbracket       81b     vardelay         2f9     
+false          =   0+    msgcpmsec        803     vptr           = 5f2     
+fill0            273     msgcpmtrk        7f8     waitinit         c38     
+formatmsg        be0     msgcy            7d6     wrcon          =   2     
+getcmd           58d     msghd            7e2     writecfg8255   =  80     
+gethex           559     msglba           80f     writesector      ca8     
+getlba           906     msgmdl           7be     wrlba            ced     
+ghex32lba        526     msgrd            8e3     wrnextsec1       2bd     
+h2aen1           6dd+    msgrev           7ce     wrsec1           cc7     
+h2aj1            6e2     msgsc            7ec     zbits            511     
+h2aj2            6eb     msgsn            7c6     zci              3fa     
+hexabort         58b     msgsure          89d     zco              3eb     
+hexdump          5a8     msgwr            8f4     zconv            504     
+hilo             5f2     mskfnd           61e     zcrlf            3c5     
+hl2asc           6da     mstatus          c16     zcsts            3dd     
+hl2ascb          6f2     nextformat       289     zeol             3d2     
+idbuffer        1000     nextsec          324     

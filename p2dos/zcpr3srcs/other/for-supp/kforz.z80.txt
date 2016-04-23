@@ -1,0 +1,628 @@
+; Program:	KFORZ
+; Version:	1.0
+; Assembly:	Z80ASM.COM 
+; Date:		5 Aug 87	
+; Author:	Carson Wilson
+;
+; Purpose:	This is an enhanced version Irv Hoff's KFOR.COM for ZCPR33.
+;
+; Features:	The bug of a dollar sign in the file name or description
+;		 not showing up on the "repeating to verify" display 
+;		 was fixed.
+;		MAIN FEATURE: now takes a command line tail of up to 32 
+;		 characters as the name of the file to be described.
+;		Loads at 1000 hex so that FORZ can be rerun with ZCPR's GO
+;		 command after running KFORZ.
+;		Reinitializes its internal FCB so that KFORZ can be rerun
+;		 with ZCPR's JUMP command. 
+;		Apologies for the parts of the source whose function remains
+;		 unknown.  This file was built from a disassembly.
+
+Version	equ	10
+
+;
+CR	equ	0dh
+LF	equ	0ah
+BDOS	equ	5
+
+DMA	equ	80h
+
+	org	1000h
+
+Entry:	jp	Start
+	db	'Z3ENV'
+	db	3
+Z3EAdr:	dw	0		; address ZCPR ENV descriptor 
+				;  to be filled in by CCP
+	dw	Entry		; Type 3 environment points to itself
+;
+	db	'[CONFIG>'
+FORDrv:	db	'A'		; drive of FOR file (not used)
+FORUsr:	db	14		; user # of FOR file
+;
+Start:	ld	hl,0
+	add	hl,sp
+	ld	(StkSav),hl
+	ld	sp,StkSav
+;
+	ld	hl,FORFCB1		; Initialize FORZ's FCB so can use
+					;  ZCPR's GO command.
+	ld	b,21			; Length to fill
+	xor	a			; Zero it out
+InitFCBa:
+	ld	(hl),a
+	inc	hl
+	djnz	InitFCBa
+;
+ReStart:	
+	ld	hl,0
+	ld	(l069d),hl
+	xor	a
+	ld	(l069a),a
+	ld	a,'!'
+	ld	(l0422),a
+	ld	(l069c),a
+;
+	call	print
+	db	CR,LF
+	db	'KFORZ ',version/10 + '0','.',version mod 10 + '0'
+	db	' (c) 1987 by C. Wilson',CR,LF
+	db	'SysOp can easily add a new file description.'
+	db	CR,LF,0
+;
+	ld	a,(DMA)
+	or	a
+	jr	z,getname		; no command line tail
+;
+	call	print
+	db	CR,LF,0
+	ld	a,(DMA)			; get tail length
+;
+	ld	de,Buf1			; pt. to buffer
+	ld	hl,DMA+2		; begin parameter 1
+;
+	sub	1			; minus 1 for leading space
+	cp	33
+	jr	c,NoTrunc
+	ld	a,32			; limit to 32 chars for 
+					;  name/typ/category
+NoTrunc:
+	ld	b,a			; get command line tail length
+
+KillSp:	ld	a,(hl)			; kill leading spaces, tabs
+	cp	' '
+	jr	z,Kill1
+	cp	9
+	jr	nz,copy
+Kill1:	inc	hl
+	djnz	KillSp
+	ld	a,b
+	or	a
+	jr	z,getname		; CL held nothing but spaces 
+;
+copy:	ld	a,(hl)			; get char from dma buffer
+	ld	(de),a			; save in our buffer
+	inc	de
+	inc	hl
+	call	PChar			; echo it
+	djnz	copy			; up to b characters
+;	
+	ld	a,CR			; tail it with cr, lf
+	ld	(de),a
+	inc	de	
+	ld	a,LF
+	ld	(de),a
+	ld	hl,l06a3
+	call	l048a		; transfer '----',etc. to high buffer
+	call	print
+	db	CR,LF,0
+	jr	transnam	
+
+getname:call	print
+	db	'What is the filename/extent/category?'
+	db	CR,LF,CR,LF,0
+	ld	hl,l06a3		; pt to "'----',CR,LF"
+	call	l048a			; transfer it
+	call	l03f2			; get name
+transnam:
+	call	l0487			; transfer name to buffer
+;
+	call	print
+	db	CR,LF
+	db	'Please describe this file (7 lines or less).  '
+	db	'Tell what equipment can use'
+	db	CR,LF,
+	db	'it and what the program does.  Extra RET to quit.',0
+	call	print
+	db	CR,LF,CR,LF
+	db	'0: ---------1---------2---------3---------4---------'
+	db	'5---------6---------',CR,LF,0
+;
+	xor	a
+	ld	(l069a),a
+	ld	(l069c),a
+	ld	a,70			; Max. line length
+	ld	(l0422),a
+	ld	c,48
+l029a:	
+	inc	c
+	ld	a,c
+	cp	56
+	jp	nc,l02be
+	call	PChar
+	ld	a,' '
+	call	l0547
+	call	l0547
+	call	l0547
+	call	print
+	db	': ',0
+	call	l03f2
+	call	l0487
+	jp	l029a
+l02be:				; tail the entry with CR,LF,'$' 
+	ld	a,CR
+	call	l0547
+	ld	a,LF
+	call	l0547
+;	ld	a,'$'
+	XOR	A
+	call	l0547
+	call	print
+	db	CR,LF
+	db	'   Repeating to verify:'
+	db	CR,LF,CR,LF,0
+;
+	ld	hl,(FreeMem)
+DISP:
+	LD	A,(HL)
+	OR	A
+	JR	Z,DONE
+	CALL	PCHAR
+	INC	HL
+	JR	DISP
+DONE:
+
+;	ex	de,hl
+;	ld	c,9			; Print string
+;	call	BDOS			;  had bug which didn't display '$'
+;
+	ld	hl,(l069d)
+	dec	hl
+	ld	(l069d),hl
+l02fe:	
+	call	print
+	db	'Is this ok (Y/N)? ',0
+	call	l04eb
+	call	PChar
+	and	5fh
+	cp	'Y'
+	jp	z,l032f
+	cp	'N'
+	jp	nz,l02fe
+	call	print
+	db	CR,LF,0
+	jp	ReStart
+l032f:	
+	ld	a,(4)		; get current default drive
+	ld	(DefDU),a
+
+	ld	a,(FORUsr)	; get stored user
+	ld	e,a
+	ld	c,32		; set user code
+	call	BDOS
+;
+	ld	a,(FORDrv)	; get FOR drive letter
+	sub	'A'		; translate to 0, 1, ...
+	ld	e,a
+	ld	c,0eh		; select disk
+	call	BDOS
+;
+	call	print
+	db	CR,LF,0
+;
+	ld	de,l0658
+	ld	c,0fh		; Open file
+	call	BDOS
+;
+	inc	a
+	jp	nz,l0367
+;
+	ld	c,16h		; Make file
+	ld	de,l0658
+	call	BDOS
+;
+	inc	a
+	jp	z,l0514
+l0367:	
+	ld	hl,l0658
+	ld	de,TempFCB
+	ld	b,9
+	call	BLDIR
+	xor	a
+	ld	(l0685),a
+	ld	(l0699),a
+	ld	hl,8000h
+	ld	(MYSTERY),hl
+;
+	ld	c,13h				; Delete file
+	ld	de,TempFCB
+	call	BDOS
+;
+	ld	c,16h				; Make file
+	ld	de,TempFCB
+	call	BDOS
+;
+	inc	a
+	jp	z,l0514
+	call	print
+	db	CR,LF,'Wait a moment...',0
+l03a9:	
+	ld	de,DMA
+	ld	c,1ah				; Set DMA
+	call	BDOS
+;
+	ld	de,l0658
+	ld	c,14h				; Read seq.
+	call	BDOS
+;
+	or	a
+	jp	nz,l05aa
+	ld	hl,DMA
+l03c0:	
+	ld	a,(hl)
+	and	7fh
+	cp	7fh			; DEL
+	jp	z,l03d0
+	cp	1ah			; ^Z 
+	jp	z,l05f8
+	call	l0547
+l03d0:	
+	inc	l
+	jp	z,l03a9
+	jp	l03c0
+l03d7:	
+	call	PChar
+	ld	a,b
+	or	a
+	jp	nz,l03e4
+	ld	a,' '
+	jp	l03ee
+l03e4:	
+	dec	b
+	dec	hl
+	ld	a,' '
+	ld	(hl),a
+	call	PChar
+l03ec:	
+	ld	a,8		; BackSp
+l03ee:	
+	call	PChar
+	ret
+;
+l03f2:	
+	ld	b,0
+	ld	hl,Buf1
+l03f7:	
+	call	l04eb
+	cp	CR
+	jp	z,l042f
+	cp	9		; Tab
+	jp	z,l0470
+	cp	7fh		; delete same as BS - C.W.
+	jp	z,BackSp
+	cp	8		; BackSp
+	jp	nz,l040f
+BackSp:	
+	ld	a,8
+	call	l03d7
+	jp	l03f7
+;
+l040f:	
+	cp	' '		; char?
+	jp	c,l03f7		; no
+	jp	z,l041a		; yes, it was <space>
+	ld	(l069a),a	; yes, but NOT space
+l041a:	
+	ld	(hl),a
+	call	PChar
+	inc	hl
+	inc	b
+	ld	a,b
+	db	0feh		; 'cp n'
+l0422:	db	70
+	jp	c,l03f7
+	call	l03ec
+	call	l03e4
+	jp	l03f7
+l042f:	
+	ld	a,(l069a)
+	or	a
+	jp	nz,l045b
+	pop	hl
+	call	PrnExit
+	db	CR,LF,'++ Aborting with no changes ++$'
+l045b:	
+	ld	(hl),CR
+	ld	a,(hl)
+	call	PChar
+	inc	hl
+	ld	(hl),LF
+	ld	a,(hl)
+	call	PChar
+	inc	hl
+	ld	a,b
+	or	a
+	ret	nz
+	pop	hl
+	jp	l02be
+l0470:	
+	ld	a,b
+	cp	68
+	jp	nc,l03f7
+	ld	(hl),' '
+	ld	a,(hl)
+	call	PChar
+	inc	hl
+	inc	b
+	ld	a,b
+	and	7
+	jp	nz,l0470
+	jp	l03f7
+l0487:	
+	ld	hl,Buf1	; pt to input buffer
+l048a:	
+	ld	a,(hl)
+	call	l0547
+	cp	LF		; test input string (empty?)
+	ret	z
+	inc	hl
+	jp	l048a
+PrnExit:	
+	pop	de
+	ld	c,9
+	call	BDOS
+l049b:	
+	call	Restore
+	ld	hl,(StkSav)
+	ld	sp,hl
+	xor	a
+	ret
+;
+print:				; print string up to 0
+	ex	(sp),hl
+print1:	ld	a,(hl)
+	call	PChar
+	inc	hl
+	ld	a,(hl)
+	or	a
+	jp	nz,print1
+	ex	(sp),hl
+	ret
+;
+l04b1:	
+	ld	c,13h		; Delete file
+	ld	de,TempFCB
+	call	BDOS
+	jp	PrnExit
+	db	CR,LF,'++ Disk full, aborting, saving original file$'
+;
+l04eb:	
+	push	hl
+	push	de
+	push	bc
+l04ee:	
+	ld	e,0ffh
+	ld	c,6		; Direct Console Input
+	call	BDOS
+	and	7fh		; mask
+	or	a
+	jp	z,l04ee
+	cp	'a'		; lower case?
+	jp	c,l0510
+	cp	'{'
+	jp	nc,l0510
+	ld	b,a
+	ld	a,(l069c)
+	or	a
+	ld	a,b
+	jp	z,l0510
+	and	5fh
+l0510:	
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+;
+l0514:	
+	call	PrnExit
+	db	CR,LF,'No dir space: output$'
+l052e:	
+	jp	PrnExit
+	db	CR,LF,'Cannot close output$'
+l0547:	
+	push	hl
+	push	af
+	ld	hl,(MYSTERY)
+	ex	de,hl
+	ld	hl,(l069d)
+	ld	a,l
+	sub	e
+	ld	a,h
+	sbc	a,d
+	jp	c,l0599			; DMA buffer full? (?)
+	ld	hl,0
+	ld	(l069d),hl
+l055d:	
+	ex	de,hl
+	ld	hl,(MYSTERY)
+	ld	a,e
+	sub	l
+	ld	a,d
+	sbc	a,h
+	jp	nc,l058b
+	ld	hl,(FreeMem)
+	add	hl,de
+;
+	ex	de,hl
+	ld	c,1ah				; Set DMA
+	call	BDOS
+;
+	ld	de,TempFCB
+	ld	c,15h
+	call	BDOS				; Write seq.
+;
+	or	a
+	jp	nz,l04b1
+	ld	de,DMA
+	ld	hl,(l069d)
+	add	hl,de
+	ld	(l069d),hl
+	jp	l055d
+l058b:	
+	ld	de,DMA
+	ld	c,1ah				; Set DMA
+	call	BDOS
+;
+	ld	hl,0
+	ld	(l069d),hl
+l0599:	
+	ex	de,hl
+	ld	hl,(FreeMem)
+	add	hl,de
+	ex	de,hl
+	pop	af
+	ld	(de),a
+	ld	hl,(l069d)
+	inc	hl
+	ld	(l069d),hl
+	pop	hl
+	ret
+l05aa:	
+	cp	1			; ^A
+	jp	z,l05f8
+;
+	ld	c,13h			; Delete file
+	ld	de,TempFCB
+	call	BDOS
+;
+	call	PrnExit
+	db	'++ SOURCE FILE READ ERROR ++$'
+
+Restore:	
+	ld	a,(DefDU)
+	rra
+	rra
+	rra
+	rra
+	and	0fh
+	ld	e,a
+	ld	c,' '		; reset user
+	call	BDOS
+	ld	a,(DefDU)
+	and	0fh
+	ld	e,a
+	ld	c,0eh		; select default disk
+	call	BDOS
+	call	print
+	db	CR,LF,0
+	ret
+
+l05f8:	
+	ld	hl,(l069d)
+	ld	a,l
+	and	7fh
+	jp	nz,l0604
+	ld	(MYSTERY),hl
+l0604:	
+	ld	a,1ah			; ^Z
+	push	af
+	call	l0547
+	pop	af
+	jp	nz,l05f8
+
+	ld	c,10h			; Close file
+	ld	de,l0658
+	call	BDOS
+
+	ld	c,10h			; Close file
+	ld	de,TempFCB
+	call	BDOS
+
+	inc	a
+	jp	z,l052e
+	ld	hl,l0659
+	ld	de,l068a
+	ld	b,10h
+	call	BLDIR
+
+	ld	c,13h			; Delete file
+	ld	de,l0658
+	call	BDOS
+
+	ld	de,TempFCB
+	ld	c,17h			; Rename file
+	call	BDOS
+	jp	l049b
+;
+PChar:				; print char
+	push	bc
+	push	de
+	push	hl
+	push	af
+	ld	e,a
+	ld	c,2
+	call	BDOS
+	pop	af
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+;
+BLDIR:				; Repeating block load with dec. of B
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	dec	b
+	jp	nz,BLDIR
+	ret
+;
+l0658:				; drive byte of FCB
+	ds	1
+l0659:	
+	db	'FOR        '		; file name
+FORFCB1:
+	ds	21			; rest of FCB
+;
+TempFCB:	
+	db	0,'        $$$'		; temporary file
+l0685:	
+	ds	5
+l068a:	
+	ds	15
+;
+l0699:	
+	db	0
+l069a:	
+	db	0
+DefDU:					; store defaults
+	ds	1
+l069c:	
+	db	0
+l069d:	
+	dw	0
+FreeMem:	
+	dw	FOREnd
+MYSTERY:			; purpose unknown 8/1/87
+	dw	8000h
+l06a3:	
+	db	'----',CR,LF
+Buf1:	
+	ds	86
+StkSav:	
+	ds	2
+
+FOREnd	equ	$
+
+	end
+

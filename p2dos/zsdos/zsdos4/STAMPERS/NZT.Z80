@@ -1,0 +1,751 @@
+	TITLE	"NZTIME Stamp Module for ZSDOS"
+;===============================================================;
+;  NZT  -  Driver for NZTIME Stamps				;
+;---------------------------------------------------------------;
+; Copyright (C) 1993  by Harold F. Bower and Cameron W. Cotrill	;
+;---------------------------------------------------------------;
+; FUNCTION:  To convert from DateStamper(tm) "type" date/time	;
+; string to the 81-bit date/time strings used by NZTIME.  This	;
+; code provides the time functions for ZSDOS to operate in an	;
+; NZTIME type Date/Time stamping mode designed by Joe Wright.	;
+;								;
+; Version:							;
+;	1.0 - Initial Release			18 Jul 93	;
+;===============================================================;
+;===========================================================================
+; NZTIME was developed by Joe Wright as an enhancement to P2DOS Stamps.
+; This implementation was developed by Harold F. Bower.
+;
+; NZTIME-stamped disks are marked by a 0A1H character in the Drive position
+; of the fourth entry in each logical Directory Sector.  This was done to
+; provide compatibility with P2DOS stamps (21H+80H).  This fourth directory
+; entry contains Create, Last Access, and Last Modified stamps for each of
+; the other three files in the sector.
+;
+; Date and Time information is bit-mapped in compressed "Universal" format
+; consisting of Year (0-99, 7 bits), Month (1-12, 4 bits), Day (1-31, 5
+; bits), Hour (0-23, 5 bits) and Minute (0-59, 6 bits).  Each stamp entry
+; therefore consists of 27 bits, or 81 bits per Directory Entry.  The Stamp
+; entry and layout in the Fourth Directory entry is:
+;
+;   Address
+;  |  0  |  1  |  2  |  3  |  4  |  5  |  6  |  7  |  8  |  9  |  A  |
+;  +-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-
+;   0A1H |<---Create #1---->5/4<---Access #1--->2/1<---Modify #1---->7/
+;
+;	   B  |  C  |  D  |  E  |  F  |  10 |  11 |  12 |  13 |  14 |
+;	 -----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-
+;	 /6<---Create #2--->4/3<---Access #2--->1/0<---Modify #2--->6/
+;
+;	   15 |  16 |  17 |  18 |  19 |  1A |  1B |  1C |  1D |  1E |  1F |
+;	 -----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+
+;	 /5<---Create #3---->3/2<---Access #3--->0/7<---Modify #3--->5/
+;							(Bits 4-0 Reserved)
+;===========================================================================
+
+VER	EQU	11		; Initial Release
+
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+
+	MACLIB	RSXFLAG		; Get the definition of RSX equate flag
+				; TRUE=Assemble as RSX, FALSE=Hi-memory module
+				;== ALSO VERSION DEPENDENT ADDRESSES
+
+DOSID	EQU	'S'		; ID tag for ZSDOS
+DOSVER	EQU	11H		; ZSDOS version number for this module
+	PAGE
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;  S T A R T    O F    R E L O C A T A B L E    C O D E
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+BEGIN:				; Label for ending space calculations
+
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+; RSX Install Routine - Used once, then no longer needed.
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+	  IF	  RSX
+INSTALL: PUSH	BC
+	PUSH	DE		; Save params for others
+	LD	A,D
+	OR	E		; Is there an Environment?
+	JR	Z,INST00	; ..jump if none 'cause can't be NZCOM
+	LD	HL,8
+	ADD	HL,DE		; Point to ENV type
+	BIT	7,(HL)		; Is it an extended Environment?
+	JR	Z,INST00	; ..jump if Not
+	LD	HL,42H		; Point to DOS Hi-addr in Extended Env
+	ADD	HL,DE
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		; ..and get to HL
+	JR	INST01		; DOS offset now in HL
+
+INST00:	LD	C,0		; Insure BIOS is even page
+	LD	HL,-0E00H	; Subtract DOS size in pages
+	ADD	HL,BC		; DOS starting addr now in HL
+INST01:	LD	(OFFSET),HL	; Let LOADER know where things are
+	PUSH	HL
+	LD	DE,6		; Offset to DOS entry jump
+	ADD	HL,DE
+	LD	C,48		; Get Version command
+	CALL	CALLHL		; ..and do it
+	CP	DOSVER		; Is it the correct version?
+	JR	NZ,INST02	; ..jump if not
+	LD	A,H		; Get type flag byte
+	CP	DOSID		; Is it our type?
+INST02:	POP	DE		; Restore DOS base addr
+	JR	NZ,INSNXT	; Skip install if wrong DOS
+	LD	HL,LOADED	; Are we loaded already?
+	LD	A,(HL)
+	AND	A
+	JR	NZ,INSNXT	; If we are loaded already
+	DEC	(HL)		; Else flag loaded
+	CALL	INSRSX		; Set up header and tie in
+	LD	HL,16H		; Offset DOS to table
+	ADD	HL,DE
+	EX	DE,HL		; ..and put in DE
+	LD	HL,JRWCLK	; Where to copy from
+	LD	BC,12		; Move 12 bytes
+	LDIR
+	EX	DE,HL		; Put DOS table addr in HL
+	INC	HL
+	INC	HL		; Point to DOS Remove Storage
+	LD	DE,MODRMV	; Set module Remove Vector
+	LD	(HL),E		; ..and save in DOS table
+	INC	HL
+	LD	(HL),D
+INSNXT:	POP	DE
+	POP	BC
+	RET
+
+INSRSX:	DI			; Don't interrupt during this
+	LD	HL,MODWARM	; Get address of module warm boot
+	LD	(MODWB+1),HL	; Place module boot address
+	LD	HL,(0006H)	; Get top of memory
+	LD	(JTABLE+1),HL
+	LD	HL,JTABLE
+	LD	(RSXPTA),HL	; Set protect address
+	LD	(0006H),HL
+	LD	HL,(0001H)
+	LD	(WBBIOS),HL	; BIOS Warm Boot target
+	INC	HL
+	LD	C,(HL)
+	INC	HL
+	LD	B,(HL)		; Get where WBOOT is pointing
+	PUSH	HL
+	LD	HL,WBNEXT
+	LD	(HL),0C3H	; JP Opcode
+	INC	HL
+	LD	(HL),C
+	INC	HL
+	LD	(HL),B		; Place jump to next WBOOT routine
+	POP	HL
+	LD	BC,MODWB
+	LD	(HL),B
+	DEC	HL
+	LD	(HL),C		; Install ourself into BIOS warm boot
+	EI			; Ok, we're tied in - make my day
+	RET
+
+	  ENDIF		;Rsx
+
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+; Patch Area Header (doubles as RSX header)
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+JTABLE:	JP	0		; [BDOS for RSX]
+MODWB:	JP	INSTALL		; Install routine [WBOOT for RSX]
+MODRMV:	JP	REMOVE		; Remove routine
+WBBIOS:	DEFW	0		; Next module install [WBOOT addr for RSX]
+	  IF  RSX
+RSXPTA:	DEFW	MODWARM		; Previous module remove [protect addr for RSX]
+	  ELSE
+RSXPTA:	DEFW	0		; Previous module remove [protect addr for RSX]
+	  ENDIF
+	DEFW	MODID		; Text header for module
+WBNEXT:	DEFB	'PCH'		; Patch signature for NZCOM [JP NXTWB for RSX]
+NXTLOD:	DEFW	TOP		; Last address in the module + 1
+VERIFY:	DEFW	JTABLE		; Pointer to head of table for verify
+
+; The following entries replicate ZSDOS table at offset 16H
+
+JRWCLK:	DEFW	RWCLK		; Read/Set Real-Time Clock
+STLA:	DEFW	STAMPA		; Stamp Last Access Time (Points to error ret)
+STCR:	DEFW	STAMPC		; Stamp Create Time
+STUP:	DEFW	STAMPU		; Stamp Update Time
+SGSTMP:	DEFW	GSTAMP		; Get File Stamp
+SPSTMP:	DEFW	PSTAMP		; Put File Stamp
+
+
+MODID:	DEFB	'NZTIME Type, v'
+	DEFB	VER/10+'0','.',[VER MOD 10]+'0',0
+
+	PAGE
+	  IF	  RSX
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+; Routine to check if this RSX is lowest RSX in memory,
+; Restores Warm Boot Address at 0001H
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+CKWARM:	LD	DE,MODWB
+	LD	HL,(WBBIOS)
+	LD	(0001H),HL	; Restore warm boot
+	INC	HL
+	LD	A,(HL)
+	INC	HL
+	SUB	E
+	RET	NZ
+	LD	A,(HL)
+	SUB	D		; Set Zero flag if we are bottom module
+	RET
+
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;     R S X    W a r m    B o o t    R o u t i n e
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+MODWARM: CALL	CKWARM		; Restore WB, check if we are lowest RSX
+	JR	NZ,MODWM1	; If not lowest
+	LD	HL,(RSXPTA)
+	LD	(0006H),HL	; Protect address
+MODWM1:	LD	A,(WBNEXT+2)	; Get pointer to next WB routine
+	LD	HL,WBBIOS+1	; Get base page of BIOS
+	CP	(HL)		; See if below BIOS
+	JR	C,WBNEXT	; If below, must be another RSX
+	LD	A,(0004H)	; Get logged DU:
+	LD	C,A
+	LD	D,(HL)
+	DEC	HL
+	LD	E,(HL)		; Get BIOS WBOOT address
+	LD	HL,-[0E00H+800H] ; Offset from WBOOT to CCP+3
+	ADD	HL,DE		; Point to CCP+3
+CALLHL:	JP	(HL)		; And exit to CCP
+
+	PAGE
+	  ELSE
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;	  I n s t a l l   Z D S    R o u t i n e
+;..........................................................
+; Enter: BC = BIOS Warm Boot address (from location 0001,2)
+;	 DE = Environment address or 0000 if none
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+INSTALL: PUSH	BC
+	PUSH	DE		; SAVE Params for others
+	LD	A,D
+	OR	E		; Was an ENV passed?
+	JR	Z,INSTA0	; Jump if no pointer, assume normal system
+	LD	HL,08H		; ..offset..
+	ADD	HL,DE		; Point to ENV Type
+	BIT	7,(HL)		; Is this an extended ENV?
+	JR	Z,INSTA0	; ..jump if no Extended ENV
+	LD	HL,42H		; ..offset to DOS
+	ADD	HL,DE
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)		; Get DOS address from ENV
+	LD	L,A
+	JR	INSTA1		; DOS offset now in HL
+
+INSTA0:	LD	C,0		; Insure BIOS is page boundary
+	LD	HL,-0E00H	; Subtract DOS size
+	ADD	HL,BC
+INSTA1:	LD	(OFFSET),HL	; Let ZDS know where things are
+	PUSH	HL		; Save DOS address
+	LD	DE,6		; Offset to DOS entry jump
+	ADD	HL,DE
+	LD	C,48		; Get Version function
+	CALL	CALLHL		; ..and do it
+	CP	DOSVER		; Is it the right version?
+	JR	NZ,CHKDO2	; ..jump if not
+	LD	A,H
+	CP	DOSID		; Is it the correct DOS?
+CHKDO2:	POP	DE
+	JR	NZ,INSNX1	; Skip install if wrong DOS
+	LD	HL,LOADED
+	LD	A,(HL)
+	AND	A
+	JR	NZ,INSNX1	; Quit if we are loaded already
+	DEC	(HL)		; Else flag loaded
+
+; We need to do this in case NZCOM is used.
+
+	LD	HL,TBLOFF	; Offset to table
+	ADD	HL,DE
+	EX	DE,HL		; ..and put in DE
+	LD	HL,JRWCLK
+	LD	BC,12
+	LDIR
+	EX	DE,HL		; ZSDOS Dummy address to HL
+	INC	HL
+	INC	HL		; Advance to UNLOAD vector address
+	LD	DE,MODRMV	; Point to Remove routine
+	LD	(HL),E		; ..and store address in ZSDOS
+	INC	HL
+	LD	(HL),D		; Save Remove in DOS
+INSNX1:	LD	HL,(WBBIOS)
+INSNXT:	POP	DE
+	POP	BC		; Restore Registers
+	LD	A,H
+	OR	L		; Test for another module present
+	RET	Z		; Exit if no others
+CALLHL:	JP	(HL)		; ..else install next
+	  ENDIF		;Rsx (else)
+
+	PAGE
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+; Remove module by disabling all Timestamp vector table addresses
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+REMOVE:	PUSH	BC
+	PUSH	DE
+LOADED	EQU	$+1
+	LD	A,00		; Storage for flag in code
+	OR	A		; Is it loaded?
+	JR	Z,REMOV0	; ..jump if not
+	XOR	A		; Else flag as gone
+	LD	(LOADED),A
+OFFSET	EQU	$+1
+	LD	HL,0000		; Get DOS address
+	LD	DE,UNLOAD+1	; ..and offset to UNLOAD vector
+	ADD	HL,DE
+	LD	(HL),A		; Clear the ZSDOS Unload vector
+	DEC	HL
+	LD	(HL),A
+	DEC	HL
+	LD	D,(HL)		; Get disable vector..
+	DEC	HL
+	LD	E,(HL)
+	LD	B,6
+RMLOOP:	DEC	HL
+	LD	(HL),D		; Move disable vector to memory
+	DEC	HL
+	LD	(HL),E
+	DJNZ	RMLOOP		; Loop til all vectors disabled
+REMOV0:	LD	HL,(RSXPTA)	; Get address of next module to remove
+	  IF  RSX
+	CALL	CKWARM		; See if we're lowest RSX - includes ZEX
+	JR	NZ,REMOV1	; Don't allow removal if there are others
+	DI			; Hold things off while we work
+	LD	HL,(JTABLE+1)	; Get prior BDOS vector
+	LD	(0006),HL	; Restore it
+	LD	HL,(WBBIOS)	; Get BIOS entry address
+	INC	HL
+	LD	DE,(WBNEXT+1)	; Get warm boot of next RSX up
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; Patch it into BIOS
+	EI			; Ok, back on now
+	SCF			; Set carry to indicate success
+	DEFB	0EH		; Trash "C" and fall thru to REMOV2
+REMOV1:	XOR	A		; Clear carry to show error
+REMOV2:	POP	DE
+	POP	BC
+	RET			; ..and exit
+	  ELSE
+	JR	INSNXT		; Quit
+	  ENDIF		;Rsx
+
+	PAGE
+;========================================================================
+;		    N Z T I M E   S T A M P   C O D E			;
+;========================================================================
+;===============================================================+
+; Stamp CREATE/ACCESS/UPDATE Time Field in T&D.			|
+; ------------------------					|
+;   Read the Real Time Clock via SGSTIM vector in Universal	|
+;   format to buffer and convert it to NZTIME format in the	|
+;   appropriate field in DIR Buffer.				|
+;---------------------------------------------------------------|
+; Enter: A = Directory Offset (0, 20H, 40H) of subject file	|
+;	BC = Address of WRFCB routine in ZSDOS			|
+;	DE = Pointer to DIR Buffer.  (Offset in A)		|
+;								|
+; Exit : A = 1 if OK, Else A = 0FFH if error.  Flags undefined	|
+;								|
+; Effects: Current DMA Buffer altered				|
+;===============================================================+
+
+STAMPC:	LD	L,0		; Set to Create field in Stamp
+	JR	STTIM		; ..jump to Common Code
+
+STAMPA:	LD	L,3		; Index to Last Access field in NZTIM (+1)
+	JR	STTIM		; ..jump to Common Code
+
+STAMPU:	LD	L,6		; Set to Update field in Stamp
+STTIM:	CALL	SETREC		; Use DE offset to rec in A.  Save L in E
+	LD	C,E		; Move index to offset reg
+
+	ADD	HL,BC		; Destination of 4-byte T&D now in HL
+	LD	DE,DSTIME	; Set address to read time
+	PUSH	HL		; .save destination addr
+	PUSH	DE		; ..and source addr
+	PUSH	BC		;2.02 ..and Counter
+	LD	C,B		; .(set C=0 for Clock Read)
+	CALL	RWCLK		; Read the Clock
+	POP	BC		;2.02 .restore Counter
+	POP	DE		; .restore source addr
+	POP	HL		; ..and destination addr
+	DEC	A		; Was the clock read Ok?
+	JR	NZ,NOTIM0	; ..jump if Not to Err exit
+
+; Convert a single Stamp from Univ Date/Time addressed by DE to NzTime Stamp
+
+NZTUP:	CALL	NZSETB		; Set number of entry in A&B (0,1,2)
+	ADD	A,C		; .add index (0,3,6)
+	LD	B,A		; ..and store
+	CP	8		; Is this > 8?
+	JR	C,NZTUP0	; ..jump if Not
+	LD	B,0		; Else set to Start at Bit 7
+	INC	HL		; .and advance a byte
+NZTUP0:	CALL	GETNZ		; Conv Univ Time & Insert in NzTime stamp
+	JR	WRFCB		; ..jump to write the sector & return
+
+;===============================================================+
+; Put File Stamps in Universal Format				|
+; ---------------						|
+;   Convert Create and Update Time fields from Universal format	|
+;   to CP/M+ (P2DOS) form and insert in DIRectory buffer.  Call	|
+;   WRFCB routine to write Directory on exit.			|
+;---------------------------------------------------------------|
+; Enter: A = Directory Offset (0, 20H, 40H) of subject file	|
+;	BC = Address of WRFCB Routine in ZSDOS			|
+;	DE = Pointer to DIR Buffer.  (Offset in A)		|
+;	HL = DMA Address containing 15 byte Stamp frame		|
+;								|
+; Exit : A = 1 if OK, Else A = 0FFH if error.  Flags undefined	|
+;								|
+; Effects : Addressed DIR buffer updated on disk if successful	|
+;===============================================================+
+
+PSTAMP:	CALL	SETREC		; Calculate the Stamp area addr for file
+
+; Convert Universal Stamp sequence to NZTim sequence, enter in DIR and Write
+; ENTER: HL -> Start of 81-bit Dest NzTime Stamp sequence
+;	  B = # Bits to skip in first byte
+;	 DE -> 15-byte Input Universal Time Stamp sequence
+; EXIT :
+
+NZWSTP:	CALL	NZSETB		; Set number of entry in A&B (0,1,2)
+	PUSH	AF		; .save for next field
+	CALL	GETNZ		; Transfer Univ Create to NzTime field
+	POP	AF		; Restore bit skip count
+	ADD	A,3		; .offset to next field
+	LD	B,A		; ..save for call
+	PUSH	AF		; ...and for final field
+	CALL	GETNZ		; Transfer Univ Last Access to NzTime
+	POP	AF		; Restore bit skip count
+	ADD	A,3		; .offset to next field
+	AND	07H		; ..compensate in case last field, 3d entry
+	LD	B,A		; ...save bit skip counter
+	CALL	GETNZ		; Transfer Univ Modify to NzTime field
+	JR	WRFCB		; ..write sector and return
+
+WRFCB0:	JR	NZ,NOTIM0	; ..jump to Error Exit if Invalid Date
+WRFCB:	CALL	$-$		; Address set on entry
+OKRET:	LD	A,1		; Else set OK flags and return
+	RET
+
+;.....
+NOTIM:	POP	AF		; Clear the Stack
+NO$TD:	POP	AF		; Remove Return Addr from Stack
+NOTIM0:	OR	0FFH		; ..and set error flags
+	RET			; Back to caller
+
+;===============================================================+
+; Get File Stamps in Universal Format				|
+; ---------------						|
+;   Read the Create and Update Stamps and convert to Universal	|
+;   format in the proper fields at the specified address.  Null	|
+;   the Last Access Time field.					|
+;---------------------------------------------------------------|
+; Enter: A = Directory Offset (0, 20H, 40H) of subject file	|
+;	DE = Pointer to DIR Buffer.  (Offset in A)		|
+;	HL = DMA Address to receive 15 byte Stamp frame		|
+;								|
+; Exit : A = 1 if OK, Else A = 0FFH if error.  Flags undefined	|
+;								|
+; Effects : DMA Buffer contains the 15-byte frame if successful	|
+;===============================================================+
+
+GSTAMP:	CALL	SETREC		; Calculate Source T&D address to HL
+				; .(Errors bypass return here, going direct)
+; Convert Complete 81-bit NZTIME Stamp to Universal 15-byte format
+; ENTER: HL -> Byte containing Start of NZTime Stamp sequence
+;	 DE -> Beginning of 15-byte Universal Stamp sequence to receive
+;	  B = # Bits to skip in first byte of NZTime input
+; EXIT : HL -> Last byte of NZTime string (Input+10)
+;	 DE -> Byte after last in Univ Time sequence (Input+15)
+;	 - 81bit NZTime sequence converted to 15-byte Universal sequence
+; NOTE: No error checking performed on values.
+
+NZRSTP:	CALL	NZSETB		; Set B with # bits to shift on 1st byte
+	LD	A,(HL)
+	CALL	NZPRIM		; Set up first byte
+	LD	(IPTR+1),HL	; Input ptr to stack
+	LD	L,A		; Byte to be shifted in L, output byte in H
+	LD	A,3
+PUTNZ0:	LD	(LPCTR+1),A	; Set outer loop counter
+	LD	B,7
+	CALL	GBITS		; Get Year (7 bits)
+	LD	B,4
+	CALL	GBITS		; Get Month (4 bits)
+	LD	B,5
+	CALL	GBITS		; Get Day (5 bits)
+	LD	B,5
+	CALL	GBITS		; Get Hour (5 bits)
+	LD	B,6
+	CALL	GBITS		; Get Minute (6 bits)
+LPCTR:	LD	A,$-$
+	DEC	A		; Have we done all 3 fields?
+	JR	NZ,PUTNZ0	; .loop if Not (saving new count)
+	JR	OKRET		; ..and exit by setting Ok Flag
+
+;.....
+
+GBITS:	LD	H,0		; Clear Bit Accumulator
+GBITS0:	ADD	HL,HL		; Shift B7 of L into B0 of H, H shifts left
+	DEC	C		; Have we shifted last of input Byte?
+	JR	NZ,GBITS1	; ..jump if Not
+
+	PUSH	HL		; Else need a byte, save regs
+IPTR:	LD	HL,$-$		; Get input ptr (set above)
+	INC	HL		; .go to next byte
+	LD	A,(HL)		; ..fetch
+	LD	(IPTR+1),HL	; ...save updated ptr
+	POP	HL		; .(restore regs
+	LD	L,A		; Place new Input byte for shifting
+	LD	C,8		;  and init Bits Remaining counter
+
+GBITS1:	DJNZ	GBITS0		; ..Shift another if not done
+	LD	A,H		; Else get completed output byte
+	CALL	BINBCD		; .make BCD for Universal
+	LD	(DE),A		; ..store in Output
+	INC	DE		; ...and advance to next digit
+	RET
+
+;------------------------ Support Routines -------------------------------
+;.....
+; Set Register B to number of bits to discard in first byte of stamp
+; Enter: Sector Pointer value punched in code
+; Exit : B = 0, 1 or 2 for respective Dir entry
+; Uses : AF, B
+
+NZSETB:	LD	A,$-$		; Load Sector Entry Pointer (Set in SETREC)
+	RLCA			; Rotate
+	RLCA			; .B6,5
+	RLCA			; ..to B1,0
+	LD	B,A		; Set Counter for # bits to skip
+	RET			;
+
+;.....
+; Get byte from source and shift number of bits in B.  Store Bit # in C.
+; Enter:  B = # Bits to discard starting at MSB
+;	  E = Input Byte
+; Exit :  B = 0
+;	  C = Current Bit # in MSB position (8..1)
+;	  A = Input byte (shifted)
+; Uses : AF,BC
+
+NZPRIM:	PUSH	AF		; Save Byte to shift
+	LD	A,8		; Set Max Bit # (8..1)
+	SUB	B		; .subtract # bits to skip
+	LD	C,A		; ..save in bit counter
+	POP	AF		; Restore Byte to possibly shift
+	INC	B		; .(prepare byte for test)
+NZPRI0:	DEC	B		; Last bit to shift?
+	RET	Z		; ..exit if so w/B=0
+	RLCA			; Else shift source 1 bit to left
+	JR	NZPRI0		; ..and try again
+
+;.....
+; Convert Time Stamp in Universal form to NZTIM stamp
+; ENTER:  B = Number of Bits to skip in Byte addressed by HL
+;	 HL -> Byte in NzTime to start conversion
+;	 DE -> 5-byte Universal Time Source String
+; EXIT : HL -> Last byte changed in NzTime Stamp (Input+3)
+;	 DE -> Byte after Seconds byte (Inout+5)
+;	 - NzTime Stamp Updated
+; NOTE: Assumes Universal Time String is Valid
+
+GETNZ:	LD	A,(HL)		; Get first byte
+	LD	(ADDPTR+1),HL	; .(save NzTim Byte ptr)
+	CALL	NZPRIM		; ..and position first byte
+	LD	L,A		; Set byte to shift
+	LD	B,7		;
+	CALL	ADDNZ		; ..Get Years (7 bits)
+	LD	B,4		;
+	CALL	ADDNZ		; .Month (4 bits)
+	LD	B,5		;
+	CALL	ADDNZ		; ..Day (5 bits)
+	LD	B,5		;
+	CALL	ADDNZ		; ...Hour (5 bits)
+	LD	B,6		;
+	CALL	ADDNZ		; ....Minute (6 bits)
+	LD	A,L		; Get working byte
+	LD	HL,(ADDPTR+1)	; .restore ptr into NzTime
+NZST3:	RLCA			; Rotate byte to final position
+	DEC	C		; Done?
+	JR	NZ,NZST3	; ..exit if so
+	LD	(HL),A		; Save the final byte
+	RET			; ..and return
+
+; Support routine to accumulate specified # of Bits (Nz) from BCD digit (P2D)
+
+ADDNZ:	LD	A,8		; Start by computing bits to fill when
+	SUB	B		;  converted to binary
+	LD	H,A		;   and save
+	LD	A,(DE)		; Get Universal byte
+	INC	DE		; .bump ptr
+	CALL	BCDBIN		; Convert to Binary
+ADDNZ0:	ADD	A,A		; Shift to align output bits with B7 start
+	DEC	H		; More to go?
+	JR	NZ,ADDNZ0	; ..loop til aligned
+ADDNZ1:	RLA			; Move MSB of Source to Carry
+	RL	L		; .Discard bit of output to C, New bit to LSB
+	DEC	C		; Time to Write Output byte & Get another?
+	JR	NZ,ADDNZ2	; ..jump if Not
+
+	PUSH	AF		; .(save regs)
+	LD	A,L		; Else Get output byte
+ADDPTR:	LD	HL,$-$		; Point to Target NZTime String (set above)
+	LD	(HL),A		; .save byte
+	INC	HL		; ..advance to next
+	LD	A,(HL)		; ...fetch
+	LD	(ADDPTR+1),HL	; Save updated ptr into NZTime
+	LD	L,A		; .set new target byte
+	POP	AF		; .(Restore regs)
+	LD	C,8		; ..and bit counter
+ADDNZ2:	DJNZ	ADDNZ1		; Loop til all bits sent to output
+	RET
+
+;.....
+; Convert BCD to HEX
+; Enter: A = BCD digit to be converted
+; Exit : A = HEX (binary) conversion
+;		 All registers preserved
+
+BCDBIN:	OR	A
+	RET	Z		; Zero is same
+	PUSH	BC		; Save register
+	LD	B,0		; Set counter
+BCDBI0:	INC	B		; Bump counter
+	SUB	1		; Count down BCD..
+	DAA
+	JR	NZ,BCDBI0	; ..til all gone
+	LD	A,B
+	POP	BC
+	RET
+
+;.....
+; Convert byte in A register to two packed BCD digits.
+
+BINBCD:	PUSH	BC		; Affect only A register
+	LD	B,0FFH		; Preset counter
+BINBCL:	INC	B		; Bump output count
+	SUB	10
+	JR	NC,BINBCL	; Loop bumping counter til no more 10s
+	ADD	A,10		; ..correct for underflow
+	LD	C,A		; Save low nybble here for a while
+	LD	A,B		; ..and bring hi one here..
+	ADD	A,A		; Move it into position
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	ADD	A,C		; Add in Low nybble
+	POP	BC		; Restore regs
+	RET
+
+;---------------------------------------------------------------+
+; Calculate offset within T&D Record if one exists.		;
+;								;
+; Enter: A = Sector Pointer (0,20H,40H) into DIRBUF		;
+;	BC = Points to the ZSDOS WRFCB routine			;
+;	DE = Points to Directory Sector Buffer			;
+;	HL = DMA Address (or flag in L for STAMPx)		;
+; Exit : A = 0, Zero Flag Set (Z), If Ok, else A <> 0, (NZ)	;
+;	HL = First byte of Create Date for record if OK		;
+;	DE = DMA Address (or flag in L for STAMPx)		;
+; Uses : HL (Entry DE), AF, BC.  Entry HL preserved in DE	;
+;---------------------------------------------------------------+
+
+SETREC:	LD	(WRFCB+1),BC	; Save Directory Write Routine address
+	EX	DE,HL		; DIR sector to HL for adr calcs
+	LD	BC,060H		; Offset to T&D Fields
+	ADD	HL,BC
+	LD	C,A		; .Sector pointer to register
+	LD	(NZSETB+1),A	; ..and in utility routine
+	LD	A,(HL)		; Get byte
+	SUB	0A1H		; Is NZ TimeStamping present?
+	JP	NZ,NO$TD	; ..quit here if not
+	LD	A,C		; Restore Sector pointer from storage
+	RRCA			; Shift 2 times
+	RRCA
+	LD	C,A		; ..save temporarily
+	RRCA			; Shift 2 more times
+	RRCA
+	ADD	A,C		; ..and add in again
+	LD	C,A		; Set for offset (C=0,10,20)
+	ADD	HL,BC		; Add offset
+	INC	HL		; ..and bump to Create Time Start
+	XOR	A		; Set good return status
+	RET
+
+;===================================================;
+;===|		D A T A     A R E A  		|===;
+;===================================================;
+; Put in CSEG to make single module
+
+;.....
+; Days-in-Month table
+
+DM:	DEFB	31,28,31,30,31,30,31,31,30,31,30,31
+
+;.....
+; Time/Date String in Universal Format
+
+DSTIME:	DEFB	0,0,0,0,0,0
+
+;******************************************************************
+; Clock Driver for ZSDOS
+;
+; This routine interfaces the ZSDOS Time interface to a physical
+; clock driver routine.  The ZSDOS interface is:
+;
+;	Entry conditions:
+;		C  = Read/Write Code (1=Write, 0=Read)
+;		DE = Address to Put/Set Time
+;
+; The Error return code on Clock Set is overwritten during instal-
+; lation if a ZSDOS clock driver (with two jumps) is detected, with
+; a relative jump to the clock set vector.  This short routine also
+; places the time address in the HL registers to be compatible with
+; DateStamper clock specifications.
+;******************************************************************
+
+	DEFS	8-[[$-BEGIN] MOD 8]	; Must start on boundary
+
+RWCLK:	EX	DE,HL		; Set registers for DS clock interface
+	LD	A,C
+	OR	A		; Read (0) or Write (<>0)
+	JR	Z,CLK		; Read clock if Zero..
+
+; The following Error Return code is overwritten if ZSDOS clock added
+
+	XOR	A		; Set error return
+	DEC	A
+	RET
+
+;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;		C l o c k     D r i v e r
+;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+; Actual clock driver or vector to external routine added here
+
+CLK:
+
+TOP	EQU	$
+
+	END
+

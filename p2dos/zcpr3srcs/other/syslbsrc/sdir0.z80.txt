@@ -1,0 +1,76 @@
+;	TITLE	"SDIR0 - Syslib 4.0"
+	NAME	('DIRFS')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SDIR.Z80 Ver 1.5 by Richard Conn
+; Date    : 28 Oct 89
+; Version : 1.7
+; Module  : SDIR0
+; Abstract: This module contains a Directory Selection routine with
+;	sizing information.  Additionally, the core of the General-
+;	purpose directory select routine is made public for the DIRF
+;	routine which reads the	directory of a specified drive
+;	without sizing information.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		DIRFS, DIRF0
+
+; From SYSLIB Get..
+
+	EXT		DIRSEL, DIRPACK, DIRALPHA, SELFLG
+	EXT		DBUFFER, DIRSLOAD
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DIRFS		(WITH Sizing Data)
+; Entry: HL - Points to Buffer starting address
+;	 DE - Points to FCB for selection
+;	  A - Contains Select flag as:
+;			Bit 7 - Select Non-System Files
+;			Bit 6 - Select System Files
+;			Bit 5 - Select All Users
+;			Bits 4-0 - User Number
+; Exit : HL - Points to Fiest File in Buffer
+;	 BC - Number of files in Buffer Array
+;	  A = 0 and Zero Flag Set (Z) if TPA Overflow
+;		 Else Zero Flag Reset (NZ)
+; Uses : AF,BC,HL
+; Special Requirements: None
+;===============================================================
+
+DIRFS:	PUSH	DE		; Save ptr to FCB
+	LD	(SELFLG),A	; Save Select Flag for DIRSEL
+	CALL	DBUFFER		; Get ptrs
+	CALL	DIRSLOAD	; Load Dir with Sizing Information
+				;..fall thru to DIRF0
+;	END
+;===============================================================
+; NAME - DIRF0		(Core of DIRF and DIRFS)
+; Entry: <Stack> contains Pointer to FCB for selection
+;	  A = 0, Zero Set if TPA Overflow, else <>0
+; Exit : HL - Points to Fiest File in Buffer
+;	 BC - Number of files in Buffer Array
+;	  A = 0 and Zero Flag Set (Z) if TPA Overflow
+;		 Else Zero Flag Reset (NZ)
+; Uses : AF,BC,HL
+; Special Requirements: None
+;===============================================================
+
+DIRF0:	POP	DE		; Get ptr to FCB
+	RET	Z		; Abort if TPA Overflow
+	PUSH	AF		; Save flag to indicate no TPA overflow
+	LD	A,(SELFLG)	; Get select flag
+	CALL	DIRSEL		; Select files
+	CALL	DIRPACK		; Pack Directory
+	XOR	A		; Sort flag (FN and FT)
+	CALL	DIRALPHA	; Alphabetize
+	POP	AF		; Get PSW (TPA overflow flag)
+	RET
+
+	END
+

@@ -1,0 +1,1194 @@
+;	Program:  CLEANDIR
+
+;	Function: Sorts the directory of a disk into increasing or decreasing
+;		  order.  Checks for the following conditions:
+;			Duplicate directory entries
+;			User # > 31
+;			Extent # > 31
+;			Illegal characters in the filename
+;			Record count > 80h
+;			Same allocation group assigned to multiple files, or
+;			to the same file twice
+
+;		  Deletes 0-length files other than those with names starting
+;		  with a '-' or a space, as used by some disk catalog programs.
+
+;		  Reports the names of all 0-length files.
+
+;		  Removes all erased entries from the directory, writing
+;		  continuous 'e5' (hex) bytes from after the last active
+;		  directory entry to the end of the directory.
+
+;		  May be invoked in a 'Check' mode, such that it does all of
+;		  the above checks, but does not write the modified directory
+;		  back to the disk.
+
+;	Requirements:
+;		  Hardware: Z80-compatible processor
+;		  Software: ZCPR3 operating system (with BDOS or ZRDOS)
+
+VERS	equ	18		;version 1.8
+
+Z3ENV	equ	0FE00H		;environment descriptor address
+
+;	SYSLIB and Z3LIB References
+
+	ext	EPRINT, COUT, PFN3, PADC, PA2HC, PHL4HC
+	ext	Z3INIT, Z3LOG, GETMSG, PUTER2, PHLFDC
+
+FALSE	equ	1 eq 2		;change to 'equ 0' if your assembler complains
+TRUE	equ	not FALSE
+
+;    !!!!!!!!!!!!!!!!!!!!!!!!!  IMPORTANT NOTE  !!!!!!!!!!!!!!!!!!!!!!!!!
+
+;*** Change the following equate to FALSE and reassemble if you are using ***
+;*** vanilla CP/M's BDOS. Failure to do so may be hazardous to your disk! ***
+
+;    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+ZRD15	equ	TRUE		;TRUE for ZRDOS 1.5 or later; FALSE for CP/M
+				;BDOS or earlier versions of ZRDOS
+
+;	Assorted CP/M definitions
+
+BDOS	equ	5
+
+BELL	equ	7
+CR	equ	0DH
+LF	equ	0AH
+
+FCB	equ	5CH
+FCB2	equ	6CH
+
+RDBUF	equ	80h		;use CP/M's default buffer for reading
+
+SELDRV	equ	14		;BDOS Select Drive function
+GETDSK	equ	25		;BDOS Get Disk # function
+
+CLEANDIR:			;start of code
+
+;	Environment Definition
+
+     if		Z3ENV ne 0
+
+;	External ZCPR3 Environment Descriptor
+
+	jp	START
+	defb	'Z3ENV'		;This is a ZCPR3 Utility
+	defb	1		;External Environment Descriptor
+Z3EADR:	defw	Z3ENV
+START:	ld	hl,(Z3EADR)	;pt to ZCPR3 environment
+
+     else
+
+;	Internal ZCPR3 Environment Descriptor
+
+	MACLIB	Z3BASE.LIB
+	MACLIB	SYSENV.LIB
+Z3EADR:	jp	START
+	SYSENV
+START:	ld	hl,Z3EADR	;pt to ZCPR3 environment
+
+     endif
+
+;	Start of Program -- Initialize ZCPR3 Environment
+
+	call	Z3INIT		;initialize the ZCPR3 Environment
+
+;	Get BIOS vectors into local table
+
+GETBIO:	ld	hl,(1)		;address of BIOS warm start vector
+	ld	de,8 * 3	;skip over vectors we don't need
+	ld	c,e		;set up counter also
+	ld	b,d
+	add	hl,de
+	ld	de,SELDSK	;pointer to local jump table
+	ldir
+
+;The call to CODEND that was used here has been replaced with a direct load
+;of the first-free-address value.  CODEND returns the address of the first
+;free PAGE of memory; this results in anywhere from 0 to 255 bytes of free
+;memory being wasted.
+
+	ld	hl,($MEMRY)	;get start of free memory
+	ld	de,50		;Allow 50 bytes for stack
+	add	hl,de
+	ld	sp,hl		;set stack
+	ld	(DIRBUF),hl	;address of directory buffer
+	ld	(RDEST),hl	;destination pointer for directory copy also
+
+FLINIT:	ld	hl,REVERSE	;initialize required values
+	xor	a
+	ld	b,10		;10 bytes to initialize
+FLINLP:	ld	(hl),a
+	inc	hl
+	djnz	FLINLP
+
+	call	GETMSG		;See if there is a message buffer
+	jr	nz,HAVMSGS
+	ld	a,0ffh		;No message buffer
+	ld	(NOMSGS),a
+	jr	ANNOUNCE
+HAVMSGS:
+	xor	a
+	call	PUTER2		;Clear error flag
+ANNOUNCE:
+	call	EPRINT
+	defb	'CLEANDIR, Version '
+	defb	[VERS/10]+'0','.',[VERS MOD 10]+'0'
+	defb	0
+	ld	a,(FCB+1)	;CHECK FOR HELP REQUEST
+	cp	'/'		;ANY OPTION MEANS HELP
+	jp	z,HELP
+	call	DOOPT
+	ld	a,(FCB+2)
+	call	DOOPT
+	ld	a,(FCB2+1)	;CHECK FOR OPTION CHAR
+	call	DOOPT
+	ld	a,(FCB2+2)
+	call	DOOPT
+
+;	MAIN PROGRAM ROUTINE
+
+SAP:
+
+;	SETUP FOR SELECTING DRIVE AND LOADING DISK PARM BLOCK
+
+SETUP:	ld	de,FCB
+	call	Z3LOG		;LOG INTO DISK SPECIFIED BY USER
+	ld	c,GETDSK	;find out from DOS what the default drive is
+	call	BDOS
+     if		ZRD15
+	ld	(DRIVE),a	;save drive number for later
+     endif
+	ld	c,a		;PREP FOR OBTAINING DPB
+	call	EPRINT
+	defb	CR,LF,'Disk ',0
+	ld	a,c		;GET DISK NUMBER
+	add	a,'A'		;CONVERT TO ASCII
+	call	COUT
+	call	SELDSK
+
+;	GET CP/M DPB DATA
+
+	ld	e,(hl)		;the BIOS SELDSK routine returns the DPH
+	inc	hl		;address in HL
+	ld	d,(hl)		;extract the translation table address
+	ld	(SECTBL),de	;save translation table address
+	ld	de,9		;offset to DPB address in DPH
+	add	hl,de
+	ld	a,(hl)		;get DPB address into HL for copy
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,DPB		;copy to local DPB
+	ld	bc,DPBLEN
+	ldir
+
+	ld	hl,(DRM)	;get max # of directory entries on the disk
+	inc	hl		;convert to 1-relative
+	call	ROTRHL		;divide by 4 to get the number of 128-byte
+	call	ROTRHL		;logical sectors in the directory
+	ld	(DIRSEC),hl	;save # of directory sectors
+	ld	(SECCTR),hl	;initialize sector counter for directory read
+
+GETDMX:	ld	hl,(BDOS+1)	;get top of TPA
+	ld	de,(DIRBUF)	;subtract start of directory buffer
+	or	a
+	sbc	hl,de		;available space for directory (bytes)
+	ld	a,l		;mask to an integral multiple of 32 bytes
+	and	not 31
+	ld	c,a
+	ld	b,h		;put byte count into BC
+	push	bc		;save for later
+	dec	bc		;count byte we're about to do
+	push	de
+	pop	hl		;get address of directory buffer to HL
+	ld	(hl),0e5h	;put an 'e5' byte into the directory
+	inc	de		;DE still points to DIRBUF - bump it
+	ldir			;fill the directory buffer with 'e5' bytes
+
+	pop	hl		;size of directory buffer (bytes) back to HL
+	ld	b,5		;set up loop counter
+DMXLP:	call	ROTRHL		;divide by 32 to get the number of
+	djnz	DMXLP		;directory entries that will fit
+	ld	(MAXDIR),hl	;save max # of active directory entries
+
+;	RDDIR - Read the directory of the current disk into the directory
+;		buffer, deleting erased entries as we go.
+
+;The directory is read in from the disk one 128-byte sector at a time.  After 
+;each sector is read into the buffer at RDBUF, it is copied to the directory 
+;buffer at DIRBUF, skipping over any erased entries, and zero-length entries 
+;other than those starting with '-' or a space.  Thus, the directory is built 
+;up incrementally, one sector at a time.  This allows the program to handle 
+;any disk, regardless of the maximum number of directory entries the disk may 
+;have.  The counter of active directory entries is incremented as each valid 
+;entry is copied into the directory buffer.  If the counter exceeds the number 
+;of entries that will fit in memory, an error message is printed and the 
+;program aborts back to the operating system.  This should be relatively rare, 
+;since, even running on a 48K TPA system, there is enough room for 1458 active 
+;directory entries--enough to fill 10 to 12 Megabytes of disk at typical disk 
+;allocation densities.
+
+RDDIR:	call	EPRINT
+	defb	' --> Reading, ',0
+RDDIR1:	ld	hl,(SYSTRK)	;select first directory track
+	ld	(CURTRK),hl
+
+READLP:	ld	hl,RDBUF
+	ld	(DMADDR),hl	;set up read buffer address
+	push	hl		;save start of buffer
+	xor	a		;flag read operation
+	call	READWRT		;read the next sector into the read buffer
+	pop	hl		;restore source pointer
+	ld	b,4		;loop counter - 4 entries per sector
+
+PACKLP:	ld	a,(hl)		;look at user # of next entry
+	cp	0e5h		;see if erased
+	jr	z,SKIPHL	;if so, bump HL over this entry
+
+;look for a zero-length file, defined as:  extent #, s2, and rc all = 0
+
+	push	hl		;save file pointer
+	ld	de,12
+	add	hl,de
+	ld	d,(hl)		;get extent to D
+	inc	hl
+	inc	hl
+	ld	a,(hl)		;get s2 byte to A
+	and	0fh
+	inc	hl
+	ld	e,(hl)		;get rc byte to E
+	or	d		;OR them all together
+	or	e
+	jr	nz,NOSKIP	;OK if not all 0
+	call	EPRINT		;tell user we found one
+	defb	CR,LF,'Zero Length File:  ',0
+	pop	hl		;restore file pointer
+	push	hl
+	call	PFNAM1
+	ld	hl,ZCNT		;count it
+	inc	(hl)
+	pop	hl		;get back file pointer
+	push	hl
+	inc	hl
+	ld	a,(hl)		;get first character of filename
+	cp	'-'		;many catalog programs use a zero-length
+	jr	z,NOSKIP	;filename that starts with '-'; save it
+	cp	' '		;some use a zero-length filename that starts
+	jr	z,NOSKIP	;with a space; don't delete this either
+	pop	hl
+
+SKIPHL:	ld	de,32		;bump HL over the current entry
+	add	hl,de
+	jr	PAKEND
+
+NOSKIP:	ld	hl,(DIRACT)	;count this one as active
+	inc	hl
+	ld	(DIRACT),hl
+	ld	(II),hl		;directory count is also starting sort count
+CKFUL:	ex	de,hl
+	ld	hl,(MAXDIR)	;compare current entry count to max
+	or	a
+	sbc	hl,de
+	pop	hl
+	jp	c,NOROOM	;error if carry
+	push	bc		;copy into directory buffer
+	ld	bc,32		;copy 32 bytes
+	ld	de,(RDEST)	;get destination for move into DE
+	ldir
+	ld	(RDEST),de	;update destination pointer
+	pop	bc
+
+PAKEND:	djnz	PACKLP		;loop for next entry
+
+NXTSEC:	ld	hl,(SECCTR)
+	dec	hl		;decrement sector counter
+	ld	(SECCTR),hl
+	ld	a,h
+	or	l
+	jp	nz,READLP	;loop until all sectors done
+
+PAKDON:	ld	(CLEANDIR+1),hl	;disable a 'GO' rerun of program - if you
+				;think this is an odd place for it, you're
+				;right--but this is the first place in the
+				;program where HL is guaranteed to contain
+				;a zero value
+	ld	a,(ZCNT)	;Get count of zero-length files
+	or	a
+	jr	z,SIZDIR	;skip if none
+	push	af
+	call	EPRINT
+	defb	CR,LF,0
+	pop	af
+	call	PADC
+	call	EPRINT
+	defb	' files of zero-length',CR,LF,0
+
+;The reason for all the rigamarole below is the following:  the directory 
+;buffer is sized to hold as many 32-byte directory entries as possible.  But 
+;it is NOT guaranteed to be an integral number of 128-byte sectors long.  So, 
+;if the disk being cleaned has enough directory entries to fill the entire 
+;buffer (within one or two entries), it might have a partially-filled sector's 
+;worth of entries at the end of the buffer - one to three entries.  Since the 
+;directory is written one 128-byte sector at a time, the write routine would 
+;write 128 bytes, part of which would be the active entries, but part of which 
+;might be the BDOS!  This would produce a very odd-looking 'entry' at the end 
+;of the directory.  The solution is to have the write routine only write full 
+;sectors from the directory buffer.  If there are any leftover entries after 
+;the last full sector's worth, these will be copied to the read buffer, which 
+;IS 128 bytes long, and the write routine will write from there to the disk 
+;for the last group of active entries.
+
+SIZDIR:	ld	hl,(DIRACT)	;get number of active directory entries
+	push	hl		;save for check later
+	ld	d,h		;else, save in DE for later
+	ld	e,l
+	call	ROTRHL		;divide by 4 to get number of full
+	call	ROTRHL		;128-byte directory sectors
+	ld	(ACTDIR),hl	;save # of filled active sectors
+	push	hl		;save it
+	add	hl,hl		;generate (DIRACT mod 4)
+	add	hl,hl		;to get the number of active entries
+	ex	de,hl		;in the last (partially filled) sector
+	or	a		;(which may be zero)
+	sbc	hl,de
+	add	hl,hl		;multiply by 32 to get the # of bytes
+	add	hl,hl		;in the active entries in the
+	add	hl,hl		;partial directory sector
+	add	hl,hl
+	add	hl,hl
+	ld	a,l		;can't be >255
+	ld	(LSTACT),a	;save for directory write
+	ld	b,a
+	pop	de		;get # of filled sectors back
+	ld	hl,(DIRSEC)	;get # of directory sectors on disk
+	or	a
+	sbc	hl,de		;subtract # of active sectors
+	ld	a,b		;get back # of bytes in partial sector
+	or	a
+	jr	z,SIZDR1	;skip if none
+	dec	hl		;if we have a partial sector, bump dummy count
+SIZDR1:	ld	(DUMDIR),hl	;save # of dummy directory sectors
+	pop	hl		;now that we've done all that, let's see if
+	ld	a,h		;we have any active entries at all
+	or	l
+	jp	z,FINISH	;if not, skip directly to the directory write
+
+;	SORT THE DIRECTORY
+
+	call	SWAP		;swap ex & s2 to make it pretty
+
+SORT:	call	EPRINT
+	defb	'Sorting (',0
+	ld	a,(REVERSE)	;INDICATE ASC OR DSC
+	or	a		;0=ASC
+	jr	z,SORTASC
+	call	EPRINT
+	defb	'Descending',0
+	jr	SORTDO
+SORTASC:
+	call	EPRINT
+	defb	'Ascending',0
+
+;	SHELL-METZNER SORT
+
+SORTDO:	call	EPRINT
+	defb	' Order), ',0
+SORTIT:	ld	hl,(II)
+	ld	(SNUMRECW),hl
+	ld	hl,(DIRBUF)
+	ld	(SSTADR),hl
+	push	hl		;AND SAVE IT
+	ld	hl,32
+	ld	(SRECLEN),hl
+	push	hl		;AND SAVE IT
+
+;	NOW DIVIDE # OF FIELDS BY 2
+
+DIVIDE:	ld	hl,(SNUMRECW)	;GET VALUE
+	call	ROTRHL
+	ld	(SNUMRECW),hl	;SAVE RESULT
+	ld	a,l		;IF SNUMRECW<>0
+	or	h		;THEN
+	jr	nz,NOTDONE	;NOT DONE
+
+;	ALL FIELDS SORTED
+
+SORTED:	pop	bc		;CLEAN UP STACK
+	pop	de
+	jp	SWAPBK		;swap back & continue
+
+NOTDONE:
+	ex	de,hl
+	ld	hl,(II)
+	or	a
+	sbc	hl,de
+	ld	(SRECLEN),hl
+	ld	hl,1
+	ld	(SSORTV1),hl
+	ld	(SSTADR),hl
+	dec	l
+	pop	bc
+	push	bc
+NDONE1:	add	hl,de
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,NDONE1
+	ld	(SSORTV2),hl
+	ex	de,hl
+	pop	bc
+	pop	hl
+	push	hl
+	push	bc
+NDONE2:	ld	(SSORTV4),hl
+	ld	(SSORTV3),hl
+	ex	de,hl
+	add	hl,de
+	ex	de,hl
+COMPARE:
+	pop	bc
+	push	bc
+	push	de		;Fix from SAP 44
+	push	hl
+COMPAR1:
+	ld	a,(DE)
+	and	7FH
+	push	bc
+	ld	c,a
+	ld	a,(hl)
+	and	7FH
+	ld	b,a
+	ld	a,c
+	sub	b
+	pop	bc
+	jr	nz,NOTEQU
+	inc	hl
+	inc	de
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,COMPAR1
+	jr	NOSWITCH
+
+;	THE CONDITION AT NOTEQU: HAS TO
+;	BE CHANGED FOR DESCENDING SORT -- IF REVERSE=0, JNC TO NOSWITCH, ELSE
+;	JC TO NOSWITCH
+
+NOTEQU:	push	af		;SAVE CONDITION
+	ld	a,(REVERSE)	;DESCENDING SORT?
+	or	a		;0=NO
+	jr	z,ASCENDING
+	pop	af		;GET CONDITION FOR DESCENDING SORT
+	jr	c,NOSWITCH
+	jr	XSWITCH
+ASCENDING:
+	pop	af		;GET CONDITION FOR ASCENDING SORT
+	jr	nc,NOSWITCH
+XSWITCH:pop	hl		;Fix from SAP 44
+	pop	de
+	pop	bc
+	push	bc
+SWITCH:	push	bc
+	ld	b,(hl)
+	ld	a,(de)
+	ld	(hl),a
+	ld	a,b
+	ld	(de),a
+	inc	hl
+	inc	de
+	pop	bc
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,SWITCH
+	ld	hl,(SNUMRECW)
+	ld	a,h
+	cpl
+	ld	d,a
+	ld	a,l
+	cpl
+	ld	e,a
+	ld	hl,(SSORTV1)
+	add	hl,de
+	jr	nc,NOSW1	;fix from SAP 44
+	inc	hl
+	ld	(SSORTV1),hl
+	ld	hl,(SSORTV3)
+	ex	de,hl
+	ld	hl,(SSORTV2)
+	ld	a,e
+	sub	l
+	ld	l,a
+	ld	a,d
+	sbc	a,h
+	ld	h,a
+	ld	(SSORTV3),hl
+	jr	COMPARE
+
+NOSWITCH:
+	pop	hl		;Clean up stack - fm SAP 44
+	pop	hl
+NOSW1:	ld	hl,(SSTADR)
+	inc	hl
+	ld	(SSTADR),hl
+	ld	(SSORTV1),hl
+	ex	de,hl
+	ld	hl,(SRECLEN)
+	ld	a,l
+	sub	e
+	ld	a,h
+	sbc	a,d
+	jp	c,DIVIDE
+	ld	hl,(SSORTV4)
+	pop	de
+	push	de
+	add	hl,de
+	ld	de,(SSORTV2)
+	jp	NDONE2
+
+SWAPBK:	call	SWAP		;swap s2 & ex back to correct positions
+
+;	Check for duplicate directory entries
+
+DUPCHK:	call	EPRINT
+	defb	'Checking, ',0
+	ld	hl,0		;I = 0
+	ld	(II),hl
+
+DUPCK1:	ld	hl,(II)
+	call	INDEX		;HL = DIRBUF + 32 * I
+	ld	(THISDIR),hl
+
+	ld	de,(THISDIR)	;Check for duplicate entries
+	ld	hl,32		;Compare with next entry
+	add	hl,de
+	ld	b,15		;duplicate if 1st 15 chars the same
+COMPDIR:ld	a,(de)
+	sub	(hl)
+	and	7fh		;in the last 7 bits
+	jr	nz,DUPCK3
+	inc	de
+	inc	hl
+	djnz	COMPDIR
+	call	EPRINT
+	defb	CR,LF,'Duplicate directory entry --> ',0
+	call	PFNAME
+	ld	a,0ffh
+	ld	(ERRORS),a
+
+DUPCK3:	ld	hl,(II)		;I = I + 1
+	inc	hl
+	ld	(II),hl
+	ld	de,(DIRACT)
+	or	a
+	sbc	hl,de
+	jr	nz,DUPCK1	;LOOP UNTIL I = DIRACT
+
+;	Check DIRECTORY
+
+CHECK:	ld	hl,0		;I = 0
+
+CHECK1:	ld	(II),hl
+	call	INDEX		;HL = DIRBUF + 32 * I
+	ld	(THISDIR),hl
+	ld	a,(hl)
+	cp	32		;Check for bad user #
+	jr	nc,BADUSR
+	ld	b,11		;Check for bad chars in name
+	inc	hl
+CHEKL1:	ld	a,(hl)
+	and	7fh		;mask out attribute bit
+	cp	32		;bad if less than a space
+	jr	c,BADNAME
+	cp	060h		;bad if lower case or {}|~
+	jr	nc,BADNAME
+	cp	'*'
+	jr	z,BADNAME
+	cp	','
+	jr	z,BADNAME
+	cp	':'
+	jr	c,GOODN1
+	cp	'@'
+	jr	c,BADNAME
+GOODN1:	inc	hl
+	djnz	CHEKL1
+
+;	Name is OK
+
+	ld	a,(hl)
+	cp	20H		;bad if extent # > 31
+	jr	nc,BADEXT
+	inc	hl		;skip over S1, S2
+	inc	hl
+	inc	hl
+	ld	a,(hl)
+	cp	81h		;bad if record # > 80h
+	jr	nc,BADREC
+CHECKDN:
+	ld	hl,(II)		;I = I + 1
+	inc	hl
+	ld	de,(DIRACT)
+	push	hl
+	or	a
+	sbc	hl,de
+	pop	hl		;LOOP UNTIL I = DIRACT
+	jr	nz,CHECK1
+	jp	ACHECK
+
+BADUSR:	call	EPRINT
+	defb	CR,LF,'User # > 31       --> ',0
+BADCH:	call	PFNAME
+	ld	a,0FFH
+	ld	(ERRORS),a
+	jr	CHECKDN
+
+BADNAME:call	EPRINT
+	defb	CR,LF,'Illegal file name --> ',0
+	jr	BADCH
+
+BADEXT:	call	EPRINT
+	defb	CR,LF,'Extent # > 31,    --> ',0
+	jr	BADCH
+
+BADREC:	call	EPRINT
+	defb	CR,LF,'Recd count > 80h  --> ',0
+	jr	BADCH
+
+;	Allocation checking
+
+ACHECK:	ld	hl,0
+	ld	b,8		;Compute # entries in each data map
+	ld	a,(DSM+1)	;= 8 or 16
+	or	a
+	jr	nz,ACHECKA
+	rl	b
+
+ACHECKA:ld	(NMAP),bc
+
+ACHECK1:ld	(II),hl
+	ld	(J),hl
+	call	INDEX		;HL = DIRBUF + 32 * I
+	ld	(THISDIR),hl
+	ld	(THATDIR),hl
+	ld	de,16
+	ld	ix,(THISDIR)
+	add	ix,de		;IX -> first allocation map entry
+	ld	bc,(NMAP)
+ACHEC5:	push	bc
+	ld	hl,(THISDIR)	;Get the next allocation map entry
+	ld	(THATDIR),hl	;from the first file
+	ld	h,0
+	ld	l,(ix+0)
+	ld	a,(DSM+1)	;(test for 1 or 2-byte allocation block#)
+	or	a
+	jr	z,ACHEC9
+	ld	h,(ix+1)	;Allocation block# is now in HL
+ACHEC9:	ld	a,h		;if it is zero,
+	or	l		;skip it
+	jr	z,ACHEC3A
+	push	ix
+	pop	iy
+	jr	ACHEC6
+
+ACHEC4:	ld	d,0		;Get allocation map entry to compare with
+	ld	e,(iy+0)
+	ld	a,(DSM+1)
+	or	a
+	jr	z,ACHEC8
+	ld	d,(iy+1)	;it is now in DE
+ACHEC8:	ld	a,d		;if it is zero,
+	or	e		;skip it
+	jr	z,ACHEC6
+	push	hl
+	sbc	hl,de
+	pop	hl
+	call	z,BADALLOC
+ACHEC6:	inc	iy
+	ld	a,(DSM+1)	;(test for 1 or 2-byte allocation block#)
+	or	a
+	jr	z,ACHEC7
+	inc	iy		;Increment two bytes if needed
+ACHEC7:	djnz	ACHEC4
+
+;	Now checked against everything in that directory -- get next
+
+	push	hl		;(Allocation block # being checked)
+	ld	hl,(J)
+	inc	hl
+	ld	(J),hl		;HL = # of next directory entry
+	ex	de,hl
+	ld	hl,(DIRACT)
+	or	a
+	sbc	hl,de		;if beyond end of directory
+	ex	de,hl
+	jr	z,ACHEC3	;jump here
+	call	INDEX		;if OK, get start of next entry
+	ld	(THATDIR),hl
+	ld	de,16
+	add	hl,de
+	push	hl
+	pop	iy		;point IY to next allocation map
+	ld	bc,(NMAP)
+	pop	hl		;Restore allocation block #
+	jr	ACHEC4
+
+ACHEC3:	pop	hl
+ACHEC3A:pop	bc
+	inc	ix		;Get next "1st" allocation block #
+	ld	a,(DSM+1)	;(test for 1 or 2-byte allocation block#)
+	or	a
+	jr	z,ACHECA
+	inc	ix		;increment index twice if needed
+ACHECA:	ld	hl,(II)		;reset 'that' file pointer
+	ld	(J),hl		;to the current entry
+	dec	b
+	jr	nz,ACHEC5
+
+	inc	hl		;done with this directory - get next
+	ld	de,(DIRACT)	;see if all entries checked
+	push	hl
+	or	a
+	sbc	hl,de
+	pop	hl
+	jp	nz,ACHECK1	;loop back for next one if not
+
+FINISH:	ld	a,(CHECKING)	;if checking
+	ld	d,a
+	ld	a,(ERRORS)	;or errors found
+	or	d
+	jp	nz,EXIT		;don't rewrite the directory
+
+;	WRDIR - Write the modified directory back to the disk
+
+;	The active directory sectors are copied from the directory buffer in
+;	the first run through the main loop.  Next, any leftover entries in
+;	the partial sector are moved to the read buffer (filled out with 'e5'
+;	bytes), and this sector is written to the disk.  Then, the read buffer
+;	is filled with 'e5' bytes, and the loop is reentered to copy this
+;	sector repeatedly to the disk until the entire directory space on the
+;	disk has been filled.
+
+WRDIR:	call	EPRINT
+	defb	'Writing, ',0
+	
+WRDIR1:	ld	hl,(SYSTRK)	;select first directory track
+	ld	(CURTRK),hl
+	ld	hl,0		;start with logical sector 0
+	ld	(CURSEC),hl
+	ld	hl,(DIRBUF)	;point to directory buffer
+	ld	(DMADDR),hl	;set DMA address
+	ld	hl,(ACTDIR)	;# of active sectors in directory
+	ld	(SECCTR),hl	;to loop counter
+	ld	a,2		;initialize loop flag
+	ld	(WRLPFL),a
+
+WDIRLP:	ld	hl,(SECCTR)
+	ld	a,h
+	or	l
+	jr	z,WRDIR2	;skip when no full sectors left
+	dec	hl		;decrement counter
+	ld	(SECCTR),hl
+	ld	a,(WRLPFL)	;see which loop we're in
+	dec	a
+	jr	nz,WDRLP1	;skip if in first execution of loop
+	ld	hl,RDBUF	;on second run, set DMA address to read buffer
+	ld	(DMADDR),hl
+	inc	a		;set flag for write
+WDRLP1:	call	READWRT		;write the next sector
+	jr	WDIRLP		;loop back for next sector
+
+WRDIR2:	ld	hl,WRLPFL	;get loop flag
+	dec	(hl)
+	jr	z,WDIRX		;exit after second time through loop
+	call	CLRBUF		;clear the read buffer to 'e5' bytes
+	ld	a,(LSTACT)	;get # of active bytes in partial sector
+	or	a
+	jr	z,WRDIR3	;skip if none
+	ld	c,a		;put byte count into BC
+	ld	b,0
+	ld	hl,RDBUF	;set up destination pointer
+	push	hl
+	ex	de,hl
+	ld	hl,(DMADDR)	;and source pointer
+	ldir			;copy active entries in the partial sector
+				;to the read buffer
+	pop	hl		;reset DMA address to the new buffer
+	ld	(DMADDR),hl
+	ld	a,1		;set write flag
+	call	READWRT		;write the last active sector
+	call	CLRBUF		;clear the dummy sector back to 'e5' bytes
+
+WRDIR3:	ld	hl,(DUMDIR)	;get count of dummy sector writes needed
+	ld	(SECCTR),hl
+	jr	WDIRLP		;reenter loop to fill out directory
+
+;	For ZRDOS 1.5 and later, ZRDOS function 37 is called to force ZRDOS
+;	to reinitialize the allocation map and directory for the disk.  This
+;	routine is copied directly from the 'DISKRST' utility provided with
+;	ZRDOS Version 1.5 and later.
+
+WDIRX:
+     if		ZRD15
+	ld	a,(DRIVE)	;get drive number
+	ld	c,a
+	ld	hl,1
+	inc	c
+SHFTL:	dec	c		;Shift bit into position
+	jr	z,DORST
+	add	hl,hl
+	jr	SHFTL
+
+DORST:	ex	de,hl		;Drive to reset in DE
+	ld	c,37		;Reset the drive
+	call	BDOS		;via the DOS
+     endif
+
+;	Exit Program
+
+EXIT:	call	EPRINT
+	defb	CR,LF,'Done',0
+	ld	a,(ERRORS)	;See if errors encountered
+	or	a
+	jr	z,GOODEXIT
+BADEXIT:			;There were errors
+	ld	a,(NOMSGS)	;Set error flag if messages are
+	or	a		;available
+	jr	nz,GOODEXIT
+	cpl
+	call	PUTER2
+GOODEXIT:
+	rst	0		;one-byte jump to warm boot vector
+				;to log in the new directory
+
+;	SUBROUTINES
+
+NOROOM:	call	EPRINT		;not enough room to read in all active entries
+	defb	CR,LF,LF,'Not enough memory to read directory.',BELL,0
+	jr	BADEXIT
+
+;	Print a file name
+
+PFNAME:	ld	hl,(THISDIR)	;HL -> User #
+PFNAM1: push	hl		;save entry pointer
+	ld	a,(hl)
+	call	PADC		;print user #
+	call	EPRINT
+	defb	':',0		;":"
+	pop	de		;get pointer back
+	inc	de		;file name
+	call	PFN3
+	call	EPRINT		;add 4 spaces
+	defb	'    ',0
+	ret
+
+;Tell about duplicate allocation blocks
+
+BADALLOC:
+	push	hl
+	call	EPRINT
+	defb	CR,LF,'Two files use allocation block ',0
+	pop	hl
+	push	hl
+	ld	a,(DSM+1)
+	or	a
+	jr	z,PRT2
+	call	PHL4HC
+	jr	ANAMES
+PRT2:	ld	a,l
+	call	PA2HC
+ANAMES:	call	PFNAME
+	ld	hl,(THATDIR)
+	call	PFNAM1
+	ld	a,0ffh
+	ld	(ERRORS),a
+	pop	hl
+	ret
+
+CLRBUF:	ld	hl,RDBUF	;use read buffer for filler
+	ld	(hl),0e5h	;'e5' into the dummy buffer
+	push	hl		;save address
+	inc	hl
+	ex	de,hl		;set up destination pointer
+	pop	hl		;get source pointer back
+	ld	bc,127		;initialize loop counter
+	ldir			;fill the dummy sector with 'e5' bytes
+	ret
+	
+;	READWRT - Read or Write the selected sector into or from the current
+;		  DMA address.
+;	On entry, the desired sector has been selected by setting the proper
+;	track and sector values into CURTRK and CURSEC.  The starting DMA
+;	address for the read is in DMADDR.
+
+;	A contains a zero for a read operation, or a 1 for a write operation.
+
+;	The track, sector, and DMA address values are incremented by this
+;	routine, so it may be called repetitively from within a loop to read
+;	multiple sequential sectors into a buffer.
+
+READWRT:
+	push	af		;save write flag
+
+	ld	bc,(DMADDR)	;set DMA address
+	call	SETDMA
+	ld	bc,(CURTRK)	;set track
+	call	SETTRK
+	ld	bc,(CURSEC)	;set sector (with translation)
+	call	SETSEC
+	pop	af		;see if read or write
+	or	a
+	jr	nz,WRGRP
+	call	READ		;read the sector
+	or	a		;set flag on status return from BIOS
+	jr	nz,RERROR	;exit if read error
+	jr	RWNXSC
+
+WRGRP:	ld	c,1		;flag as directory write for the BIOS
+	call	WRITE		;write the sector
+	or	a
+	jr	nz,WERROR	;exit if write error
+
+RWNXSC:	ld	de,(CURSEC)	;increment current sector
+	inc	de
+	ld	hl,(SPT)	;check to see if beyond end of track
+	dec	hl		;convert to 0-relative
+	or	a
+	sbc	hl,de
+	jr	nc,NEXTOK
+
+NXTTRK:	ld	hl,(CURTRK)	;if so, bump track counter
+	inc	hl
+	ld	(CURTRK),hl	;set new current track
+	ld	de,0		;set sector 0
+
+NEXTOK:	ld	(CURSEC),de	;set new current sector
+	ld	hl,(DMADDR)
+	ld	de,80H		;advance to next DMA address
+	add	hl,de
+	ld	(DMADDR),hl
+	ret
+
+;	COME HERE IF WE GET A READ ERROR
+
+RERROR:	call	EPRINT
+	defb	CR,LF,'READ ERROR - No Change Made',BELL,0
+	jp	BADEXIT
+
+;	COME HERE IF WE GET A WRITE ERROR
+
+WERROR:	call	EPRINT
+	defb	CR,LF,'WRITE ERROR - Directory Left in UNKNOWN Condition'
+	defb	BELL,0
+	jp	BADEXIT
+
+;This routine was developed by Joe Wright.  It swaps the s2 and extent bytes
+;of each directory entry before the sort, and swaps them back after sorting.
+;This is needed to get the extents in the proper sequence, because the s2
+;byte, which is really the 'high order' byte of the extent counter, comes
+;after the extent byte in the FCB (the extent counter is really in two parts.
+;The 'low order' part is the extent field of the FCB, and it may have values
+;from 0 to 31.  The 'high order' part, as discussed, is the 's2' byte, which
+;may range from 0 to 15.  This is where standard CP/M's limit of 8 Meg per
+;file comes from: 16 'superextents' x 32 extents x 16K per extent = 8192K).
+;This causes the sort routine to sort the extents of a large file into the
+;sequence '1,33,34,35,2,3,...32' (using the s2 byte as a counter of groups of
+;32 extents).  Actually, CP/M doesn't really care if the extents are in any
+;particular order, but this way is much more aesthetically satisfying.  If
+;you want a sorted directory, might as well have it sorted properly!
+
+SWAP:	ld	hl,(DIRBUF)	; Beginning of dir buffer
+	ld	de,12		; Offset to EX byte
+	add	hl,de		; Point to EX in 1st sort buffer entry
+	ld	de,32		; Bytes per entry
+	ld	bc,(DIRACT)	; Get count of active directory entries
+SWAP1:	push	bc		; Remaining count
+	push	hl		; Pointer to EX
+
+	ld	c,(hl)		; Get the extent byte into C
+	inc	hl
+	inc	hl		; Point to S2
+	ld	a,(hl)		; swap them
+	ld	(hl),c
+	pop	hl
+	ld	(hl),a
+
+	add	hl,de		; Point to next entry
+	pop	bc		; Get count
+	dec	bc		; Down
+	ld	a,b
+	or	c
+	jr	nz,SWAP1	; Again
+	ret			; Finished
+
+;	DIVIDE HL BY 2
+
+ROTRHL:	or	a		;CLEAR CARRY
+	ld	a,h
+	rra
+	ld	h,a
+	ld	a,l
+	rra
+	ld	l,a
+	ret
+
+INDEX:	add	hl,hl		;given an entry number in HL (0,1,...), INDEX
+	add	hl,hl		;sets HL to point to the start of that
+	add	hl,hl		;entry in the directory buffer
+	add	hl,hl		;multiply HL by 32, the size of each entry
+	add	hl,hl
+	ld	de,(DIRBUF)	;offset from the start of the buffer
+	add	hl,de
+	ret
+
+;	Check options (in A)
+
+DOOPT:	cp	'C'		;see if check-only requested
+	jr	nz,CHECKD
+	ld	(CHECKING),a	;set flag
+	ret
+CHECKD:	cp	'D'		;check for descending order sort
+	ret	nz
+	ld	(REVERSE),a
+	ret
+
+;	PRINT HELP MESSAGE
+
+HELP:	call	EPRINT
+	defb	CR,LF,'Syntax:'
+	defb	CR,LF,'  CLEANDIR dir: o'
+	defb	CR,LF,'Options:'
+	defb	CR,LF,'  C - Check only - don''t rewrite directory'
+	defb	CR,LF,'  D - sort in Descending Order (users and files)'
+	defb	CR,LF,'Note:'
+	defb	CR,LF,'  Only disk ref is used in dir: form'
+	defb	0
+	jp	BADEXIT
+
+;Select the (0-relative) Sector Number in BC
+
+SETSEC:	ld	de,(SECTBL)	;point to translation table
+	call	SECTRN		;let the BIOS translate the sector
+	ld	a,(SPT+1)	;if less than 256 sectors per track
+	or	a
+	jr	nz,GSTSEC
+	ld	h,a		;zero the high-order byte of the sector #
+GSTSEC:	ld	b,h		;put the translated sector # into BC
+	ld	c,l
+	jr	BSTSEC		;execute BIOS call
+
+;	BIOS jump table is copied into this area
+
+SELDSK:	jp	0
+SETTRK:	jp	0
+BSTSEC:	jp	0
+SETDMA:	jp	0
+READ:	jp	0
+WRITE:	jp	0
+LSTS:	jp	0
+SECTRN:	jp	0
+
+DIRBUF	equ	LSTS		;address of directory buffer - unused vector
+
+     if		ZRD15
+DRIVE	equ	LSTS + 2	;active drive letter - in unused area
+     endif
+
+$MEMRY:	defs	2		;address of first byte after last loaded
+				;module - filled in by linker
+;	DATA AREA
+
+;	The following 36 bytes of the data area are placed in the default
+;	FCBs starting at 5ch.
+
+	org	5ch
+
+MAXDIR:	defs	2		;max # of directory entries readable from disk
+DUMDIR:	defs	2		;# of 'dummy' directory sectors
+ACTDIR:	defs	2		;# of full directory sectors
+RDEST:	defs	2		;destination pointer for directory copy
+
+DMADDR:	defs	2		;DMA address for read or write
+DIRSEC:	defs	2		;# of sectors in directory
+SECCTR:	defs	2		;sector counter for directory read/write
+
+CURTRK:	defs	2		;current track for read or write
+
+SECTBL:	defs	2		;address of sector translation table
+
+;Loop counters for the various routines
+
+II:	defs	2		;At entry to SORT, = # directory entries;
+				;general loop counter for other routines
+J:	defs	2		;inner loop for ACHECK
+
+;The following values are initialized as a block to save space, so don't
+;move them around without looking at the initialization code at FLINIT.
+
+REVERSE:
+	defs	1		;non-zero for descending-order sort
+CHECKING:
+	defs	1		;non-zero if only checking
+NOMSGS:	defs	1		;non-zero if no message buffer available
+ERRORS:	defs	1		;non-zero if errors found in directory
+DIRACT:	defs	2		;# of active directory entries
+CURSEC:	defs	2		;current sector for read or write
+ZCNT:	defs	1		;count of zero-length files
+LSTACT:	defs	1		;# of active bytes in partial sector
+
+;Directory entry pointers
+
+THISDIR:
+	defs	2
+THATDIR:
+	defs	2
+
+;The rest of the data area overlays the start of the code.  This works
+;since the values are not set until after the affected code has been passed,
+;and the code is only executed once.  However, this prevents CLEANDIR from
+;being executed repeatedly by using the 'GO' command--probably not something
+;that is done a lot anyway.  The address at the start of the program is
+;changed to prevent a 'GO' command from trying to rerun the program, which
+;would try to execute the data area as code.
+
+	org	START
+
+NMAP:	defs	2		;# entries in allocation map - 8 or 16
+WRLPFL:	defs	1		;WRDIR loop flag: 2 = writing active sectors
+				;		  1 = writing 'e5' sectors
+
+;SORT variables
+
+SRECLEN:
+	defs	2
+SSTADR:	defs	2
+SSORTV1:
+	defs	2
+SSORTV2:
+	defs	2
+SSORTV3:
+	defs	2
+SSORTV4:
+	defs	2
+SNUMRECW:
+	defs	2
+
+;The disk parameter block is copied here from CP/M
+
+DPB	equ	$
+SPT:	defs	2
+BSH:	defs	1
+BLM:	defs	1
+EXM:	defs	1
+DSM:	defs	2
+DRM:	defs	2
+AL0:	defs	1
+AL1:	defs	1
+CKS:	defs	2
+SYSTRK:	defs	2
+DPBLEN	equ	$ - DPB
+
+	END
+

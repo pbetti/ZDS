@@ -1,0 +1,180 @@
+;
+                                   MOVE 
+                                Version 2.4
+
+                               Gene Pizzetta
+                             November 24, 1991
+
+
+MOVE is a ZCPR3 utility to "move" a file from one directory to another on 
+the same disk.  It has inspect and quiet modes, sets the program error 
+flag on error, and optionally moves only files that do not already exist in 
+the destination directory.  MOVE cannot be used under Z3Plus.
+
+
+
+           U  Usage                         C  Configuration
+           O  Options                       H  History
+           E  Errors                        B  Bug Reports
+:U
+
+                                   USAGE 
+
+
+     MOVE {dir:}afn {dir{:}} {{/}options}
+
+
+The source file and the destination directory must be on the same drive.  
+If no DIR or DU specification is given, the current drive and user are 
+assumed.
+
+MOVE operates by changing the user number of the file's directory entry.  
+The file itself is not copied or moved.
+:O
+
+                                  OPTIONS 
+
+A leading slash is required only if the options are not the third token in 
+the command tail, but is allowed in any case.
+
+     E    erase any existing file with the same name in the destination 
+          directory without prompting.  Ordinarily MOVE prints "exists, 
+          Erase?" before overwriting an existing file.  Option "O" will 
+          also work here.
+
+     N    do not move the file if a file with the same name exists in the 
+          destination directory.  Ordinarily MOVE would prompt you if it 
+          found an existing file.  This option has priority over option E 
+          above.
+
+     I    inspect mode.  MOVE prompts for each matching filename.  Type "Y" 
+          to move the file, "Q" or ^C to quit the program, or any other key 
+          to skip the file and continue.
+
+OPTIONS (continued)
+
+     S    Include system (hidden) files.  Ordinarily, files with the system 
+          attribute set are ignored by MOVE.
+
+     Q    quiet mode.  Only error messages and required prompts are 
+          displayed on the console.  This option toggles the current 
+          default.  If the ZCPR3 quiet flag is set, "Q" on the command line 
+          will switch MOVE to verbose mode; otherwise, it puts MOVE in 
+          quiet mode.
+
+All options can be configured as defaults (see CONFIGURATION).  In that 
+case, the command line option will toggle to the non-default mode.
+
+The interaction between options E and N can seem confusing if either is 
+changed from its distributed default.  Just remember that the N option is 
+checked first, with the E option being checked only if appropriate.
+:E
+
+                                  ERRORS 
+
+On error the ZCPR3 program error flag is set as follows:
+
+    255   user abort (configurable)
+     19   invalid option
+     10   no matching source file found
+      4   no vacant user area (which is required) or Z3Plus (MOVE cannot 
+          run under that system)
+      2   invalid directory
+
+The error handler, if one is running, will be invoked for all errors.  
+Whether a user abort is considered an error is configurable.
+:C
+
+                               CONFIGURATION 
+
+Although several configuration options are available, MOVE should be ready 
+to run "as is" for most users.
+
+Configuration changes are made with ZCNFG and the accompanying MOVEnn.CFG 
+file.  If the name of the configuration file is not changed, ZCNFG will 
+always be able to find it, even if the name of MOVE is changed to something 
+else.  Full explanations for the various configuration options are 
+available on the ZCNFG help screens.
+
+All command line options are toggles and can be configured as the defaults. 
+The command line options may then be used to toggle to whatever is the non- 
+default state.
+:H
+
+                                  HISTORY 
+
+
+Version 2.4 -- November 24, 1992 -- Gene Pizzetta
+     "S" option now used to include or exclude system files.  Old option 
+     "O" still available as synonym for option "E".  Corrected bug in 
+     inspect mode, found by Howard Goldstein, which caused the program to 
+     be aborted sometimes by the BDOS when "No" was selected.
+
+Version 2.3 -- October 30, 1992 -- Gene Pizzetta
+     More robust check for Z-System.  Corrected check for CP/M Plus (BDOS 
+     returns 31h, not 30h).  No longer prints "NoName" if DU has no name.  
+     Added "E" option to erase existing file at destination and "N" to skip 
+     the move if file exists at destination.  Old options "O" and "S", 
+     respectively, still work.  Old "Q" option, which did nothing anyway, 
+     now toggles quiet mode.  Added "I" inspect mode option.  Also obeys 
+     quiet flag.  These option changes make MOVE more compatible with COPY 
+     and other Z utilities.  Now reports number of files moved and can be 
+     configured to print this report even in quiet mode.  All command line 
+     options configurable as defaults.  Slash no longer required before 
+     options if they are the third token on the command line.  Can now 
+     abort ("Q" or ^C) at any prompt.  Intelligent help screen shows 
+     current effect of options.  On error invokes error handler and sets 
+     program error flag as follows:  19 = invalid option; 2 = invalid 
+     directory; 10 = no matching source file found; 255 (FFh) = user abort; 
+     4 = Z3Plus (we cannot run under that system) or no vacant user area 
+     (which is required).  Can be configured to consider user abort as an 
+     error or not.  Configuration via ZCNFG.  Thanks to Howard Goldstein 
+     for his beta testing.
+
+Version 2.2 -- December 4, 1989 -- Howard Goldstein
+     Fixed bug in handling of large files.  Needed to set S2, not s1 wild.  
+     Modified move algorithm for increased speed.  Now uses "search next" 
+     and does only one write per directory sector per file instead of 
+     possibly four.  Cleaned up command line parsing code.  Removed special 
+     handling for stand-alone user numbers as DUSCAN seems to do it right.  
+     Shortened code in SCANER: and fixed IFCBG: to work with extended 
+     environment.  Shortened code in several other places as well.  Added a 
+     call to FRESET just before deleting a file in the destination area to 
+     avoid problems when running under DRI BDOS.  Added conditional 
+     assembly for type 4.
+
+Version 2.1B -- December 31, 1987 -- Bruce Morgen
+     "B" version, one Bridger hint, one bug fix.  Wildcard to both extent 
+     bytes before file existence test in "mainloop:", clear carry flag 
+     before the "sbc hl,de" a little after the call to "eval10".
+
+Version 2.1A --	December 30, 1987 -- Bruce Morgen
+     "A" version, incorporated Bridger's FRESET
+
+Version 2.1 -- December 28, 1987 -- Bruce Morgen
+     ZCPR33 Type 3 format with safety header, search for an empty user area 
+     instead of bombing out everything in user 31, established DSEG - with 
+     initialization to assure predictable re-entrance.  Fixed wildcard FCB 
+     (had too many "?"s).  Allow legitimate DU/DIR destination specs 
+     without colons, ditto standalone user numbers.  Added intelligent help 
+     message (change name to MAKE or MV, help also changes).  Scanning code 
+     ATTEMPTS to following all Z33/BGii stipulations where applicable....
+
+Version 2.0 -- February 28, 1986 -- Joe Wright
+     Fixed drive selection bug. Add Query as default option.  Report 
+     directories in DU:DIR form.
+:B
+
+                        BUG REPORTS AND SUGGESTIONS 
+
+Please report any bugs as soon as possible, and make suggestions at your 
+leisure:
+
+                  Gene Pizzetta
+                  481 Revere St.
+                  Revere, MA 02151
+
+                  Voice:  (617) 284-0891
+                  Newton Centre Z-Node:  (617) 965-7259
+                  Ladera Z-Node Central:  (213) 670-9465
+

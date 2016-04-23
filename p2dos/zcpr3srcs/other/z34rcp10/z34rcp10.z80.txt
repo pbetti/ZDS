@@ -1,0 +1,274 @@
+
+; Program:	Z34RCP
+; Version:	1.0 
+; Description:	Resident Command Package (RCP) for ZCPR34
+; Author:	Carson Wilson
+; Date:		June 15, 1988
+
+; Derivation:	SYSRCP (Richard Conn)
+
+; Z34RCP is copyright 1988 by Alpha Systems.  All rights reserved.  End-user
+; distribution and duplication permitted for non-commercial purposes only.
+; Any commercial use of Z34RCP, defined as any situation where the duplicator
+; recieves revenue by duplicating or distributing Z34RCP by itself or in
+; conjunction with any hardware or software product, is expressly prohibited
+; unless authorized in writing by Alpha Systems.
+
+;=============================================================================
+;
+;		D E F I N I T I O N S    S E C T I O N
+;
+;=============================================================================
+
+	maclib	sysdef.lib	; Common logic, sys, ascii defines
+	maclib	z34defn.lib	; Defines offsets in Z34 command processor
+	maclib	z34mac.lib	; Macros
+	maclib	z34rcp.lib	; Defines command options
+
+	 if	ZRL
+	maclib	z34cmn.lib 	; Defines universal ZCPR named common blocks
+	 else
+	maclib	rcpbase.lib	; Defines addresses for one system
+	 endif
+
+	name	RCP10		; Declare module name
+
+; ============================================================================
+
+;			M A C R O S    S E C T I O N
+
+; ============================================================================
+
+; Macros to include module file and print module length.
+; Under SLR and compatible assemblers, a running account of current RCP 
+; size and bytes added will be given for each module.
+;
+; For other assemblers you may have to either modify the non-SLR include
+; macro or use a text editor to read in the actual contents of each file 
+; in place of the include statement.
+
+	 if	SLR
+;
+; General purpose macro to display decimal values and messages
+;
+prtdec	macro m1,m2,m3,m4,m5
+	.radix 10			; Decimal output	
+	.printx m1 m2 m3 m4 m5		; Print to screen
+	endm
+;
+; Macro to include modules and display lengths.
+;
+include	macro	filename
+before	defl	$
+	$include	filename&.lib
+after	defl	$
+modlen	defl	after - before		; Module length
+rcplen	defl	after - RCPbegin	; RCP length
+recs	defl	rcplen  /  128		; ..in records
+bytes	defl	rcplen mod 128		; ..and additional bytes 
+	prtdec	%modlen,<bytes added by filename&>
+	prtdec	<Current length is>,%recs,<records>,%bytes,<bytes.>
+	prtdec				; Trailing CRLF
+	endm
+
+	 else				; Non-SLR assemblers
+include	macro	filename
+	$include	filename&.lib
+	endm
+	 endif				; SLR
+
+; ------------------------------------------------------------------------
+
+; Macros to build RCP ID for Help command
+
+; Under SLR and compatible assemblers, the RCP name reflects the
+; RCP size, e.g., "RCP-21F" means the RCP occupies 21 records.  
+
+	 if	SLR
+rcpid	macro
+rcplen	defl	RCPend - RCPbegin
+fulrecs	equ	rcplen / 128			; Full records
+lastr	equ	[rcplen mod 128 + 127]/128	; Last record, if any
+ttlrecs	equ	fulrecs + lastr
+
+	db	'RCP-'
+	db	ttlrecs  /  10 + '0'		; Tens of records
+	db	ttlrecs mod 10 + '0'		; Ones
+	db	rcptype				; 'F', 'H', etc. from RCP.LIB
+	db	0				; ID string terminator
+	endm
+
+	 else					; Non-SLR
+rcpid	macro
+	db	'RCP-'
+	db	rcptype
+	db	0
+	endm
+	 endif					; SLR
+
+;
+	 if	ZRL
+
+; =============================================================================
+
+; 		J e t L D R    I D    S E C T I O N
+
+; =============================================================================
+
+; Macro to build ID block message for JetLDR.
+
+optcnt	defl	0			; Options counter
+
+option	macro string1,enable1,string2,enable2
+
+	if enable1			;; Skip if command not present
+	 if [optcnt mod 4] eq 0
+	  db	cr,lf			;; New line every four options
+	  endif
+	 optcnt	defl optcnt + 1		;; Increment options counter
+	 db	tab			;; Leading tab
+	 count defl 0			;; Initialize character count
+
+	 irpc char,string1		;; Count and define characters 
+	 count defl count + 1
+	 db	'&char'
+	 endm	; irpc
+
+	 if not nul enable2		;; Sub-option label present
+	  if enable2			;; Sub-option enabled
+	   db	' ('			;; Begin sub-opt description
+	   irpc char,string2		;; Count and define characters
+	   count defl count + 1
+	   db	'&char'
+	   endm	; irpc
+	   db	')'			;; End sub-opt description
+           count defl count + 3		;; For ' ()'
+	  endif ; enable2
+	 endif ; not nul enable2
+
+	 if	count lt 8		;; If total description < 8 chars
+	  db	tab			;; Add extra tab
+	 endif  ; count
+	endif	; enable1
+	endm	; option macro
+
+; ---------------------------------------------------------
+
+	COM	/_ID_/			; JetLDR ID block
+	db	'(C) 1988 Alpha Systems.  Enabled Commands:'
+	option	Cls,clson,TC,clstcap
+	option	Cp,cpon,stp,stpcall
+	option	Dir,diron,sp,<spaceon and dirsp>
+	option	Echo,echoon,lst,echolst
+	option	Era,eraon,sp,<spaceon and erasp>
+	option 	Help,true
+	option	List,liston
+	option	Note,noteon
+	option	Peek,peekon,hdr,peekhdr
+	option	Poke,pokeon,q,pokeq
+	option	Port,porton
+	option	Protect,proton
+	option	Quiet,quieton
+	option	Register,regon
+	option	Rename,renon
+	option	Reset,reson,sp,<spaceon and resetsp>
+	option	Space,spaceon
+	option	Type,lton,cls,<clson and typecls>
+	option	Wheel,whlon,q,whlq
+	db	0			; ID string terminator
+
+;=============================================================================
+;
+;	E N T R Y    C O D E    S E C T I O N
+;
+;=============================================================================
+
+	cseg
+	 else
+	org	z3rcp
+	 endif			; ZRL
+
+RCPbegin:
+	db	'Z3RCP'		; Package ID
+
+	include	RCPcmd		; Command table and custom commands
+
+	include RCPsubs		; File of subroutines
+
+	include RCPh		; 'H'	help (command list) command
+
+; Include only selected code sections.
+
+	 if	clson
+	include RCPcls		; 'CLS'	clear screen command
+	 endif	;clson
+
+	 if	reson
+	include RCPr		; 'R'	disk reset command
+	 endif	;reson
+
+	 if	spaceon
+	include RCPsp		; 'SP'	space on disk command
+	 endif	;spaceon
+
+	 if	echoon
+	include RCPecho		; 'ECHO' command
+	 endif	;echoon
+
+	 if	eraon
+	include	RCPera		; 'ERA'	erase command
+	 endif	;eraon
+
+	 if	renon
+	include RCPren		; 'REN'	rename command
+	 endif	;renon
+
+	 if	diron
+	include	RCPdir		; 'DIR'	directory command
+	 endif	;diron
+
+	 if	lton
+	include	RCPlt		; 'LIST' and 'TYPE' commands
+	 endif	;lton
+
+	 if	proton
+	include RCPprot		; 'PROT' file attribute setting command
+	 endif	;proton
+
+	 if	cpon
+	include RCPcp		; 'CP'	file copying command
+	 endif	;cpon
+
+	 if	peekon or pokeon or porton
+	include RCPiom		; 'PEEK', 'POKE', 'PORT' commands
+	 endif	;peekon or pokeon or porton
+
+	 if	quieton
+	include	RCPquiet	; 'Q' quiet flag
+	 endif	;quieton 
+
+	 if	regon
+	include RCPreg		; 'REG'	register operation commands
+	 endif	;regon
+
+	 if	whlon
+	include RCPwhl		; 'WHL' command
+	 endif	;whlon
+
+;----------------------------------------
+
+; Name of RCP
+
+; This block allows the 'H' command and/or the SHOW utility to display a name
+; and version number for this RCP as well as the commands that are supported.
+; It also generates a unique string marking the end of the RCP module.
+
+rcpname:
+	rcpid
+
+RCPend:					; Used to calculate length 
+	end
+
+; End of Z34RCP.Z80
+
+

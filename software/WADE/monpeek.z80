@@ -1,0 +1,502 @@
+	title	Hardware dependent routines for monitor
+	name	('MONPEEK')
+;
+;	Last Edited	85-04-19	Wagner
+;
+;	Copyright (c) 1984, 1985 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, October 1990
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+;	Hardware dependent routines which concern banking are collected
+;	in this module.
+;
+;	Extended addressing (used only if equate "extended" is true):
+;
+;	The monitor uses a 24-bit extended address when accessing memory
+;	in all commands. The msb is specified by the user or obtained by
+;	currbank.
+;	The value FF as msb is used as "default" and may not be used as
+;	a normal bank number.
+;	In sytems with a 64k address space, the msb may simply be ignored.
+;	If the monitor resides in EPROM, and the EPROM address space overlays
+;	parts of the normal address space, PEEK, POKE, and GOTO must switch
+;	out the EPROM and access real memory instead.
+;	In this case, and in any case where banking might switch out
+;	the monitor, you will have to move parts of PEEK, POKE, and GOTO
+;	to a common, non-switched area. This may be done by INITSYSTEM.
+;
+;	GOTO		must enter program memory.
+;			If necessary, console interrupts can be re-enabled
+;			here.
+;	DEBEXIT		is jumped to to exit the monitor. cleanup operations
+;			may be performed here.
+;
+;	The following entries are only needed if "extended" is true:
+;
+;	PEEK		reads 16 bytes from the extended address specified
+;			by A and HL.
+;	PEEKS		does the same, but reads into a different buffer.
+;	POKE		writes back the 16 bytes read by PEEK.
+;
+;	CURRBANK	must return the current bank for program execution.
+;	XLTBANK		must return the current or the default bank depending
+;			on address
+;	BANKOK		must set the carry-flag if the bank passed as parameter
+;			is not a valid bank.
+;
+.rst		equ	6	; RST number
+;
+restartloc 	equ	.rst*8
+restartinst	equ	restartloc+11000111b
+;
+dfltbnk 	equ	1	; default program bank
+;
+	cseg
+;
+	maclib	monopt.lib
+;
+	entry	restart,rstloc,debexit,resetrst
+if	extended
+	entry	peek,poke,peeks,currbank,bankok,xltbank
+	entry	peekbuf,paddr,pbank,psaddr,psbank
+	ext	cbank
+	ext	breaklist
+endif;EXTENDED
+	entry	inipeek
+	entry	goto
+;
+	ext	next,biosloc
+	ext	regpc,string,regiff,regsp
+	ext	break,nresetbk
+	ext	string,wrhex,wrchar
+	ext	monent,cmderr,eocmd
+;
+;------------------------------------------------------------------------------
+;
+;	inipeek:	init module variables & jump locations
+;
+inipeek:
+if	extended
+	ld	de,xltscbpar
+	ld	c,.SCB
+	call	next		; get common memory base address
+	ld	(combase),hl
+	ld	hl,(biosloc)	; set up direct jumps to bios
+	ld	de,24*3
+	add	hl,de
+	ld	(move+1),hl
+	ld	de,6
+	add	hl,de
+	ld	(selmem+1),hl
+	add	hl,de
+	ld	(xmove+1),hl
+	ret
+;
+xltscbpar:
+	db	.COMRAM		; scb offset
+	db	.get		; get operation
+else
+	ret
+endif;EXTENDED
+;
+;------------------------------------------------------------------------------
+;
+if	extended
+;
+;	peek:		read 16 bytes of memory into "peekbuf"
+;
+;		entry:	A = bank
+;			HL = address
+;
+;		exit:	-
+;			(paddr & pbank set, peekbuf filled with 16 bytes)
+;
+;		uses:	-
+;
+peek:
+	call	xltbank
+	ld	(pbank),a
+	ld	(paddr),hl
+	push	de
+	ld	de,peekbuf
+peek10:
+	push	bc
+	push	hl
+	push	af
+	push	hl
+	push	de
+	ld	c,a
+	ld	b,dfltbnk
+	call	xmove
+	pop	hl
+	pop	de
+	ld	bc,16
+	call	move
+	pop	af
+	pop	hl
+	pop	bc
+	pop	de
+	ret
+;
+;	peeks:		read 16 bytes of memory into "string"
+;
+;		entry:	A = bank
+;			HL = address
+;
+;		exit:	-
+;			(psaddr & psbank set, string filled with 16 bytes)
+;
+;		uses:	-
+;
+peeks:
+	call	xltbank
+	ld	(psbank),a
+	ld	(psaddr),hl
+	push	de
+	ld	de,string
+	jr	peek10
+;
+;	poke:		write 16 bytes of memory from "peekbuf"
+;
+;		entry:	-
+;
+;		exit:	-
+;
+;		uses:	-
+;
+poke:
+	push	hl
+	push	de
+	push	bc
+	push	af
+	ld	a,(pbank)
+	ld	hl,(paddr)
+	call	xltbank
+	push	hl
+	ld	b,a
+	ld	c,dfltbnk
+	call	xmove
+	pop	hl
+	ld	de,peekbuf
+	ld	bc,16
+	call	move
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+;
+selmem:
+	jp	$-$
+;
+move:
+	jp	$-$
+;
+xmove:
+	jp	$-$
+endif;EXTENDED
+;
+;	goto:		enter program
+;
+;		entry:	cbank = bank
+;			regpc = address to go to
+;			regsp = user stack pointer
+;			regiff = interrupt enable flag
+;			all registers restored except SP and interrupt status
+;			interrupts are disabled.
+;
+;		exit:	no exit
+;
+;		uses:	N/A
+;
+;	NOTE:	this routine must insert a jump to the break-entry at the
+;		restart address. If the monitor is in banked memory, this
+;		break-entry must be in common.
+;
+goto:
+	push	af
+	push	hl
+	ld	hl,(regpc)
+	ld	a,h
+	or	l
+	jp	z,debexit	; jump to 0 means exit debugger
+	call	setrst
+	pop	hl
+if	extended
+	ld	a,(cbank)
+	call	selmem
+endif;EXTENDED
+if	disint
+	ld	a,(regiff)
+	and	1
+	jr	z,gotodi
+endif;DISINT
+	pop	af
+	ld	sp,(regsp)
+	push	hl
+	ld	hl,(regpc)
+	ex	(sp),hl
+if	disint
+	ei
+	ret
+gotodi:
+	pop	af
+	ld	sp,(regsp)
+	push	hl
+	ld	hl,(regpc)
+	ex	(sp),hl
+endif;DISINT
+	ret
+if	extended
+setrst:
+	push	bc
+	push	de
+	push	ix
+	ld	hl,rstsave
+	ld	de,rstsave+1
+	ld	bc,9*4-1
+	ld	(hl),-1		; init save area
+	ldir
+	ld	ix,breaklist+1	; breakpoint list
+	ld	b,(ix-1)	; number of entries
+	ld	a,b
+	or	a		; no breakpoints ?
+	jr	z,setrstex	; then go exit
+setrst1:
+	ld	hl,rstsave	; save area
+	ld	de,4		; entry length
+setrstlp:
+	ld	a,(hl)		; save bank
+	cp	(ix+2)		; same as breakpoint bank ?
+	jr	z,setrstnext	; then get next break entry
+	inc	a
+	jr	z,setrstenter	; enter jump if unused
+	add	hl,de
+	jr	setrstlp
+setrstnext:
+	inc	de
+	add	ix,de		; ix = ix + 5
+	djnz	setrst1		; loop for all breakpoint entries
+setrstex:
+	pop	ix
+	pop	de
+	pop	bc
+	ret
+;
+setrstenter:
+	ld	a,(ix+2)	; breakpoint bank
+	ld	(hl),a		; store in list
+	call	selmem
+	inc	hl
+	push	bc		; save break count
+	ex	de,hl
+	ld	a,(rstloc)
+	ld	l,a
+	ld	bc,3		; save previous contents of restart location
+	ld	h,b
+	push	hl
+	push	bc
+	ldir
+	pop	bc
+	pop	de
+	ld	hl,jbreak	; insert jump to debugger at RST location
+	ldir
+	pop	bc
+	ld	de,4
+	jr	setrstnext
+;
+jbreak:
+	jp	ebreak
+;
+resetrst:
+	ld	hl,rstsave
+	ld	a,(rstloc)
+	ld	e,a
+	ld	bc,3
+	ld	d,b
+resetlp:
+	ld	a,(hl)
+	cp	-1
+	jr	z,resetex
+	call	selmem
+	inc	hl
+	push	de
+	push	bc
+	ldir
+	pop	bc
+	pop	de
+	jr resetlp
+resetex:
+	ld	a,dfltbnk
+	call	selmem
+	ret
+else
+setrst:
+	push	bc
+	push	de
+	push	hl
+	ld	de,rstsave
+	ld	a,(rstloc)
+	ld	l,a
+	ld	bc,3		; save previous contents of restart location
+	ld	h,b
+	push	hl
+	push	bc
+	ldir
+	pop	bc
+	pop	de
+	ld	hl,jbreak	; insert jump to debugger at RST location
+	ldir
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+;
+jbreak:
+	jp	break
+;
+resetrst:
+	ld	hl,rstsave
+	ld	a,(rstloc)
+	ld	e,a
+	ld	bc,3
+	ld	d,b
+	ldir
+	ret
+;
+endif;EXTENDED
+;
+if	extended
+;
+;	ebreak:		Break entry for extended memory version.
+;			restores bank before continuing.
+;
+ebreak:
+	ld	(string),sp
+	ld	sp,string+.linlen
+	push	af
+	ld	a,dfltbnk
+	call	selmem
+if	mega
+	ld	(cbank),a	; mega bios returns previous bank in A
+endif;MEGA
+	pop	af
+	ld	sp,(string)
+	jp	break
+endif;EXTENDED
+;
+;	debexit:	EXIT from debugger
+;
+debexit:
+	call	nresetbk	; restore original memory contents
+if	CPM3
+	ld	hl,next-3
+else
+	ld	hl,(next+1)
+endif;CPM3
+	ld	(BDOS+1),hl	; restore BDOS entry
+	ld	hl,(biosloc)
+	ld	(OS+1),hl	; restore BIOS entry
+	ld	a,.JP		; restore JMP instruction
+	ld	(OS),a		; in case it was overwritten
+	ld	(BDOS),a
+if	disint
+	ld	a,(regiff)
+	and	1
+	jr	z,debexdi
+	ei
+endif;DISINT
+debexdi:
+	jp	(hl)		; go to BIOS WBOOT entry
+if	extended
+;
+;	currbank:	return current program (not EPROM) bank
+;
+;		entry:	-
+;
+;		exit:	A = bank
+;
+;		uses:	-
+;
+currbank:
+	ld	a,(cbank)
+	ret			; done.
+;
+;
+;	xltbank:	return bank or default for "common"
+;
+;		entry:	A = bank or FF for current bank
+;			HL = address
+;
+;		exit:	A = bank or FF if address is in a non-banked area.
+;
+;		uses:	-
+;
+xltbank:
+	cp	-1
+	jr	nz,xltb10
+	ld	a,(cbank)
+xltb10:
+	push	hl
+	push	de
+	or	a
+	ld	de,(combase)
+	sbc	hl,de		; addr - common base
+	pop	de
+	pop	hl
+	ret	c		; ready if addr below common
+	or	-1		; set default for common
+	ret
+;
+;	bankok:		set carry-flag if passed value is not a legal bank no.
+;
+;		entry:	A = bank number
+;
+;		exit:	carry set if not a legal bank
+;
+;		uses:	may use A, BC, DE
+;
+bankok:
+	cp	127		; default max legal bank number
+	ccf
+	ret
+endif;EXTENDED
+;
+restart:db	restartinst
+rstloc:	db	restartloc
+;
+	dseg
+;
+if	extended
+rstsave:ds	9*4
+else
+rstsave:ds	3
+endif;EXTENDED
+if	extended
+;
+combase:ds	2
+;
+pbank:	ds	1
+paddr:	ds	2
+peekbuf:ds	16
+;
+psbank:	ds	1
+psaddr:	ds	2
+;
+endif;EXTENDED
+
+	end
+tended
+;
+combase:ds	2
+;

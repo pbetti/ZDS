@@ -1,0 +1,1186 @@
+;
+	.sall
+	.sfcond
+;
+	.xlist
+	MACLIB	Z3BASE.LIB
+	.list
+;
+;
+;
+;  Command line macros
+;
+;
+;-----------------------------------------------------------------------
+;
+mom  macro
+     db   07eh
+     endm
+;
+jrz  macro     ?n
+     db   28h,?n-$-1
+     endm
+;
+jz   macro     ?n
+     db   0cah
+     dw   ?n
+     endm
+;
+rm   macro
+     db   0f8h
+     endm
+;
+rz   macro
+     db   0c8h
+     endm
+;
+cz   macro     ?n
+     db   0cch
+     dw   ?n
+     endm
+;
+        org    0000h    
+        aseg
+;
+;
+;
+;
+false	equ	00h
+true	equ	0ffffh
+cpm     equ     0005h    ;BDOS address
+xrst	equ	08h      ;Restart 0 address
+trpchr	equ	0cfh     ;Restart character
+lockchr equ     04h      ;cntrl-D
+cr	equ	0dh      ;carriage return
+lf	equ	0ah      ;line feedŠbell    equ     07h      ;bell character
+fil	equ	00h      ;zero fill character
+tbuff   equ     0081h    ;parameter buffer
+;
+;
+;  SYSTEM SEGMENT:  ZAP.RCP
+;  SYSTEM:  ZCPR3 on KAYPRO10
+;  CUSTOMIZED BY:  THOMAS MITCHELL
+;
+;
+;  PROGRAM:  ZAP.MAC
+;  AUTHOR:  THOMAS MITCHELL
+;  VERSION:  1.0
+;  DATE:   15 NOVEMBER 85
+;  PREVIOUS VERSIONS:  NONE
+;
+VERS	EQU	10
+RCPID	EQU	'A'
+;
+;
+;	ZAP is a resident debug command package for ZCPR3. 
+;
+;
+;
+;  SYSTEM Entry Point
+;
+      .phase    rcp
+;
+	db	'Z3RCP'	; Flag for Package Loader
+;
+;  **** Command Table for RCP ****
+;	This table is RCP-dependent!
+;
+;	The command name table is structured as follows:
+;
+;   ctable:
+;         DB	'CMNDNAME'	; Table Record Structure is
+;	  DW	cmndaddress	; 8 Chars for Name and 2 Bytes for Adr
+;	  ...
+;	  DB	0	; End of Table
+;
+cnsize	equ	4	; NUMBER OF CHARS IN COMMAND NAME
+	db	cnsize	; size of text entries
+ctab1:
+	db     'H   '	; Help for RCP
+	defw	clist
+        db     'CLS '    ;CLEAR SCREEN
+        defw   cls
+	db     'CM  '    ;CHANGE MEMORY
+	defw	subs	
+        db     'DM  '    ;DISPLAY MEMORY
+	defw	disp	
+        db     'DR  '    ;DISPLAY REGISTERS
+	defw	xam	
+        db     'EX  '    ;EXECUTE PROGRAM WITH BREAKPOINTSŠ	defw	exec	
+        db     'FM  '    ;FILL MEMORY
+	defw	fill	
+        db     'FS  '    ;FIND STRING
+	defw	where	
+        db     'HEX '    ;HEX MATH
+	defw	hexn	
+        db     'IN  '    ;INPUT PORT
+	defw	inputio	
+        db     'LOCK'    ;LOCK COMPUTER
+	defw	lock	
+        db     'MM  '    ;MOVE MEMORY
+	defw	move	
+        db     'OUT '    ;OUTPUT TO PORT
+	defw	outio	
+        db     'PM  '    ;PUT ASCII INTO MEMORY
+    	defw	puta	
+        db     'SIZE'    ;DISPLAY MAX MEMORY ADDRESS BEFORE ROM
+	defw	size	
+        db     'TEST'    ;TEST MEMORY (non-destructive)
+	defw	test	
+        db     'TM  '    ;TYPE MEMORY
+	defw	type	
+        db     'VM  '    ;COMPARE MEMORY WITH MEMORY
+	defw	verify	
+        db     0
+;
+;
+;  BANNER NAME OF RCP
+;
+rcp$name:
+	db	'Debug '
+	db	(vers/10)+'0','.',(vers mod 10)+'0'
+	db	RCPID
+	db	0
+;
+;
+;  Command List Routine
+;
+     .8080
+clist:
+	lxi	h,rcp$name	; print RCP Name
+	call	print1		;print message
+	lxi	h,ctab1		; print table entries
+	mvi	c,1		; set count for new line
+xlist1:
+	mom		; done?
+	ora	a
+	rz
+	dcr	c		; count down
+	jnz	list1a
+	call	crlf		; new line
+	mvi	c,4		; set count
+list1a:
+	lxi	d,entryname	; copy command nameŠ                                ; into message buffer
+	mvi	b,cnsize	; number of chars
+xlist2:
+	mom		; copy
+	stax	d
+	inx	h		; pt to next
+	inx	d
+	dcr	b
+	jnz	xlist2
+	inx	h		; skip to next entry
+	inx	h
+	push	h		; save ptr
+	lxi	h,entrymsg	; print message
+	call	print1		;print message
+	pop	h		; get ptr
+	jmp	xlist1
+;
+;  Print String (terminated in 0 or MSB Set) at Return Address
+;
+vprint:
+eprint:
+	xthl			; get address
+	call	print1		;print message
+	xthl			; put address
+	ret
+;
+;  Print String (terminated in 0 or MSB Set) pted to by HL
+;
+print1:
+	mom		        ; done?
+	inx	h		; pt to next
+	ora	a		; 0 terminator
+	rz
+	call	cout		; print char
+	ora	a		; set MSB
+	rm			; MSB terminator
+	jmp	print1
+;
+;
+;  Character Output
+;
+cout:
+	push	psw
+	push	b
+	push	d
+	push	h
+	mov	e,a
+	mvi	c,2		; use BDOS
+	call	cpm
+	pop	h
+	pop	d
+	pop	b
+	pop	psw
+	ret
+;Š;  Get char in A
+;
+cin:
+	push	h
+	push	d
+	push	b
+	mvi	c,1
+	call	cpm
+	ani	7fh
+	push	psw
+	mvi	a,08h           ;bs=overwrite
+	call	cout		;output character
+	pop	psw
+	pop	b
+	pop	d
+	pop	h
+	ret
+;
+;  CLIST Messages
+;
+entrymsg:
+	db	'  '    ; command name prefix
+entryname:
+	ds	cnsize	; command name
+	db	0	; terminator
+;
+     .Z80
+;
+;***************************************************************
+;    LOCK computer system until special character entered
+;         on keyboard.
+;    This routine is used as a simple means to prevent
+;    UNAUTHORIZED system operation. The system locks up,
+;    monitoring for an unlock character at which time it
+;    will enable the system again.
+;
+;
+lock:
+        call	crlf	 ;new line
+by:	call	cin      ;get console char.
+	cp	lockchr  ;Unlock character
+	jr	nz,by    ;no
+        ret
+;
+;***************************************************************
+;    CLEAR SCREEN
+;
+cls:    ld     hl,clear  ;load message address
+        call   print1    ;print it
+        ret
+clear:  db     01ah,0,0,0,0,0,0    ;clear screen string
+;
+;***************************************************************
+;    PUT ASCII character into memory
+;      PA address(cr)Š;    This allows entering of ASCII text into memory from the
+;    console device. The parity bit is cleared, and all will be
+;    stored except the back-arrow which deletes the previous
+;    character, and control-D, which returns control to the
+;    system. This command, combined with the 'FS' command,
+;    provides a rudimentary text processing ability.
+;
+puta:   ld     hl,tbuff       ;command line buffer
+        call	expr1	      ;get 1 parameter
+	call	crlf	      ;new line
+	ld     hl,(staddr)
+pa1:	call	cin	      ;get console char.
+	cp	04h           ;control-D
+	jz	slfadr        ;print CR and H&L
+	cp	05fh          ;control-E
+       	jrz	pa3
+	ld	(hl),a
+	inc	hl
+pa2:	call	cout	      ;output character
+	jr	pa1
+pa3:	dec	hl
+	ld	c,(hl)
+	jr	pa2
+;
+;****************************************************************
+;    DISPLAY MEMORY
+;      DM staddr endaddr(cr)
+;    Display the contents of memory in base hex with the
+;    starting location on each line. (Between the two
+;    parameters given). 16 bytes per line max.
+;
+disp:   ld     hl,tbuff		;command line buffer
+        call	exlf		;get 2 parameters
+d0:	call	slfadr          ;print CR and H&L
+d1:	call	blk		;print space
+	ld	a,(hl)
+	call	lbyte		;print A reg.
+	inc	hl
+	ld	a,l
+	and	0fh             ;see if time to CRLF
+	jr	nz,d1
+	call	blk		;print space
+	call	blk		;print space
+	ld	bc,-16
+	add	hl,bc
+	ld	b,16
+dt1:	ld	a,(hl)
+	and	07fh
+	cp	' '
+	jr	nc,dt3
+dt2:	ld	a,'.'
+dt3:	cp	07ch
+	jr	nc,dt2
+	call	cout		;output character
+	call	hilox		;range testŠ	djnz	dt1
+	jr	d0
+;
+;***************************************************************
+;    FILL MEMORY WITH HEX CHARACTER
+;      FM staddr endaddr char(cr)
+;    This command will fill a block of memory with a value.
+;     IE; F0 1FFF 0 fills from <1> to <2> with the byte <3>.
+;    Handy for initializing a block to a specific value,
+;    or memory to a constant value before loading a program.
+;    (zero is especially useful.)
+;
+fill:
+        ld      hl,tbuff	;command line buffer   
+        call	expr3		;get 3 parameters
+        call    crlf		;new line
+f:	ld	(hl),c
+	call	hilo            ;finished?
+	jr	nc,f
+        ret
+;
+;****************************************************************
+;    NON-DESTRUCTIVE MEMORY TEST
+;     TEST staddr endaddr(cr)
+;    This is a 'quickie' memory test to spot hard memory
+;    failures, or accidently protected memory locations.
+;    It is not meant to be the definitive memory diagnostic.
+;    It is, however, non-destructive. Errors are printed on
+;    the console as follows-
+;     <ADDR> 00000100 where <1> is the bad bit.
+;    Bit location of the failure is easily determined.
+;    Non-R/W memory will return with- 11111111
+;
+test:   ld     hl,tbuff		;command line buffer
+        call	exlf		;get 2 parameters
+	call   crlf		;new line
+t1:	ld	a,(hl)
+	ld	b,a
+	cpl
+	ld	(hl),a
+	xor	(hl)
+	jrz	t2
+	push	de
+	ld	d,b
+	ld	e,a
+	call	hlsp		;print H&L and space
+	call	bits		;print binary bits
+	call	crlf		;new line
+	ld	b,d
+	pop	de
+t2:	ld	(hl),b
+	call	hilox		;range test
+	jr	t1
+;
+;****************************************************************Š;    MOVE MEMORY TO ANOTHER LOCATION
+;      MM staddr endaddr destination(cr)
+;    This command moves mass amounts of memory from <1> thru <2>
+;    to the address starting at <3>. This routine should be used
+;    with some caution, as it could smash memory if carelessly
+;    implemented.
+;
+move:   ld     hl,tbuff		;command line buffer
+        call	expr3		;get 3 parameters
+	call   crlf		;new line
+m:	ld	a,(hl)
+	ld	(bc),a
+	inc	bc
+	call	hilox		;range test
+	jr	m
+store:	ld	(ix+00h),a
+	cp	(ix+00h)
+	jr	nz,err3
+	inc	ix
+	dec	e
+	ret
+err3:	push	ix
+	pop	hl
+	call	ladr		;print H&L
+	jp	error
+;
+;****************************************************************
+;    CHANGE MEMORY until (cr) entered
+;    space bar = goto next memory location
+;      CM staddr(cr)
+;    This routine allows both inspection of & modification of
+;    memory on a byte by byte basis. It takes one address
+;    parameter, followed by a carriage return. The data at
+;    that location will be displayed. If it is desired to 
+;    change it, the value is then entered. A following space
+;    will display the next byte. A carriage return (CR) will
+;    terminate the command. The system adds a CRLF at
+;    locations ending with either XXX0 or XXX8. To aid in
+;    determining the present address, it is printed after
+;    each CRLF. A backarrow will back up the pointer and 
+;    display the previous location.
+;
+subs:   ld     hl,tbuff		;command line buffer
+        call	expr1		;get 1 parameter
+        ld     hl,(staddr)
+s0:	ld	a,(hl)
+	call	lbyte		;print A reg.
+	call	copck		;print dash
+	push	hl
+        call   ti
+        cp     ' '
+        jrz    s4
+        cp     cr
+        jrz    s5
+        call   exfŠ        pop    de
+	pop	hl
+	ld	(hl),e
+s1:	inc	hl
+s3:	ld	a,l
+	and	07h
+	cz	slfadr        ;print CR and H&L
+	jr	s0
+s2:	dec	hl
+	jr	s3
+s4:     pop    hl
+        jr     s1
+s5:     call   crlf           ;new line
+        pop    hl
+        ret
+;
+;****************************************************************
+;    DISPLAY MEMORY in ASCII characters
+;         TM staddr endaddr(cr)
+;    This routine translates the data in memory to an ASCII 
+;    format. All non-printing characters are converted to 
+;    periods. [.]
+;    There are 64 characters per line.
+;
+type:   ld     hl,tbuff		;command line buffer
+        call	exlf		;get 2 parameters
+	call   crlf		;new line
+tt0:	call	slfadr          ;print CR and H&L
+	ld	b,64            ;characters per line
+tt1:	ld	a,(hl)
+	and	07fh            ;kill parity bit
+	cp	' '             ;range test          
+	jr	nc,tt3          ;=>space
+tt2:	ld	a,'.'           ;replace non-printing
+tt3:	cp	07ch            ;above lower case z
+	jr	nc,tt2
+	call	cout		;output character
+	call	hilox		;range test
+	djnz	tt1             ;time to CRLF?
+	jr	tt0             ; YES.
+;
+;***************************************************************
+;    INPUT FROM I/O ADDRESS
+;     IN port(cr)
+;
+inputio:
+        ld     hl,tbuff		;command line buffer
+	call	expr1		;get 1 parameter
+        call   crlf		;new line
+        ld     bc,(staddr)
+	in	e,(c)           ;input from port
+;
+bits:	ld	b,08h           ;display 8 bits
+	call	blk		;print space
+q2:	sla	eŠ	ld	a,18h
+	adc	a,a             ;make "0" or "1"
+	call	cout		;output character
+	djnz	q2
+        ret
+;
+;****************************************************************
+;    OUTPUT TO I/O ADDRESS a HEX CHARACTER
+;     OUT port char(cr)
+;
+outio:
+        ld     hl,tbuff		;command line buffer
+        call	expr		;get 2 parameters
+        ld     de,(endaddr)
+        ld     bc,(staddr)
+	out	(c),e           ;output char. to port 
+        ret
+;
+;****************************************************************
+;    COMPARE ONE AREA OF MEMORY WITH ANOTHER
+;     CM staddr endaddr destination(cr)
+;
+verify:
+        ld     hl,tbuff		;command line buffer
+        call	expr3		;get 3 parameters
+	call   crlf		;new line
+verio:	ld	a,(bc)
+	cp	(hl)            ;compare source and destination
+	jrz	bx
+	push	bc
+	ld	b,a
+	call	hlsp		;print H&L and space
+	ld	a,(hl)
+	call	lbyte		;print A reg.
+	call	blk		;print space
+	ld	a,b
+	call	lbyte		;print A reg.
+	call	crlf		;new line
+	pop	bc
+bx:	inc	bc
+	call	hilox		;range test
+	jr	verio
+;
+;***************************************************************
+;    FIND HEX CHARACTER STRING IN MEMORY
+;     FIND(cr)
+;     xx,xx,xx,xx,xx(cr)
+;    This is a Hexadecinal search routine. It takes no address
+;    parameters. As many bytes may be entered, separated by a
+;    comma, as desired. The maximum is 255, but 3-4 is typical,
+;    and more than 12 would be unusual. The entire memory is 
+;    searched, starting from zero, and all starting addresses
+;    of each occurence of the search string are printed on the
+;    console device.
+;Šwhere:
+        ld	d,0           ;count search bytes
+ww0:    ld     c,1
+        ld     hl,0	     
+        call	ex0           ;get one byte
+        pop    hl             ;pick it up
+	ld	h,l           ;stick in high byte
+	push	hl            ;put it in stack
+	inc	sp            ;adjust stack
+	inc	d             ;count up
+	ld	a,b           ;test delimiter
+	sub	cr
+	jr	nz,ww0        ;more to go
+        call   crlf	      ;new line
+	ld	b,a           ;cheap zeroes
+	ld	c,a
+	ld	h,a
+	ld	l,d           ;get byte count in L
+	dec	l             ;-1
+	add	hl,sp         ;bytes stored in stack
+	push	hl
+	push	bc
+findc:
+find:	pop	hl            ;HL= search address
+	pop	ix            ;X = search byte pointer
+	ld	e,d           ;reset count
+	ld	a,(ix+00h)    ;get the first search byte
+	cpir                  ;compare, incr., & repeat 
+	jp	po,done2      ;odd parity = done
+	push	ix            ;save pointers
+	push	hl
+found:	dec	e
+	jrz	tell          ;found all
+	ld	a,(ix-1)      ;look at next match
+	cp	(hl)          ;test next
+	jr	nz,find       ;no match
+	inc	hl            ;bump pointers
+	dec	ix
+	jr	found         ;test next match
+tell:
+        pop	hl
+	push	hl
+	dec	hl
+	push	bc            ;save search count limit
+	call    crlf	      ;new line
+	call	ladr	      ;print H&L
+	pop	bc            ;restore
+	jr	findc
+done2:	inc	sp
+	dec	e             ;reset stack
+	jr	nz,done2
+	ret
+;
+;**************************************************************
+;    GIVE SIZE OF MEMORY FROM 0 TO PROMŠ;      SIZE(cr)
+;
+size:	call	memsiz
+slfadr:	call	crlf		;new line
+hlsp:	call	ladr		;print H&L
+blk:	ld	a,' '
+        jp     cout		;output character
+;
+;**************************************************************
+;    HEXIDECIMAL ARITHMETIC 
+;     HEX xxxx xxxx(cr)
+;
+hexn:   ld     hl,tbuff		;command line buffer
+        call	exlf		;get 2 parameters
+	call   crlf		;new line
+	push	hl
+	add	hl,de
+	call	hlsp		;print H&L and space
+	pop	hl
+	or	a
+	sbc	hl,de
+;
+;    Print H&L on console
+;
+ladr:	ld	a,h
+	call	lbyte		;print A reg.
+	ld	a,l
+lbyte:	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	call	..here
+	pop	af
+..here:	call	conv		;Hex to ASCII
+        ld      a,c
+	jp	cout		;output character
+;
+;***************************************************************
+;    EXECUTE MEMORY WITH BREAKPOINTS (2)
+;     EXEC staddr brkpnt brkpnt(cr)
+;     EXEC staddr brkpnt(cr)
+;     EXEC staddr(cr)
+;     EXEC ,brkpnt brkpnt(cr)
+;     EXEC ,brkpnt(cr)
+;
+exec:
+        ld     (temp),sp      ;save system return address
+        ld     bc,(sloc)
+        ld     a,b
+        or     c
+        jr     nz,goah
+        ld     (sloc),sp
+goah:   ld     hl,tbuff		;command line buffer
+        call   sksp		;skip spaces
+        jrz     g3              ;continue executionŠ        ld     a,(hl)
+        call	pchk		;check parameter
+	jrz	g1a             ;delimiter entered
+;   get starting address
+        call   expr1		;get 1 parameter
+        ld     de,(staddr)
+        ld     (pcloc),de
+        call   sksp		;skip spaces
+	jz	g3              ;yes, cr so leave.
+;    set breakpoints 
+g1:
+;    FIRST TRAP ADDRESS
+        ld     a,(hl)
+        call   pchk		;check parameter
+        jr     nz,tpaddr
+g1a:    inc    hl
+        jr     g1
+tpaddr: 
+        call	expr1           ;get a trap address
+        ld     bc,(staddr)
+        ld     (tloc),bc
+	ld	a,b             ;look at trap address
+	or	c
+	jrz	g2              ;don't set trap at address 0
+        ld     a,(bc)
+        ld     (tlocx),a
+	ld	a,trpchr
+	ld	(bc),a
+g2:	call   sksp		;skip spaces
+	jz	g2a             ;yes, cr.
+;    SECOND TRAP ADDRESS
+g1x:    ld     a,(hl)
+        call   pchk		;check parameter
+        jr     nz,tp2addr
+        inc    hl
+        jr     g1x
+tp2addr:
+	call	expr1           ;get a trap address
+        ld     bc,(staddr)
+        ld     (tloc+2),bc
+	ld	a,b             ;look at trap address
+	or	c
+	jrz	g2x             ;don't set trap at address 0
+        ld     a,(bc)
+        ld     (tlocx+1),a
+	ld	a,trpchr
+	ld	(bc),a
+g2x:	call   sksp		;skip spaces
+	jz	g2a             ;yes, cr.
+        jp     error
+;
+g2a:	ld	a,0c3h        ;set up trap address
+	ld	(xrst),a
+	ld	hl,trap
+	ld	(xrst+1),hlŠg3:
+        ld     bc,(rloc)
+        ld     a,c
+        ld     r,a
+        ld     a,b
+        ld     i,a
+        ld     iy,(yloc)
+        ld     ix,(xloc)
+        ld     a,(aploc)
+        ld     bc,(bploc)
+        ld     de,(dploc)
+        ld     hl,(hploc)
+        exx
+        ex     af,af'
+        ld     a,(aloc)
+        ld     sp,(sloc)
+        ld     hl,(hloc)
+        ld     de,(dloc)
+        ld     bc,(bloc)
+        ld     hl,(pcloc)
+	jp	(hl)     ;execute
+;
+trap:
+;    This is the breakpoint "TRAP" handling routine.
+;    All user registers are saved for display purposes,
+;    and the contents are restored when executing a 'EX'
+;    command.
+;
+;    saves all Z-80 registers
+;
+        ld     (bloc),bc
+        ld     (dloc),de
+        ld     (hloc),hl
+        ld     (sloc),sp
+        ld     sp,floc+2
+        push   af
+	ex	af,af'
+	exx
+	ld     (hploc),hl
+	ld     (dploc),de
+	ld     (bploc),bc
+        ld     sp,fploc+2
+        push   af
+	ld     (xloc),ix
+	ld     (yloc),iy
+	ld	a,i      ;get interrupt vector
+	ld	b,a
+	ld	a,r      ;get refresh byte
+	ld	c,a
+	ld     (rloc),bc
+        ld     sp,(sloc)
+	pop	bc       ;get trapped address
+        dec     bc       ;adjust for trap byte
+        ld     (pcloc),bc
+;Š;    Display trap address
+;
+        ld     hl,thead
+        call   print1		;print message
+        ld     hl,(pcloc)
+        call   ladr		;print H&L
+        call   crlf		;new line
+;
+;   Restore original characters at trap addesses
+;
+        ld     hl,(tloc)
+        ld     a,h
+        or     l
+        jrz    no1
+        ld     a,(tlocx)
+        ld     (hl),a
+no1:    ld     hl,(tloc+2)
+        ld     a,h
+        or     l
+        jrz    no2
+        ld     a,(tlocx+1)
+        ld     (hl),a
+no2:
+;
+;    Restore system return address
+;
+        ld     sp,(temp)
+;
+;****************************************************************
+;    DISPLAY ALL Z-80 REGISTERS
+;     DR(cr)
+;    These register values are placed into the CPU upon
+;    executing any 'EX'  (execute) command.
+xam:
+        call   crlf		;new line
+        ld     hl,header
+        call   print1		;print message
+        call   crlf		;new line
+        ld     hl,row1
+        call   print1		;print message
+        ld     a,(aloc)
+        call   lbyte		;print A reg.
+        call   blk		;print space
+        ld     hl,(bloc)
+        call   ladr		;print H&L
+        call   blk		;print space
+        ld     hl,(dloc)
+        call   ladr		;print H&L
+        call   blk		;print space
+        ld     hl,(hloc)
+        call   ladr		;print H&L
+        call   blk		;print space
+        ld     a,(floc)
+        ld     e,a
+        call   bits		;print binary bitsŠ        call   crlf		;new line
+        ld     hl,row2
+        call   print1		;print message
+        ld     a,(aploc)
+        call   lbyte		;print A reg.
+        call   blk		;print space
+        ld     hl,(bploc)
+        call   ladr		;print H&L
+        call   blk		;print space
+        ld     hl,(dploc)
+        call   ladr		;print H&L
+        call   blk		;print space
+        ld     hl,(hploc)
+        call   ladr		;print H&L
+        call   blk		;print space
+        ld     a,(fploc)
+        ld     e,a
+        call   bits		;print binary bits
+        call   crlf		;new line
+        call   crlf		;new line
+        ld     hl,row3
+        call   print1		;print message
+        call   crlf		;new line
+        ld     b,5
+dagn:   call   blk		;print space
+        djnz   dagn
+        ld     a,(iloc)
+        call   lbyte		;print A reg.
+        call   blk		;print space
+        ld     a,(rloc)
+        call   lbyte		;print A reg.
+        call   blk		;print space
+        ld     hl,(xloc)
+        call   ladr		;print H&L
+        call   blk		;print space
+        ld     hl,(yloc)
+        call   ladr		;print H&L
+        call   blk		;print space
+        ld     hl,(sloc)
+        call   ladr		;print H&L
+        call   blk		;print space
+        ld     hl,(pcloc)
+        call   ladr		;print H&L
+        call   crlf		;new line
+        ret
+temp:   ds     2                ;System stack pointer
+;
+header:   db   '     A  B C  D E  H L   SZ_H_PNC ',0
+row1:     db   'REG= ',0
+row2:     db   'ALT= ',0
+row3:     db   '     I  R  IX   IY   SP   PC   ',0
+;
+thead:  db   'TRAP @ ',0
+tloc:   ds     4         
+tlocx:	ds     2Špcloc:  ds     2    ;program counter
+;
+floc:	ds     1    ;AF reg.
+aloc:   ds     1
+bloc:	ds     1    ;BC reg
+cloc:	ds     1
+dloc:	ds     1    ;DE reg
+eloc:	ds     1
+hloc:	ds     1    ;HL reg
+lloc:	ds     1
+;
+sloc:	ds     2    ;Stack pointer
+llocx:	ds     2
+;
+fploc:  ds     1    ;AF alt. reg.
+aploc:	ds     1
+bploc:	ds     1    ;BC alt. reg.
+cploc:	ds     1
+dploc:	ds     1    ;DE alt. reg.
+eploc:	ds     1
+hploc:	ds     1    ;HL alt. reg.
+lploc:	ds     1
+xloc:   ds     2    ;IX reg.
+yloc:	ds     2    ;IY reg.
+rloc:	ds     1    ;Refresh reg.
+iloc:	ds     1    ;Interrupt reg.
+;
+;    This is a called routine used to calculate the top
+;    of memory starting from the bottom of memory, and
+;    searching upward until first R/W memory is found,
+;    and then continuing until the end of the R/W
+;    memory. This allows ROM at zero, and insures a
+;    continuious memory block has been found.
+;    
+memsiz:	push	bc
+	ld	bc,0     ;point to start of monitor
+	ld	hl,-1    ;ram search starting point
+m0:	inc	h        ;find first R/W memory
+	ld	a,(hl)
+	cpl
+	ld	(hl),a
+	cp	(hl)
+	cpl
+	ld	(hl),a
+	jr	nz,m0
+m1:	inc	h        ;R/W found, now find end
+	ld	a,(hl)
+	cpl
+	ld	(hl),a
+	cp	(hl)
+	cpl
+	ld	(hl),a
+	jr	nz,m2
+	ld	a,h      ;test for monitor border
+	cp	bŠ	jr	nz,m1    ;not there yet
+m2:	dec	h        ;back up, subtract workspace
+	pop	bc
+	ret
+;
+nibble:	sub	'0'      ;qualify & convert
+	ret	c        ;<0
+	cp	'G'-'0'  ;>F?
+	ccf              ;pervert carry
+	ret	c
+	cp	10       ;number?
+	ccf              ;pervert again
+	ret	nc       ;return clean
+	sub	'A'-'9'-1     ;adjust
+	cp	0ah           ;filter ':' thru '@'
+	ret
+;
+copck:	ld	a,'-'
+	call	cout	;output character
+        ret
+;
+pchk:	cp	' '      ;Return zero if delimiter
+	rz
+	cp	','
+	rz
+	cp	cr       ;return w/carry set if CR
+	scf
+	rz
+	ccf              ;Else non-zero, no carry.
+	ret
+;
+;    Conver Hex to ASCII
+;
+conv:	and	0fh      ;low nibble only
+	add	a,90h
+	daa
+	adc	a,40h
+	daa
+	ld	c,a
+	ret
+;
+;    Output CR/LF
+;
+crlf:
+        push   psw
+        push   de
+        push   bc
+	push	hl
+	ld	hl,msg
+        call   print1		;print message
+	pop	hl
+        pop    bc
+        pop    de
+        pop    psw
+	retŠmsg: db   cr,lf,0
+;
+;
+;    extract hexadecimal number from line pted to by hl
+;    return with value in de and hl pting to offending char.
+;
+hexnum:
+        ld     de,0      ;de=accumulated value
+        ld     b,5       ;b=char. count
+hnum1:
+        ld     a,(hl)    ;get char
+        cp     '-'+1     ;done?
+        ret    c         ;return if space or less
+        inc    hl        ;pt to next
+        sub    '0'       ;convert to binary
+        jr     c,numerr  ;return and done if error
+        cp     10        ;0-9?
+        jr     c,hnum2
+        sub    7         ;A-F?
+        cp     10h       ;error?
+        jr     nc,numerr
+hnum2:
+        ld     c,a       ;digit in c
+        ld     a,d       ;get accumulated value
+        rlca              ;exchange nybbles
+        rlca
+        rlca
+        rlca
+        and    0f0h      ;mask out low nybble
+        ld     d,a
+        ld     a,e       ;switch low-order nybbles
+        rlca
+        rlca
+        rlca
+        rlca
+        ld     e,a       ;high nybble of e=new high of e,
+                         ; low nybble of e=new low of d.
+        and    0fh       ;get new low of d
+        or     d         ;mask in high of d
+        ld     d,a       ;new high byte in d
+        ld     a,e
+        and    0f0h      ;mask out low of e
+        or     c         ;mask in new low
+        ld     e,a       ;new low byte in e
+        djnz   hnum1     ;count down
+        ret
+;
+;
+numerr:
+        jp     error
+;
+;    skip to next non-blank
+;
+sksp:
+        ld     a,(hl)    ;get char.Š        inc    hl        ;pt to next
+        cp     ' '       ;skip spaces
+        jrz    sksp
+        dec    hl        ;pt to good char.
+        or     a         ;set eol flag
+        ret
+;
+;
+;
+;    Get two parameters and load in HL and DE.
+;
+exlf:
+	call	expr		;get 2 parameters
+        ld     de,(endaddr)
+        ld     hl,(staddr)
+        ret
+;
+;    Get two parameters
+;
+expr:   call   sksp		;skip spaces
+        call   hexnum		;ASCII to hex
+        ld     (staddr),de
+        call   sksp		;skip spaces
+        call   hexnum		;ASCII to hex
+        ld     (endaddr),de
+        ret
+;
+;    Get 1 parameter
+;
+expr1:  call   sksp		;skip spaces
+        call   hexnum		;ASCII to hex
+        ld     (staddr),de
+        ret
+;
+;    Get 3 parameters
+;
+expr3:  call   expr		;get 2 parameters
+        call   sksp		;skip spaces
+        call   hexnum		;ASCII to hex
+        ld     (destchar),de
+        call   crlf		;new line
+        ld     bc,(destchar)
+        ld     de,(endaddr)
+        ld     hl,(staddr)
+        ret
+;
+staddr: dw     0000h     ;Parameter 1
+endaddr:
+        dw     0000h     ;Parameter 2
+destchar:
+        dw     0000h     ;Parameter 3
+;
+;    Get hex values from console
+;
+exf:    ld     c,1       ;parameter count to 1Šexpr0:  ld     hl,0      ;clear HL
+        jr     ex1
+ex0:    call   ti        ;input from console
+ex1:    ld     b,a       ;save it
+        call   nibble    ;convert ASCII to hex
+        jr     c,ex2     ;illegal character detected
+        add    hl,hl     ;multiply by 16
+        add    hl,hl
+        add    hl,hl
+        add    hl,hl
+        or     l         ;or in the single nibble
+        ld     l,a
+        jr     ex0       ;get some more
+ex2:    ex     (sp),hl   ;save up in stack
+        push   hl        ;replace the return
+        ld     a,b       ;test the delimiter
+        call   pchk	 ;check parameter
+        jr     nc,ex3    ;CR entered
+        dec    c         ;should go to zero
+        rz               ;return if it does
+ex3:    jp     nz,error  ;something wrong
+        dec    c         ;do this again?
+        ld     hl,0
+        jr     nz,ex0    ;yes.
+        ret              ;else return
+;
+;    Range testing routine
+;    Carry set indicates range exceeded
+;
+hilox:	call	hilo
+	ret	nc       ;o.k.
+	pop	de       ;return one level back
+	ret
+;
+hilo:	inc	hl       ;increment HL
+	ld	a,h      ;test for crossing 64K boundry
+	or	l
+	scf              ;carry set=stop
+	rz               ;yes, border crossed
+	ld	a,e      ;now test HL vs. DE
+	sub	l
+	ld	a,d
+	sbc	a,h
+	ret              ;if carry was set, then stop
+;
+;    Console check
+;         ^S = stop display ( any character to continue)
+;         ^C = abort display
+;
+cchk:	call	cin	;get console char.
+	cp	013h	;cntrl s
+	jrz	cchk
+	cp	003h	;cntrl c
+	ret	nz
+;Šerror:	
+	ld	a,'*'
+	call	cout		;output character
+        jp      0000h           ;reboot
+;***
+const:	
+	push	hl
+	push	de
+	push	bc
+	ld	c,11
+	call	cpm
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+;
+;
+ti:	call	cin		;get console char.
+	inc	a               ;ignore rubouts
+	rm
+	dec	a               ;ignore nulls
+	rz
+	cp	'N'             ;ignore N
+	rz
+	cp	'n'             ;ignore n
+	jrz	t
+	cp	cr              ;ignore carriage returns
+	rz
+	push	bc
+	call	cout		;output character
+	pop	bc
+	cp	'A'-1           ;convert to upper case
+	ret	c
+	cp	'z'+1
+	ret	nc
+t:	and	5fh
+	ret
+;
+  
+	.z80
+;
+	 if2
+	 if	$ ge (rcp+rcps*128)
+	.printx ->This RCP is too large, don't try to run it.<-
+	 endif
+	 endif
+;
+	.dephase
+;
+	end
+

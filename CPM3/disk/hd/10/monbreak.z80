@@ -1,0 +1,972 @@
+	title	Break/Trace/Display Module for Monitor
+	name	('MONBREAK')
+;
+;	Last Edited	85-04-27	Wagner
+;
+;	Copyright (c) 1984, 1985 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, October 1990
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+	maclib	monopt.lib
+;
+	entry	break
+;
+	entry	display,disalt,disyvars
+;
+if	hilo
+	entry	dishighlow
+endif;HILO
+;
+	entry	initbreak,unbreak,dotrace
+	entry	deletebk,definebk,addbk,resetbk,nresetbk
+;
+	entry	numbreaks,breaklist
+	entry	regi,regiff,regbc,regpc,regsp,altbc,iffstr
+;
+	ext	initcio
+	ext	resetrst
+	ext	string
+;
+if	extended
+	entry	cbank
+	ext	peek,poke,currbank,peekbuf,xltbank
+endif;EXTENDED
+;
+	ext	goto
+	ext	wrstr,wrchar,wrhex,wrword,space,space2,crlf,tkbint
+	ext	mexpression
+	ext	monitor,cmderr,stack
+	ext	disasm,analop,jumpaddr,jumpmark
+	ext	tracecount,trcallopt,tracejp,tracenl,traceexp,traceptr
+	ext	bkexpbuf,protexpbuf
+	ext	listaddr,restart,rstloc
+	ext	variables
+;
+if	hilo
+	ext	lowval
+endif;HILO
+;
+	cseg
+;
+maxbreaks equ	8
+;
+;	Display:
+;
+;123456789.123456789.123456789.123456789.
+;F=76543210  A=xx BC=xxxx DE=xxxx HL=xxxx IX=xxxx PC=xxxx    instruction
+;     IFF=x  I=xx IY=xxxx SP=xxxx (xxxx xxxx xxxx xxxx xxxx) LD    (IX+00),00
+;F'=76543210 A'=xx BC'=xxxx DE'=xxxx HL'=xxxx M=xx
+;
+;F=76543210 A=xx BC=xxxx DE=xxxx PC=xxxx 12345678:   1234567890123456  .1234567
+;IFF=x I=xx HL=xxxx IX=xxxx IY=xxxx SP=xxxx (xxxx xxxx)
+;
+;	disflags:	Display flag register
+;
+disflags:
+	push	af
+	call	disregnam
+	pop	af
+	ld	hl,flagnames
+	ld	b,8
+disfll:
+	rlca
+	push	af
+	jr	nc,disfloff
+	ld	a,(hl)
+	jr	disflxx
+disfloff:
+	ld	a,'.'
+disflxx:
+	call	wrchar
+	inc	hl
+	pop	af
+	djnz	disfll
+	jp	space
+;
+flagnames:
+	defb	'SZxHxPNC'
+;
+;	display:	display CPU state (primary regs only)
+;
+display:
+	ld	de,reg1nam
+	ld	a,(regf)
+	call	disflags	; display flags
+	call	space
+	ld	hl,rega
+	call	dis8reg		; display A
+	ld	hl,regbc
+	call	space
+	call	space
+if	symbolic
+	ld	b,2
+else
+	ld	b,3
+endif;SYMBOLIC
+displ10:
+	call	dis16reg	; display BC, DE, HL
+	djnz	displ10
+if	not symbolic
+	ld	hl,regix
+	call	dis16reg	; IX
+endif;NOT SYMBOLIC
+	call	disregnam	; 'PC='
+if	extended
+	ld	a,(cbank)
+endif;EXTENDED
+	ld	hl,(regpc)
+	ld	b,0
+	call	disasm		; disassemble at PC
+	ld	(newpc),hl	; save next PC
+	call	crlf
+	ld	de,reg2nam
+	call	disregnam	; 'IFF='
+	ld	a,(regiff)
+	and	1
+	or	'0'
+	call	wrchar		; display IFF
+	call	space
+	ld	hl,regi
+	call	dis8reg		; display I
+if	symbolic
+	ld	hl,reghl
+	call	dis16reg
+	ld	hl,regix
+	call	dis16reg
+	call	dis16reg
+else
+	ld	hl,regiy
+	call	dis16reg	; IY
+endif;SYMBOLIC
+	call	disregnam	; 'SP='
+	ld	hl,(regsp)
+	call	wrword		; display SP
+	call	space
+if	extended
+	ld	a,(cbank)
+	call	peek
+endif;EXTENDED
+	ld	a,'('
+	call	wrchar
+if	symbolic
+	ld	b,2
+else
+	ld	b,5		; display 5 words at bottom of stack
+endif;SYMBOLIC
+if	extended
+	ld	hl,peekbuf
+endif;EXTENDED
+displayl3:
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ex	de,hl
+	call	wrword		; display (SP)
+	ex	de,hl
+	dec	b
+	jr	z,displayend
+	call	space
+	jr	displayl3
+displayend:
+	ld	a,')'
+	call	wrchar
+	jp	crlf
+if	symbolic
+reg1nam:
+	db	'F=A=BC=DE=PC='
+reg2nam:
+iffstr:
+	db	'IFF=I=HL=IX=IY=SP='
+else
+reg1nam:
+	db	'F= A=BC=DE=HL=IX=PC='
+reg2nam:
+	db	'     '
+iffstr:
+	db	'IFF= I=IY=SP='
+endif;SYMBOLIC
+;
+;	disalt:		display alternate registers
+;
+disalt:
+	ld	a,(altaf)
+	ld	de,reganam
+	call	disflags
+	ld	hl,altaf+1
+	call	dis8reg		; display A'
+	call	space
+	ld	hl,altbc
+	ld	b,3
+disaltlp:
+	call	dis16reg	; display BF', DE', HL'
+	djnz	disaltlp
+if	extended
+	ld	hl,cbank
+	call	dis8reg
+endif;EXTENDED
+	jp	crlf
+;
+reganam:db	'F''=A''=BC''=DE''=HL''='
+if	extended
+	db	' X='
+endif;EXTENDED
+;
+;	disyvars:	display Y-variables
+;
+disyvars:
+	ld	hl,variables
+	ld	b,10
+	ld	c,'0'
+disylp:
+	ld	a,'Y'
+	call	wrchar
+	ld	a,c
+	call	wrchar
+	ld	a,'='
+	call	wrchar
+	call	disword
+	call	space
+	inc	c
+	ld	a,c
+	cp	'5'
+	call	z,crlf
+	djnz	disylp
+	jp	crlf
+if	hilo
+;
+;	dishighlow:	display High, Low and Max
+;
+dishighlow:
+	ld	de,hilostr
+	ld	hl,lowval
+	ld	b,4
+dishilo10:
+	call	dis16reg
+	djnz	dishilo10
+	jp	crlf
+;
+hilostr:db	'Low=  High=  Max=  Top='
+;
+endif;HILO
+;
+dis8reg:
+	call	disregnam
+	ld	a,(hl)
+	call	wrhex
+	jp	space
+;
+dis16reg:
+	call	disregnam
+	call	disword
+	jp	space
+;
+disword:
+	push	de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ex	de,hl
+	call	wrword
+	ex	de,hl
+	pop	de
+	ret
+;
+disregnam:
+	ld	a,(de)
+	inc	de
+	call	wrchar
+	cp	'='
+	ret	z
+	jr	disregnam
+;
+;------------------------------------------------------------------------------
+;
+;	Breakpoint Entry
+;
+break:
+	ld	(savsp),sp	; save stackpointer
+	ld	sp,breakstack	; register save area
+	push	af		; AF
+	ld	a,i
+	push	af		; I & IFF
+if	disint
+	di
+endif;DISINT
+	push	iy
+	push	ix
+	push	hl		; dummy (AF)
+	push	hl		; dummy (SP)
+	push	hl		; HL
+	push	de
+	push	bc
+	ex	af,af'
+	push	af		; AF'
+	exx
+	push	hl		; dummy (no SP')
+	push	hl		; HL'
+	push	de		; DE'
+	push	bc		; BC'
+	exx
+	ex	af,af'		; back to old register set
+	ld	sp,stack	; local stack
+	xor	a
+	ld	(regiff),a	; so peek does not enable interrupts
+if	extended
+	call	currbank
+	ld	(cbank),a
+endif;EXTENDED
+	ld	hl,(savsp)	; stackpointer on entry
+if	extended
+	call	peek
+	ld	hl,peekbuf
+endif;EXTENDED
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; location at stackpointer = retaddr
+	ld	hl,(savsp)
+	inc	hl
+	inc	hl		; point before retaddr on stack
+	ex	de,hl		; retaddr into HL
+	dec	hl		; address at RST
+if	extended
+	ld	a,(cbank)
+	call	peek
+	ld	a,(peekbuf)
+else
+	ld	a,(hl)
+endif;EXTENDED
+	push	hl
+	ld	hl,restart
+	cp	(hl)		; is it RST ?
+	pop	hl
+	jr	nz,break15	; leave pc as is if not
+	ld	a,(breaklist)
+	ld	b,a
+	push	de
+if	extended
+	ld	a,(cbank)
+	call	xltbank
+endif;EXTENDED
+	call	searchbk	; is it a breakpoint ?
+	pop	de
+	jr	z,break20	; then reset PC to RST
+break15:
+	inc	hl		; else leave PC as it is
+break20:
+	ex	de,hl
+	ld	(regsp),hl	; store corrected SP
+	ld	hl,(regpc)	; this contains I & IFF
+	ld	(regpc),de	; set corrected PC
+	ld	(listaddr),de	; new default list address
+	ld	(regiff),hl	; store iff elsewhere
+	ld	hl,(savaf)
+	ld	(regaf),hl	; store AF at correct place
+	ld	a,(regiff)
+	rrca
+	rrca
+	and	1
+	push	af
+	xor	a
+	ld	(regiff),a
+	call	resetbk		; reset breakpoints
+	pop	af
+	ld	(regiff),a	; shift P/V-Flag for IFF
+if	disint
+	jr	z,break80	; exit if interrupts disabled
+	ei			; else re-enable
+endif;DISINT
+break80:
+	call	initcio
+	ld	hl,(regpc)	; current PC
+	ld	a,(numbreaks)
+	ld	b,a
+if	zeroboot
+	ld	a,h
+	or	l
+	jp	z,breakwarm	; jump if warmboot
+endif;ZEROBOOT
+ if	extended
+	ld	a,(cbank)
+	call	xltbank
+endif;EXTENDED
+	call	searchbk	; is this a normal breakpoint ?
+	jr	nz,breaktr	; check trace if not
+	ld	a,(iy+3)	; conditional break ?
+	and	80h
+	jp	z,breakexit	; exit if not conditional
+	ld	ix,bkexpbuf
+	call	mexpression	; evaluate condition
+	jp	c,breakexit	; exit if bad
+	ld	a,h
+	or	l
+	jp	nz,breakexit	; exit if condition met
+	ld	hl,(tracecount)
+	ld	a,h
+	or	l
+	jr	nz,breaktr	; go trace if condition false
+	call	tkbint
+	jr	nz,breakexit
+	jp	gounbreak	; continue if condition not met
+breaktr:
+	ld	hl,(tracecount)	; are we tracing ?
+	ld	a,h
+	or	l
+	jr	nz,breaktr10	; then check trace conditions
+	ld	a,(temptrace)
+	or	a
+	jp	nz,gounbreak	; go if temporary trace
+	jr	breakexit
+breaktr10:
+	ld	a,(tracejp)	; jumps only ?
+	or	a
+	jr	z,breaktr20	; next if not
+	ld	hl,(regpc)
+if	extended
+	ld	a,(cbank)
+endif;EXTENDED
+	call	analop		; analyse opcode
+	ld	a,(jumpmark)	; jump ?
+	or	a
+	jr	z,brkdotr	; no list if no jump
+breaktr20:
+	ld	a,(traceexp)	; while/until ?
+	or	a
+	jr	z,break85	; continue if not
+;
+;	trace while/until
+;
+	ld	ix,(traceptr)	; load expression pointer
+	call	mexpression
+	jr	c,breakexit	; exit on error
+	ld	a,(traceexp)
+	rlca
+	jr	c,breakuntil
+	ld	a,h
+	or	l
+	jr	z,breakexit	; trace while: exit if false
+	jr	break85
+breakuntil:
+	ld	a,h
+	or	l
+	jr	nz,breakexit	; trace until: exit if true
+break85:
+	ld	a,(traceexp)
+	or	a
+	jr	nz,break91	; no decrease if expression
+	ld	hl,(tracecount)
+	dec	hl		; else decrease count
+	ld	(tracecount),hl
+	ld	a,h
+	or	l
+	jr	z,breakexit	; and exit if zero
+break91:
+	ld	a,(tracenl)	; no list ?
+	or	a
+	jr	z,breakdis	; go if no list
+brkdotr:
+	call	tkbint		; check for int from keyboard
+	jr	nz,breakexit
+	jp	dotrace
+breakdis:
+	call	display		; display if list on
+	jp	dotrace		; and continue tracing
+if	zeroboot
+breakwarm:
+	ld	hl,wbootmsg
+	call	wrstr
+endif;ZEROBOOT
+breakexit:
+	call	display		; display next opcode
+	jp	monitor
+if	zeroboot
+wbootmsg:
+	db	cr,lf,'WARM BOOT',cr,lf,0
+endif;ZEROBOOT
+;
+;------------------------------------------------------------------------------
+;
+;	unbreak:	return from break
+;
+gounbreak:
+	ld	a,(numbreaks)
+	ld	b,a
+unbreak:
+	xor	a
+	ld	(temptrace),a
+	or	b
+	jr	z,untrace	; go if no breakpoints
+	push	bc
+	ld	hl,(regpc)
+if	extended
+	ld	a,-1
+	call	xltbank
+endif;EXTENDED
+	call	searchbk	; break set at PC ?
+	pop	bc
+	jr	nz,untrace	; ok if not
+	ld	a,-1
+	ld	(temptrace),a	; mark temporary trace
+	jp	normtrace	; trace one op if break at PC
+;
+;	untrace:	return from break, tracing on
+;
+;		entry:	B = number of breakpoints (including temporary)
+;
+untrace:
+if	disint
+	di
+endif;DISINT
+	ld	a,(regiff)
+	push	af
+	xor	a
+	ld	(regiff),a
+	call	setbk
+	pop	af
+	ld	(regiff),a
+	ld	sp,altbc	; restore registers
+	exx
+	pop	bc
+	pop	de
+	pop	hl
+	exx
+	pop	af		; i & iff
+	ld	i,a
+	ex	af,af'
+	pop	af
+	ex	af,af'
+	pop	bc
+	pop	de
+	pop	hl
+	pop	af		; dummy (SP)
+	pop	af		; AF
+	pop	ix
+	pop	iy
+	ld	sp,string+80
+	jp	goto		; go to program
+;
+;------------------------------------------------------------------------------
+;
+;	setbk:		set breakpoints
+;
+;		entry:	B = number of breakpoints
+;
+setbk:
+	ld	ix,breaklist+1
+	ld	(ix-1),b
+	ld	a,b
+	or	a
+	ret	z		; ret if no breakpoints
+	ld	c,5
+	ld	de,(regpc)
+setbkloop:
+	ld	l,(ix+0)
+	ld	h,(ix+1)
+if	extended
+	ld	a,(ix+2)
+	call	peek
+	ld	a,(peekbuf)
+else
+	ld	a,(hl)
+endif;EXTENDED
+	ld	(ix+4),a	; save previous memory contents
+if	extended
+	ld	a,(cbank)
+	cp	(ix+2)
+	jr	z,setbklp4	; check pc if same bank
+	ld	a,(ix+2)
+	inc	a		; default bank ?
+	jr	nz,setbklp5	; branch if different bank
+endif;EXTENDED
+setbklp4:
+	or	a
+if	not extended
+	push	hl
+	sbc	hl,de
+	pop	hl
+else
+	sbc	hl,de
+endif;NOT EXTENDED
+	jr	z,setbklp10	; dont set break at current PC
+setbklp5:
+	ld	a,(restart)
+if	extended
+	ld	(peekbuf),a
+	call	poke
+else
+	ld	(hl),a
+endif;EXTENDED
+setbklp10:
+	ld	a,b
+	ld	b,0
+	add	ix,bc
+	ld	b,a
+	djnz	setbkloop
+	ret
+;
+;	resetbk:	reset breakpoints and restart location
+;	nresetbk:	reset breakpoints only
+;
+resetbk:
+	call	resetrst
+nresetbk:
+	ld	ix,breaklist+1
+	ld	b,(ix-1)
+	ld	a,b
+	or	a
+	ret	z		; ret if no breakpoints
+	ld	a,(numbreaks)
+	ld	(ix-1),a	; reset number of breakpoints
+	ld	de,5
+resbkloop:
+	ld	l,(ix+0)
+	ld	h,(ix+1)
+if	extended
+	ld	a,(ix+2)
+	call	peek
+	ld	a,(peekbuf)
+	ld	hl,restart
+	cp	(hl)
+else
+	ld	a,(restart)
+	cp	(hl)
+endif;EXTENDED
+	jr	nz,resbk1
+	ld	a,(ix+4)
+if	extended
+	ld	(peekbuf),a
+	call	poke
+else
+	ld	(hl),a
+endif;EXTENDED
+resbk1:
+	add	ix,de
+	djnz	resbkloop
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	dotrace:	execute one opcode, then break
+;
+dotrace:
+	xor	a
+	ld	(temptrace),a
+	ld	ix,protexpbuf	; protection
+	call	mexpression
+	jr	c,normtrace	; ok if no protection
+	ld	a,h
+	or	l
+	jr	z,normtrace	; ok if expression false
+;
+;	protected region, set break to return address
+;
+	call	tratsp
+	ld	a,(numbreaks)
+	ld	b,a
+	ld	a,-1		; default bank
+	call	addbk		; set as temp breakpoint
+	jp	untrace
+;
+;	normal trace
+;
+normtrace:
+	ld	hl,(regpc)
+if	extended
+	ld	a,(cbank)
+endif;EXTENDED
+	call	analop
+	ld	(newpc),hl
+	ld	a,(numbreaks)	; number of breakpoints
+	ld	b,a
+	ld	a,(jumpmark)
+	or	a		; jump/call/ret instruction ?
+	jr	nz,dotrjump	; then we have to set a different break
+dotr10:
+	ld	hl,(newpc)	; next location
+	ld	a,-1
+	call	addbk		; set as temporary breakpoint
+	jp	untrace		; execute
+dotrjump:
+	and	070h
+	cp	20h
+	jr	c,dotrjimm	; 10 is immediate
+	jr	nz,dotrjreg	; 30 is to register
+	call	tratsp		; 20 is to stack
+dotrj10:
+	ld	a,-1
+	call	addbk		; set as temp breakpoint
+	ld	a,(jumpmark)
+	and	80h		; conditional ?
+	jp	z,untrace	; go exec if not
+	jr	dotr10		; enter normal
+dotrjimm:
+	ld	hl,(jumpaddr)	; immediate
+	ld	de,(regpc)	; same as current PC ?
+	or	a
+	sbc	hl,de
+	jr	nz,dotrjimmok	; ok if not same
+if	extended
+	ld	a,(peekbuf)	; peekbuf contains current opcode
+else
+	ld	a,(de)
+endif;EXTENDED
+	cp	10h		; DJNZ ?
+	jp	nz,cmderr	; abort if not
+	jr	dotr10		; enter normal addr instead of jumpaddr
+dotrjimmok:
+	ld	hl,(jumpaddr)
+	ld	a,(jumpmark)
+	and	1		; call ?
+	jr	z,dotrj10	; ok if not
+	ld	a,(trcallopt)	; trace over calls ?
+	or	a
+	jr	nz,dotr10	; set normal break if yes
+	jr	dotrj10		; else continue
+dotrjreg:
+	ld	a,(jumpmark)
+	and	NibMASK
+	add	a,a
+	ld	e,a
+	ld	d,0
+	ld	hl,regbc
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl
+	jr	dotrj10
+;
+tratsp:
+	ld	hl,(regsp)	; get return address
+if	extended
+	ld	a,(cbank)
+	call	peek
+	ld	hl,peekbuf
+endif;EXTENDED
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	addbk:		add a breakpoint to the list if not already present
+;
+;		entry:	HL = breakpoint address
+;			B  = current number of breakpoints
+;			A  = breakpoint bank
+;
+;		exit:	B = B + 1
+;
+addbk:
+if	extended
+	cp	-1
+	jr	nz,addbk1
+	call	xltbank
+endif;EXTENDED
+addbk1:
+	call	searchbk
+	ret	z		; no change if already defined
+	ld	(iy+0),l
+	ld	(iy+1),h
+	ld	(iy+2),a
+	ld	(iy+3),0	; clear condition flag
+	inc	b
+	ret
+;
+;	searchbk:	search for breakpoint
+;
+;		entry:	A/HL = address
+;			B = number of breakpoints
+;
+;		exit:	zero-flag set if found
+;			C = index if found
+;			IY = breaklist pointer (end of list if not found)
+;
+searchbk:
+	ld	d,a
+	ld	e,b
+	ld	iy,breaklist+1
+	ld	a,b
+	or	a
+	jr	nz,searchbk10
+	dec	a
+	ld	a,d
+	ret
+searchbk10:
+	ld	c,0
+searchbk20:
+	ld	a,(iy+0)
+	cp	l
+	jr	nz,searchbk25	; no match if not same address
+	ld	a,(iy+1)
+	sub	h
+	jr	nz,searchbk25
+if	extended
+	ld 	a,(iy+2)
+	cp	d
+	jr	nz,searchbk25	; no match if not same bank
+endif;EXTENDED
+	ld	b,e		; match, return
+	ld	a,d
+	ret
+searchbk25:
+	push	de
+	ld	de,5
+	add	iy,de
+	pop	de
+	inc	c
+	djnz	searchbk20
+	or	-1
+	ld	b,e
+	ld	a,d
+	ret
+;
+;	delbk:		delete breakpoint
+;
+;		entry:	IY = pointer to breakpoint list element
+;			C = index
+;
+delbk:
+	ld	hl,numbreaks
+	dec	(hl)
+	ld	a,(hl)
+	ld	(breaklist),a
+	sub	c		; elements after this element
+	ret	z		; ready if nothing to move
+	ld	c,a
+delbklp:
+	ld	b,5
+delbk10:
+	ld	a,(iy+5)
+	ld	(iy+0),a
+	inc	iy
+	djnz	delbk10
+	dec	c
+	jr	nz,delbklp
+	ret
+;
+;	deletebk:	delete breakpoint
+;
+;		entry:	A/HL = address
+;
+deletebk:
+	push	iy
+	push	af
+	ld	a,(numbreaks)
+	ld	b,a
+	pop	af
+if	extended
+	cp	-1
+	call	z,xltbank
+endif;EXTENDED
+	call	searchbk
+	jp	nz,cmderr
+	call	delbk
+	pop	iy
+	ret
+;
+;	definebk:	add breakpoint
+;
+definebk:
+	push	bc
+	ld 	bc,(numbreaks-1); get numbreaks into B
+	call	addbk
+	ld	a,maxbreaks
+	cp	b
+	jp	c,cmderr
+	ld	a,b
+	pop	bc
+	ld	(iy+3),c	; set condition flag
+	ld	(numbreaks),a
+	ld	(breaklist),a
+	ret
+;
+;	initbreak:	init module variables
+;
+initbreak:
+	ld	hl,vars
+	ld	de,vars+1
+	ld	bc,varspace-1
+	ld	(hl),0
+	ldir			; clear registers & breakpoints
+if	extended
+	call	currbank
+	ld	(cbank),a	; init current bank
+endif;EXTENDED
+	ld	a,i
+	ld	(regi),a	; init I-reg
+	ret	po		; leave IFF = 0 if interrupts disabled
+	ld	a,1
+	ld	(regiff),a	; init IFF
+	ret
+;
+	dseg
+;
+vars:
+;
+altbc:	ds	2
+altde:	ds	2
+althl:	ds	2
+regiff:	ds	2		; no alternate SP
+regi	equ	regiff+1
+altaf:	ds	2
+;
+regbc:	ds	2
+regde:	ds	2
+reghl:	ds	2
+regsp:	ds	2
+regaf:	ds	2
+regf	equ	regaf
+rega	equ	regaf+1
+regix:	ds	2
+regiy:	ds	2
+regpc:	ds	2
+;
+savaf:	ds	2
+breakstack equ	$
+;
+savsp:	ds	2
+retloc:	ds	2
+newpc:	ds	2
+;
+if	extended
+cbank:	ds	1
+endif;EXTENDED
+;
+temptrace:
+	ds	1
+numbreaks:
+	ds	1
+breaklist:
+	ds	(maxbreaks+2)*5+1
+;
+; Break list format:
+;
+;	db	number of active entries
+; each entry:
+;	dw	address
+;	db	bank	(unused for non-extended version)
+;	db	condition-flag
+;	db	storage for original contents of location
+;
+varspace equ	$-vars
+
+	end
+or non-extended version)
+;	db	condition-flag
+;	db	storage for original contents of location
+;
+varspace equ

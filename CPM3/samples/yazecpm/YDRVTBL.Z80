@@ -1,0 +1,257 @@
+	title	Drive tables for the Modular CP/M 3.1 BIOS of yaze-ag
+	subttl	Copyright (C) 2000,2002	Andreas	Gerlich
+	page 65,132
+;
+; This file is part of yaze-ag - yet another Z80 emulator by ag.
+;
+; Copyright (C) 2002 Andreas Gerlich (Andreas.Gerlich@mathematik.uni-ulm.de)
+;
+; Yaze-ag is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free
+; Software Foundation; either version 2 of the License, or (at your
+; option) any later version.
+;
+; This program is distributed in the hope that it will be useful, but
+; WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program (see the file COPYING);
+; if not, write to the Free Software Foundation, Inc.,
+; 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+;
+
+	.list
+
+	public	@dtbl
+	public	dph0,dph1,dph2,dph3,dph4,dph5,dph6,dph7,dph8
+	public	dph9,dph10,dph11,dph12,dph13,dph14,dph15
+
+	public	t$sssd	; translation table for SSSD disks
+
+	maclib	sysdef
+	;
+	; MAXDSM  ; max blocks of storage capacity (defined in sysdef.lib)
+	; MAXDRM  ; max numbers of directory entries (defined in sysdef.lib)
+
+	; CP/M 3 Disk definition macros
+
+	maclib	cpm3-slr	; cpm3.lib for slr180/z80asm(slr)
+
+;--------------------------------------------------------------------------
+
+	DSEG	;<-------------- banked memory
+
+		; @dtvl may be resident in banked memory
+
+
+@dtbl:	dw	dph0	; A:
+	dw	dph1	; B:
+	dw	dph2	; C:
+	dw	dph3	; D:
+	dw	dph4	; E:
+	dw	dph5	; F:
+	dw	dph6	; G:
+	dw	dph7	; H:
+	dw	dph8	; I:
+	dw	dph9	; J:
+	dw	dph10	; K:
+	dw	dph11	; L:
+	dw	dph12	; M:
+	dw	dph13	; N:
+	dw	dph14	; O:
+	dw	dph15	; P:
+
+
+;--------------------------------------------------------------------------
+
+	DSEG	;<-------------- banked memory
+
+		; DPHs may be resident in banked memory
+
+
+dph0	dw	NOtranstbl	; translate table address
+	db	0,0,0,0,0,0,0,0,0 ; BDOS scratch area
+	db	0		; media flag
+	dw	dpb0		; disk parameter block
+
+if NOT ldrbios
+	;
+	; dw	00000h		; no checksum vector
+	; dw	0FFFEh		; checksum vector by GENCPM
+	dw	csv0		; own checksum vector generation (see above)
+	;
+	dw	alv0		; own allocation vector generation (see above)
+	;
+	dw	0FFFEh		; DIRBCB allocated by GENCPM
+	dw	0FFFEh		; DTABCB allocated by GENCPM
+	dw	0FFFEh		; HASH allocated by GENCPM
+else
+	dw	csv		; checksum vector
+	dw	alv		; allocation vector
+	dw	dirbcb		; DIRBCB
+	dw	0FFFFh		; DTABCB
+	dw	0FFFFh		; HASH
+endif
+	db	0		; HASH bank
+;
+;
+if ldrbios
+
+csv:	ds	0200H,0H	; checksum vector
+alv:	ds	1024,0H		; allocation vector
+
+dirbcb:	db	0FFh		; disk drive
+	db	0,0,0		; record position
+	db	0		; write buffer flag
+	db	0		; BDOS scratch byte
+	db	0,0		; track
+	db	0,0		; sektor
+	dw	dirbuf		; directory buffer
+	;
+	dw	0FFFFH		; hash (not used in nonbanked)
+	db	0		; hashbank (not used in nonbanked)
+
+	; directory buffer
+dirbuf:	ds	128,0DDH
+
+endif
+
+;
+;
+;
+
+	IRP	no,<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15>
+
+dph&no	dw	NOtranstbl	; translate table address
+	db	0,0,0,0,0,0,0,0,0 ; BDOS scratch area
+	db	0		; media flag
+	dw	dpb&no		; disk parameter block
+	;
+	; dw	00000h		; no checksum vector
+	; dw	0FFFEh		; checksum vector by GENCPM
+	dw	csv&no		; own checksum vector generation (see above)
+	;
+	dw	alv&no		; own allocation vector generation (see above)
+	;
+	dw	0FFFEh		; DIRBCB allocated by GENCPM
+	dw	0FFFEh		; DTABCB allocated by GENCPM
+	dw	0FFFEh		; HASH allocated by GENCPM
+	db	0		; HASH bank
+
+	ENDM
+
+;--------------------------------------------------------------------------
+
+
+	CSEG	;<-------------- COMMON memory
+
+		; DPB's must be resident in common memory
+
+
+DSM	equ	MAXDSM		; 4096-1 see sysdef.lib
+				; until 8 MB disks (2 KB block size) or
+				; until 16MB disks if block size is 4 KB
+				; until 32MB disks if block size is 8 KB
+				; until 64MB disks if block size is 16 KB
+
+ALVsize	equ	(DSM/4)	+ 1	; calculated allocation size
+
+DRM	equ	MAXDRM		; 2048-1 see sysdef.lib
+				; 2048 Directory entries
+				; 2048 directory entries are necessary to
+				; mount UNIX directories
+
+CKS	equ	08000H	+  ((DRM/4) + 1)
+		;^^^^ permanent mounted - but the Yaze-bios set the @MEDIA
+		;     in the SCB and the Media flag in the DPHs if necessary.
+		;
+		;     See page 36 ff in the System Guide ("Disk Parameter
+		;     Header") the field CSV and page 40 ff the field CKS.
+		;
+		;     In addition, see also page 107 ("Appendix A: Removable
+		;     Media Considerations") !!!
+
+; folgende Zeile erlaubt beim Entwickeln immer ein Changedisk zu erkennen
+; (sollte ich in einem anderen Fenster ausversehen eine Disk veraendert haben
+;  zum Beispiel beim Start von CPM3 und Submit !!!)
+;
+;; CKS	equ	((DRM/4) + 1)i ; immer checksum check (ohne OR 08000H !!!)
+
+
+	IRP	no,<0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15> ; A: - P:
+
+dpb&no	dw	128	; SPT
+	db	4,15	; BSH, BLM  --> 2048 bytes is one block
+	db	0	; EXM
+	dw	DSM	; DSM
+	dw	DRM	; DRM
+	db	0ffh,0ffh ; AL0, AL1
+	;
+	dw	CKS	; CKS
+	;
+	dw	0	; OFF
+;;;	db	5,31	; PSH, PHM  --> 4096 bytes physical sector
+	db	4,15	; PSH, PHM  --> 2048 bytes physical sector
+;;;	db	3,7	; PSH, PHM  --> 1024 bytes physical sector
+;;;	db	0,0	; PSH, PHM  --> 128 bytes physical sector
+
+	endm
+
+;------------------------------
+;	Sektor
+;	size	PSH	PHM
+;------------------------------
+;	128	0	 0
+;	256	1	 1
+;	512	2	 3
+;      1024	3	 7
+;      2048	4	15
+;      4096	5	31
+;
+;--------------------------------------------------------------------------
+
+
+	DSEG	;<-------------- banked memory
+
+	; allocation and checksum vector
+
+	; allocation vectors
+	;
+	IRP	no,<0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15>
+alv&no:: defs	ALVsize,0	; allocation vector
+;alv&no:: equ	0FFFEh		; allocation vector by GENCPM
+	ENDM
+
+
+	; checksum vectors
+	; if checksize is defined (without the MSB) a CSV is defined
+	; else "CSV equ 0".
+	;
+	IRP	no,<0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15>
+	if	CKS and	07fffh ; if checksize is defined (without the MSB)
+csv&no:: defs	CKS and	07fffh,0	; checksum vector
+;csv&no:: equ	0FFFEh			; checksum vector by GENCPM
+	else
+csv&nO:: equ	0	; NO checksum vector
+	endif
+	ENDM
+
+;--------------------------------------------------------------------------
+
+
+	DSEG	;<-------------- banked memory
+
+	;may be banked
+
+
+NOtranstbl equ	0		; NO translation table
+
+t$sssd:	skew 26,6,0		; instead with 1 begin with 0
+
+;--------------------------------------------------------------------------
+
+
+	end
+

@@ -1,0 +1,605 @@
+; PPIP-0.Z80
+
+; <<0>> 	    Start of code - MAIN module
+
+	JP	START		; Jump to real start of program
+;
+	 IF	ZCPR3		; ZCPR3 header
+	DB	'Z3ENV'
+	DB	01
+Z3EADR:
+	DW	0
+	 ENDIF			; ZCPR3
+
+;=======================================================================
+
+; User customizable values
+
+RETRY:	DB	3		; Number of retries if CRC error (0 = none)
+MAXDRV:	DB	'P'		; Max. accessible drive (CHARACTER)
+MAXUSR:	DB	15		; Max. accessible user (0..31 only)
+SWITCH:	DB	'/'		; Character used to activate options
+
+;-----------------------------------------------------------------------
+
+; Options Switches.  This is a very simple option scheme.  Options are
+; stored in memory in 2 bytes.	The first is the option character and
+; the second is the option status.  The options used here are either ON
+; or OFF.  No other values are used.
+;
+; To make it possible to rerun the code with the GO command, there is a
+; configuration copy of the option switches here and a working copy in
+; the uninitialized data area.	The configuration options are copied
+; into the working options at the beginning of the program.
+;
+OPTIONS0:
+	DB	'V'		; Do CRC Verification
+VERIFY0:
+	DB	OFF
+
+	DB	'C'		; Report CRC values
+REPORT0:
+	DB	OFF
+
+	DB	'A'		; Copy Archived files
+ARCHIV0:
+	DB	OFF
+
+	DB	'E'		; Delete (Emend) R/W files without asking
+EMEND0:
+	DB	OFF
+
+	DB	'W'		; Delete (Wipe) R/W and R/O files not asking
+WIPE0:
+	DB	OFF
+
+	DB	'M'		; Move File (Copy, then delete source)
+MOVF0:
+	DB	OFF
+
+	DB	0		; Zeros mark end of table
+
+OPTSIZE	EQU	$ - OPTIONS0
+
+;=======================================================================
+
+; Main line code
+;
+; Set up stack, initialize RAM, and find top of available memory
+;
+START:
+	LD	HL,DATA		; Zero out uninitialized data area
+	LD	BC,400H		; 1K should be plenty
+INIT:
+	LD	(HL),0		; Write the null
+	INC	HL		; Point to next byte
+	DEC	BC		; Decrement count
+	LD	A,B		; Check for end
+	OR	C
+	JP	NZ,INIT		; If more, loop
+	LD	HL,ARGBUF	; Initialize ARGV pointer
+	LD	(ARGV),HL
+	LD	HL,NARGBUF	; Initialize IOBUF pointer
+	LD	(IOBUF),HL
+	LD	HL,0		; Save old stack pointer
+	ADD	HL,SP
+	LD	(OLDSP),HL
+	LD	SP,STACK	; Set local stack
+	LD	HL,OPTIONS0	; Copy configuration options
+	LD	DE,OPTIONS	; ..to working options
+	LD	B,OPTSIZE
+	CALL	MOVE
+	CALL	TPASET		; Set top of TPA
+
+	 IF	ZCPR3		; Get ENV values from memory
+	LD	HL,(Z3EADR)	; Get ENV address from header
+	LD	A,H		; See if program installed
+	OR	L
+	JP	Z,NOTZ3		; Barf if not ZCPR3
+	LD	DE,ENVOFF	; Offset to ENV address in ENV
+	EX	DE,HL		; We want to keep ENV address
+	ADD	HL,DE		; Now HL should be pointing to the value
+	LD	A,(HL)		; ..in DE
+	CP	E
+	JP	NZ,NOTZ3	; If not, not installed correctly
+	INC	HL		; Check high byte
+	LD	A,(HL)
+	CP	D
+	JP	NZ,NOTZ3	; Again, if mismatch, not installed
+	LD	HL,MDSKOF	; Offset to high disk in DE
+	ADD	HL,DE		; Add it in
+	LD	A,(HL)		; Read out value
+	ADD	A,'@'		; Make ASCII for PPIP
+	LD	(MAXDRV),A	; Put into place
+	INC	HL		; Bump pointer to high user
+	LD	A,(HL)		; Read out value
+	LD	(MAXUSR),A	; Poke it in as-is
+	INC	HL		; Bump pointer to DUOK byte
+	LD	A,(HL)		; Read it out
+	LD	(DUOKFL),A	; And store it in dead space
+	INC	HL		; Bump to CRT selection byte
+	LD	A,(HL)		; Read it out
+	DEC	A		; Decrement to test for a 1
+	JP	NZ,CRTZRO	; Use CRT 0
+	INC	HL		; B
+	INC	HL		; U
+	INC	HL		; M
+CRTZRO:
+	INC	HL		; P
+	INC	HL		; S
+	LD	A,(HL)		; Get width of chosen CRT
+	LD	(ZSWID),A	; Store it in a dead ASCII spot
+	 ENDIF			; ZCPR3
+
+; Parse the command line
+
+PARSCMD:
+	LD	A,(DFCB+NAMOFF)	; Check default FCB
+	CP	'/'		; For Z3-style help query
+	JP	Z,HELP		; Branch if found
+	CALL	PARSE		; Parse the command line
+	LD	A,(ARGC)	; Get arg count
+	OR	A		; Test for zero
+	JP	Z,HELP		; Help user if no arguments
+	CALL	GETOPT		; Get options from command line
+	CP	3		; Less than 3 arguments ?
+	JP	C,SAVEDU	; YES - move on
+
+; Tell user we are ignoring superfluous arguments
+
+	LD	C,A		; Put arg. count into C
+	LD	B,2		; Initialize index to THIRD argument
+	CALL	ILPRT		; Tell user
+	DB	CR,LF,'Ignoring:',CR,LF,0
+IGNORE:
+	LD	A,TAB		; Tab in
+	CALL	TYPE
+	LD	A,B		; Get index in Acc.
+	CALL	GETARGV		; Get argument address
+	CALL	PRINT		; Print the argument
+	CALL	NEWLINE		; Plus cr/lf
+	INC	B		; Increment index
+	LD	A,B		; Get index
+	CP	C		; Is it last one ?
+	JP	C,IGNORE	; NO - continue until all done
+
+; Get and save current (default) disk and user
+
+SAVEDU:
+	CALL	GETDU		; Get current drive/user from CP/M
+	LD	A,B		; And save it locally
+	LD	(DRIVE),A
+	LD	A,C
+	LD	(USER),A
+
+; Reset the disk system, if necessary
+
+RESET:
+	LD	L,0		; Zero out L register
+	LD	C,ZRDVER	; Set up to see if we run ZRDOS
+	CALL	BDOS		; Call it in
+	LD	A,L		; MSB to A
+	OR	A		; Zero means DRI BDOS, so reset
+	JP	NZ,ZRDYES	; Otherwise no reset required
+	LD	C,RSTDSK	; Set up for disk system reset
+	CALL	BDOS		; Call it in
+
+; Check command mode
+
+ZRDYES:
+	LD	HL,CMDBUF+3	; First place to look for '='
+EQSCAN:
+	LD	A,(HL)		; Char in A
+	CP	'='		; Is it or isn't it?
+	JP	Z,CPMODE	; If it is, we have CP/M syntax
+	INC	HL		; Bump the pointer
+	OR	A		; Check for terminating null
+	JP	NZ,EQSCAN	; If not yet, keep looping
+	JP	CONCHK		; Go, do with MS-DOS syntax, 1.3
+CPMODE:
+	LD	A,(ARGC)	; Get argument count for CP/M mode
+	CP	2		; Two arguments ?
+	JP	C,CONCHK	; NO - then mode doesn't matter
+	XOR	A		; Else get index for argument 0
+	CALL	SWAPARG		; And swap it with argument 1
+
+; See if console (CON:) is the source "file"
+
+CONCHK:
+	XOR	A		; Index to argument 0
+	CALL	GETARGV		; Get address in HL
+	LD	DE,CONNAM	; DE points to 'CON:'
+	LD	B,4		; B = 4 (characters in the name)
+	CALL	STRNCMP		; Compare and if not CON:
+	JP	NZ,MFN		; Then go do a regular file-to-file copy
+	LD	A,(ARGC)	; Get argument count
+	CP	2		; Two of 'em ?
+	JP	C,NODEST	; NO - error
+	LD	A,ON		; Else turn console copy operation flag ON
+	LD	(CONOP),A
+	JP	ALLOC		; And allocate memory for the buffer
+;
+NODEST:
+	CALL	ILPRT		; Else error and quit
+	DB	'No destination file specified.',CR,LF,0
+	JP	DONE
+
+; Set up File Control Blocks
+
+MFN:	XOR	A		; Set arg number 0
+	CALL	GETARGV		; Get argument address in HL
+	LD	DE,SOURCE	; And point DE to address of source FCB
+	CALL	DOWILD		; Then do wild card expansion
+	JP	C,DONE		; Done if error or no file
+	LD	A,(ARGC)	; Get arg. count
+	CP	2		; Are there two arguments ?
+	JP	NC,MFN2		; YES - get destination file name
+
+MFN1:
+	LD	DE,TEMP+USROFF	; Else install current drive and user
+	LD	A,(USER)	; Into the temporary FCB
+	LD	(DE),A
+	INC	DE
+	LD	A,(DRIVE)
+	INC	A
+	LD	(DE),A
+	INC	DE		; Point to name field in temp. FCB
+MFN1A:
+	LD	HL,SOURCE+NAMOFF; Then copy source name to temp. FCB
+	LD	B,FCBSZ-1
+	CALL	MOVE
+	JP	ALLOC		; Temp. FCB is complete
+
+MFN2:
+	LD	A,1		; Get index for SECOND argument
+	CALL	GETARGV		; And get address of dest. file name
+	LD	DE,TEMP		; And point to temporary FCB
+	CALL	EXPAND		; And expand second arg. into temp. FCB
+	JP	C,DONE		; Done now if error
+	INC	DE		; Point to first character in temp. FCB
+	LD	A,(DE)		; Get it
+	CP	' '		; If nothing is there (DU: only)
+	JP	Z,MFN1A		; Then copy source file name
+
+; Calculate the size of our disk I/O buffer
+
+ALLOC:
+	LD	HL,(MEMTOP)	; Get address of last available ram
+	EX	DE,HL		; Put it into DE
+	LD	HL,(IOBUF)	; Get address for beginning of iobuf in HL
+	CALL	SUB16		; DE = DE (memtop) - HL (iobuf) = bufsize
+	JP	C,NORAM		; Error if no memory available
+	LD	HL,RECSZ	; Get record size (bytes)
+	LD	BC,0		; Initialize counter for divide
+ALLOC1:
+	CALL	SUB16		; Bytes in buffer/bytes in record =
+	JP	C,ALLOC2	; Records in buffer
+	INC	BC
+	JP	ALLOC1
+ALLOC2:
+	LD	H,B		; Put result into HL
+	LD	L,C
+	LD	(BUFRECS),HL	; And squirrel it away
+	LD	A,H		; Do we have any memory available?
+	OR	L		; Test for zero
+	JP	NZ,ANYCOPY	; And move on if we do
+NORAM:
+	CALL	ILPRT		; Else error
+	DB	'Out of memory.',CR,LF,0
+	JP	DONE		; And quit
+
+; Select either the file-to-file or console-to-file routine
+
+ANYCOPY:
+	LD	A,(CONOP)	; Get console op. flag
+	OR	A		; Test
+	JP	Z,COPY		; And do file-to-file if zero
+
+; Copy from console to file
+
+CONCPY:
+	LD	A,1		; Get index for destination
+	CALL	GETARGV		; And get file name address for it
+	LD	DE,DEST		; Make an FCB for dest. file
+	CALL	EXPAND
+	JP	C,DONE		; Quit if name error
+	LD	A,(DEST+NAMOFF)	; See if there is a name specified
+	CP	' '+1		; By looking for a space at dest. FCB
+	JP	C,NODEST	; Error if no file name there
+	LD	A,'?'		; See if there is a wild card in the name
+	LD	HL,DEST+NAMOFF	; By searching FCB for a '?'
+	CALL	POS
+	JP	Z,CNCPY1	; Continue if none found
+	CALL	ILPRT		; Else error
+	DB	'Wildcards not allowed.',CR,LF,0
+	JP	DONE
+
+CNCPY1:
+	LD	HL,DEST		; Point to dest. FCB
+	CALL	PRNFNAM		; Print the file name
+	CALL	NEWFILE		; Create a new file
+	JP	C,DONE		; Done if file can't be created
+	CALL	ILPRT		; Tell them it's ok to proceed
+	DB	CR,LF,'File is open.  Use ^Z to quit.',CR,LF,LF,0
+	LD	HL,(IOBUF)	; Load buffer address
+	CALL	EDIT		; And go get console input
+	LD	E,A		; A=no. bytes remaining
+	LD	A,80h
+	SUB	E		; A:=no. bytes used in last record
+	LD	DE,DEST-2
+	LD	(DE),A		; Set LRBC
+	INC	DE
+	INC	DE		; Write everything to file
+	LD	HL,(IOBUF)	; From the buffer
+	CALL	BLKWRT
+	JP	NC,CNCPY2	; Continue if write ok
+	CALL	ILPRT		; Else error - erase old file
+	DB	CR,LF,'Disk is full.  Deleting file.',CR,LF,0
+	CALL	FDELETE
+	JP	DONE		; And quit
+
+CNCPY2:
+	CALL	FCLOSE		; All is ok so close the file
+	JP	DONE		; That's all
+
+; Copy source files to destination files with CRC
+
+COPY:
+	CALL	INITCRC		; Initialize CRC tables
+	LD	DE,LAST		; Initialize "last" name
+	LD	B,FNAMSZ
+	LD	A,' '
+	CALL	PAD
+	LD	A,(RETRY)	; Initialize retry count
+	LD	(ATTMPT),A
+	LD	HL,NARGBUF	; Point to beginning of file names
+	CALL	ILPRT		; Tell user what we're doing
+	DB	'COPYING:',CR,LF,0
+
+; Main copy loop
+
+COPY0:
+	PUSH	HL		; Save the nargbuf address from harm
+	LD	DE,SOURCE+NAMOFF ; Point to source FCB name field
+	LD	B,FNAMSZ	; Get character count for name
+	CALL	MOVE		; Move the name into the source FCB
+	LD	HL,SOURCE	; Create the destination name by
+	LD	DE,DEST		; Matching wild cards in temporary FCB
+	LD	BC,TEMP		; With those in the source FCB
+	CALL	MTCHWLD
+	LD	HL,SOURCE	; Print the file names involved
+	CALL	PRNFNAM
+	CALL	ILPRT
+	DB	' to ',0
+	LD	HL,DEST
+	CALL	PRNFNAM
+	LD	A,(ARCHIV)	; See if this is an archive operation
+	CP	ON
+	JP	NZ,CHKWID	; And move on if not
+	LD	A,(SOURCE+ARCOFF) ; Get archive byte from name
+	AND	080H		; Is it set?
+	JP	Z,CHKWID	; NO - then ok to copy
+	CALL	ILPRT
+	DB	' Archived',0	; Else let them know
+	JP	COPYDUN		; And try next file
+
+CHKWID:
+	 IF	NOT ZCPR3	;
+	  IF 	CPM3
+	LD	DE,SCBPB1	;Get screen width
+	LD	C,31h		;from System Control Block
+	CALL	BDOS
+	INC	A
+	  ENDIF			;CPM3
+	  IF	NOT CPM3
+	LD	A,SWID		; Newline issued if width < 80
+	  ENDIF			; NOT CPM3
+	 ENDIF			; NOT ZCPR3
+
+	 IF	ZCPR3
+	LD	A,(ZSWID)
+	 ENDIF			; ZCPR3
+
+	CP	80
+	JP	NC,CKSAME
+	CALL	NEWLINE
+CKSAME:
+	LD	HL,SOURCE+USROFF ; Compare source and dest. FCB's
+	LD	DE,DEST+USROFF
+	LD	B,FNAMSZ+2
+	CALL	STRNCMP
+	JP	NZ,CKLAST	; And move on if not the same
+	CALL	ILPRT		; Else error
+	DB	' Can''t copy to same drive/user.',0
+	JP	DONE		; And quit now
+
+CKLAST:
+	LD	HL,DEST+NAMOFF	; Compare dest. name with last name
+	LD	DE,LAST		; To determine whether the last
+	LD	B,FNAMSZ	; File will be overwritten (this allows us
+	CALL	STRNCMP		; To avoid an EXISTS error in cases where
+	JP	NZ,COPYFIL	; We can figure out what has happened)
+;
+	CALL	ILPRT		; Tell user we'll pass on this one
+	DB	' Duplicate!',0
+	JP	COPYDUN		; And skip the rest
+
+; Copy happens
+
+COPYFIL:
+	LD	HL,SOURCE	; Get source
+	LD	DE,DEST		; And destination FCB's
+
+	 IF	Z80DOS OR CPM3
+	LD	A,1
+	LD	(CPYING),A
+	 ENDIF			; Z80DOS OR CPM3
+
+	CALL	FCOPY		; Do it
+
+	 IF	Z80DOS OR CPM3
+	LD	A,0
+	LD	(CPYING),A
+	 ENDIF			; Z80DOS
+
+	JP	NC,CRCHK	; Continue if no error
+	LD	A,(FERROR)	; Fatal file error?
+	OR	A
+	JP	NZ,DONE		; YES - then quit
+	JP	COPYDUN		; Else try next file
+
+; Copy done - do CRC
+
+CRCHK:
+	LD	A,(VERIFY)	; Get verify option
+	CP	OFF		; Is it off?
+	JP	Z,SAVLAST	; YES - then skip CRC
+	LD	HL,(CRCVAL)	; Move crcval
+	LD	(CRCVAL2),HL	; To crcval2
+	CALL	ILPRT
+	DB	' - Verifying ',0
+	LD	DE,DEST		; Point to destination FCB
+	CALL	FCRC		; Do the crc check
+	JP	C,DONE		; Quit now if error
+	LD	HL,(CRCVAL2)	; Get source crc
+	EX	DE,HL		; Into DE
+	LD	HL,(CRCVAL)	; And dest. crc into HL
+	CALL	SUB16		; Test
+	JP	Z,CRCOK		; Good copy if zero
+	CALL	ILPRT		; Else admit that we blew it
+	DB	'failed!',CR,LF,0
+	LD	A,(ATTMPT)	; Get number of retry attempts
+	OR	A		; Test for zero
+	JP	NZ,AGAIN	; And try again if more tries are allowed
+	CALL	ILPRT		; Else, send error message
+	DB	CR,LF,'Please check your disk.',BELL,CR,LF,0
+	JP	DONE		; And bail out
+
+AGAIN:
+	DEC	A		; Decrement attempt count
+	LD	(ATTMPT),A	; Save it
+	POP	HL		; Restore pointer to file name
+	LD	DE,DEST		; Point to destination FCB
+	CALL	FDELETE		; And delete the offending file
+	JP	COPY9		; And try the copy again
+
+CRCOK:
+	CALL	ILPRT		; Tell 'em the copy is good
+	DB	'OK ',0
+	LD	A,(RETRY)	; Re-init. retry count
+	LD	(ATTMPT),A
+	LD	A,(REPORT)	; See if we need to print the CRC value
+	CP	OFF		; Move on
+	JP	Z,SAVLAST	; If not
+	LD	HL,(CRCVAL)	; Else get the value
+	CALL	DHXOUT		; And print it
+
+; Copy is finished - save destination as last
+
+SAVLAST:
+	 IF	DATESTAMP	;
+	CALL	COPYDATE	; Copy source time stamp to destination
+	 ENDIF			; DATESTAMP
+;
+; NEW /M OPTION CODE
+;
+	LD	A,(MOVF)
+	CP	ON
+	JP	NZ,SAVLAST1	; IF MOVE NOT REQUESTED
+	CALL	ILPRT
+	 IF	DATESTAMP
+	DB	CR,LF		; FOLD LINE
+	 ENDIF
+	DB	'- Erasing ',0
+	LD	HL,SOURCE	; SOURCE FCB
+	PUSH	HL
+	CALL	PRNFNAM		; SHOW WHAT FILE WE'RE KILLING
+	POP	DE
+	CALL	FSETUSR		; SET USER AREA
+	CALL	FDELETE		; ERASE SOURCE
+;
+SAVLAST1:
+	LD	HL,DEST+NAMOFF	; Point to dest. FCB, name field
+	LD	DE,LAST		; And "last" buffer
+	LD	B,FNAMSZ	; Get count of name characters
+	CALL	MOVE		; And copy dest. name to last name
+
+; Set attributes
+
+	LD	A,(EXISTS)	; Did dest. file exist?
+	OR	A
+	JP	Z,ATTNEW	; NO - then copy source attributes to dest.
+	LD	A,(RO)		; Was existing file read-only?
+	OR	A
+	JP	Z,ATTARC	; NO - then move on
+	LD	A,(DEST+ROOFF)	; Else set R/O bit back on
+	OR	080H		; (we had to turn it off to write the file)
+	LD	(DEST+ROOFF),A
+	JP	ATTARC		; And move on
+
+ATTNEW:
+	LD	DE,SOURCE+NAMOFF ; Point to source FCB.name
+	LD	HL,DEST+NAMOFF	; And to destination FCB.name
+	LD	B,FNAMSZ	; And load count of name characters
+ATTNW1:
+	LD	A,(HL)		; Turn dest. attribute off as default
+	AND	07FH
+	LD	(HL),A
+	LD	A,(DE)		; Get a byte from source
+	AND	080H		; Mask the attribute bit
+	OR	(HL)		; And IF SET then dest. will be set too
+	LD	(HL),A
+	INC	HL		; Bump pointers
+	INC	DE
+	DEC	B		; Decrement count
+	JP	NZ,ATTNW1	; And continue until every byte is done
+ATTARC:
+	LD	A,(ARCHIV)	; See if this is an archive operation
+	CP	ON
+	JP	NZ,ATTDST	; NO - then don't worry about archive attrib
+	LD	A,(SOURCE+ARCOFF) ; Else get source archive byte
+	OR	080H		; Set archive bit
+	LD	(SOURCE+ARCOFF),A ; Put it back
+	LD	A,(DEST+ARCOFF)	; Clear destination archive bit
+	AND	07FH
+	LD	(DEST+ARCOFF),A
+	LD	DE,SOURCE	; Point to source FCB
+	CALL	ATTRBUT		; And set archive attribute for source
+ATTDST:
+	LD	DE,DEST		; Point to dest FCB
+	CALL	ATTRBUT		; Set attributes into directory
+COPYDUN:
+	LD	HL,(NARGC)	; Get argument count
+	DEC	HL		; Decrement it
+	LD	(NARGC),HL	; And save the result
+	LD	A,H		; Test if for zero
+	OR	L
+	POP	HL		; Restore pointer to names
+	JP	Z,DONE		; And done if args. exhausted
+	CALL	NEWLINE		; Next console line
+	LD	DE,FNAMSZ	; Set DE to the size of one name
+	ADD	HL,DE		; And increment buffer pointer by this much
+COPY9:
+	CALL	KEYPRESS	; Check console status - any key ?
+	JP	Z,COPY0		; NO - loop
+	CALL	GETKEY		; Else get the key
+	CP	BRKKEY		; Break key?
+	JP	NZ,COPY0	; NO - loop
+USRABRT:
+	CALL	ILPRT
+	DB	CR,LF,'User abort',CR,LF,0
+
+; Exit point: resets current DU:, reloads old SP, and returns to CP/M
+
+DONE:	LD	A,(DRIVE)
+	LD	B,A
+	LD	A,(USER)
+	LD	C,A
+	CALL	SETDU
+DONEX:
+	LD	HL,(OLDSP)
+	LD	SP,HL
+	RET
+;			  end of routine
+;-----------------------------------------------------------------------
+

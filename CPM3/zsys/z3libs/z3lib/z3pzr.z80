@@ -1,0 +1,65 @@
+	TITLE	"Z3PZR - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3PZR.Z80 Ver 1.1 by Richard Conn
+; Date    : 29 Mar 89
+; Version : 1.2
+; Module  : Z3PZR
+; Abstract: This module contains the routine PUTZRUN which sets
+;	the ZEX run message byte with a specified value
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		PUTZRUN
+
+;  External References
+
+	EXT		ENVPTR
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PUTZRUN
+; Entry:  A - Contains value to put in ZEX run message byte
+; Exit :  A - Unknown, Carry Clear if Message Placed
+;	      Carry Set (C) if No message available
+; Uses AF
+; Special Requirements: None
+;===============================================================
+
+PUTZRUN: PUSH	HL
+	PUSH	AF		;save value
+	LD	HL,(ENVPTR)	;pt to environment
+	LD	A,H		;any environment?
+	OR	L
+	JR	Z,ERROR
+	PUSH	DE		;pt to message byte
+	LD	DE,34		;offset to message ptr
+	ADD	HL,DE
+	LD	A,(HL)		;get address of messages
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		;HL pts to message
+	OR	H		;any messages?
+	JR	Z,ERROR0
+	LD	DE,8		;pt to Zex Running Flag
+	ADD	HL,DE
+	POP	DE
+	POP	AF		;get byte
+	LD	(HL),A		;put byte
+	OR	A		; ..clear Carry flag
+	POP	HL		;restore HL
+	RET
+
+ERROR0:	POP	DE
+ERROR:	POP	AF		;restore A
+	POP	HL		;restore HL
+	SCF			;set carry
+	RET
+
+	END
+

@@ -1,0 +1,284 @@
+
+                               CHN
+                           Version 3.1
+
+                          Gene Pizzetta
+                          June 15, 1987
+
+
+CHN creates a command (.COM) file that, when called from the CP/M 
+prompt, will cause another command or chain of commands to be 
+executed.  The command files created by CHN may be chained one to 
+another, they may call nested submit files, they may be called by 
+submit files, and they support (and even enhance) CP/M 3's 
+conditional batch operations.  The commands may also contain 
+SUBMIT- style parameter markers ("$n") to be filled in from the 
+command line when the command file is called.  Thus CHN is 
+somewhat similar to EX (CP/M 2.2) and ALIAS (ZCPR).  The multiple 
+commands in each command file may contain up to a total of 128 
+characters, and each command will be executed by the CCP rather 
+than by the command file itself.  The command files are small 
+(512-byte) self-contained programs.  CHN.COM is only needed to 
+create and edit them.
+
+NOTE:  The command files created by CHN will run only under CP/M
+Plus (CP/M 3.0) and require a Z80 CPU.
+
+
+USAGE:
+
+     CHN {{d:}<fn>} {[<command>{\<command>{ ... }}}
+
+The filename is the name of the command file you want CHN to
+create or edit and it may not be ambiguous.  If a filename is not
+given in the command line, it will be requested by the program.
+If a drive specification is not given, the command file will be
+created on the current (default) drive.  The file created will be
+a .COM file, so it is not necessary to give a filetype (if a
+filetype is given it will be ignored).
+
+If a filename is given on the command line, then a command line 
+to be placed in the file can be given following a left bracket 
+([).  A command line entered this way must be slightly shorter 
+than 128 characters because the CCP will include "CHN" and the 
+output filename as part of its 128 character limit.  In addition, 
+the CCP will truncate the command line at the first exclamation 
+point so they cannot be used to separate multiple commands for 
+your CHN-created file.  You may, however, use backslashes (\) for 
+the same purpose.  CHN will convert all backslashes to 
+exclamations before entering them into the command file.  
+Backslashes are seldom used in commands, but if you need to enter 
+one then omit the command line from the command tail.  (This 
+command line mode is best not used until your experienced with 
+CHN and feel comfortable with it.)
+
+If the command line is not given then CHN will request that you
+enter one:
+
+     COMMAND LINE:
+
+     >
+
+Enter a single command, or multiple commands separated by 
+exclamation points (!) up to 128 characters long.  Conditional 
+commands should have a colon (:) immediately after the 
+exclamation point and before the command itself; a conditional 
+command will not be executed if the preceding command returns a 
+"failure" code to the BDOS.  (Very few programs support the 
+"failure" code, unfortunately.  But this one does, as does SLR's 
+Z80ASM, and many public domain programs can be easily modified to 
+do so.)
+
+Note:  ^C or a null entry at the filename or command line request
+will abort the program.
+
+For example, if you tell CHN to create the program ALLCOM.COM and
+enter the following command line:
+     d a:*.com!d b:*.com!d c:*.com!d d:*.com
+then just typing "ALLCOM" at the system prompt will show you the 
+.COM files on all four drives.  This command file could be 
+created all in one step by entering the following at the CP/M 
+prompt:
+     A>chn allcom [d a:*.com\d b:*.com\d c:*.com\d d:*.com
+
+Or you can create a file called ASM.COM that contains the 
+following command line:
+     z80asm sample!:link sample
+which will assemble SAMPLE.Z80, but will skip the linking 
+operation if any errors occur.
+
+Unlike SUBMIT, CHN's command files do not support program input,
+but you can call a .SUB file from within the command file if
+program input is needed.  SUBMIT may be called, including the
+passing of parameters to the .SUB file.  When execution of the
+.SUB file is completed, the remaining commands in the command
+file will be executed.
+
+
+EDITING:  If CHN finds a .COM file of the same name already 
+exists, you will be asked if you want to edit it.  If your reply 
+is anything other than "Y" then CHN will ask you for a new 
+filename.
+
+If you reply with "Y" then CHN will try to read the command line
+from the file.  If the .COM file turns out to be something other
+than a command file created by CHN, then CHN will complain and
+abort.
+
+If the command line is successfully read, if will be displayed on 
+the screen for editing.  Any of the CP/M Plus command line 
+editing keys may be used.  The most important editing keys will 
+be displayed in a small help line to remind you.  Pressing return 
+at any point in the line causes CHN to accept the entire line as 
+currently displayed and write it to the file.
+
+Read DRI's manuals to learn the details of command line editing.
+There is one complication that might be worth mentioning here: if
+your command is longer than one physical screen line, you won't
+be able to use ^B to go to the beginning of the logical line if
+you cursor is on the second line.  You must use ^R to redisplay
+the line.
+
+
+PARAMETERS:  Parameters may be passed to the command file from
+the command line just like SUBMIT.  Use a dollar sign followed by
+a number 1 through 9 (like SUBMIT, parameter 0 is not supported).
+Arguments from the command line will be assigned numerically in
+the order that they appear; i.e., the first argument will replace
+"$1", the second argument will replace "$2", etc.  Just like
+SUBMIT, two dollar signs ("$$") in succession in the command
+file's command line will be entered as a single real dollar sign
+and will not be replaced by an argument.  Arguments taken from
+the command line are limited to 14 characters each.
+
+For instance, you might enter the following command line in a
+command file named RASM.COM:
+     rmac $1 $$la!rmac $2 $$la!link $1,$2,$stdlib.irl[s]!
+     era $1.rel!era $2.rel
+Then you call the command file at the system prompt by typing:
+     B>rasm prog1 prog2
+which would assemble PROG1.ASM, assemble PROG2.ASM (looking for
+macro libraries on drive A in both cases), link them together
+with with the needed modules from STDLIB, then erase the now
+unneeded PROG1.REL and PROG2.REL.
+
+Note:  Left brackets may be used in command lines that are 
+entered from the CP/M prompt.  Only the first bracket on the line 
+is considered as a delimiter and discarded.
+
+
+CHAINING:  CHN's command files can be chained if you want to send
+multiple commands that take more than 128 characters and you
+don't want to use SUBMIT.  Just make the call to the next command
+file the last command on the command line.
+
+Command files do not nest, however.  If the call to a second
+command file is nested in the first command file, the second will
+execute normally, but the remaining commands in the first command
+file will not usually resume when the second is finished.  You
+will be returned to the CCP.
+
+It's not reliable, however.  Sometimes it DOES return to the
+original command file.  I haven't yet figured out under what
+circumstances it returns or doesn't return.  That's a matter for
+future experimentation.
+
+
+MORE EXAMPLES:  CHN command files can be handy for storing 
+commands that contain numerous hard-to-remember options, such as:
+     pip lst:=$1[fzt8p58
+which would be used to send a text file to the printer, filtering 
+out high bits and formfeeds, expanding tabs to 8 spaces and 
+skipping over perforations every 58 lines.
+
+In addition, you can create a COPY command file that uses a 
+format closer to that of most other operating systems:
+     pip $2=1$
+then you can type "COPY sourcefile destfile" and PIP will still
+work properly.
+
+Before I use NewWord, I like to load the overlay files and the
+document I'm going to work on to my RAM disk, set up my function
+keys, make the RAM disk the default drive and then call NewWord.
+The following command file does it all for me:
+     pip m:=a:*.ovr!pip m:=b:$1!loadkey a:nw!m:!nw $1
+
+I use Leor Zolman's excellent BDS C compiler all the time, but
+under CP/M Plus (at least on my machine) it tends to crash if a
+SUBMIT is active, sometimes crashing the entire system, sometimes
+just aborting before it's finished.  The compiler and linker work
+fine with command files created by CHN, however, so that problem
+is now solved.
+
+Lastly, on RCP/Ms running CP/M Plus, CHN command files could be
+used to create several ZCPR-type aliases for a single program.
+KMD.COM, for instance, could also be called by a command file
+named XMODEM.COM.
+
+
+INSTALLATION:  No installation is really necessary.  CHN.COM will 
+work as is.  Provision has been made, however, for you to use dim 
+video or color, if your terminal supports it, for the small help 
+line displayed on the editing screen.  Seven bytes each are 
+provided for patching in the code for dim and normal video, or 
+whatever attribute you want to use.  The string for dim video 
+begins at 103h and ends at 10Ah.  The string for normal video 
+begins at 10Bh and ends at 112h.  You can use EDFILE, SID, or 
+some other file modification utility to edit these strings if you 
+wish.  Each string MUST end with 24h, which is an ASCII dollar 
+sign.
+
+The distribution library contains two versions of CHN.COM, one
+with no video attributes used and one that uses dim video for
+terminals that recognize the Lear Siegler escape sequence: <ESC>
+) for dim and <ESC> ( for normal.
+
+
+HISTORY:  Much of the code for CHN was taken from SYN, written
+for the Osborne Executive by Gordon Wilk.
+
+Wilk's program was inspired by ZCPR's ALIAS and by a CP/M 2.2 
+public domain program called SYNONYM.  SYN was machine specific, 
+however, and would crash any computer other than the Executive.  
+Since the advent of the Commodore 128 the number of CP/M Plus 
+users has grown by over a million.  In addition, CP/M Plus is 
+used on some Morrows and other machines.  This program deserved a 
+wider distribution that was not possible until the machine 
+specific code was changed.
+
+That was easy enough, so I decided, while I was at it, to make it
+more user friendly by allowing command line specification of the
+output file and drive.  I also changed the name to CHN, which I
+think is more meaningful for the average user and easier to type.
+Later I added the ability to do the whole job from the CP/M
+prompt.
+
+I can't think of a reason anyone would want to run CHN.COM in a
+batch sequence, but I think all programs should send the BDOS
+"failure" code when appropriate.  I haven't tested it, but David
+Cortesi has stated that the necessary call to BDOS function 108
+does no harm under CP/M 2.2, even though that version of CP/M
+doesn't support it.  Anyway, CHN now sends a "failure" code if it
+aborts.
+
+A few other minor changes were made.  They are detailed below.
+
+
+VERSIONS:
+
+1.0  [date unknown] Gordon Wilk -- Original release.
+
+2.0  9/86           Gordon Wilk -- FOG release, program named
+                    SYN, Osborne Executive specific
+
+3.0  5/20/87        Gene Pizzetta -- Machine specific code
+                    changed; allows command line specification of
+                    output drive and filename; parameter marker
+                    changed from "&" to "$" to be consistent with
+                    SUBMIT; sends "failure" code to BDOS if
+                    aborted; code cleaned up; Z80 macros removed
+                    (now requires Z80.LIB for reassembly).
+                    Should now run on all Z80 CP/M 3.0 machines.
+
+3.1  6/15/87        Gene Pizzetta -- Fixed small bug that caused
+                    CHN to write an empty command file to disk if
+                    ^X was used to erase the command line during
+                    editing mode (the program now properly
+                    aborts); added ability to read command line
+                    from the command tail (following a "[").
+
+The original code is copyright 1986 by
+                         Gordon Wilk
+                         6707 Springpark Avenue
+                         Los Angeles, CA  90056
+                         (213) 645-6419
+Released for private, non-commercial use without fee.
+
+
+Please report any bugs or suggestions concerning this version to:
+
+     Gene Pizzetta            CompuServe: 72060,505
+     481 Revere Street        Q-Link:  GeneP
+     Revere, MA  02151        GEnie:  E.Pizzetta
+                              Voice:  (617) 284-0891
+

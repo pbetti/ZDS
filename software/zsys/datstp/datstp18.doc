@@ -1,0 +1,319 @@
+
+                             DATSTP
+                           Version 1.8
+
+                          Gene Pizzetta
+                         October 9, 1991
+
+
+How often have you wanted to change the date stamps for a file or 
+two without having to call up DATSWEEP.  Or maybe you wanted to 
+change a P2DOS-type date stamp and DATSWEEP didn't work.  Or 
+maybe you're running Z3Plus.  Well, here's the answer:  DATSTP 
+displays or changes the create and modify date stamps on any file 
+under ZSDOS, ZDDOS, Z3Plus, and vanilla DateStamper.
+
+*****************************************************************
+*  DATSTP is very powerful and can destroy your date stamps!    *
+*  Read the documentation carefully.  Make sure you understand  *
+*  how it works before you use it.                              *
+*****************************************************************
+
+USAGE:
+
+     DATSTP {dir:}fn.ft {date} {time} {{/}options}
+
+Everything is optional but the filename.  If no DU or DIR is 
+given, the current drive and user is assumed.  If no date, time, 
+or option is given, current date stamps for the file will be 
+displayed.  If an option, date, and/or time are given, the file's 
+date stamp will be updated.  DATSTP's default mode is to edit and 
+update the create stamp.
+
+OPTIONS:  A leading slash is always optional, but options must be 
+the last parameters on the command line.
+
+     M    Edit and write modify date stamp.  Without this option, 
+          the creation date stamp will be read into the edit 
+          buffer, edited, and then written back to the create 
+          stamp on disk.  With the M option, the modification 
+          date will be read into the edit buffer, edited, and 
+          then written back to the modify stamp on disk.  (But 
+          see option C below.)
+
+     B    Write to both create and modify date stamps.  The 
+          edited date is ordinarily written back to the stamp 
+          from which it came.  With this option, the edited date 
+          is written to both the create and modify stamps on 
+          disk.  This option is required with P2DOS date stamping 
+          if both date stamps are blank.
+
+     C    Edit current system date instead of date stamp.  This 
+          option overrides create date and modify date editing, 
+          but does not affect which date stamp is modified.  For 
+          example, if the C and M options are used together, the 
+          current date will be moved into the edit buffer as the 
+          default date, but the edited stamp will still be 
+          written to the modify stamp on disk.
+
+     Q    Toggle current setting of quiet mode.  DATSTP checks 
+          the ZCPR3 quiet flag when it is invoked and enters 
+          quiet mode if the quiet flag is on.  If the quiet flag 
+          is off, DATSTP then checks a configurable internal 
+          quiet flag to determine if it should default to quiet 
+          mode.  In either case, the Q option toggles off quiet 
+          mode, if it is on, and toggles it on, if it is off.
+
+On error, DATSTP sets the program error flag to standard error 
+codes listed in Z34ERR.LIB.  If an error handler is installed, it 
+will also be invoked.
+
+DATE/TIME ENTRY:  DATSTP uses a the ZSLIB SPARSDS routine.  It 
+allows date entry in either European or American order 
+(configurable):
+     mm/dd/yy hh:mm      [ American date/clock time ]
+or
+     dd.mm.yy hh:mm      [ European date/clock time ]
+
+Time must always be entered based on a 24-hour clock; i.e., 3:00 
+p.m. is entered as 15:00.  Relative time can also be entered, for 
+those who use that method:
+     mm/dd/yy +nnnn      [ American date/relative time ]
+or
+     dd.mm.yy +nnnn      [ European date/relative time ]
+
+Either periods or slashes may be used as date delimiters with 
+either American or European date order.
+
+In the discussion below, American order is assumed.  Those using 
+European order will have to make the necessary mental changes.
+
+DATSTP is an EDITOR!  It is important to understand that concept 
+because DATSTP does not actually replace the date and time, it 
+edits it.  By default, the editing buffer is loaded with the 
+file's current create date stamp and the command line date 
+applied to it.  Any missing blank fields in the command line date 
+and time string remain unchanged in the buffer.  For instance, if 
+the current create date is "3/15/89 21:35" and the command line 
+date is
+     DATSTP TEST.DOC /25
+then only the day would be changed ("3/25/89 21:35").  Including 
+two delimiters
+     DATSTP TEST.DOC //25
+changes the year ("3/15/25 21:35").  If the command line entry 
+was
+     DATSTP TEST.DOC 9:
+then only the hour would be changed ("3/15/89 9:35").  Leading 
+delimiters are always required, but trailing delimiters are not 
+necessary except for hours:
+     DATSTP TEST.DOC 9
+would change the month ("9/15/91 21:35"), instead of the hour.
+
+Leave no spaces within a date or time specification:
+     DATSTP TEST.DOC 9//90
+changes the month and year as expected ("9/15/90 21:35"), but
+     DATSTP TEST.DOC 9/ /90
+will yield only a usage message.
+
+With the M option, the modify date stamp will be loaded into the 
+edit buffer instead of the create stamp.
+
+With the C option, the current system date and time will be 
+loaded into the edit buffer instead of a date stamp.
+
+If the original date field is empty and you do not give valid 
+entries for at least the day and month fields, you will get an 
+"invalid date/time" error.  The problem is greater with P2DOS 
+date stamping (see below).
+
+Whichever date field you choose for editing, the create stamp, 
+the modify stamp (M option), or the current date (C option), the 
+B option will cause the resulting date to be written to both 
+stamp fields.  (With P2DOS stamping, if both the create date and 
+modify date are blank, the B option is required.  Either date can 
+be corrected singly later.)
+
+You can easily move dates between fields.  For instance, if you 
+want to move the create date stamp to the modify stamp, use:
+     DATSTP TEST.DOC b
+The create stamp will be loaded into the edit buffer, but, since 
+all date fields are empty, it will not be changed.  It will then 
+be written back to both stamp fields per the B option.  The 
+modify stamp can also be moved to the create stamp field 
+similarly:
+     DATSTP TEST.DOC mb
+
+The C option works in like manner:
+     DATSTP TEST.DOC c
+will write the current date and time to the create stamp,
+     DATSTP TEST.DOC cm
+writes the current date and time to the modify stamp, and
+     DATSTP TEST.DOC cb
+writes it to both stamps.
+     
+Although DATSTP will not accept ambiguous filenames, a group of 
+files can be given the same date by using DATSTP with W.COM.  For 
+example,
+     W DATSTP *.ASM 7/12/91 17:30
+will set the create date on all ASM files to 5:30 p.m., July 12, 
+1991.
+
+DISTRIBUTED VERSIONS:  The distribution library contains three 
+types of assembly.  Those with filetype 3OM are type-3 programs 
+that load at 8000h and require ZCPR 3.3 or higher.  Those with 
+filetype 4OM are type-4 programs and require ZCPR 3.4 or higher. 
+The COM files load at 100h, the normal address, and will work on 
+any Z-System.
+
+The DATSTPZ versions run only under ZSDOS and ZDDOS, using date 
+stamp routines from ZSLIB.  They are the smallest versions -- 
+types 1 and 3 are under 4 kilobytes.
+
+The DATSTPP versions run only under Z3Plus and should work on 
+most CP/M-Plus machines.  They are known not to work reliably on 
+GCR CP/M disks for the Commodore 128 (although there seems to be 
+no problem when using MFM disks on that machine).
+
+The DATSTPU versions are universal, for ZSDOS, ZDDOS, Z3Plus, and 
+vanilla DateStamper.  In fact, the universal versions will read 
+and write stamps on any disk containing a !!!TIME&.DAT file, even 
+if DateStamper is not running.  These are the largest versions, 
+however, and are probably not worth the disk space on ZSDOS and 
+Z3Plus machines.
+
+The usage screen displays "Version Z-n.n" for the ZSDOS version, 
+"Version  P-n.n" for the Z3Plus version, or "Version U-n.n" for 
+the universal version.
+
+CONFIGURATION:  You may use ZCNFG and the DATSTPnn.CFG file to 
+configure display defaults to suit yourself.  ZCNFG will find the 
+configuration file automatically as long as you don't change its 
+name, even if you change the name of DATSTPnn.COM.
+
+As distributed, DATSTP defaults to verbose operation.  You can 
+set it to default to quiet mode, if you wish.  Civilian 12-hour 
+time is used in screen displays in the distributed version, but 
+you can configure DATSTP to use military 24-hour time (on the 
+command line you must always use 24-hour time).  You may also 
+configure DATSTP to display and accept from the command line 
+dates in European order (dd.mm.yy).  As distributed, American 
+date order (mm/dd/yy) is used.
+
+RE-ASSEMBLY:  Assembling and linking DATSTP is relatively easy 
+because the needed libraries are included in request statements 
+and need not be passed to the linker on the command line.  Just 
+make sure that ZSLIB (3.1 or higher), VLIB, Z3LIB, and SYSLIB are 
+available where the linker can find them.  For the universal 
+version you will also need DSLIB.  To re-assemble with SLR's 
+Z80ASM and SLRNK+ or with Al Hawley's ZMAC and ZML, use the 
+command lines below:
+          z80asm datstp/m
+          zmac datstp
+The assembler will request you to answer "y" or "n" to two 
+questions:  "For ZSDOS?" and "For Z3Plus?".  For the universal 
+version answer "y" to both.
+     For type 1:
+          slrnkp datstp/n,/v,/a:100,/j,datstp,/e
+          zml datstp
+     For type 3:
+          slrnkp datstp.3om/n,/v,/a:8000,/j,datstp,/e
+          zml datstp /a8000
+     For type 4:
+          slrnkp datstp/k,/v,nulprl,datstp,/e;
+               myload datstp.4om=datstp.prl,typ4ldr.hex
+          zml datstp.4om=datstp,typ4ldr/p
+ZML generally produces the minimum-size type-4 version.  Use it 
+if you have it!  Although it not clearly explained in the ZML 
+documentation, the standard type-4 header file (TYP4LDR.Z80) must 
+be assembled into a COM file and then renamed to TYP4LDR.HDR 
+before it can be linked properly to a type-4 program.  SLRNK+, on 
+the other hand, requires a file consisting of exactly 256 bytes 
+of nulls (NULPRL.REL, above).
+
+HISTORY:
+
+Version 1.8 -- October 9, 1991 -- Gene Pizzetta
+     Some parsing bugs fixed.  An error in the GetOpt routine 
+     kept "/option" from working as the second parameter.  
+     Meanwhile, Howard Goldstein found some bugs in the ZSLIB 
+     parsers which necessitated a new linkage anyway.  Lastly a 
+     few minor code tweeks.
+
+Version 1.7 -- August 29, 1991 -- Gene Pizzetta
+     New parser allows very flexible date and time entry.  Added 
+     C option to use current system time as stamp editing source. 
+     Changed most messages to in-line.  DateStamper date stamp 
+     reading and writing can be done as long as a !!!TIME&.DAT 
+     file exists on the disk; DateStamper need not be running.  
+     Uses several new ZSLIB 3.1 routines.  Version 1.6 was never 
+     released, but Bruce Morgen's excellent mods have been 
+     preserved here.
+
+Version 1.6 -- June 1, 1991 -- Bruce Morgen
+     Restored vanilla DateStamper support through use of lower 
+     level DSLIB routines in the universal version.  Reduced Type 
+     4 COM file size of that version to 48 records through use of 
+     ZML linker and a small change -- the CPM3 scratch buffer is 
+     no longer a defined space in DSEG.  At runtime, the UseCp3 
+     routine selects Entry-1024 if DATSTP.COM is a Type 4, or 
+     ($memry) if it's a Type 3.  Some trival code pruning here 
+     and there, saved maybe a half-dozen bytes to help make room 
+     for the new stuff.
+
+Version 1.5 -- May 27, 1991 -- Gene Pizzetta
+     Compensated (hopefully) for idiosyncracy of ZSDOS's P2DOS 
+     datestamper which does not always return zeros if no date 
+     stamp is found.  Thanks to Curtis Anderson and Howard 
+     Goldstein for pointing me toward this problem.  Replaced 
+     separate ZSLIB date modules with combined module that 
+     outputs both American and European date formats.  Replaced 
+     ZSLIB civilian time module with a new module that outputs 
+     "am" and "pm", instead of "p" or nothing.  Converted to 
+     Zilog mnemonics and shortened some code.
+
+Version 1.4 -- October 10, 1990 -- Gene Pizzetta
+     Added date stamp writing under Z3Plus.  Dropped support of 
+     DateStamper under ZRDOS, because of conflict between ZSLIB 
+     and DSLIB.  Added Type-4 version.  Not released.
+
+Version 1.3 -- October 8, 1990 -- Gene Pizzetta
+     Incorporates Howard Goldstein's excellent optimizations that 
+     cut the code size considerably.  Added equates to create a 
+     universal version using DSLIB date stamp routines for 
+     operation under ZRDOS DateStamper, and under Z3Plus (display 
+     only).  ZSDOS version is considerably smaller, however.  
+     Corrected lingering bug in the PARSDS module that gave an 
+     error when a colon was given that was not followed by a 
+     minute specification, but WAS followed by another command 
+     line parameter.
+
+Version 1.2A -- September 12, 1990 -- Howard Goldstein
+     Optimized code.  No functional changes (I hope).
+
+Version 1.2 -- September 8, 1990 -- Gene Pizzetta
+     Corrected failure to initialize option B flag.
+
+Version 1.1 -- September 7, 1990 -- Gene Pizzetta
+     Improved display, especially for reverse video highlighting. 
+     Also corrected a small bug in usage message, and made a few 
+     other minor code changes.
+
+Version 1.0 -- September 3, 1990 -- Gene Pizzetta
+     Initial release.  I tried versions with all the date stamps 
+     displayed on a single line, and the multiple line version 
+     here released.  I personally found the multi-line version 
+     much easier to read at a glance.  In addition, I reversed 
+     the access and modify fields from their usual position in 
+     the display.  Since this program does not touch the access 
+     field, I felt the two fields of concern should be adjacent 
+     to each other.  Please leave any comments, suggestions, or 
+     bug reports on the boards below.
+
+          Gene Pizzetta
+          481 Revere Street
+          Revere, MA 02151
+
+          Newton Centre Z-Node:  (617) 965-7259
+          Ladera Z-Node Central:  (213) 670-9465
+          Voice:  (617) 284-0891
+

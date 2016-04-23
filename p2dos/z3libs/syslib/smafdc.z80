@@ -1,0 +1,72 @@
+;	TITLE	"SMAFDC - Syslib 4.0"
+	NAME	('MAFDC')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;	 	Derived from SMAFDC.Z80 by Richard Conn
+; Date    : 6 Jul 89
+; Version : 1.3
+; Module  : SMAFDC
+; Abstract: This module contains the routine MAFDC which stores
+;	the byte in the A register as one to three decimal char-
+;	acters in Memory.  Only the necessary characters are
+;	stored, giving the effect of printing in a left-justified
+;	three character field.  No registers are altered.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		MAFDC, @ADM1
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - MAFDC
+; Entry:  A = Byte to print
+;	 DE - Addresses a memory buffer
+; Exit : DE - Points to the byte after the buffer
+; Uses : DE
+; Special Requirements: None
+;===============================================================
+
+MAFDC:	PUSH	BC		; Save BC
+	LD	B,-1		; Set for "No chars printed"
+@ADM1:	PUSH	HL
+	PUSH	AF
+	LD	H,100		; Print Hundreds
+	CALL	PAC		; Print a char
+	LD	H,10		; Print Tens
+	CALL	PAC
+	CALL	DIV0		; Print
+	POP	AF		; Restore the registers
+	POP	HL
+	POP	BC
+	RET
+
+; Print result of Division of A by M w/store sensing (Integer Division)
+
+PAC:	LD	L,-1		; Set initial result count
+PAC0:	SUB	H		; Divide by iterative subtraction
+	INC	L		; .bump count
+	JR	NC,PAC0		; ..and loop til we go too far
+	ADD	A,H		; Then correct for underflow
+	LD	H,A		; ..and store
+	LD	A,L		; Get result
+	OR	A
+	JR	NZ,DIV0		; ..jump if Not zero digit
+	OR	B		; Do we store anything?
+	LD	A,H		; .(restore digit in case)
+	RET	M		; ..quit here if not
+	LD	A,' '		; Else prepare for leading space
+	JR	Z,MO		; ..jump if we are storing a space
+	XOR	A		; Else we store a real Zero
+DIV0:	ADD	A,'0'		; Convert to ascii digit
+	LD	B,A		; ..save as flag for next digit
+MO:	LD	(DE),A		; If memory, store digit..
+	INC	DE		; ..bump pointer
+	LD	A,H		; and restore remainder from Temp
+	RET
+
+	END
+

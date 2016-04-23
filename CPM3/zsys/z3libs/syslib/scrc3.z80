@@ -1,0 +1,135 @@
+;	TITLE	"SCRC3 - Syslib Ver 4.0"
+	NAME	('CRC3')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author   : Harold F. Bower
+;	Adapted from routine furnished by Bruce Morgen
+; Date     : 17 Sep 89
+; Version  : 1.0
+; Module   : SCRC3
+; Abstract :  This module contains the routines CRCINIT, CRC3CLR,
+;	CRC3UPD and CRC3DONE which implement the X^16+X^12+X^5+1
+;	Cyclic Redundance Code polynomial as recommended by CCITT.
+;	This routines featured here differ from those in module
+;	SCRC only in that they are table-driven, therefore much
+;	faster.  The disadvantage is that a table of values must
+;	be built (CRC3INIT) in a 512 byte memory space supplied
+;	by the user.
+; Revision :
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points :
+
+	PUBLIC		CRC3INIT, CRC3CLR, CRC3UPD, CRC3DONE
+
+	.Z80
+	PAGE
+
+;==========================================================
+; Routine - CRC3INIT.  Initialize the CRC value table
+; Enter: HL - Points to an area for 512-byte table
+; Exit : - None
+; Uses : - None
+; Requirements: None
+;==========================================================
+; Builds the 512-byte look-up table, enter with HL containing
+; buffer starting address.
+
+CRC3INIT: PUSH	HL
+	LD	(CRCTBL),HL	; Save addr of 512-Byte look-up table
+	LD	C,0		; Set Table Index
+
+GLOOP:	EX	DE,HL
+	LD	HL,0		; Initialize 'CRC' Register pair
+	LD	A,C
+	PUSH	BC		; Save the index in 'C' Register
+	LD	B,8
+	XOR	H
+	LD	H,A
+
+LLOOP:	ADD	HL,HL
+	JR	NC,LSKIP
+	LD	A,10H		; Generator is x^16 + x^12 + x^5 + x^0 as
+	XOR	H		; Recommended by CCITT for asynchronous
+	LD	H,A		; Communications
+	LD	A,21H
+	XOR	L
+	LD	L,A
+
+LSKIP:	DJNZ	LLOOP
+	POP	BC
+	EX	DE,HL		; 'DE' pair now has 'CRC', 'HL' pointing
+	LD	(HL),D		; into table.  Store high byte of 'CRC'
+	INC	H
+	LD	(HL),E		; Store low byte
+	DEC	H
+	INC	HL		; Move to next table entry
+	INC	C		; Next Index
+	JR	NZ,GLOOP
+	POP	HL
+	RET
+
+;==============================================================
+; NAME - CRCCLR
+; Entry: - None
+; Exit : - None
+; Uses : - None
+; Requirements : None
+;==============================================================
+
+CRC3CLR: PUSH	HL		; Save the HL pair
+	LD	HL,0		; Initialize the CRC value
+	LD	(CRCVAL),HL	; ..by storing Zero
+	POP	HL
+	RET
+
+;==============================================================
+; NAME - CRC3UPD
+; Entry:  A - Contains byte to be included in CRC calculation
+; Exit : - None
+; Uses : - None
+; Requiremens : None
+;==============================================================
+
+CRC3UPD: PUSH	HL		; Save all registers
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+	LD	DE,(CRCVAL)	; Pick up partial remainder
+	LD	B,0
+	XOR	D
+	LD	C,A
+	LD	HL,(CRCTBL)	; Index into the 512-byte 'CRC' Table
+	ADD	HL,BC
+	LD	A,(HL)
+	XOR	E
+	LD	D,A
+	INC	H
+	LD	E,(HL)
+	LD	(CRCVAL),DE	; Store the current 'CRC' Value
+	POP	AF		; Restore registers for exit
+	POP	BC
+	POP	DE
+	POP	HL
+	RET
+
+;==============================================================
+; NAME - CRC3DONE
+; Entry: - None
+; Exit : HL - Contains the calculated 16-bit CRC value
+; Uses : HL
+; Requirements : None
+;==============================================================
+
+CRC3DONE: LD	HL,(CRCVAL)	; Get the value
+	RET
+
+;  Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+CRCVAL:	DEFS	2		; Resultant 16-bit CRC value
+CRCTBL:	DEFS	2		; Address of 512-byte table
+
+	END
+

@@ -1,0 +1,1201 @@
+	title	'Floppy disk driver for the Modular CP/M 3 BIOS'
+
+;	CP/M-80 Version 3	-- Modular BIOS
+;	Disk I/O Module for P112, adapted from biosdisk.inc
+;	Version 1.1
+;	Compile with M80
+
+	.z80
+Z80182	equ	1
+	include	Z180.INC
+	include	BIOSEQU.INC
+	include	P112EQU.INC
+
+	dseg
+
+	; disk drive dispatching tables for linked BIOS
+
+	public	fd0,fd1
+	public	?abs$addr	; for ramdisk module
+	public	?fd$chk
+
+	; Variables containing parameters passed by BDOS
+
+	extrn	@adrv,@rdrv
+	extrn	@dma,@trk,@sect
+	extrn	@media,@cbnk,@dbnk
+
+	; System Control Block variables
+
+	extrn	@ermde		; BDOS error mode
+
+	; Utility routines in standard BIOS
+
+	extrn	?wboot		; warm boot vector
+	extrn	?pmsg		; print message @<HL> up to 00, saves <BC> & <DE>
+	extrn	?pdec		; print binary number in <A> from 0 to 99
+	extrn	?ahex		; print <A> as hexadecimal
+	extrn	?pderr		; print BIOS disk error header
+	extrn	?conin,?cono	; con in and out
+	extrn	?const		; get console status
+        extrn   ?bank           ; select bank in <A>
+	extrn	?get$bank$bbr	; get BBR value for bank number in <A>
+
+
+	; CP/M 3 Disk definition macros
+
+	;include CPM3.INC
+
+	; common control characters
+
+cr	equ	13
+lf	equ	10
+bell	equ	7
+
+	; Extended Disk Parameter Headers (XDPHs)
+
+	dw	fd$write
+	dw	fd$read
+	dw	fd$login
+	dw	fd$init0
+	db	0		; relative drive zero
+	db	0		; media type
+fd0:	dw	0		; translate table address
+	db	0,0,0,0,0,0,0,0,0 ; BDOS scratch area
+	db	0		; media flag
+	dw	dpbfd0		; disk parameter block
+	dw	0FFFEh		; checksum vector by GENCPM
+	if	banked
+	dw	alv0
+	else
+	dw	0FFFEh		; allocation vector by GENCPM
+	endif
+	dw	0FFFEh		; DIRBCB allocated by GENCPM
+	dw	0FFFEh		; DTABCB allocated by GENCPM
+	dw	0FFFEh		; HASH allocated by GENCPM
+	db	0		; HASH bank
+;
+	dw	fd$write
+	dw	fd$read
+	dw	fd$login
+	dw	fd$init0
+	db	1		; relative drive one
+	db	0		; media type
+fd1:	dw	0		; translate table address
+	db	0,0,0,0,0,0,0,0,0 ; BDOS scratch area
+	db	0		; media flag
+	dw	dpbfd1		; disk parameter block
+	dw	0FFFEh		; checksum vector by GENCPM
+	if	banked
+	dw	alv1
+	else
+	dw	0FFFEh		; allocation vector by GENCPM
+	endif
+	dw	0FFFEh		; DIRBCB allocated by GENCPM
+	dw	0FFFEh		; DTABCB allocated by GENCPM
+	dw	0FFFEh		; HASH allocated by GENCPM
+	db	0		; HASH bank
+;
+
+	cseg	;DPB must be resident
+
+	db	BP_176
+	dw	remap3
+dpbfd0:	dw	88		; 128-byte logical records per track
+	db	4		; block shift factor
+	db	15		; block mask
+	db	0		; extent mask
+	dw	873		; disk size - 1 
+	dw	255		; directory entries - 1
+	db	11110000b	; alloc 0
+	db	00000000b	; alloc 1
+	dw	64		; check vector size
+	dw	1		; reserved tracks
+	db	3		; physical record shift factor
+	db	7		; physical record mask
+	ds	14		; space for custom extension
+
+	db	BP_176
+	dw	remap3
+dpbfd1:	dw	88		; 128-byte logical records per track
+	db	4		; block shift factor
+	db	15		; block mask
+	db	0		; extent mask
+	dw	873		; disk size - 1
+	dw	255		; directory entries - 1
+	db	11110000b	; alloc 0
+	db	00000000b	; alloc 1
+	dw	64		; check vector size
+	dw	1		; reserved tracks
+	db	3		; physical record shift factor
+	db	7		; physical record mask
+	ds	14		; space for custom extension
+
+;	dpb	512,18,160,2048,128,1	; 1.44
+;	dpb	1024,11,160,2048,256,1	; 1.76
+
+	dseg	;this may be banked
+
+	; Supported disk formats
+
+;------ Parameters for 5", 360kB drives
+
+			; Special parameters BEFORE label
+	db	D5_360		; Drive type
+	dw	remap5		; Sector mapping strategy
+dpblk5:	dw	4*18		; CP/M "sectors"/track
+	db	4		; Block shift
+	db	15		; Block mask
+	db	1		; Extent mask
+	dw	174		; Max. allocn. block no.
+	dw	63		; No. of directory entries -1
+	db	10000000b	; Bit-map for allocn. blocks
+	db	00000000b	;   used for directory
+	dw	16		; No. of bytes in dir. check buffer
+	dw	1		; No. of tracks before directory
+	db	2		; Physical record shift
+	db	3		; Physical record mask
+
+extofs	equ	$-dpblk5	; offset to custom extension from dpb
+
+; Custom extension: controller hardware parameters. Format is same as MS-DOS
+; NOTE: Also used in select to Read 250 kbps MFM Sector IDs.
+
+phchrl:	db	0DFh		; SRT=3mS, HUT=240mS
+	db	02h		; HLT=4mS, no DMA
+	db	25h		; 5 secs. (25 index pulses)
+	db	02h		; 512 bytes/sector
+	db	9		; Sectors/track
+	db	2Ah		; Gap length
+	db	0FFh		; DTL (not used)
+	db	80		; Gap-3 length: Format
+	db	0E5h		; Data fill: Format
+	db	15		; Head-settle time (mS)
+	db	tkssec * 7 / 8	; Motor-on delay * 1/8 sec.
+	db	39		; Highest cylinder no.
+	db	02		; Data Rate (250 kb/s)
+	db	1		;; First Physical Sector Number
+
+dpbsize	equ	$-dpblk5+3	; total size of extended dpb
+
+;------ Parameters for 3", 1.4MB drives
+
+			; Special parameters BEFORE label
+	db	D3_144		; Drive type
+	dw	remap3		; Sector mapping strategy
+dpblk3:	dw	4*18		; CP/M "sectors"/track
+	db	4		; Block shift
+	db	15		; Block mask
+	db	0		; Extent mask
+	dw	715-1		; Max. allocn. block no.
+	dw	128-1		; No. of directory entries -1
+	db	11000000b	; Bit-map for allocn. blocks
+	db	00000000b	;   used for directory
+	dw	32		; No. of bytes in dir. check buffer
+	dw	1		; No. of tracks before directory
+	db	2		; Physical record shift
+	db	3		; Physical record mask
+
+; Custom extension: controller hardware parameters. Format is same as MS-DOS
+; NOTE: Also used in select to Read 500 kbps "High-Density" Sector IDs.
+
+phchrh:	db	0DFh		; SRT=3mS, HUT=240mS
+	db	02h		; HLT=4mS
+	db	25h		; 5 secs. (25 index pulses)
+	db	02h		; 512 bytes/sector
+	db	18		; Sectors/track
+	db	1Bh		; Gap length
+	db	0FFh		; DTL (not used)
+	db	108		; Gap-3 length: Format
+	db	0E5h		; Data fill: Format
+	db	15		; Head-settle time (mS)
+	db	tkssec * 7 / 8	; Motor-on delay * 1/8 sec.
+	db	79		; Highest cylinder no.
+	db	00		; Data Rate (500kb/s)
+	db	1		;; First Physical Sector Number
+
+;------ Parameters for 3", 1.76MB Drives (BP HD Format)
+
+			; Special parameters BEFORE label
+	db	BP_176		; Drive type
+	dw	remap3		; Sector mapping strategy
+dpblk2:	dw	88		; CP/M "sectors"/track
+	db	4		; Block shift
+	db	15		; Block mask
+	db	0		; Extent mask
+	dw	873		; Max. allocn. block no.
+	dw	255		; No. of directory entries -1
+	db	11110000b	; Bit-map for allocn. blocks
+	db	00000000b	;   used for directory
+	dw	64		; No. of bytes in dir. check buffer
+	dw	1		; No. of tracks before directory
+	db	3		; Physical record shift
+	db	7		; Physical record mask
+
+; Custom extension: controller hardware parameters.
+
+	db	0DFh		; SRT=3mS, HUT=240mS
+	db	02h		; HLT=4mS
+	db	25h		; 5 secs. (25 index pulses)
+	db	03h		; 1024 Bytes/Sector
+	db	11		; Sectors/track
+	db	11h		; Gap length
+	db	0FFh		; DTL (not used)
+	db	34		; Gap-3 length: Format
+	db	0E5h		; Data fill: Format
+	db	15		; Head-settle time (mS)
+	db	tkssec * 7 / 8	; Motor-on delay * 1/8 sec.
+	db	79		; Highest cylinder no.
+	db	00h		; Data Rate (500kb/s)
+	db	65		;; 1st Physical Sector Number
+
+;------ Parameters for 3"/5", 800KB Drives (Ampro/ON/YASBEC/SB180 DSQD Format)
+
+			; Special parameters BEFORE label
+	db	Am_800		; Drive type
+	dw	remap3		; Sector mapping strategy
+dpBlk1:	dw	40		; Sectors per track
+	db	4		; Block shift factor
+	db	15		; Block mask
+	db	0		; Extent mask
+	dw	394		; Disk size-1
+	dw	255		; Directory max
+	db	11110000b	; Alloc 0
+	db	00000000b	; Alloc 1
+	dw	64		; Check size
+	dw	2		; Track offset
+	db	3		; Physical record shift
+	db	7		; Physical record mask
+
+; Custom extension: controller hardware parameters.
+
+	db	0DFh		; SRT=3mS, HUT=240mS
+	db	02h		; HLT=4mS
+	db	25h		; 5 secs. (25 index pulses)
+	db	03h		; 1024 Bytes/Sector
+	db	5		; Sectors/track
+	db	1Bh		; Gap length
+	db	0FFh		; DTL (not used)
+	db	54h		; Gap-3 length: Format
+	db	0E5h		; Data fill: Format
+	db	15		; Head-settle time (mS)
+	db	tkssec * 7 / 8	; Motor-on delay * 1/8 sec.
+	db	79		; Highest cylinder no.
+	db	02h		; Data Rate (500kb/s)
+	db	17		;; 1st Physical Sector Number
+
+
+	; Disk I/O routines for standardized BIOS interface
+
+	; Initialization entry point.
+	;	called for first time initialization
+
+fd$init0:
+	ld	hl,dpblk3-3
+	ld	de,dpbfd0-3
+	ld	bc,dpbsize
+	ldir
+	ld	hl,dpblk3-3
+	ld	de,dpbfd1-3
+	ld	bc,dpbsize
+	ldir
+	call	fd$reset
+	ret
+
+	; This entry is called when a logical drive is about to
+	; be logged into for the purpose of density determination.
+	; It may adjust the parameters contained in the disk
+	; parameter header pointed at by <DE>.
+
+fd$login:
+	push	ix
+	push	de
+	ld	a,(nvrate)
+	rla			; NV RAM valid?
+	jr	c,selold	; jump if so, to blindly try both formats
+	ld	a,(@rdrv)
+	bit	0,a		; 0 if drive A:, 1 if B:
+	ld	a,(flpy00)	; assume floppy 0
+	jr	z,sel00		; jump if A:
+	ld	a,(flpy10)	; else get physical drive B: settings
+sel00:	bit	7,a		; hi-density capable?
+	jr	z,sel01		; jump to just try 250 kb/s MFM if not
+selold:	call	fd$reset
+	ld	ix,phchrh	; set hi-density basic settings
+	call	read$id		; try to read sector ID mark
+	jr	nc,selok	; jump if succesfully ID'd at HD
+	call	fd$reset	; else, reset the controller to try normally
+sel01:	ld	ix,phchrl	; set normal-density basic settings
+	call	read$id		; can we read now?
+	jr	c,selbad	; error if not
+
+; If we make it here, we have the sector size code in A, and IX points to the
+; characteristics that allowed us to read. Only the four formats ID'd above
+; are currently recognized. Decipher and set.
+
+selok:	cp	2		; 512-byte sectors?
+	jr	z,selok0	; jump if so to set small blocks
+	cp	3		; 1024-byte sectors?
+	jr	nz,selbad	; quit w/error if not, can't ID
+	ld	bc,dpblk2-3	; assume BP 1.76 MB format
+	bit	1,(ix+DRATE)	; high density?
+	jr	z,selok1	; jump if so
+	ld	bc,dpblk1-3	; else set for Ampro 800 KB size
+	jr	selok1		; and continue
+selok0:	ld	bc,dpblk3-3	; assume 1.44 MB format
+	bit	1,(ix+DRATE)	; high density?
+	jr	z,selok1	; jump if so
+	ld	bc,dpblk5-3	; else set for 360 KB size
+selok1:	pop	de		; restore xdpb address
+	ld	a,(bc)		; get the media type from extended dpb
+	dec	de
+	ld	(de),a		; setup the media type in xdph
+	ld	hl,12+1
+	add	hl,de		; point to dpb address in xdph
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; get dpb address in DE
+	dec	de
+	dec	de
+	dec	de
+	ld	l,c
+	ld	h,b
+	ld	bc,dpbsize
+	ldir			; copy extended dpb
+	pop	ix
+	ret
+selbad:	pop	de
+	pop	ix
+	ret
+
+;=======================================================================;
+;	B A S I C   D I S K - D R I V E   R O U T I N E S		;
+;=======================================================================;
+
+; This code uses polled I/O for data transfers, since the Z180 DMA
+; cannot transfer to logical addresses and the disk I/O buffer can
+; cross the bank limits. Clock interrupts are used for motor timing
+; functions.
+
+;======================================================================
+;	L O C A L   D A T A
+ 
+	; Return-error status values (in A, if CY=1)
+
+CALERR	equ	1	; Error in a recalibration function
+IOERR	equ	2	; Error posted by Result Phase: see (HL)
+BADSECT	equ	3	; Sector/Length will overrun track
+LOSTDAT	equ	4	; DMA did not transfer full block
+TIMEOUT	equ	5	; Interrupt timed out
+BADCMD	equ	6	; Invalid function code
+SEKERR	equ	7	; Seek error
+DSKCHG	equ	8	; Media changed
+
+TRIES	equ	5	; No. of retries on IO errors
+
+MONTIM	equ	5 * tkssec	; Motor on time (secs * tickspersec)
+
+;======================================================================
+;	F . D . C .    C O M M A N D   C O D E S
+
+CMD_RECAL	equ	07H	; Recalibrate
+CMD_SENSE	equ	08H	; Sense Interrupt
+CMD_SEEK	equ	0FH	; Seek to track
+CMD_READ	equ	46H	; Read (MFM, implied seek)
+CMD_WRITE	equ	45H	; Write, ditto
+CMD_VERIFY	equ	56H	; Verify, ditto
+CMD_RDID	equ	4AH	; Read Disk Sector ID Data
+
+;======================================================================
+;	R E S E T   T H E   D I S K E T T E   S Y S T E M
+
+fd$reset:
+	push	hl
+	xor	a
+	ld	(calibd),a	; All drives uncalibrated
+	out0	(_DOR),a	; Force reset
+	ld	a,DORON
+	out0	(_DOR),a	; All drives off, no DMA
+	ld	hl,cnfgTab
+	call	send$cmd$str	; "Configure"
+	xor	a		; Post OK
+	pop	hl
+	ret
+
+cnfgTab:
+	db	ECFT-$-1	; Length
+	db	13H		; "Configure"
+	db	00H		; Required
+	db	71H		; No FIFO in use
+	db	43		; Write precomp point
+ECFT	equ	$
+ 
+
+;======================================================================
+;   D I S K   R E A D   A N D   W R I T E   E N T R Y   P O I N T S
+;
+;   These entries are called with the following arguments:
+;
+;	@trk  - track number (even tracks are Side 0, odd tracks are Side 1)
+;	@rdrv - drive number (0 or 1)
+;	@sect - sector number
+;	@dma  - disk transfer address (logical address)
+;	@dbnk - disk transfer bank
+;
+;	DE - pointer to XDPH
+;	IX - pointer to Drive Parameter Block (DPB)
+;
+;   Return values:
+;	If successful:
+;		A = 0
+;
+;	If errors:
+;		A = 1     Permanent error
+;		A = 2     Write protect (write operations only)
+;		A = 0FFh  Media change detected
+
+fd$read:
+	ld	hl,do$read
+	jr	fd$common
+
+fd$write:
+	ld	hl,do$write
+
+fd$common:
+	push	ix
+	push	iy
+
+	push	hl
+	ld	(curdph),de	; save current dph address
+	ld	hl,12
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; DE = ptr to current dpb
+	ld	hl,extofs
+	add	hl,de
+	push	hl
+	pop	ix		; IX = ptr to custom extension
+	pop	hl
+
+	ld	a,TRIES
+again:	ld	(rtCnt),a	; Retry counter
+
+	push	hl
+	call	ipchl		; To the sub-function
+	pop	hl		; restore HL
+
+	ld	c,0		; C = 0 means no error
+	jr	nc,fd$ret	; Exit: no error
+	ld	c,a		; error code in C
+	cp	IOERR		; Was it an IO error?
+	jr	z,more
+	cp	SEKERR		; Or a seek error?
+	jr	nz,fatal	; No: other errors are fatal
+
+more:	ld	a,(restab+1)
+	and	02h		; write protect error?
+	jr	nz,fd$r1	; yes, return with error code of 2
+	call	fd$reset	; Reset the FDC
+	call	uncal		; Reset the "calibrated" bit
+	ld	a,(rtCnt)
+	dec	a		; Count attempts
+	jr	nz,again	; More to go
+
+fatal:	ld	a,(@ermde)
+	inc	a		; 0FFh ?
+	jr	z,fd$ret
+	ld	a,c
+	cp	DSKCHG		; media changed?
+	ld	a,0FFh		; signal media change
+	jr	z,fd$r1		; and exit without printing any error message
+	push	bc
+	ld	a,c
+	call	perror
+	pop	bc
+fd$ret:
+	ld	a,c
+	or	a
+	jr	z,fd$r1
+	ld	a,1		; signal permanent error
+fd$r1:
+	or	a
+	pop	iy
+	pop	ix
+	ret
+
+;======================================================================
+;	R E A D   O N E   P H Y S I C A L   S E C T O R
+
+do$read:	
+	call	fd$setup	; Drive selected & ready
+	ret	c
+	cp	DSKCHG
+	scf
+	ret	z
+	call	launch		; Go fire it off
+	db	CMD_READ	; Command code
+	db	40H		; Expected ST0
+	db	80H		; Expected ST1
+	ret			; CY=fault: HL -> result phase
+
+;======================================================================
+;	W R I T E   O N E   P H Y S I C A L   S E C T O R
+
+do$write:
+	call	fd$setup	; Drive selected & ready
+	ret	c
+	cp	DSKCHG
+	scf
+	ret	z
+	call	launch		; Go fire it off
+	db	CMD_WRITE	; Command code
+	db	40H		; Expected ST0
+	db	80H		; Expected ST1
+	ret			; CY=fault: HL -> result phase
+
+;======================================================================
+;	R E A D    D I S K    S E C T O R    I D    D A T A
+;
+; Enter: @rdrv = Disk Number (A=0, B=1, etc)
+;	 IX = Disk Definition Table address (Original characteristics table)
+;
+; Exit :  A = 0, Zero Set (Z), Carry Clear (NC) if ID Read Correctly
+;	      Carry Set (C) if Timeout (Reg A and Zero Flag indeterminate)
+;	  A <> 0, Zero Reset (NZ) if Error Reading ID (Carry indeterminate)
+
+read$id:
+	call	fd$setup	; Start Motors, Select, etc...
+	ret	c
+
+	ld	a,CMD_RDID
+	call	send$byte	; Command the Controller
+	ld	a,(@rdrv)
+	call	send$byte	;  with Drive #
+
+	ld	iy,RIDres	;    (check results with this)
+	call	test$result	;   get controller response
+	ret	c		;  ..return Carry set if Timeout
+
+	ld	hl,resTab	; The Command results went here
+	ld	de,6
+	add	hl,de		;  offset to Sector Size
+	ld	a,(hl)		;   fetch
+	or	a		;    and insure Carry Clear
+	ret
+
+RIDres:	db	4AH		; Command
+	db	00		; Expected ST0
+	db	00		; Expected ST1
+
+;======================================================================
+;	U T I L I T Y   S U B R O U T I N E S
+
+DORON	equ	04h		; Basic state: no drives, no reset, no DMA
+
+; Prepare for a Read or Write operation
+; Returns with CY set if operation failed.
+; On success, return CY = 0 and A = 0, if media change detected
+; return with A = DSKCHG.
+
+fd$setup:
+	di
+	ld	a,MONTIM
+	ld	(motim),a	; reset motor-on time counter
+
+	ld	a,(@rdrv)	; drive #
+	ld	d,a
+	ld	b,a
+	inc	b
+	ld	a,08h
+su1:	add	a,a
+	djnz	su1		; Shift drive bit as reqd.
+	ld	(mask),a	; Save drive indicator bit
+	ld	b,a		; Local copy
+
+	in0	a,(_DOR)
+	ld	c,a
+	and	0FCh		; Kill select bits
+	or	d		; Select reqd. drive
+	or	DORON		; No reset, no DMA
+	out0	(_DOR),a	; Selected
+
+	ld	a,c
+	and	b		; Is this drive running?
+	jr	nz,su2
+	in0	a,(_DOR)
+	or	b		; Start it up
+	out0	(_DOR),a
+
+	ld	a,(IX+MTRON)	; get spinup delay
+	ld	(mtm),a
+	ei			; ensure interrupts are active
+mlp:	ld	a,(mtm)		; otherwise loop never times out!
+	or	a		; up to speed?
+	jr	nz,mlp		; loop if not
+
+su2:	ei
+
+; Send the SPECIFY command (all from DPB)
+
+	ld	a,(ix+DRATE)
+	out0	(_CCR),a	; Data rate as reqd.
+	or	a
+	ld	a,mhz
+	jr	nz,su21
+	ld	a,1
+su21:	ld	(dlycnt),a
+
+	ld	a,03h		; "Specify"
+	call	send$byte   
+
+	ld	a,(NVRate)
+	bit	7,a		; Valid Non-Volatile Configuration?
+	jr	nz,su2A		; ..jump if Not
+	inc	d
+	dec	d		; Drive A: (Unit 0)?
+	ld	a,(flpy0T)	;  (prepare for Yes)
+	jr	z,su20		; ..jump if So
+	ld	a,(flpy1T)	; Else get Timings for Drive B: (Unit 1)
+su20:	push	af		;  (save)
+	and	0Fh		;  keep only SRT
+	neg			;   make 2's complement
+	rla			; Move
+	rla			;  to
+	rla			;   High
+	rla			;    Nibble
+	or	0Fh		;     and add Maximum HUT
+	call	send$byte
+	pop	af		; Restore timings byte for HLT
+	rra			; Move HLT
+	rra			;  down
+	rra			;   to count * 4
+	and	1Eh		;    kill possible junk
+	jr	su2B		;   ..and jump to Set
+
+su2A:	ld	a,(ix+SPEC_1)
+	call	send$byte   
+	ld	a,(ix+SPEC_2)
+su2B:	set	0,a		; Set LSB for Non-DMA operation
+	call	send$byte
+
+; Check for change line active
+
+	in0	a,(_DIR)
+	and	80h		; media changed?
+	ld	c,0		; set return code to 0
+	jr	z,su2C		; no, continue normally
+
+	ld	a,0FFh		; otherwise set the media flag to 0FFh
+	ld	(@media),a
+	ld	hl,(curdph)
+	ld	bc,11
+	add	hl,bc
+	ld	(hl),a		; and the corresponding media byte in xdph
+
+; Most drives clear the DSKCHG condition only after a seek command.
+; We seek here to an arbitrary track since the recalibrate command alone
+; would not reset the DSKCHG line if the drive head was already home'd.
+
+	ld	a,CMD_SEEK	; seek to an arbitrary track and then
+	call	send$byte	; recalibrate to clear the DSKCHG condition
+	ld	a,d		; drive no.
+	call	send$byte
+	ld	a,40
+	call	send$byte
+	call	end$seek
+
+	call	uncal		; mark drive as uncalibrated
+
+	ld	c,DSKCHG	; set return code to DSKCHG
+
+su2C:	ld	hl,calibd
+	ld	a,(mask)
+	and	(hl)		; Is this drive calibrated?
+	ld	a,c		; return code in A
+	ret	nz		; Done if so (CY = 0)
+
+	push	bc		; save return code
+	ld	a,CMD_RECAL
+	call	send$byte	; Send the "recal" command
+	ld	a,d
+	call	send$byte	; Drive no.
+
+	call	end$seek	; Finish the operation
+	pop	bc		; restore return code
+	ret	c		; return if error with CY set
+
+	ld	hl,calibd
+	ld	a,(mask)
+	or	(hl)
+	ld	(hl),a		; Flag it calibrated, now
+	ld	a,c		; return code in A
+	ret			; return with CY = 0 (success)
+
+;--------------------------------------------------------------------
+; Finish of a seek/recalibrate function
+
+end$seek:
+	push	bc
+	call	wait$int	; Wait for it
+	pop	bc
+	ld	a,timeout
+	ret	c		; Timed out
+ 
+	call	mapsec		; track to C, sector to E
+
+sk1:	ld	a,cmd_sense	; "Sense Interrupt" at the end
+	call	send$byte
+	call	get$byte
+	cp	80h		; invalid command?
+	jr	z,sk1
+	ld	b,a		; ST0 in B
+	call	get$byte	; PCN in A
+	ld	d,a
+	ld	a,b
+	bit	5,a		; command complete?
+	jr	z,sk1		; loop if not
+	ld	a,d
+
+	push	bc		; Verify correct cylinder
+	srl	c
+	cp	c		; Yes?
+	pop	bc
+	ld	a,sekerr
+	scf
+	ret	nz		; Quit if unequal
+ 
+	ld	a,b		; Get back ST0
+	and	0E0h
+	cp	20h		; Look for success
+	ret	z
+	ld	a,calerr
+	scf
+	ret			; CY=1 if it failed
+ 
+; Offsets for inline arguments
+
+OPCODE	equ	0		; Command to FDC
+TST0	equ	1		; Match Status 0
+TST1	equ	2		;   "	  "   1
+SKIP	equ	3		; No. of bytes to skip at return
+
+;--------------------------------------------------------------------
+; Initiate a read or write command (for a single sector)
+
+launch:
+	ex	(sp),iy		; Save IY, point at argts.
+
+	call	mapsec		; get track & sector in C, E
+
+	ld	a,(iy+OPCODE)
+	call	send$byte	; Command code
+	ld	a,(@rdrv)	; Drive
+	bit	0,c		; Odd track (ie Side 1)?
+	jr	z,Lc1
+	set	2,a
+Lc1:	call	send$byte	; Drive & head
+	ld	a,c
+	srl	a		; Cylinder
+	call	send$byte
+	ld	a,c
+	and	1
+	call	send$byte	; Head
+	ld	a,e
+	call	send$byte	; Sector
+	ld	a,(ix+SECSZE)
+	call	send$byte	; Sector length (encoded)
+	ld	a,e
+	call	send$byte	; Final sector no.
+	ld	a,(ix+GPL)
+	call	send$byte	; Gap length
+	ld	a,0FFh		; Data transfer length (default)
+	call	send$byte	; Final byte: FDC running
+
+	call	do$xfer
+
+	call	test$result	; Find out what happened
+	push	bc
+	push	af
+	ld	bc,SKIP
+	add	iy,bc		; Jump past the inline params.
+	pop	af
+	pop	bc
+	ex	(sp),iy		; Recover IY, post link
+	ret
+
+;--------------------------------------------------------------------
+; Check results of I/O operations
+;  IY -> test-block for status:  (see "launch" for details)
+
+test$result:
+	push	bc
+	call	wait$int	; Wait for completion
+	pop	bc
+	ld	a,TIMEOUT
+	ret	c		; Failed (CY posted to caller)
+
+; Get 7 result bytes after read/write
+
+	push	bc
+	push	de
+	ld	de,resTab	; Point to Result Table
+	ld	b,7		; No. of expected bytes
+Lc3:	call	get$byte
+	ld	(de),a
+	inc	de		; Post it
+	djnz	Lc3
+	pop	de
+	pop	bc
+	ld	hl,resTab	; Pointer to results block
+	push	hl
+
+	ld	a,(hl)		; Get ST0
+	and	0F8h		; Kill variable bits (just errors)
+	cp	(iy+TST0)	; Check to expected value
+	jr	nz,Bad
+	inc	hl
+	ld	a,CMD_WRITE
+	cp	(iy+0)
+	ld	a,(hl)		; Get ST1
+	jr	nz,skip1
+	and	0FDh		;;  (Kill W/P Bit so we can read W/P Disks)
+skip1:	cp	(iy+TST1)	; Check to expected value
+	jr	nz,Bad
+	inc	hl
+	ld	a,(hl)
+	sub	0		; No "funny" errors (ever!)
+	jr	nz,Bad
+
+	pop	hl
+	xor	a		; It all succeeded!
+	ret			; OK: return CY=0 (A=0)
+
+Bad:	ld	a,IOERR		; Error post: see block at (HL)
+	pop	hl
+	scf
+	ret			; CY = error
+
+;--------------------------------------------------------------------
+; Wait for FDC RQM to become ready with timeout indicator.
+
+wait$int:
+	ld	bc,25000	; timeout counter
+wait1:	in0	a,(_MSR)	; read status register
+	and	80h		; interrupt present (also clears carry)
+	ret	nz		; return OK if yes
+	dec	bc
+	ld	a,b
+	or	c		; timed out?
+	jr	nz,wait1
+	scf			; set error flag
+	ret
+
+;--------------------------------------------------------------------
+; Send A to Cmnd/data port
+
+send$byte:
+	push	af
+scb1:   in0     a,(_MSR)	; Check FDC status
+	bit	7,a		; Wait till ready
+	jr	z,scb1
+	pop	af		; Recover the cmnd. byte
+	out0	(_DATA),a
+	ret
+
+;--------------------------------------------------------------------
+; Read Cmnd/data port to A
+
+get$byte:
+	in0	a,(_MSR)
+	bit	7,a		; Ready?
+	jr	z,get$byte
+	in0	a,(_DATA)	; Get it
+	ret
+
+;--------------------------------------------------------------------
+; Send string of commands from HL
+
+send$cmd$str:
+	push	bc		; 1st. byte is count
+	ld	b,(hl)		; Save count
+SndC1:	inc	hl
+	ld	a,(hl)		; Get cmnd. byte
+	call	send$byte	; Send it
+	djnz	SndC1		; Repeat
+	pop	bc
+	ret
+
+;--------------------------------------------------------------------
+; Force a recalibrate on this drive
+
+uncal:
+	push	hl
+	ld	hl,calibd	; First force a recalibrate
+	ld	a,(MASK)
+	cpl
+	and	(hl)		; Turn of the "calibrated" bit
+	ld	(hl),a
+	pop	hl
+	ret
+
+;======================================================================
+; C O N V E R T   L O G I C A L   T O   P H Y S I C A L   A D D R E S S
+
+;  This utility converts a logical address (in @dma) to a 20-bit physical
+; address (in AHL). Other registers are unchanged. Absolute addresses
+; are used by the Z182 DMA.
+;  The routine accesses the memory-mapping hardware registers to obtain
+; the current translations.
+;  NB This code assumes that CA1 > BA > CA0
+
+    if banked
+	cseg		; since ?abs$addr is used by the xmove function
+    endif
+
+?abs$addr:
+	ld	hl,(@dma)
+	push	hl
+	ld	a,h		; First, see which logical bank
+	and	0F0h
+	ld	h,a		; Save 4kB page
+	in0	a,(cbar)
+	and	0F0h		; CA1 logical base
+	ld	l,a
+	ld	a,h
+	sub	l		; Form Addr - Base
+	jr	c,not1		; If CY: Addr < Base, so don't use
+	in0	a,(cbr)		; It is CA1 - take base
+	jr	mod
+
+not1:	in0	a,(cbar)
+	add	a,a
+	add	a,a
+	add	a,a
+	add	a,a		; BA logical base in A[7:4]
+	ld	l,a
+	ld	a,h
+	sub	l		; Form Addr - Base
+	ld	a,0
+	jr	c,mod		; Not BA, must be CA0
+    if banked
+	ld	a,(@dbnk)
+	call	?get$bank$bbr	; Else, it is @dbnk's BA
+    else
+	in0	a,(bbr)		; Else, it is BA
+    endif
+mod:	pop	hl		; Now do the adjustment
+	push	bc		; Save it
+	push	hl		; Save HL again
+	ld	c,h
+	ld	b,0		; BC = HL >> 8
+	ld	l,a
+	ld	h,b		; HL = physical base
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl		; HL = physical base << 4
+	add	hl,bc		; Top address in HL
+	ld	a,h
+	and	0Fh		; Bits 19:16 in A
+	ld	b,l		; Save bits 15:8
+	pop	hl
+	ld	h,b		; Full address in AHL
+	pop	bc		; Restore BC
+	and	a		; CY=0 (ie no errors)
+	ret			; Done
+
+    if banked
+	dseg
+    endif
+
+;--------------------------------------------------------------------
+
+mapsec:	ld	l,(ix-extofs-2)
+	ld	h,(ix-extofs-1)
+ipchl:	jp	(hl)
+
+; mapping for 5" disk
+
+remap5:
+	call	remap3		; load track and sector
+	ld	a,e		; fetch sector
+	dec	a		;  compensated for INC in remapS
+	sla	c		; cylinder => track
+	cp	9		; over 1 physical track?
+	jr	c,rm51
+	sub	9		; yes, adjust down
+	inc	c		;  & use top side
+rm51:	inc	a		; physical sectors based 1
+	ld	e,a		; sector in E
+	ret			; returns physical track in C
+
+; mapping for 3" disk (same as BP and Ampro)
+
+remap3:
+	ld	a,(@sect)	; get physical sector
+	add	a,(ix+SCTR_1)	; add 1st physical sector #
+	ld	e,a		; store for exit
+	ld	a,(@trk)	; get low byte of track
+	ld	c,a		; position
+	ret
+
+;--------------------------------------------------------------------
+
+perror:
+	push	af
+	call	?pderr		; print std error message
+	ld	hl,sepmsg
+	call	?pmsg
+	pop	af
+	call	errmsg		; print the error cause
+	ret
+
+sepmsg:	db	', ',0
+
+e1:	db	'Recalibration error',0
+e3:	db	'Bad sector length',0
+e4:	db	'DMA underrun',0
+e5:	db	'Interrupt timeout',0
+e6:	db	'Invalid function code',0
+e7:	db	'Seek error',0
+
+errtab:	dw	e1,eu,e3,e4,e5,e6,e7
+
+e21:	db	'CRC error',0
+e22:	db	'DMA overrun',0
+e23:	db	'Sector not found',0
+e24:	db	'Write protect',0
+e25:	db	'Missing address mark',0
+
+errt02:	dw	e25,e24,e23,eu,e22,e21
+
+eu:	db	'Unknown',0
+
+errmsg:	or	a
+	ret	z		; return if no error
+	cp	2
+	jr	z,err2
+	cp	8
+	jr	nc,unknw
+	ld	hl,errtab
+em2:	dec	a
+	jr	z,em1
+	inc	hl
+	inc	hl
+	jr	em2
+em1:	ld	a,(hl)		; get message address
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	?pmsg
+
+unknw:	push	af
+	ld	hl,eu
+	call	?pmsg
+	ld	c,' '
+	call	?cono
+	pop	af
+	jp	?ahex
+
+err2:	ld	a,(restab+1)	; ST1
+	and	34h		; 37h
+	jr	z,unknw
+	ld	hl,errt02
+em3:	rrc	a
+	jr	c,em1
+	inc	hl
+	inc	hl
+	jr	em3
+
+curdph:	ds	2		; address of current xdph
+calibd:	ds	1		; drives "calibrated" flag
+mask:	ds	1		; bit-mask of current drive
+resTab:	ds	7		; buffer for result-phase data
+rtCnt:	ds	1		; retry count for I/O command
+
+nvrate:	db	0FFh		; MSB=1 if invalid NV RAM
+				; if valid, bits 0-3 are COM1 data rate
+nvram0:	ds	1		; CPU speed and wait states (not used)
+flpy00:	ds	1		; floppy 0 physical parms
+flpy0T:	ds	1		; floppy 0 timings
+flpy10:	ds	1		; floppy 1 physical parms
+flpy1T:	ds	1		; floppy 1 timings
+
+	if	banked
+alv0:	ds	(874/4)+2	; double-bit alloc vector for first drive
+alv1:	ds	(874/4)+2	; double-bit alloc vector for second drive
+	endif
+
+	db	0
+
+	cseg	; must be in common memory
+
+;======================================================================
+;	T U R N   O F F   A L L   D R I V E - M O T O R S
+
+motors$off:
+	in0	a,(_DOR)
+	and	0Fh		; Drop motor lines: keep selection
+	out0	(_DOR),a
+	xor	a
+	ld	(motim),a
+	ret
+
+; This routine is called at each clock interrupt. It implements the
+; timeout function for floppy drive motors
+
+?fd$chk:
+	ld	hl,motim	; point to FDC motor-on timer
+	ld	a,(hl)
+	or	a		; already timed out?
+	jr	z,tdone		; jump if yes
+	dec	(hl)		; otherwise count down
+	call	z,motors$off	; stop motors if timed out
+tdone:	inc	hl		; advance ptr to spinup timer
+	ld	a,(hl)
+	or	a		; timed out?
+	ret	z		; return if yes
+	dec	(hl)		; else count down
+	ret
+
+; Polled FDC transfer
+
+do$xfer:
+	di
+	push	bc
+	ld	c,_DATA
+	ld	a,(@cbnk)
+	push	af		; save current bank
+	ld	a,(@dbnk)
+	call	?bank		; select bank for disk I/O
+	ld	hl,(@dma)	; get disk transfer address
+xfr1:	call	wrdy
+	bit	5,a		; in execution phase?
+	jr	z,fdcres	; return if not to check result
+	bit	6,a		; write?
+	jr	nz,xfr2
+	outi			; write one byte from (HL++) to (C)
+	jr	xfr1
+xfr2:	ini			; read one byte from (C) to (HL++)
+	jr	xfr1
+fdcres:	pop	af
+	call	?bank		; restore old bank
+	pop	bc
+	ei
+	ret
+
+wrdy:	ld	a,(dlycnt)	; delay count
+wrd0:	dec	a		;  count down
+	jr	nz,wrd0		;   for approx 6us delay
+wrd1:	in0	a,(_MSR)	; read main status register
+	bit	7,a		; interrupt present?
+	ret	nz		; return if so
+	jr	wrd1		; else loop
+
+dlycnt:	db	mhz		; delay to avoid oversampling status register
+motim:	db	0		; motor-on time counter
+mtm:	db	0		; motor spinup time counter
+
+	end
+

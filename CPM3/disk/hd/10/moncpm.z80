@@ -1,0 +1,1650 @@
+	title	System dependent routines for monitor
+	name	('MONCPM')
+;
+;	Last Edited	85-04-27	Wagner
+;
+;	Copyright (c) 1984, 1985 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, July 1993
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+;	System dependent routines are collected in this module.
+;
+;	INITSYSTEM	is called upon initial entry into the monitor.
+;			any hardware initialisation necessary only once
+;			should be inserted here.
+;			Also, this routine may initialise the default list,
+;			dump, and assemble address (normally 0), and the
+;			protection expression.
+;
+;	INITCIO		is called upon each re-entry into the monitor, i.e.
+;			after a break.
+;			it may be used to disable interrupts for the console
+;			or to re-init console i/o.
+;
+;	WRCHAR		should write the character unedited to the console.
+;	RDCHAR		should read a character from the console.
+;	POLLCH		must return true if a character is available.
+;			the character itself is not read by this routine.
+;
+;	JMACRO		may switch console input to a file.
+;	KILLMAC		must revert input to the console.
+;
+;
+;	READ		can read a file from the disk or via a communication
+;			line. an offset or load address is passed.
+;
+;	WRITE		can write a file to the disk or via a communication
+;			line. a start and end address is passed.
+;
+;	FILE		may use the information in "string" to generate
+;			a filename for read/write, or for any other purpose.
+;
+;	USERDEF		user defined command. jump to CMDERR if you do not
+;			supply a debugger command here.
+;
+;
+	cseg
+;
+	maclib	monopt.lib
+;
+	entry	next,biosloc
+;
+	entry	initsystem,initcio
+;
+	entry	rdchar,pollch
+	entry	wrchar
+;
+	entry	jmacro,killmac
+	entry	userdef
+;
+	entry	start,read,write,file
+IF	SYMBOLIC
+	entry	sfile
+	entry	readsymbol,symwrite,puthexbyte,putfilch
+;
+	ext	syminit,rdsymname,defsymbol,wsymbols
+ENDIF;SYMBOLIC
+	ext	regpc,string,regiff,regsp
+	ext	break
+	ext	listaddr,dumpaddr,asmaddr
+IF	HILO
+	ext	highval,lowval,maxval,topval
+ENDIF;HILO
+	ext	protexpbuf
+	ext	string,getch,testch,skipsep,skipsp,isdigit,iscontrol
+	ext	expression
+	ext	sgetch,stestch
+	ext	monent,cmderr,eocmd
+	ext	wrstr,crlf
+	ext	dishighlow
+	ext	inipeek
+IF	EXTENDED
+	ext	cbank,listbnk,dumpbnk,asmbnk
+;
+dfltbnk equ	1		; default bank on program start
+;
+ENDIF;EXTENDED
+;
+;------------------------------------------------------------------------------
+;
+;	RSX-Header
+;
+serial:
+	db	0,0,0,0,0,0
+start:
+	jp	CPMmon
+next:
+	jp	BDOS+1
+prev:
+	dw	BDOS+2
+remove:
+	db	0ffh		; remove after execution
+nonbank:
+	db	0
+	db	'MONIT   '
+loader:
+	db	0
+	db	0,0
+;
+	jp	warmboot	; boot-jump
+biostab:
+	jp	warmboot	; exit through cleanup routine for warm boot
+bioconst:
+	ds	3
+bioconin:
+	ds	3
+bioconout:
+	ds	29*3		; remaining functions are not trapped
+biosloc:
+	ds	2		; real BIOS entry saved here
+;
+warmboot:
+	ld	hl,0
+	push	hl		; simulate break at 0
+	jp	break
+CPMmon:
+	ld	a,c
+	or	a
+	jr	z,warmboot	; 0 is warm boot
+	cp	.setdma		; set DMA ?
+	jr	nz,CPMmon10
+	ld	(dmaaddr),de	; save DMA address
+	jp	next
+CPMmon10:
+	cp	.errmod		; set error mode ?
+	jr	nz,CPMmon20
+	ld	a,e
+	ld	(errmode),a
+	jp	next
+CPMmon20:
+	cp	.conin		; console input ?
+	jr	nz,CPMmon30
+	ld	a,(trapinput)
+	or	a
+	jp	z,next		; pass on if no trap
+	call	next
+	ld	hl,trapchar
+	cp	(hl)
+	ret	nz		; return char if <> trap character
+	ld	c,.conin
+	ld	hl,next
+	push	hl		; set retaddr to "next", so next time
+	jp	break		; program will get the character
+CPMmon30:
+	cp	.dircon
+	jr	nz,CPMmon40
+	ld	a,e
+	inc	a
+	jr	z,CPMconin
+	inc	a
+	jp	z,next
+	inc	a
+	jp	nz,next
+CPMconin:
+	ld	a,(trapinput)
+	or	a
+	jp	z,next		; pass on if no trap
+	call	next
+	ld	hl,trapchar
+	cp	(hl)
+	ret	nz		; return char if <> trap character
+	ld	hl,CPMconi1
+	push	hl		; set retaddr to "CPMconi1", so next time
+	jp	break		; program will get the character
+CPMconi1:
+	ld	c,.dircon
+	ld	e,..conget
+IF	CPM3
+	jp	next
+ELSE
+	call	next
+	or	a
+	jr,	z,CPMconi1
+	ret
+ENDIF;CPM3
+CPMmon40:
+	cp	.RSX		; RSX call ?
+	jp	nz,next		; pass on if not RSX
+	ld	a,(initCPM)
+	or	a
+	jp	nz,next		; pass on if initialised
+	dec	a
+	ld	(initCPM),a	; mark initialised
+;
+;	parameter block for initialisation:
+;
+;	db	0,0		; reserved
+;	dw	protstr		; address of protection expression string
+;
+	ex	de,hl
+	inc	hl
+	inc	hl
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	(pesave),de
+	ld	hl,defDMA
+	ld	(dmaaddr),hl
+	xor	a
+	ld	(errmode),a
+	ld	hl,(OS+1)	; get BIOS entry
+	ld	(biosloc),hl
+	inc	hl
+	inc	hl		; skip WBOOT
+	inc	hl
+	ld	(goconst+1),hl	; save bios table entry for const
+	ld	de,bioconst
+	ld	bc,3
+	ldir
+	ld	(goconin+1),hl	; save entry for conin
+	ld	bc,3
+	ldir
+	ld	(goconout+1),hl	; save entry for conout
+	ld	bc,29*3
+	ldir
+	ld	hl,biostab
+	ld	(OS+1),hl	; replace BIOS entry point
+	ld	hl,conin
+	ld	(bioconin+1),hl	; replace CONIN-entry in our BIOS trap table
+	xor	a
+	ld	(trapinput),a	; mark no input trapping
+	jp	monent		; monitor main entry
+;
+;	replacement for BIOS-conin for user trap
+;
+conin:
+	ld	a,(trapinput)
+	or	a
+	jr	nz,conin10
+goconin:
+	jp	$-$
+conin10:
+	call	goconin
+	push	hl
+	ld	hl,trapchar
+	cp	(hl)
+	pop	hl
+	ret	nz
+	push	hl
+	ld	hl,goconin
+	ex	(sp),hl		; put "goconin" as retaddr on stack
+	jp	break		; so on return prog will get char
+;
+;	initsystem:	initialise
+;
+;		entry:	-
+;
+;		exit:	-
+;
+;		uses:	may use all registers
+;
+initsystem:
+	ld	hl,TPA
+	ld	(listaddr),hl
+	ld	(dumpaddr),hl
+	ld	(asmaddr),hl
+IF	EXTENDED
+	ld	a,dfltbnk
+	ld	(cbank),a
+	ld	(listbnk),a
+	ld	(dumpbnk),a
+	ld	(asmbnk),a
+ENDIF;EXTENDED
+IF	HILO
+	ld	(lowval),hl
+	ld	(highval),hl
+	ld	(maxval),hl
+ENDIF;HILO
+	ld	(regpc),hl
+	ld	hl,serial-1
+	ld	(topval),hl
+	ld	de,warmboot
+	ld	(hl),d
+	dec	hl
+	ld	(hl),e
+	ld	(regsp),hl	; set sp to bottom, with retaddr = debexit
+	ld	hl,(pesave)
+	ld	de,protexpbuf
+init10:
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	or	a
+	jr	nz,init10
+	ld	hl,TPA
+	ld	de,TPA+1
+	ld	bc,serial-TPA-4
+	ld	(hl),a
+	ldir			; clear memory
+	call	inipeek
+IF	SYMBOLIC
+	ld	hl,serial
+	call	syminit
+	ld	hl,FCB2
+	ld	de,symFCB
+	ld	bc,32
+	ldir			; unpack file
+ENDIF;SYMBOLIC
+	ld	a,(FCB+1)
+	cp	' '
+	scf
+	call	nz,read
+IF	SYMBOLIC
+	ld	a,(symFCB+1)
+	cp	' '
+	ret	z
+	ld	hl,symstr
+	call	wrstr
+	jp	readsymdefault
+symstr:
+	db	'SYMBOLS',cr,lf,0
+ELSE
+	ret
+ENDIF;SYMBOLIC
+;
+;	initcio:	initialise console I/O
+;
+;		entry:	-
+;
+;		exit:	-
+;
+;		uses:	may use all registers
+;
+initcio:
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	rdchar:		read char from console
+;
+;		entry:	-
+;
+;		exit:	A = character
+;
+;		uses:	-
+;
+rdchar:
+	push	bc
+	push	de
+	push	hl
+	ld	a,(macactive)
+	or	a
+	jr	z,rdchar1
+	call	getmacch
+	jr	nc,rdcharex
+	call	killmac
+rdchar1:
+	call	goconin
+rdcharex:
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+;
+;	pollch:		test if console input available
+;			(should abort macro if active and char available)
+;
+;		entry:	-
+;
+;		exit:	A <> 0 if input available, flags set
+;
+;		uses:	-
+;
+pollch:
+	push	bc
+	push	de
+	push	hl
+goconst:
+	call	$-$
+	or	a
+	push	af
+	call	nz,killmac
+	pop	af
+	pop	hl
+	pop	de
+	pop	bc
+	ret	z
+	or	-1
+	ret
+;
+;	wrchar:		write char to console
+;
+;		entry:	A = character
+;
+;		exit:	-
+;
+;		uses:	-
+;
+wrchar:
+	push	bc
+	push	de
+	push	hl
+	push	af
+	ld	c,a
+goconout:
+	call	$-$
+	pop	af
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	killmac:	revert input to console
+;
+;		entry:	IX points to input line
+;
+;		exit:	-
+;
+;		uses:	may use all registers
+;
+killmac:
+	ld	hl,macactive
+	ld	a,(hl)
+	or	a
+	ret	z
+	ld	(hl),0		; mark no longer active
+	jp	closerd		; close the file
+;
+;	jmacro:		activate macro-file
+;
+;		entry:	IX points to input line
+;
+;		exit:	-
+;
+;		uses:	may use all registers
+;
+jmacro:
+	ld	hl,macpars
+	ld	de,macpars+1
+	ld	bc,..maxp-1
+	ld	(hl),0
+	ldir			; clear parameter pointers
+	call	killmac
+	call	testch		; any character ?
+	jp	z,cmderr	; error if not
+	ld	hl,myFCB
+	call	parsefn		; parse filename
+	jp	c,cmderr	; error if parse filename found an error
+	jr	z,jmac50	; ok if no more parameters
+	ld	de,macparbuf
+	ld	bc,.linlen
+	ldir			; copy buffer from position after filename
+	ld	hl,macpars
+	ld	ix,macparbuf
+	call	skipsp		; skip spaces
+	push	ix
+	pop	de		; pointer into DE
+	ld	b,10		; max params
+	ld	a,(de)
+	cp	','
+	jr	nz,jmac10
+	inc	de		; skip first comma
+jmac10:
+	ld	a,(de)
+	inc	de
+	or	a
+	jr	z,jmac50
+	cp	' '
+	jr	z,jmac10	; skip spaces
+	cp	','
+	jr	nz,jmac20
+	inc	hl
+	inc	hl
+	djnz	jmac10		; empty parameter
+	jp	cmderr
+jmac20:
+	dec	de
+	ld	(hl),e		; save start position
+	inc	hl
+	ld	(hl),d
+	inc	hl
+jmac30:
+	ld	a,(de)
+	inc	de
+	or	a
+	jr	z,jmac50	; ready if end of string
+	cp	','
+	jr	nz,jmac30	; skip chars to next comma
+	jr	jmac10
+jmac50:
+	call	openrd
+	ld	a,-1
+	ld	(macactive),a	; mark macro active
+	ld	hl,0
+	ld	(parmp),hl	; mark no parameter active
+	ret			; ready
+;
+;	getmacch:	get one char from macro
+;
+getmacch:
+	ld	hl,(parmp)	; parameter expansion pointer
+	ld	a,h
+	or	l
+	jr	nz,getmacpar	; branch if inside parameter expansion
+	call	getfilch
+	ret	c		; ret with carry if EOF
+getmacc1:
+	cp	'@'		; parameter ?
+	jr	z,getmacc2
+	or	a		; ret with char if not
+	ret
+getmacc2:
+	call	getfilch	; get next char
+	jp	c,cmderr	; error if single @
+	cp	'@'
+	ret	z		; @@ becomes one @
+	call	isdigit
+	jp	c,cmderr	; error if not @n
+	sub	'0'
+	add	a,a		; * 2
+	ld	e,a
+	ld	d,0
+	ld	hl,macpars
+	add	hl,de		; point to parameter pointer
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; get parameter pointer
+	ex	de,hl
+	ld	(parmp),hl	; set parameter expansion pointer
+	jr	getmacch	; go try again
+getmacpar:
+	ld	a,(hl)
+	or	a
+	jr	z,getmacparend	; ready if end of string
+	cp	','
+	jr	z,getmacparend	; ready if comma
+	inc	hl
+	ld	(parmp),hl
+	or	a		; else ret with char
+	ret
+getmacparend:
+	ld	hl,0
+	ld	(parmp),hl	; clear parameter pointer
+	jr	getmacch	; and try again
+;
+;------------------------------------------------------------------------------
+;
+;	U:	User interrupt character
+;
+userdef:
+	call	eocmd
+	ld	hl,uintstr
+	call	wrstr		; prompt
+	call	rdchar		; get unedited character from console
+	cp	cr
+	jr	z,userintdel	; CR means delete char
+	ld	(trapchar),a	; store char
+	call	iscontrol
+	jr	c,userint1	; ok if not control
+	push	af
+	ld	a,'^'		; else display as ^c
+	call	wrchar
+	pop	af
+	add	a,'A'-1		; make it displayable
+userint1:
+	call	wrchar
+	ld	(trapinput),a	; mark char exists
+	jp	crlf
+userintdel:
+	xor	a
+	ld	(trapinput),a	; mark no trap
+	jp	crlf
+uintstr:
+	db	'Ch: ',0
+;
+;------------------------------------------------------------------------------
+;
+;	file:		set filename for read/write
+;
+;		entry:	"string" contains parameter text
+;			(first char is 'F'-command)
+;
+;		exit:	-
+;
+;		uses:	may use all registers
+;
+file:
+	ld	ix,string	; to start of string
+	call	skipsep
+	call	getch		; skip 'F'
+	call	stestch
+	cp	' '
+	jr	z,file5		; ok if first char is ' '
+	dec	ix
+	ld	(ix+0),' '	; set first char to space
+file5:
+	ld	hl,PSW1
+	ld	de,PSW1+1
+	ld	bc,5
+	ld	(hl),0
+	ldir			; clear password pointers
+	push	ix		; save start position
+	push	ix		; again
+	ld	hl,FCB
+	call	parsefn
+	pop	ix		; string position
+	ld	de,CCPbuf
+	jr	c,file10	; ready if error
+	jr	z,file10	; ready if EOS
+	inc	hl		; skip separator
+	ex	de,hl		; into DE
+file10:
+	push	de
+	ld	hl,FCB+16	; password ?
+	ld	a,(hl)
+	cp	' '
+	jr	z,file20
+	call	pwcount		; get password pointer/count field
+	ld	a,b
+	ld	(PSW1+1),a
+	add	a,CCPbuf+1
+	ld	(PSW1),a	; set addr
+	ld	a,c
+	ld	(PSW1+2),a	; set length
+file20:
+	pop	ix		; string start into IX
+	push	ix		; save
+	ld	hl,0
+	ld	(CCPbuf),hl
+	ld	hl,FCB2
+	call	parsefn
+	pop	ix
+	ld	hl,FCB2+16	; password ?
+	ld	a,(hl)
+	cp	' '
+	jr	z,file30
+	call	pwcount		; get password pointer/count field
+	ld	a,(PSW1+1)
+	add	a,b
+	add	a,CCPbuf+1
+	ld	(PSW2),a	; set addr
+	ld	a,c
+	ld	(PSW2+2),a	; set length
+file30:
+	xor	a
+	ld	(PSW1+1),a
+	ld	hl,0
+	ld	(FCBcr),hl
+	ld	(FCBrrn+1),hl
+	pop	ix		; string start
+	ld	hl,CCPbuf+1
+	ld	b,0
+file31:
+	call	sgetch
+	ld	(hl),a
+	jr	z,file40
+	inc	hl
+	inc	b
+	jr	file31
+file40:
+	ld	a,b
+	ld	(CCPbuf),a	; set command line length
+	ret
+IF	SYMBOLIC
+;
+;	sfile:		set filename for symbol read/write
+;
+;		entry:	"string" contains parameter text
+;
+;		exit:	-
+;
+;		uses:	may use all registers
+;
+sfile:
+	ld	hl,symFCB
+	call	parsefn
+	jp	c,cmderr
+	ret
+ENDIF;SYMBOLIC
+;
+pwcount:
+	ld	bc,0
+pwcount5:
+	call	sgetch
+	jr	z,pwcount10
+	cp	';'
+	jr	z,pwcount10
+	inc	b
+	jr	pwcount5
+pwcount10:
+	ld	a,(hl)
+	or	a
+	ret	z
+	cp	' '
+	ret	z
+	inc	hl
+	inc	c
+	jr	pwcount10
+;
+;	parsefn:	scan input line for filename
+;
+;		entry:	IX = input line pointer
+;			HL = FCB address
+;
+;		exit:	HL = pointer to next char if not error or eol
+;			carry set if error
+;			zero set if end of line
+;
+;		uses:	all regs
+;
+parsefn:
+IF	CPM3
+	ld	(pFCBin),ix
+	ld	(pFCBout),hl
+	ld	c,.parse
+	ld	de,pFCBin
+	call	next
+ELSE
+	call	scanfn
+ENDIF;CPM3
+	ld	a,l
+	or	h
+	ret	z
+	inc	hl
+	ld	a,h
+	or	l
+	scf
+	ret	z
+	dec	hl
+	or	a
+	ret
+IF	NOT CPM3
+;
+;	scanfn:		scan input line for filename
+;
+;		entry:	IX = input line pointer
+;			HL = FCB address
+;
+;		exit:	HL = next input line address if more follows
+;			HL = 0 if end of input line reached
+;			HL = 0ffffh if error occurred
+;
+;		uses:	all regs
+;
+scanfn:
+	push	hl
+	ld	(hl),0		; init drive to 0
+	inc	hl
+	ld	d,h
+	ld	e,l
+	inc	de
+	ld	(hl),' '
+	ld	bc,11
+	ldir			; init fn/ft to spaces
+	ld	(hl),0
+	ld	bc,4
+	ldir			; init ex/s1/s2/rc to 0
+	ld	(hl),' '
+	ld	bc,8
+	ldir			; init password field to spaces
+	ld	(hl),0
+	ld	bc,11
+	ldir			; init remainder of FCB to 0
+	pop	hl
+	push	hl
+	call	scanskip
+	call	isdelim
+	jr	nc,scanfnret	; ret with next char if delimiter
+	call	sgetch		; get the char
+	push	af
+	call	stestch		; check next char
+	cp	':'
+	jr	nz,scanfn10	; branch if not a drive specification
+	pop	af
+	cp	'A'
+	jr	c,scanfnreterr	; ret error if not A..P
+	cp	'P'+1
+	jr	nc,scanfnreterr
+	sub	'A'-1
+	ld	(hl),a		; set drive spec
+	call	sgetch		; skip ':'
+	call	stestch		; get next char
+	call	isdelim
+	jr	nc,scanfnret	; ret if drive spec only
+	call	sgetch		; get the char
+	push	af
+scanfn10:
+	pop	af
+	inc	hl
+	ld	(hl),a
+	inc	hl
+	ld	b,8		; max length + 1
+scanfn20:
+	call	stestch
+	cp	'.'
+	jr	z,scanfn40	; branch if extent
+	call	isdelim
+	jr	nc,scanfnret	; ready if delimiter
+	dec	b
+	jr	z,scanfnreterr	; error if fn too long
+	call	sgetch
+	cp	'*'
+	jr	z,scanfn30	; '*' is translated to ???...
+	ld	(hl),a
+	inc	hl
+	jr	scanfn20
+scanfn30:
+	ld	(hl),'?'
+	inc	hl
+	djnz	scanfn30
+	ld	b,1
+	jr	scanfn20
+scanfn40:
+	pop	hl
+	push	hl
+	ld	bc,9
+	add	hl,bc		; point to extent
+	ld	b,4		; max length + 1
+	call	sgetch		; skip '.'
+scanfn50:
+	call	stestch
+	call	isdelim
+	jr	nc,scanfnret	; ready if delimiter
+	dec	b
+	jr	z,scanfnreterr	; error if extent too long
+	call	sgetch
+	cp	'*'
+	jr	z,scanfn60
+	ld	(hl),a
+	inc	hl
+	jr	scanfn50
+scanfn60:
+	ld	(hl),'?'
+	inc	hl
+	djnz	scanfn60
+	ld	b,1
+	jr	scanfn50
+scanfnret:
+	pop	hl
+	call	scanskip
+	jr	z,scanfnret0	; return 0 if end of line
+	push	ix
+	pop	hl
+	ret
+scanfnreterr:
+	pop	hl
+	ld	hl,-1
+	ret
+scanfnret0:
+	ld	hl,0
+	ret
+scanskip:
+	ld	a,(ix+0)
+	or	a
+	ret	z
+	cp	' '
+	jp	nz,stestch
+	inc	ix
+	jr	scanskip
+isdelim:
+	or	a
+	ret	z
+	push	hl
+	push	bc
+	ld	hl,delimtab
+	ld	bc,delimlen
+	ccir
+	pop	bc
+	pop	hl
+	ret	z		; ret zero if delimiter
+	scf
+	ret			; else ret with carry set
+delimtab:
+	db	' ;=<>.:,|[]'
+delimlen equ	$-delimtab
+ENDIF;NOT CPM3
+;
+;------------------------------------------------------------------------------
+;
+IF	FILEOPS
+;
+;
+;	read:		read a file
+;
+;		entry:	A/HL = offset (or load address)
+;			Carry set if no offset given
+;
+read:
+	jr	nc,read1
+read0:
+	ld	hl,0
+read1:
+	ld	(rwoffset),hl	; save offset
+	ld	hl,FCB
+	call	rwinit
+	call	openrd
+ IF	CPM3
+	ld	a,(myFCB)	; drive id
+	ld	(TPAdsk),a	; set as program load drive
+ ENDIF;CPM3
+	call	ishexfile
+	jp	z,rdhexfile
+	xor	a
+	ld	(myFCB+.cr),a	; clear cr to read first record again
+	call	erroff
+ IF	CPM3
+	ld	a,(rwbuf)	; get first byte of file
+	cp	.RET		; RET instruction ?
+	jr	nz,rdcomfile	; normal COM-file if not
+	call	iscomfile	; .COM-Extension ?
+	jr	nz,rdcomfile	; don't process RSX if not
+	ld	hl,rsxstr
+	call	wrstr
+	ld	hl,(rwoffset)
+	ld	de,TPA
+	add	hl,de
+	ld	(myFCB+.rrn),hl	; set load address
+	ld	de,myFCB
+	ld	c,.ovly		; load overlay function
+	call	next		; load program & attached RSX
+	or	a
+	jp	nz,rwerror
+  IF	HILO
+	ld	hl,(topval)
+	ld	(maxval),hl
+	ld	hl,(TPAtop)
+	ld	(highval),hl
+	ld	de,(regsp)
+	sbc	hl,de		; RSX-entry-address - current SP
+	jr	nc,rsxldok	; ok if SP below RSX
+	ld	hl,(TPAtop)
+	ld	a,l
+	and	0f0h
+	ld	l,a
+	xor	a
+	dec	hl
+	ld	(hl),a		; set stack to 0
+	dec	hl
+	ld	(hl),a
+	ld	(regsp),hl	; else set SP at RSX entry
+  ENDIF;HILO
+rsxldok:
+	call	closerd
+  IF	HILO
+	jp	dishighlow
+  ELSE
+	ret
+  ENDIF;HILO
+rsxstr:	db	'Attached RSX',cr,lf,0
+ ENDIF;CPM3
+rdcomfile:
+	ld	hl,(rwoffset)
+	ld	de,TPA
+	add	hl,de
+	push	hl
+	ld	de,CCPbuf
+	or	a
+	sbc	hl,de
+	jp	c,rwerror	; cant read below 80h
+	pop	hl
+rdcomloop:
+	push	de		; save 80h
+	push	hl		; save current DMA
+	ex	de,hl		; DMA into HL
+	add	hl,de		; add 80 again for last read addr
+ IF	HILO
+	ld	bc,(topval)	; max read addr
+ ELSE
+	ld	bc,serial-1	; maximum read addr
+ ENDIF;HILO
+	inc	bc		; plus one to get carry
+	or	a
+	sbc	hl,bc
+	jp	nc,rwerror	; error if read would overwrite us
+	ld	c,.setdma
+	call	next		; set dma
+	ld	de,myFCB
+	ld	c,.rdseq
+	call	next		; read file
+	pop	hl
+	pop	de
+	or	a
+	jr	nz,rdready
+	add	hl,de		; increase dma addr
+	jr	rdcomloop	; continue if no error
+rdready:
+ IF	HILO
+	dec	hl
+	ld	(highval),hl
+	ex	de,hl
+	ld	hl,(maxval)
+	or	a
+	sbc	hl,de
+	jr	nc,rdready1
+	ld	(maxval),de
+ ENDIF;HILO
+rdready1:
+	push	af
+	call	closerd
+ IF	HILO
+	call	dishighlow
+ ENDIF;HILO
+	pop	af
+	cp	1
+	jp	nz,cmderr	; error if not eof
+	ret
+;
+;	read intel hex format
+;
+rdhexfile:
+	ld	hl,0
+	ld	(tmphigh),hl
+rdhexloop:
+	call	getfilch
+	jr	c,rdhexready
+	cp	':'
+	jr	nz,rdhexloop
+	call	gethexbyte
+	ld	b,a		; length
+	ld	c,a		; init checksum
+	call	gethexbyte
+	ld	d,a
+	call	gethexbyte
+	ld	e,a		; address
+	call	gethexbyte	; type
+	or	a
+	jr	z,rdhexdata
+	dec	a
+	jr	z,rdhexready1	; ready on end of file marker
+	cp	2		; 03 = start addr
+	jp	nz,cmderr
+	ex	de,hl
+	ld	(regpc),hl
+	ld	(listaddr),hl
+	call	rdchecksum
+	jp	rdhexloop
+rdhexready1:
+	call	rdchecksum
+rdhexready:
+ IF	HILO
+	ld	hl,(tmphigh)
+	dec	hl
+	ld	(highval),hl
+	ex	de,hl
+	ld	hl,(maxval)
+	or	a
+	sbc	hl,de
+	jr	nc,rdhexready2
+	ld	(maxval),de
+ ENDIF;HILO
+rdhexready2:
+	call	closerd
+ IF	HILO
+	jp	dishighlow
+ ELSE
+	ret
+ ENDIF;HILO
+rdhexdata:
+	ld	a,b
+	or	a
+	jr	z,rdhexloop
+	ld	hl,(rwoffset)
+	add	hl,de
+	push	hl
+	or	a
+	ld	de,CCPbuf
+	sbc	hl,de
+	jp	c,cmderr
+	pop	hl
+	push	hl		; current address
+	ld	e,b		; DE = length (D is still = 0)
+	add	hl,de		; top addr for this record
+ IF	HILO
+	ld	de,(topval)	; max allowed addr
+ ELSE
+	ld	de,serial-1
+ ENDIF;HILO
+	inc	de		; plus one for carry
+	or	a
+	sbc	hl,de
+	jp	nc,cmderr	; error if read above top
+	pop	hl
+rdhexdatloop:
+	call	gethexbyte
+	ld	(hl),a
+	inc	hl
+	djnz	rdhexdatloop
+rdhexdend:
+	call	rdchecksum
+	ex	de,hl
+	ld	hl,(tmphigh)
+	or	a
+	sbc	hl,de
+	jp	nc,rdhexloop
+	ld	(tmphigh),de
+	jp	rdhexloop
+;
+gethexbyte:
+	push	bc
+	push	de
+	push	hl
+	call	getfilch
+	jp	c,cmderr
+	call	aschex
+	rlca
+	rlca
+	rlca
+	rlca
+	push	af
+	call	getfilch
+	jp	c,cmderr
+	call	aschex
+	ld	c,a
+	pop	af
+	or	c
+	pop	hl
+	pop	de
+	pop	bc
+	push	af
+	add	a,c
+	ld	c,a
+	pop	af
+	ret
+;
+rdchecksum:
+	ld	b,c
+	call	gethexbyte
+	neg
+	cp	b
+	jp	nz,cmderr
+	ret
+;
+aschex:
+	sub	'0'
+	jp	c,cmderr
+	cp	10
+	ret	c
+	sub	'A'-'0'
+	jp	c,cmderr
+	add	a,10
+	cp	16
+	ret	c
+	jp	cmderr
+;
+;------------------------------------------------------------------------------
+;
+rwrestore:
+	ld	de,(dmaaddr)
+	ld	c,.setdma
+	call	next		; restore user DMA
+ IF	CPM3
+	ld	a,(errmode)
+	ld	c,.errmod
+	call	next		; restore error mode
+ ENDIF;CPM3
+	ret			; ready
+;
+rwerror:
+	call	rwrestore
+	jp	cmderr
+;
+erroff:
+ IF	CPM3
+	ld	e,ext.err
+	ld	c,.errmod
+	jp	next		; set error mode
+ ELSE
+	ret
+ ENDIF;CPM3
+;
+rwinit:
+	ld	de,myFCB
+	ld	bc,14
+	ldir			; copy FCB
+	ld	h,d
+	ld	l,e
+	inc	de
+	ld	(hl),0
+	ld	bc,21
+	ldir			; fill FCB with 0
+	ret
+;
+iscomfile:
+	ld	hl,comstr
+	jr	ishexcom
+;
+ishexfile:
+	ld	hl,hexstr
+ishexcom:
+	ld	de,myFCB+9	; extension
+	ld	b,3
+ishexlp:
+	ld	a,(de)
+	and	NoMSB
+	cp	(hl)
+	ret	nz
+	inc	de
+	inc	hl
+	djnz	ishexlp
+	xor	a
+	ret
+;
+hexstr:	db	'HEX'
+comstr:	db	'COM'
+;
+;------------------------------------------------------------------------------
+;
+;	write:		write file
+;
+;		entry:	A/HL = first address
+;			DE = last address
+;
+write:
+	ld	a,(FCB+1)
+	cp	' '
+	jp	z,cmderr
+	push	de		; save end
+	push	hl		; save start
+	or	a
+	sbc	hl,de
+	jp	nc,cmderr	; error	if end <= start
+	ld	hl,FCB
+	call	rwinit
+	call	openwr
+	call	ishexfile
+	jp	z,wrhexfile
+;
+wrcomfile:
+	call	eocmd
+	call	erroff
+	pop	de		; start
+wrcomloop:
+	push	de
+	ld	c,.setdma
+	call	next		; set dma
+	ld	de,myFCB
+	ld	c,.wrseq
+	call	next		; write file
+	pop	hl
+	or	a
+	jp	nz,rwerror
+	ld	de,reclng
+	add	hl,de		; increase dma addr
+	pop	de		; get end
+	push	de
+	ex	de,hl
+	or	a
+	sbc	hl,de		; end - current
+	jr	nc,wrcomloop	; continue if current < end
+	pop	de		; discard end
+	ld	de,myFCB
+	ld	c,.close
+	call	next		; close
+	inc	a
+	jp	z,rwerror
+	jp	rwrestore
+;
+wrhexfile:
+	call	expression
+	jr	nc,wrhexfil10
+	ld	hl,0
+wrhexfil10:
+	ld	(rwoffset),hl
+	call	eocmd
+	pop	hl		; start
+wrhexloop:
+	ld	b,16
+	ex	de,hl
+	ld	hl,(rwoffset)
+	add	hl,de
+	push	de
+	call	starthexrec
+	pop	hl
+wrhexl1:
+	ld	a,(hl)
+	call	puthexbyte
+	inc	hl
+	djnz	wrhexl1
+	push	hl
+	call	endhexrec
+	pop	de		; curr
+	pop	hl		; end
+	push	hl
+	or	a
+	sbc	hl,de		; end - curr
+	ex	de,hl
+	jr	nc,wrhexloop
+	pop	de
+	ld	b,0
+	ld	hl,0
+	call	starthexrec
+	call	endhexrec
+	jp	closewr
+;
+puthexbyte:
+	push	af
+	add	a,c
+	ld	c,a
+	pop	af
+	push	bc
+	push	de
+	push	hl
+	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	call	puthexdig
+	pop	af
+	call	puthexdig
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+;
+puthexdig:
+	and	LoMASK
+	add	a,90h
+	daa
+	adc	a,40h
+	daa
+	jp	putfilch
+;
+starthexrec:
+	push	hl
+	ld	a,':'
+	push	bc
+	call	putfilch
+	pop	bc
+	ld	c,0
+	ld	a,b
+	call	puthexbyte
+	pop	hl
+	ld	a,h
+	call	puthexbyte
+	ld	a,l
+	call	puthexbyte
+	ld	a,b
+	or	a
+	ld	a,0
+	jp	nz,puthexbyte
+	inc	a
+	jp	puthexbyte
+;
+endhexrec:
+	push	hl
+	ld	a,c
+	neg
+	call	puthexbyte
+	ld	a,cr
+	call	putfilch
+	ld	a,lf
+	call	putfilch
+	pop	hl
+	ret
+;
+;------------------------------------------------------------------------------
+;
+;	openrd:		open file (FCB = myFCB) for reading
+;
+openrd:
+	call	killmac
+	call	erroff		; set error mode
+	ld	de,myFCB
+	ld	c,.open
+	call	next		; open the file
+	inc	a
+	jp	z,rwerror	; error if not opened
+	xor	a
+	ld	(myFCB+.cr),a	; clear cr-field
+	call	getfilrec	; read
+	jp	nz,cmderr	; read already did the rwrestore
+	ret
+;
+;	getfilrec:	read one record from the file
+;
+;		exit:	A = read error code (<> 0 if error)
+;
+getfilrec:
+	xor	a
+	ld	(rwptr),a
+	call	erroff		; set error mode
+	ld	de,rwbuf
+	ld	c,.setdma
+	call	next		; set dma
+	ld	de,myFCB
+	ld	c,.rdseq
+	call	next		; read
+	push	af
+	call	rwrestore
+	pop	af
+	or	a
+	ret			; ret with error code from read
+;
+;	getfilch:	get one byte from the file
+;
+;		exit:	A = char
+;			Carry set if EOF
+;
+getfilch:
+	ld	a,(rwptr)
+	cp	reclng
+	jr	nz,getfilch1
+	call	getfilrec
+	scf
+	ret	nz
+getfilch1:
+	ld	hl,rwptr
+	ld	e,(hl)
+	inc	(hl)
+	ld	d,0
+	ld	hl,rwbuf
+	add	hl,de
+	ld	a,(hl)
+	cp	eof
+	scf
+	ret	z
+	or	a
+	ret
+;
+;	closerd:	close read file
+;
+closerd:
+	call	erroff
+	ld	de,myFCB
+	ld	c,.close
+	call	next
+	jp	rwrestore
+;
+;	openwr:		open file (FCB = myFCB) for writing
+;
+openwr:
+	call	killmac
+	call	erroff		; set error mode
+	ld	de,myFCB
+	ld	c,.delete
+	call	next		; delete file
+	ld	a,h
+	or	a
+	jp	nz,rwerror	; abort if physical error
+	ld	de,myFCB
+	ld	c,.make		; make file
+	call	next
+	inc	a
+	jp	z,rwerror	; error if not made
+	xor	a
+	ld	(myFCB+.cr),a	; clear CR-field
+	ld	(rwptr),a
+	call	rwrestore
+	ret
+;
+;	putfilrec:	write one record to the file
+;
+putfilrec:
+	xor	a
+	ld	(rwptr),a
+	call	erroff		; set error mode
+	ld	de,rwbuf
+	ld	c,.setdma
+	call	next		; set dma
+	ld	de,myFCB
+	ld	c,.wrseq
+	call	next		; write
+	push	af
+	call	rwrestore
+	pop	af
+	or	a
+	jp	nz,cmderr	; abort on error
+	ret
+;
+;	putfilch:	put one byte to the file
+;
+;		entry:	A = char
+;
+putfilch:
+	push	af
+	ld	a,(rwptr)
+	cp	reclng
+	jr	nz,putfilch1
+	call	putfilrec
+putfilch1:
+	pop	af
+	ld	hl,rwptr
+	ld	e,(hl)
+	inc	(hl)
+	ld	d,0
+	ld	hl,rwbuf
+	add	hl,de
+	ld	(hl),a
+	ret
+;
+;	closewr:	close the file
+;
+closewr:
+	ld	a,(rwptr)
+	cp	reclng
+	jr	z,closewr1
+	ld	a,eof
+	call	putfilch	; fill  record with 1a
+	jr	closewr
+closewr1:
+	call	putfilrec	; write last record
+	call	erroff
+	ld	de,myFCB
+	ld	c,.close	; close
+	call	next
+	inc	a
+	jp	z,rwerror
+	jp	rwrestore
+;
+ IF	SYMBOLIC
+;
+;	readsymbol:	read symbols from file
+;
+readsymdefault:
+	ld	hl,0
+	ld	(rwoffset),hl
+	jr	readsym10
+readsymbol:
+	jr	nc,readsym01
+	ld	hl,0
+readsym01:
+	ld	(rwoffset),hl
+	call	eocmd
+	ld	a,(symFCB+1)
+	cp	' '
+	jp	z,cmderr
+readsym10:
+	ld	hl,symFCB
+	call	rwinit
+	call	openrd
+readsymline:
+	ld	ix,string
+	ld	b,.linlen	; max input line length
+readsymlin10:
+	push	bc
+	call	getfilch
+	pop	bc
+	jr	c,readsymlin80
+	cp	cr
+	jr	z,readsymlin70
+	cp	lf
+	jr	z,readsymlin10
+	cp	tab
+	jr	nz,readsymlin20
+	ld	a,' '
+readsymlin20:
+	cp	' '
+	jp	c,rwerror
+	ld	(ix+0),a
+	inc	ix
+	djnz	readsymlin10
+	jp	rwerror
+readsymlin70:
+	ld	a,b
+	cp	.linlen
+	jr	z,readsymline
+	call	evalsym
+	jr	readsymline
+readsymlin80:
+	ld	a,b
+	cp	.linlen
+	call	nz,evalsym
+	call	closerd
+	jp	dishighlow
+;
+evalsym:
+	ld	(ix+0),0
+	ld	ix,string
+evalsym10:
+	call	skipsp
+	ret	z
+	call	expression
+	jp	c,cmderr
+	ld	de,(rwoffset)
+	add	hl,de
+	push	hl
+	call	rdsymname
+	jp	c,cmderr
+	pop	de
+	call	defsymbol
+	jr	evalsym10
+;
+;	symwrite:	write symbols to file
+;
+symwrite:
+	ld	a,(symFCB+1)
+	cp	' '
+	jp	z,cmderr
+	call	eocmd
+	ld	hl,symFCB
+	call	rwinit
+	call	openwr
+	call	wsymbols
+	jp	closewr
+ ENDIF;SYMBOLIC
+ENDIF;FILEOPS
+;
+;------------------------------------------------------------------------------
+;
+	dseg
+
+initCPM:
+	db	0
+dmaaddr:
+	ds	2
+errmode:
+	ds	1
+trapinput:
+	ds	1
+trapchar:
+	ds	1
+macactive:
+	ds	1
+parmp:
+	ds	2
+macparbuf:
+	ds	.linlen
+..maxp	equ	20
+macpars:
+	ds	..maxp
+;
+myFCB:	ds	FCBlen
+rwbuf:	ds	reclng
+rwptr:	ds	1
+;
+symFCB:	ds	FCBlen
+;
+pFCBin:	ds	2
+pFCBout:ds	2
+;
+rwoffset equ	pFCBin
+pesave	 equ	pFCBout
+tmphigh  equ	pFCBout
+;
+	end
+
+symFCB:

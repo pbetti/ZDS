@@ -1,0 +1,445 @@
+                     INTRODUCTION TO S-BASIC
+
+1. What is S-BASIC?
+
+S-BASIC stands for "structured BASIC."  S-BASIC is a native-code 
+compiler for a structured dialect of the BASIC programming 
+language.  It runs on 8-bit microcomputers using the Z80 CPU chip 
+and the CP/M operating system.  The compiler and the language it 
+compiles were developed during the period 1979-1981 by Gilbert 
+Ohnysty, who saw a need for a true native-code compiler and a 
+language implementation that preserved BASIC's ease of use and 
+straight-forward syntax, while incorporating the control-flow 
+constructs associated with modern programming languages.
+        
+The original BASIC programming language was developed by John 
+Kemeny and Thomas Kurtz at Dartmouth College in 1964.  It 
+borrowed syntax from both FORTRAN and ALGOL, but more heavily 
+from the former than the latter.  S-BASIC reaches back to BASIC's 
+ALGOL roots to incorporate features from that language 
+indispensable to the writing of good structured programs, 
+including local variables, recursion, statement grouping with 
+BEGIN and END, looping with WHILE and REPEAT statements, 
+multi-way decisions with a CASE statement, and user-defined 
+procedures and functions.  S-BASIC also incorporates a number of 
+other useful features: COMMENT and TEXT statements that 
+eliminate the need for multiple REM or PRINT statements, a FIXED 
+(binary coded decimal) variable type for financial calculations, 
+BASED variables that may be positioned at run-time, and a 
+powerful $INCLUDE command that allows functions and procedures to 
+be gathered into library files and selectively extracted at 
+compile time.
+
+
+2.  Getting Started
+
+     The S-BASIC compiler consists of four files, all of which 
+need to be present when programs are being compiled:
+
+          SBASIC.COM
+          OVERLAYB.COM
+          BASICLIB.REL
+          USERLIB.REL
+
+     In a dual-floppy system, it is convenient to have the 
+compiler files (which together aggregate 75K) plus your favorite 
+text editor (more on that in a moment) located on the same disk.  
+This will probably not leave enough room on the disk to store the 
+S-BASIC programs you create, so they will be stored on another 
+disk (and in any event you will not want to limit the number of 
+programs you write to those that will fit on a single disk).  On 
+a hard-disk system, the compiler files and the programs you write 
+must be in the same CP/M user area.  If you are copying files 
+from a distribution disk using the CP/M PIP utility, be sure to 
+specify the "O" option with the two .REL files so that PIP will 
+understand they are object files and will not prematurely 
+terminate the copy operation upon encountering a control-Z byte.  
+For example, to copy BASICLIB.REL from a disk in drive A to a 
+disk in drive B, you would type PIP B:=A:BASICLIB.REL[OV].
+
+     S-BASIC programs can be written using any ASCII text editor. 
+A good choice for this purpose is Eric Meyer's VDE: it is small, 
+fast, and loads quickly.  Although less convenient, you can also 
+use WordStar in "non-document" mode (choose "N" from the opening 
+menu) or Perfect Writer in "normal" mode (Ctrl-X,m,normal).  In a 
+pinch, you could even use the CP/M line editor ED, although it 
+would certainly take most of the fun out of S-BASIC programming!
+        
+     Whatever editor you use, it is vital that the last line of 
+text be terminated with a carriage return and line feed.  Some 
+editors, such as Perfect Writer, do not automatically terminate 
+the last line of a file.  The result, when you go to compile, is 
+that the compiler will continue to process the lines leading up 
+to the end of file again and again and again, until at some point 
+the stack overflows.  So make sure before saving your program 
+that the cursor is below the last line of your program.
+
+     So let's get started.  The traditional first program in any 
+programming language is "Hello, World."  It does nothing more 
+than display the greeting "Hello" (or some variant) on the user's 
+terminal.  To create an S-BASIC version of "Hello, World" fire up 
+your text editor and type in the following text:
+
+     rem - Hello World in S-BASIC
+     print "Hello, there!"
+     end
+
+Save the text under the filename HELLO.BAS.  If your program 
+files are to be stored on a different drive than the drive on 
+which your text editor is located, you will need to include the 
+drive designation as part of the filename, e.g., B:HELLO.BAS.   
+After saving the file, exit from the text editor to the CP/M 
+operating system.  Assuming the compiler files are on drive A: 
+and the program files on drive B:, you would then invoke the 
+compiler by typing:
+
+     A>SBASIC b:hello
+
+If you haven't made any mistakes, you should see the following:
+
+            tm
+     S-BASIC Compiler Version 5.4b
+     
+     0001:00 rem - Hello, World in S-BASIC
+     0002:00 print "Hello, there!"
+     0003:00 end
+     0004:00
+     0005:00         ****** End of program ******
+     
+     Compilation complete
+     
+     A>_
+     
+Assuming there were no errors, you should now see a file named 
+HELLO.COM on drive B.  HELLO.COM is a stand-alone executable file 
+and can be run from the CP/M prompt by simply typing its name 
+(minus the ".COM"):
+
+     A>hello
+     Hello, There!
+     Warm Boot
+     A>_
+
+So that's it.  You've created and run your first S-BASIC program.
+
+     Before going on, it is worthwhile to note a couple of 
+details.  HELLO.BAS, which contains the text of your program, is 
+usually referred to as the "source file" and the text itself is 
+referred to as the "source code."   S-BASIC source files must 
+have the filename extension .BAS or they will not be recognized 
+by the compiler.  
+
+    The compiler translates the source code into instructions 
+(called "machine code" or "object code") that can be understood 
+by the computer's central processing unit (CPU).  The compiler 
+then links the object code with necessary support routines from 
+the two library files (BASICLIB.REL and USERLIB.REL) to create 
+the final .COM file.   The output file (which is referred to as 
+the "object file") is a stand-alone program which can be run 
+under the CP/M operating system without the presence of other 
+files.  S-BASIC differs in this respect from some other BASIC 
+compilers which either generate intermediate code that must be
+executed using a run-time interpreter or that require that a 
+special file containing library routines be present when the 
+program is run.
+
+     Note that when running the compiler you do not include the 
+.BAS extension as part of the filename.  Instead, the compiler 
+supports a special syntax.  If no extension is specified, then 
+the compiler will look for the source file on the current drive, 
+unless you have prefixed the filename with a drive designator (as 
+we did above), in which case it will look on that drive for a 
+file of the name specified with the extension .BAS.  A "listing" 
+(printout) of the file will be displayed on the screen (with line 
+numbers added for reference purposes).  Alternatively, you can 
+specify the drives for the source and object files, as well as 
+control the program listing, by using a special form of filename 
+extension.  This is done by adding a dot (.) and three letters to 
+the name of the source file, as follows:
+                   /---> source file drive (A-P)
+                  //---> object file drive (A-P or Z)             
+                 ///---> listing file drive (A-P or X-Z) 
+A>sbasic myprog.xxx 
+
+     A "z" for the object file drive instructs the compiler not 
+to generate an object file.  For the listing file, "x" refers to 
+the console, "y" refers to the CP/M list device (normally 
+the printer) and "z" means to omit.  So, for example, instead of 
+the command given above to compile HELLO.BAS,  you could have 
+typed:
+
+     A>SBASIC hello.bbx
+
+This tells the S-BASIC compiler, "Look for a source file named 
+HELLO.BAS on drive B, place the object file HELLO.COM on drive B, 
+and send the listing to the console."   Note that ".bbx" (in this 
+example) is simply treated as information you are giving to the 
+compiler.  You do not change the actual filename extension of the 
+source file, which must remain .BAS. 
+
+3.  Organizaton of an S-BASIC Program
+
+When explaining a programming language, sometimes a listing 
+is worth a thousand words.  Figure 1 is an example, written in 
+Microsoft BASIC-80 (MBASIC), of a fairly simple program to cal- 
+culate the number of elapsed days from one date to another. 
+
+----------------------------------------------------------------
+Figure 1 -- MBASIC version of DAYS.BAS
+----------------------------------------------------------------
+10 REM	* * * DAYS.BAS * * *  revised 7/30/87
+20 REM
+30 REM	MBASIC programa to calculate number of elapsed
+40 REM	days from one date to another
+50 REM
+60 VERS$="7/30/87"
+70 PRINT CHR$(26);
+80 PRINT "DAYS  vers. ";VERS$: PRINT
+90 PRINT "Calculate number of elapsed days from one date to another."
+100 PRINT "Enter dates in MMDDYY format--e.g., 070487 for July 4, 1987."
+110 PRINT "Years '00 through '30 are assumed to be 21st century."
+120 PRINT
+130 INPUT "First Date   : ";D$
+140 GOSUB 270
+150 DATE1=DAYNUM
+160 INPUT "Second Date  : ";D$
+170 GOSUB 270
+180 DATE2=DAYNUM
+190 DAYS=DATE2-DATE1
+200 PRINT "Elapsed Days = ";DAYS
+210 INPUT "Do another (y/n)";MSG$
+220 IF MSG$="Y" OR MSG$="y" THEN GOTO 120
+230 END
+240 REM
+250 REM	-- Parse and validate date
+260 REM
+270 M=VAL(MID$(D$,1,2))
+280 D=VAL(MID$(D$,3,2))
+290 Y=VAL(MID$(D$,5,2))
+300 IF Y<=30 THEN Y=Y+2000 ELSE Y=Y+1900
+310 IF M<1 OR M>12 OR D<1 OR D>31 THEN OK=0 ELSE OK=-1
+320 IF Y<1931 OR Y>2030 THEN OK=0
+330 IF OK THEN 400
+340	PRINT CHR$(7);
+350	INPUT "Bad date -- try again:";D$
+360	GOTO 280
+370 REM
+380 REM	-- Compute numeric date
+390 REM
+400 DAYNUM=365*Y+D+31*(M-1)
+410 IF M>=3 THEN DAYNUM=DAYNUM-INT(.4*M+2.3) ELSE Y=Y-1
+420 DAYNUM=DAYNUM+INT(Y/4)
+430 DAYNUM=DAYNUM-INT(.75*(INT(Y/100)+1))
+440 RETURN
+
+-----------------------End of Figure 1--------------------------
+
+
+Essentially, the program prompts for the two dates in question, 
+converts each date to the number of days elapsed since the begin- 
+ning of the Christian or common era (using the assumptions of the 
+Gregorian calendar reform), and then subtracts the two resulting 
+day numbers.  
+
+The program could be made to compile, with only minimal changes, 
+under SBASIC.  The significant points of difference are that 
+variables must always be declared under SBASIC and multiple 
+statements cannot be combined on the same line using ":".  But 
+although the program will run fine with such minimal changes, it 
+offers no improvement in elegance or clarity over its MBASIC 
+equivalent.  Figure 2, by contrast, illustrates SBASIC's 
+expressiveness.
+
+----------------------------------------------------------------
+Figure 2  -- SBASIC version of DAYS.BAS
+----------------------------------------------------------------
+comment
+	DAYS	revised 7/29/85
+
+	An SBASIC program to calculate the number of
+	elapsed days from one date to another
+end
+
+$constant ok = FFFFH
+
+var date = string : 20
+var m, d, y = integer
+var date1, date2 = real
+var another = char
+
+rem  Clear Kaypro screen
+procedure cls
+    print #0; chr(26);
+end
+
+rem  Sound console bell
+procedure beep
+    print #0; chr(7);
+end
+
+comment
+	Given month, day, and year, return a numeric date which
+	is equal to the number of days since the start of the 
+	Christian era. The result will be valid only for dates 
+	subsequent to the adoption of the Gregorian calendar 
+	reform.
+end
+function daynum(mo, da, yr = integer) = real
+    var n = real
+    n = 365 * yr + da + 31 * (mo - 1)
+    if mo >= 3 then 
+        n = n - int(.4 * mo + 2.3) 
+    else
+        yr = yr - 1
+    n = n + int(yr/4)
+    n = n - int(.75 * (int(yr/100) + 1))
+end = n
+ 
+procedure parse_date
+    m = val(mid(date,1,2))
+    d = val(mid(date,3,2))
+    y = val(mid(date,5,2))
+    if y <= 30 then
+        y = y + 2000
+    else
+        y = y + 1900
+end parse_date
+
+function check_date(mo, da, yr = integer) = integer
+    var result = integer
+    if mo < 1 or m > 12 or da < 1 or da > 31 then
+        result = not ok
+    else if yr < 1931 or yr > 2030 then 
+        result = not ok
+    else
+        result = ok
+end = result
+
+procedure get_date
+    var good_date = integer
+    repeat
+        begin
+            input date
+            parse_date
+            good_date = check_date(m, d, y)
+            if not good_date then
+                begin
+                    beep
+                    print "Invalid date. Try again: ";
+                end
+          end
+    until good_date
+end get_date
+
+rem	--  main program begins here
+
+cls
+text 0,\
+DAYS vers. 7/29/85
+
+Calculates number of elapsed days from one date to another.
+Enter dates in MMDDYY format, e.g., 070485 for July 4, 1985
+Years '00 through '30 are assumed to be 21st century.
+\
+
+repeat
+    begin
+        print
+        print "First date   : ";
+        get_date
+        date1 = daynum(m, d, y)
+        print "Second date  : ";
+        get_date
+        date2 = daynum(m, d, y)
+        print "Elapsed days = "; date2 - date1
+        input "Do another (y/n)"; another
+    end
+until not another
+
+end
+
+----------------------End of Figure 2---------------------------
+
+Perhaps the most obvious difference is that the SBASIC version 
+has no line numbers and no GOTO or GOSUB statements. Line numbers 
+are allowed in SBASIC but not needed unless the line in question 
+is the target of a GOTO or GOSUB, both of which can usually be 
+avoided thanks to SBASIC's support for named procedures and 
+functions, statement grouping with BEGIN and END, and the two 
+looping constructs WHILE...DO and REPEAT...UNTIL.  The actual 
+source code is longer than its MBASIC counterpart but hopefully 
+easier to follow, since the program is broken down into discrete 
+tasks and the flow of control is easy to visualize.  What's more, 
+once a particular function or procedure is written and debugged, 
+it becomes available as a building block for subsequent 
+programming efforts. (SBASIC has a powerful $include command that 
+allows functions and procedures to be gathered into library files 
+and then extracted as needed at compile time, saving not only the 
+labor of retyping a function or procedure known to be working, 
+but also avoiding the risk of silly typing errors.)
+
+     Any S-BASIC statement may be preceded by a line number.  
+Line numbers are optional, however, and need to appear only where 
+a reference is necessary, such as when the statement is the 
+target of a GOTO or GOSUB statement.  Line numbers need not be in 
+any particular order and do not control the sequence in which 
+statements are executed.  They are treated purely as labels.
+
+     A valid line number consists of at least one digit 
+optionally followed either by digits or non-reserved characters.  
+Non-reserved characters consist of alphabetic characters plus the 
+dot (.), dollar sign ($), ampersand (&), at-sign (@), and 
+underbar (_).  Thus, the following are valid line "numbers":
+
+     0025
+     100
+     99end
+     0test.routine
+
+     A statement may be either upper case or lower case ASCII 
+characters, as the compiler will internally convert all lower 
+case (except for text within quotation marks) into upper case.  
+Because quoted strings are not converted, filename arguments to 
+functions such as OPEN must be specified in upper case, or there 
+will be problems if an attempt is made to access the file from 
+the CP/M prompt.  Additionally, hexadecimal values must be 
+specified using upper case or they will not be recognized by the 
+compiler as numbers (thus 0DH, not 0dh).
+
+     The input buffers of the compiler are token-oriented.  This 
+means there is no limit to how long a physical line can be.  As a 
+practical matter, however, many text editors limit the length of 
+a physical line or do not properly display lines that are longer 
+than the width of the terminal.  In such instances, a backslash 
+(\) can be used to continue a logical line on to the next 
+physical line.  Everything from the backslash to the end of the 
+physical line is ignored, which means that you can, if you wish, 
+put a comment after the backslash. For example, the following 
+statement will be treated as a single line:
+
+     PRINT     FIRST.NAME,    \ student's first name
+               LAST.NAME,     \ student's last name
+               PHONE.NUMBER   \ student's phone number
+
+     Although the compiler itself is token-oriented, the S-BASIC 
+language is definitely line-oriented in the sense that an 
+end-of-line is treated as a statement termination.  S-BASIC 
+differs in this respect from some other structured programming 
+languages, such as PASCAL and C, which use semi-colons to 
+terminate or separate statements.  As a result, an individual 
+statement cannot be split willy-nilly over more than one physical 
+line unless the backslash is used to continue the line.  The only 
+exception is that S-BASIC does permit certain statements   in 
+particular, the IF ...THEN ... ELSE statement, the WHILE ... DO 
+statement, and the REPEAT ... UNTIL statement to be split at 
+defined points without having to use the backslash continuation 
+character.
+
+     Unlike some BASIC dialects, S-BASIC does not allow two or 
+more statements to be placed on the same physical line.  The only 
+exception is that a REM (remark) statement may follow on the same 
+line as another statement
+
+    For information concerning S-BASIC keywords, see the help 
+file (SBASIC.HLP)
+

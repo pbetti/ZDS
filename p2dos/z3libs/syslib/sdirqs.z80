@@ -1,0 +1,398 @@
+	TITLE	"SDIRQS - Syslib 4.3"
+	NAME	('DIRQS')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SDIRQS.Z80 Ver 1.5 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.6
+; Module  : SDIRQS
+; Abstract: This module contains the routine DIRQS which is a
+;	general-purpose directory select routine WITH sizing
+;	information.  It Uses a Shell Sort in memory to return
+;	a sorted listing of directory entries.  Limited capabil-
+;	ity is provided to alter the sort basis.  This routine
+;	is intended for use where the full capabilities of SDIR
+;	are not needed, and sizing information is needed which
+;	is not provided by DIRQ.
+; Revision:
+;  2.0 - 18 Nov 90 - Revised to use general sort routine.  HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		DIRQS
+
+; From SYSLIB Get..
+
+	EXT		BLKSHF, BLKMSK, BLKMAX, DIRMAX
+	ext		dparams, ssbinit, sort
+	EXT		@FNCMP, GETMTOP
+
+; Definitions
+
+CPM	EQU	0
+BDOS	EQU	5
+SETDMA	EQU	26	; CP/M command to set DMA transfer address
+BUFF	EQU	80H	; DMA Buffer
+ESIZE	EQU	16	; 16 Bytes/Entry
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DIRQS
+; Entry: HL - Points to Buffer
+;	 DE - Points to FCB (36 chars)
+;	  A - Contains Select character:
+;		Bit 7 - If "1", Select Non-System Files
+;		Bit 6 - If "1", Select System Files
+;		Bit 5 - If "1", Sort by Type then Name
+;			If "0", Sort by Name then Type
+;		Bits 4-0 - Unused
+; Exit :  A <> 0, Zero Flag Clear (NZ) if Ok
+;	      A = 0, Zero Flag Set (Z) if TPA Overflowed (err)
+;	 BC - Contains number of files in array
+;	 HL - Points to First file in buffer
+; Uses : AF,BC,HL
+; Side Effects: Default DMA reset to default of 80H
+;===============================================================
+
+DIRQS:	PUSH	DE		; Save ptr to FCB
+	LD	(SELFLG),A	; Save Select Flag for selection and Alpha
+	LD	(TFCB),HL	; Set ptr to temp FCB
+;;	ADD	HL,DE		; HL now pts to scratch area
+;;	PUSH	DE		; Save ptr to FCB
+;;	CALL	DBUFFER		; Get ptrs
+	ld	bc,36		;; Advance to after our FCB
+	add	hl,bc		;; HL now pts to scratch area
+	call	dparams		;; Set parameters for logged disk
+	ex	de,hl		;; Save in DE while we set up SSB
+	ld	hl,(dirmax)	;; Get Max Number of DIR entries
+	ld	(fcount),hl	;; ..save in SSB
+	ld	hl,esize	;; Get Size of records
+	ld	(elsiz),hl	;; ..save in SSB
+	ld	hl,0		;; Let SSBINIT set buffer addr
+	ld	(dstart),hl	;;
+	ld	hl,00FFH	;; Use ptrs and reorder after sort
+	ld	(ptrflg),hl	;; ..place in POINT (L) and NOREC (H) in SSB
+	ld	hl,cmpentry	;; Address of User Compare routine
+	ld	(compit),hl	;; ..place addr in SSB
+	ex	de,hl		;; Put Memory base back in HL
+	ld	de,SSB		;; .point to SSB
+	call	ssbinit		;; ..and Initialize the Sort routine
+	ld	(dirbuf),hl	;; Save returned Record Buffer Address
+	POP	DE		; Get ptr to FCB
+;;	PUSH	HL		; Save ptr to Buffer
+	CALL	DIRLOAD		; Load directory with Sizing Info
+;;	POP	HL		; Get ptr to Buffer
+;;	POP	DE		; Get ptr to FCB
+;;	RET	Z		; Abort if TPA overflow
+
+	ld	de,ssb		;; Set parm for Sort routine
+	push	af		;;
+	call	nz,sort		;; ..and do it
+	ld	hl,(dstart)	;; Load exit parms
+	ld	bc,(fcount)	;;
+;;	PUSH	AF		; Save flag to indicate No TPA overflow
+;;	CALL	DISORT		; Alphabetize in External Module
+	POP	AF		; Get AF (TPA Overflow Flag)
+	RET
+
+
+; Build Directory Table at DIRBUF
+;  This is the Optimal Directory load routine; It loads unique file names from
+;  disk and information to compute the file sizes
+; On Input : HL pts to Directory Buffer (16 x N Max)
+;	     DE pts to FCB (only 12 bytes needed)
+; On Output: BC is Number of Files
+;	     A = 0 and Zero Flag set if TPA overflow
+
+DIRLOAD: LD	(DSTART),HL	; Set start of Buffer area
+	INC	DE		; Pt to File Name
+	LD	HL,(TFCB)	; Pt to TFCB
+	LD	(HL),0		; Select Current Disk
+	INC	HL		; Pt to File Name in TFCB
+	LD	B,11		; 11 chars
+
+DLLOOP:	LD	A,(DE)		; Copy
+	LD	(HL),A
+	INC	HL		; Pt to Next
+	INC	DE
+	DJNZ	DLLOOP		; Count down
+	LD	(HL),'?'	; Select all extents
+	INC	HL		; Pt to next char
+	LD	B,23		; 23 chars
+	XOR	A		; Zero rest of TFCB
+
+DLLOOP1: LD	(HL),A		; Store Zero
+	INC	HL		; Pt to next 
+	DJNZ	DLLOOP1		; Count down
+
+	LD	HL,0		; Initialize counters
+	LD	(FCOUNT),HL	; Total Files on Disk = 0
+
+;  Begin by setting default DMA address to 80H
+
+	LD	DE,BUFF
+	LD	C,SETDMA
+	CALL	BDOS		; Set DMA address to default
+
+;  Now we begin scanning for files to place into the Memory Buffer
+
+	LD	C,17		; Search for file
+	JR	DIRLP1
+
+DIRLP:	CALL	PENTRY		; Place entry in Dir
+	JR	Z,DIROVFL	; Memory overflow error
+	LD	C,18		; Search for Next Match
+
+DIRLP1:	LD	DE,(TFCB)	; Pt to FCB
+	CALL	BDOS
+	CP	255		; Done?
+	JR	NZ,DIRLP
+
+;  Now we are done with the Load -- Set up Return Values
+
+DIRDN:	OR	0FFH		; Load Ok and set flags to NZ
+DIRDNX:	LD	BC,(FCOUNT)	; Get total number of files to BC
+	RET
+
+;  Memory Overflow Error
+
+DIROVFL: XOR	A		; Load Error
+	JR	DIRDNX
+
+
+;  PENTRY --  Place entry in Directory Buffer if not an Erased Entry
+
+;  On Input : A = 0-3 for adr index in Buff of entry FCB
+;	      FCOUNT = Number of files in Dir so far
+;  On Output: FCOUNT = Number of files in Dir so far
+;	      A = 0 and Zero Flag set if Memory Overflow Error
+
+PENTRY:	RRCA			; Multiply by 32 for Offset computation
+	RRCA
+	RRCA
+	AND	60H		; A = Byte Offset
+	LD	DE,BUFF		; Pt to buffer entry
+	LD	L,A		; Let HL = Offset
+	LD	H,0
+	ADD	HL,DE		; HL = Ptr to FCB
+
+;  HL = Adr of FCB in Buff
+
+	CALL	ATTEST		; Test Attributes
+	JR	Z,PEDONE	; Sdip if attribute not desired
+
+;  Scan Directory Entries as loaded so far for another entry by the same
+;	name; If found, set that entry to be the entry with the larger EX
+;	and return with the Zero Flag Set, Indicating no new file; If not
+;	found, return with Zero Flag Reset (NZ)
+
+	CALL	DUPENTRY	; Check for duplicate and select EX
+	JR	Z,PEDONE	; Skip if duplicate
+
+;  Copy FCB pted to by HL into Directory Buffer
+
+	LD	DE,(DIRBUF)	; Pt to Next Entry Location
+	LD	BC,ESIZE	; Number of Bytes/Entry
+	LDIR			; Copy FCB into Memory Buffer
+	LD	(DIRBUF),DE	; Set ptr to Next Entry
+	CALL	GETMTOP		; Return CCP starting page in HL
+	LD	A,H		; Get page byte..
+	DEC	A		; ..and back down to previous page
+	CP	D		; Is ptr to next entry beyond this?
+	RET	Z
+
+	LD	HL,(FCOUNT)	; Increment total number of files
+	INC	HL
+	LD	(FCOUNT),HL
+
+;  Done with PENTRY and no error
+
+PEDONE:	OR	0FFH		; Set flags to No error (NZ)
+	RET
+
+
+;  Check attributes of file entry pted to by HL against SELFLG
+;	If system file and system attribute set, Return NZ
+;	If Normal file and Normal attribute set, Return NZ
+
+ATTEST:	PUSH	HL		; Save ptr
+	LD	BC,10		; Pt to System Attribute
+	ADD	HL,BC
+	BIT	7,(HL)		; Check for System Attribute
+	POP	HL		; Restore ptr
+	LD	A,(SELFLG)	; Get selection flag
+	JR	Z,ATDIR
+	AND	01000000B	; Check System Attribute
+	RET
+
+ATDIR:	AND	10000000B	; Check Normal Attribute
+	RET
+
+
+;  Scan Directory Entries as loaded so far for another entry by the same
+;	name; If found, set that entry to be the entry with the larger EX
+;	and return with the Zero flag set, indicating no new file; If not
+;	found, return with Zero Flag Reset (NZ)
+;  On Input : HL pts to Entry to scan for, FCOUNT = Number of entries so far,
+;		and (DSTART) = Starting address of Directory loaded
+;  On Output: A = 0 and Zero Flag Set if duplicate entry found; A = 0FFH and NZ
+;		if no dup entry found
+;	Only HL not affected
+
+DUPENTRY:
+	PUSH	HL		; Save ptr to entry to scan for
+	EX	DE,HL		; Ptr in DE
+	LD	BC,(FCOUNT)	; Check count
+	LD	A,B		; No entries?
+	OR	C
+	JR	Z,NODUP		; No duplicate entry return
+	LD	HL,(DSTART)	; HL pts to first entry
+
+DUPELOOP:
+	PUSH	BC		; Save count
+	PUSH	HL		; Save ptrs
+	PUSH	DE
+	INC	HL		; Pt to FN
+	INC	DE
+	LD	B,11		; Compare FN and FT
+	CALL	@FNCMP
+	JR	NZ,NODUPL	; Continue looking for another entry
+
+;  Duplicate entries have been identified at this point
+
+	LD	A,(DE)		; Get extent field from target
+	CP	(HL)		; Compare with that in directory entry
+	POP	DE		; Get ptrs
+	POP	HL
+	JR	C,DUPSMALL
+
+;  New target is larger than stored entry
+
+	EX	DE,HL		; HL pts to target, DE pts to dir entry
+	LD	BC,ESIZE	; Number of bytes to move
+	LDIR			; Move it
+
+;  New target is smaller than stored entry
+
+DUPSMALL:
+	POP	BC		; Clear count from stack
+	XOR	A		; Indicate dup found
+	POP	HL		; Restore ptr to entry to scan for
+	RET
+
+;  No duplicate found; Advance to next entry
+
+NODUPL:	POP	DE		; Restore ptrs
+	POP	HL
+	LD	BC,ESIZE	; HL pts to current entry in Buffer,
+	ADD	HL,BC		; ...so add ESIZE to it
+	POP	BC		; Get count
+	DEC	BC		; Count down
+	LD	A,B		; Check for Done
+	OR	C
+	JR	NZ,DUPELOOP
+
+;  No Duplicate found
+
+NODUP:	OR	0FFH		; Indicate dup not found (NZ)
+	POP	HL		; Restore ptr to entry to scan for
+	RET
+
+;===============================================================
+;  NAME - ICOMPARE
+;  Entry: <HL> - Points to one FCB extracted entry
+;	  <DE> - Points to second FCB extracted entry
+;  Exit :  <F> - Carry Set (C) means (DE) < (HL)
+;		 Zero Set (Z) means (DE) = (HL)
+;		 Non-Zero (NZ) and No Carry (NC) means (DE) > (HL)
+;	  <HL>,<DE>,<BC>,<AF> - Preserved
+;  Special Requirements: None
+;===============================================================
+
+;;ICOMPARE:
+;;	LD	BC,(ORDER)	; Address of Order - 2 to BC
+;;	DEC	HL		; Adjust index to 0...N-1 from 1...N
+;;	ADD	HL,HL		; Double the element number to point to the ptr
+;;	ADD	HL,BC		; Add to this the base address of the ptr table
+;;	EX	DE,HL		; Result in DE
+;;	DEC	HL		; Adjust index to 0...N-1 from 1...N
+;;	ADD	HL,HL		; Do the same with the original DE
+;;	ADD	HL,BC
+;;	EX	DE,HL
+
+;  HL now points to the pointer whose index was in HL to begin with
+;  DE now points to the pointer whose index was in DE to begin with
+;	For example, If DE=5 and HL=4, DE now points to the 5th ptr and HL
+; to the 4th pointer
+
+;;	LD	C,(HL)		; BC is made to point to the object indexed
+;;	INC	HL		; ...by the original HL
+;;	LD	B,(HL)
+;;	EX	DE,HL
+;;	LD	E,(HL)		; DE is made to point to the object indexed
+;;	INC	HL		; ...by the original DE
+;;	LD	D,(HL)
+;;	LD	H,B		; Set HL = Object pted to indirectly by BC
+;;	LD	L,C
+
+;  Compare Dir entry pted to by HL with that pted to by DE;
+;	No net effect on HL, DE; Ret w/Carry Set means DE < HL
+;	Ret w/zero Set means DE = HL
+
+CMPENTRY:  push	bc		;; Save count
+	LD	A,(SELFLG)	; Group by File Type?
+	AND	00100000B
+	JR	Z,CMPFNFT
+
+;  Compare by File Type and File Name (in that order)
+
+	PUSH	HL
+	PUSH	DE
+	LD	BC,9		; Pt to FT (8 bytes + 1 byte for User Number)
+	ADD	HL,BC
+	EX	DE,HL
+	ADD	HL,BC
+	EX	DE,HL		; DE, HL now pt to their FT'S
+	LD	B,3		; 3 bytes
+	CALL	@FNCMP		; Compare FT'S
+	POP	DE
+	POP	HL
+;;	RET	NZ		; Continue if complete match
+	jr	nz,cmpex	;; ..continue if complete match
+	LD	B,8		; 8 bytes
+	JR	CMPFT1
+
+;  Compare by File Name and File Type (in that order)
+
+CMPFNFT: LD	B,11		; 11 bytes for FN and FT
+CMPFT1:	PUSH	HL
+	PUSH	DE
+	INC	HL		; Pt to FN
+	INC	DE
+	CALL	@FNCMP		; Do comparison
+	POP	DE
+	POP	HL
+cmpex:	pop	bc
+	RET
+
+;  Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+selflg:	defs	1		;;
+dirbuf:	defs	2		;;
+TFCB:	DS	2		; Address of temporary FCB
+ssb:
+DSTART:	DS	2		; Pointer to first Directory Entry
+FCOUNT:	DS	2		; Total Number of Files/Number of Sel Files
+elsiz:	defs	2		;; Size of each element
+compit:	defs	2		;; Addr of compare routine
+ordbuf:	defs	2		;; Addr of Order buffer
+ptrflg:	defs	1		;; FF=Use ptrs, 0=No ptrs
+	defs	1		;; (reserved)
+
+	END
+

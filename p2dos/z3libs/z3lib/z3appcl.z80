@@ -1,0 +1,107 @@
+	TITLE	"Z3APPCL - Z3Lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3APPCL.Z80 Ver 1.1 by Richard Conn
+; Date    : 6 Mar 87
+; Version : 1.1
+; Module  : Z3APPCL
+; Abstract: This module contains the routine APPCL which stores
+;	a command in the Z3 Command Line buffer.  Error status is
+;	returned.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		APPCL
+
+;  External References
+
+	EXT		GETCL1, GETCL2
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - APPCL
+; Entry: HL - Points to a command line
+; Exit :  A <> 0 and Zero Flag Reset (NZ) if OK
+;              A = 0 and Zero Flag Set (Z) if comd line overflow
+;			(No change to command line)
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+APPCL:	PUSH	BC		;save registers
+	PUSH	DE
+	PUSH	HL	
+	PUSH	HL		;save ptr to new line
+	CALL	GETCL1		;is command line available?
+	JR	NZ,PCL0
+
+; Error Return
+
+NOCL:	POP	HL		;get ptr to new line
+	XOR	A		;ret Z
+	JR	PEXIT
+
+; Pack old command line
+
+PCL0:	LD	B,A		;count of chars in B
+	PUSH	HL
+	CALL	GETCL2		;get address of new first command
+	LD	(OLDCMD),HL	;save position
+	POP	HL
+	LD	DE,4		;pt to first char in buffer
+	EX	DE,HL
+	ADD	HL,DE
+	EX	DE,HL
+	LD	(HL),E		;store address
+	INC	HL
+	LD	(HL),D		;DE pts to first char of buffer
+	LD	HL,(OLDCMD)	;get address of first char of remaining CL
+
+; Copy Old Command Line into Front of Buffer
+
+PCL1:	LD	A,(HL)		;copy
+	LD	(DE),A
+	INC	HL
+	INC	DE
+	DEC	B		;count down
+	OR	A		;EOL?
+	JR	NZ,PCL1
+	INC	B		;B = number of bytes left in buffer
+	POP	HL		;HL = address of first char of new command line
+
+;	HL pts to first char of new command line
+;	DE pts to after ending 0 of old command line
+;	B = number of chars remaining before overflow of Z3 command line
+
+	PUSH	DE		;save ptr on stack
+PCL2:	LD	A,(HL)		;get next char
+	LD	(DE),A		;put next char
+	DEC	B		;count down remaining chars
+	JR	Z,NOCL		;overflow if reached zero
+	INC	HL		;pt to next
+	INC	DE
+	OR	A		; EOL?
+	JR	NZ,PCL2
+	POP	HL		; Get ptr to first char of new line
+	DEC	HL		; Pt to ending 0 of old line
+	LD	(HL),';'	; Store semicolon separator
+	DEC	A		; Set to 0FFH, NZ for No error
+PEXIT:	POP	HL		; Restore regs
+	POP	DE
+	POP	BC
+	RET
+
+
+; Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+OLDCMD:	DEFS	2		; Pointer to old command line in CL buffer
+
+	END
+

@@ -1,0 +1,867 @@
+                                  VDE25.DOC
+                                  ---------
+                 Instructions for VDE (Video Display Editor):
+                            VDE, VDM 2.5 (03/87)
+
+                              (c)1987, E. Meyer
+
+==============================================================================
+
+    VDE is a small, powerful text editor for CP/M computers, offering:
+    ---
+  * full-screen editing      * block operations      * user area support
+  * wordwrap and reformat    * macro programs        * disk file operations
+  * margins, tabs, spacing   * find and replace      * WordStar compatibility
+  * many print features      * undelete functions    * configurable options
+
+     VDE is fast: it's written entirely in assembly language, and edits a file 
+entirely in memory.  Its definable macros and pure ASCII output make it an 
+ideal programmer's editor.  With full formatting and printing features, and 
+either ASCII or WordStar file format, it is also an efficient word processor.
+     VDE is designed for Z80 CP/M 2.2 and 3.0 systems; it should also work 
+with full equivalents (eg HD64180 CPU, ZRDOS), but NOT on 8080/85 systems.  
+The generic version can be installed for any terminal; there is also a memory- 
+mapped version VDM, which offers faster screen display if your hardware 
+supports it.
+
+
+===============================  INTRODUCTION  ===============================
+
+VDE is invoked from CP/M:   A>vde [du:][filename] [opt]     ("opt"= A,W,N)
+                 EXAMPLE:   A>vde b3:prog.asm [n
+
+     You can also run VDE simply by typing "vde<CR>", in which case VDE will 
+load into memory and then ask for a filename.
+     Here "du:" is an optional CP/M drive and user number; if omitted, the 
+current defaults (in the ">" prompt) are assumed.  The "opt" letter should be 
+preceded by a space and/or a "[", and if specified, selects one of three 
+different file modes:  "W"ordstar document, "A"SCII document, "N"on-document. 
+The default is usually "A".
+     If you are creating a new file, it will of course be empty.  If the file 
+you name is too large to fit in memory, VDE will complain, and you'll have to 
+break it up first.  (Typically this limit is about 55-60K.)
+     VDE gives you a "status line" at the top of the screen which includes the 
+filename, cursor position (page, line, column), INSERT toggle (if on), and 
+prefix flag (if on).  If you type ESC-?, you will get a brief menu of the 
+various VDE commands, along with the amount of free memory.  The menu, like 
+all command prompts and error messages, appears temporarily in the top portion 
+of the screen; press ESC again to remove it.
+-------------------------------------------------------------------------------
+ B11:TEXT.FIL  [A         Pg 12    Ln 34    Cl 49      INSERT      ESC-? = menu
+          VDE 2.xx (xx/87) (c)1987 E.Meyer          Bytes free: xxxxx
+<udrl>  |^V insert|^B reform||ESC-   Write Prnt||^Q-    |R TOF  ||^O- D disp CR
+^F wd rt|^N ins CR|^^ case  ||<udrl> Read  Name||<udrl> |C EOF  ||L,R,X margins
+^A wd lf|^G del rt|^P ^code ||Block  Files Load||B block|F find ||+,-,V  vtabs
+^R pg up|DEL dl lf|^PZ place||Termin Erase Save||P place|A replc||P pagn|S spcg
+^C pg dn|^T del wd|^U undel ||Copy   Macro eXit||DEL dl BOL| U  ||C cntr|W wndw
+^Z rp fi|^Y del ln|^W wait  ||Delete Key   Quit|| Y del EOL|undl||F flsh|Z zap
+-------------------------------------------------------------------------------
+     The VDE command set is similar in many respects to WordStar's, though not 
+identical.  There are ESC- commands, which mostly correspond to WordStar ^K- 
+(Block) commands; ^Q- and ^O- commands; and other single-control-key commands. 
+The similarities are strong enough that a WordStar user should have no trouble 
+adapting to VDE.
+
+
+=============================  COMMAND SUMMARY  ==============================
+
+I. CONTROL KEYS:  single keystroke commands, function without prefix.
+
+     CR =  Carriage return (^M).  Marks a paragraph end.
+     BS =  Nondestructive Backspace (^H).
+    TAB =  Hard Tab mode: insert a Tab (^I).
+           Variable Tab mode: move to next tab stop.
+
+     Arrow keys:  WordStar: ^E up, ^X down, ^S left, ^D right.
+                  Alternate: configurable, defaults to ^K,^J,^H,^L.
+     ^F =  move to next word right.
+     ^A =  move to next word left.
+     ^R =  scroll upward one screen.
+     ^C =  scroll downward one screen.
+
+     ^G =  delete character to the right of the cursor.
+    DEL =  delete character to the left.  [Configurable alternate.]
+     ^U =  undelete a character.
+     ^T =  delete word to right of cursor.
+     ^Y =  delete current line.
+
+     ^N =  insert a carriage return (break line) at present position.
+     ^V =  toggle INSERT mode on and off.
+     ^^ =  toggle case (upper/lower) of character at cursor.
+     ^P =  insert following control code.
+     ^B =  reformat a paragraph.
+     ^Z =  repeat find/replace (Repeats last ^QF or ^QA command.)
+     ^W =  wait.  (Brief pause, useful during Macros.)
+
+II. ESCAPE COMMANDS:  first hit ESC, then the key shown.  (ESC cancels)
+
+     ESC ? =  menu.  Display a brief menu of all VDE commands.
+                    Also shows amount of memory free for editing.
+
+     ESC Arrows: Left/Right (including ^S/D) = shift frame horizontally,
+                32 columns at a time (if cursor position allows).
+                 Up/Down (including ^E/X) = shift vertically 1/4 screen.
+
+     ESC F =  Files.  Look at the directory of a disk.  Press ESC to clear.
+     ESC E =  Erase.  Erase a disk file.
+     ESC L =  Load.  Load a brand new file to begin editing.
+     ESC N =  Name.  Change the current filename (affects Save, eXit).
+     ESC R =  Read.  Read a disk file into text at cursor position.
+     ESC P =  Print.  Print the file (or block) from memory.
+     ESC S =  Save.  Save the current file, but continue editing it.
+     ESC X =  eXit.  Do a Save, then a Quit (no confirmation needed).
+     ESC Q =  Quit.  Abandon current file and exit VDE.
+
+     ESC B =  Block.  Mark the start of a Block.
+     ESC T =  Terminate.  Mark the end of a Block.
+     ESC H =  Hide.  Unmark the Block.
+     ESC D =  Delete.  Delete the marked Block.
+     ESC C =  Copy.  Copy the marked Block to present cursor position.
+     ESC W =  Write.  Write the marked Block to a disk file.
+
+     ESC M =  Macro.  Execute a string of commands repeatedly.
+     ESC K =  Key.  Store Macro on function Key for later recall.
+     ESC 0..9 =  Use stored Key.  (In macro mode: label.)
+     ESC !,=,~,#   Used in Macro programming (see below).
+
+III.  QUICK COMMANDS:  first hit ^Q, then the key shown.  (ESC cancels)
+
+     ^Q Arrows:  Left/Right (including ^S/D) = go to start or end of line.
+                 Up/Down (including ^E/X) = go to top or bottom of screen.
+
+     ^Q B =  move to block marker.
+     ^Q P =  move to next place marker.
+     ^Q R =  move to top of file.
+     ^Q C =  move to end of file.
+
+     ^Q F =  find next occurrence of a string.
+     ^Q A =  start global find/replace.
+
+     ^Q Y =  delete from cursor to end of current line.
+     ^Q DEL =  delete from cursor to beginning of current line.
+     ^Q U =  undelete a line.
+
+IV.  ONSCREEN COMMANDS:  first hit ^O, then the key shown.  (ESC cancels)
+
+     ^O R =  set right margin (column 1 turns off wordwrap/formatting).
+     ^O L =  set left margin.
+     ^O X =  toggle margin release in/out.
+     ^O S =  toggle line spacing single/double.
+     ^O C =  center current line.
+     ^O F =  align a line flush to the right margin.
+     ^O D =  toggle display of hard CRs on/off.
+
+     ^O V =  toggle tab mode Hard/Variable.
+     ^O + =  set variable tab stop.
+     ^O - =  clear variable tab stop.
+
+     ^O P =  toggle pagination on/off.
+     ^O W =  toggle windowing on/off.
+     ^O Z =  temporarily blank the entire screen.
+
+
+=========================  EXPLANATION OF COMMANDS  ==========================
+
+ARROW KEYS - VDE supports two separate sets of Arrow keys, which function 
+    interchangeably.  The built-in set supports the WordStar "arrow key 
+    diamond" ^E,^X,^S,^D; the other is user configurable, but set by default 
+    to ^K,^J,^H,^L.  These keys move the cursor up, down, left, right.
+         Preceded by ^Q-, an arrow moves more quickly: to the top or bottom of 
+    the screen, to the left or right end of the line.
+         Preceded by ESC-, an arrow moves the FRAME rather than the cursor: 
+    the text as a whole shifts up/down 1/4 screen, or right/left 32 columns, 
+    while the cursor stays put.  (In fact, vertical shifts will drag the 
+    cursor along if they have to; horizontal shifts just won't work.)
+
+BASIC COMMANDS ESC-S,N,Q,X,L) - ESC-S SAVES your work: what's in memory is 
+    written to disk under the file name in the header.  (If that file already 
+    existed, it may be preserved as a BAK file.)  Do this often.
+         ESC-N NAMES your work.  This allows you to change the filename in the 
+    header before saving.  After a name change, BAK files are not preserved.
+         ESC-X EXITS politely to CP/M, saving your work first.
+         ESC-Q just QUITS.  Since you will wind up at the CP/M prompt with any 
+    text not yet saved lost forever, you are prompted to confirm this (Y/N).
+         ESC-L quits and LOADS a new file to begin editing.  This also 
+    requires confirmation (Y/N).
+
+BLOCK COMMANDS (ESC-B,T,H,D,C,W,PB, ^QB) - ESC-B marks the start of a Block. 
+    ESC-T marks the end.  (The marker is the same in both cases, by default a 
+    highlighted "B", and will remain until deleted or reset.)  You can't mark 
+    the end if the start isn't marked yet.  Of the Block functions ESC- 
+    D,C,W,PB, none will work if the Block isn't marked, and only ESC-D works 
+    if the cursor is inside the block.
+         ESC-H hides (unmarks) the block, removing any block markers set.
+         ESC-D deletes the block (including markers).
+         ESC-C copies the block text (not including markers) to right after 
+    the present cursor location.  There is no Block Move command, but ESC-C 
+    then ESC-D (to delete the original) will work fine.  (If the block is too 
+    big for a copy to fit in memory you will get an error.)
+         ESC-W writes the block text to a disk file.
+         ESC-PB (ESC-P with B option) prints the block text.
+         The ^QB command moves the cursor to the Block start.
+         [The default block marker is ^B.  This can be reconfigured.]
+
+DISK OPERATIONS (ESC-F,E,R) -  On using the ESC-F command, you will be asked 
+    to specify a drive and/or user, and its directory will be shown.  If there 
+    is not enough room to fit all the files on the screen, you will see "..." 
+    at the end to indicate that there were still more.  Press ESC to return to 
+    editing.  [ESC-F may be configured to ignore SYStem files.]
+         ESC-E can erase a disk file.  (Like all VDE commands, it will not 
+    accept wildcards in the filename.)
+         ESC-R reads in the contents of an entire disk file, placing the text 
+    after the current cursor position.
+
+FIND, REPLACE (^QF, ^QA, ^Z) -  ^QF is the command to find a string.  The 
+    search is case sensitive; the character "?" can function as a wildcard 
+    (unless it's the first character in the string).  Thus searching for "he 
+    ??press" will find "the Depression", "She impressed" etc (but not "the 
+    press).  Control codes (including ^M, or CR, for newline) may be included 
+    with the ^P prefix.
+        ^QA is the global find/replace command.  It asks for a string to find, 
+    and what to change it to.  The cursor will be placed in succession on each 
+    occurrence of the string in the file (starting at the current cursor 
+    location).  To change it, press "Y";  anything else skips to the next.  If 
+    you want to change all further occurrences without being asked, press "*". 
+    ESC cancels at any time.
+         ^Z repeats the last ^QF or ^QA command.  For ^QF this is simply a 
+    repeat find; for ^QA you will also be asked whether you want to replace 
+    the found string.
+
+INSERT MODE (^V) -  ^V toggles insertion on and off (when on, the INSERT flag 
+    shows in the header).  Normally, any existing text to the right of the 
+    cursor is overwritten as you type.  If INSERT is ON, what you type is 
+    inserted, and existing text moves to the right.
+
+LINE SPACING (^OS) -  The ^OS command toggles between single and double line 
+    spacing.  In double space mode, the following functions produce double
+    carriage returns:  <CR>, ^N, Wordwrap, ^B.  You can easily mix single and 
+    double spacing; and the Reform function ^B can quickly convert between the 
+    two.
+
+MACROS (ESC-M) -  A "macro" is a string of VDE commands and text that (once 
+    defined) can be repeated or reused.  When you type ESC-M you will be asked 
+    for the string, then a "Repeat count".  Usually you will simply type a 
+    number for the repeat count (0-9, or "*" for "global" -- actually 255 
+    times).  You will see the results as the macro executes, and you can abort 
+    it at any time by pressing ESC.  (If you are sure you know what you're 
+    doing, you can speed up Macro execution by specifying "Quiet" mode: press 
+    "Q" before the repeat count.  Only the header will be updated as the Macro 
+    runs.)
+         Macros also stop any time an error occurs; the error message will be 
+    visible, and can be cleared by pressing ESC.  Many commands (like Find or 
+    Reformat) are designed to generate errors at the end of the file so that a 
+    global ("*") Macro containing them will halt there.  Other global Macros 
+    may need to be aborted manually.
+         VDE turns INSERT OFF before running a macro, so that the same 
+    sequence will always have the same effect.
+         In order to include any input line editing characters (BS, left 
+    arrow, DEL, ^X, CR) in a macro, you must prefix them with ^P.  (NOTE:  To 
+    make them easier to read and understand, Macro listings will be given here 
+    as they function, not as they are typed in.  ^P prefixes as needed are NOT 
+    shown.  Keystrokes are separated by dashes or commas for clarity, and "sp" 
+    means a space or blank.)
+         Here is an example of a macro.  Can you figure out what it does?  
+    (Answer:  .elif eht fo dne eht ta meht fo tsil a gnikam elif a fo tuo 
+    sesehtnerap ni stnemmoc lla ekat lliw tI)
+           ^QR,^QF,(,CR,^G,ESC-B,^QF,),CR,^G,ESC-T,^QC,CR,ESC-C,ESC-D
+               {Onscreen you will see: QRQF(MG[BQF)MG[TQCM[C[D }
+         VDE Macros are very powerful tools, particularly given their program 
+    ability and storage on function keys.
+
+MACRO KEYS (ESC-K) -  Up to 10 Macros can be stored (0..9), by entering them 
+    with the ESC-M command, then using ESC-K to save them.  They can then be 
+    recalled and used simply by typing ESC-<number>.  Example: typing ESC-K-0 
+    will store the last Macro used as Key 0, and it can be recalled and reused 
+    at any future time simply by typing ESC-0.
+         Ordinarily, Keys operate just like the original Macro:  they will ask 
+    for "Repeat count" when executed.  If you want to suppress this (giving 
+    something more like a "function key", that only executes once) you can 
+    type "N" (for No repeat) before storing the key number.  Example:  ESC-K-N- 
+    0 stores a Macro in Key 0 as a once-only function key.  Similarly you can 
+    make it a QUIET once-only key with "Q" instead: eg ESC-K-Q-0.
+         If the Macro (ESC-M) string is empty, using ESC-K will delete a Key 
+    definition.  Using a defined Key brings its string into the Macro buffer.  
+    Trying to use an undefined Key results in an error.
+         There are 500 bytes total available for all 10 keys, and a 128 byte 
+    limit for any one Key.  (VINSTALL will accept keys up to 128 bytes; but 
+    VDE's input line is only 65 bytes.)  If your request to store (ESC-K) 
+    exceeds the limit an error will result.
+         Besides simply storing Macros, here are some useful function Keys:
+       1.  Showing a ruler line.  The following sequence:
+                ^V,CR,TAB,!,TAB,!,TAB,!,TAB,!,TAB,!,TAB,!,CR,^V
+    can be used to display a ruler line showing tab stops.
+       2.  Storing different sets of margins (eg for quotes): for example,
+                             ^OL,12,CR,^OR,66,CR
+       3.  Typing any frequently repeated phrase; "ESC-6" is much more 
+    convenient than "World Wide Widgets Inc."
+          [VINSTALL allows you to install a default set of macro Keys.  Thus 
+    VDE can be customized for any task, such as the formatting requirements 
+    of specialized writing or programming languages.]
+
+MACRO PROGRAMMING (ESC-0..9, ESC-!,=,~,#) -  VDE has several commands which 
+    function only in a Macro string, and give you control over the execution 
+    of a macro, allowing real programming.
+         ESC-0..9, when in a Macro, function as "labels" 0..9.  They have no 
+    effect, but can be "jumped" to by other commands.
+         ESC-! followed by 0..9 is a simple "jump" instruction, causing macro 
+    execution to resume with the command following the label ESC-0..9.  As two 
+    special cases, ESC-!-[ jumps to the beginning of the Macro, and ESC-!-] 
+    jumps to the end (aborts).
+         ESC-= and ESC-~, followed by a character and then a label (or "[", 
+    "]"), are conditional jumps: they will jump to that label IF the character 
+    at the cursor position does (or for "~", doesn't) match that specified.
+         ESC-= and ESC-~, followed by a character and then ">" or "<", are 
+    search loops.  They will continue to move the cursor right (or for "<", 
+    left) as long as the character at the cursor does(n't) match, or until the 
+    beginning or end of the file.
+         ESC-#, followed by 0..9, is used to "chain" to another macro key.  In 
+    this way you can build up strings longer than the 65-byte limit on any one 
+    key.  It does not "call" the key; there is no returning.
+         Macro programs are stored just like any other macro string (usually 
+    with no repeat count).  If you program in an endless loop, you will at 
+    some point have to abort with ESC.  Don't make macro programs "quiet" 
+    until you're sure they work.
+         Example: stripping (varible numbers of) leading spaces.  The macro:
+                            ^QS,ESC=sp>,^QDEL,CR
+    will delete all leading blanks on a line.
+
+MARGINS, CENTER, FLUSH (^OR,L,X, ^OF,C) - ^OR sets the RIGHT margin, and 
+    turns ON wordwrap, formatting, and centering.  The default is column 1, 
+    which turns OFF all formatting functions.  At the prompt "Column:" enter 
+    the column number (1-255), or just hit RETURN for the current cursor 
+    column.  If this value conflicts with the left margin, the left margin 
+    will be reset to 1.
+         ^OL sets the LEFT margin in an identical fashion.  Must be to left of 
+    the right margin, which must have been set first.  The default is 1.
+        ^OX temporarily RELEASES the margins (sets them to 1), allowing you to 
+    type outside them without wordwrap.  Use ^OX again to restore the margins.
+        ^OC CENTERS a line with respect to the current margins, if set.
+        ^OF FLUSHES a line over to the right margin, if set.
+
+PAGINATION (^OP) -  The ^OP command toggles pagination.  When on, the default 
+    page length is reflected in the VDE header ("Pg xx..."), and all page 
+    functions in the Print routine (formfeeds, headers, start/stop print) are 
+    enabled.  When off, the header will say "Pg 0", and the line count ("Ln 
+    xx...") will be the line number in the file; also, printing sends the 
+    whole file out at once, with no pagination from VDE.
+         [You cannot toggle pagination on if the default page length is 0.]
+
+PLACE MARKERS (^PZ,^QP) -  You can set any number of temporary place markers 
+    in your file with ^PZ (they will appear as a highlighted Z).  The ^QP 
+    command moves the cursor to the next place marker in the file, if set 
+    (cycling back to the top of the file if needed).  Place markers are not 
+    saved to disk.
+
+PRINTING (ESC-P, ^P) -  The ESC-P command Prints the file from memory.  You 
+    will be asked for a set of "Options:", at which point you may enter one or 
+    more of the following, in any order:
+       P      pauses for keystroke before printing each page (sheet feed).
+       B      causes ONLY the currently marked Block to print.
+       ^      causes control characters ^X to be FILTERED to ASCII "^X".
+       *nn    causes the job to print out nn TIMES (nn=1..255).
+       @nn    causes printing to begin AT page nn.
+       #nn    causes a MAXIMUM of nn pages to print.
+       "..."  causes quoted string to print out as a HEADER.  The string, 
+    followed immediately by the page number, will print at the top right of 
+    each page near the margin.  (Maximum length is 50 characters; use an empty 
+    string, "", to get numbered pages with no header text.)
+         The last three options (@,#,"") are NOT allowed if pagination is off 
+    (^OP), or if "B"lock print was chosen.
+          Example 1:      Options:  P*2 "Instructions, page" @6#1
+    will print out page six of the file twice, with the header shown, pausing 
+    before each page for a keystroke.
+          Example 2:      Options:  B^
+    will print out the current marked Block, with control filtering.
+         You can abort printing at any time with ESC (this may take a moment, 
+    or a few keystrokes, depending on your BIOS).
+         For printer control, VDE supports a subset of WordStar ^P print 
+    codes.  These can be entered with ^P, then the control code (or letter;  
+    ^P^X and ^PX are equivalent).  First there are simple embedded codes:
+          ^H - overstrike previous character
+          ^L - formfeed  (Not recommended when pagination (^OP) is on)
+    Then there are seven user-definable codes: three toggles, four switches.  
+    The Printer Installation in VINSTALL allows you to choose what codes you 
+    want, and install the control sequences your printer needs.  The defaults
+    are              toggles  ^D, ^S, ^Y
+                and switches  ^Q, ^W, ^E, ^R.
+    These correspond to the Doublestrike, Underline, and Ribbon toggles, and 
+    the four User Codes, in WordStar.  Toggles are well suited to features 
+    (like ^Sunderline^S) that will be turned on and off.
+         Control codes other than the 7 installed ones will simply print out 
+    "as is", that is, ^[ will print as ESC, etc.  (Note ^B and ^Z are reserved 
+    for use as block and place markers.)  Control codes display on screen as 
+    highlighted capital letters.  Unfortunately, VDE does count these codes 
+    when reformatting text.  Where format is critical, insert ^P codes last.
+
+TABS (^I, ^OV,^O+,^O-) -  There are two Tab modes, Variable and Hard; the ^OV 
+    command toggles between them.  In Hard Tab mode the Tab key produces an 
+    actual ^I (ASCII TAB); whether this overwrites any existing text depends 
+    on the INSERT toggle.  Hard Tabs display by default at fixed intervals of 
+    8 screen columns.  [This is reconfigurable to 2, 4, 16, etc.]
+         In Variable Tab mode, the Tab key moves the cursor to the next 
+    variable tab stop.  Existing text is not overwritten; spaces are added at 
+    the end of a line as needed.  Up to eight tab stops may be set with ^O+ 
+    and cleared with ^O-; the defaults are in columns 5, 15, 35, and 55.  
+    [These are reconfigurable.]
+         Note that you can always get a Hard Tab by typing ^PI.
+
+UNDELETE (^U, ^QU) -  The undelete functions can be used (repeatedly if 
+    necessary) to recover a reasonable amount of text deleted either by 
+    overtyping, or with any of VDE's delete commands.  ^U undeletes one 
+    character; ^QU does a whole line.
+         Restrictions: undelete may work imperfectly if the cursor has been 
+    moved since deleting; or if DEL has been used several times in sequence; 
+    or if ESC-D was used and the cursor was not at the start of the block.
+         Further use after all deleted text is recovered will produce junk 
+    (often including duplicates of text above the cursor).
+
+WINDOW, ZAP (^OW, ^OZ) -  The ^OW command creates a Window in the bottom half 
+    of the screen, which retains a copy of the file text starting at the 
+    cursor line.  Editing continues normally in the top half of the screen.  
+    This is useful for comparing different sections of text within a file, or 
+    even between different files.  Typing ^OW again removes the Window. 
+    (Note: Windowing is only supported for screens of 15 or more lines.)
+         The ^OZ command temporarily zaps (blanks) the entire screen; good for 
+    avoiding CRT burn-in, or just protecting work from prying eyes or fingers. 
+    Restore the screen by pressing ESC.  (Note: if Windowing was in effect, 
+    its text will be lost.)
+
+WORDWRAP, REFORMAT (^B, ^OD) -  WORDWRAP is automatic whenever the right 
+    margin is set.  Any text entered will be formatted while you type, to the 
+    current margin settings.
+         ^B REFORMATS from the line the cursor is on, to the end of the para- 
+    graph, according to the current margin settings and line spacing.  (Thus 
+    it is used not only to reshape text after editing, but also to change 
+    margins and line spacing.)
+         The end of a paragraph is marked by a "HARD CR", which occurs when 
+    you press the <CR> key.  (This is a CR immediately following a character 
+    of text.)  In contrast, when wordwrap occurs you get a "SOFT CR" (which is 
+    actually a CR with a space before it).  You can change a hard CR into a 
+    soft one, or vice versa, by deleting or adding a space before it.  Hitting 
+    the <CR> key also hardens a soft CR.  The distinction between hard and soft 
+    CRs is only important when using ^B.
+         ^OD toggles DISPLAY OF HARD CRs.  Hard CRs, otherwise invisible, can 
+    be caused to display as a "<" character.  This can be useful; some may 
+    find it distracting, so it turns off.  You may find you want to leave it 
+    on for a while, at least until you get used to how the new hard CRs work.  
+    (Avoid hitting the CR key just to move down through a file, for example.)
+
+
+===========================  FURTHER INFORMATION  ============================
+
+ASCII FILES - The "A"SCII-document file format has been modified in VDE 2.50 
+    to allow more accurate formatting (the old method required a lot of guess- 
+    work on VDE's part) and greater WordStar compatibility.  The new scheme 
+    distinguishes between "hard" and "soft" CRs according to whether or not 
+    they are preceded by a space.
+         Consequently, if you edit an ASCII file created by other software 
+    (including earlier versions of VDE!), it will appear to be full of hard 
+    CRs, making text impossible to reformat.  There are two easy ways to solve 
+    this problem: first, you can use ^QA to find "^M"s and selectively replace 
+    them with " ^M".  Alternatively, the following Macro (best stored as a 
+    Quiet macro Key) does a good job of "softening up" a single paragraph:
+               ^QS,^X,ESC=sp],ESC=CR],^S,^Vsp^V,^D,ESC![
+
+FILE MODES -  By default, VDE reads and writes text as standard ASCII 7-bit 
+    characters, a format accepted by virtually all software.  However, if you 
+    specify the "W" option on the command line, as in
+                         A>vde document.fil w
+    VDE will function in WordStar document mode, which means that (1) any 
+    right justification is removed when files are read in, and (2) soft 
+    returns and spaces are written as appropriate on output.  If you are 
+    exchanging files with WordStar, this will produce what you want about 95% 
+    of the time, and you can easily clean up the occasional glitch.
+         [VINSTALL allows you to set up VDE to default to WordStar mode; if 
+    this is done, you can still specify the option "A" to get ASCII mode.]
+         The "N" and "A" modes both produce ASCII files, and differ only in 
+    the default options (margins etc) set up when a new file is loaded.  
+    Typically "A" is for word processing and "N" is for programs, etc.
+         DEFAULTS FOR:       File I/O   Margins      Tabs    Hard CR disp.
+       "W"ordstar document   WORDSTAR     SET      VARIABLE      ON
+       "A"SCII document       ASCII       SET      VARIABLE      ON
+       "N"on-document         ASCII     RELEASED     HARD        OFF
+         The file mode option can be specified along with the filename at any 
+    VDE file function prompt, allowing you to mix WordStar and ASCII disk 
+    files as needed.  You can also change the current mode with the ESC-N 
+    function by entering a new mode (eg, "[W") without a filename.
+
+HYPHENATION -  VDE can't hyphenate, but it does recognize hyphens in the text, 
+    treating them as a legitimate place to break a line.  (So if you're typing 
+    a long word close to the margin, you can type a hyphen where you'd like 
+    the word to be broken.)  If VDE is trying to reformat and finds a hyphen 
+    at the end of a line, it will quit with an error.  You must join the lines 
+    (and delete the hyphen, if desired) manually, then press ^B again.
+
+INTERRUPTION -  If VDE gets interrupted by a message from some other software 
+    (BIOS error, resident utilities, etc), it may lose control of the screen.  
+    The best way to restore it to normal is by blanking and restoring the 
+    screen (^OZ,ESC).
+
+RUNNING OUT OF ROOM -  If you run out of disk space, you can just swap disks 
+    (you should always keep a blank FORMATTED disk around).  Alternatively, 
+    you can use the ESC-F and ESC-E commands to delete unneeded files; and you 
+    can install VDE not to preserve backup (BAK) files.
+
+SPACE COMPRESSION -  Since VDE 2.10, a new text compression algorithm is used, 
+    that can effectively increase memory capacity by over 25%.  Of course this 
+    compression is undone when writing the file back to disk.
+         (Earlier versions of VDE used a compression algorithm inherited from 
+    VDO, that was about half as efficient.)
+
+SPEED -   VDM is quite fast on screen.  VDE should run with adequate speed on 
+    most terminals; however, if your BIOS doesn't buffer the keyboard well, 
+    you might occasionally lose characters when typing.  Hints that help here: 
+    (1) response speed improves if you have INSERT OFF while typing in large 
+    amounts of text.  (2) getting "Scroll Up/Down" correct when installing VDE 
+    for your computer makes a big difference.
+
+STRING ARGUMENTS -  When confronted with a prompt like "Find:", you are 
+    expected to type in a string (up to 65 characters).  During this process, 
+    you can correct mistakes with DEL, BS, or any left arrow, or ^X will 
+    delete the whole entry; hit CR when finished.  Note that to get any of 
+    these codes into the string itself, you must precede it with ^P (this 
+    includes ^P).
+         Examples: to find a line beginning with a "*" (find "CR,*") type
+                     ^QF, ^P,CR, *, CR.
+    Now to get this into a Macro with ESC-M, you would have to type (whew)
+                     ESC-M, ^QF, ^P,^P, ^P,CR, *, ^P,CR,  CR.
+
+WORDSTAR COMPATIBILITY -  Aside from the obvious fact that "ESC" is used as a 
+    command prefix instead of "^K", the remaining differences between the VDE 
+    and WordStar command sets are minor:
+          COMMON FUNCTION       WS      VDE      NOTES
+          -----------------    ----     ---      -------------------------
+          Rept Find/Replace     ^L      ^Z
+          Partial Scroll Up     ^W     ESC<up>   Several lines at once.
+            "      "   Down     ^Z     ESC<dn>
+          Set Place Mark      ^K0..9    ^PZ      Not individually numbered.
+          Go To Place Mark    ^Q0..9    ^QP      Cyclic.
+          Block End             ^KK     ESC-T
+          Delete Block          ^KY     ESC-D
+          Move Block            ^KV     ---      Must Copy then Delete.
+          VariTab Set,Clr     ^OI,^ON  ^O+,^O-
+          Help                  ^J...   ESC-?
+          Erase Disk File       ^KJ     ESC-E
+          Interrupt Process     ^U      ESC
+    It is also important to note that VDE does not recognize "dot commands".
+
+
+=================================  MESSAGES  =================================
+
+          All messages appear in the line just below the header.  First there 
+are PROMPTS requiring user input.  (Many assume a natural default if you just 
+type RETURN, and can be aborted if you type ESC,RETURN.)
+
+       "Abandon file?" - please confirm ("Y") a Quit or Load request.
+          "Find:", etc - enter the string argument for the command.
+        "Column:", etc - enter a number 0..255
+       "Repeat count:" - enter [optional "Q" and] repeat count for Macro.
+         "Key number:" - enter [optional "N/Q" and] key number for Key.
+
+Then there are the (temporary) INFORMATIONAL messages:
+
+         "Please WAIT" - disk I/O or printing in progress.
+
+Then there are ERROR messages: you need to press ESC to continue.  "Error" 
+alone means the command used just won't work in this situation.  (Example: 
+a block isn't correctly marked.)  More specific errors are:
+
+        "Memory" - the file, block, or key string won't fit in RAM.
+           "Key" - an illegal control or ESC sequence was pressed.
+           "I/O" - file not found, disk full, empty/invalid drive, etc.
+      "Reformat" - end of file; hyphen at end of line; or word too long.
+          "Find" - the search string was not found.
+        "Syntax" - a macro programming command was misused.
+
+
+==============================  USING VINSTALL  ==============================
+
+     VDE and VDM should be distributed in a library file containing this DOC 
+file and a corresponding version of the VINSTALL program.
+     As distributed, VDE is set up for an ADM3 terminal, and VDM is set up 
+for an Osborne Executive.  If you use another computer/terminal, you may have 
+to re-"install" VDE/M; otherwise it will make more or less of a mess on your 
+screen, or (possibly, with VDM) crash.
+     Most users should not need to go through the full terminal installation, 
+at least at first.  Choose the <L>ist option to select from a menu of 
+terminals already built into VINSTALL.  The list is not exhaustive, but it 
+includes most basic types: for example, the default "LearSiegler ADM3" data 
+will also run on Qume, Wyse, Freedom and many other terminals, as well as many 
+computers, that emulate an ADM3 terminal.  Check your manual to see whether 
+your machine emulates one on the menu, or comes close.  (Minor touchups, such 
+as codes for inverse video, can be made later.)
+     The default printer installation is a basic Teletype.  You will probably 
+want to redo this, so you will have access to your printer's special features.
+     There are also many options affecting the operation of VDE that you can 
+select or modify to suit your taste.
+
+VINSTALL SYNTAX:    A>vinstall [d:]vde[.com] [instfil]     "[]"=optional
+
+     Typically, you can use VINSTALL to modify VDE24.COM simply by typing:
+                    A>vinstall vde24
+and selecting the values you want to change.  If you have to do a manual 
+installation of VDE for your computer, you may want to create an "installation 
+file" which you can use (and give to others) to supplement the built-in 
+terminal list of VINSTALL.  This is done by specifying another filename:
+                    A>vinstall vde24 termname[.vde]
+VINSTALL will load and use (or create) the file TERMNAME.VDE (or .VDM), and 
+update it as well as VDE.COM when you exit.  The installation file is very 
+small, containing just terminal parameters (no user options, etc).
+     It is also possible to create "key files" of VDE macro key definitions.  
+These work just the same way, except they must have a filetype of ".VDK", and 
+this must be specified on the command line, eg:
+                    A>vinstall vdm241 mykeys.vdk
+(No, you can't specify both an installation and a key file at once.) The 
+version numbers of VDE/M, VINSTALL, and any other files must "agree" or you 
+will get an error.  The match need not be exact, as there may be a new release 
+of VDE without modifying the installation areas.
+
+     VINSTALL is largely self-documenting, and steps you through each item 
+individually.  If this is your first time running the program, take advantage 
+of its "Help" option before you start in, for some basic instructions.  Note 
+that ALL the number entry in VINSTALL is HEXADECIMAL; you will find a good 
+ASCII/base-conversion chart helpful.  VINSTALL can't check for illegal values; 
+be careful what you enter.
+     What follows is a more detailed explanation of installation items, in 
+about the same order as in the VINSTALL procedure.  Most people will be using 
+VDE; you can try to use VDM instead if you have memory mapped video with:  (1) 
+a high bit that can be used to highlight and provide a cursor; (2) an absolute 
+address at or above 3000h.
+
+USER OPTIONS
+       Create BAKup files (Y/N) - Do you want backup files to be made when you 
+    save a file with VDE?
+       Default file mode W/A/N -  Which of the three file modes "W","A","N" 
+    described above do you want as the default?  (W=57, A=41, N=4E.)
+       Default insert on (Y/N) - Do you want the INSERT toggle to start out on 
+    when VDE loads a new file?
+       Left and Right margin columns (00-FF) - Default margin settings.  Set 
+    both to 1 to entirely disable wordwrap and reformatting.
+       Page length (00-FF) - Set the number of text lines to print on a page.  
+    (Does not include another 3 lines for a header, if used.)  Setting to 0 
+    disables pagination entirely.
+       Scroll overlap (00-lines) - This is the number of lines overlap between 
+    screens when scrolling with ^R/^C.  The smaller, the larger the scroll.
+       Show system files (Y/N) - Do you want files with the SYStem attribute 
+    to show in the VDE directory display?
+       Fixed drives (01-10) -  This lets you specify that up to two CP/M 
+    logical drives are nonremovable (hard or RAM disk), so VDE won't reset 
+    them before writing to them, speeding up some systems.  Enter 01 for A:, 
+    02 for B: etc (or just 0000 if you have none).  Caution: naming a floppy 
+    drive here can cause serious BDOS errors.
+       Ring bell on error (Y/N) - Do you want your terminal bell to ring when 
+    a VDE error message displays?
+       Alternate video in header (Y/N) - Do you want the header, messages, etc 
+    to appear in a contrasting video mode?
+       Block mark character (00-7F) - Usually ^B (02), but if you need to 
+    imbed that code in your files for any reason (eg, ZCPR3) you can change 
+    this to some other (otherwise unused) ASCII code, such as 00 (^@).
+       Clock speed in MHz (01-FF) - Set this to reflect your CPU clock speed; 
+    most Z80 computers are 4.0 MHz (use 40 here).
+       Horizontal scroll delay (01-FF) - This affects only VDE (not VDM): 
+    adjusts the delay between scrolling the current line and scrolling the 
+    rest of the screen, when working beyond the right screen edge.  The 
+    average value is 80; adjust as you like.
+       Hard Tab display spacing  -  Usually 08, this can also be 02, 04, 10, 
+    or any other power of two.  Other values will produce erratic results.
+       Variable tab stops -  Enter a list of up to 8 tab stop columns, in 
+    ascending order.  (Column 01 is the leftmost.)
+
+TERMINAL INSTALLATION (Both versions)
+       Terminal ID - Identify the terminal you are installing. (16 characters)
+       Viewable screen columns (28-FF) - Enter the width of your screen in 
+    columns.  The normal value is 50 for eighty columns.
+       Screen lines (04-FF) - Enter the number of lines on your screen.  
+    Normally 18 for twenty-four line screens.
+       DELete character (00-7F) - VDE always accepts 7F as a delete key.  If 
+    your keyboard can't generate this you can install an alternate value here 
+    (example: 1F enables ^_ on an Osborne 1).  If you have a DEL key, you can 
+    leave this at the default value, FF for "not used".
+       Arrows up, down, right, left (00-7F) - Enter the ASCII codes for your 
+    terminal arrow keys in this order, one byte each.  Ignore parity.  Use a 
+    value of FF to mean "not used".  (WordStar arrows and BS need not be 
+    redefined here.)  The default is CP/M ^K,^J,^L, entered as 0B0A0CFF. 
+    (Use the codes generated by your arrow keys; not the cursor control codes 
+    for your screen, where these differ.)
+       Terminal init, uninit - Enter the codes you want sent to initialize 
+    your screen on entry into VDE, and to uninitialize on exit, in the form 
+    (# of bytes),bytes.  You will at least want to clear the screen.
+
+TERMINAL INSTALLATION (Generic VDE only)
+       Autowrap at line end (Y/N) -  Usually Yes, as most terminals wrap down 
+    to the next line when a character is printed at the right edge of the 
+    screen.  If yours discards characters instead, set this to No.
+       Clear to end of line - Enter the codes to clear to the end of the line, 
+    as (#),bytes.  Example: ESC-T is (02)1B54.  If your terminal can't do this 
+    then zero it out (00).
+       Alternate video on/off - Enter the codes (#),bytes to turn your 
+    favorite video mode (eg inverse) on and off.  If your terminal can't do 
+    this, zero them out (00).
+       Use high bit for alt. video (Y/N) - If your terminal needs the high bit 
+    set on characters to get them in alternate video, zero the above strings 
+    out and say Yes here; otherwise, No.
+       Console filter (7D-FF) - This is the highest ASCII code that will be 
+    sent to the screen.  Normally 7F; if your terminal can't display codes 7F 
+    or 7E (DEL and tilde), lower this to 7E or 7D.
+       Use ANSI cursor addressing (Y/N) - Normally No; if your terminal uses 
+    ANSI standard codes "ESC[rr;ccH" for cursor addressing, answer Yes here 
+    and skip over the next two items.
+       Cursor column before row (Y/N) - Normally No; if your terminal expects 
+    col,row order when positioning the cursor instead of row,col, say Yes.
+       Position cursor at (0,0) - Enter the 4-byte sequence for addressing the 
+    cursor to the top left:  two lead bytes, then two row/column values.  Most 
+    terminals use ESC,=,20h+row,20h+col, or 1B3D2020.  If you have only one 
+    lead byte, make the first something innocuous like 00.
+       Delay after cursor positioning (00-FF) - Normally 00.  Some slow 
+    terminals require a delay here to accomplish cursor movement; adjust this 
+    value upwards as necessary.
+       Scroll text up and down - Sequences that will cause the text to quickly 
+    scroll up or down a line.  On most terminals you can send the cursor to 
+    the second screen line (first text line) and delete/insert a line.  
+    Example: on an ADM3-style terminal, 1B3D2120 puts the cursor on line 2, 
+    1B52 deletes a line, and 1B45 inserts a line.  So what you need for scroll 
+    up is (06)1B3D21201B52, and for scroll down (06)1B3D21201B45.  Some 
+    terminals require different approaches; if yours can't do this at all, 
+    zero this out (00).  CAUTION: installing this incorrectly can have danger- 
+    ous results; the screen display may not be properly maintained.  If in 
+    doubt, zero it out.
+
+TERMINAL INSTALLATION (Memory-mapped VDM only)
+       Unused columns of RAM (00-FF) - Enter the number of unused bytes in 
+    video RAM between the end of one visible line and the start of the next.  
+    Example: many computers have 80 (hex) bytes of RAM per line, but only show 
+    50 of them.  So there would be 30 unused columns.
+       Cursor on/off - Enter the codes (#),bytes to turn the regular CP/M 
+    cursor on and off, so it won't appear on the VDE screen.  If you can't do 
+    this zero them out (00), and the cursor will remain visible at the upper 
+    corner of the screen.
+       Video RAM start (3000-FFFF) - Enter the starting address of your video 
+    memory, as four hex digits.
+       Video in/out code - If your video RAM is in the ordinary bank of 
+    memory, just enter "C9" here (that's a RET instruction).  Otherwise, you 
+    will need the machine-language code to switch video memory in and out.  
+    There are 16 bytes available for each routine, and you must preserve all 
+    the CPU registers, and end with a RET.  You should find the assembler code 
+    to do this in your terminal manual; to convert it to hex, either look up 
+    the hex values in a Z80 reference book, or use DDT or ASM/MAC to write and 
+    assemble the code to hex form.
+
+PRINTER INSTALLATION
+       Printer ID - Identify the printer you are installing.  (16 characters)
+       Printer initialization - Enter a string of codes (#),bytes to send to 
+    the printer before printing text, to set up print mode, margins, etc.
+       Printer uninit - another string (#),bytes to restore the printer to any 
+    desired state after VDE is finished printing.
+       Send LF after CR (Y/N) - Normally Yes.  But with some printers, which 
+    manufacture their own LF on receiving a CR, you will want No here.
+       Toggles and switches - Enter the ASCII codes for the three toggles, 
+    then four switches, as described above.  Toggles turn a feature on and 
+    off again; switches just send the same code each time.  The defaults, 
+    which correspond to WordStar, are toggles ^D,^S,^Y (doublestrike, 
+    underline, and ribbon) and switches ^Q,^W,^E,^R.  You can use any codes 
+    here EXCEPT ^B,^H,^I,^J,^L,^M,^Z, which are used for other purposes.
+       Codes for toggles (on/off) - Enter the codes (#),bytes to send to the 
+    printer on encountering each of the three toggle codes, first to turn a 
+    feature on, then off.
+       Codes for switches - Enter the codes (#),bytes to send to the printer 
+    on encountering each of the four switches.
+
+MACRO KEYS
+       VINSTALL gives you the ability to examine and change the default set of 
+    macro Keys in VDE.  (Any Keys defined with ESC-K while running VDE 
+    override the defaults.)  VINSTALL gives you a display much like this:
+      MACRO KEYS:  (01C6 bytes free)  <---- note free bytes (up to 01F4 = 500)
+      <0><>
+      <1><>                           <---- "<>" flag means empty
+      <2><>
+      <3>^C^W                         <---- normal macro key
+      <4><>
+      <5><N>World Wide Widgets Inc.   <---- "<N>" flag means no-rpt key
+      <6><>
+      <7><Q>^QR^[B^QC^[T^[C           <---- "<Q>" flag means quiet key
+      <8><>
+      <9><>
+    This is pretty straightforward; you just select the number of the Key you 
+    wish to redefine, then type in the new definition, much as you would in 
+    VDE.  All the same rules apply (but VINSTALL will accept longer keys, up 
+    to 128 bytes).  If the new definition is too long to fit it will be 
+    rejected.
+
+FURTHER USER PATCHING
+       The address of the user patch area will be given to you by VINSTALL.  
+    This small region in VDE can be used to install any extra patch code you 
+    need.  (Example:  if your video in/out routines won't fit into 16 bytes, 
+    you can jump to the user patch area and put more code there.)  This is the 
+    ONLY such area available, as VDE uses all available memory after its own 
+    code for editing text.
+       VINSTALL also tells you the addresses of the command tables in VDE/M. 
+    You may find this useful if you need to go in and change a VDE command key 
+    that conflicts with your computer's firmware.  There are four command 
+    tables: basic, ESC, ^Q, and ^O.  Each is a list of 3-byte entries, with a 
+    one byte keycode, then a two byte address.  (Examples: you will find the 
+    ^T command and the ESC prefix in the basic table; and the ^OX command 
+    appears in the ^O menu, as ^X.)  Find the problem keycode, and use DDT or 
+    another utility to change it.  (You will also see the keycodes 80-84h in 
+    the tables; these mean DEL and the arrow keys, however installed.)
+       Don't try to change the ESC- prefix to ^K- to make VDE more WordStar- 
+    like.  It will take you a while to locate all the occurrences, and leave 
+    you with some pretty confusing pairs of commands (eg ^KX = eXit, ^K^X = 
+    shift screen down).
+
+RESTORE DEFAULTS
+       This option is provided in the event that someone has so mucked up your 
+    copy of VDE that you can't sort out what's wrong.  This should return VDE 
+    to the state it was distributed in: all User Options restored to their 
+    defaults, Terminal Installation set to ADM3 (or Osborne Exec), printer set 
+    to a basic Teletype, no Macro Keys, no User Patch code.
+
+
+=================================  HISTORY  ==================================
+
+     The original VDO editor (Fritz Schneider, 1982) was adapted by George 
+Peace to run on Osborne computers (VDO-EX, 1984), then further enhanced by me 
+(VDE).  There are other descendants of VDO, including James Whorton's VDO25; 
+each has evolved in a different direction, with its own advantages and 
+compromises.  VDE reflects my own tastes, and has by now been thoroughly 
+enough rewritten and expanded that I consider it (and the name "VDE/M") mine.
+
+     VDE, VDE-2 (1984) - Improved command set.  Still Osborne only.
+     VDE-PX (1985) - First terminal adaptation, to Epson PX-8.
+     VDE-OS/OX (1985) - Osborne versions, with ongoing improvements.
+     VDE, VDM 2.00 (1986) - Unified VDE/M installable for different terminals.
+
+     v 2.1x (6/86) - Macros; file directory; undelete; tighter compression; 
+                   improved pagination and scrolling; printer installation.
+     v 2.2x (8/86) - More WordStar-like commands; left margin; hyphenation.
+     v 2.3x (9/86) - New VINSTALL program; word functions; new ^Q-up/down; 
+                   global replace; print options; all ^P codes allowed.
+     v 2.40 (1/87) - Improved scrolling and screen functions; more screen 
+                   sizes supported; WordStar file mode; place markers; ^OZ; 
+                   block print; larger macro keys; VINSTALL terminal menu.
+     v 2.50 (3/87) - User area support; variable tabs; double spacing; search 
+                   wildcards; more standard block functions; improved format- 
+                   ting; many additions to VINSTALL.
+
+
+     ****************************************************************
+     *****     The VDE editor and its documentation are         *****
+     *****       (c)1987 E. Meyer, all rights reserved.         *****
+     ***** You may freely distribute UNMODIFIED copies of them, *****
+     *****     for NONPROFIT use only, at your own risk.        *****
+     ****************************************************************
+
+     Please do not circulate the VDE package (minimally VDE, VDM, VINSTALL, 
+and VDE.DOC) in any incomplete or modified form, or without the above 
+copyright notice.  You may include additions of your own (*.VFK files, HEX 
+overlays, special documentation) if you wish; if you devise something really 
+useful, please tell me about it.
+     Source code to VDE 2.xx has not been released.  Direct problems and 
+suggestions concerning VDE itself to me at the address below; include a 
+stamped envelope for a reply if desired.
+
+              Eric Meyer
+              427 N. Washington
+              Bloomington, IN 47401      CompuServe [74415,1305]
+
+==============================================================================
+

@@ -1,0 +1,113 @@
+	TITLE	"ZSDOS Disk Access Counter Clock - (RELATIVE)"
+	SUBTTL	"Description of Clock Module"
+;===================================================================
+;	R E L A T I V E    C O U N T E R    C L O C K
+; Maintains BCD date and 3-byte relative counter string for clock
+;
+;				Cameron W. Cotrill / Harold F. Bower
+; Version 10/03/88-1
+;===================================================================
+
+VERS	EQU	03		; test version
+	.Z80
+	NAME	RELCLK
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; Ptr to STATYR (not used)
+
+CLKNAM:	DEFB	'Relative Clock         '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10+'0',0
+
+DESCR:	DEFB	' Disk access counter clock',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+	DEFW	0		; Nothing to do
+	DEFW	0
+
+	PAGE
+	SUBTTL	"Clock Code - Relative Counter"
+
+	CSEG
+;-------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-------------------------------------------------------------
+; Enter: HL = Address to Put Date/Time string
+; Exit : Time moved and counter incremented
+;	 A=1 for OK status on exit
+
+	JP	GETTIM		; Get time
+	JP	WRCLK		; Set time
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c  k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	EX	DE,HL		; Save entry pointer in DE
+	LD	HL,RELBUF+4	; Point to relative clock buffer + 1
+	INC	(HL)		; Bump LSB
+	JR	NZ,RELCL1	; If no rollover
+	DEC	HL
+	INC	(HL)		; Else bump the MSB
+	SET	7,(HL)		; Insure Rel Clock flag still set
+RELCL1:	LD	HL,RELBUF
+RELCL2:	LD	BC,5
+	LDIR			; Move to user's buffer
+	LD	A,(HL)		; Move the last byte
+	EX	DE,HL
+	LD	E,(HL)		; DS preserves the last contents in E
+	LD	(HL),A		; ..before saving the last byyte
+OKEXIT:	LD	A,1		; Show clock OK
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+WRCLK:	LD	DE,RELBUF	; Save to local buffer
+	CALL	RELCL2		; ..in read routine
+	DEC	HL		; Back up..
+	DEC	HL
+	SET	7,(HL)		; ..and insure Relative counter set
+	INC	HL
+	INC	HL
+	JR	OKEXIT		; Exit and set OK flag
+
+;---------------------- D a t a    A r e a -----------------------
+
+;  The contents of this string are returned when reading the Rel Clock
+
+RELBUF:	DEFB	88H,1,1,80H,0,0	   ; Relative clock buffer YY MM DD RH RL UN
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks
+
+	COMMON	/_POST_/
+	RET			; Nothing to configure
+
+	DEFB	0,0,0		; Filler
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+	COMMON	/_PRE_/
+
+EXECUT:	JR	PRETST		; Jump around storage location
+
+	DEFW	EXECUT		; Execution addr of this module
+
+PRETST:	SCF			; Indicate all is well
+	RET
+
+	END
+

@@ -1,0 +1,57 @@
+	TITLE	"Z33CHK - Z3lib 4.0
+;=================================================================
+;    Copyright (C) 1989 by Jay Sage.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Jay Sage, modified by Harold F. Bower
+; Date    : 1/3/88
+; Version : 1.0
+; Module  : Z33CHK
+; Abstract: This module contains the routine Z33CHK which checks
+;	to see that the version of the CCP that is running is version
+;	3.x.  Two tests must be passed.  First, the second jump in the
+;	CCP header must be a relative jump instruction (18H).  Secondly,
+;	the version byte must be 3xH.  If both tests pass, the routine
+;	returns with the zero flag set (Z).  Otherwise, the flag is
+;	reset (NZ).
+; Revision:  Deleted unnecessary offset calculation.  HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		Z33CHK
+
+;  External References
+
+	EXT		GETCCP
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - Z33CHK
+; Entry: - None
+; Exit :  A = 0, Zero Flag Set (Z) if CCP is ZCPR 3.3
+;	      A <> 0, Zero Clear (NZ) if Not ZCPR 3.3
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+Z33CHK:	PUSH	HL		; Save registers
+	PUSH	DE
+	CALL	GETCCP		; Get entry address to CCP
+	INC	HL		; Advance to second jump
+	INC	HL
+	INC	HL
+	LD	A,(HL)		; Get the opcode
+	SUB	18H		; Is it a relative jump?
+	JR	NZ,CHK1		; ..jump to quit now if not Z33
+	INC	HL		; Else Advance to version byte
+	INC	HL
+	LD	A,(HL)		; Get possible version byte
+	AND	0F0H		; Isolate high nybble
+	SUB	30H		; Set to zero if equal to 30H
+CHK1:	POP	DE		; Restore regs w/AF set to status
+	POP	HL
+	RET
+
+	END
+

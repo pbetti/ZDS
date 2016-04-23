@@ -1,0 +1,186 @@
+; LIBRARY:  SYSENV.LIB
+; AUTHOR:  RICHARD CONN
+; VERSION:  1.0
+; DATE:  22 FEB 84
+; PREVIOUS VERSIONS:  NONE
+;**************************************************************************
+;
+; AUTHOR: JAY SAGE (with actual modification by Steven Gold)
+; VERSION: 2.0 for NZCOM/ZCPR34
+; DATE: May 21, 1988
+; PREVIOUS VERSIONS: 1.0
+;*************************************************************************
+;	SYSENV IS THE DEFINITION FOR THE ZCPR3 ENVIRONMENT.
+;
+SYSENV	MACRO
+
+;  ENVIRONMENT DESCRIPTOR
+;	IF INLINE, THERE IS A LEADING JMP JUST BEFORE THIS
+;
+ENVORG1:
+	DB	'Z3ENV'		; Environment id
+	DB	80H             ; Class 4 environment (internal)
+
+	DW	EXPATH		; External path address
+	DB	EXPATHS		; Number of 2-byte elements in path
+
+	DW	RCP		; Rcp address
+	DB	RCPS		; Number of 128-byte blocks in rcp
+
+	DW	IOP		; Iop address
+	DB	IOPS		; Number of 128-byte blocks in iop
+
+	DW	FCP		; Fcp address
+	DB	FCPS		; Number of 128-byte blocks in fcp
+
+	DW	Z3NDIR		; Ndr address
+	DB	Z3NDIRS		; Number of 18-byte entries in ndr
+
+	DW	Z3CL		; Zcpr3 command line
+	DB	Z3CLS		; Number of bytes in command line
+
+	DW	Z3ENV		; Zcpr3 environment descriptor
+	DB	Z3ENVS		; Number of 128-byte blocks in descriptor
+
+	DW	SHSTK		; Shell stack address
+	DB	SHSTKS		; Number of shsize-byte entires in shell stack
+	DB	SHSIZE		; Size of a shell stack entry
+
+	DW	Z3MSG		; Zcpr3 message buffer
+
+	DW	EXTFCB		; Zcpr3 external fcb
+
+	DW	EXTSTK		; Zcpr3 external stack
+
+	DB	0		; Quiet flag (1=quiet, 0=not quiet)
+
+	DW	Z3WHL		; Address of wheel byte
+
+	DB	9 		; Processor speed in Mhz
+
+	DB	'G'-'@'		; Maximum disk
+	DB	31		; Maximum user
+	DB	1		; 1=ok to accept du, 0=not ok
+
+	DB	0		; Crt selection (0=crt 0, 1=crt 1)
+	DB	0		; Printer selection (n=printer n)
+
+	DB	80		; Width of crt 0
+	DB	24		; Number of lines on crt 0
+	DB	22		; Number of lines of text on crt 0
+
+	DW	DRVEC		; Drive Vector *sg*
+
+	DB	00H		; Space
+
+ 	DB	80		; Width of printer 0
+	DB	66		; Number of lines on printer 0
+	DB	58		; Number of lines of text on printer 0
+	DB	1		; Form feed flag (0=can't formfeed, 1=can)
+
+	DB	00		; Space
+	DB	00		; Space
+	DB	00		; Space
+	DB	00		; Space
+
+	DW	CCP		; CCP Address	*sg*
+	DB	CCPS		; CCP length in records	*sg*
+	DW	DOS		; DOS Address 	*sg*
+	DB	DOSS		; DOS length in records	*sg*
+	DW	BIOS		; BIOS Address 	*sg*
+
+	DB	'SH      '	; Shell variable filename
+	DB	'VAR'		; Shell variable filetype
+
+	DB	'        '	; Filename 1
+	DB	'   '		; Filetype 1
+
+	DB	'        '	; Filename 2
+	DB	'   '		; Filetype 2
+
+	DB	'        '	; Filename 3
+	DB	'   '		; Filetype 3
+
+	DB	'        '	; Filename 4
+	DB	'   '		; Filetype 4
+
+	DS	128-[$-ENVORG1+3] ; Make exactly 128 bytes long
+				; (+3 compensates for leading jmp)
+;
+; TERMINAL CAPABILITIES DATA (TCAP)
+;
+ENVORG2:
+
+; NZTCAP:  NZQUME.MAC (Based on: NZWYS60.MAC)
+; Author:  Steven Gold (By: Joe Wright)
+; Date:    31 December 87
+; Version: 1.0
+
+; Extended Termcap Data for NZ
+
+; This is the proposed TermCap Data for the New Z-System.
+; It more fully describes the terminal and its capabilities.
+; It remains compatible with VLIB but offers added features.
+
+ESC	EQU	27		; ASCII escape character
+
+NZTCAP:	DB	'QUME QVT-102   ' ; Name of terminal (15 bytes)
+;
+; It is often desirable to differentiate terminals with other than
+; their commands.  For example TeleVideo 955 has the same command
+; set as Wyse 60 but takes less time to initialize (reset).
+; Also, it might be interesting to know whether this is an ASCII
+; or an ANSI terminal.  The Terminal Type byte is implemented for
+; this purpose.  Current usage allows 8 ASCII terminal types and
+; 8 ANSI types as follows:
+;
+;	Type 0	TeleVideo 925/950
+;	Type 1	TeleVideo 955		Requires 2 seconds for reset
+;	Type 2	Wyse 60			Requires 9 seconds for reset
+;	Type 3	..Unassigned
+;	...
+;
+;	Type 16	DEC VT-100
+;	Type 17	DEC VT-220
+;	...
+;
+	DB	2		; Term type 
+;
+	DB	'K'-'@'		; Cursor up
+	DB	'J'-'@'		; Cursor down
+	DB	'L'-'@'		; Cursor right
+	DB	'H'-'@'		; Cursor left
+	DB	00		; Cl delay
+	DB	00		; Cm delay
+	DB	00		; Ce delay
+	DB	ESC,'+',0	; Cl string
+	DB	ESC,'=%+ %+ ',0	; Cm string
+	DB	ESC,'T',0	; Ce string
+	DB	ESC,')',0	; So string
+	DB	ESC,'(',0	; Se string
+	DB	0		; Ti string
+	DB	0		; Te string
+;
+; Extensions to Standard Z3TCAP not supported by VLIB
+; Full-screen editors (WordStar) can use the following three
+; for speed and clarity.
+;
+	DB	ESC,'R',0	; Line Delete
+	DB	ESC,'E',0	; Line Insert
+	DB	ESC,'G',0	; Set Attributes
+;
+; Some terminals allow reading the cursor position and the screen itself.
+;
+	DB	ESC,'?',0	; Read Cursor
+	DB	ESC,'6',0	; Read Line
+;
+;  Fill unused space with nulls
+;
+; End of NZTCAP for Qume QVT-102
+	DS	32-[$-ENVORG2]	; Make exactly 32 bytes long
+
+	ENDM
+;
+;  END OF ENVIRONMENT DESCRIPTOR
+;
+

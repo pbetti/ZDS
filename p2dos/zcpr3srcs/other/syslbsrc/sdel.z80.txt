@@ -1,0 +1,164 @@
+	TITLE	"SDEL - SYSLIB 4.3"
+	NAME	('DELETE')
+;===============================================================
+;   The Libraries, Version 4, (C) 1990 by Alpha Systems Corp.
+;---------------------------------------------------------------
+; Author : Joe Wright
+; Date   : 15 Nov 90
+; Version: 1.0
+; Module : SDEL
+; Abstract:
+;
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		DELETE, DELETO
+
+; Externals
+
+	EXT		LOGSSB, RETSSB, PTORD, SORDER
+	EXT		SPOINT, PTREC, SNREC, SSIZE, LL, RR, KEY
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DELETO.  Remove an item for the Order list.  Called
+;	 following DELETE to remove an item from an auxilary
+;	 Order list.
+; Entry: DE - pointer to Caller's SSB
+;	 HL - Indec (1..N) of the record to be removed
+; Exit :
+; Uses :
+; Special Requirements:
+;===============================================================
+
+DELETO:	LD	A,(SPOINT)		; Are we using pointers?
+	OR	A
+	RET	Z			; ..quit here if not
+	LD	(DELO),A		; Else save a non-zero flag
+	CALL	DELETE			; Kill the pointer entry
+	XOR	A
+	LD	(DELO),A		; Clear the Delete flag
+	RET				; ..and quit
+
+DELO:	DEFB	0
+
+;===============================================================
+; NAME - DELETE.  Remove an item from Record and Order lists.
+; Entry :  DE points to caller's SSB.
+;	  HL is the Index (1..N) of the record to be removed.
+; Exit  :
+; Uses  :
+; Special Requirements:
+;===============================================================
+
+DELETE:	LD	(LL),HL		; Save I
+	CALL	LOGSSB
+	LD	HL,(LL)
+	LD	A,(SPOINT)
+	OR	A
+	JR	NZ,DELP
+
+	CALL	PTREC
+	EX	DE,HL
+	CALL	CLOSER
+	DEC	HL
+	LD	(SNREC),HL
+	JP	RETSSB
+
+DELP:	CALL	PTORD		;
+	PUSH	HL		; Save Pointer address P(I)
+
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)		; Destination of the move
+	LD	(RR),DE		; Pointer value R(I)
+
+	CALL	CLOSER
+
+	LD	DE,(LL)		; Get I
+	SBC	HL,DE
+	POP	DE		; Pointer location P(I)
+	JR	Z,ADJO
+
+	ADD	HL,HL		; Length..
+	LD	B,H
+	LD	C,L		; ..to BC
+
+	LD	H,D
+	LD	L,E
+	INC	HL
+	INC	HL
+	LDIR			; Close up the Order list
+
+; Adjust Order table pointers.
+;	N := N-1;
+;	For I = 1 To N Do
+;	  If P(I) > V Then P(I) := P(I) - Size
+
+ADJO:	LD	HL,(SNREC)
+	DEC	HL
+	LD	(SNREC),HL	; Decrement N
+
+ADJ:	LD	B,H
+	LD	C,L		; Loop counter
+
+	LD	HL,(SORDER)
+	LD	(KEY),HL
+
+AOT:	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	LD	HL,(RR)		; Deleted pointer
+	OR	A
+	SBC	HL,DE		; Compare with current pointer
+	JR	NC,AOT0		; Deleted pointer is higher
+
+	LD	HL,(SSIZE)
+	EX	DE,HL
+	OR	A
+	SBC	HL,DE
+	EX	DE,HL		; New pointer to DE
+
+	LD	HL,(KEY)
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D
+	JR	AOT1
+
+AOT0:	LD	HL,(KEY)
+	INC	HL
+AOT1:	INC	HL
+	LD	(KEY),HL
+
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,AOT
+	JP	RETSSB
+
+CLOSER:	LD	HL,(SNREC)
+	LD	A,(DELO)
+	OR	A
+	JR	Z,CLOS0
+
+	INC	HL
+	LD	(SNREC),HL
+	RET
+
+CLOS0:	PUSH	HL		; Save N
+	CALL	PTREC		; Last record address R(N)
+	SBC	HL,DE		; R(N) - R(I)
+	JR	Z,CLOSEX
+
+	LD	B,H
+	LD	C,L		; Length of the move
+	LD	HL,(SSIZE)
+	ADD	HL,DE		; Source of the move
+	LDIR			; Close up the Record list
+CLOSEX:	POP	HL		; Get N
+	RET
+
+	END
+

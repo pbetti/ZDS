@@ -1,0 +1,785 @@
+   1:			; 	TITLE	"DateStamper (tm) Stamp Module for ZSDOS"
+   2:			;***************************************************************************
+   3:			;  Z D S								   *
+   4:			;--------------------------------------------------------------------------*
+   5:			; Copyright (C) 1988  by Cameron W. Cotrill and Harold F. Bower		   *
+   6:			;--------------------------------------------------------------------------*
+   7:			; This module replaces DateStamper V2.30 in ZSDOS systems.  It provides	   *
+   8:			; support for ZSDOS Functions 102 thru 105.  To simplify the tie-ins with  *
+   9:			; ZSDOS, this module is "Dirty" - It assumes addresses inside of ZSDOS.    *
+  10:			;									   *
+  11:			; The loader for this routine needs to place the address of ZSDOS (Page    *
+  12:			; Boundary) in the offset entry in JTABLE.  All ZSDOS addresses are dynami-*
+  13:			; cally calculated from this address.  BIOS is assumed to be 0E00H above   *
+  14:			; ZSDOS, but this may be changed by using the EQUate.			   *
+  15:			;									   *
+  16:			; This program may be used only by licensed Plu*Perfect DateStamper Users! *
+  17:			;	Agreement pending with Plu*Perfect Systems			   *
+  18:			;									   *
+  19:			; The author wishes to acknowledge the numerous suggestions and helpful	   *
+  20:			; hints from Bridger Mitchell of Plu*Perfect Systems.			   *
+  21:			;									   *
+  22:			; Revision:								   *
+  23:			;	1.0 - Initial Release						   *
+  24:			;***************************************************************************
+  25:			
+  26:			; rsym zsdos.sym
+  27:			
+  28:			; VER	EQU	11		; Release Version
+  29:			
+  30:			; FALSE	EQU	0
+  31:			; TRUE	EQU	NOT FALSE
+  32:			
+  33:			; 	MACLIB	RSXFLAG		; Get definition of RSX equate flag
+  34:							; TRUE=Assemble as RSX, FALSE=Assemble hi-mem
+  35:							;== ALSO GET VERSION ADDRESS EQUATES
+  36:			; DOSID	EQU	'S'
+  37:			; DOSVER	EQU	11H
+  38:			include ../common.asm
+**** ../common.asm ****
+   1:			;
+   2:			; Here just some common symbol...
+   3:			;
+   4:			
+   5:	0016          	VERS	EQU     22      	; VERSION 2.2 (CP/M related)
+   6:			;
+   7:	003C          	MSIZE	EQU     60              ; CP/M VERSION MEMORY SIZE IN KILOBYTES
+   8:			;MSIZE	EQU     56              ; CP/M VERSION MEMORY SIZE IN KILOBYTES
+   9:	0400          	RESROOM	EQU	1024		; RESERVED ROOM SPACE BELOW MONITOR (F000)
+  10:	0600          	BIOSTDS	EQU	1536		; BIOS STANDARD SIZE
+  11:	0A00          	BIOREAS	EQU	BIOSTDS+RESROOM	; BIOS REAL SIZE
+  12:	0400          	ZSTDOVR	EQU	1024		; ZCPR STANDARD OVERHEAD SIZE
+  13:	0000          	ZIOPKG	EQU	0		; ZCPR IO PACKAGE SIZE
+  14:	0800          	ZRESPKG	EQU	2048		; ZCPR RESIDENT CMD PKG SIZE
+  15:	0200          	ZFLOPKG	EQU	512		; ZCPR FLOW CMD PACKAGE SIZE
+  16:	01C8          	ZDSSTSZ	EQU	01C8H		; ZDS Stamper reserved space
+  17:			
+  18:	1200          	EXTRABIAS	EQU	RESROOM+ZSTDOVR+ZIOPKG+ZRESPKG+ZFLOPKG	; ...
+  19:				;
+  20:				;       "BIAS" IS ADDRESS OFFSET FROM 3400H FOR MEMORY SYSTEMS
+  21:				;       THAN 16K (REFERRED TO AS"B" THROUGHOUT THE TEXT)
+  22:				;
+  23:	8E00          	BIAS	EQU     ((MSIZE-20)*1024)-EXTRABIAS
+  24:	C200          	CCP	EQU     3400H+BIAS      ; BASE OF CCP
+  25:	CA06          	BDOS	EQU     CCP+0806H       ; BASE OF BDOS
+  26:	CA00          	BDOSB	EQU	CCP+0800H	; BDOS base offset
+  27:	D800          	BIOS	EQU     CCP+1600H       ; BASE OF BIOS
+  28:	E200          	ZBUFBAS	EQU	BIOS+BIOREAS	; BASE OF ZCPR3 BUFFERS
+  29:				;
+  30:				; 	some other equs...
+  31:				;
+  32:	000D          	CR	EQU     0DH		; CARRIAGE RETURN
+  33:	000A          	LF	EQU     0AH		; LINE FEED;
+  34:	000C          	FF	EQU	0CH		; FORM FEED (clear screen)
+  35:	FFFF          	TRUE	EQU	-1		; ....
+  36:	0000          	FALSE	EQU	0
+  37:	0000          	INTRON	EQU	FALSE		; Interrupts disabled
+  38:				;
+  39:				; define which kind of date stamper must be embedded in
+  40:				; RCP
+  41:				;
+  42:	0000          	STMPP2	EQU	FALSE		; P2DOS date stamper
+  43:	FFFF          	STMPZS	EQU	TRUE		; ZSDOS date stamper
+  44:				;
+  45:				; path for ZCPR3 used on cold boot
+  46:				;
+  47:	0024          	IDISK1	EQU	'$'		; 1st: current disk, current user
+  48:	0024          	IUSER1	EQU	'$'
+  49:	0024          	IDISK2	EQU	'$'		; 2nd: current disk, user 15
+  50:	000F          	IUSER2	EQU	15
+  51:	0001          	IDISK3	EQU	'A'-'@'		; 3rd: disk A, current user
+  52:	0024          	IUSER3	EQU	'$'
+  53:	0001          	IDISK4	EQU	'A'-'@'		; 4th: disk A, user 15
+  54:	000F          	IUSER4	EQU	15
+  55:			
+  56:			; COMMON.ASM [EOF]
+**** zds.asm ****
+  39:			include ../z3base.lib
+**** ../z3base.lib ****
+   1:			; Z3BASE - Dynamic Configuration
+   2:			;
+   3:			; ZCPR33 is copyright 1987 by Echelon, Inc.  All rights reserved.  End-user
+   4:			; distribution and duplication permitted for non-commercial purposes only.
+   5:			; Any commercial use of ZCPR33, defined as any situation where the duplicator
+   6:			; recieves revenue by duplicating or distributing ZCPR33 by itself or in
+   7:			; conjunction with any hardware or software product, is expressly prohibited
+   8:			; unless authorized in writing by Echelon.
+   9:			;
+  10:			; This is a special version of Z3BASE, inspired by Joe Wright's Z3BASE
+  11:			; for Z-Com.  All segment addresses are automatically derived when the
+  12:			; CCP equate is set.  The benefit of this is that reconfiguration of the
+  13:			; system after initial installation is greatly eased.
+  14:			;
+  15:			; Although this version of Z3BASE is being distributed with ZCPR 3.3, any
+  16:			; previous version of Z3BASE can be used to assemble the Z33 Command
+  17:			; Processor.  No new symbols are needed.  So, if you have an existing
+  18:			; Z3BASE, go ahead and use it.
+  19:			;
+  20:			; Instructions:
+  21:			;
+  22:			; The user should first design the ZCPR3 memory usage using the chart
+  23:			; below.  (Echelon recommends the chart be filled out, even though it is
+  24:			; not read by the assembler, so that your system will be self-documenting.)
+  25:			; Then set the CCP equate for the beginning address of ZCPR3.  Next, examine
+  26:			; and change the SEGn equates which follow in the file to ensure that the
+  27:			; system segments and buffers are placed at the proper addresses.
+  28:			;
+  29:			; This file has been customized for use with AMPRO hard disk systems.  The
+  30:			; target configuration has support for hard disks up to 49 Meg, extended
+  31:			; IOP support, and 28-entry NDR.
+  32:			;
+  33:			;****************************************************************
+  34:			;*								*
+  35:			;*  Z3BASE.LIB -- Base Addresses for ZCPR 3.3/Z-System		*
+  36:			;*								*
+  37:			;* 	Segments:						*
+  38:			;*								*
+  39:			;*	Segment		Function				*
+  40:			;*	-------		--------				*
+  41:			;*	ZSDOS		ZSDOS 1.1				*
+  42:			;*	CBIOSZ		ZDS BIOS with additional		*
+  43:			;*			ZCPR3 initialization routines		*
+  44:			;*	ZCPR3		Echelon Z80 Command Processor		*
+  45:			;*			Replacement, Version 3.3 (ZCPR3)	*
+  46:			;*	*.ENV		All Environment Descriptors		*
+  47:			;*	*.FCP		All Flow Command Packages		*
+  48:			;*	*.NDR		All Named Directory Definition Files	*
+  49:			;*	*.RCP		All Resident Command Packages		*
+  50:			;*	*.IOP		All Input/Output Packages		*
+  51:			;*								*
+  52:			;*								*
+  53:			;* Memory Map of System (for CCP EQU 0BC00H):			*
+  54:			;*								*
+  55:			;*	Address Range	  Size	Function			*
+  56:			;*	-------------	-------	--------			*
+  57:			;*	    0 -   FF	256 b	Standard CP/M Buffers except	*
+  58:			;*	  100 - C2FF	~48 K	Transient Program Area		*
+  59:			;*	 C200 - C9FF	  2 K	ZCPR 3.3 Command Processor	*
+  60:			;*	 CA00 - D7FF	3.5 K	ZSDOS				*
+  61:			;*	 D800 - E1FF	2.5 K	BIOS with disk buffers		*
+  62:			;*	 E200 - E9FF	  2 K	Resident Command Package	*
+  63:			;*	 0000 - 0000	1.5 K	Input/Output Package		*
+  64:			;*	 EA00 - EBFF	 .5 K	Flow Command Package		*
+  65:			;*	 EC00 - ECFF	256 b	Environment Descriptor		*
+  66:			;*				Bytes 00H-7FH:  Z3 Parameters	*
+  67:			;*				Bytes 80H-FFH:  Z3 TCAP		*
+  68:			;*	 ED00 - ED7F	128 b	ZCPR3 Shell Stack		*
+  69:			;*	 ED80 - EDCF	 80 b	ZCPR3 Message Buffers		*
+  70:			;*	 EDD0 - EDF3	 36 b	ZCPR3 External FCB		*
+  71:			;*	 EDF4 - EDFE	 11 b	ZCPR3 External Path	        *
+  72:			;*       EDFF  		  1 b	Wheel Byte			*
+  73:			;*	 EE00 - EEFF    256 B	Memory-Based Named Directory	*
+  74:			;*	 EF00 - EFCF	208 B	Multiple Command Line Buffer	*
+  75:			;*	 EFD0 - EFFF	 48 b	ZCPR3 External Stack		*
+  76:			;****************************************************************
+  77:			
+  78:			; include	macro	filename
+  79:			;
+  80:			; 	 if	zas
+  81:			; 	.in		filename
+  82:			; 	 else	;slr assembler
+  83:			; 	include	filename
+  84:			; 	 endif	;zas
+  85:			;
+  86:			; 	 endm
+  87:			
+  88:			; FALSE	equ	0
+  89:			; TRUE	equ	NOT FALSE
+  90:			
+  91:	0021          	Z3REV	EQU	33	; ZCPR3 REV NUMBER
+  92:			; MSIZE	EQU	54	; SIZE OF CPM SYSTEM
+  93:			
+  94:	0000          	BASE	EQU	0
+  95:			
+  96:			; CCP	EQU	0BC00H 	; ZCPR3 COMMAND PROCESSOR
+  97:			
+  98:	E200          	SEG1	EQU	ZBUFBAS	; where the things starts
+  99:			
+ 100:			;
+ 101:			; RCP definition.  Set RCPS to 0 to eliminate RCP
+ 102:			;
+ 103:			
+ 104:	0010          	RCPS	EQU	16		; 16 128-byte Blocks (2K bytes)
+ 105:			
+ 106:	0001          		 IF	RCPS NE 0
+ 107:	E200          	RCP	EQU	SEG1		; RESIDENT COMMAND PACKAGE
+ 108:				 ELSE
+ 110:				 ENDIF
+ 111:			
+ 112:	EA00          	SEG2	EQU	SEG1+(RCPS*128)
+ 113:			
+ 114:			;
+ 115:			; IOP definition.  Set IOPS to 0 to eliminate IOP
+ 116:			;
+ 117:			; IOPS	EQU	12		; 12 128-byte Blocks (1.5K bytes)
+ 118:	0000          	IOPS	EQU	0		; 12 128-byte Blocks (1.5K bytes)
+ 119:			
+ 120:	0000          		 IF	IOPS NE 0
+ 122:				 ELSE
+ 123:	0000          	IOP	EQU	0
+ 124:				 ENDIF
+ 125:			
+ 126:	EA00          	SEG3	EQU	SEG2+(IOPS*128)
+ 127:			
+ 128:			;
+ 129:			; FCP definition.  Set FCPS to 0 to eliminate FCP
+ 130:			;
+ 131:			
+ 132:	0004          	FCPS	EQU	4	; 4 128-byte Blocks (0.5K bytes)
+ 133:			
+ 134:	0001          		 IF	FCPS NE 0
+ 135:	EA00          	FCP	EQU	SEG3
+ 136:				 ELSE
+ 138:				 ENDIF
+ 139:			
+ 140:	EC00          	SEG10	EQU	SEG3+(FCPS*128)
+ 141:			
+ 142:			;
+ 143:			; The ZCPR3 External Environment Descriptor is mandatory for ZCPR 3.3.
+ 144:			; Echelon recommends you work this out so that your ENV begins at address
+ 145:			; FE00h, but this is only a recommendation and not mandatory.
+ 146:			;
+ 147:			
+ 148:	EC00          	Z3ENV	EQU	SEG10	; ENVIRONMENT DESCRIPTORS
+ 149:	0002          	Z3ENVS	EQU	2	; SIZE OF ENVIRONMENT DESCRIPTOR IN 128-BYTE BLOCKS
+ 150:			
+ 151:	ED00          	SEG4	EQU	SEG10+(Z3ENVS*128)
+ 152:			
+ 153:			;
+ 154:			; Shell Stack definition.  Set SHSTKS to 0 to eliminate Shell Stack
+ 155:			;
+ 156:			
+ 157:	0004          	SHSTKS	EQU	4	; NUMBER OF SHSIZE-BYTE SHELL STACK ENTRIES
+ 158:	0020          	SHSIZE	EQU	32	; SIZE OF A SHELL STACK ENTRY
+ 159:						;   (STACK SIZE = SHSTKS * SHSIZE)
+ 160:	0001          		 IF SHSTKS NE 0
+ 161:	ED00          	SHSTK	EQU	SEG4
+ 162:				 ELSE
+ 164:				 ENDIF
+ 165:			
+ 166:	ED80          	SEG5	EQU	SEG4+(SHSTKS*SHSIZE)
+ 167:			
+ 168:			;
+ 169:			; The ZCPR3 Message Buffers are mandatory for ZCPR 3.3.
+ 170:			;
+ 171:	ED80          	Z3MSG	EQU	SEG5		; ZCPR3 MESSAGE BUFFER
+ 172:			
+ 173:	EDD0          	SEG6	EQU	SEG5+80
+ 174:			
+ 175:			;
+ 176:			; The ZCPR3 External FCB is mandatory for ZCPR 3.3.
+ 177:			;
+ 178:			
+ 179:	EDD0          	EXTFCB	EQU	SEG6		; ZCPR3 EXTERNAL FCB
+ 180:			
+ 181:	EDF4          	SEG7	EQU	SEG6+36
+ 182:			
+ 183:			;
+ 184:			; The Path is mandatory for ZCPR 3.3.  No more than 5 path elements can be
+ 185:			; used with this Z3BASE.LIB file.
+ 186:			;
+ 187:			
+ 188:	EDF4          	EXPATH	EQU	SEG7		; EXTERNAL PATH
+ 189:	0005          	EXPATHS	EQU	5		; 5 2-byte Path Elements
+ 190:							;  (PATH SIZE = EXPATHS*2 + 1)
+ 191:			
+ 192:	EDFF          	SEG8	EQU	SEG7+(EXPATHS*2)+1
+ 193:			
+ 194:			;
+ 195:			; The ZCPR3 Wheel Byte is mandatory for ZCPR 3.3.
+ 196:			;
+ 197:			
+ 198:	EDFF          	Z3WHL	EQU	SEG8		; WHEEL BYTE ADDRESS
+ 199:			
+ 200:	EE00          	SEG9	EQU	SEG8+1
+ 201:			
+ 202:			;
+ 203:			; ZCPR3 Named Directory Buffer definition.  Set Z3NDIRS to 0 to eliminate
+ 204:			; the named directory buffer.  If Z3NDIRS is changed, also change the seg11
+ 205:			; equate below.
+ 206:			;
+ 207:	001C          	Z3NDIRS	EQU	28		; 28 18-byte Named Directory Elements permitted
+ 208:							;   (NDIR SIZE = Z3NDIRS*18 + 1 for trailing 0)
+ 209:	0001          		 IF	Z3NDIRS NE 0
+ 210:	EE00          	Z3NDIR	EQU	SEG9		; ZCPR3 NAMED DIRECTORY AREA
+ 211:				 ELSE
+ 213:				 ENDIF
+ 214:			
+ 215:	EF00          	SEG11	EQU	SEG9+256	; add 512 for 28-entry NDR
+ 216:							; add 256 for 14-entry NDR ("standard")
+ 217:							; add 0 if Z3NDIRS is set to 0
+ 218:			
+ 219:			;
+ 220:			; The ZCPR3 External Command Line Buffer is mandatory for ZCPR 3.3.
+ 221:			;
+ 222:			
+ 223:	EF00          	Z3CL	EQU	SEG11	; ZCPR3 COMMAND LINE BUFFER
+ 224:	00D0          	Z3CLS	EQU	208	; SIZE OF COMMAND LINE BUFFER
+ 225:			
+ 226:	EFD0          	SEG12	EQU	SEG11+Z3CLS
+ 227:			
+ 228:			;
+ 229:			; The ZCPR3 External Stack is mandatory for ZCPR 3.3.
+ 230:			;
+ 231:			
+ 232:	EFD0          	EXTSTK	EQU	SEG12	; ZCPR3 EXTERNAL STACK
+ 233:			
+ 234:			; end of Z3BASE.LIB
+**** zds.asm ****
+  40:			
+  41:	0016          	TIMOFF	EQU	0016H		; Time Vector group offset
+  42:	0018          	LSTOFF	EQU	0018H		; Stamp Last Accessed routine addr
+  43:	001A          	CREOFF	EQU	001AH		; Stamp Create Time routine addr
+  44:	001C          	MODOFF	EQU	001CH		; Stamp Modify Time routine addr
+  45:	001E          	GSTOFF	EQU	001EH		; Get Stamp routine addr
+  46:	0020          	SSTOFF	EQU	0020H		; Set Stamp routine addr
+  47:			
+  48:	CA3C          	DPBOF	EQU	(BDOSB+003CH)		; Offset to DPB copy inside ZSDOS
+  49:	0027          	RDSECT	EQU	27H			; Offset in BIOS jump table to Read
+  50:	002A          	WRSECT	EQU	2AH			; Offset in BIOS jump table to Write
+  51:	0091          	TDVAL	EQU	91H			; Checksum of !!!TIME&.DAT less attributes
+  52:			; TBLOFF	EQU	16H		; Offset of ZSDOS time routine vector table
+  53:	0024          	SDMOFF	EQU	24H			; Offset in BIOS jump table to set DMA
+  54:	0647          	GETCDMO	EQU     0647H			; Offset to return current drive bit
+  55:	0052          	RECDIRO	EQU     0052H			; Offset to current DIR record number
+  56:	0677          	STDIR1O	EQU     0677H			; Offset to ZSDOS set track and sector
+  57:	0DF8          	TDFVCTO	EQU     0DF8H			; Offset to time/date vector in DOS
+  58:	064A          	SDRVBO	EQU     064AH			; Offset to set drive bit routine
+  59:			
+  60:	D047          	GETCDM	EQU	(BDOSB+GETCDMO)
+  61:	CA52          	RECDIR	EQU	(BDOSB+RECDIRO)
+  62:	D077          	STDIR1	EQU	(BDOSB+STDIR1O)
+  63:	D7F8          	TDFVCT	EQU	(BDOSB+TDFVCTO)
+  64:	D04A          	SDRVB	EQU	(BDOSB+SDRVBO)
+  65:			
+  66:	E838          		ORG	(FCP-ZDSSTSZ)	; We are at the top of the RCP area
+  67:			
+  68:	E838  C347E8  		JP	STCR		; jump table to make stuffs easy in zsdos...
+  69:	E83B  C34BE8  		JP	STUP
+  70:	E83E  C366E8  		JP	RSTAMP
+  71:	E841  C36BE8  		JP	WSTAMP
+  72:	E844  C34FE8  		JP	STLA
+  73:			
+  74:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  75:			;		S t a m p     C r e a t e
+  76:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  77:			
+  78:	E847  0600    	STCR:	LD	B,00		; Offset into stamp in B
+  79:	E849  1806    		JR	STT
+  80:			
+  81:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  82:			;		S t a m p     U p d a t e
+  83:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  84:			
+  85:	E84B  060A    	STUP:	LD	B,10		; Offset into stamp in B
+  86:	E84D  1802    		JR	STT
+  87:			
+  88:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  89:			;		S t a m p     A c c e s s
+  90:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  91:			
+  92:	E84F  0605    	STLA:	LD	B,05		; Offset into stamp in B
+  93:	E851  32D2E8  	STT:	LD	(INDEX),A	; Save index into DIR entry
+  94:	E854  22FFE8  		LD	(STPDMA),HL	; Save user DMA pointer
+  95:	E857  0E02    		LD	C,2		; Show as stamp
+  96:	E859  2600    		LD	H,0
+  97:	E85B  C603    		ADD	A,3		; Point to no date attribute
+  98:	E85D  6F      		LD	L,A
+  99:	E85E  19      		ADD	HL,DE		; Point to DIR entry
+ 100:	E85F  CB7E    		BIT	7,(HL)
+ 101:	E861  3EFF    		LD	A,0FFH		; Prepare error status in case
+ 102:	E863  C0      		RET	NZ		; Don't update if no date attrib
+ 103:	E864  180E    		JR	STPSV0
+ 104:			
+ 105:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 106:			;     G E T / P U T    S t a m p    R o u t i n e s
+ 107:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 108:			
+ 109:	E866  010000  	RSTAMP:	LD	BC,0		; Flag as read
+ 110:	E869  1803    		JR	STPSVC
+ 111:			
+ 112:	E86B  010100  	WSTAMP:	LD	BC,1		; Flag as write
+ 113:						; And fall thru...
+ 114:			
+ 115:			; Stamp Service Routine (Combined Get Stamp and Put Stamp)
+ 116:			; Calling Parameters:
+ 117:			;	A = Index to DIR Entry [00H,20H,40H,60H]
+ 118:			;	B = Offset in Stamp [0,5,10]
+ 119:			;	C = Function [0 = Read, 1=Write, 2=Update]
+ 120:			;	DE= Pointer to DIR Buffer
+ 121:			;	HL= User DMA Address
+ 122:			
+ 123:	E86E  32D2E8  	STPSVC:	LD	(INDEX),A	; Save index into DIR entry
+ 124:	E871  22FFE8  		LD	(STPDMA),HL	; Save user DMA pointer
+ 125:	E874  ED43B5E9	STPSV0:	LD	(RWCODE),BC	; Save read/write code and Sector offset
+ 126:	E878  ED5390E8		LD	(SECBUF),DE	; Check if !!!TIME&.DAT Exists on the drive
+ 127:	E87C  CD4FE9  		CALL	GETTDV		; Return current time/date vector in BC
+ 128:	E87F  C5      		PUSH	BC		; Save it
+ 129:	E880  1147D0  		LD	DE,GETCDM
+ 130:	E883  CDADE9  		CALL	VECTOR		; Return vector for current drive in hl
+ 131:			;==	POP	HL
+ 132:	E886  C1      		pop	bc		; [1.1]
+ 133:	E887  7C      		LD	A,H
+ 134:	E888  A0      		AND	B
+ 135:	E889  67      		LD	H,A
+ 136:	E88A  7D      		LD	A,L
+ 137:	E88B  A1      		AND	C
+ 138:	E88C  B4      		OR	H		; Test if current drive has !!!TIME&.DAT
+ 139:	E88D  286C    		JR	Z,SERRO		; ..jump if it doesn't
+ 140:			
+ 141:	E890          	SECBUF	EQU	$+1
+ 142:	E88F  010000  		LD	BC,0000		; Store Sector Buffer adr inline
+ 143:	E892  CDA9E9  		CALL	DODMA		; Set DMA to address sector buffer
+ 144:			
+ 145:			; It exists, so find first alloc for it (First after DIR)
+ 146:			
+ 147:	E895  1152CA  		LD	DE,RECDIR
+ 148:	E898  CD52E9  		CALL	INDFET		; Get current dir record
+ 149:						; Calculate Buffer Offset
+ 150:	E89B  AF      		XOR	A
+ 151:	E89C  CB38    		SRL	B
+ 152:	E89E  CB19    		RR	C		; Divide record by two, lsb to carry
+ 153:	E8A0  1F      		RRA			; Place in msb of a
+ 154:	E8A1  21D2E8  		LD	HL,INDEX
+ 155:	E8A4  86      		ADD	A,(HL)		; Get offset to stamp in buffer
+ 156:	E8A5  1F      		RRA			; Divide by 2 (8 stamps/rec)
+ 157:	E8A6  77      		LD	(HL),A		; Save index for later
+ 158:						; Now calculate record number needed
+ 159:	E8A7  C5      		PUSH	BC		; Save relative record number
+ 160:	E8A8  1145CA  		LD	DE,DPBOF+9	; Get dir alloc bitmap from DPB
+ 161:	E8AB  CD52E9  		CALL	INDFET
+ 162:	E8AE  C5      		PUSH	BC		; Save bitmap
+ 163:	E8AF  113FCA  		LD	DE,DPBOF+3	; Point to block mask in DPB
+ 164:	E8B2  CD52E9  		CALL	INDFET		; Get into C reg
+ 165:	E8B5  0C      		INC	C		; Now is number of records per block
+ 166:	E8B6  AF      		XOR	A		; Cheap zero
+ 167:	E8B7  59      		LD	E,C		; Records/block to E
+ 168:	E8B8  57      		LD	D,A		; Sign extend
+ 169:	E8B9  0610    		LD	B,16		; Check all bits
+ 170:	E8BB  E1      		POP	HL		; Restore bitmap, rel rec on tos
+ 171:	E8BC  29      	STPSV1:	ADD	HL,HL		; Shift MSB into Carry
+ 172:	E8BD  3003    		JR	NC,STPSV2	; If bit was a zero
+ 173:	E8BF  E3      		EX	(SP),HL		; Else get relative record
+ 174:	E8C0  19      		ADD	HL,DE		; Add records for this dir block
+ 175:	E8C1  E3      		EX	(SP),HL		; Back to tos
+ 176:	E8C2  10F8    	STPSV2:	DJNZ	STPSV1		; Loop until done
+ 177:	E8C4  E1      		POP	HL		; now has actual record number
+ 178:						; Call DSSTS (Set BIOS Track and Sector)
+ 179:	E8C5  CD3AE9  		CALL	RDSEC		; Set Track/Sector and Read
+ 180:	E8C8  CD2FE9  		CALL	CKSUM		; Checksum first 127 bytes of local buffer
+ 181:	E8CB  BE      		CP	(HL)		; Test against DS's checksum
+ 182:	E8CC  202D    		JR	NZ,SERRO	; Abort if error
+ 183:						; Set Pointers for Block Move
+ 184:	E8CE  AF      		XOR	A		; Clear acc
+ 185:	E8CF  57      		LD	D,A		; Word value for D
+ 186:	E8D0  47      		LD	B,A		; And B
+ 187:			
+ 188:	E8D2          	INDEX	EQU	$+1
+ 189:	E8D1  1E00    		LD	E,00		; INDEX value stored here inline
+ 190:	E8D3  2A90E8  		LD	HL,(SECBUF)
+ 191:	E8D6  19      		ADD	HL,DE		; Now pointing to correct stamp
+ 192:	E8D7  0E0F    		LD	C,15		; Size of stamp
+ 193:	E8D9  ED5BFFE8		LD	DE,(STPDMA)	; Get user stamp pointer
+ 194:						; Test for Why we're here
+ 195:	E8DD  3AB5E9  		LD	A,(RWCODE)	; Get Read/Write Code
+ 196:	E8E0  A7      		AND	A		; Is it get stamp?
+ 197:	E8E1  2004    		JR	NZ,PUTSTP	; If we're supposed to write
+ 198:						; Copy Stamp from Local Buff to User DMA
+ 199:	E8E3  EDB0    		LDIR			; Move to user DMA
+ 200:	E8E5  1811    		JR	STPSVX		; ..and exit
+ 201:			
+ 202:			; Copy Stamp from User DMA to Local Buff
+ 203:			
+ 204:	E8E7  D602    	PUTSTP:	SUB	2		; Is this a simple put?
+ 205:	E8E9  281B    		JR	Z,UPSTMP	; No, read the clock
+ 206:	E8EB  EB      		EX	DE,HL		; Swap pointers
+ 207:	E8EC  EDB0    	PUTS1:	LDIR			; Move new stamp into place
+ 208:	E8EE  CD2FE9  		CALL	CKSUM		; Checksum first 127 bytes of local buffer
+ 209:	E8F1  77      		LD	(HL),A		; ..and save checksum in last byte of record
+ 210:			
+ 211:	E8F2  1E2A    		LD	E,WRSECT	; Do BIOS Write Sector
+ 212:	E8F4  0C      		INC	C		; ..Flag as non-deferred (0 from ldir -> 01)
+ 213:	E8F5  CD47E9  		CALL	DOBIOSE		; Write sector to disk
+ 214:			
+ 215:	E8F8  3E01    	STPSVX:	LD	A,1		; Indicate all is well (OK return)
+ 216:	E8FA  01      		DEFB	01H		; ..fall thru the LD  A,FF with a LD  BC,FF3E
+ 217:			
+ 218:			; Set Return to Error
+ 219:			
+ 220:	E8FB  3EFF    	SERRO:	LD	A,0FFH		; Set Error condition and restore User DMA
+ 221:	E8FD  F5      	SEXIT:	PUSH	AF		; Save return code
+ 222:			
+ 223:	E8FF          	STPDMA	EQU	$+1
+ 224:	E8FE  010000  		LD	BC,0000		; Get User's DMA addr (stored here inline)
+ 225:	E901  CDA9E9  		CALL	DODMA		; ..and restore it
+ 226:	E904  F1      		POP	AF		; Restore return code
+ 227:	E905  C9      		RET			; ..and return to ZSDOS
+ 228:			
+ 229:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 230:			;    Read the Clock and place in proper Stamp Field
+ 231:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 232:			
+ 233:	E906  57      	UPSTMP:	LD	D,A		; A reg contains 0
+ 234:	E907  3AB6E9  		LD	A,(STOFF)	; Get offset in stamp
+ 235:	E90A  5F      		LD	E,A		; Make word length in DE
+ 236:	E90B  19      		ADD	HL,DE		; Point to where to put stamp
+ 237:	E90C  E5      		PUSH	HL		; Save target address
+ 238:	E90D  B7      		OR	A		; Is it CREATE time?
+ 239:	E90E  2007    		JR	NZ,UPSTM0	; ..jump if Not
+ 240:	E910  060F    		LD	B,15		; Else zero entire stamp record
+ 241:	E912  3600    	UPSL:	LD	(HL),0
+ 242:	E914  23      		INC	HL
+ 243:	E915  10FB    		DJNZ	UPSL
+ 244:	E917  4A      	UPSTM0:	LD	C,D		; Flag as clock read
+ 245:	E918  11B7E9  		LD	DE,TDBUF	; Point to TD buffer
+ 246:	E91B  D5      		PUSH	DE
+ 247:	E91C  2A16CA  		LD	HL,(BDOSB+TIMOFF)	; Clock driver address
+ 248:	E91F  2223E9  		LD	(CACLDR),HL	; set call addr
+ 249:	E923          	CACLDR	EQU	$+1		; where to place clock driver address
+ 250:	E922  CD0000  		CALL	0		; Push
+ 251:			; 	CALL	RWCLK		; Fetch the time (may be BIOS)
+ 252:	E925  E1      		POP	HL		; Get buffer start
+ 253:	E926  D1      		POP	DE		; Get stamp address
+ 254:	E927  3D      		DEC	A		; Was it a good clock read?
+ 255:	E928  20D1    		JR	NZ,SERRO	; ..Take error exit if not
+ 256:	E92A  010500  		LD	BC,5		; Else move 5 bytes
+ 257:	E92D  18BD    		JR	PUTS1		; ..and finish up
+ 258:			
+ 259:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 260:			;    Checksum the first 127 bytes of the Local Buffer
+ 261:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 262:			
+ 263:	E92F  067F    	CKSUM:	LD	B,127
+ 264:	E931  2A90E8  		LD	HL,(SECBUF)	; Point to buffer start
+ 265:	E934  AF      		XOR	A		; Init checksum to 0
+ 266:	E935  86      	CKSUM1:	ADD	A,(HL)		; Add to checksum
+ 267:	E936  23      		INC	HL
+ 268:	E937  10FC    		DJNZ	CKSUM1		; Loop until done
+ 269:	E939  C9      		RET
+ 270:			
+ 271:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 272:			; Read Sector Number in HL Using BIOS to Current DMA
+ 273:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 274:			
+ 275:	E93A  EB      	RDSEC:	EX	DE,HL		; Move desired logical record to DE
+ 276:	E93B  0177D0  		LD	BC,STDIR1	; DOS logical record -> track/sector
+ 277:	E93E  2AAFE9  		LD	HL,(OFFSET)
+ 278:	E941  09      		ADD	HL,BC		; ZSDOS Stdir1 address now in HL
+ 279:	E942  CDB4E9  		CALL	CALLHL		; Set Track/Sector
+ 280:	E945  1E27    		LD	E,RDSECT	; Do BIOS Read of Sector
+ 281:						;..fall thru to READ
+ 282:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 283:			;  C a l l   B I O S   w i t h   E r r o r   T e s t i n g
+ 284:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 285:			
+ 286:	E947  CDABE9  	DOBIOSE: CALL	DOBIOS		; Do the function
+ 287:	E94A  A7      		AND	A		; Was there an error?
+ 288:	E94B  C8      		RET	Z		; ..return if no error
+ 289:	E94C  F1      		POP	AF		; Else clear return address from stack
+ 290:	E94D  18AC    		JR	SERRO		; Flag error and return
+ 291:			
+ 292:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 293:			; Indexed Fetch of BC from ZSDOS RAM
+ 294:			;  Called w/ DE=Offset in ZSDOS, Returns BC=Value at Index
+ 295:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 296:			
+ 297:	E94F  11F8D7  	GETTDV:	LD	DE,TDFVCT	; Time and date vector - commonly used
+ 298:	E952  2AAFE9  	INDFET:	LD	HL,(OFFSET)
+ 299:	E955  19      		ADD	HL,DE		; Point to LSB
+ 300:	E956  4E      		LD	C,(HL)
+ 301:	E957  23      		INC	HL
+ 302:	E958  46      		LD	B,(HL)		; Get value from RAM
+ 303:	E959  C9      		RET
+ 304:			
+ 305:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 306:			;     R e p l a c e m e n t   F u n c t i o n   12
+ 307:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 308:			
+ 309:	E95A  7B      	NEWF12:	LD	A,E		; See if arg passed
+ 310:	E95B  FE44    		CP	'D'
+ 311:	E95D  CD5AE9  	ZDPC1T:	CALL	NEWF12		; Gets swapped with DOS code
+ 312:			;--	LD	HL,22H		;   (DOS code swapped)
+ 313:	E960  C0      		RET	NZ		; If DS inquery not used
+ 314:	E961  63      		LD	H,E		; Set return value
+ 315:	E962  E5      		PUSH	HL
+ 316:	E963  2A16CA  		LD	HL,(BDOSB+TIMOFF)	; Clock driver address
+ 317:	E966  226BE9  		LD	(CLKADR),HL	; set clock addr
+ 318:	E969  E1      		POP	HL
+ 319:	E96B          	CLKADR	EQU	$+1		; where to place clock driver address
+ 320:	E96A  110000  		LD	DE,0		; Address of clock routine
+ 321:			; 	LD	DE,CLK		; Address of clock routine
+ 322:	E96D  C9      		RET
+ 323:			
+ 324:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 325:			;     C h e c k    f o r    ! ! ! T I M & . D A T
+ 326:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 327:			
+ 328:	E96E  3EFF    	SETCHK:	LD	A,0FFH
+ 329:	E970  3278E9  		LD	(CKDSF),A	; Set flag to check DS
+ 330:	E973  CD6EE9  	ZDPC2T:	CALL	SETCHK		; This gets swapped with DOS
+ 331:			;--	CALL	SETFCT		;   (DOS code swapped)
+ 332:	E976  C9      		RET
+ 333:			
+ 334:	E978          	CKDSF	EQU	$+1
+ 335:	E977  3E00    	CKTDF:	LD	A,00		;   <CKDSF flag stored inline>
+ 336:	E979  B7      		OR	A		; Have we passed this way before?
+ 337:	E97A  2829    		JR	Z,ZDPC3T	; ..exit if we have
+ 338:	E97C  3C      		INC	A
+ 339:	E97D  3278E9  		LD	(CKDSF),A	; Else clear flag
+ 340:	E980  01000C  		LD	BC,0C00H	; Init loop count and checksum
+ 341:	E983  E5      		PUSH	HL		; Get DIR pointer back
+ 342:	E984  7E      	CKTDF1:	LD	A,(HL)		; Get char from directory
+ 343:	E985  E67F    		AND	7FH		; Mask attributes
+ 344:	E987  81      		ADD	A,C
+ 345:	E988  4F      		LD	C,A		; Update Checksum
+ 346:	E989  23      		INC	HL		; bump pointers
+ 347:	E98A  10F8    		DJNZ	CKTDF1		; And loop
+ 348:	E98C  FE91    		CP	TDVAL		; Check against !!!TIME&.DAT checksum
+ 349:	E98E  2014    		JR	NZ,CKTDFX	; ..exit if no match
+ 350:	E990  11F8D7  		LD	DE,TDFVCT
+ 351:	E993  CD4FE9  		CALL	GETTDV		; Get time/date login vector in BC
+ 352:	E996  E5      		PUSH	HL		; Save pointer to MSB of vector
+ 353:	E997  114AD0  		LD	DE,SDRVB	; Prepare to add this drive to vector
+ 354:	E99A  60      		LD	H,B
+ 355:	E99B  69      		LD	L,C		; Xfer time/date login mask to HL
+ 356:	E99C  CDADE9  		CALL	VECTOR		; HL=new time/date vector on return
+ 357:	E99F  D1      		POP	DE		; Restore pointer to Vector storage
+ 358:	E9A0  EB      		EX	DE,HL		; New T/D vector in DE
+ 359:	E9A1  72      		LD	(HL),D
+ 360:	E9A2  2B      		DEC	HL
+ 361:	E9A3  73      		LD	(HL),E		; Update the vector in DOS
+ 362:	E9A4  E1      	CKTDFX:	POP	HL
+ 363:	E9A5  CD77E9  	ZDPC3T:	CALL	CKTDF		; Gets swapped with DOS code
+ 364:			;--	CALL	CKSUB		;   (DOS code swapped)
+ 365:	E9A8  C9      		RET
+ 366:			
+ 367:			;.....
+ 368:			; Set DMA address.
+ 369:			
+ 370:	E9A9  1E24    	DODMA:	LD	E,SDMOFF	; Set offset for BIOS call
+ 371:						;..and fall thru
+ 372:			;.....
+ 373:			; Do BIOS Call.  Enter with BIOS offset in E, parameter in BC
+ 374:			
+ 375:	E9AB  16D8    	DOBIOS:	LD	D,BIOS/256	; Set BIOS Page address in MSB
+ 376:	E9AD  E5      	VECTOR:	PUSH	HL		; Save caller's HL
+ 377:			
+ 378:	E9AF          	OFFSET	EQU	$+1
+ 379:	E9AE  210000  		LD	HL,0000		; Get ZSDOS base address (stored inline)
+ 380:	E9B1  19      		ADD	HL,DE		; Now pointing to BIOS base
+ 381:	E9B2  E3      		EX	(SP),HL		; Restore HL, vector to TOS
+ 382:	E9B3  C9      		RET			; ..and execute BIOS function
+ 383:			
+ 384:	E9B4  E9      	CALLHL:	JP	(HL)		; And exit to CCP
+ 385:			
+ 386:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 387:			;		R A M    A r e a
+ 388:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 389:			
+ 390:	E9B5  00      	RWCODE:	DEFB	0		; 0 for read stamp, 1 for write stamp
+ 391:	E9B6  00      	STOFF:	DEFB	0		; Offset in stamp
+ 392:	E9B7          	TDBUF:	DEFS	6		; Temp storage for date
+ 393:			
+ 394:			;**********************************************************
+ 395:			; Clock Driver routines for ZSDOS
+ 396:			;
+ 397:			; The routine placed here implements the clock driver for
+ 398:			; ZSDOS/DateStamper.  The target of JRWCLK points to this
+ 399:			; location.  The actual routine exists here, appended by
+ 400:			; SETUPZST, and may be a complete driver or may point to
+ 401:			; routines implemented in BIOS.
+ 402:			;
+ 403:			; If a DateStamper "type" clock driver is being added,
+ 404:			; SETUPZST will set the code to return error status on a
+ 405:			; clock set function while the code is altered to enable
+ 406:			; clock setting if a ZSDOS "type" clock is selected.
+ 407:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 408:			; The interface specification at this point is:
+ 409:			;
+ 410:			; Entry Parameters:
+ 411:			;	C = Read/Write Code (1=Write, 0=Read)
+ 412:			;	DE= Address to Put Time
+ 413:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 414:			
+ 415:			
+ 416:			; RWCLK:	EX	DE,HL		; Put address for Time in HL
+ 417:			; 	LD	A,C		; Is it a set or read?
+ 418:			; 	OR	A
+ 419:			; 	JR	Z,CLK		; ..jump to Read if 0
+ 420:			
+ 421:			; The following code sets error status on a Set Time for DateStamper
+ 422:			; clocks.  It is overwritten with a relative jump to CLK+3 if ZSDOS
+ 423:			; style clock is appended.
+ 424:			
+ 425:			; 	XOR	A		; Set error status
+ 426:			; 	DEC	A		; ..to 0FFH
+ 427:			; 	RET
+ 428:			
+ 429:			;.....
+ 430:			; The remaining memory in this module is overwritten by
+ 431:			;  the clock driver.
+ 432:			
+ 433:			; CLK:
+ 434:			;
+ 435:			; TOP	EQU	$
+ 436:			;
+ 437:			; 	END
+**** zds.asm ****
+
+
+
+Statistics:
+
+   135	symbols
+   383	bytes
+
+
+
+Symbol Table:
+
+base           =   0+    iuser2         =   f+    stla            e84f     
+bdos           =ca06+    iuser3         =  24+    stmpp2         =   0+    
+bdosb          =ca00     iuser4         =   f+    stmpzs         =ffff+    
+bias           =8e00     lf             =   a+    stoff           e9b6     
+bioreas        = a00     lstoff         =  18+    stpdma         =e8ff     
+bios           =d800     modoff         =  1c+    stpsv0          e874     
+biostds        = 600     msize          =  3c     stpsv1          e8bc     
+cacldr         =e923     newf12          e95a     stpsv2          e8c2     
+callhl          e9b4     offset         =e9af     stpsvc          e86e     
+ccp            =c200     puts1           e8ec     stpsvx          e8f8     
+ckdsf          =e978     putstp          e8e7     stt             e851     
+cksum           e92f     rcp            =e200+    stup            e84b     
+cksum1          e935     rcps           =  10     tdbuf           e9b7     
+cktdf           e977     rdsec           e93a     tdfvct         =d7f8     
+cktdf1          e984     rdsect         =  27     tdfvcto        = df8     
+cktdfx          e9a4     recdir         =ca52     tdval          =  91     
+clkadr         =e96b     recdiro        =  52     timoff         =  16     
+cr             =   d+    resroom        = 400     true           =ffff     
+creoff         =  1a+    rstamp          e866     upsl            e912     
+dobios          e9ab     rwcode          e9b5     upstm0          e917     
+dobiose         e947     sdmoff         =  24     upstmp          e906     
+dodma           e9a9     sdrvb          =d04a     vector          e9ad     
+dpbof          =ca3c     sdrvbo         = 64a     vers           =  16+    
+expath         =edf4+    secbuf         =e890     wrsect         =  2a     
+expaths        =   5     seg1           =e200     wstamp          e86b     
+extfcb         =edd0+    seg10          =ec00     z3cl           =ef00+    
+extrabias      =1200     seg11          =ef00     z3cls          =  d0     
+extstk         =efd0+    seg12          =efd0     z3env          =ec00+    
+false          =   0     seg2           =ea00     z3envs         =   2     
+fcp            =ea00     seg3           =ea00     z3msg          =ed80+    
+fcps           =   4     seg4           =ed00     z3ndir         =ee00+    
+ff             =   c+    seg5           =ed80     z3ndirs        =  1c     
+getcdm         =d047     seg6           =edd0     z3rev          =  21+    
+getcdmo        = 647     seg7           =edf4     z3whl          =edff+    
+gettdv          e94f     seg8           =edff     zbufbas        =e200     
+gstoff         =  1e+    seg9           =ee00     zdpc1t          e95d+    
+idisk1         =  24+    serro           e8fb     zdpc2t          e973+    
+idisk2         =  24+    setchk          e96e     zdpc3t          e9a5     
+idisk3         =   1+    sexit           e8fd+    zdsstsz        = 1c8     
+idisk4         =   1+    shsize         =  20     zflopkg        = 200     
+index          =e8d2     shstk          =ed00+    ziopkg         =   0     
+indfet          e952     shstks         =   4     zrespkg        = 800     
+intron         =   0+    sstoff         =  20+    zstdovr        = 400     
+iop            =   0+    stcr            e847     
+iops           =   0     stdir1         =d077     
+iuser1         =  24+    stdir1o        = 677     

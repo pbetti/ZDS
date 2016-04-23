@@ -1,0 +1,76 @@
+;	TITLE	"SLUREAD - Syslib 4.0"
+	NAME	('LUREAD')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SLUREAD.Z80 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.1
+; Module  : SLUREAD
+; Abstract: This module has the routine LUREAD which reads the
+;	next block from the file opened by LUOPEN within the
+;	current library
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		LUREAD
+
+; From SYSLIB Get..
+
+	EXT		R$READ
+
+; Definitions
+
+LUDCNT	EQU	4		; Offset to LUD current count
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - LUREAD
+; Entry: DE - Points to LUD
+; Exit :  A  = 0, Zero Set (Z) if Ok
+;	       A = 0FFH, Zero Clear (NZ) if End of File
+; Uses : AF
+; Special Requirements: DMA address may be set for reads
+;===============================================================
+
+LUREAD:	PUSH	HL		; save regs
+	PUSH	DE
+	PUSH	BC
+	LD	HL,LUDCNT	; pt to count in LUD
+	ADD	HL,DE
+	LD	C,(HL)		; get length
+	INC	HL
+	LD	B,(HL)
+	LD	A,C		; check for zero
+	OR	B
+	JR	Z,EOF
+	DEC	BC		; decrement
+	LD	(HL),B		; replace
+	DEC	HL
+	LD	(HL),C
+	DEC	HL		; pt to index
+	LD	B,(HL)		; get index into BC
+	DEC	HL
+	LD	C,(HL)
+	PUSH	BC		; save index
+	INC	BC		; increment index for next read
+	LD	(HL),C		; save new index
+	INC	HL
+	LD	(HL),B
+	LD	DE,11+3		; pt to FCB
+	ADD	HL,DE
+	EX	DE,HL		; DE = FCB
+	POP	HL		; HL = index
+	CALL	R$READ		; read block
+	JR	Z,DONE		; ..jump if No error (A=0)
+EOF:	OR	0FFH		; Else set End-of-File condition
+DONE:	POP	BC		; restore regs
+	POP	DE
+	POP	HL
+	RET
+
+	END
+

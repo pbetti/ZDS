@@ -1,0 +1,140 @@
+
+                              ECHO
+                           Version 1.4
+
+                          Gene Pizzetta
+                        October 10, 1991
+
+
+ECHO, based on Carson Wilson's Z34RCP, echoes a text string to 
+console or printer.  Escape sequences allow sending any ASCII 
+character from null (00h) to delete (7Fh).
+
+The purpose of ECHO is two-fold:  First, ECHO provides a way of 
+sending messages to the console during the execution of a command 
+line, alias, or batch operation.  For example:
+
+     echo assembling;
+     m80 =$1;
+     if input;
+          echo linking;
+          l80 /p:100,$1,a:syslib/s,$1/n,/e;
+     fi
+
+as an alias will print the informative messages of "ASSEMBLING" 
+and "LINKING" during the respective phases of the commands.
+
+Secondly, ECHO provides a convenient way of sending escape 
+sequences to the CRT and printer.  ECHO does no character 
+translation, except as noted below.  Virtually any ASCII 
+character can be sent because direct BIOS calls are used and 
+because several escape sequences allow sending characters that 
+cannot ordinarily be entered on the command line.
+
+USAGE:
+
+     ECHO {text}
+
+If no text is given, no characters are echoed.  (Except that when 
+printer output is selected, a carriage return and line feed pair 
+is sent at the end of the line.
+
+Text may contain the following escape sequences:
+
+     %P   Send the following characters to the printer.
+     %C   Send the following characters to the console.  (This is 
+          usually the default, but ECHO can be configured to 
+          default to printer output.)
+     %>   Send the following characters in lower-case.
+     %<   Send the following characters in upper-case.  (This is 
+          usually the default, but ECHO can be configured to 
+          default to lower-case.)
+     ^c   Send the character "c" as a control character.  For 
+          example, "^Z" sends a control-Z and "^@" sends a null.
+     %D   Send a delete (rubout) character.
+     %S   Send a semi-colon character.  Since it acts as the ZCPR 
+          command separator, an actual semi-colon cannot be 
+          included in the text string.
+     %^   Send a caret character.
+     %%   Send a percent character.
+
+If two slashes are the first two non-space characters on the 
+command line, a usage message will be displayed.  You can begin 
+the text display with two slashes by merely preceding them with 
+the per-cent sign escape character:
+     ECHO %// THIS LINE BEGINS WITH TWO SLASHES
+
+A semi-colon on the command line signals the end of a command to 
+the command processor, so ECHO's text string cannot contain one.  
+Use "%S" instead; it will be replaced with a semi-colon on 
+output.
+
+If the "%" escape character is followed by "C", "P", "D", "S", 
+"<", or ">", the appropriate action will be taken, otherwise the 
+following character will merely be echoed as is.
+
+PRINTER OUTPUT:  Printer output varies slightly from console 
+output.
+
+If a form feed is sent during printer output ("^L"), ECHO will 
+send a carriage return and line feed first, then the form feed 
+character.
+
+If a text string ends while ECHO is in printer output mode, a 
+final carriage return and linefeed will be added to the string.  
+(In console mode a carriage return and line feed is sent by the 
+CPR instead.)  If you would rather not have a CR/LF pair sent to 
+the printer, put the console output escape sequence ("%C") at the 
+end of the string.  For instance, to reset an Epson printer 
+without spacing the paper up a line:
+     ECHO %P^[@^M%C
+This sequence sends ESC and "@", followed by a carriage return 
+("^M"), but not a final carriage return/line feed because output 
+is redirected to the console.
+
+CONFIGURATION:  Although no configuration is necessary, two 
+defaults can be changed using ZCNFG and the ECHOnn.CFG 
+configuration file.  If you do not change the name of the CFG 
+file, ZCNFG will always be able to find it, even if you change 
+the name of ECHO.
+
+Normally ECHO defaults to sending upper-case characters, but 
+ZCNFG can be used to set the default to lower-case.  Also, output 
+normally defaults to the console, but ECHO can be configured to 
+default to the printer.
+
+HISTORY:
+
+Version 1.4 -- October 10, 1991 -- Gene Pizzetta
+     ECHO was sometimes exhibiting strange behavior under BYE, 
+     which Howard Goldstein diagnosed as a stack problem.  The 
+     stack size has been increased.  Also, now uses ZSLIB GCOMNAM 
+     instead of Z3LIB PRTNAME so correct disk name prints on 
+     usage screen even with GO command.  Some code tweeking save 
+     a few bytes.
+
+Version 1.3 -- November 25, 1990 -- Gene Pizzetta
+     Fixed a bug reported by Biff Bueffel that could cause a 
+     crash under certain circumstances if no text string was 
+     given on the command line.  Added %D escape sequence that 
+     sends a DEL (RUB) character, the only character ECHO could 
+     not send.  Converted code to Zilog.
+
+Version 1.2 -- October 21, 1990 -- Gene Pizzetta
+     I got tired of my aliases not working whenever I got rid of 
+     my RCP for more memory.  So I decided to make the transient 
+     ECHO compatible with Carson Wilson's Z34RCP.  Most of the 
+     code is his, modified as necessary.  The dollar sign ($) for 
+     printer output no longer works.  One additional escape 
+     sequence has been added: %S sends a semi-colon to printer or 
+     screen; there was no other way to send one.  Now properly 
+     requires *two* slashes for the help message.  Added type-3 
+     safety header.  Added type-4 version.  Configurable with 
+     ZCNFG.
+
+RCPECHO for Z34RCP -- Version 1.0 -- June 15, 1988 -- Carson Wilson
+
+Version 1.1 -- September 22, 1987 -- Comeron W. Cotrill
+
+Version 1.0 -- March 22, 1984 -- Richard Conn
+

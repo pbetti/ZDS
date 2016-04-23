@@ -1,0 +1,329 @@
+title	rsxcfg.asm (c) 1988 Bridger Mitchell
+;
+name	CFGrsx		;"CFG" required
+
+DEMO equ 0	; for extra messages
+.xlist
+;
+; Package types, passed in (A) to cfg
+;
+NOCODE		equ	0
+;
+ENVCODE		equ	1	; absolute
+TCAPCODE	equ	2	; absolute
+NDRCODE		equ	3	; absolute
+;
+RCPCODE		equ	4	; first REL file 
+FCPCODE		equ	5
+IOPCODE		equ	6
+CCPCODE		equ	7
+CP3CODE		equ	8
+DOSCODE		equ	9
+DO3CODE		equ	10
+BIOCODE		equ	11
+CFGCODE		equ	12
+RSXCODE		equ	13
+BSXCODE		equ	14
+;
+LASTCODE	equ	14
+;
+UNKNOWNCODE	equ	0FFh
+
+;
+; (C) function value passed to cfg
+;
+PASS1_FN	equ	1
+PASS2_FN	equ	2
+VALID_FN	equ	3
+MOVE_FN		equ	4
+UPDATE_FN	equ	5
+
+; (A) code returned by cfg
+; 
+ABORT_CODE	equ	0FFh		; abort this file load
+PROCEED_CODE	equ	0
+SLEEP_CODE	equ	1		; replace me with dummy cfg
+SKIP_CODE	equ	2
+ADDRESS_CODE	equ	3
+;
+
+;
+; This code goes into the cfg buffer.
+; It will be called by JetLDR as soon as it is loaded.
+;
+com	/_CFG_/
+;
+; dispatch
+;
+	jp	start		; required JP
+	db	'Z3CFG'		; required package id
+;
+start:	cp	RSXCODE		; if not loading an RSX
+	jr	nz,proceed	; .. let JL continue	
+;
+; Note that this module doen't attempt to use the copy
+; of the data structure until an RSX is encountered.
+; The copy is not put here until this module's INIT is
+; called, which is AFTER this code is first entered.
+;
+	ld	a,c		; get cfg function number
+	cp	PASS1_FN
+	jp	z,pass1
+	cp	PASS2_FN
+	jp	z,pass2
+	cp	VALID_FN
+	jp	z,valid
+	cp	UPDATE_FN
+	jp	z,update
+	cp	MOVE_FN
+	jp	z,move
+;
+proceed:ld	a,PROCEED_CODE	;unknown, let JetLDR go ahead.
+	ret
+;
+;
+; calculate the rsx's load addr
+; return pointers to load and common tables
+;
+Pass1:
+;
+; This should check appropriate sizes of
+; segments, if they contain code/data.
+; This rsx has only CSEG/DSEG.
+;
+; Ensure that no non-rsx is in protected memory.
+;
+	ld	de,(0006)	; anything below the ccp?
+	ld	hl,bdosbase
+	or	a
+	sbc	hl,de
+	jr	nz,ckrsxs	; ..yes
+norsx:	ld	hl,ccp		; we are the top rsx
+	jr	allocrsx	; allocate just below the ccp
+;
+ckrsxs:	ld	hl,09 		; if (0006) points to an rsx
+	add	hl,de		; the wbaddr will be here
+	ld	e,(hl)		; if == wbaddr
+	inc	hl
+	ld	d,(hl)
+	ld	hl,(0001)
+	or	a
+	sbc	hl,de
+	jp	nz,nonrsx	; ..it doesn't, can't load.
+;
+anotherrsx:			;..we have rsx(s) in memory
+	ld	hl,(0006)	; allocate below the lowest rsx
+
+allocrsx:
+	push	hl
+	call	ourprogsize	; calc space needed
+	ex	de,hl
+	call	ourdatasize
+	add	hl,de
+	ex	de,hl		; de = progsize+datasize
+	pop	hl
+	or	a
+	sbc	hl,de
+	ld	(loadprog),hl	; set load and final addr
+	ld	(rsxprog),hl
+	call	ourprogsize	; put DSEG following CSEG
+	add	hl,de		; de = datasize
+	ld	(loaddata),hl
+	ld	(rsxdata),hl
+;
+pass1go:
+	ld	a,ADDRESS_CODE	; tell JL to use our parameters
+	ld	hl,ourcmns	; here they are
+	ld	de,ourload
+	ld	bc,ourfinal
+	ret
+
+; <<	de = datasize
+ourdatasize:
+	ld	bc,2
+	jr	getsize
+
+; <<	de = progsize
+;
+ourprogsize:
+	ld	bc,0
+getsize:
+	push	hl
+	ld	hl,(sizetbl.)
+	add	hl,bc
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	pop	hl
+	ret
+;
+
+nonrsx:	ld	hl,badmsg
+	call	pstr
+;
+abort:	ld	a,ABORT_CODE
+	ret
+badmsg:	db	13,10,7,'cfg: non-rsx in memory. Can''t load.',0
+;
+
+Pass2:
+;
+; Because we are loading directly to the
+; final addresses in pass1, we can have JetLDR
+; skip pass 2 processing.
+;
+	jp	skip
+
+;
+; do any validation here
+; This could, e.g., cancel the load if something's awry.
+; 
+Valid:
+;
+skip:	ld	a,SKIP_CODE	; tell JL to skip this function
+	ret			; and proceed to the next one
+	
+; 
+; Because we are loading directly to the
+; final addresses in pass1, no move is required.
+; If it were, it should be done here, not by JetLDR, which
+; doesn't know how/where to move an rsx.
+;
+Move:
+	jp	skip
+	
+;
+; JetLDR is finished with this file.  It will proceed to the
+; next one.  If we expect another rsx, we can remain
+; active.  Otherwise, we could tell JetLDR to put us to sleep.
+;
+Update:
+;
+; this is a "noisy" message, left here for demonstration.
+;   
+IF DEMO
+	ld	hl,finmsg1
+	call	pstr
+	ld	hl,(relname.)
+	call	pstr
+	ld	hl,finmsg2
+	call	pstr
+	ret
+
+;	ld	a,SLEEP_CODE
+;	ret
+;
+finmsg1:
+	db	13,10,'rsxcfg: finished configuring ',0
+;
+finmsg2:db	', now install',0
+;
+ELSE
+	ret
+ENDIF
+
+; The named_commons_table.  If the RSX has additional
+; references (z3env, for example), put them here too
+; and extend the load_table and final_table to match.
+; Define needed labels with additional CFG-module named commons.
+;
+ourcmns:
+	db	4
+ 	db	'_ID_',0
+	db	'_INIT_',0
+	db	'_BIOS_',0
+	db	'_CCP_',0
+;
+; The load_table for the rsx.
+; Note that JetLDR takes care of the labels "id" etc.
+;
+ourload:
+ loadprog:	ds	2		; prog
+ loaddata:	ds	2		; data
+ loadid:	dw	id		; cmn1
+ loadinit:	dw	init		; cmn2
+ loadbios:	dw	bios		; cmn3
+ loadccp:	dw	ccp		; cmn4
+;
+; The final_table for the rsx.
+; Because we're loading directly to the final
+; addresses, these are the same.
+;
+ourfinal:
+ rsxprog:	ds	2	
+ rsxdata:	ds	2
+ rsxid:		dw	id
+ rsxinit:	dw	init
+ rsxbios:	dw	bios
+ rsxccp:	dw	ccp
+;
+;
+; The JetLDR 'malloc' function allocates BC bytes of memory.
+; If it succeeds, HL -> allocated memory, DE = bytes left.
+; Failure is HL = 0.
+; Call malloc with BC = 0 to find out how much is left. 
+; There is no deallocator.
+;
+
+; copy of READ-ONLY data structure
+;
+cfgstruct:
+pstr:		jp	$-$	; print nul-term. string at hl
+malloc:		jp	$-$	; allocate memory
+actfcb.:	ds	2	; ptr to fcb (or lbr directory entry)
+relname.:	ds	2	; ptr to name of REL module
+time.:		ds	2	; ptr to 4-byte time string (SLR only)
+idbuf.:		ds	2	; ptr to _ID_ buffer
+initbuf.:	ds	2	; ptr to _INIT_ buffer
+soucebuf.:	ds	2	; ptr to source buffer
+relbuf.:	ds	2	; ptr to (relocated) code buffer
+cmnnametbl.:	ds	2	; ptr to named-common structures
+loadtbl.:	ds	2	; ptr to load buffer table
+finaltbl.:	ds	2	; ptr to final bases
+sizetbl.:	ds	2	; ptr to sizes of segments
+structlen equ $-cfgstruct
+
+;
+
+; The initialization code for this CFG module
+; just copies the JetLDR data structure into the
+; CFG module for more convenient access.
+;
+com	/_INIT_/
+init	equ	$
+;
+	ld	de,cfgstruct	; copy the structure
+	ld	bc,structlen	; into the cfg module
+	ldir
+;
+IF DEMO
+	ld	hl,msg
+	xor	a		; ok
+	ret			; 'ret' to 'pstr'
+
+msg:	db	13,10,'cfg: initialized.',0
+ELSE
+	xor	a
+	ret
+ENDIF
+
+
+; The remaining named-commons referenced by this CFG module.
+; Add to this list if the rsx needs others, such as _ENV_.
+;
+com	/_BIOS_/
+bios	equ	$
+	
+com	/_CCP_/
+ccp	equ	$
+
+com	/_BDOS_/
+bdosbase equ	$
+
+com	/_ID_/
+id	equ	$
+	db	'RSXCFG - configure an rsx - 3/10/88',0
+
+	end	; testrsx.asm
+f.:	ds	2	; ptr to _INIT_ buffer
+soucebuf

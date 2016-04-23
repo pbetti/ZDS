@@ -1,0 +1,764 @@
+
+; ZCPR34-2.Z80
+
+; Revisions to ZCPR Version 3.3 to make Version 3.4 (C) Copyright Jay P. Sage,
+; 1988, all rights reserved.
+
+;=============================================================================
+;
+;	C O M M A N D    L I N E    P R O C E S S I N G    C O D E
+;
+;=============================================================================
+
+; MAIN ENTRY POINT TO CPR
+
+; This is the main entry point to the command processor.  On entry the C
+; register must contain the value of the user/drive to be used as the current
+; directory.
+
+zcpr:
+	ld	sp,stack	; Reset stack
+
+	 if	pwnoecho
+	ld	a,0c3h		; Get a JP instruction
+	ld	(bios+12),a	; Reenable bios conout routine
+	 endif	;pwnoecho
+
+; If the HIGHUSER option is enabled, we compare the user/drive in the login
+; byte in C to the values stored in the message buffer.  If, ignoring bit 4
+; of the user number, they match, then we remain in the current area, which
+; may be a user area above 15.
+
+	ld	hl,curusr	; Point to current user (and drive)
+
+	 if	highuser
+
+	ld	a,(hl)		; Get current user (can be 0..31)
+	rlca			; Ensures Cy and A0 = 0
+	rla
+	rla
+	rla			; Move to high nibble, masking MSB
+	inc	hl		; Point to current drive #
+	or	(hl)		; Construct User/Drive byte, to compare with C
+	cp	c		; ..and do compare
+	jr	z,zcpr1		; Skip update if no change in DU
+	dec	hl		; Point back to curusr
+
+	 endif	;highuser
+
+	ld	(hl),c		; Save user/drive code temporarily
+	xor	a		; High and low nibbles to zero
+	rrd			; A(low) -> CURUSR(high) ->
+				; .. CURUSR(low) -> A(low)
+				; Now A has drive from CURUSR low nibble
+				; ..and CURUSR has user from high nibble
+	inc	hl		; Point to drive byte
+	ld	(hl),a		; Store drive byte
+
+zcpr1:
+
+; This block of code is executed when submit processing is enabled.  We log
+; into user area 0, where the submit file is kept, and we search the
+; designated drive for the file.  The result is kept in SUBFLAG.  This code
+; only has to be executed on reentry to the command processor at the main
+; entry point.  Commands that do not reboot but simply return to the CPR will
+; execute without the disk reset and file search required here.  Ron Fowler
+; pointed out a shortcut based on the fact that after a disk reset, the A
+; regiser contains a value of 0 if there is no file on drive A with a '$' in
+; the file name and 0FFH if there is such a file.  Thus if A = 0, there can
+; be no '$$$.SUB' file on drive A.  This trick is, unfortunately, not reliable
+; under some versions of ZRDOS.  Therefore, an option has been included to
+; use or not use this shortcut.
+
+	 if	subon		; If submit facility enabled ..
+
+; Removed call to defltdma as function 13 does it.  jww
+;
+;	call	defltdma	; Set DMA address to 80H
+;
+	xor	a		; Log into user area 0
+	call	setuser
+	ld	c,13		; Reset disk system (returns 0FFH if a $$$.SUB
+	call	bdossave	; ..file might exist in user 0)
+	ld	de,subfcb	; Point to submit file FCB with explicit drive
+
+	 if	subclue
+	call	nz,srchfst	; Search only if flag says it could exist
+	 else	;not subclue
+	call	srchfst		; Search for the file unconditionally
+	 endif	;subclue
+
+	ld	(subflag),a	; Set flag for result (0 = no $$$.SUB)
+
+	 else	;not subon
+
+	ld	c,13		; Reset disk system
+	call	bdossave
+
+	 endif	; subon
+
+	jr	nextcmd		; Go to entry point for processing next command
+
+
+;-----------------------------------------------------------------------------
+
+; NEW COMMAND LINE ENTRY POINT
+
+; This entry point is used when ZCPR34 finds the command line empty.  A call to
+; READBUF gets the next command line from the following possible sources in
+; this order:
+;	1) a running ZEX script
+;	2) the submit file $$$.SUB (if enabled)
+;	3) the shell stack
+;	4) the user
+; If the line comes from the shell stack, then the shell bit in the command
+; status flag is set.
+
+restart:
+	ld	sp,stack	; Reset stack
+	xor	a
+	ld	(cmdstatfl),a	; Reset ZCPR3 command status flag
+	inc	a		; Set ZEX message byte to 1 to
+	ld	(zexinpfl),a	; ..indicate command prompt
+	 if	subon
+	ld	(xsubflag),a	; Ditto for XSUB flag
+	 endif	;subon
+	ld	hl,cmdlin	; HL --> beginning of command line buffer
+	ld	(nxtchr),hl	; Save as pointer to next character to process
+	ld	(hl),0		; Zero out command line (in case of warm boot)
+	push	hl		; Save pointer to command line
+	call	readbuf		; Input command line (ZEX, submit, shell,
+				; .. or user)
+	pop	hl		; Get back pointer to command line
+	ld	a,(hl)		; Check for comment line
+	cp	comment		; Begins with comment character?
+	jr	z,restart	; If so, go back for another line
+				; Otherwise, fall through
+
+;-----------------------------------------------------------------------------
+
+; COMMAND CONTINUATION PROCESSING ENTRY POINT
+
+; This is the entry point for continuing the processing of an existing command
+; line.  The current drive and user values as known to the CPR are combined
+; and made into the user/drive byte that CP/M keeps at location 0004.  If the
+; HIGHUSER option is enabled, the user number for this byte is forced to be
+; in the range 0..15.  Next the command status flag is processed.  The error
+; and ECP bits in the actual flag are reset, and the original flag is checked
+; for an ECP error return (both ECP bit and error bit set).  In that case,
+; control is transferred to the error handler.
+
+nextcmd:
+	ld	hl,(curusr)	; Get currently logged drive and user
+	ld	a,l		; Work on user number
+	rlca			; Clears Cy and A0
+	rla
+	rla
+	rla			; Move to high nibble, masking MSB
+	or	h		; ..and drive into low nibble
+	ld	(udflag),a	; Set user/disk flag in page 0
+
+	ld	a,2		; Turn ZEX input redirection off
+	ld	(zexinpfl),a
+	 if	subon
+	ld	(xsubflag),a	; Turn off XSUB input redirection
+	 endif	;subon
+
+	ld	hl,cmdstatfl	; Point to the command status flag (CSF)
+	ld	a,(hl)		; Get a copy into register A
+	res	1,(hl)		; Reset the actual error bit
+	res	2,(hl)		; Reset the actual ECP bit
+	and	110b		; Select ECP and error bits in original flag
+	cp	110b		; Test for an ECP error
+	jp	z,error		; Process ECP error with error handler
+	res	3,(hl)		; Clear the external program bit
+
+; This is the entry point from the error handler.  It bypasses the resetting
+; of the command status flag bits so that the information will be available to
+; the error handler.
+
+nextcmd1:
+	ld	sp,stack	; Reset stack
+	call	logcurrent	; Return to default directory
+	ld	hl,(nxtchr)	; Point to first character of next command
+	push	hl		; Save pointer to next character to process
+
+; We have to capitalize the command line each time because an alias or other
+; command line generator may have stuck some new text in.  The code is shorter
+; if we simply capitalize the entire command rather than trying to capitalize
+; only the one command we are about to execute.
+
+capbuf:				; Capitalize the command line
+	ld	a,(hl)		; Get character
+	call	ucase		; Convert to upper case
+	ld	(hl),a		; Put it back
+	inc	hl		; Point to next one
+	or	a		; See if end of line (marked with null)
+	jr	nz,capbuf	; If not, loop back
+
+	pop	hl		; Restore pointer to next character to process
+
+nextcmd3:
+
+; ZCPR34 provides a convenience feature to make it easier to enter a leading
+; colon to force the current directory to be scanned and to make the CPR skip
+; resident commands.  If ALTCOLON is active, an alternate character can be
+; entered as the first character of a command.  The default (and recommended)
+; alternative character is the period (it could not have any other meaning
+; here).  If FASTECP (see below) is not enabled or if ALTONLY is enabled,
+; leading spaces on the command line are skipped before looking for the
+; alternate character for the colon
+
+	 if	[ not fastecp ] or [ fastecp and altonly ]
+	call	sksp
+	 else	;fastecp and not altonly
+	ld	a,(hl)		; Get first character in new command line
+	 endif	;[ not fastecp ] or [ fastecp and altonly ]
+
+	 if	altcolon	; If allowing alias character for leading colon
+	cp	altchar		; If first character is ALTCHAR, treat as ':'
+	jr	nz,nextcmd3a	; Branch if not '.'
+	ld	a,':'		; Else replace with colon
+
+	 if	not fastecp
+	ld	(hl),a		; Otherwise do more massaging below first
+nextcmd3a:
+	 endif	;not fastecp
+
+	 endif	;altcolon
+
+; ZCPR34 supports three new options that can speed up command processing. 
+; FASTECP allows commands with a leading space to bypass the search for
+; resident commands or transient commands (COM files) along the path and go
+; directly to the extended command processor.  With SKIPPATH enabled, when
+; a command is prefixed by an explicit directory specification (but not a
+; lone colon), searching of the path and invocation of the ECP are disabled.
+; If the command is not found in the specified directory, the error handler
+; is invoked immediately.  Finally, if BADDUECP is enabled, when an attempt
+; is made to log into an invalid directory, the command is sent directly to
+; the ECP, which can provide special handling.  To implement these three
+; features, the first actual character of the command line is saved as a
+; flag in FIRSTCHAR.  My apologies for the complexity of these nested
+; conditionals.
+
+		; With FASTECP we store the first actual character
+		; ..and then skip over spaces (unless ALTONLY is
+		; ..enabled, in which case we skipped spaces above)
+
+	 if	fastecp
+
+	 if	altspace	; If allowing alias character for leading space
+nextcmd3a:
+	cp	ecpchar		; If first character is ECPCHAR treat as ' '
+	jr	nz,nextcmd3b	; Branch if not '/' (alternate character)
+	ld	a,' '		; Else replace with space
+	 if	not altcolon
+	ld	(hl),a
+	 endif	;not altcolon
+nextcmd3b:
+	 endif	;altspace
+
+	 if	altcolon
+	ld	(hl),a		; A could have been modified above
+	 if	not altspace
+nextcmd3a:
+	 endif	;not altspace
+	 endif	;altcolon
+
+	ld	(firstchar),a	; Save it in flag
+	call	sksp		; Then skip leading spaces
+
+	 else	;not fastecp
+
+		; With SKIPPATH but not FASTECP we store the first
+		; ..character of the command (spaces were skipped above)
+
+	 if	skippath	; and [ not fastecp ]
+	ld	(firstchar),a	; Store first nonspace character
+
+		; With only BADDUECP (and neither SKIPPATH nor FASTECP)
+		; ..we store a null in the FIRSTCHAR flag
+
+	 else	;not skippath
+
+	 if	badduecp	; ..and [ not fastecp ] and [ not skippath ]
+	xor	a		; Store a null
+	ld	(firstchar),a	; ..to indicate baddu condition
+	ld	a,(hl)		; Retrieve character
+	 endif	;badduecp	... and [ not fastecp ] and [ not skippath ]
+
+	 endif	;skippath	... and [ not fastecp ]
+
+	 endif	;fastecp
+
+; Resume processing of the command line
+
+	or	a		; Now at end of line?
+	jr	z,restart	; If so, get a new command line
+	cp	ctrlc		; Flush ^C to prevent error-handler
+	jr	z,restart	; ..invocation on warm boots
+
+	cp	cmdsep		; Is it a command separator?
+	inc	hl		; If so, skip over it
+	jr	z,nextcmd3	; ..and process next command
+	dec	hl		; If not, back up again
+
+nextcmd4:
+
+; Unless we are now running the external error handler, the following code
+; saves the address of the current command in Z3MSG+4 for use by programs
+; to determine the command line with which they were invoked.
+
+	ld	a,(cmdstatfl)	; Get command status flag
+	bit	1,a		; Test for error handler invocation
+	jr	nz,nextcmd5	; If so, skip over next instruction
+	ld	(cmdptr),hl
+
+nextcmd5:
+
+; Find the end of this command and set up the pointer to the next command.
+
+	push	hl		; Save command line pointer
+	dec	hl		; Adjust for preincrementing below
+nextcmd6:			; Find end of this command
+	inc	hl		; Point to next character
+	call	tsteol		; Test for end of command
+	jr	nz,nextcmd6	; Keep looping if not
+
+	ld	(nxtchr),hl	; Set pointer to next command
+	pop	hl		; Get back pointer to current command tail
+
+	call	parser		; Parse entire command line, then look for
+				; ..the command
+
+
+;=============================================================================
+
+;		C O M M A N D    S E A R C H    C O D E
+
+;=============================================================================
+
+; CODE FOR FINDING AND RUNNING THE COMMAND
+
+; Here is the code for running a command.  Commands are searched for and
+; processed in the following order:
+;
+;	1) flow control package (FCP) commands and IF state testing
+;	2) resident command package (RCP)
+;	3) command processor (CPR)
+;	4) transient (COM file or extended command processor)
+;	5) external error handler
+;	6) internal error message and processing
+;
+; Special notes:
+;
+;    a)	If the current command is a shell command, special handling of flow
+; 	control is required.  If SHELLIF is enabled so that flow commands are
+;	allowed in shell alias scripts, then we reset the flow state to its
+;	initial condition (none) with each shell invocation (and after each
+;	command is run, we reset the shell bit in the code after CALLPROG).
+;	In this case shells will run regardless of flow state, and residual
+;	conditionals from the last running of the shell are flushed.  Each
+;	shell input sequence begins afresh.  On the other hand, if SHELLIF is
+;	off, flow control commands inside a shell script must be flushed so
+;	that they do not interfere with user entered commands.
+;    b)	Directory prefixes are ignored for flow commands, since all flow control
+;	processing must pass through the FCP (the command must run even when
+;	the current flow state is false).
+;    c)	If the command is not found in the FCP, then the current flow state is
+;	tested.  If it is false, the command is flushed and the code branches
+;	back to get the next command.
+;    d)	If the command had a directory prefix (a colon alone is sufficient),
+;	then steps #2 and #3 are skipped over,and the command is processed
+;	immediately as a transient program.
+;    e)	In ZCPR34, unlike ZCPR30, RCP commands are scanned before CPR commands.
+;	This has been done so that more powerful RCP commands can supercede
+;	CPR commands.
+;    f)	If the SKIPPATH option is enabled, when an explicit directory is
+;	specified with a command (but not just a colon), searching of the path
+;	is bypassed.  If the FASTECP option is enabled, commands with leading
+;	spaces are sent directly to the ECP for processing.
+;    g)	If no external command can be found, ZCPR34 performs extensive error
+;	handling.  If the command error occurred while looking for a shell
+;	program, then the shell stack is popped.  Otherwise, ZCPR34 tries to
+;	invoke an external, user-specified error handling command line.  If
+;	none was specified or if the error handler invoked by that command
+;	line cannot be found, the internal error message (step #6) is displayed.
+
+
+;-----------------------------------------------------------------------------
+
+runcmd:
+	 if	shellif		; If shells reininitialize flow control...
+	ld	a,(cmdstatfl)	; Get command status flag
+	rrca			; Shell bit set?
+	jr	nc,fcpcmd	; If not a shell, process command
+	xor	a		; Otherwise, shell is running, so
+	ld	(ifptrfl),a	; ..reinitialize the IF system and continue
+	 endif	;shellif
+
+
+; ---------- Module <<1>>: Flow Control Processing
+
+; An option is supported here to allow the address of the FCP to be obtained
+; from the environment descriptor.  This is logically consistent with the
+; pholosopy of the Z-System and is useful when one wants to have a single block
+; of FCP/RCP memory that can be allocated dynamically between FCP and RCP
+; functions.
+
+fcpcmd:
+
+	 if	fcps ne 0	; Omit code if FCP not implemented
+
+	 if	fcpenv		; If getting FCP address from Z3ENV
+
+	ld	hl,(z3env+12h)	; Offset in Z3ENV to FCP address
+	call	pkgoff		; Set HL to FCP+5
+	jr	z,runcmd1	; Skip if no FCP present
+
+	 else	; using fixed FCP address
+
+	ld	hl,fcp+5	; Get address from Z3BASE.LIB
+
+	 endif	;fcpenv
+
+
+; If flow control processing is not allowed in shell aliases (scripts running
+; as shell commands), then we have to make sure that we flush any flow control
+; commmands, otherwise the CPR will attempt to execute them as transients,
+; with dire consequences.  In the code below we check the shell bit.  If it
+; is not set, we proceed normally.  If it is set, we scan for flow commands
+; and then jump past the flow testing to RUNFCP2, where the code will flush
+; the command if it was a flow command and execute it unconditionally if not.
+
+	call	cmdscan		; Scan command table in the module
+				; ..and set Z-flag true if command found
+	 if	not shellif
+	ld	a,(cmdstatfl)	; Get command status flag
+	rrca			; Test shell bit -- Does not affect Z-flag
+	jr	c,runfcp2	; If shell bit not set, flush using code below
+	 endif	;not shellif
+
+	jr	z,callprog	; Run if found (with no leading CRLF)
+
+; This is where we test the current IF state.  If it is false, we skip this
+; command.
+
+	call	iftest		; Check current IF status
+
+runfcp2:			; If false, skip this command and go on to next
+	 if	drvprefix	; If DRVPREFIX we can use code below
+	jr	z,jpnextcmd	; ..to save a byte
+	 else			; Otherwise, we have to do an
+	jp	z,nextcmd	; ..absolute jump
+	 endif	;drvprefix
+
+	 endif	;fcp ne 0
+
+
+runcmd1:
+	 if	fastecp or badduecp
+	ld	a,(firstchar)	; If FIRSTCHAR flag set for ECP invocation,
+	cp	' '		; ..then go straight to transient processing
+	jr	z,com
+	 endif	;fastecp or badduecp
+
+colon	equ	$+1		; Flag for in-the-code modification
+	ld	a,0		; If command had a directory prefix (even just
+	or	a		; ..a colon) then skip over resident commands
+	jr	nz,comdir
+
+
+; ---------- Module <<2>>: RCP Processing
+
+; An option is supported here to allow the address of the RCP to be obtained
+; from the environment descriptor.  This is logically consistent with the
+; philosophy of the Z-System and is useful when one wants to have a single
+; block of FCP/RCP memory that can be allocated dynamically between FCP and
+; RCP functions.
+
+	 if	rcps ne 0	; Omit code if RCP not implemented
+
+rcpcmd:
+
+	 if	rcpenv		; If getting address of rcp from Z3ENV
+
+	ld	hl,(z3env+0ch)	; Offset in Z3ENV to RCP address
+	call	pkgoff		; Set HL to address of RCP+5
+	jr	z,cprcmd	; Skip if no RCP
+
+	 else	; using fixed RCP address
+
+	ld	hl,rcp+5	; Get address from Z3BASE.LIB
+
+	 endif	; rcpenv
+
+	call	cmdscan		; Check for command in RCP
+	jr	z,callproglf	; If so, run it (with leading CRLF)
+
+	 endif	;rcp ne 0
+
+
+; ---------- Module <<3>>: CPR-Resident Command Processing
+
+cprcmd:
+
+cprcmd1	defl	diron or eraon or geton or goon or jumpon
+cprcmd1	defl	cprcmd1 or lton or noteon or renon or saveon
+
+	 if	cprcmd1		; If any CPR commands
+	ld	hl,cmdtbl	; Point to CPR-resident command table
+	call	cmdscan		; ..and scan for the command
+	jr	z,callprog	; If found, run it (with no leading CRLF)
+	 endif	;any CPR commands
+
+
+; ---------- Module <<4>>: Transient Command Processing
+
+comdir:				; Test for DU: or DIR: only (directory change)
+
+	 if	drvprefix
+
+	ld	a,(cmdfcb+1)	; Any command name?
+	cp	' '
+	jr	nz,com		; If so, must be transient or error
+
+		; Entry point for change of directory only
+
+	 if	wdu		; If controlled by wheel..
+
+	call	whlchk
+
+	 if	badduecp
+	jr	nz,comdir1
+	ld	(colon),a	; Pretend there is no colon
+	ld	a,' '		; Force invocation of ECP
+	ld	(firstchar),a
+	jr	com
+	 else	;not badduecp
+	ld	a,ecduchg
+	jr	z,error
+	 endif	;badduecp
+
+	 endif	; wdu
+
+comdir1:
+	ld	hl,(tempusr)	; Get temporary drive and user bytes
+
+	 if	not highuser	; If only users 0..15 can be logged
+	bit	4,l
+	jp	nz,baddirerr	; If out of range, invoke error handling
+	 endif	;not highuser
+
+	dec	h		; Shift drive to range 0..15
+	ld	(curusr),hl	; Make the temporary DU into the current DU
+	call	logcurrent	; Log into the new current directory
+jpnextcmd:
+	jp	nextcmd		; Resume command line processing
+
+	 else	;not drvprefix
+
+	 if	badduecp
+	xor	a		; Pretend there is no colon
+	ld	(colon),a
+	ld	a,' '		; Force invocation of ECP
+	ld	(firstchar),a
+	 else	;not badduecp
+	ld	a,ecduchg
+	jr	z,error
+	 endif	;badduecp
+
+	 endif	;drvprefix
+
+
+com:				; Process transient command
+
+	ld	hl,tpa		; Set default execution/load address
+	ld	a,3		; Dynamically load type-3 and above ENVs
+	call	mload		; Load memory with file specified in cmd line
+	ld	a,(cmdstatfl)	; Check command status flag to see if
+	and	100b		; ..ECP running (and suppress leading CRLF)
+
+; CALLPROG is the entry point for the execution of the loaded program.  At
+; alternate entry point CALLPROGLF if the zero flag is set, a CRLF is sent
+; to the console before running the program.
+
+callproglf:
+	call	z,crlf		; Leading new line
+
+callprog:
+	ld	a,(cmdstatfl)	; Check command status flag to see if
+	and	2		; ..error handler is running
+	ld	(zexinpfl),a	; Store result in ZEX control flag
+				; 2 = ZEX off, 0 = ZEX on
+	 if	subon
+	ld	(xsubflag),a	; Ditto for XSUB input redirection
+	 endif	;subon
+
+; Copy command tail into TBUFF
+
+tailsv	equ	$+1		; Pointer for in-the-code modification
+	ld	hl,0		; Address of first character of command tail
+	ld	de,tbuff	; Point to TBUFF
+	push	de		; Save pointer
+	ld	bc,7e00h	; C=0 (byte counter) and B=7E (max bytes)
+	inc	de		; Point to first char
+tail:
+	call	tsteol		; Check for EOL
+	jr	z,tail1		; Jump if we are done
+	ld	(de),a		; Put character into TBUFF
+	inc	hl		; Advance pointers
+	inc	de
+	inc	c		; Increment character count
+	djnz	tail		; If room for more characters, continue
+	call	print		; Display overflow message
+	db	bell		; ..ring bell
+	dc	'Ovfl'		; ..then continue anyway
+tail1:
+	xor	a		; Store ending zero
+	ld	(de),a
+	pop	hl		; Get back pointer to character count byte
+	ld	(hl),c		; Store the count
+
+; Run loaded transient program
+
+	call	defltdma	; Set DMA to 0080h standard value
+
+; Perform automatic installation of Z3 programs (unless type-2 environment)
+
+	ld	hl,(execadr)	; Get current execution address
+	call	z3chk		; See if file is a Z3 program
+	ld	de,z3env	; Get actual ENV address
+	jr	nz,execute	; Branch if not Z3
+
+	cp	2		; If type-2 (internal) environment
+	jr	z,execute	; ..do not perform installation
+
+; Install types 0, 1, 3 and 4
+
+	inc	hl		; Advance to place to put Z3ENV address
+	ld	(hl),e		; Put in low byte of environment address
+	inc	hl
+	ld	(hl),d		; Put in high byte of environment address
+
+; Test for RST 0 as first byte and change to JP if so
+
+	ld	hl,(execadr)	; Point to first byte of program code
+	ld	a,(hl)
+	cp	0c7h		; Test for RST 0
+	jr	nz,execute
+	ld	(hl),0c3h	; Replace with JP instruction
+
+; Execution of the program occurs here by calling it as a subroutine
+
+execute:
+	ex	de,hl		; Pass Z3ENV address to program in HL
+
+execadr	equ	$+1		; Pointer for in-line code modification
+	call	tpa		; Call transient (or resident)
+
+; Return from execution
+
+	 if	shellif		; If flow processing allowed in shells...
+	ld	hl,cmdstatfl	; Reset the shell bit in the command status
+	res	0,(hl)		; ..flag so multiple-command shells will work
+	 endif	;shellif
+
+				; Continue command processing
+	 if	drvprefix	; If DRVPREFIX we can save a byte by
+	jr	jpnextcmd	; ..doing a two-step relative jump
+	 else			; Otherwise, we just have to do
+	jp	nextcmd		; ..the absolute jump
+	 endif	;drvprefix
+
+
+; ---------- Module <<5>>: External Error Handler Processing
+
+baddirerr:
+	ld	a,ecbaddir	; Error code for bad directory specification
+
+error:
+
+; If we are returning from an external command to process an error, we want
+; to leave the error return code as it was set by the transient program.
+
+	ld	hl,cmdstatfl	; Point to command status flag
+	bit	3,(hl)		; Check transient error flag bit
+	jr	nz,error1	; If set, leave error code as set externally
+	ld	(ecflag),a	; Otherwise, save error code from A register
+
+error1:
+	res	2,(hl)		; Reset the ECP bit to prevent recursion of
+				; ..error handler by programs that don't
+				; ..clear the bit
+	bit	0,(hl)		; Was error in attempting to run a shell?
+	jr	nz,errsh	; If so, pop shell stack
+
+; The following code is included to avoid a catastrophic infinite loop when
+; the external error handler cannot be found.  After one unsuccessful try,
+; the internal code is invoked.
+
+	bit	1,(hl)		; Was an error handler already called?
+	jr	nz,errintrnl	; If so, use internal error handler
+
+; If the current IF state is false, we ignore the error and just go on with
+; the next command.
+
+	 if	fcps ne 0
+	call	iftest
+	jp	z,nextcmd
+	 endif	;fcp ne 0
+
+	set	1,(hl)		; Set command status flag for error invocation
+	ld	hl,errcmd	; Point to error handler command line
+	ld	a,(hl)		; Check first byte for presence of an
+	or	a		; ..error command line
+	jr	z,errintrnl	; If no error handler, use built-in one
+	ld	(nxtchr),hl	; Else, use error command line as next command
+	jp	nextcmd1	; Run command without resetting status flag
+
+
+; ---------- Module <<6>>: Resident Error Handler Code
+
+; If the error is with the invocation of a shell command, we pop the bad shell
+; command off the stack to prevent recursion of the error.  We then use the
+; internal error handler to echo the bad shell command.
+
+errsh:	ld	hl,(z3env+20h)	; SHSTKS to L, SHSIZE to H
+	ld	b,l
+	ld	e,h		; SHSIZE to E
+	xor	a		; Your basic null
+	ld	hl,(z3env+1eh)	; Get shell stack address
+	ld	(hl),a		; Clear current stack entry
+	dec	b		; SHSTKS-1 in B
+	jr	z,errintrnl	; Done if SHSTKS=1
+	push	hl		; Save address of shell stack
+	ld	d,a		; Clear D
+	ld	h,a		; Clear H..
+	ld	l,a		; ..and L
+
+errs0:	add	hl,de		; Multiply SHSIZE*(SHSTKS-1)
+	djnz	errs0
+
+	ld	b,h
+	ld	c,l		; Length to BC
+	ex	de,hl		; SHSIZE to HL
+	pop	de		; Destination (shell stack beginning)
+	add	hl,de		; SHSTK+SHSIZE to HL (Source)
+	ldir
+	ld	(de),a		; Clear last entry
+
+errintrnl:
+	 if	subon
+	call	subkil		; Terminate active submit file if any
+	 endif	;subon
+
+	call	crlf		; New line
+	ld	hl,(cmdptr)	; Point to beginning of bad command
+	call	printhl		; Echo it to console
+	call	print		; Print '?'
+	dc	'?'
+	jp	restart		; Restart CPR
+
+; End ZCPR34-2.Z80
+

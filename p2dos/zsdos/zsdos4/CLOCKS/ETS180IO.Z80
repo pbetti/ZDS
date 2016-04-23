@@ -1,0 +1,200 @@
+	TITLE	"ETS 180IO+ Clock driver for ZSDOS - (ETS180IO+)"
+	SUBTTL	"Description of Clock Module"
+;--------------------------------------------------------------
+; Ver 0.4 - Initial release version.	15 Oct 88,  H.F.Bower
+;--------------------------------------------------------------
+
+VERS	EQU	04
+	.Z80
+	NAME	ETS180
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; Ptr to statyr
+
+CLKNAM:	DEFB	'ETS180 IO+ Real Clock   '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'  ETS180 IO+ Real Time Clock/Calendar',CR,LF
+	DEFB	'   for the MicroMint SB-180/FX-180',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		; Dummy parameters
+	DEFW	0
+
+
+	PAGE
+	SUBTTL	"Clock Code - ETS180 IO+ for MicroMint SB-180"
+
+	CSEG
+;====================================================================
+; ETS180IO.
+;  ZSDOS clock interface module for the ETS180 IOPLUS Expansion board
+;  for the MicroMint SB180.
+;					Harold F. Bower,  8 Jun 87
+; Version 07/12/88-1
+;====================================================================
+
+MHZ	DEFL	9		; Set for highest speed of SB180
+
+BASE	EQU	40H		; Base address port
+CREGF	EQU	BASE+15		; EPSON 62421 Control Register F
+CREGE	EQU	BASE+14		; EPSON 62421 Control Register E
+CTRL	EQU	BASE+13		; EPSON 62421 Control Register D
+YEAR10	EQU	BASE+11		; EPSON 62421 Years*10 Register
+
+BSYBIT	EQU	0010B		; Mask to test for busy bit
+HLDBIT	EQU	0001B		; Bit to set hold mode
+
+	CSEG
+;-------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+	JP	GETTIM		; Jump to Read Clock
+	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	PUSH	HL		; Save time string start address
+LOOP:	LD	HL,BUFR		; First clock read to buffer
+	CALL	RDIT		; ..and do the read
+	POP	HL		; Restore destination time addr
+	PUSH	HL		; ..and keep on stack
+	CALL	RDIT		; Second read to real string
+
+;  Clock has been read twice.  Now compare both reads to see if it
+;  held steady, or was incrementing registers.  Must compare 6 bytes
+;  (12 digits) in date & time string.
+
+	LD	D,6		; Compare 6 bytes in both reads
+	LD	BC,BUFR		; Set first string..
+	POP	HL		; ..and second
+	PUSH	HL		; ...keeping copy on stack
+LOOP0:	LD	A,(BC)		; Get byte from one string
+	CP	(HL)		; ..compare with other string
+	JR	NZ,ERLOOP	; Repeat whole read if bytes differ
+	INC	BC		; Else advance to next byte
+	INC	HL		; ..in both strings
+	DEC	D		; Count down
+	JR	NZ,LOOP0	; ..and loop til all done
+	DEC	HL		; Back up byte in time string
+	POP	BC		; Clear stack
+OKRET:	LD	A,01		; Set return code for OK
+	RET			; ..and return
+
+ERLOOP:	POP	HL		; Restore Entry string
+	PUSH	HL		; ..keeping on stack
+	LD	BC,5		; Offset to "seconds" addr
+	ADD	HL,BC
+	LD	(HL),E		; Restore Entry "seconds" value
+	JR	LOOP		; ..and reply
+
+;.....
+;  Actual read routine from 62421 chip.  It reads 12 registers without
+;  stopping the chip, and does not require use of the Write line which
+;  may be disconnected to prevent accidental or deliberate changing of
+;  the time.
+
+RDIT:	LD	BC,12*256+YEAR10 ; 12 bytes starting at high address
+RDLOOP:	LD	A,B		; Check counter
+	CP	6		; Is it for HRs * 10 (12/24)
+	IN	A,(C)
+	JR	NZ,NOT24	; Jump if Not
+	AND	03H		; ..else strip 12/24 bit
+NOT24:	RLD			; Rotate nybble into memory addr
+	DEC	B		; Count down the counter
+	RET	Z		; ..return if we are at the end
+	DEC	C		; Odd/even count of nybbles
+	BIT	0,B
+	JR	NZ,RDLOOP	; ..jump if just one nybble done
+	INC	HL		; Else advance pointer
+	LD	E,(HL)		; ..and save entry value in case it's last
+	JR	RDLOOP
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+WRCLK:	LD	A,00000111B	; Power Up reset
+	OUT	(CREGF),A
+	XOR	00000001B	; Toggle reset bit
+	OUT	(CREGF),A
+
+	LD	B,5		; Loop to prevent lockups (arbitrary)
+HLDLOP:	LD	A,HLDBIT	; Try to stop the clock
+	OUT	(CTRL),A
+	IN	A,(CTRL)	; Check the busy bit
+	AND	BSYBIT
+	JR	Z,SETCK0	; Do it if clock is stopped
+	XOR	A		; ..else turn back on
+	OUT	(CTRL),A
+	DJNZ	HLDLOP		; Count down and loop if not OK
+	OR	0FFH		; If end, set error status of FF
+	RET			; ...and quit
+
+SETCK0:	LD	C,YEAR10	; Start with Years*10's register
+	LD	B,6		; Output 12 values (6 bytes) to the chip
+OUTLOP:	RLD			; Rotate high nybble to low part of A
+	OUT	(C),A		; ..and send High
+	DEC	C		; Lower output port address
+	RLD			; Rotate low nybble to low part of A
+	OUT	(C),A		; ..and send low
+	DEC	C		; Bump port addr
+	RLD			; ..restore string byte
+	INC	HL		; ...and advance to the next byte
+	DJNZ	OUTLOP		; Count down and loop if more to do
+
+	LD	A,0101B		; Set for 1 sec, No interrupts
+	OUT	(CREGE),A
+	DEC	A		; Change to 0100B to set 24-hour mode
+	OUT	(CREGF),A
+	XOR	A		; Turn clock Off
+	OUT	(CTRL),A
+	JR	OKRET		; Jump to set Ok status and return
+
+;----------------- D a t a    A r e a -----------------
+
+; Data Storage needed in module
+
+BUFR:	DEFS	6		; Storage for read time
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	RET			; Nothing to set here
+
+	DEFB	0,0,0		; Dummy filler
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

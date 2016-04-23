@@ -1,0 +1,382 @@
+Program: LOADND
+     Logs in a disk and updates the ZCPR3 system Named Directory
+(NDR) to reflect the directory names (if any) for the target disk.
+
+LOADND is copyright by A. E. Hawley January 30, 1987.
+It may be freely distributed, but it must not be sold 
+either separately or as part of a package without the 
+written consent of the author.  The author may be reached 
+via electronic mail at the Ladera Z-Node in Los Angeles,
+213-670-9465, or through the Lillipute Z-Node in Chicago 
+at 312-649-1730.
+
+LOADND is released for beta test through the Z-system 
+users group Z-SIG on January 30, 1987 by the author.
+
+Author: Al Hawley, Ladera Z-Node, (213) 670-9465
+
+VERSION HISTORY:
+
+1.2 - 01/31/87 - by AEH
+	Added error and progress reporting routines. The progress
+	reporting messages respond to the ZCPR3 Quiet command.
+	(A computer, like a wife, should not chatter about things
+	that you're not interested in!)
+	The HELP screen reflects current choice of key command
+	letter options, which are user definable by setting the
+	value of those parameters in a data area.
+	Parameters which can be changed to customize the program
+	were moved to a data area near the start and marked with
+	ascii labels that show up with ZDM or other debuggers.
+	For most customization, it is not necessary to reassemble
+	the program - just use the debugger to make changes to
+	the byte(s) following the markers. See CUSTOMIZATION, below.
+	
+1.1 - 01/25/87 - BY AEH 
+	Name Change only. Change from DSKNDR to LOADND to better
+	reflect the program function and relation to other programs
+	which perform operations on the system NDR. The other
+	programs are EDITND (V1.0, Jan87) and SAVEND (to be released
+	in Feb87). EDITND edits the resident Named Directory buffer;
+	SAVEND copies the resident Named Directory buffer to a disk
+	file suitable for reloading with LDR.COM.
+
+1.1 - 12/26/86 - by AEH - 
+	Replaced the first routine in INIT: which tests for
+	valid Z3ENV definition. The original routine tested
+	for a zero address (inadequate). The new routine tests
+	for equality of the 'Z3ENV' strings which occur at the
+	beginning of a ZCPR3 utility and the environment
+	descriptor. If they don't match, installation is required.
+
+1.0 - 12/17/86 - Initial version.
+
+Previous similar pgm: LDSK 1.1 by Wilson Bent
+
+PROGRAM FUNCTION:
+     Logs in a disk and updates the ZCPR3 system Named Directory
+(NDR) to reflect the directory names (if any) for the target disk.
+New Directory Names for the target drive are obtained from one of
+two sources. The first source is an existing file on the target
+disk. The name of that file is specified in the abbreviated FCB
+labeled 'ndrfls:'. The default file specification is *.NDR. 
+The second source is (as in LDSK) the list of filenames
+specified in the FCB labeled 'dashfn:'. The current default
+specification is '-*.*', i.e. those filenames whose first
+character is a '-' character.
+
+
+WHY IS IT NEEDED?
+     In a ZCPR3 system, Named Directories can be used instead of
+or in addition to the Disk/user form of specifying user areas
+in the systems mass storage. Directory names are stored in a
+system buffer from a file whose type is .NDR. The buffer is
+usually loaded at cold boot time along with other initialization
+procedures. Subsequently, a new set of names (contained in another
+.NDR type file) can be loaded by invoking LDR.COM. New NDR files
+can be created (or old ones modified) through use of the MKDIR
+utility. Although this is an efficient and useful system, there
+arises a problem which many users have recognized: 
+
+     Suppose you have a system with 2 floppy drives, A and B. The
+NDR file contains names for BOTH drives. If you switch disks in
+one of the drives, you may need a new set of directory names. So
+you can make another NDR file and load it. However, the number of
+combinations (=number of NDR files!) becomes quite large if you
+have very many different types of application disks! What is needed
+is a method of dynamically changing the entries in the system NDR
+buffer for just one drive. The new names for THAT drive should come
+from file(s) on the new disk.
+
+UPDATE FROM AN *.NDR FILE
+     Most of my floppy disks are bootable; they contain Z-system on
+the system tracks, and the required system modules on the data tracks.
+The SYS.NDR file presumes the disk is in drive A (the boot drive), and
+the directory names for drive A are appropriate for that disk. Those
+entries are what one would want in the system NDR (with the appropriate
+drive designator) when that disk is inserted in some other drive. So I
+started the LOADND program with the purpose of solving the problem
+described above by installing the (drive A) entries from the NDR file
+on the disk in the system NDR buffer. During the installation, the
+'A' is changed to the letter appropriate to the drive which contains
+the disk.
+
+UPDATE FROM DASHFILES
+     There is another method of designating directory names; an unique
+character is used as the first byte of a filename in each directory.
+That filename (without the first character and ignoring the type field)
+is then taken as the directory name. If a '-' is the first character,
+then the name appears near the top of a sorted directory listing. Such
+files are called 'dashfiles'. In this documentation, the term is used
+even when some other character (like '!', for instance) is the first
+character. Wilson Bent, Jr. seized on these names as a method of
+solving the NDR problem; his well-executed program, LDSK, searches
+the target disk for dashfiles and uses them to update the system NDR.
+
+CREDIT:
+     LDSK came to my attention after I had already designed LOADND for
+accessing NDR files on a target disk. LOADND owes much to Wilson Bent
+for many of his ideas which were incorporated for handling dashfiles.
+Because of differences in program flow and data structuring, it was
+easier for me to incorporate his good work into LOADND than to make a
+revision to LDSK. 
+
+CUSTOMIZATION
+
+     At (approximately) location 010Ch in LOADND.COM there are some
+user-settable parameters. Each is preceded by a label whose last
+character is '>'. The byte(s) immediately following the '>' are the
+parameters which may be changed (a debugger can be used). 
+	label:	byte(s)		notes:
+	DIRLTR>	-		The first char of files used to
+				identify a user area. '-',usually
+	NDROPT>	N		The option letter used to specify
+				getting names from an .NDR type file
+	KEEP>	A		Only names for drive 'A' in the NDR
+				file will be used for the update. This
+				is usually appropriate. Change it if
+				your situation is different. THIS IS
+				NOT THE SAME AS THE TARGET DRIVE IN
+				THE COMMAND LINE!
+
+     NDRFILE>	0????????NDR	Prototype fcb for finding NDR files
+    DASHFILE>	0-??????????	Prototype fcb for selecting marked files
+
+The last two are the first 12 bytes of data for an fcb. Don't change
+the leading '0'! The '?' characters can be changed to anything you
+wish in order to restrict the filenames/types searched for on the
+target disk. The '-' is not actually used; that letter is filled in
+by the program from the value at DIRLTR>.
+
+
+HIGHLIGHTS of LOADND
+
+1)	LOADND is a ZCPR3 utility. Standard structure, command
+	syntax, and HELP functions are provided. The HELP function
+	describes command syntax using the ACTUAL name of the
+	program (in case you have renamed it!), and also
+	shows the defaults for arguments; the default for the
+	drive is always displayed as the currently logged drive.
+	Since modification of system facilities is dangerous in
+	general, the wheel byte is checked and non-privileged
+	users are denied the use of LOADND.
+
+2)	Either dash-files, or an .NDR (or other) file
+	can be used to specify the new directory names. The
+	choice of which to use (or which to try first if both
+	types are used) is determined by a byte near the
+	beginning of the program. This default choice can be
+	modified with a debugger, by reassembly, or by an
+	option on the invoking command line.
+
+3)	Complete restructuring of the code permits flexibility
+	in making changes (improvements?)
+
+4)	Because of the use of dynamically assigned buffers,
+	LOADND permits the processing of system Named Directory
+	Buffers of any size.
+
+
+LOADND command line syntax:
+
+	LOADND [<drive letter>[:]] [/<option letters>]
+
+<drive letter> is the drive whose named directory entries in
+	the system NDR buffer are to be replaced with new entries
+	specified from information on that drive. If this argument
+	is not present, the system default drive is assumed.
+	The drive used is called the 'target drive' in the LOADND
+	source code. Note that the ':' is optional. In fact, any
+	number (limited by the size of the ZCPR3 command buffer)
+	of characters may be present; all but the first are
+	ignored.
+
+<option letters> 
+	Two letters comprise valid options: N, and D. (also n, d)
+	The option field must start with a '/' and must not contain
+	spaces or commas. At least one space or comma must be used to
+	separate the option field from the preceding portion of
+	the command. The options define the source of directory
+	names on the target disk. 'N' specifies an .NDR-type file;
+	'D' specifies the set of dashfiles. If BOTH are specified,
+	the second option is used only if the first failed to
+	find appropriate files. (i.e. /ND means 'use an NDR file. If
+	no NDR file is found, then look for dashfiles to use.')
+
+Defaults exist for both of the arguments: The Current Drive for
+	the first, and an option built-in at assembly time for
+	the option(s). When HELP is invoked, the current defaults
+	are reported.
+
+Invalid entries for either argument will result in display of the
+	Help Screen. In particular, the following commands get help:
+
+		LOADND ?
+		LOADND //
+		LOADND B: ?
+		LOADND H
+
+
+LOADND dynamically allocates four BUFFERS during its operation. They are:
+
+BUFFER 0 - referred to as 'lclndr' , 'NDBuff', and 'new NDR'
+	This buffer contains the Named Directory entries as they are
+	collected from the system NDR and one of the sources on the
+	target disk. The system NDR buffer is finally overlayed by
+	the contents of this buffer.
+
+BUFFER 1 - contains names from the target disk directory like *.NDR
+
+BUFFER 2 - contains names from the target disk directory like -*.*
+
+BUFFER 3 - The contents of the .NDR file selected from buffer 1 are
+	read into this buffer. The data in this buffer is in exactly
+	the same format as the system (and buffer 0) NDR buffer.
+
+Buffer Control Blocks (BCBs) are used to allocate memory space for
+	and access the four buffers. They are named BCB0, BCB1, BCB2,
+	and BCB3. The BCBs are in the data area near the end of the
+	LOADND pgm. They are filled in by the program code as required
+	by the quantity and nature of the data being stored in each
+	buffer.
+
+PROGRAM FLOW
+	The main sequence of events is straight-forward and can be
+	easily seen in the MAIN: routine at the beginning of the
+	program. BOTH .ndr and dash- filenames are extracted from
+	the target disk using the DIRF function from SYSLIB. The
+	disk directory names returned by DIRF are sorted in ASCII
+	ascending order. If there is more than one .NDR-type file
+	found, the first one is used; this is thus the alphabetically
+	first .ndr file on the disk regardless of user area it is
+	from.
+
+	The CASE routine determines from the default or command
+	line option(s) which routines to use for loading Directory
+	names into the local copy of the System Named Directory
+	buffer (NDR). When the number of names to be added excedes
+	the capacity of the buffer, those which would cause the
+	buffer to overflow are ignored. If the option chosen is to
+	use both types of source, then the following algorithm is
+	used:
+	An attempt is made to use the first-named source (N or D)
+	for new directory names. If no names are found, then the
+	second source is used. If neither source is present, then
+	the Named Directory Buffer is rewritten to the System
+	with the Directory Names for the target drive DELETED.
+
+	For example, when the option is /ND,
+	If at least one .NDR type file was found, then its contents
+	are loaded into buffer 3 and used to append to the data in
+	buffer 0 (lclndr). Only the names associated with Drive A
+	in the NDR file are used, and their associated password
+	fields are included.
+	If no .NDR file was found on the disk, or if the one found
+	contained no entries for the target disk, then the dashfiles
+	(if any) in buffer 2 are reformatted (a blank password field
+	is added) and appended to buffer 0.
+
+NOTES:
+
+1)	I have attempted to use a highly structured approach in the
+	coding. As a result, you will observe that some of the data
+	in (for example) the BCB's is never referenced. 'Extra' 
+	instructions like unnecessary pushes & pops will be observed
+	in many routines. 'Optimization' by removing such code is
+	undesireable, since its purpose is to make the routines fairly
+	free-standing. Economizing on instructions will not have a
+	noticeable effect on program speed, since the several disk
+	accesses use more time than anything else.
+
+2)	The 'wrapup' routine is stubbed in for the eventuality that
+	a restoration to the original D/U, for example, might be
+	required before return to the OS.
+
+3)	If neither an .NDR file or dash-file(s) are found, the result
+	will be an absence of Named Directories for the target disk.
+	Should the program in such a case simply abort without
+	changing the system NDR ? Should the choice be a command line
+	option? ..an assembly time option?
+
+4)	Should the error flag be set when the program runs into trouble
+	such as in (3) ?
+
+5)	With few exceptions, subroutines return with logic TRUE
+	or FALSE (and zero flag adjusted) to reflect potential
+	problems. Deletion of such code in the interest of 'cleanup'
+	should be done with caution!
+
+6)	LDISK reports the new directory names as they are entered
+	into the LCLNDR buffer. LOADND does not. Should it? Or, as an
+	alternative, should LOADND chain to PWD for a display? (That's
+	fairly easy to do with Z3LIB routines.)
+
+7)	Neither LDSK nor LOADND checks newly added directory names to
+	see if they duplicate existing ones. I plan to add such a
+	test. What should happen when an attempt to add a duplicate
+	is detected? - Modify the new name algorithmically? (what
+	algorithm? ) - Delete the offending name? (which one?) -
+	Should the user be asked to choose a new name?
+
+8)	No provision is made for an internal ZCPR3 Environment. I
+	couldn't think of a reason for using it. Should it be
+	provided for?
+
+9)	There are no actual FCB's in the program. Those structures
+	labeled to resemble FCB's are simply the first 12 bytes of
+	an FCB. Where an actual FCB is required, the system FCB at
+	5Ch is used.
+
+10)	If you examine (with a debugger) the memory allocation as
+	shown by the values in the BCB's after a target NDR file
+	has been loaded, you will see that 'holes' exist. It didn't
+	seem worth the trouble to pack the buffers to recover space
+	no longer used (by DIRF, mainly). A final refinement, maybe?
+
+11)	LDSK 2.0 contains several enhancements, one of which is the
+	option to have a list of drives to log-in on the command
+	line. Since ZCPR3 provides for multiple commands on one
+	line, I felt that this was unnecessary in LOADND; further,
+	with the option field provided in this program it might be
+	an avantage to permit a choice of options for each drive
+	logged.
+
+12)	I saw no scenario in which the error flag should be set.
+	Is there a need for an error indication?
+
+PLEASE SEND COMMENTS TO:		Al Hawley
+					Ladera Z-node, Los Angeles
+					213/670-9465
+
+(Selected) Notes from LDSK 1.1, by:
+	Wilson H. Bent, Jr.
+	39 Maple Ave.
+	Fair Haven, NJ  07701
+	Work: (201) 949-1277
+	UN*X: ... ihnp4!vax135!hoh-2!whb
+	RCP/M: Lillipute: (312) 649-1730 Chicago
+	       Voorhees:  (609) 428-8864 So. NJ
+
+LDSK logs in disk directories as follows:
+  First the Named Directory Buffer is copied,
+clearing entries for the current disk.  Then
+the disk is searched for files of the form:
+	-???????.???
+(i.e, an initial dash), which are assumed to
+be names of directories.  Using these, a new
+NDBuff is built, which replaces the old one.
+Note that the extent of the file is ignored.
+
+NDBuff entries are:
+   Disk: 1 byte (A = 1, B = 2, M = 0Dh)
+   User: 1 byte
+   Name: 8 bytes (space-filled)
+   Pass: 8 bytes (ditto)
+The password entry is optional, and cleared to spaces.
+
+Lower-case names are allowed, but how're y'gonna make
+a file with'em? (answer: with some editors, or DU.COM - aeh)
+
+The number of names is limited to 14.
+
+                                                                                                  

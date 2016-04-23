@@ -1,0 +1,161 @@
+;=======================================================================
+;
+; Program:  DSTATS.TXT - DSTATS language-dependent message text overlay.
+; Author:   Terry Hazen
+; Date:     11/11/93
+;
+; NOTE:  When using this module as an overlay source code file, rename
+;	 it to DSTTXT.Z80 and set the OVERLAY equate to YES.
+;
+; To create a version of DSTATS that will work in another language or use a
+; customized set of messages and prompts, proceed as follows:
+;
+; 1. Edit the messages in this file, changing only the sections so marked.
+; 2. Assemble the file to a HEX file (e.g., "ZMAC DSTTXT/H").
+; 3. Create a new version of DSTATS using MLOAD or MYLOAD with the command:
+;	MYLOAD DSTNEW=DSTATS.COM,DSTTXT.HEX.
+;
+; Equates that may be required by overlay
+;
+no	equ	0
+yes	equ	not no
+;
+; Set to YES to use this file as the overlay source:
+;
+overlay	equ	no		; NO =use as include file
+;				; YES=use as source for overlay file
+	 if	overlay
+;
+; Character equates
+;
+bell	equ	7
+tab	equ	9		; Tab character
+lf	equ	10		; Line feed
+cr	equ	13		; Carriage return
+;
+	org	120h		; Start of overlay
+	 endif
+;
+length	equ	7*128		; Length of overlay area = 7 records
+;
+; Overlay header.  Make no changes in this section except for the
+; language ID.	The order and size of these entries must not be changed:
+;
+z3txt:	rst	0		; Don't want to run overlay
+;
+	db	'Z3TXT',0	; Overlay ID
+fnam:	db	'DSTATS  '	; Program ID and default filename
+	db	'ENG'		; Language ID - English version
+	dw	length		; Length of overlay area
+;
+; Option character table.  These characters may be changed as required,
+; but their order must not be changed.	The number of commands is fixed
+; and no termination is required:
+;
+dcmd:	db	'D'		; Pause display option character
+mcmd:	db	'M'		; Display bitmap option character
+;
+; Help screen string pointers.	Make no changes in this section:
+;
+hlp00$:	dw	hlp00-z3txt
+hlp01$:	dw	hlp01-z3txt
+hlp02$:	dw	hlp02-z3txt
+hlp03$:	dw	hlp03-z3txt
+hlp04$:	dw	hlp04-z3txt
+hlp05$:	dw	hlp05-z3txt
+hlp06$:	dw	hlp06-z3txt
+hlp07$:	dw	hlp07-z3txt
+hlp08$:	dw	hlp08-z3txt
+hlp09$:	dw	hlp09-z3txt
+;
+; Program message string pointers.  Make no changes in this section:
+;
+msg00$:	dw	msg00-z3txt
+msg01$:	dw	msg01-z3txt
+msg02$:	dw	msg02-z3txt
+msg03$:	dw	msg03-z3txt
+msg04$:	dw	msg04-z3txt
+msg05$:	dw	msg05-z3txt
+msg06$:	dw	msg06-z3txt
+msg07$:	dw	msg07-z3txt
+msg08$:	dw	msg08-z3txt
+msg09$:	dw	msg09-z3txt
+msg10$:	dw	msg10-z3txt
+msg11$:	dw	msg11-z3txt
+msg12$:	dw	msg12-z3txt
+msg13$:	dw	msg13-z3txt
+msg14$:	dw	msg14-z3txt
+;
+; Error message string pointers.  Make no changes in this section:
+;
+err00$:	dw	err00-z3txt
+err01$:	dw	err01-z3txt
+err02$:	dw	err02-z3txt
+;
+; The message strings in the following sections may be changed freely,
+; both in content and length.  The order of these messages must not be
+; changed.  The lengths of some messages may affect the appearance of
+; some screens, and trial-and-error may be required to get them right.
+; All message strings must be null-terminated:
+;
+; Help screen message strings.
+;
+hlp00:	db	' vers ',0
+hlp01:	db	'   Displays disk and user statistics',0
+hlp02:	db	' plus',0
+hlp03:	db	' allocation bitmap',cr,lf,0
+hlp04:	db	'Syntax:',cr,lf,'   ',0
+hlp05:	db	' [dir:]',0
+hlp06:	db	' [[/]options]',cr,lf
+	db	'Options:',cr,lf,'   ',0
+hlp07:	db	'Don''t ',0
+hlp08:	db	'Display',0
+hlp09:	db	'Pause display before',0
+;
+; Program message strings
+;
+msg00:	db	'[More] ',0	; Msg01 wipes out msg00 - make same length
+msg01:	db	cr
+	db	'       ',cr,0
+msg02:	db	lf,'Drive ',0	; Note no CR
+;
+; The following 6 messages are displayed in sequence and should
+; all be the same length.  The lengths may be changed if required.
+;
+msg03:	db	'  Directory entries...',0
+msg04:	db	'  Directory size......',0
+msg05:	db	'  Block size..........',0
+msg06:	db	'  Net disk space......',0
+msg07:	db	'    Space used........',0
+msg08:	db	'    Free space........',0
+;
+msg09:	db	cr,lf,'Directory usage:',cr,lf
+	db	'  User/Label       Files    Entries    Size',cr,lf,0
+msg10:	db	'  Totals:',0
+msg11:	db	'  Free:',0
+msg12:	db	'[Allocation map or ^C to quit] ',0
+msg13:	db	'k'		; 'k' = 1024 bytes
+	db	cr,lf
+msg14:	db	0		; No-msg and termination for msg13
+;
+; Error messages
+;
+err00:	db	bell,'Requires ZCPR3!$'	; $-terminated for DOS print string
+err01:	db	'   Invalid directory',cr,lf,bell,0
+err02:	db	'   Non-standard DPB!',cr,lf,bell,0
+;
+; If overlay is too large, display error message at assembly time
+;
+olen	equ	($-z3txt)
+printe	 macro	msg1,n,msg2
+	.printx
+	.printx	msg1 n msg2
+	.printx
+	 endm
+;
+	 if	olen gt	length
+	printe	<  Overlay is too large!  Must be>,%(length/128),<records or less.>
+	 endif
+
+; End of language-dependent message overlay area
+

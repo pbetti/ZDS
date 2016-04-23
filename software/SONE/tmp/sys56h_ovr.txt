@@ -1,0 +1,168 @@
+;
+			;********************************************************
+			;*							*
+			;*			BIOS				*
+			;*							*
+			;********************************************************
+			;
+			;	jump vector for individual subroutines
+			;
+				.phase	bios		; origin of this program
+			;
+d600	c3 d717			jp	boot		; cold start
+d603			wboote:
+d603	c3 d71d			jp	wboot		; warm start
+d606	c3 d7dc			jp	const		; console status
+d609	c3 d7e8			jp	conin		; console character in
+d60c	c3 d7f9			jp	conout		; console character out
+d60f	c3 d80e			jp	list		; list character out
+d612	c3 d82a			jp	punch		; punch character out
+d615	c3 d82d			jp	reader		; reader character in
+d618	c3 d85f			jp	home		; move head to home position
+d61b	c3 d83e			jp	seldsk		; select disk
+d61e	c3 d862			jp	settrk		; set track number
+d621	c3 d873			jp	setsec		; set sector number
+d624	c3 d878			jp	setdma		; set dma address
+d627	c3 d87d			jp	read		; read disk
+d62a	c3 d882			jp	write		; write disk
+d62d	c3 d81c			jp	listst		; return list status
+d630	c3 d867			jp	sectran		; sector translate
+				;
+d633			dpbase	equ	$	; base of disk parameter header
+			;
+				; dpe0,dpe1 = disk parameter header for hard disk
+d633			dpe0:
+d633	0000 0000		defw	xlt0, 0000h	; no translate table
+d637	0000 0000		defw	0000h, 0000h	; scratch area
+d63b	dd00 d6cc		defw	dirbuf, dpb0	; dir buff, parm block
+d63f	de91 dddc		defw	csv0, alv0	; check, alloc vector
+d643			dpe1:
+d643	0000 0000		defw	xlt0, 0000h	; no translate table
+d647	0000 0000		defw	0000h, 0000h	; scratch area
+d64b	dd00 d6db		defw	dirbuf, dpb01	; dir buff, parm block
+d64f	df46 de91		defw	csv1, alv1	; check, alloc vector
+			;
+				; dpe2,dpe3 = disk parameter header for floppy disk (256 byte/sec)
+d653			dpe2:	; 256 byte/sec - Single Side
+d653	d693 0000		defw	xlt1, 0000h	; translate table
+d657	0000 0000		defw	0000h, 0000h	; scratch area
+d65b	dd00 d6ea		defw	dirbuf,dpb1	; dir buff,parm block
+d65f	dd8c dd80		defw	csv2,alv2	; check,alloc vector
+				;
+				;
+d663			dpe3:	; 256 byte/sec - Single Side
+d663	d693 0000		defw	xlt1,0000h	; translate table
+d667	0000 0000		defw	0000h,0000h	; scratch area
+d66b	dd00 d6ea		defw	dirbuf,dpb12	; dir buff,parm block
+d66f	dda8 dd9c		defw	csv3,alv3	; check,alloc vector
+			;
+				; dpe4,dpe5 = disk parameter header for floppy disk (128 byte/sec)
+d673			dpe4:	; 128 byte/sec - Single Side
+d673	d6bb 0000		defw	xlt2,0000h	; translate table
+d677	0000 0000		defw	0000h,0000h	; scratch area
+d67b	dd00 d708		defw	dirbuf,dpb2	; dir buff,parm block
+d67f	ddc2 ddb8		defw	csv4,alv4	; check,alloc vector
+				;
+e683			dpe5:	; 128 byte/sec - Single Side
+d683	d6bb 0000		defw	xlt2,0000h	; translate table
+d687	0000 0000		defw	0000h,0000h	; scratch area
+d68b	dd00 d708		defw	dirbuf,dpb2	; dir buff,parm block
+d68f	ddd4 ddca		defw	csv5,alv5	; check,alloc vector
+			;
+			;
+			xlt0	equ	0		; no sector translate for hard disk
+			;
+d693			xlt1:
+				; sector translate table for floppy disk (256 byte/sec)
+d693	01 02 0d 0e		defb	1,2,13,14,5,6,17,18,9,10,3,4,15,16,7,8,19,20,11,12
+d697	05 06 11 12
+d69b	09 0a 03 04
+d69f	0f 10 07 08
+d6a3	13 14 0b 0c
+
+d6a7	15 16 21 22		defb	21,22,33,34,25,26,37,38,29,30,23,24,35,36,27,28,39,40,31,32
+d6ab	19 1a 25 26
+d6af	1d 1e 17 18
+d6b3	23 24 1b 1c
+d6b7	27 28 1f 20
+			;
+			xlt2:
+				; sector translate table for floppy disk (128 byte/sec)
+d6bb	01 07 0d 02		defb	1,7,13,2,8,14,3,9,15
+d6bf	08 0e 03 09
+d6c3	0f
+d6c4	04 0a 10 05		defb	4,10,16,5,11,17,6,12
+d6c8	0b 11 06 0c
+			;
+			;
+			dpb0:
+				; disk parameter block for hard disk 0 (256 byte/sector 1 res. trk)
+d6cc	0080			defw	128		; SPT (sec/trk) (32 sect * (256/128) * 2 side)
+d6ce	05			defb	5		; BSH
+d6cf	1f			defb	31		; BLM
+d6d0	01			defb	1		; EXM (extent mask)
+d6d1	059b			defw	1435		; DSM (disk size in BLS units - 1) (5740 kbyte)
+d6d3	03ff			defw	1023		; DRM (directory elements - 1)
+d6d5	ff			defb	11111111b	; AL0
+d6d6	00			defb	00000000b	; AL1
+d6d7	0000			defw	0		; CKS disk fixed, no dir. check vector
+d6d9	0001			defw	1		; OFF (track offset)
+			;
+d6db			dpb01:
+				; disk parameter block for hard disk 1 (256 byte/sector no res. trk)
+d6db	0080			defw	128		; SPT (sec/trk) (32 sect * (256/128) * 2 side)
+d6dd	05			defb	5		; BSH
+d6de	1f			defb	31		; BLM
+d6df	01			defb	1		; EXM (extent mask)
+d6e0	059f			defw	1439		; DSM (disk size in BLS units - 1) (5756 kbyte)
+d6e2	03ff			defw	1023		; DRM (directory elements - 1)
+d6e4	ff			defb	11111111b	; AL0
+d6e5	00			defb	00000000b	; AL1
+d6e6	0000			defw	0		; CKS disk fixed, no dir. check vector
+d6e8	0000			defw	0		; OFF (track offset)
+			;
+			;
+			;
+d6ea			dpb1:
+				; disk parameter block for floppy disk
+				; 256 byte/sector - Single Side
+d6ea	0014			defw	20		; SPT (sec/trk) (10 sect * (256/128) * 1 side)
+d6ec	04			defb	4		; BSH
+d6ed	0f			defb	15		; BLM
+d6ee	01			defb	1		; EXM (extent mask)
+d6ef	002d			defw	45		; DSM (disk size in BLS unit) (90 kbyte)
+d6f1	003f			defw	63		; DRM (directory elements - 1)
+d6f3	80			defb	10000000b	; AL0
+d6f4	00			defb	00000000b	; AL1
+d6f5	0010			defw	16		; CKS = (DRM + 1)/4 (size dir. check vect.)
+d6f7	0003			defw	3		; OFF (track offset)
+			;
+d6f9			dpb12:
+				; disk parameter block for floppy disk
+				; 256 byte/sector - Single Side
+d6f9	0028			defw	40		; SPT (sec/trk) (10 sect * (256/128))		<--- ?????
+d6fb	04			defb	4		; BSH
+d6fc	0f			defb	15		; BLM
+d6fd	01			defb	1		; EXM (extent mask)
+d6fe	005e			defw	94		; DSM (disk size in BLS unit) (90 kbyte)	<--- ?????
+d700	003f			defw	63		; DRM (directory elements - 1)
+d702	80			defb	10000000b	; AL0
+d703	00			defb	00000000b	; AL1
+d704	0010			defw	16		; CKS = (DRM + 1)/4 (size dir. check vect.)
+d706	0002			defw	2		; OFF (track offset)				<--- ?????
+			;
+			;
+d708			dpb2:
+				; disk parameter block for floppy disk (128 byte/sector)
+d708	0011			defw	17		; SPT (SEC/trk)
+d70a	03			defb	3		; BSH
+d70b	07			defb	7		; BLM
+d70c	00			defb	0		; EXM (extent mask)
+d70d	004d			defw	77		; DSM (disk size in BLS unit) (77 kbyte)
+d70f	001f			defw	31		; DRM (directory elements - 1)
+d711	80			defb	10000000b	; AL0
+d712	00			defb	00000000b	; AL1
+d713	0008			defw	8		; CKS = (DRM + 1)/4 (size dir. check vect.)
+d715	03			defb	3		; OFF (track offset)
+			;
+			;

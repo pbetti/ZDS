@@ -1,0 +1,928 @@
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1
+
+
+                                title	 	MAKE.RCP
+                                
+                                
+                                ; NOTE TO JAY SAGE.  The error handler stuff is noted by (*RMB*), it
+                                ;		follows your info in Z33PNOTE.001, but loses error code
+                                ;		when run under Z33VERR09, SHOW12 finds the error code
+                                ;		sometimes - depending the option tried.  Actually the EH info
+                                ;		'will be covered in detail in another programming note.'
+                                ;		Is this an alias for 'it can be shown that'?
+                                ;		In all seriousness, the flaw probably lies in the EH used.
+                                
+                                
+                                
+                                ;	FUTURE UPGRADES PLANNED: if requested.
+                                ;	------------------------
+                                ;	OVERWRITE CHECK ON CLB FILL, currently depends on user.
+                                ;	DON'T TRANSFER COMMAND IF FILE NOT MODIFIED, a small speed increase.
+                                ;	DISK/USER ON DEPENDENT FILE, probably not necessary with public files.
+                                
+                                
+                                
+                                ;	MAKE.RCP history
+                                ;------------------------------
+                                
+                                ; 1.3	Released to the great unknown.  Enjoy.
+                                
+                                
+                                ; 1.2	Shorten code; added PUBLIC10 support; increased Makefile Buffer
+                                ;	to allow one-pass by using part of ring buffer; added tcap video
+                                ;	support; adding error handler support( *RMB* ) but loses error code;
+                                ;	new variable size ring buffer.
+                                
+                                ; 1.1	Test release to Sage, McCord, and Thom, and ZSIG.
+                                
+                                
+                                
+                                
+                                .z80				; assembled under M80
+                                .list
+                                
+  000D                          VERS	EQU	13
+  004D                          RCPID	EQU	'M'
+                                
+                                ;	(C) COPYRIGHT 1986, 1987 Non-Linear Thinkers.
+                                ;		Released for non-profit use only.
+                                ;
+                                ;	Contact: 	R Bardarson
+                                ;			259 El Bosque St.
+                                ;			San Jose, CA 95134
+                                ;			408-432-0821, Z-Node Central or SME Z-Node#3
+                                
+                                
+                                
+                                ;   MAKE.RCP is a powerful resident command processor for ZCPR33.  It's
+                                ; only function is to maintain a transient program, that is it ensures
+                                ; that the latest version of a program is always created without
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-1
+
+
+                                ; requiring operator intervention.  See MAKE.DOC, MKE.LBR for details.
+                                
+                                
+  0005                          bdos	equ	5
+  EACF                          bufend	equ	rcp+128*rcps-1	; auto-sized end of makefile buffer
+  0004                          chroff	equ	4		; filename offset to char with bit 7 set
+                                
+                                ;cmderr	equ	1110b		; value to set CMDSTATFL on ferror (*RMB*)
+                                				; if error handler is SHOW12.
+  0006                          cmderr	equ	110b		; value to set CMDSTATFL on ferror (*RMB*)
+                                				; this value invokes EH but loses poked
+                                				; ECFLAG value, if changed to 1110b, then
+                                				; Z33VERR09 re-installs itself.
+                                				; if 110b, then error code is lost.
+                                
+                                
+  0004                          cnsize	equ	4		; number of chars in command name
+  000D                          cr	equ	0dh
+  000A                          ferror	equ	10		; value to set ECFLAG on error (*RMB*)
+  002F                          legstr	equ	'/'		; start of legal character set
+  005B                          legfin	equ	'['		; end of legal character set +1
+  000A                          lf	equ	0ah
+  0023                          lnkchr	equ	'#'		; semaphore == end of translation strings
+  0003                          tcpnum	equ	3		; highlite is tcpnum string
+  0097                          tcpoff	equ	151		; offset to TCAP terminal attributes
+                                
+                                
+                                
+                                ; start with semi-standard RCP header code, including H command
+                                
+  0000'                         	aseg
+                                	org	rcp		; passed by Z3BASE
+  E2D0    5A 33 52 43           	db	'Z3RCP'		; Flag for Package Loader
+  E2D4    50                    
+  E2D5    04                    	db	cnsize		; size of text entries
+  E2D6                          ctab:
+  E2D6    48 20 20 20           	db	'H   '		; RCP command list and name
+  E2DA    E364                  	dw	clist
+  E2DC                          ctab1:
+  E2DC    4D 41 4B 45           	db	'MAKE'		; Make utility
+  E2E0    E384                  	dw	make
+  E2E2    43 48 43 4B           	db	'CHCK'		; Error checker - internally invoked
+  E2E6    E563                  	dw	check
+  E2E8    00                    	db	0
+                                
+                                ;  BANNER NAME OF RCP
+                                
+  E2E9                          rcp$name:
+  E2E9    4D 41 4B 45           	db	'MAKERCP '
+  E2ED    52 43 50 20           
+  E2F1    31 2E 33 4D           	db	(vers/10)+'0','.',(vers mod 10)+'0',RCPID,cr,lf
+  E2F5    0D 0A                 
+  E2F7    20 20                 	db	'  '		; command name prefix
+  E2F9    4D 41 4B 45           	db	'MAKE'		; only command available to user
+  E2FD    00                    	db	0		; terminator
+                                
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-2
+
+
+                                
+                                
+                                ; MAIN DATA for MAKE, comparison strings and vectors 
+                                
+                                ; The following strings are the outputs of various compilers/assemblers
+                                ; when the translation is successful.  To add a string, examine the
+                                ; output produced by MAKE after a successful translation.  If necessary
+                                ; examine the output from a failed or marginal compilation.  Isolate the
+                                ; CRITICAL portion which GUARANTEES that no errors have occured, and add
+                                ; to the STRNG# db list (BE SURE TO END WITH A NULL!).  Then add a ptr
+                                ; to the STRVEC list.
+                                
+                                
+  E2FE    4E 4F 46 41           strng1:	db	'NOFATALERRORS',0			; M80 3.43
+  E302    54 41 4C 45           
+  E306    52 52 4F 52           
+  E30A    53 00                 
+  E30C    50 41 53 53           strng2:	db	'PASS20ERRORS',0			; SLR 1.09
+  E310    32 30 45 52           
+  E314    52 4F 52 53           
+  E318    00                    
+  E319    4E 4F 45 52           strng3:	db	'NOERRORSINPASS1NOERRORSINPASS2',0	; PL/I 1.3
+  E31D    52 4F 52 53           
+  E321    49 4E 50 41           
+  E325    53 53 31 4E           
+  E329    4F 45 52 52           
+  E32D    4F 52 53 49           
+  E331    4E 50 41 53           
+  E335    53 32 00              
+  E338    50 52 4F 54           strng4:	db	'PROTECTVERSION30',0			; PROTECT 3.0
+  E33C    45 43 54 56           
+  E340    45 52 53 49           
+  E344    4F 4E 33 30           
+  E348    00                    
+  E349    50 55 42 4C           strng5:	db	'PUBLICVERSION10P',0			; PUBLIC 1.0
+  E34D    49 43 56 45           
+  E351    52 53 49 4F           
+  E355    4E 31 30 50           
+  E359    00                    
+                                
+                                ; vector of string ptrs
+  E35A    E2FE                  strvec:	dw	strng1		; add new ptr's after this one DO NOT CHANGE!
+  E35C    E349                  	dw	strng5
+  E35E    E338                  	dw	strng4
+  E360    E319                  	dw	strng3
+  E362    E30C                  	dw	strng2
+  0005                          strcnt	equ	(($-strvec)/2)
+                                
+                                
+                                
+                                ;  Command List Routine, only give MAKE as user accessible.
+                                
+  E364                          clist:
+  E364    21 E2E9               	ld	hl,rcp$name	; print RCP Name and command
+  E367    CD E36B               	call	print1
+  E36A    C9                    	ret
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-3
+
+
+                                
+                                ;  Print String (terminated in 0 ) pted to by HL
+                                
+  E36B                          print1:
+  E36B    7E                    	ld	a,(hl)		; done?
+  E36C    23                    	inc	hl		; pt to next
+  E36D    B7                    	or	a		; 0 terminator
+  E36E    C8                    	ret	z
+                                
+  E36F    E5                    	push	hl		; save char ptr
+  E370    CD E37D               	call	cout		; print char
+  E373    E1                    	pop	hl
+  E374    18 F5                 	jr	print1
+                                
+                                
+                                ;  New Line
+                                
+  E376                          crlf:
+  E376    3E 0D                 	ld	a,cr
+  E378    CD E37D               	call	cout
+  E37B    3E 0A                 	ld	a,lf		;fall thru
+                                
+                                ;  Character Output
+                                
+  E37D                          cout:
+  E37D    5F                    	ld	e,a
+  E37E    0E 02                 	ld	c,2		; use BDOS
+  E380    CD 0005               	call	bdos
+  E383    C9                    	ret
+                                
+                                
+                                
+                                ;**********************************************************************
+                                
+                                ; User entry point, with command of MAKE MAKEFILE
+                                
+  E384                          make::				; initialization and reset
+  E384    ED 73 E81E            	ld	(savstk),sp	; save stack
+  E388    31 E81D               	ld	sp,stck		; setup local stack
+  E38B    21 005D               	ld	hl,05dh		; copy name into buffcb
+  E38E    11 E64E               	ld	de,buffcb+1
+  E391    01 0008               	ld	bc,8
+  E394    ED B0                 	ldir
+  E396    AF                    	xor	a
+  E397    32 E718               	ld	(lnkflg),a	; linker flag = OFF
+  E39A    32 E64D               	ld	(buffcb),a	; default drive
+  E39D    32 E659               	ld	(buffcb+12),a	; extent
+  E3A0    32 E66D               	ld	(buffcb+32),a	; current record
+  E3A3    11 E64D               	ld	de,buffcb
+  E3A6    0E 0F                 	ld	c,0fh		; open makefile
+  E3A8    CD 0005               	call	bdos
+  E3AB    FE FF                 	cp	0ffh
+  E3AD    CA E74A               	jp	z,filerr	; invoke error handler (*RMB*)
+                                
+  E3B0    21 E7A0               	ld	hl,buffer-128	; offset HL to start
+  E3B3    E5                    	push	hl
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-4
+
+
+  E3B4                          read:				; read makefile until end
+  E3B4    E1                    	pop	hl
+  E3B5    11 0080               	ld	de,128
+  E3B8    19                    	add	hl,de		; add 80h to dma
+  E3B9    E5                    	push	hl
+  E3BA    E5                    	push	hl		; save DMA location
+  E3BB    11 EACF               	ld	de,bufend	; check for overflow
+  E3BE    AF                    	xor	a		; clear flags
+  E3BF    ED 52                 	sbc	hl,de
+  E3C1    CB 7C                 	bit	7,h		; h=00H means overflow
+  E3C3    CA E75B               	jp	z,ovferr
+                                
+  E3C6    D1                    	pop	de		; current DMA location
+  E3C7    0E 1A                 	ld	c,1ah		; set DMA for makefile
+  E3C9    CD 0005               	call	bdos
+  E3CC    11 E64D               	ld	de,buffcb
+  E3CF    0E 14                 	ld	c,14h		; read makefile
+  E3D1    CD 0005               	call	bdos
+  E3D4    B7                    	or	a
+  E3D5    28 DD                 	jr	z,read
+                                
+  E3D7    E1                    	pop	hl		; holds end of buffer
+  E3D8    3E 1A                 	ld	a,1ah		; EOF marker
+  E3DA    01 0080               	ld	bc,128		; must be in last 128 bytes
+  E3DD    ED B9                 	cpdr			; search for EOF
+  E3DF    28 03                 	jr	z,bufset	; found, hl holds last of makefile
+                                
+  E3E1    3B                    	dec	sp		; not found
+  E3E2    3B                    	dec	sp
+  E3E3    E1                    	pop	hl		; get it off the stack again
+  E3E4                          bufset:
+  E3E4    E5                    	push	hl		; save
+  E3E5    11 E820               	ld	de,buffer	; DE=start of buffer, HL=end of buffer
+  E3E8    AF                    	xor	a		; clear carry
+  E3E9    ED 52                 	sbc	hl,de		; calc length to move
+  E3EB    23                    	inc	hl		; adjust count
+  E3EC    44                    	ld	b,h
+  E3ED    4D                    	ld	c,l
+  E3EE    E1                    	pop	hl		; recover end of buffer
+  E3EF    11 EACF               	ld	de,bufend
+  E3F2    ED B8                 	lddr			; move makefile to end of ring buffer
+  E3F4    13                    	inc	de		; adjust ptr
+  E3F5    ED 53 E71A            	ld	(bufptr),de	; set makefile buffer ptr
+                                
+  E3F9    21 EC97               	ld	hl,z3env+151	; get terminal abilities
+  E3FC    06 03                 	ld	b,tcpnum	; get highlite/normal tcap
+  E3FE                          tcabil:
+  E3FE    23                    	inc	hl
+  E3FF    7E                    	ld	a,(hl)
+  E400    B7                    	or	a
+  E401    20 FB                 	jr	nz,tcabil	; sort thru to end of string
+  E403    10 F9                 	djnz	tcabil		; get right string
+                                
+  E405    23                    	inc	hl		; ptr to highlite
+  E406    22 E553               	ld	(highlt),hl	; self-modifying code is best
+  E409                          tcahgh:
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-5
+
+
+  E409    7E                    	ld	a,(hl)
+  E40A    23                    	inc	hl
+  E40B    B7                    	or	a
+  E40C    20 FB                 	jr	nz,tcahgh	; find end of highlite
+                                
+  E40E    22 E55D               	ld	(normlt),hl	; ptr to normal
+                                
+                                
+                                ; *****************************************************************
+                                
+                                ; internal entry point from CHCK, if file has not been changed
+                                ; also initial entry as fall-thru from MAKE
+                                
+  E411                          make2::				; entry point from CHCK
+  E411    31 E81D               	ld	sp,stck		; setup local stack
+  E414    21 EF04               	ld	hl,z3cl+4
+  E417    22 EF00               	ld	(z3cl),hl	; reset clb ptr
+  E41A    21 E820               	ld	hl,ring
+  E41D    22 E71E               	ld	(rngptr),hl	; reset ring buffer ptr
+  E420    21 E2FE               	ld	hl,strng1
+  E423    22 E35A               	ld	(strvec),hl	; reset strings ptr starting value
+                                
+  E426    21 E726               	ld	hl,chekng	; ... warm feeling of something happening ...
+  E429    CD E54E               	call	status
+                                
+                                
+                                ; setup FCB for dependent file
+                                
+  E42C                          scan:
+  E42C    CD E537               	call	getchr		; return next chr in makefile in A
+  E42F    FE 23                 	cp	lnkchr		; test for link flag
+  E431    20 0C                 	jr	nz,gobble
+  E433    32 E718               	ld	(lnkflg),a
+                                
+  E436    21 E739               	ld	hl,lnking	; ... warm feeling of something happening ...
+  E439    CD E54E               	call	status
+  E43C    C3 E47E               	jp	gobbl2		; no filename to setup for linkers
+                                
+  E43F                          gobble:
+  E43F    FE 2F                 	cp	legstr		; test for legal char set at start of line
+  E441    38 E9                 	jr	c,scan
+  E443    FE 5B                 	cp	legfin
+  E445    30 E5                 	jr	nc,scan
+                                
+  E447    21 E672               	ld	hl,fscb+1	; blank filename
+  E44A    11 E673               	ld	de,fscb+2
+  E44D    01 0007               	ld	bc,7
+  E450    36 20                 	ld	(hl),20h
+  E452    ED B0                 	ldir
+                                
+  E454    21 E671               	ld	hl,fscb		; HL has ptr
+  E457                          name:
+  E457    23                    	inc	hl
+  E458    77                    	ld	(hl),a		; move filename to search FCB
+  E459    CD E537               	call	getchr
+  E45C    FE 2E                 	cp	'.'		; test for end of name
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-6
+
+
+  E45E    20 F7                 	jr	nz,name
+                                
+  E460    21 E67A               	ld	hl,fscb+9	; move type
+  E463    06 03                 	ld	b,3		; expects a 3 char type
+  E465                          type:
+  E465    C5                    	push	bc		; preserve count
+  E466    CD E537               	call	getchr
+  E469    C1                    	pop	bc
+  E46A    77                    	ld	(hl),a
+  E46B    23                    	inc	hl		; HL has ptr
+  E46C    10 F7                 	djnz	type
+                                
+  E46E    AF                    	xor	a
+  E46F    32 E671               	ld	(fscb),a	; default drive
+  E472    32 E67D               	ld	(fscb+12),a	; extent
+                                
+  E475    CD E376               	call	crlf
+  E478    21 E672               	ld	hl,fscb+1	; display filename
+  E47B    CD E36B               	call	print1
+                                
+                                
+  E47E                          gobbl2:
+  E47E    CD E537               	call	getchr		; return next chr in makefile in A
+  E481    FE 2F                 	cp	legstr		; test for legal char set at start of line
+  E483    38 F9                 	jr	c,gobbl2
+  E485    FE 5B                 	cp	legfin
+  E487    30 F5                 	jr	nc,gobbl2	; now at start of command portion
+                                
+                                
+                                ; stuff CLB with makefile command
+                                
+  E489    21 EF04               	ld	hl,z3cl+4	; first time at start of CLB
+  E48C                          comman:
+  E48C    77                    	ld	(hl),a		; add to line buffer
+  E48D    23                    	inc	hl		; HL has ptr
+  E48E    CD E537               	call	getchr
+  E491    FE 0D                 	cp	cr		; test for end of line
+  E493    28 04                 	jr	z,end
+  E495    FE 0A                 	cp	lf
+  E497    20 F3                 	jr	nz,comman	; get rest of line
+                                
+  E499                          end:
+  E499    36 00                 	ld	(hl),0		; mark end of command
+                                
+  E49B    3A E718               	ld	a,(lnkflg)	; check for linker string
+  E49E    B7                    	or	a
+  E49F    C2 E4FC               	jp	nz,xecute	; no further work for linker commands
+                                
+  E4A2    EB                    	ex	de,hl		; DE has end-of-command
+  E4A3    21 E720               	ld	hl,append	; append to command
+  E4A6    01 0006               	ld	bc,applen
+  E4A9    ED B0                 	ldir
+                                
+                                
+                                ; search for file and test for modification
+                                
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-7
+
+
+  E4AB    11 E695               	ld	de,fsbuf
+  E4AE    0E 1A                 	ld	c,1ah		; set DMA for search
+  E4B0    CD 0005               	call	bdos
+                                
+  E4B3    21 E675               	ld	hl,fscb+chroff	; high bit set => no change
+  E4B6    7E                    	ld	a,(hl)
+  E4B7    F6 80                 	or	80h
+  E4B9    32 E719               	ld	(tstchr),a	; save for test and set attributes
+                                
+  E4BC    0E 11                 	ld	c,11h		; search for first
+  E4BE    11 E671               	ld	de,fscb
+  E4C1                          retry:
+  E4C1    CD 0005               	call	bdos
+  E4C4    FE FF                 	cp	0ffh
+  E4C6    CA E756               	jp	z,nofile
+                                
+  E4C9    21 E695               	ld	hl,fsbuf	; directory buffer from search
+  E4CC    B7                    	or	a
+  E4CD    28 09                 	jr	z,cont
+                                
+  E4CF    87                    	add	a,a		; *2
+  E4D0    87                    	add	a,a		; *4
+  E4D1    87                    	add	a,a		; *8
+  E4D2    87                    	add	a,a		; *16
+  E4D3    87                    	add	a,a		; *32 the size of disk FCB
+  E4D4    16 00                 	ld	d,0
+  E4D6    5F                    	ld	e,a
+  E4D7    19                    	add	hl,de		; index to dir entry
+                                
+  E4D8                          cont:
+  E4D8    7E                    	ld	a,(hl)		; get file user area, for public files
+  E4D9    32 E717               	ld	(filusr),a	; save file user area
+                                
+  E4DC    E5                    	push	hl		; save search FCB ptr
+  E4DD    11 0004               	ld	de,chroff	; high bit set => no change
+  E4E0    19                    	add	hl,de
+  E4E1    46                    	ld	b,(hl)		; from BDOS call
+  E4E2    3A E719               	ld	a,(tstchr)	; versus test char
+  E4E5    E1                    	pop	hl
+  E4E6    A8                    	xor	b		; multiple case test
+  E4E7    CA E42C               	jp	z,scan		; NO CHANGE goto scan and check next file
+  E4EA    FE 80                 	cp	80h					
+  E4EC    28 05                 	jr	z,new		; modified file, invoke command
+  E4EE    0E 12                 	ld	c,12h		; wrong file, search for next
+  E4F0    C3 E4C1               	jp	retry
+                                
+  E4F3                          new:
+  E4F3    23                    	inc	hl		; copy file's other attributes
+  E4F4    11 E672               	ld	de,fscb+1
+  E4F7    01 000B               	ld	bc,11
+  E4FA    ED B0                 	ldir
+                                
+  E4FC                          xecute:
+  E4FC    CD E376               	call	crlf
+  E4FF    21 E72F               	ld	hl,excung	; ... warm feeling of something happening ...
+  E502    CD E54E               	call	status
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-8
+
+
+  E505    CD E376               	call	crlf
+                                
+  E508    21 EF04               	ld	hl,z3cl+4	; display CLB
+  E50B    CD E36B               	call	print1
+  E50E    CD E376               	call	crlf
+                                
+  E511    ED 7B E81E            	ld	sp,(savstk)	; recover stack ptr
+  E515    3A E718               	ld	a,(lnkflg)
+  E518    B7                    	or	a
+  E519    C0                    	ret	nz		; no CHeCKing on linker
+                                
+  E51A    3C                    	inc	a
+  E51B    32 E715               	ld	(chkact),a	; activate CHCK
+                                
+  E51E    2A 0001               	ld	hl,(1)		; compute CONOUT location
+  E521    11 0009               	ld	de,3*3
+  E524    19                    	add	hl,de
+  E525    23                    	inc	hl
+  E526    22 E71C               	ld	(conloc),hl	; may need error checking to watch for
+                                				; multiple CONOUT changes caused by
+                                				; users command line
+                                
+  E529    5E                    	ld	e,(hl)		; get old vector
+  E52A    23                    	inc	hl
+  E52B    56                    	ld	d,(hl)
+  E52C    ED 53 E64B            	ld	(oldcon),de	; save usual conout routine
+                                
+  E530    11 E5F7               	ld	de,redir	; redirect vector
+  E533    72                    	ld	(hl),d
+  E534    2B                    	dec	hl
+  E535    73                    	ld	(hl),e
+                                
+  E536    C9                    	ret			; GO DO IT
+                                
+                                
+                                
+  E537                          getchr::		; return the next char in Makefile in A
+  E537    E5                    	push	hl
+  E538    2A E71A               	ld	hl,(bufptr)
+  E53B    01 EACF               	ld	bc,bufend	; test value on end of file buffer
+  E53E    AF                    	xor	a		; clear flags for SBC
+  E53F    ED 42                 	sbc	hl,bc		; test for end of file buffer
+  E541    CA E745               	jp	z,eoferr	; eof prior to linker end
+                                
+  E544    2A E71A               	ld	hl,(bufptr)
+  E547    7E                    	ld	a,(hl)		; get the chr
+  E548    23                    	inc	hl
+  E549    22 E71A               	ld	(bufptr),hl	; adjust the ptr
+  E54C    E1                    	pop	hl
+  E54D    C9                    	ret
+                                
+                                
+                                	; display MAKE's state in highlite, for clarity
+  E54E                          status:
+  E54E    E5                    	push	hl		; save status msg ptr
+  E54F    CD E376               	call	crlf
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-9
+
+
+  E552    21                    	db	21h		; LD	HL,
+  E553    0000                  highlt:	dw			; location of highlite string in ENV
+  E555    CD E36B               	call	print1
+  E558    E1                    	pop	hl		; recover status msg
+  E559    CD E36B               	call	print1
+  E55C                          vidoff:
+  E55C    21                    	db	21h		; LD	HL,
+  E55D    0000                  normlt:	dw
+  E55F    CD E36B               	call	print1
+  E562    C9                    	ret
+                                
+                                
+                                
+                                ; **********************************************************************
+                                
+  E563                          check::
+  E563    ED 73 E81E            	ld	(savstk),sp	; ... well everybody else does this ...
+  E567    31 E81D               	ld	sp,stck		; ... maybe they want to save their code ...
+                                
+  E56A    3A E715               	ld	a,(chkact)	; check for CHCK activity
+  E56D    B7                    	or	a
+  E56E    CA E740               	jp	z,chkerr	; user typed CHCK, should also use EH
+                                
+  E571    2A E71C               	ld	hl,(conloc)	; put BIOS CONOUT vector back
+  E574    ED 5B E64B            	ld	de,(oldcon)
+  E578    73                    	ld	(hl),e
+  E579    23                    	inc	hl
+  E57A    72                    	ld	(hl),d		; no more crash worries
+                                	
+  E57B    AF                    	xor	a		; de-activate CHCK
+  E57C    32 E715               	ld	(chkact),a
+                                
+  E57F    2A E71E               	ld	hl,(rngptr)	; calculate length
+  E582    36 00                 	ld	(hl),0		; mark end
+  E584    11 E820               	ld	de,ring
+  E587    ED 52                 	sbc	hl,de
+  E589    23                    	inc	hl
+  E58A    23                    	inc	hl
+  E58B    22 E595               	ld	(count),hl	; store for CPI
+                                
+                                
+                                ; search thru ring buffer for main data strings.
+                                ; if found then sucessful command, otherwise error
+                                
+                                
+  E58E    06 05                 	ld	b,strcnt
+  E590                          next:
+  E590    C5                    	push	bc
+  E591    21 E820               	ld	hl,ring		; search for strings
+  E594    01                    	db	01h		; ld	bc,count
+  E595    0000                  count:	dw			; CPI count
+  E597                          nomatch:
+  E597    ED 5B E35A            	ld	de,(strvec)	; current string to for searching
+  E59B                          match:
+  E59B    1A                    	ld	a,(de)
+  E59C    B7                    	or	a		; 0 at end of comparison string
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-10
+
+
+  E59D    28 24                 	jr	z,update	; successful command execution
+  E59F    ED A1                 	cpi
+  E5A1    E2 E5A9               	jp	po,newstr	; not found
+  E5A4    20 F1                 	jr	nz,nomatch	; next char doesn't match
+  E5A6    13                    	inc	de
+  E5A7    18 F2                 	jr	match		; test next char of comparison string
+                                
+                                
+                                ; get next comparison-string ptr
+                                
+  E5A9                          newstr:
+  E5A9    C1                    	pop	bc		; count is also vector offset
+  E5AA    78                    	ld	a,b
+  E5AB    3D                    	dec	a
+  E5AC    87                    	add	a,a		; *2 for ptrs
+  E5AD    21 E35A               	ld	hl,strvec	; start of c-string ptrs
+  E5B0    16 00                 	ld	d,0
+  E5B2    5F                    	ld	e,a
+  E5B3    19                    	add	hl,de		; decreasing offset to next c-s ptr
+  E5B4    5E                    	ld	e,(hl)		; get ptr value
+  E5B5    23                    	inc	hl
+  E5B6    56                    	ld	d,(hl)
+  E5B7    ED 53 E35A            	ld	(strvec),de	; store next c-s ptr and try again
+  E5BB    10 D3                 	djnz	next
+                                
+  E5BD    21 E820               	ld	hl,ring		; not matched so printout ring buffer
+  E5C0    C3 E770               	jp	finis		; to enable adding new strings.
+                                
+                                
+  E5C3                          update:				; succesful translation
+  E5C3    1E FF                 	ld	e,0ffh
+  E5C5    CD E5F1               	call	user
+  E5C8    32 E716               	ld	(curusr),a	; save current user area
+  E5CB    3A E717               	ld	a,(filusr)	; get files' user area, for public files
+  E5CE    5F                    	ld	e,a		; and set it prior to setting atributes
+  E5CF    CD E5F1               	call	user
+                                
+  E5D2    3A E719               	ld	a,(tstchr)
+  E5D5    32 E675               	ld	(fscb+chroff),a	; mark file as completed
+  E5D8    11 E671               	ld	de,fscb
+  E5DB    0E 1E                 	ld	c,1eh		; set attribute
+  E5DD    CD 0005               	call	bdos
+  E5E0    F5                    	push	af		; save result code, first restore user area
+                                
+  E5E1    3A E716               	ld	a,(curusr)	; get current user area
+  E5E4    5F                    	ld	e,a		; restore initial user area
+  E5E5    CD E5F1               	call	user
+                                
+  E5E8    F1                    	pop	af		; recover file result code
+  E5E9    FE FF                 	cp	0ffh		; oops
+  E5EB    C2 E411               	jp	nz,make2	; continue MAKEing
+  E5EE    C3 E760               	jp	upderr		; again invoke EH someday
+                                
+  E5F1                          user:
+  E5F1    0E 20                 	ld	c,20h		; set/get user number
+  E5F3    CD 0005               	call	bdos
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-11
+
+
+  E5F6    C9                    	ret
+                                
+                                
+                                ; BIOS CONOUT redirection routine to capture translator output in ring buffer
+                                
+  E5F7                          redir:				; BIOS redirection
+  E5F7    08                    	ex	af,af'
+  E5F8    79                    	ld	a,c		; get character
+  E5F9    D9                    	exx			; get clean reg set
+                                
+  E5FA    FE 30                 	cp	'0'		; filter input
+  E5FC    DA E648               	jp	c,rexit
+  E5FF    FE 3A                 	cp	':'
+  E601    DA E61A               	jp	c,fend		; a number
+  E604    FE 41                 	cp	'A'
+  E606    DA E648               	jp	c,rexit
+  E609    FE 5B                 	cp	'['
+  E60B    DA E61A               	jp	c,fend		; uppercase
+  E60E    FE 61                 	cp	'a'
+  E610    DA E648               	jp	c,rexit
+  E613    FE 7B                 	cp	'{'
+  E615    D2 E648               	jp	nc,rexit
+  E618    E6 5F                 	and	01011111b	; convert to uppercase
+                                
+                                ; save output in ring buffer, when it fills then rotate 2nd half
+                                ; need to save initial and final output only for translation error check
+                                
+  E61A                          fend:
+  E61A    2A E71E               	ld	hl,(rngptr)	; add char to ring buffer
+  E61D    77                    	ld	(hl),a
+  E61E    23                    	inc	hl
+  E61F    22 E71E               	ld	(rngptr),hl	; next char
+                                
+  E622    AF                    	xor	a		; clear flags
+  E623    ED 4B E71A            	ld	bc,(bufptr)	; test for full ring
+  E627    ED 42                 	sbc	hl,bc		; ring extends to current buffer char
+  E629    C2 E648               	jp	nz,rexit	; not overflowed
+                                
+  E62C    2A E71E               	ld	hl,(rngptr)
+  E62F    2B                    	dec	hl
+  E630    22 E71E               	ld	(rngptr),hl	; reset end of ring
+                                
+  E633    AF                    	xor	a		; clear carry
+  E634    11 E820               	ld	de,ring		; compute ring size
+  E637    ED 52                 	sbc	hl,de
+  E639    CB 1C                 	rr	h		; divide by 2
+  E63B    CB 1D                 	rr	l
+  E63D    44                    	ld	b,h
+  E63E    4D                    	ld	c,l		; save half size for LDIR
+  E63F    11 E820               	ld	de,ring
+  E642    19                    	add	hl,de		; get middle of ring
+  E643    54                    	ld	d,h
+  E644    5D                    	ld	e,l
+  E645    23                    	inc	hl
+  E646    ED B0                 	ldir			; rotate
+                                
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-12
+
+
+  E648                          rexit:
+  E648    D9                    	exx			; restore and continue
+  E649    08                    	ex	af,af'
+  E64A    C3                    	db	0c3h		; JP to old console output
+  E64B    0000                  oldcon:	dw			; BIOS console output vector
+                                
+                                
+                                
+                                ; DATA, SEMAPHORE & PTR AREAS
+                                
+  E64D                          buffcb:	ds	9		; drive & makefile name
+  E656    4D 4B 45              	db	'MKE'		; file type for makefiles
+  E659                          	ds	24		; makefile FCB
+  E671                          fscb:	ds	36		; search fcb
+  E695                          fsbuf:	ds	128		; search dma
+                                
+  E715    00                    chkact:	db	0		; checker active flag
+  E716    00                    curusr:	db	0		; current user area
+  E717    00                    filusr:	db	0		; public files' user area
+  E718    00                    lnkflg:	db	0		; linker time flag
+  E719    00                    tstchr:	db	0		; filename character
+                                
+  E71A    0000                  bufptr:	dw			; ptr to chr in buffer
+  E71C    0000                  conloc:	dw			; location of changed vector
+  E71E    0000                  rngptr:	dw			; location of next byte to add
+                                
+  E720    3B 43 48 43           append:	db	';CHCK',0	; CHeCK for errors and loop to make2:
+  E724    4B 00                 
+  0006                          applen	equ	$-append
+                                
+  E726    43 68 65 63           chekng:	db	'Checking',0	; ..warm feeling messages ...
+  E72A    6B 69 6E 67           
+  E72E    00                    
+  E72F    45 78 65 63           excung:	db	'Executing',0
+  E733    75 74 69 6E           
+  E737    67 00                 
+  E739    4C 69 6E 6B           lnking:	db	'Linker',0
+  E73D    65 72 00              
+                                
+                                
+                                
+                                ; various error messages
+                                
+  E740                          chkerr:
+  E740    21 E786               	ld	hl,cerror
+  E743    18 2B                 	jr	finis
+  E745                          eoferr:
+  E745    21 E796               	ld	hl,eerror
+  E748    18 26                 	jr	finis
+  E74A                          filerr:				; (*RMB*) here is the Error Handler interface
+  E74A    3E 0A                 	ld	a,ferror
+  E74C    32 EB30               	ld	(z3msg),a	; load ECFLAG - error return code flag
+  E74F    3E 06                 	ld	a,cmderr
+  E751    32 EB33               	ld	(z3msg+3),a	; load CMDSTATFL - command status flag
+  E754    18 2B                 	jr	finis2
+  E756                          nofile:
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-13
+
+
+  E756    21 E7AF               	ld	hl,nerror
+  E759    18 15                 	jr	finis
+  E75B                          ovferr:
+  E75B    21 E7C8               	ld	hl,oerror
+  E75E    18 10                 	jr	finis
+  E760                          upderr:
+  E760    CD E376               	call	crlf
+  E763    AF                    	xor	a
+  E764    32 E67D               	ld	(fscb+12),a	; mark end of search fcb
+  E767    21 E672               	ld	hl,fscb+1
+  E76A    CD E36B               	call	print1
+  E76D    21 E7E2               	ld	hl,uerror
+  E770                          finis:
+  E770    E5                    	push	hl
+  E771    CD E376               	call	crlf
+  E774    E1                    	pop	hl
+  E775    CD E36B               	call	print1
+  E778    3E 07                 	ld	a,7		; ring bell on error
+  E77A    CD E37D               	call	cout
+  E77D    AF                    	xor	a
+  E77E    32 EF04               	ld	(z3cl+4),a	; clear CLB
+  E781                          finis2:
+  E781    ED 7B E81E            	ld	sp,(savstk)	; recover stack ptr
+  E785    C9                    	ret			; to Z33
+                                
+                                
+                                
+  E786    4D 41 4B 45           cerror:	db	'MAKE not active',0
+  E78A    20 6E 6F 74           
+  E78E    20 61 63 74           
+  E792    69 76 65 00           
+  E796    4D 69 73 73           eerror:	db	'Missing linker semaphore',0
+  E79A    69 6E 67 20           
+  E79E    6C 69 6E 6B           
+  E7A2    65 72 20 73           
+  E7A6    65 6D 61 70           
+  E7AA    68 6F 72 65           
+  E7AE    00                    
+  E7AF    44 65 70 65           nerror:	db	'Dependent file not found',0
+  E7B3    6E 64 65 6E           
+  E7B7    74 20 66 69           
+  E7BB    6C 65 20 6E           
+  E7BF    6F 74 20 66           
+  E7C3    6F 75 6E 64           
+  E7C7    00                    
+  E7C8    4D 61 6B 65           oerror:	db	'Makefile overflows buffer',0
+  E7CC    66 69 6C 65           
+  E7D0    20 6F 76 65           
+  E7D4    72 66 6C 6F           
+  E7D8    77 73 20 62           
+  E7DC    75 66 66 65           
+  E7E0    72 00                 
+  E7E2    4E 6F 74 20           uerror:	db	'Not found, changed DIR: ??',0
+  E7E6    66 6F 75 6E           
+  E7EA    64 2C 20 63           
+  E7EE    68 61 6E 67           
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	1-14
+
+
+  E7F2    65 64 20 44           
+  E7F6    49 52 3A 20           
+  E7FA    3F 3F 00              
+                                
+                                
+  E7FD                          	ds	20h
+  E81D    00                    stck:	db	0
+  E81E    0000                  savstk:	dw			; save the stack or else!
+                                
+  E820                          buffer::			; file dma, then ring buffer, till end of RCP
+  E820                          ring:				; after filling, move makefile buffer to end
+                                				; of ring, then ring grows as makefile read.
+                                
+                                
+  E820    28 43 29 20           	db	'(C) COPYRIGHT 1986, 1987 Non-Linear Thinkers.'
+  E824    43 4F 50 59           
+  E828    52 49 47 48           
+  E82C    54 20 31 39           
+  E830    38 36 2C 20           
+  E834    31 39 38 37           
+  E838    20 4E 6F 6E           
+  E83C    2D 4C 69 6E           
+  E840    65 61 72 20           
+  E844    54 68 69 6E           
+  E848    6B 65 72 73           
+  E84C    2E                    
+                                
+                                
+                                	if2			; comment this out if not using M80
+  02AF                          bufsiz	equ	bufend-buffer
+  0010                          	.radix	16
+                                	PRINTE	<MAKE loads at            >,%(RCP),<Hex>
+                                	PRINTE	<BUFFER/RING size is        >,%(BUFSIZ),<Hex>
+  000A                          	.radix	10
+                                	endif
+                                
+                                PRINTE	MACRO	MSG1,N,MSG2
+                                	.PRINTX	% MSG1 N MSG2 %
+                                	ENDM
+                                 
+                                	end
+MAKE.RCP	MACRO-80 3.43	27-Jul-81	PAGE	S
+
+
+Macros:
+PRINTE          
+
+Symbols:
+E720 	APPEND          0006 	APPLEN          0000 	BASE            
+0005 	BDOS            EACF 	BUFEND          E64D 	BUFFCB          
+E820I 	BUFFER          E71A 	BUFPTR          E3E4 	BUFSET          
+02AF 	BUFSIZ          BE00 	CCP             E786 	CERROR          
+E563I 	CHECK           E726 	CHEKNG          E715 	CHKACT          
+E740 	CHKERR          0004 	CHROFF          E364 	CLIST           
+0006 	CMDERR          0004 	CNSIZE          E48C 	COMMAN          
+E71C 	CONLOC          E4D8 	CONT            E595 	COUNT           
+E37D 	COUT            000D 	CR              E376 	CRLF            
+E2D6 	CTAB            E2DC 	CTAB1           E716 	CURUSR          
+F800 	DSKBUF          F700 	DSKMEM          E796 	EERROR          
+E499 	END             E745 	EOFERR          E72F 	EXCUNG          
+0040 	EXPATH          0005 	EXPATHS         EB00 	EXTFCB          
+EAD0 	EXTSTK          0000 	FALSE           0000 	FCP             
+0000 	FCPS            E61A 	FEND            000A 	FERROR          
+E74A 	FILERR          E717 	FILUSR          E770 	FINIS           
+E781 	FINIS2          E695 	FSBUF           E671 	FSCB            
+E537I 	GETCHR          E47E 	GOBBL2          E43F 	GOBBLE          
+E553 	HIGHLT          0000 	IOP             0000 	IOPS            
+005B 	LEGFIN          002F 	LEGSTR          000A 	LF              
+0023 	LNKCHR          E718 	LNKFLG          E739 	LNKING          
+E384I 	MAKE            E411I 	MAKE2           E59B 	MATCH           
+F000 	MONITR          E457 	NAME            E7AF 	NERROR          
+E4F3 	NEW             E5A9 	NEWSTR          E590 	NEXT            
+E756 	NOFILE          E597 	NOMATCH         E55D 	NORMLT          
+E7C8 	OERROR          E64B 	OLDCON          E75B 	OVFERR          
+E36B 	PRINT1          E2D0 	RCP             E2E9 	RCP$NAME        
+004D 	RCPID           0010 	RCPS            E3B4 	READ            
+E5F7 	REDIR           E4C1 	RETRY           E648 	REXIT           
+E820 	RING            E71E 	RNGPTR          E81E 	SAVSTK          
+E42C 	SCAN            F700 	SCRATCH         0020 	SHSIZE          
+EB80 	SHSTK           0004 	SHSTKS          E54E 	STATUS          
+E81D 	STCK            0005 	STRCNT          E2FE 	STRNG1          
+E30C 	STRNG2          E319 	STRNG3          E338 	STRNG4          
+E349 	STRNG5          E35A 	STRVEC          FF00 	SYSMEM          
+FF00 	SYSRAM          E3FE 	TCABIL          E409 	TCAHGH          
+0003 	TCPNUM          0097 	TCPOFF          FFFF 	TRUE            
+E719 	TSTCHR          E465 	TYPE            E7E2 	UERROR          
+E5C3 	UPDATE          E760 	UPDERR          E5F1 	USER            
+000D 	VERS            E55C 	VIDOFF          E4FC 	XECUTE          
+FE20 	XLPOOL          E2D0 	Z3BUF           EF00 	Z3CL            
+00FA 	Z3CLS           EC00 	Z3ENV           0002 	Z3ENVS          
+EB30 	Z3MSG           ED00 	Z3NDIR          001C 	Z3NDIRS         
+0021 	Z3REV           004B 	Z3WHL           
+
+
+
+No Fatal error(s)
+
+
+    FFFF

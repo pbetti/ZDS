@@ -1,0 +1,62 @@
+;	TITLE	"SMOVE3 - Syslib 4.0"
+	NAME	('MOVEBC')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SMOVE.Z80 Ver 1.1 by Richard Conn
+; Date    : 23 Jul 89
+; Version : 1.3
+; Module  : SMOVE3
+; Abstract: This module contains the routine MOVEBC which moves
+;	up to 65536 bytes of data in memory.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		MOVEBC
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - MOVEBC
+; Entry: HL - Points to the first byte of source block
+;	 DE - Points to the first byte of destination block
+;	 BC - Number of bytes to move
+; Exit : - None
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+MOVEBC:	PUSH	AF		; Save registers
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	LD	A,L		; Is DE greater than HL?
+	SUB	E		; .check by subtraction
+	LD	A,H
+	SBC	A,D
+	JR	C,MOVER		; ..Jump to Move Front-to-back if DE > HL
+			; ..fall thru to Move Front-to-Back if HL >= DE
+; Move Front-to-Back
+
+	LDIR			; Block Move data
+DONE:	POP	HL		; Restore Regs
+	POP	DE
+	POP	BC
+	POP	AF
+	RET
+
+; Move Back-to-Front.  Start by pointing to End of Buffers
+
+MOVER:	DEC	BC		; Decr count by 1
+	ADD	HL,BC		; Pt to End of Buffers
+	EX	DE,HL
+	ADD	HL,BC
+	EX	DE,HL
+	INC	BC		; Correct byte count
+	LDDR			; Block Move in downward direction
+	JR	DONE
+
+	END
+

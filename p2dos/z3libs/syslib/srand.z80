@@ -1,0 +1,84 @@
+;	TITLE	"SRAND - Syslib 4.0"
+	NAME	('RAND')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SRAND.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SRAND
+; Abstract: This module contains the routines RNDSEED and RNDINIT
+;	and RND which pass a user-defined Seed value to the Random
+;	number generator; Initialize the Random Number generator
+;	with the present value of the Z80 refresh register; and
+;	return an 8-bit Pseudo-random number respectively.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		RNDINIT, RNDSEED, RND
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - RNDINIT
+; Entry: - None
+; Exit : - Nothing returned, the Seed is initialized
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+RNDINIT: PUSH	AF		; Save AF
+	LD	A,R		; Get Seed from Refresh Reg
+RNDID:	LD	(SEED),A	; Save it for later
+	CALL	RND		; Generate a Random Number
+	LD	(ADDEND),A	; Save an Initial Addend
+	POP	AF		; Restore AF
+	RET
+
+;===============================================================
+; NAME - RNDSEED
+; Entry:  A - Contains the User-defined Seed value
+; Exit : - Nothing returned, the Seed is initialized
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+RNDSEED: PUSH	AF		; Save AF
+	JR	RNDID		; Save Seed and Generate Addend
+
+;===============================================================
+; NAME - RND
+; Entry: - None
+; Exit :  A - Pseudo-random 8-bit Number
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+RND:	PUSH	HL		; Don't affect HL
+	LD	HL,SEED		; Pt to Seed
+	LD	A,(HL)		; Get it
+	RLCA			; Play with it
+	XOR	(HL)
+	RRCA
+	INC	HL		; Pt to Addend
+	INC	(HL)		; Increment it
+	ADD	A,(HL)		; Add in Addend
+	JP	PE,SKIP
+	INC	(HL)		; Increment Addend Again
+
+SKIP:	DEC	HL		; Pt to Seed again
+	LD	(HL),A		; Save New Seed
+	POP	HL		; Restore HL
+	RET
+
+;  Data Storage
+
+	DSEG			; Put in Data Segment
+
+SEED:	DEFS	1		; 1 byte seed
+ADDEND:	DEFS	1		; Storage for Addend
+
+	END
+

@@ -1,0 +1,174 @@
+ Notes on Switched Output
+ Print String from Stack    - PRINT, EPRINT, LPRINT, SPRINT
+ Print String from HL       - PSTR, EPSTR, LPSTR, SPSTR
+ Description of File Name Output
+ Print File Name            - LFNn, PFNn, SFNn
+ Store File Name in Memory  - MFNn
+:               Notes on Switched Output 
+
+The Switched Output series of routines is different from the
+other series in that the Switched Output series uses a Global
+data byte (SCTLFL, or S Control Flag) to determine where the
+output is to be routed.  Its switching functions are:
+
+	 ----- SCTLFL -----
+	 Binary		Hex	Outputs to
+
+	00000000B	00H	 Nothing
+	00000001B	01H	 Console
+	10000000B	80H	 Printer
+	10000001B	81H	 Console and Printer
+
+If you do not initialize the SCTLFL variable before using an
+S-routine, output will go to the console (default value of
+SCTLFL is 01H).
+
+
+     An example of code using S-routines is:
+
+	EXT	SCTLFL,SADC,SOUT ; Declare routines/value
+	...
+	LD	A,81H		; Enable printer and console
+	LD	(SCTLFL),A
+	...
+	LD	A,32		; Print number 32
+	CALL	SADC
+	...
+	LD	A,80H		; Enable printer only
+	LD	(SCTLFL),A
+	...
+	LD	A,'D'		; Print letter "D"
+	CALL	SOUT
+	...
+
+:PRINT  - Print to Console Interpreting Control Characters
+ EPRINT - Print to Console only Expanding Tabs
+ LPRINT - Print to Printer Interpreting Control Characters
+ SPRINT - Print to Switched (Console/Printer) Interpreting
+		Control Characters
+
+  ENTER: <stack> Points to Null-terminated (Binary 0) String
+  EXIT : None  (Execution resumes at byte after ending Null)
+  USES : None
+
+ Usage:  These routines are most often used for "Inline" print
+  requirements where the text strings are embedded within the
+  executable code.  With the exception of EPRINT, control
+  characters other than TAB, BS, CR, LF and BEL are output as
+  "^Chr" sequences.  (See Character Output routines)
+
+Example:
+	EXT	PRINT		; Declare the routine
+	...			; ..preceeding code
+	CALL	PRINT		; Print the following String
+	DEFB	'Hello World',0
+	...			; Execution resumes here
+:PSTR  - Print to Console Interpreting Control Characters
+ EPSTR - Print to Console only Expanding Tabs
+ LPSTR - Print to Printer Interpreting Control Characters
+ SPSTR - Print to Switched (Console/Printer) Interpreting
+		Control Characters
+
+  ENTER: HL = Pointer to Null-Terminated (binary 0) String
+  EXIT : HL = Points to byte following Null Terminating String
+  USES : HL
+
+ Usage:  These routines are used to print Null-Terminated
+  strings from indexed strings or remotely-located places in
+  the code body.  With the exception of EPSTR, control chars
+  other than TAB, BS, CR, LF and BEL are output as "^Chr"
+  sequences.  (See Character Output routines)
+
+:            Description of File Name Output 
+
+File Name output routines described here are used to display
+the file Name and Type stored in an FCB in a variety of forms.
+These forms are denoted in the routine names (xFNn) as:
+
+xFN1 - Print File Name & Type in 12-char field, embedded spaces
+xFN2 - Print File Name & Type in N-char field, No spaces
+xFN3 - Print File Name & Type in 12-char field, Trailing spaces
+
+The following illustrates how values will be output by these
+routines.  The underscore Character (_) indicates a space.
+
+FCB Name/Type	   xFN1		   xFN2		   xFN3
+-----------	------------	------------	------------
+FILENAMETYP	FILENAME.TYP	FILENAME.TYP	FILENAME.TYP
+MYFILE  TXT	MYFILE__.TXT	MYFILE.TXT	MYFILE.TXT__
+R       R	R_______.R__	R.R		R.R_________
+S		S_______.___	S.		S.__________
+        T	________.T__	.T		.T__________
+
+In addition to the method of printing the Name and Type, each
+of these routines has a prefix to its name: L, M, P, or S.
+These prefixes indicate where the output is to be sent.  L
+indicates the Printer (or LST: device), M for Memory, P for the
+Console (print the output), and S for a switched output to
+Nothing, the Console, the Printer, or both.  The list is:
+
+     Letter    Example      Outputs To
+
+	L	LFN1	  LST: Device (printer)
+	M	MFN1      Memory pted to by HL
+	P	PFN1	  CON: Device (console)
+	S	SFN1	  Switched Output
+
+:LFNn - Print File Name to Printer (LST: device)
+ PFNn - Print File Name to Console (CON: device)
+ SFNn - Print File Name to Switched (LST:/CON:) device(s)
+
+  ENTER: DE = Address of FCB+1
+  EXIT : None
+  USES : None
+
+ Usage:  These routines are most commonly used to print File
+  Name and Type information from a File Control Block (FCB).
+  The "n" in the routine name specifies the method in which to
+  display the information.  Values of n are 1 to 3, where 1
+  prints fixed 12-char output with embedded spaces, 2 prints
+  variable length (up to 12 chars) with no trailing spaces, and
+  3 prints fixed 12-char output with trailing spaces.
+  (See general information for Filename Display)
+
+:MFNn - Store File Name in Memory
+
+  ENTER: DE = Pointer to FCB+1
+	 HL = Pointer to Memory Buffer of at least 12 chars
+  EXIT : None
+  USES : None
+
+ Usage:  These routines are used to store a File Name and Type
+  in memory formatted as the routines for Console/Printer
+  output.  The suffix "n" in the routine name specifies the
+  form of the information where where 1 stores a fixed 12-char
+  field with embedded spaces, 2 stores a variable length (up to
+  12 chars) in the field with no trailing spaces, and 3 stores
+  a fixed 12-char field with trailing spaces.  (See general
+  information for Filename Display)
+
+  Notes:  MFN1 and MFN3 are quite straight-forward to use
+  since they always fill exactly 12 bytes of memory.  Advancing
+  to the next byte after the last one used is quite simple, as
+  shown by:
+
+	LD	DE,FCB+1	; Point to FN field
+	LD	HL,BUFFER	; ..and to Memory buffer
+	CALL	MFN1		; Store the name
+	LD	BC,12		; Skip to after last byte
+	ADD	HL,BC		; ..by adding 12 to start
+
+  MFN2 is not quite as easy to use since it fills at most 12
+  bytes, but could fill less than this.  The problem may be
+  overcome by using a 13-character buffer and the FILLB and
+  SKNSP routines, as:
+
+	LD	HL,BUFFER	; Point to buffer
+	LD	B,13		; Fill 13 bytes w/spaces
+	LD	A,' '
+	CALL	FILLB
+	LD	DE,FCB+1	; Point to FN field
+	CALL	MFN2		; ..and store
+	CALL	SKNSP		; Skip over Non-spaces (HL now
+	...			; ..points to byte after last)
+

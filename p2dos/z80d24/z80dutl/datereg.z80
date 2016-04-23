@@ -1,0 +1,68 @@
+; Program:  DATEREG
+; Author:   Rick Charnes
+; Date:     22 October 1987
+;
+; In Z80DOS the date is stored in memory locations 0050 and 0051.  The 
+; hex values contained therein are the number of days in hex since 
+; December 31, 1977.  In this form the date is entirely inaccessible for 
+; use in aliases.  DATEREG take the date in the form contained in these 
+; memory locations and puts it in the ZCPR3 registers.  Thus the $Rn 
+; symbol in ARUNZ can be used to represent the date.
+                
+; The components of the date are represented as follows:
+                  
+; REGISTER 5 = mm, where 'yy' is the 20th century year
+; REGISTER 6 = dd, where 'mm' is the month
+; REGISTER 7 = yy, where 'dd' is the day
+;
+; Note that both REG.COM and the RCP-resident REG display the decimal 
+; equivalent of the hex values held in the ZCPR3 registers.  Therefore, 
+; using these commands will NOT display what you might have hoped.  
+; ARUNZ's '$Rn' symbol, however, displays the ZCPR3 registers in their 
+; native hex form, which is exactly how we want it to appear since it
+; is only in the hex format that the date reads accurately.
+
+; DATERG would of course not be possible without Carson Wilson's superb 
+; Z80DOS.  This program in particular uses DATEHL.REL written by Carson 
+; and supplied in Z80DOS10.LBR.
+;
+; DATEREG prints nothing on the screen.
+
+; External Z3LIB and SYSLIB Routines
+;
+	ext	z3init,putreg,qprint,datehl
+;
+; Program beginning
+;
+	jp	start
+	db	'z3env'
+	db	3		; Type 3 environment
+z3env:	dw	0fe00h
+;
+; Initialize environment for Z3 routines
+
+start:	ld	hl,(z3env)
+	call	z3init
+
+	ld	hl,(50h)
+	call	datehl		; Carson Wilson's linkable routine
+
+; PUTREG takes whatever is in B and makes that the ZCPR3 register
+; number, and whatever in A the register value.
+
+put:	ld	b,6	; First we deal with ZCPR3 register 6.  
+                        ; Calling DATEHL has already put the BCD day
+                        ; into A, so day gets put into register 6.
+	call	putreg	
+	ld	b,7	; ZCPR3 register 7
+	ld	a,h	; H contains BCD 20th century year, PUTREG 
+			; puts it into ZCPR3 register 7.
+	call	putreg
+
+	ld	b,5     ; ZCPR3 register 5
+	ld	a,l	; L contains BCD month, which PUTREG will put
+			; into register 5.
+	call	putreg
+
+	end
+

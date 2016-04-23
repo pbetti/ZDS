@@ -1,0 +1,62 @@
+	TITLE	"Z3GZR - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3GZR.Z80 Ver 1.1 by Richard Conn
+; Date    : 15 Mar 87
+; Version : 1.2
+; Module  : Z3GZR
+; Abstract: This module contains the routine GETZRUN which
+;	returns the ZEX Run message flag byte
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		GETZRUN
+
+;  External References
+
+	EXT		ENVPTR
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - GETZRUN
+; Entry: - None
+; Exit : A = Run message byte, Carry Reset (NC) if Ok, else
+;	     A = 0, Carry Flag Set (C) if no such message available
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+GETZRUN: PUSH	HL
+	LD	HL,(ENVPTR)	;pt to environment
+	LD	A,H		;any environment?
+	OR	L
+	JR	Z,ERROR0
+	PUSH	DE		;pt to message byte
+	LD	DE,34		;offset to message ptr
+	ADD	HL,DE
+	LD	A,(HL)		;get address of messages
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		; HL pts to message
+	OR	H		;any messages?
+	JR	Z,ERROR
+	LD	DE,8		;pt to Zex Running Flag
+	ADD	HL,DE
+	POP	DE
+	LD	A,(HL)		;get byte
+	OR	A		;set Z and Clear Carry
+	POP	HL		;restore HL
+	RET
+
+ERROR:	POP	DE		; Restore DE
+ERROR0:	POP	HL		;restore HL
+	SCF			;set carry
+	RET
+
+	END
+

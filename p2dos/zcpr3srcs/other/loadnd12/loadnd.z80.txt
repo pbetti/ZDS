@@ -1,0 +1,1008 @@
+; Program: LOADND
+; Log in a disk and update the ZCPR3 system NDR
+
+;LOADND is copyright by A. E. Hawley January 30, 1987.
+;It may be freely distributed, but it must not be sold 
+;either separately or as part of a package without the 
+;written consent of the author.  The author may be reached 
+;via electronic mail at the Ladera Z-Node in Los Angeles,
+;213-670-9465, or through the Lillipute Z-Node in Chicago 
+;at 312-649-1730.
+;
+;LOADND is released for beta test through the Z-system 
+;users group Z-SIG on January 30, 1987 by the author.
+
+; Author: Al Hawley, Ladera Z-Node, (213) 670-9465
+
+vers	equ	'1'
+rev	equ	'2'
+; Version: 1.2  by AEH
+; Version Date: 01/30/87
+; Added error and activity reporting routines with QUIET flag response.
+; Removed 'wired-in' options from code - put all in table near start
+;   of pgm where they are marked for easy access with ZDM. Help screen
+;   is automatically initialized to reflect any changes in option
+;   designators as well as the name under which the program is invoked.
+
+; Version: 1.1
+; Version Date: 12/26/86
+; Previous versions: DSKNDR 1.1 (see LOADND.DOC)
+;
+; PROGRAM FUNCTION:
+; Log in a disk and update the ZCPR3 system NDR
+; to reflect the directory names for the new disk,
+; if any. Gets directory names from a disk file like
+; *.NDR or from filenames starting with some 
+; defined character like '-'.
+; See LOADND.DOC for details.
+
+;VERSION HISTORY
+;
+; LOADND V1.1   -   Name change only. Was DSKNDR 
+;		    New name better reflects function.
+
+;***************************************************
+;THIS SOURCE FILE IS CODED TO ASSEMBLE WITH THE
+; ZAS (FROM ECHELON) AND COMPATIBLE ASSEMBLERS.
+; OTHERS MAY REQUIRE SOME TRANSLATION.
+;***************************************************
+
+;The following tells ZAS to pass
+;names of libraries to ZLINK. The link command line
+;does not need to name the libraries
+
+	.REQUEST Z3LIB,SYSLIB
+
+; External Z3LIB Routines
+	EXT	Z3INIT,GETNDR,GETEFCB,GETMDISK
+	EXT	GETWHL,GETQUIET
+
+; External SYSLIB Routines
+	EXT	CODEND,DBUFFER,DIRF,SUA,INITFCB
+	EXT	SETDMA,F$OPEN,F$READ,RETUD,LOGUD
+	EXT	MULHD,SSBINIT,SORT,COMPB
+	EXT	SKSP,SKNSP,PSTR,PRINT
+;
+; External VLIB Routines
+;
+; Other External Library Routines
+;
+; COMMON ASCII & SYSTEM DEFINITIONS
+	.xlist
+	.IN	SYSDEF
+	.list
+;DEFINITIONS UNIQUE TO THIS PROGRAM
+
+ENTLEN	equ	18	; NDR Entry Len = 18 bytes
+DIRLEN	EQU	16	; DIR Entry length returned by DIRF
+DIRLTR	EQU	'-'	; 1st char of directory-name files
+KEEPDR	EQU	'A'-40H	; Drive identifier for directory name
+			; entries to RETAIN from the *.NDR file
+			; read from the target disk.
+
+;***************************************************
+;MACRO DEFINITIONS
+
+;load reg hl from the address in hl
+LDHLHL	MACRO
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	ENDM
+
+;***************************************************
+
+;program code starts here..
+
+	JP	START
+	DB	'Z3ENV'		;This is a ZCPR3 Utility
+	DB	1		;External Environment Descriptor
+
+Z3EADR: DW	0FE00H		;this is corrected by Z3INS
+
+;proctl: contain the default process option. possible values are:
+;	0	if NDR file is present use it, else use marked files
+;	1	if marked files present use them, else use NDR file
+;	2	use marked files only (ignore NDR files)
+;	3	use NDR file only (ignore marked files)
+proctl:	db	0		;process control byte, default value
+	db	0		;reserved for pgm use. do not change.
+
+	DB	'DIRLTR>'	;marker, for debugger change of...
+char1:	db	'-'		; first char of dir-name files
+	db	' NDROPT>'	;marker, for option letter for NDR option
+char2:	db	'N'
+	db	' KEEP>'		;marker for drive designator of names
+				; to keep from the .NDR file
+keeper:	db	keepdr
+
+	db	' NDRFILE>'
+ndrfls:	db	0
+	db	'????????NDR'	;11 char for .ndr file spec
+	db	' DASHFILE>'
+dashfn:	db	0
+	db	'-??????????'	;11 char ambiguous dash fn.ft
+
+START:	LD	HL,(Z3EADR)	;pt to ZCPR3 environment
+	CALL	Z3INIT		;initialize the ZCPR3 Environment
+
+;***************************************************
+;This is the main routine, from which all other
+;functions are called.
+
+MAIN:	ld	(stak), sp	; save callers stack for exit
+	ld	sp, stak	; set up local stack
+	call	init		; test for z3env and sys NDR,
+				; initialize local ndr buffer
+				; store data for NDR, default disk
+
+	call	parse		;parse command tail
+	jp	z,help		;help required. do it.
+
+	call	copyin		;get system NDR w/o tgt dr dirnames
+
+	call	getdname	;get dash- and *.ndr disk dir names
+
+	call	case		;copy dir names into local NDR buffer
+				;using procedure specified by options
+
+	jr	z,exit		;if z, no names were found, so abort.
+
+	call	ndrsrt		;sort the entries into D/U order
+
+	call	copyout		;copy local ndr buffer to system ndr
+
+exit:	call	wrapup		;deinitialization
+	ld	sp, (stak)	;finished. return quietly (no warm boot)
+	ret
+
+;***************************************************
+
+init:
+
+;validate the environment stored at the normal
+; start of the program against the system env.
+; by comparing the string 'Z3ENV' which must be
+; in the location (pgm-start + 9) and environment
+; address +3. Returns Z if the environment reference
+; is valid, NZ if the strings don't match.
+;enter with hl->env address
+	inc	hl		;->'Z3ENV' in sys env.
+	inc	hl
+	inc	hl
+	ld	de,[z3eadr-6]	;->local 'Z3ENV'
+	ld	b,5		;compare 5 bytes
+	call	compb
+	ld	a,8		;error code
+	jp	nz,exinit	;if nz, pgm not installed
+
+; test for wheel. Only priviledged users modify the system.
+	call	getwhl
+	ld	a,6		;error code
+	jp	z,exinit	;deny use if no wheel
+
+; initial memory allocation
+	call	codend		;set hl-> first free memory
+	ld	(freesp),hl	;store in freespace pointer
+	ld	(bcb0),hl	; setup bcb0 as local ndr buff
+
+; set up the default drive to process
+	call	retud		;B=disk(0-15), C=user(0-31)
+	ld	a,b
+	inc	a		;disk(1-16)
+	ld	(tgtdsk),a	; the default drive
+	add	a,'A'-1		; convert to ascii
+	ld	(tdrv),a	; put ascii char in message
+	ld	(defdrv),a	; ...and in help message
+
+; get Named Directory pointer, exit with error if none
+	call	getndr		; get ndr addr & length
+	ld	(z3ndb),hl	; store the address, and
+	ld	(ndblks),a	; the max number of entries
+	ld	a,7		; error code
+	jp	z,exinit	; exit if no NDR
+
+; initialize Buffer Control Block 0 as the
+; descriptor for the local buffer which will
+; contain the copy of system NDR entries.
+
+	ld	hl,(ndblks)	; max number of blocks
+	ld	de,entlen	; length of each block
+	ld	(bcb0+4),de	; store in Buffer Control Block
+	call	mulhd		; hl*de = buffer data bytes
+
+; The system NDR is a multiple of 128 bytes in length
+	ld	de,80h		; round off to the
+	add	hl,de		; ..next higher multiple
+	ld	a,l		; ..of 128 bytes (80h)
+	and	a,80h
+	ld	l,a		; hl = buffer length
+; save this to avoid another calculation later
+	ld	(size0),hl	; save for copyout:
+	push	hl		; ..and for null fill
+	ld	de,(bcb0)	; buffer start addr
+	push	de		; ..and save for null fill
+	add	hl,de		; loc for next buffer
+	ld	(bcb0+8),hl	; save in Buf. Cntl. Blk.
+	ld	(freesp),hl	; ..and for global use
+
+;initialize the buffer that will contain the
+;local NDR image to nulls. Since subsequent
+;operations do not disturb the unused portions
+;of the buffer, its format is suitable for
+;overlaying the system NDR once the entries are
+;sorted in D,U order.
+	pop	hl		;buffer start
+	pop	bc		;buffer length
+	dec	bc		;..for fill algorithm
+	ld	(hl),0		;the first null
+	ld	d,h		;make destination addr
+	ld	e,l
+	inc	de
+	ldir			;chase the null through
+				;the buffer
+
+;initialize the first character of the ambiguous
+; file name in the fcb used to get directory names
+; Usually this character is a '-' (see equates, above).
+	ld	a,(char1)
+	ld	(dashfn+1),a
+
+;load the default option char(s) into the help message
+	ld	(opt0+1),a	;use the same char for
+	ld	(opt1),a	;..designating options
+	ld	(opt2),a
+	ld	a,(char2)	;the option char for NDR file use
+	ld	(opt0),a
+	ld	(opt1+1),a
+	ld	(opt3),a
+
+;store the default option selection in the help message
+	ld	hl,optbl	;list of locations in hlpmsg
+	ld	de,(proctl)	;get default option number
+	add	hl,de
+	add	hl,de		;index into the list
+	ldhlhl			;get the address
+	ld	e,(hl)		;get the letters, the
+	inc	hl
+	ld	d,(hl)		;..second may be a space
+	ld	(defopt),de	;store in the help msg
+
+;get the name under which this program was
+; invoked and put it in the help message
+; if this is the first invocation
+	ld	a,(myname)
+	cp	a,' '		;space if first time
+	jr	nz,xinit	;jmp if already done
+	call	getefcb
+	jr	z,xinit		;jmp if no ext fcb
+	inc	hl		;point to pgm name
+	ld	de,myname
+	ld	bc,8
+	ldir			;transfer the name...
+
+xinit:	xor	a
+	ld	(errflg),a
+	dec	a		;mark successful return(-1, NZ)
+	ret
+
+exinit:
+	ld	(errflg),a
+	jp	help
+
+;***************************************************
+
+;CASE: is the command dispatcher. It uses the option
+; flag to control the use of disk-resident .ndr file
+; or the marked files to build the new dir names for 
+; the target disk.
+case:
+	ld	hl,cstbl
+	ld	bc,(proctl)	;get option number
+	add	hl,bc
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	(hl)
+
+cstbl:	dw	case00,case01,case02,case03
+
+;***************************************************
+
+; The CASExx routines fetch the new dir names
+; and transfer them into the local copy of the
+; system-resident Named directory buffer.
+
+case00:	;attempt to get names from an .ndr file
+	call	chkndr
+	jp	nz,ndrcpy	;..and return nz (success)
+	; fall through if no ndr, and...
+case02:	;..get names from marked files on disk
+	call	dshcpy
+	ret		;nz = success, z = no names
+
+case01:	;attempt marked files first
+	call	dshcpy
+	ret	nz	;return if successful
+	;else (no marked files) fall through, to..
+
+case03:	;..get names from .ndr file on target disk
+	call	chkndr
+	jp	nz,ndrcpy	;..and return nz (success)
+	ret			;z = no names
+
+;***************************************************
+
+;wrapup: set/reset system messages, disk system,
+; and any other miscellaneous housecleaning
+; before returning to the operating system.
+
+wrapup:
+
+;>>> none required yet <<<
+
+	ret
+
+;***************************************************
+
+help:	ld	bc,(errflg)
+	ld	hl,hlpndx
+	add	hl,bc
+	add	hl,bc
+	ldhlhl
+	call	pstr
+	jp	exit
+
+hlpndx:	dw	hlpmsg,em1,em2,em3,em4,em5
+	dw	em6,em7,em8,em9
+
+;***************************************************
+
+; parse: scan the command tail for command line options
+; If the first argument does not start with '/', use its
+; first character as the potential drive designator. If
+; the drive designator is valid, store it for later use.
+; If an argument starts with '/', use the following one
+; or two characters to define the processing sequence to
+; use in locating the new entries for the system NDR image.
+; If invalid entry is found in either argument,
+; return (Z) to indicate an error (and invoke help).
+;  NOTE that commas in the command tail are converted to
+; spaces; space(s) are then used to elimit arguments.
+; Thus, arguments may not contain spaces or commas.
+
+parse:	push	ix
+	ld	ix,opt0		;->option characters in hlp
+	ld	hl,tbuf		;point to command tail
+	ld	a,(hl)		;get character count
+	or	a,a		;test for null
+	jr	z,pdone		;use defaults if no args
+
+	inc	hl		;point to arg string
+	call	ctosp		;change commas to spaces
+	call	sksp		;skip to first non-space
+	ld	a,(hl)
+	cp	'?'		;help requested via '?' ?
+	jr	z,hexit
+	cp	'/'		;options follow?
+	jr	z,options
+	call	drvtst		;test for valid drive designator
+	jr	z,hexit		;bad arg - return z for help
+	ld	(tdrv),a	;save for progress message
+	sub	a,'A'-1		;convert to 1...16
+	ld	(tgtdsk),a	;store converted drive designator
+
+	call	sknsp		;skip to next space or eos
+	ld	a,(hl)
+	or	a,a		;test for null
+	jr	z,pdone		;no more arguments
+	call	sksp		;skip to next non-space
+	ld	a,(hl)
+	cp	a,'/'		;option ?
+	jr	nz,pdone	;ignore if not option designator
+options:
+	inc	hl
+	ld	a,(hl)		;get the option character
+	or	a		;if 0, '/' was only char
+	jr	z,hexit		;..and this is a help request
+	cp	'/'		;help requested via '//'?
+	jr	z,hexit		;errflg is still 0
+	cp	(ix)		;NDR option char?
+	ld	bc,3		;b=0, c=3(for option 'N')
+	jr	z,ndopt
+	ld	c,2
+	cp	(ix+1)		;dashfile option char?
+	jr	z,dnopt
+	ld	a,9		;error code 9 - options help
+	ld	(errflg),a
+	jr	hexit		;bad option, use help exit
+
+dnopt:	inc	hl
+	ld	a,(hl)		;get possible second option letter
+	cp	(ix)		;NDR option char?
+	jp	nz,savopt	;no, option is case02
+	ld	c,1		;yes, option is case01
+	jr	savopt
+
+ndopt:	inc	hl
+	ld	a,(hl)		;get possible second option letter
+	cp	(ix+1)		;dashfile option char?
+	jp	nz,savopt	;no, option is case03
+	ld	c,0		;option nd=case00
+
+savopt:	ld	(proctl),bc	;save option in proc cntl word
+
+pdone:	ld	hl,drives	;tell what's happening
+	call	qpstr
+
+	ld	a,(tgtdsk)	;get drive (1...16)
+	dec	a		;make 0...15
+	ld	b,a
+	call	logud		;log it in
+
+xparse:	xor	a		;normal exit
+	dec	a
+	pop	ix
+	ret			;return 0ff and nz (true)
+
+hexit:	xor	a		;exit for help screen
+	pop	ix
+	ret			;bad option, z=call for help
+
+;***************************************************
+
+; scan a null terminated string pointed to by HL,
+; replacing commas with spaces. This is used to
+; make commas & spaces eqivalent in the command line.
+
+ctosp:	push	hl
+ctosp0:	ld	a,(hl)		;get a char
+	or	a,a		;test for eos
+	jr	z,xctosp	;done if null
+	cp	','		;comma?
+	jr	nz,ctosp1	;skip if not
+	ld	(hl),' '	;yes, replace with space
+ctosp1:	inc	hl		;prepare for next char
+	jr	ctosp0
+xctosp:	pop	hl
+	ret
+
+;***************************************************
+
+;Test the character in Accum for valid drive
+;designator which does not exceed the MAXDISK
+;value obtained from the system environment.
+;preserve all registers. Return zflag=nz for
+;valid drive, and =z for invalid drive designator
+
+drvtst:	push	bc
+	ld	c,a
+	sub	a,'A'		;< 'A'?
+	jr	c,notdrv
+	ld	b,a		;save it (range 0-15)
+	call	getmdisk	;max disk (1-16) from sysenv
+	sub	a,b		;maxdisk > requested disk?
+	jr	c,notdrv
+
+	ld	a,c		;return the character
+	pop	bc
+	or	a,a		;drive ok, return NZ
+	ret
+
+notdrv:	xor	a,a		;return as if logic false(z)
+	ld	a,5		;error code - bad drive
+	ld	(errflg),a
+	pop	bc
+	ret
+
+;***************************************************
+
+; copyin: copy the existing NDBuff into
+; lclndr(buffer 0), ignoring target-disk entries
+; Enter buffer data in bcb0 to permit access.
+
+copyin:	push	ix
+	ld	ix,bcb0+2	;for counting number of entries
+;	ld	(ix),0		;initialize
+	ld	de, (bcb0)
+	ld	hl, (z3ndb)	; prepare copying, (hl) to (de)
+	jr	cpin02
+
+cpin01:	ld	bc, entlen
+	ld	a, (tgtdsk)	; is it for target disk?
+	cp	(hl)
+	jr	z, noload	; don't load if yes.
+	ldir			; no, load it.
+	inc	(ix)		;count entries in bcb0+2
+	jr	cpin02
+noload:	add	hl, bc		; incr. source addr
+cpin02:	xor	a		; Disk == 0 means end
+	or	(hl)		;end of ND entries?
+	jr	nz, cpin01	;if no, get more
+
+;transfer complete. Now complete filling in the BCB
+	ld	(bcb0+6),de	;save pointer to next avail. loc
+	pop	ix
+	ret
+
+;***************************************************
+
+;1) Get the disk directory names like *.NDR, if any,
+; and store them in buffer 1. Allocate space via bcb1.
+;2) Get file names marked as directory name files from
+; the target disk for all user areas, if any exist.
+; Store them in buffer 2. Allocate space via bcb2.
+; These names are marked by <DIRLTR> as the first
+; character of the filename. Translate the names in the
+; buffer to ndr format, ready for potential transfer
+; to 'lclndr'.
+
+getdname:
+;set up target fcb to select names like *.ndr
+	push	ix		;save for possible system use
+	ld	de,ndrfls	;specify *.ndr file names
+	ld	bc,dirlen	;record size
+	ld	ix,bcb1		;specify the buffer control block
+
+	call	getsfn		;GET Selected File Names from tgt disk
+
+;set up target fcb to select file names like '-???????'
+	ld	de,dashfn	;specify <DIRLTR> filenames
+	ld	bc,dirlen	;record size
+	ld	ix,bcb2		;specify the buffer control block
+
+	call	getsfn		;GET Selected File Names from tgt disk
+
+	pop	ix
+
+;translate to ndr format (D,U,FN). There isn't
+;room for the Password field, so it's added later.
+	call	dtondr		;translate dashfiles to ndr format
+	ret
+
+;***************************************************
+
+;dtondr: restructures the dash-filenames returned
+;by dirf (in buffer 2) to conform to .ndr format
+;on exit: A = 0 (empty buffer) or -1 (success)
+; and with zflag set appropriately
+; BC,DE,HL,IX are preserved
+
+dtondr:	push	ix		;preserve registers used
+	push	bc
+	push	de
+
+;setup initial parameters
+	ld	a,(bcb2+2)	;number of entries
+	and	a,a		;adjust zero flag
+	jr	z,dtondx	;ret if empty with z
+	ld	b,a		;transfer to B reg, for counting
+	ld	a,(tgtdsk)	;get target drive
+	ld	c,a		;.. in register c
+	ld	de,16		;length of each record
+	ld	ix,(bcb2)	;ix->dash file buffer
+
+;do the following for each record. There are B
+;records to process.
+dtond1:	ld	a,(ix)		;move user number to replace
+	ld	(ix+1),a	;..the dash
+	ld	(ix),c		;replace old user with drive
+	add	ix,de		;point to next record
+	djnz	dtond1		;repeat b times
+;done. The first 9 bytes are in .ndr form
+	xor	a,a		;mark successful
+	dec	a
+dtondx:	pop	de
+	pop	bc
+	pop	ix
+	ret
+
+;***************************************************
+
+;getsfn: gets file names from target disk which match
+;the ambigous specification in the target fcb.
+;Entry: (DE) = Target FCB
+;   A = flag byte as follows:
+;	bit(s)	Meaning when set (=1)
+;	7	select non-system file names
+;	6	select system file names
+;	5	select all user areas
+;	4 - 0	user area (0-31) to select
+;		if bit 5 = 0
+
+getsfn:
+	push	bc		;record length
+	ld	(ix+4),c	;save in buff cntl blk
+	ld	(ix+5),b
+	ld	hl,(freesp)	;use next free memory
+	ld	a,11100000B	;all files in all user areas
+	call	dirf		;fetch names,put in buffer
+;HL= address of the first selected dir item,
+;BC= number of DIRLEN byte entries in this buffer
+
+	ld	(ix+0),l	;fill in the BCB
+	ld	(ix+1),h
+	ld	(ix+2),c
+	ld	(ix+3),b
+	pop	de		;record length
+	call	incrbf		;calc buffer end +1
+	ld	(ix+8),e	;save in BCB
+	ld	(ix+9),d
+	ld	(ix+6),-1	;mark buffer full
+	ld	(ix+7),-1
+	ret
+
+;***************************************************
+
+;incrbf: allocates next buffer starting addr
+; ENTRY: HL = start of current buffer,
+; BC = number of entries in current buffer
+; DE = size of each entry in bytes
+; EXIT: HL, BC are unchanged, DE = HL+(BC*DE)
+
+incrbf:	push	hl
+	ld	h,b		;setup for multiply
+	ld	l,c
+	call	mulhd		;HL<-(entries)*(record size)
+	ex	de,hl		;..in DE
+	pop	hl		;get start addr
+;	push	hl		;get start addr
+	add	hl,de		;add space used by entries
+	ex	de,hl		;next buffer start in DE
+	ld	(freesp),de	;update freespace pointer
+;	pop	hl		;recover start addr
+	ret
+
+;***************************************************
+
+;dshcpy: copy formatted dash names from the dirf
+;buffer (buffer 2) to the lclndr buffer (buffer 0).
+;Each du/name occupies 9 bytes, so append 9 spaces
+;to provide the 8th byte of the name, and a blank
+;password entry. BC,DE,HL are destroyed.
+
+dshcpy:	push	ix		;save - system may be using it
+	ld	ix,bcb0+2	;use to count records copied
+	ld	de,(bcb0+6)	;dest is next free space in lclndr
+	ld	hl,(bcb2)	;source is dirf dash buffer
+	ld	a,(bcb2+2)	;number of entries to copy
+	and	a,a
+	ld	b,a		;for counting records
+	ld	a,2		;error code, in case no records
+	jr	z,errdshx	;return with no copy and z set
+
+dshcp1:	call	roomck		;space for more in destination?
+	jr	c,errdshx	;cy set=no. error code 1 in reg A
+
+	push	bc		;save the record counter
+	ld	bc,9		;load the byte counter
+	push	bc		;..and save for further use
+	ldir			;copy d,u, and 7-byte name
+	pop	bc
+	push	hl		;save dash buffer pointer
+	ld	hl,space	;now transfer 9 spaces
+	ldir
+	inc	(ix)		;add one to count in bcb0
+	pop	hl		;recover source pointer
+	ld	bc,7		;sorce bytes to skip
+	add	hl,bc		;point to next record
+	pop	bc		;recover the record counter
+	djnz	dshcp1		;repeat till all records copied
+
+	ld	(bcb0+6),de	;record next free loc in the buffer
+	xor	a,a		;make a null (or logic false)
+	ld	(de),a		;mark next entry null
+	ld	(errflg),a	;reset error flag
+	pop	ix
+	ld	hl,mfmsg	;report where update is from
+	call	qpstr
+	xor	a
+	dec	a		; return logical true (nz)
+	ret
+
+errdshx:			; return false if dest. is full
+	ld	(errflg),a	; or if nothing to copy
+	xor	a
+	pop	ix
+	ret
+
+;*************************************************************
+;routine to locate .NDR files and, if found, load the
+;first such file into memory for selective copy into
+;the lclndr buffer. Load address is defined as buffer 3.
+
+chkndr:	ld	a,(bcb1+2)	;get number of entries
+	or	a,a		;any entries?
+	ld	a,4		;error code - no NDR file found
+	ld	(errflg),a
+	ret	z		;z = return logical false
+
+;we have at least one .ndr file. Get the first.
+	ld	hl,(bcb1)	;get user number
+	ld	a,(hl)
+	call	sua		;set user area
+
+	inc	hl		;hl -> filename
+	ld	de,tfcb+1	;use transient fcb
+	ld	bc,11		;11 char in filename
+	ldir			;copy to fcb
+
+	ld	de,tfcb		;initialize fcb
+	call	initfcb
+	ld	a,(tgtdsk)	;use target drive
+	ld	(de),a
+
+	call	f$open		;open the .ndr file
+
+	ld	hl,entlen
+	ld	(bcb3+4),hl	;record length
+	ld	hl,(freesp)	;set area to read to
+	ld	(bcb3),hl	;buffer 3 start addr
+	call	setdma
+	ld	bc,128		;constant for increment dma
+
+rdndr1:	call	f$read		;read 128 bytes
+	or	a
+	jr	nz,rdndrx	;done, return logic true
+	add	hl,bc
+	call	setdma
+	jr	rdndr1		;go get more until done
+
+rdndrx:	ld	(bcb3+8),hl	;end of buffer
+	ld	(freesp),hl	;..and begin free memory
+	xor	a
+	ld	(errflg),a	;show no error
+	dec	a		;return nz
+	ret
+
+;***************************************************
+
+;ndrcpy: copy NDR entries from buffer 3
+;starting at (bcb3) to the lclndr buffer. Copy
+;only those entries whose Drive is keepdr, changing
+;the drive designation to (tgtdsk) during the copy.
+
+ndrcpy:	push	ix
+	ld	ix,bcb0+2	; for counting number of entries
+	ld	de, (bcb0+6)	; dest = next free loc in lclndr
+	ld	hl, (bcb3)	; prepare copying, (hl) to (de)
+	ld	a,(ix)		; save for test of records copied
+	ld	(temprc),a
+	jr	ndrcp2
+
+ndrcp1:	call	roomck		;space for more in destination?
+	jr	c,exndrcp	;cy set=no. Acc=1 to force logic false
+
+	ld	bc, entlen
+	ld	a, (keeper)	; get drive number to retain
+	cp	(hl)		; is this one to keep?
+	jr	nz, ndrcp3	; don't load if no.
+	ld	a,(tgtdsk)	; yes, get target drive
+	ld	(hl),a		; ..and substitute drive
+	ldir			; ..byte, then load it.
+	inc	(ix)		; count entries in bcb0+2
+	jr	ndrcp2
+ndrcp3:	add	hl, bc		; incr. source addr
+ndrcp2:	xor	a		; Disk == 0 means end
+	or	(hl)		; end of ND entries?
+	jr	nz, ndrcp1	; if no, get more
+	ld	a,(temprc)	; get starting number of entries
+	cp	a,(ix)		; same as current number?
+	ld	a,3		;error code - no entries for this drive
+	jr	z,exndrcp	; yes, Nothing copied
+
+;transfer complete. Now complete filling in the BCB
+; the value of the A reg. will be decremented to form
+; either a logical true(0ffh) or false(00h) with flags set.
+
+xndrcp:	ld	(bcb0+6),de	;save pointer to next avail. loc
+	pop	ix
+	ld	hl,ndfmsg	;report where update is from
+	call	qpstr
+	xor	a
+	ld	(errflg),a
+	dec	a		; return logical true if no problems
+	ret
+
+exndrcp:
+	ld	(errflg),a	;save the error code
+	xor	a
+	ret			; return false if dest. is full
+
+temprc:	ds	1
+
+;***************************************************
+
+; roomck: compares the current number of entries in
+; the lclndr with the maximum number allowed.
+; on entry, IX points to current number of entries.
+; on return, a=1 and carry is set if current number
+; of entries equals or excedes the maximum allowed.
+
+roomck:	ld	a,(ndblks)	; get max # NDR entries
+	dec	a		; for the compare
+	cp	a,(ix)		; exceded by current yet?
+	ld	a,1		; in case no room left
+	ret
+
+;***************************************************
+
+;ndrsrt: sets up the Sort Specification Block for
+; sorting the local NDR image in d/u order, then
+; calls dosort: for the actual buffer allocation
+; and sorting.
+
+ndrsrt:	push	hl
+	push	de
+	push	bc
+	ld	hl,bcb0
+	ld	de,ssb		;Sort Specification Block
+	ld	bc,6
+	ldir			;copy 1st 3 words from bcb0
+	ld	hl,(freesp)	;tell where to work
+	ld	(ssb+8),hl
+	call	dosort		;sort local NDR image
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+;***************************************************
+
+; copyout: copy new NDR into NDBuff.
+
+copyout:
+	ld	hl, (bcb0)	; source is local NDR image
+	ld	de, (z3ndb)	; dest is system NDR buffer
+	ld	bc, (size0)	; buffer size, bytes
+	ldir
+	ret
+
+;***************************************************
+
+; dosort: is called to sort the contents of a
+; buffer using memory space starting at addr in HL.
+; Assumes the sort parameters in SSB: have been
+; correctly entered therein.
+; BC,DE,HL are preserved
+
+dosort:	push	bc		;save for caller
+	push	de
+	push	hl
+	ld	bc,(ssb)
+	push	bc		;save for sort
+	ld	de,ssb
+	call	ssbinit		;munches (ssb)
+	pop	bc
+	ld	(ssb),bc	;restore (ssb)
+	call	sort
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+;***************************************************
+
+;compdu: is referenced indirectly through the
+;Sort Specification Block. It is the compare
+;routine used by Sort (from Syslib)
+
+compdu:	push	bc	;preserve for caller
+	ld	b,2	;number of bytes in comp vector
+	ex	de,hl	;for ascending sort order
+	call	compb	;vector compare routine
+	ex	de,hl
+	pop	bc
+	ret
+
+;***************************************************
+
+qpstr:
+;print a null terminated string if QUIET flag is off.
+;on entry, hl->first char of string.
+	call	getquiet
+	ret	nz		;quiet, please..
+	jp	pstr		;print & return
+
+;***************************************************
+;		MESSAGES
+
+;PROGRESS MESSAGES
+drives:	db	'Updating Directory Names for Drive: '
+tdrv:	db	'A',cr,lf,0
+mfmsg:	db	'..from marked files on that drive.'cr,lf,0
+ndfmsg:	db	'..from an NDR type file on that drive.'cr,lf,0
+
+;ERROR MESSAGES
+em1:	db '? 1 - Not enough room in the ndr buffer.'cr,lf,0
+em2:	db '? 2 - No marked filenames found on that drive.'cr,lf,0
+em3:	db '? 3 - No entries for that drive in the NDR file.'cr,lf,0
+em4:	db '? 4 - No NDR type files found on that drive.'cr,lf,0
+em5:	db '? 5 - Invalid drive requested.'cr,lf,0
+em6:	db 'Sorry - Wheel privileges are required for this pgm.'cr,lf,0
+em7:	db 'Can''t find System Named Directory!'cr,lf,0
+em8:	db 'This ZCPR3 program must be installed with Z3INS.'cr,lf,0
+
+;HELP SCREEN
+
+hlpmsg:	db	tab,tab,'LOADND version ',vers,'.',rev,cr,lf,lf
+	db	'Update ZCPR3 Named Directory for <Drive> from',cr,lf
+	db	' the disk in that Drive.',cr,lf,lf
+	db	'SYNTAX:   '
+myname:	db	' LOADND '
+	db	' [<Drive>[:]]  [/<option>]',cr,lf,lf
+	db	'The current defaults for DRIVE and OPTION are '
+defdrv:	db	' , and /'
+defopt:	db	'  ',cr,lf
+	db '<Drive> is a disk designator (A,B, etc) (":" optional)',cr,lf
+em9:	db '<option> is one of the following:',cr,lf,lf
+	db tab
+opt0:	db	'ND = use NDR file if present, else use marked files',cr,lf
+	db tab
+opt1:	db	'DN = use marked files if present, else use NDR file',cr,lf
+	db tab
+opt2:	db	'D  = use marked files only (ignore NDR files)',cr,lf
+	db tab
+opt3:	db	'N  = use NDR file only (ignore marked files)',cr,lf
+	db lf
+	db 'If the first argument is / or // or ? this screen is displayed.',cr,lf
+	db lf
+	db	0
+
+;index table for option designators
+optbl:	dw	opt0,opt1,opt2,opt3
+
+;***************************************************
+
+space:	ds	9, ' '
+errflg:	dw	0
+tgtdsk:	db	0		;target disk
+z3ndb:	dw	0		;system NDR address
+ndblks:	dw	0		;sys NDR max number of entries
+freesp:	dw	0		;start of free mem after buffer alloc
+
+;Sort Specification Block
+;Controls operation of the SORT routine
+
+ssb:	dw	0	;addr of first record
+	dw	0	;number of records to sort
+	dw	0	;record size, bytes
+	dw	compdu	;addr of compare routine to use
+	dw	0	;addr of scratch area for sort
+	db	true	;use pointers (false/no = don't)
+
+; Buffer Control Blocks - contain pointers and data
+; for the dynamically allocated buffers
+
+; Buffer 0 - for copy of system NDR
+bcb0:	dw	0	; buffer start address
+	dw	0	; number of records/blocks
+	dw	0	; number of bytes/(record/block)
+	dw	0	; pointer to next loc in buffer
+	dw	0	; next buffer start/freespace
+
+size0:	dw	0	;(bcb0+8) - (bcb0)
+
+;these have the same structure as bcb0: --
+bcb1:	ds	10,0	; for Buffer 1 - for disk directory
+			; listing of *.NDR files
+
+bcb2:	ds	10,0	; for Buffer 2 - for disk directory
+			; listing of marked files
+
+bcb3:	ds	10,0	; for Buffer 3 - for contents of the
+			; selected *.NDR file
+
+;***************************************************
+
+stak_space:
+	ds 	64		; This seems enough
+stak:	dw 	0
+
+;***************************************************
+
+	end
+                                                                   

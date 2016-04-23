@@ -1,0 +1,286 @@
+;-----------------------------------------------------------------------
+
+; PPIP19.Z80
+
+	.Z80
+	ASEG			; Needed for M80, ignore otherwise
+	ORG	0100H
+
+; File copy program for use across user areas
+
+; Copyright (C) by D. Jewett, III, 1986.  All rights reserved.	You
+; shall not use this program for commercial purposes or for monetary
+; gain without first obtaining written permission from the author.
+
+; Your comments and bug reports are welcomed:
+
+;			David Jewett, III
+;			10376 Iron Mill Road
+;			Richmond, VA  23235
+;			Day Phone:  (804) 794-7667
+
+; or upload them to Data-Plus(tm) (914) 246-6906 and/or leave a message.
+
+; Thanks to Harry Kaemmerer for his invaluable assistance with this
+; program.
+
+; For further information see PPIP.DOC
+
+;-----------------------------------------------------------------------
+;		      Revisions in reverse order:
+; 05 Dec 95  Added support for CP/M 3 time stamping (requires a Z80
+;   v1.9     processor) and exact file sizes
+;                                       - John Elliott
+;
+; 07/15/88  Added support for Z80DOS type of time stamping.
+;   V1.8			-Eugene Nolan
+;
+; 05/24/88  Fixed one more instance of corrupted code from the PPIP15-17
+;   V1.73   fiasco which rendered the program totally unusable on my system.
+;				-Howard Goldstein
+;
+; 05/16/88  Minor changes to corrupted code and changed yes/no on/off EQUs.
+;   v1.72   Minor corrections to documentation.
+;                                       -Ernest F. Barnhart, N8DVE
+;
+; 08/26/87  Cosmetic change in new move code screen messages.  Now
+;   v1.7    folds line if datestamper enabled.  Changed DateStamper
+;           code to all 8080 compatable instructions.
+;					- Cameron W. Cotrill
+;
+; 08/11/87  Added /M option to move files (copy then delete source).
+;   v1.6    'M' in the option tail turns the move mode on and forces
+;	    CRC verification.  'OPTOK' routine changed to support move.
+;	    Fixed ADD A and ADD L instructions in DateStamper code that
+;	    M80 didn't like.  Fixed last DS instruction in OPTIONS
+;	    table to DS 2 to prevent overwrite of IOBUF in vanilla
+;	    version.  Added version display in vanilla version.
+;					- Cameron W. Cotrill
+;
+; 01/13/87  Put in true ZCPR3 header and stripped out Joe Wright's auto-
+;   v1.5    install code (many people now have ZCPR3 with autoinstall
+;	    capability).  If not, users will have to install with Z3INS.
+;	    The default ENV address of 0000h will signal a non-Z3 system.
+;	    Also put in some more bullet-proof Z3 installation check
+;	    code.  Changed TPASET code to work optimally with RSXs (like
+;	    BGII).  Fixed code so it will work with GO command.  Added
+;	    optional DatStamper support to copy date/stamp of source
+;	    file to destination (NOTE: this code uses ZILOG opcodes!)
+;	    Made some format changes in the built-in help screen and
+;	    verify 'OK' message. Modularized files for easier editing.
+;					- Jay Sage
+;
+; 05/30/86  Refined ZCPR3 support through use of Joe Wright's FENV rou-
+;   v1.4    tine.  Front-end data bytes now appear at the same addresses
+;	    regardless of the ZCPR3 equate's value.  Z3INS is no longer
+;	    required for the Z3 version of PPIP, as a matter of fact,
+;	    Z3INS.COM will tell the user that PPIP is NOT a Z3 utility.
+;	    This is because I had to leave off the conventional Z3 header
+;	    to keep PPIP within the 4K boundary without resorting to Z80
+;	    opcodes.  Just pay no attention to the ravings of Z3INS and
+;	    enjoy the program.		- Bruce Morgen
+;
+; 05/14/86  Introduced conditional assembly for ZCPR3 use, the consistent
+;   v1.3    modularity of PPIP's structure made this amazingly straight-
+;	    forward to do, opened up user areas 16-31 (if MAXUSER byte
+;	    allows) by simply replacing the PRNDU routine with one used
+;	    in MLOAD24.ASM, MAKE23.ASM and many other programs, cost in
+;	    code length was trivial, so why not?  Also corrected harmless
+;	    but incorrect JP instruction to a JMP (my boo-boo from 1.2).
+;					- Bruce Morgen
+;
+; 04/21/86  Made syntax selection automatic at the expense of the comma
+;   v1.2    and space as acceptable delimiters in CP/M mode.  PPIP now
+;	    scans the command line for '=' and defaults to MS-DOS mode
+;	    if not found.  Help message now educates on both options
+;	    since they are both ALWAYS available.  Added support for '/'
+;	    or '//' alone as a help request (that's standard syntax with
+;	    ZCPR3, where this program is getting quite popular).  Added
+;	    test for ZRDOS, which does not need a reset call to insure a
+;	    safe disk write.		- Bruce Morgen
+;
+; 01/31/86  Fixed where CRC was always being done on source file.  Fixed
+;   v1.1    options list in help message.  Added version information.
+;					- D. Jewett, III
+;
+; 12/02/85  Original version		- D. Jewett, III
+;   v1.0
+
+;-----------------------------------------------------------------------
+;			  System Equates
+
+; Conditional Assembly Values
+
+NO	EQU	0
+YES	EQU	NOT NO
+;
+;=======================================================================
+;		      main options (only 4)
+; ZCPR3 support
+
+ZCPR3	EQU	NO	        ; YES only for ZCPR3
+
+; DateStamper support
+
+DATESTAMP EQU	NO		; Include DateStamper support (copies
+				; ..time/date stamps with files)
+
+; Z80DOS support
+
+Z80DOS	EQU	NO		; Include Z80DOS timestamping support
+
+; CP/M 3 support
+
+CPM3	EQU	YES		; Include CP/M 3 timestamping support
+
+;=======================================================================
+
+	 IF	ZCPR3
+ENVOFF	EQU	001BH		; Offset to ENV address in ENV
+MDSKOF	EQU	002CH		; Offset to Z3 DU: limits in ENV
+	 ENDIF			; ZCPR3
+
+; Version
+
+VTENS	EQU	'1'		; Version number tens
+VUNITS	EQU	'9'		; Version number units
+
+; Option Status
+
+OFF	EQU	0
+ON	EQU	NOT NO
+
+; CP/M functions
+
+CONIN	EQU	1		; Read console character
+CONOUT	EQU	2		; Write console character
+DCONIO	EQU	6		; Direct console input/output
+CONSTAT	EQU	11		; Get console status
+GETVRS	EQU	12		; 2.x get version
+RSTDSK	EQU	13		; Reset disk system
+SELDSK	EQU	14		; Select disk
+OPEN	EQU	15		; Open file
+CLOSE	EQU	16		; Close file
+SRCHFST	EQU	17		; Search for first directory occurrence
+SRCHNXT	EQU	18		; Search for next directory occurrence
+DELETE	EQU	19		; Delete file
+READ	EQU	20		; Sequential file read record
+WRITE	EQU	21		; Sequential file write record
+CREATE	EQU	22		; Create file
+GETDSK	EQU	25		; Get current disk number
+SETDMA	EQU	26		; Set DMA address
+SETATT	EQU	30		; Set file attributes
+SETUSR	EQU	32		; 2.x set user number
+GETUSR	EQU	SETUSR		; 2.x get current user number
+ZRDVER	EQU	48		; ZRDOS version call
+
+; Addresses
+
+WBOOT	EQU	0000H		; Warm start
+DULOC	EQU	0004H		; Drive/user byte
+BDOS	EQU	0005H		; BDOS entry address
+DFCB	EQU	005CH		; CP/M's default FCB #1
+CMDBUF	EQU	0080H		; CP/M's default DMA/command buffer
+
+; ASCII values
+
+BELL	EQU	7		; Ring console bell
+BS	EQU	8		; Back space
+TAB	EQU	9		; Tab over
+LF	EQU	10		; Line feed
+CR	EQU	13		; Carriage return
+RUB	EQU	07FH		; Rubout
+
+BRKKEY	EQU	'C'-040H	; Break key (to stop program execution)
+EOF	EQU	'Z'-040H	; CP/M end-of-file marker for text files
+
+; File name and FCB definitions
+
+FCBSZ	EQU	36		; Size of entire File Control Block
+FNAMSZ	EQU	11		; Size of file name in FCB (name + type)
+FTYPSZ	EQU	3		; Size of the "type" field in file name
+
+; Offsets into CP/M FCB
+
+BLOFF	EQU	-2		; Last Record Byte count in special FCB
+USROFF	EQU	-1		; User byte in our special FCB
+DRVOFF	EQU	0		; Drive byte
+NAMOFF	EQU	1		; File name
+ROOFF	EQU	9		; T1' - read-only attribute
+ARCOFF	EQU	11		; T3' - archive attribute
+EXTOFF	EQU	12		; Extent byte
+
+; Miscellaneous equates
+
+RECSZ	EQU	128		; Size of a CP/M standard disk record
+NAMESZ	EQU	12		; Max. size of a CP/M file name less DU:
+MAXNARG	EQU	512		; Max no. of file names
+MAXARG	EQU	8		; Max. no. of command arguments (0<n<255)
+
+; Equates used by the editor subroutine
+
+; When using the editor routine to enter text from the console, you can
+; use a "trigger" to enter control characters.  For instance, to enter a
+; literal backspace, enter the trigger character plus an 'H'. To enter
+; the trigger character itself, just type it twice.  Don't use '^' as a
+; trigger since '^^' is a control character.  You really only need to
+; use the trigger to enter backspace (^H), carriage return (^M), EOF
+; (^Z) and the trigger itself, since other control sequences will be
+; interpreted literally if you just hit control- and the key as usual.
+; You may define the trigger you want to use here.
+
+TRIGGER	EQU	'~'		; Character to trigger control sequence
+
+; The editor also needs to know your screen width.
+
+	 IF	NOT ZCPR3
+SWID	EQU	80		; Console screen width
+	 ENDIF			; NOT ZCPR3
+
+;-----------------------------------------------------------------------
+
+; This program is divided into modules.  Each module has a number so it
+; can be located easily with a text processor.	Each module number is
+; surrounded by <<>> to distinguish it from other text.  For instance,
+; module one appears as <<1>>.	An index to the modules follows:
+
+;      Module		    Description
+;      ------	-------------------------------------
+;	 0	Main-line code and user customization
+;	 1	Command argument parsing
+;	 2	File name handling
+;	 3	Disk input/output
+;	 4	CRC verification
+;	 5	DateStamper routines
+;	 5ZD	Z80DOS routines
+;	 5C3	CP/M 3 routines
+;	 7	Console input/output
+;	 8	General utility subroutines
+;	 9	Data area
+
+;-----------------------------------------------------------------------
+
+	INCLUDE	PPIP-0.Z80	; Module <<0>> main code
+	INCLUDE	PPIP-1.Z80	; Module <<1>> argument processing
+	INCLUDE	PPIP-2.Z80	; Module <<2>> file name module
+	INCLUDE	PPIP-3.Z80	; Module <<3>> disk I/O module
+	INCLUDE	PPIP-4.Z80	; Module <<4>> CRC module
+
+	 IF	DATESTAMP
+	INCLUDE	PPIP-5.Z80	; Module <<5>> DatStamper module
+	 ENDIF			; DATESTAMP
+
+	 IF	Z80DOS
+	INCLUDE PPIP-5ZD.Z80	; Module <<5ZD> Z80DOS module
+	 ENDIF			; Z80DOS
+
+	 IF	CPM3
+	INCLUDE PPIP-5C3.Z80	; Module <<5C3>> CP/M 3 module
+	 ENDIF			; CPM3
+
+	INCLUDE	PPIP-7.Z80	; Module <<7>> console I/O module
+	INCLUDE	PPIP-8.Z80	; Module <<8>> utility subroutines
+	INCLUDE	PPIP-9.Z80	; Module <<9>> data areas
+;
+	END
+

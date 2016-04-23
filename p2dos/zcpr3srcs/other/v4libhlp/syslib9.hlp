@@ -1,0 +1,56 @@
+ File Name String Parser  - FNAME
+ FCB Initialization       - INITFCB
+:FNAME - File Name String Parser
+
+  ENTER: HL = Pointer to target string ending with delimiter
+	 DE = Pointer to a 36-byte long FCB
+  EXIT : BC = Disk/User
+	      B=Disk (Drive A=1..P=16, 0FFH=No Disk specified)
+	      C=User (0..31, '?'=All Users, 0FFH=No User spec)
+	 HL = Pointer to the character which ended the scan
+	  A <> 0, Zero Flag Clear (NZ) if String Parsed Ok
+	      A = 0, Zero Set (Z) if invalid Disk or User
+  USES : AF,BC,HL
+
+ Usage:  This routine parses a string to a specified FCB, and
+  Disk/User to Registers.  The string is assumed to be in form:
+
+		DU:FILENAME.TYP
+
+  where any part of the specification is optional.  It clears
+  all bytes of the FCB to Zero except for the FN (File Name)
+  and FT (File Type) fields which are initialized to values
+  extracted from the string, or Spaces if absent.
+
+  The string pointed to by HL is not a conventional string in
+  the sense of the rest of the SYSLIB routines.  It is ended
+  by any of the following delimiters, as opposed by simply
+  always being terminated by a binary zero.  Delimiters are:
+
+	<NULL or Binary 0>	<SP or Space>
+	     =    _    ;    ,    <    >
+
+ Examples:
+
+	TEST.TXT    <-- FN=TEXT  FT=TXT, B = 0FFH, C = 0FFH
+
+	A:T	    <-- FN=T  FT=<Saces>, B = 1, C = 0FFH
+
+	5:T	    <-- FN=T  FT=<Saces>, B = 0FFH, C = 5
+
+	C10:X.Y	    <-- FN=X  FT=Y, B = 3, C = 10
+
+:INITFCB - FCB Initialization
+
+  ENTER: DE = Pointer to 36-byte FCB buffer
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is used as a general purpose application
+  to clear all bytes in an FCB to Zero except for the File Name
+  and Type fields.
+
+  Note: Using INITFCB to prepare FCBs for use destroys any
+  Drive specification in the first byte of the FCB since it
+  will be set to Zero equating to the Currently Logged Drive.
+

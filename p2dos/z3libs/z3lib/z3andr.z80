@@ -1,0 +1,210 @@
+	TITLE	"Z3ANDR - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3ANDR.Z80 Ver 1.1 by Richard Conn
+; Date    : 24 Jun 91
+; Version : 1.1
+; Module  : Z3ANDR
+; Abstract: This module contains the routine ADDNDR which adds
+;	a name and optional password to the Named Directory Buffer.
+; Revision:
+;  1.0a-  5 Mar 87 - initial V4 release.			HFB
+;  1.1 - 24 Jun 91 - shortened code, fixed NDR indexing.	HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Module Entry Points
+
+	PUBLIC		ADDNDR
+
+; External References
+
+	EXT		GETND0, RETUD, CAPS
+
+; Definitions
+
+NPSIZE	EQU	8	;number of chars in name/password
+ENTSIZE	EQU	18	;number of bytes in entry
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - ADDNDR
+; Entry: HL - Points to a Z3 FCB (dsk @ 0, usr @ 13)
+;	 DE - Points to 8-char password (space fill)
+;	  A - A = 0 if No password, A <> 0  to get passwd fm DE
+; Exit : AF - A = 0 and Zero Flag Set (Z) if no NDR or NDR full
+;		 A <> 0 and Zero Flag Reset (NZ) if OK
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+ADDNDR:	PUSH	BC		; Save regs
+	PUSH	DE
+	PUSH	HL
+	LD	(PASSFL),A	; Save Password Flag
+	LD	(DNAME),HL	; Save ptr to DIR Name
+	EX	DE,HL
+	LD	(DPASS),HL	; Save ptr to DIR Password
+	CALL	GETND0		; Get ptr to Named Directory Buffer
+	JR	Z,PNDREX
+	LD	B,A		; Save # of Entries from GETND0 call
+
+; Look for free entry (every 18 bytes)
+
+	LD	DE,ENTSIZE	; Set stepping size thru Buffer
+
+ADDN2:	LD	A,(HL)		; Get 1st char of entry
+	OR	A		; Any entry here?
+	JR	Z,ADDN3		; ..jump if not to add
+	ADD	HL,DE		; Else pt to next
+	DJNZ	ADDN2		; ..until finished
+
+; Error exit
+
+PNDREX:	XOR	A		; Set Error if entry is here
+ADEXIT:	OR	A		; Set exit flags on Ok
+	POP	HL		; Restore regs
+	POP	DE
+	POP	BC
+	RET
+
+; Space is available.  HL pts to empty entry
+
+ADDN3:	EX	DE,HL		; Destination Addr in DE
+	LD	HL,(DNAME)	; Get ptr to DIR name
+
+; Store disk number (1..)
+
+	LD	A,(HL)		; Get disk
+	OR	A		; Current disk?
+	JR	NZ,ADDN4
+	CALL	RETUD		; Get DU in BC
+	INC	B		; Disk A = 1
+	LD	A,B		; ..move to A
+
+ADDN4:	LD	(DE),A		; Store disk letter
+	INC	DE		; ..advance to User Number
+
+; Store user number
+
+	PUSH	DE		; Save ptr
+	PUSH	HL		; Save ptr to disk name
+	LD	DE,13		; Offset to user number
+	ADD	HL,DE
+	LD	A,(HL)		; Get User Number
+	POP	HL		; Get ptr to disk name
+	POP	DE		; Get ptr to user number
+	LD	(DE),A		; Save user number
+	INC	DE		; .advance to name
+	INC	HL		; ..for both ptrs
+
+; Copy disk name
+
+	CALL	MOVE8		; Copy name and capitalize
+
+; Space fill password and then set it if instructed
+
+	PUSH	DE		; Save ptr to password
+	LD	B,NPSIZE	; Fill password with spaces
+	LD	A,' '		; Get space
+
+ADDN5:	LD	(DE),A		; Store space
+	INC	DE		; .next
+	DJNZ	ADDN5		; ..until done
+	XOR	A		; Make next entry empty
+	LD	(DE),A
+	POP	DE		; Get ptr to password
+	LD	A,(PASSFL)	; Set password?
+	OR	A
+	JR	Z,ADDN6		; ..jump if not
+	LD	HL,(DPASS)	; Pt to password
+	CALL	MOVE8		; Copy password and capitalize
+
+; Sort directory and then exit
+
+ADDN6:	CALL	GETND0		; Pt to named directory buffer
+
+; Sort so entry addressed by HL is lowest
+
+ADDN7:	EX	DE,HL		; Target to DE
+	LD	A,(DE)		; Get 1st char of entry
+	OR	A		; End of Directory?
+	LD	A,0FFH		; .(prepare for yes)
+	JR	Z,ADEXIT	; ..quit if so
+	LD	HL,ENTSIZE	; Point to next entry
+	ADD	HL,DE		; HL pts to Next, DE pts to target
+	CALL	SORT		; Do the sort
+	LD	HL,ENTSIZE	; Point to next entry
+	ADD	HL,DE
+	JR	ADDN7
+
+; Sort dir entries so target pted to by DE is less than rest, pted to by HL
+
+SORT:	PUSH	HL		; Save HL,DE
+	PUSH	DE
+
+SORT0:	LD	A,(HL)		; Get first char
+	OR	A		; Are we done?
+	JR	Z,SORTDN	; ..quit if so
+
+	LD	A,(DE)		; Get Target
+	CP	(HL)		; Target must be <= to Next
+	JR	C,SORTNXT
+	JR	NZ,SORTSW	; Switch
+	INC	HL		; Check user
+	INC	DE
+	LD	A,(DE)		; Get Target User
+	CP	(HL)		; .compare to Next User
+	DEC	DE		; ..pt back
+	DEC	HL
+	JR	C,SORTNXT
+	JR	Z,SORTNXT
+
+SORTSW:	PUSH	HL		; Save regs
+	PUSH	DE
+	LD	B,ENTSIZE
+
+SSW:	LD	C,(HL)		; Get one
+	LD	A,(DE)		; Get another
+	LD	(HL),A		; Put one
+	LD	A,C
+	LD	(DE),A		; Put another
+	INC	HL		; Pt to next
+	INC	DE
+	DJNZ	SSW		; ..loop til done
+	POP	DE		; Get regs
+	POP	HL
+
+SORTNXT: LD	BC,ENTSIZE
+	ADD	HL,BC		; Increment HL to New Next
+	JR	SORT0		; ..and continue sort
+
+SORTDN:	POP	DE		;Get regs and exit
+	POP	HL
+	RET
+
+;.....
+; Copy 8 bytes from HL to DE and capitalize
+
+MOVE8:	LD	B,NPSIZE
+MOVE8L:	LD	A,(HL)		; Get a byte
+	CALL	CAPS		; .capitalize
+	LD	(DE),A		; ..put it
+	INC	HL		; Advance to next
+	INC	DE
+	DJNZ	MOVE8L		; ..and loop til done
+	RET
+
+
+; Data Storage/Buffers
+
+	DSEG			; Put this in Data Segment
+
+PASSFL:	DEFS	1		; Password Flag
+DNAME:	DEFS	2		; Ptr to Name
+DPASS:	DEFS	2		; Ptr to Password
+
+	END
+

@@ -1,0 +1,128 @@
+; PPIP-4.Z80
+;
+; <<4>>        Cyclic Reduncancy Check Verification Module
+;	       -------------------------------------------
+;
+; NOTE:
+; -----
+; The UPDCRC and INITCRC subroutines have been lifted from DISK77B.ASM,
+; Copyright (c) 1984 by Frank Gaude',  all rights reserved.   They use the
+; same algorithm recommended by CCITT for asynchronous communications, and
+; are compatible with CHEK, MODEM7, etc.
+; -------------------------------------------------------------------------
+; Do CRC verify on a disk file
+;
+; Entry:  DE points to completed fcb for file
+;
+; Return:  CRCVAL (globally defined) contains the crc check value
+;	   CARRY SET on return if error
+;
+FCRC:	LD	HL,0		; Initialize the crcval
+	LD	(CRCVAL),HL	; To zero
+	CALL	FOPEN		; Open the file
+	JP	NC,FCRC1	; Continue if ok
+;
+	CALL	ERRET		; Else return error
+	DB	'verify file open error',0
+;
+FCRC1:	LD	HL,CMDBUF	; Point to default DMA address
+	CALL	FACCESS		; Set DMA address
+FCRC2:	CALL	FREAD		; Read one record
+	JP	C,FCRCDUN	; Finished now if end of file
+	CALL	RECRC		; Do crc check on entire record
+	JP	FCRC2		; And loop
+;
+FCRCDUN:
+	XOR	A		; Carry off - normal exit
+	RET
+;
+; --------------------------------------------------------------------------
+; Update CRC for one record.
+;
+; Entry:  HL = starting address (current DMA address)
+;
+; Return:  CRCVAL (globally defined) is updated
+;	   all regs. preserved except PSW
+;
+RECRC:	PUSH	BC		; Save all
+	PUSH	DE
+	PUSH	HL
+	LD	B,RECSZ		; Counter for one record's worth of bytes
+RECRC1:	LD	A,(HL)		; Get a character
+	CALL	UPDCRC		; Update crc with it
+	INC	HL		; Point to next
+	DEC	B		; Decrement count
+	JP	NZ,RECRC1	; Loop 'till done
+	POP	HL		; Restore all
+	POP	DE
+	POP	BC
+	RET			; Back we go
+;
+; -------------------------------------------------------------------------
+; Update CRC with one byte.
+;
+; Entry:  Acc. = byte for update
+;
+; Result:  CRCVAL (globally defined) is updated
+;	   all regs. except PSW are preserved
+;
+UPDCRC:	PUSH	BC		; Update 'crc'..
+	PUSH	HL		; Accumulator..
+	LD	HL,(CRCVAL)	; Pick up partial remainder
+	EX	DE,HL		; De-pair now has partial
+	LD	B,0
+	XOR	D
+	LD	C,A
+	LD	HL,CRCTBL
+	ADD	HL,BC
+	LD	A,(HL)
+	XOR	E
+	LD	D,A
+	INC	H
+	LD	E,(HL)
+	EX	DE,HL
+	LD	(CRCVAL),HL
+	POP	HL
+	POP	BC
+	RET
+;
+; -------------------------------------------------------------------------
+; Initialize tables for fast crc calculations.
+;
+; Entry: none
+;
+; Return:  all registers affected
+;
+INITCRC:
+	LD	HL,CRCTBL
+	LD	C,0		; Table index
+GLOOP:	EX	DE,HL
+	LD	HL,0		; Initialize crc register pair
+	LD	A,C
+	PUSH	BC		; Save index in c-reg
+	LD	B,8
+	XOR	H
+	LD	H,A
+LLOOP:	ADD	HL,HL
+	JP	NC,LSKIP
+	LD	A,10H		; Generator is x^16 + x^12 + x^5 + x^0
+	XOR	H
+	LD	H,A
+	LD	A,21H
+	XOR	L
+	LD	L,A
+LSKIP:	DEC	B
+	JP	NZ,LLOOP
+	POP	BC
+	EX	DE,HL		; DE has 'crc', HL points to table.
+	LD	(HL),D		; Store high..
+	INC	H		; And..
+	LD	(HL),E		; Low byte of 'crc'.
+	DEC	H
+	INC	HL		; Move to next table entry
+	INC	C		; Next index
+	JP	NZ,GLOOP
+	RET
+;
+;			  end of CRC module
+

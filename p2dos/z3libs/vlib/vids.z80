@@ -1,0 +1,107 @@
+	TITLE	"VIDS - Vlib 4.0"
+	NAME	('VIDS')
+;=====================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;---------------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Extracted from VID7.Z80 Ver 1.2 by Joe Wright
+; Date	  : 29 Aug 92
+; Version : 1.0
+; Module  : VIDS
+; Abstract: This module contains the routines SETATT and SETATR which
+;	which use new SA and AT attributes in VLIB4D definitions.
+; Revision:
+;	1.0  29 Aug 92 - Initial.				HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		SETATT, SETATR
+
+; ..from VLIB Get..
+
+	EXT		@PARSV, @SA, @AT, @B15
+
+	.Z80
+	CSEG
+;===============================================================
+; SETATR - Send coded attributes to console.
+;  Entry:  A = Attribute Code
+;	0	= Normal
+;	1	= Blink
+;	2	= Reverse
+;	3	= Blink and Reverse
+;	4	= Underline
+;	5	= Blink and Underline
+;	6	= Reverse and Underline
+;	7	= Blink and Reverse and Underline
+;  Exit :  A = 0 and Zero Flag Set (Z) if Not done, else
+;	   A = FFH and Zero Flag Reset (NZ) if Attributes set Ok
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+SETATR:	PUSH	HL
+	PUSH	DE
+	PUSH	BC		; Save the Registers
+	CALL	SETAT		; Set the attributes
+OK:	OR	0FFH		; Return Ok condition of NZ
+EXIT:	POP	BC
+	POP	DE
+	POP	HL		; Restore regs
+	RET
+
+SETAT:	LD	B,0FH		; Lo nybble binary mask in B
+	LD	H,0		; Clear H (accumulator)
+	AND	7		; Strip Hi bits and set flags
+	LD	C,A		; Save code in C (0-7)
+	LD	DE,(@AT)	; Point to the Attributes (4 of them)
+	CALL	Z,ATTR		; Normal
+	INC	DE		; Next attribute byte
+	RR	C		; Shift control bit into Cy
+	CALL	C,ATTR		; Blink
+	INC	DE		; Next attribute
+	RR	C
+	CALL	C,ATTR		; Reverse
+	INC	DE		; Next attribute
+	RR	C
+	CALL	C,ATTR		; Underline
+	LD	A,(@B15)	; TermCap Type byte
+	BIT	4,A		; Test ANSI bit
+	RET	NZ		; ANSI
+	JR	SATT		; Send final ASCII attribute
+
+ATTR:	LD	A,(@B15)	; TermCap Type byte
+	BIT	4,A		; Test ANSI bit
+	LD	A,(DE)		; Get attribute
+	JR	NZ,ANSI		; It's ANSI, otherwise..
+
+	AND	B		; Strip Hi bits
+	OR	H		; OR in previous bits
+	LD	H,A		; Put 'em back
+	RET			; Don't send ASCII yet
+
+ANSI:	AND	B		; Strip Hi bits
+	LD	H,A		; Move binary to H
+SATT:	CALL	SETATT		; Send the attribute(s) in H
+	RET	NZ		; If no error
+	POP	HL		; Pop CALL to SETAT
+	JR	EXIT		; Return with Zero error
+
+;===============================================================
+; SETATT - Set 16-bit attributes according to specified string
+;  Entry:  H = 1st byte, L = 2nd byte
+;  Exit :  A = 0 and Zero Flag Set (Z) if Not done, else
+;	   A = FFH and Zero Flag Reset (NZ) if Attributes set Ok
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+SETATT:	PUSH	HL
+	PUSH	DE
+	PUSH	BC		; Save regs
+	LD	DE,(@SA)	; Point to the TCAP string
+	JP	@PARSV		; ..jump to VID7 to complete and exit
+
+
+	END
+

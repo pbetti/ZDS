@@ -1,0 +1,171 @@
+                                    JETCP+
+                             Jet Copy for Z3PLUS
+                          08 Jun 91 by Carson Wilson
+                         Sysop, Antelope Freeway RAS
+                            312/764-5162, Chicago
+
+NOTICE: JetCP is copyright 1990 by Carson Wilson, all rights reserved.  You 
+may not redistribute the files in this library individually or charge money 
+for JetCP without the written permission of Carson Wilson.  The author takes 
+no responsibility for consequences of the use or inability to use JetCP.
+
+
+                         1.  WHAT IS IT?
+                         2.  USING JETCP.
+                         3.  PATCHING JETCP.
+                         4.  ERROR HANDLING.
+                         5.  PERFORMANCE.
+
+
+1.  WHAT IS IT?
+
+JetCP was designed as a fastest-possible speed file copy program for Z3PLUS.  
+As such, it does not include many of the amenities found in more sophisticated 
+(but slower) copy programs, such as multiple file capability, copy 
+verification, or user-query options.  While these options are sometimes 
+convenient, they take up memory which can otherwise be used as copy buffer 
+space.  In any case, I find that the sophistication of Z System largely rules 
+out the need for sophisticated utility programs.  For example, to do multiple 
+copies with JetCP, I simply invoke JetCP as part of a ZFILER Group Macro 
+command, or use Dreas Nielsen's remarkable FOR/NEXT utility to generate 
+multiple copy commands.  Similar techniques can be used to do user-prompted 
+copying and verification.
+
+Another significant feature of JetCP is its ability to preserve CP/M Plus 
+datestamps.  The physical datestamp of the copy matches that of the copied 
+file.  However, JetCP does NOT read directory labels, so you should be using 
+the same selection of active logical stamps on both destination and source 
+disks to avoid confusing, CP/M Plus Creation stamps with Last Access stamps.  
+You may also override datestamping with the "/D" option, or by patching JetCP 
+(see below).
+
+JetCP achieves high speed throughput chiefly by making use of several 
+techniques not available under other operating systems, specifically 
+multi-sector i/o and advanced BDOS error handling.  In addition, copy buffers 
+are as large as memory will allow, further speeding copy operation.  As a 
+final offering to Mercury, JetCP doesn't attempt to make the destination file 
+until it has finished reading the input file or has filled its read buffer.  
+The algorithm is thus
+
+     open input file
+     read input file
+     make output file
+     write output file
+
+rather than the more common
+
+     open input file
+     open output file
+     read input file
+     write output file
+
+While this makes JetCP slower than most copy programs at discovering a full 
+destination disk or directory, most of the time it permits greater speed by 
+minimizing drive reselection.
+
+ 
+2.  USING JETCP.
+
+There really isn't too much to using JetCP.  JetCP runs in either help mode if 
+invoked as 
+
+     JETCP
+      or
+     JETCP //
+      or
+     JETCP ?
+ 
+or copies files if invoked as
+
+     JETCP [dir:]ufn [dir:][ufn] [[/]D]
+
+The current defaults are assumed for all items other than the "ufn" which must 
+be included and is the unambiguous name of the source file to be copied.  If 
+you just specify a directory for output, a file of the same name is produced 
+at the destination directory.  The "/D" option toggles datestamping off by 
+default, or on if you have patched JetCP not to preserve datestamps by 
+default, which brings us to...
+
+
+3.  PATCHING JETCP.
+
+If you don't want datestamping (there IS a time penalty involved, as Z3PLUS 
+must relog the destination disk after every copy), you can turn this option 
+OFF by default by changing the byte after the ASCII label "[OPTIONS>" at the 
+start of JETCP.COM from 0FFh to 000h.  Now JetCP will preserve stamps only if 
+you give the "/D" option on the command line.
+
+
+4.  ERROR HANDLING.
+
+Pardon my boast, but JetCP's error handling is among the best.  Several errors 
+merely cause JetCP to prompt you for a "Y" or "N" response.  If the target 
+file exists, JetCP rings the terminal's bell and asks
+
+ Erase destination file (Y/N)? N
+
+If you hit any key other than "Y" or "y" the copy operation is aborted.  If 
+the target file turns out to be Read-Only, JetCP rings again and further asks
+
+ Erase R/O file (Y/N)? N
+
+Again, any response other than a YES is taken as a NO, and the operation is 
+cancelled.
+
+While copying, several problems may develop, the most common of which is 
+probably running out of space.  In this case, JetCP chains to the Z-SYSTEM 
+ERROR HANDLER (make sure you are using one!), with error code 11 decimal.  
+If you are using ZERR, you may cancel the operation, prepend some other 
+commands to the operation, or restart the operation.  ZERR also allows you to 
+optionally cancel the rest of any pending ZEX or SUBMIT script, which is often 
+very important.  Moral: INSTALL AN ERROR HANDLER!  The best currently 
+available is in ZERR12.LBR on most Z-Nodes.
+
+Several other errors may also occur.  Most chain to the current error handler 
+with appropriate messages (duplicate or ambiguous filespecs, illegal directory 
+specification, etc.).  Another sort of error occurs during filestamp transfer, 
+and is usually not fatal.  If there was a problem copying filestamps, JetCP 
+displays one of the following messages, and continues the copy: 
+
+     Set stamp error: BIOS write
+     Set stamp error: BIOS read
+     Set stamp error: drive invalid
+     Set stamp error: BIOS sectors > 1k
+     Set stamp error: no stamps on disk
+     Set stamp error: file not found
+     Set stamp error: unknown
+
+These messages simply signify that the filestamp was not preserved, and 
+attempt to provide clues as to why.  Most often the reason is that there are 
+no stamps on the destination disk.  This is only cause for concern if you 
+thought that there WERE stamps on the destination disk.  Other set stamp 
+errors should rarely occur.  If they do, make note of the circumstances and 
+attempt to remedy them.
+
+One possible difficulty that is not the fault of the target system is "BIOS 
+sectors >1k".  If you get this error, your system reads and writes physical 
+sectors greater than 1 kilobyte in size, and JetCP must be modified to allow a 
+larger directory sector buffer in order to do file datestamping.  Otherwise no 
+datestamps will be preserved, although no harm should result from this type of 
+error (the file copy will still be intact).
+
+Of course, if the source disk did not include valid file datestamps, no 
+attempt will be made to set the stamp of the target file, and none of these 
+errors will appear.
+
+
+5.  PERFORMANCE.
+
+I have used JetCP on a Morrow MD5 and an Osborne Executive, and find that 
+JetCP works significantly faster than currently available file copy programs 
+under Z3PLUS.  Typically JetCP runs about 1.25 times as fast as the best 
+conventional copy programs for CP/M.
+
+Some of the same techniques could probably be implemented in a copy program 
+for CP/M 2.2-based systems, especially under ZSDOS and ZDDOS where extended 
+error handling is available.  Please feel free to use the source code in your 
+own programs, provided credit is given to me as original author.  Please don't 
+use the name JETCP for your project without my permission.
+
+                                   - end -
+

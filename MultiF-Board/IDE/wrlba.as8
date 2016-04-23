@@ -1,0 +1,58 @@
+wrlba:
+		LHLD	@TRK		;Get CPM requested Track Hi&Lo
+		MVI	H,00H		;zero high track byte
+		MOV	A,L		;load low track byte to accumulator
+		CPI	00H		;check for 0 track and skip track loop
+		JZ	lbasec
+		MVI	B,06H		;load counter to shift low track value 6 places to left i.e X 64
+lbatrk:
+		DAD	H		;Add HL to itself 6 times to multiply by 64
+		DJNZ	lbatrk		;loop around 6 times i.e x 64
+
+lbasec:
+		LDA	@SECT		;Get CPM requested sector
+		ADD	L		;Add value in L to sector info in A
+		JNC	lbaoff		;If no carry jump to lba offset correction
+		INR	H		;carry one over to H
+lbaoff:
+		MOV	L,A		;copy accumulator to L
+		DCX	H		;decrement 1 from the HL register pair
+					;HL should now contain correct LBA value
+
+;---------
+		LXI     D, msgLBA
+		CALL	PSTRING		;(LBA = 00 (<-- Old "Heads" = 0 for these drives).
+;---------
+		MVI	D,0		;Send 0 for upper cyl value
+		MVI	E,REGcylinderMSB
+		CALL	IDEwr8D		;Send info to drive
+;---------
+		MOV	A,D		;print upper "cylinder" byte
+		CALL	phex
+;---------
+
+		MOV	D,H		;load lba high byte to D from H
+		MVI	E,REGcylinderLSB
+		CALL	IDEwr8D		;Send info to drive
+;---------
+		MOV	A,D		;print high LBA byte
+		CALL	phex
+;---------
+
+		MOV	D,L		;load lba low byte to D from L
+		MVI	E,REGsector
+		CALL	IDEwr8D		;Send info to drive
+
+;---------
+		MOV	A,D		;print low LBA byte
+		CALL	phex
+		LXI     D, MSGBracket	;)$ and closing bracket
+		CALL	PSTRING
+;---------
+
+		MVI	D,1		;For now, one sector at a time
+		MVI	E,REGseccnt
+		CALL	IDEwr8D
+
+		RET
+;================================================================================

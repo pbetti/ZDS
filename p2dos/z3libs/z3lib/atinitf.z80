@@ -1,0 +1,69 @@
+;	TITLE	"ATINITF0 - Z3lib 4.0"
+	NAME	('@INITF')
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3PRSx modules by Richard Conn
+; Date    : 28 Jul 89
+; Version : 1.3
+; Module  : ATINITF0
+; Abstract: This module contains a modified routine extracted
+;	from Z3PRS1 and Z3PRS2 for code efficiency reasons.
+;	@INITF initializes an addressed FCB for a complete parse.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		@INITF, @IFCB
+
+; From Z3LIB Get..
+
+	EXT		RETUD
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - @INITF
+; Entry: DE - Points to FCB to initialize
+; Exit : - Nothing returned.  The FCB is initialized
+;	 DE - Points to CR field of FCB
+; Uses : AF,BC,DE
+; Special Requirements: None
+;===============================================================
+
+@INITF:	XOR	A
+	LD	(DE),A		; Set default disk (DN byte is 0)
+	INC	DE		; ..Pt to file name field
+	CALL	@IFCB		; Fill 1st part of FCB
+		   ;..Fall thru to run again..
+;===============================================================
+; NAME - @IFCB
+; Entry: DE - Points to FCB area to initialize
+; Exit : - Nothing returned.  The FCB is initialized
+;	 DE - Points to CR field of FCB
+; Uses : AF,BC,DE
+; Special Requirements: None
+;===============================================================
+; Fill FN, FT, EX, S1, S2, RC, and following CR (or DN) fields
+
+@IFCB:	EX	DE,HL		; Put FCB pointer in HL
+	LD	BC,11*256+' '	; Store 11 spaces
+L0:	LD	(HL),C		; Stuff char
+	INC	HL		; .bump ptr
+	DJNZ	L0		; ..and loop til done
+	XOR	A
+	LD	(HL),A		; Set EX to Zero
+	INC	HL
+	CALL	RETUD		; Get current user
+	LD	(HL),C		; ..and set S1 to Current User
+	INC	HL
+	LD	B,3		; Store 3 Zeroes
+L1:	LD	(HL),A		; Stuff byte of Zero
+	INC	HL		; .Pt to next
+	DJNZ	L1		; ..loop til done
+	EX	DE,HL		; Restore pointer to DE
+	RET
+
+	END
+

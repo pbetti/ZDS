@@ -1,0 +1,221 @@
+; DELETE
+;
+; This subroutine is responsible for the deletion of a record
+; from the database. Actually, the record will only be marked
+; for deletion. It is the responsibility of the EXIT routines
+; to perform the actual deletion.
+;
+; The method used to mark the files is to set a byte, with an 
+; '*', in the index file. The list subroutine will check this 
+; byte and if the record is deleted, the terminals listing is
+; displayed in the standout mode.
+;  
+; The delete function is a toggle. This means that depressing
+; the [D]elete key will delete and un-delete the record.
+
+delete:	push	hl		; save registers
+	push	de
+	push	bc
+
+	ld	de,fcb3		; open MERGE.TCP
+	call	initfcb
+	call	f$mopen
+	jp	nz,f?mopen
+
+	ld	hl,buf1		; get start address of buffer to scan
+	ld	de,iname	; get string to scan for
+	call	instr		; find index name in buffer
+	jp	nz,delerr	; error handler
+	ld	bc,17		; point to deletion flag
+	add	hl,bc
+	ld	a,(hl)
+	cp	'*'		; is record marked for deletion
+	jp	z,undel		; yes - then undelete
+	ld	a,'*'
+	ld	(hl),a
+	ld	a,(delflg)	; get deletion counter
+	inc	a		; adjust counter to show 1 more deletion
+	ld	(delflg),a	; save counter
+	jp	dexit
+
+undel:	ld	a,' '		; undelete mark is a space
+	ld	(hl),a		; save in buffer
+	ld	a,(delflg)	; get deletetion counter
+	dec	a		; adjust counter to show 1 less deletion
+	ld	(delflg),a	; save counter
+
+dexit:	ld	hl,tbuf		; point to TBUF
+	call	setdma		; set DMA
+	ld	de,fcb1		; get record number
+	ld	hl,(rec)	; point to FCB1
+	ld	bc,(recof)	; get offset into database
+	add	hl,bc		; add offset to record number
+	call	r$read		; read record
+	jp	nz,r?read	; error routines
+	call	data		; display data
+	pop	bc		; restore registers
+	pop	de
+	pop	hl
+	jp	exopt
+
+delerr:	call	gxymsg
+	db	24,5
+	db	2,'ERROR',1
+	db	' - Unable to delete record'
+	db	0
+	call	wait1s
+	call	wait1s
+	call	at
+	db	24,5
+	call	ereol
+	jp	dexit
+
+; This next routine is responsible for the actual deletion of the marked
+; records in the database. It will use the information in BUF1 which is
+; the NEWFILE database index. The records that are marked for deletion 
+; are so marked in this index. The index records will be read from BUF1
+; and if they are not marked for deletion, they will be copied to a file
+; designated as the output file for the delete function.
+
+delex:	ld	hl,buf3		; point to beginning of BUF3
+	ld	a,0		; put 0 in A
+	ld	bc,buf3+2048	; point to end of BUF3
+
+zmore:	ld	(hl),a		; zero BUF3	
+	inc	hl		; advance pointer
+	push	hl		; save on stack
+	sbc	hl,bc		; have we reached the end
+	pop	hl		; restore from stack
+	jp	nz,zmore	; loop until done
+
+	ld	hl,versn	; point to loaded version number
+	ld	de,verbuf	; point to buffer
+	ld	bc,4		; number of bytes in version number
+	ldir			; save version number in buffer
+	
+dfile:	ld	hl,buf1		; point to buffer
+	ld	de,buf3		; point to destination buffer
+	
+dx:	ld	a,(hl)		; get first character in terminal name
+	cp	' '		; is it blank
+	jp	z,delwt		; if blank, we're through
+	ld	bc,17		; get offset to delete flag
+	add	hl,bc		; add offset to buffer pointer
+	ld 	a,(hl)		; put character in A
+	cp	'*'		; has record been deleted?
+	jp	nz,deltr	; if not deleted write to BUF3
+
+decon:	ld	a,(delflg)	; get deletion flag
+	dec	a		; decrement counter
+	ld	(delflg),a	; save new counter
+
+	inc	hl		; point to next name
+	jp	dx		; loop until done
+
+deltr:	ld	bc,16		; negative offset to terminal name
+	sbc	hl,bc		; point to terminal name
+	ld	bc,16		; number of bytes to transfer
+	ldir			; move terminal name to BUF3
+	inc	hl		; point to record number
+	inc	hl		; point to next name
+	jp	dx		; loop until done
+
+delwt:	call	getv		; get new version number
+	call	gxymsg
+	db	23,5
+	db	2,'Writing File:  ',1
+	db	0
+	call	ereol
+
+	ld	a,0ffh		; get set indicator
+	ld	(dlfg),a	; set indicator
+	ld	hl,buf3		; point to BUF3
+	jp	wrtndx		; write to file
+
+wrndx:	ld	(buf),hl	; save buffer address
+	ld	de,tbuf		; point to TBUF
+	ld	bc,128		; number of bytes to move
+	ldir			; move HL to DE
+	ld	hl,tbuf		; point to TBUF
+	ld	de,term		; get string to search for
+	ld	b,128		; length of TBUF
+	ld	c,1		; length of vector to find
+	call	scanner		; find DE in HL
+	jp	nz,wrmre	; if not found, skip inserting version number
+	ex	de,hl		; put destination in DE
+	ld	hl,verbuf	; point to version number buffer
+	ld	bc,16		; length of version number
+	ldir			; move to TBUF
+	ex	de,hl		; restore HL
+
+wrmre:	ld 	de,fcb3		; point to FCB
+	call	f$write		; write record to MERGE.TCP
+	jp	nz,f?write	; error routine
+	ld	hl,(buf)	; get buffer address
+	ld	bc,128		; length of buffer
+	add	hl,bc		; increment buffer pointer
+	ld	(buf),hl	; save new buffer address
+	dec	hl		; point to last byte of buffer
+	ld	a,(hl)		; place character in A
+	cp	0		; is it zero
+	inc	hl		; point to first byte again
+	jp	nz,wrndx	; if zero, end of transfer
+
+; Read entries in BUF3 and find the corresponding data blocks and
+; write them to the NEW TCAP file. Deleted records will be processed
+; from this point. If the deleted flag is set, the exit routines will
+; jump to this point for processing.
+	
+wrnd:	ld	hl,buf3		; point to BUF3
+	ld	(buf),hl	; save buffer address
+
+wnxt:	ld	hl,(buf)	; point to buffer
+	ld	a,(hl)		; get first character in buffer
+	cp	0		; if blank, we're through
+	jp	z,mexit		; exit routine
+	ld	de,termid	; point to terminal id string
+	ld	bc,16		; length of id string
+	ldir			; transfer id string to TERMID
+	ld	hl,buf1		; point to string to scan
+	ld	de,termid	; point to string to scan for
+	call	instr		; scan BUF1 for TERMID
+	jp	z,wtp		; if found - write from NEW TCAP
+	ld	hl,buf2		; point to vector to scan
+	call	instr		; scan BUF2 for TERMID
+	jp	nz,merr		; merge error handler
+	ld	de,fcb2		; point to CURRENT TCAP file
+	ld	bc,(recof2)	; get proper record offset
+	ld	(ofset),bc	; save in buffer
+	jp	wtp1		; read/write record
+
+wtp:	ld	de,fcb1		; point to NEW TCAP file
+	ld	bc,(recof)	; get proper record offset
+	ld	(ofset),bc	; save in buffer
+
+wtp1:	ld	bc,17		; offset to delete flag
+	add	hl,bc		; point to delete flag
+	ld	a,(hl)		; put delete flag in A
+	cp	'*'		; is record deleted?
+	jp	z,wdl		; if yes - go to next record
+	dec	hl		; point to record number
+	ld	a,(hl)		; place in A
+	cp	0ffh
+	jp	nz,wtcn
+	ld	a,0
+
+wtcn:	ld	(rec),a		; save record number
+	ld	hl,(rec)	; put record number in HL
+	ld	bc,(ofset)	; get record offset
+	add	hl,bc		; add in record offset
+	call	r$read		; read file
+	jp	nz,r?read	; error routines
+	ld	de,fcb3		; point to MERGE.TCP FCB
+	call	f$write		; write to file
+	jp	nz,f?write	; error routines
+
+wdl:	ld	hl,(buf)	; get buffer address
+	ld	bc,16		; length of entry in BUF3
+	add	hl,bc		; advance to next entry
+	ld	(buf),hl	; save new buffer address
+	jp	wnxt		; contiue
+

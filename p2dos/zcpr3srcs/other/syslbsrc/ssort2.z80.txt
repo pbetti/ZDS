@@ -1,0 +1,111 @@
+	TITLE	"SSORT2 - Syslib 4.3"
+	NAME	('BSORT')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Joe Wright with touches and formatting by Harold F. Bower
+; Date    : 19 Oct 90
+; Version : 2.0
+; Module  : SSORT2
+; Abstract: This module contains the core Shell Sort routine, BSORT.
+;	It uses data provided by the SSB managed by the support code
+;	in SSORT1 module (Entry point SORT).  The two words of scratch
+;	data space are borrowed from the core SSORT1 module.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+SID	EQU	'S'		; Identify this as the SYSLIB sort
+
+; Module Entry Points
+
+	PUBLIC		BSORT, SID
+
+; Externals
+
+	EXT		SNREC			; Variable from the SSB
+	EXT		ICOMPARE, ISWAP		; Routines from SORT1
+	EXT		SJJ, SGAP		; Available vars from SSORT1
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - BSORT
+; Entry: None - SSB Must be set from calling SORT
+; Exit : None - The Pointers are sorted
+; Uses : AF,BC,DE,HL
+;NOTE:
+;===============================================================
+; Shell Sort --  This sort routine adapted from "Software Tools" by
+;	Kernigan and Plaugher, page 106.  copyright, 1976, Addison-Wesley.
+; On Entry, BC = Number of Entries
+
+; This is the main Sort loop for the Shell Sort in "Software Tools" by K&P
+
+BSORT:	LD	HL,(SNREC)	; Number of items to sort from the SSB
+	LD	(SGAP),HL	; Set initial gap to N for first division by 2
+
+; This is the top of the loop.  Each iteration starts here
+; For (GAP = N/2; GAP > 0; GAP = GAP/2)
+
+SORT0:	LD	HL,(SGAP)	; Get previous gap
+	SRL	H		; Shift right w/zero fill to divide by 2
+	RR	L
+
+	LD	A,L		;  Test for Zero
+	OR	H
+	RET	Z		; Done with sort if Gap/2 = 0
+
+	BIT	0,L		; Do we have an Odd gap?
+	JR	NZ,SORT1	; .jump if so..
+	DEC	HL		; ..else make it Odd
+
+SORT1:	LD	(SGAP),HL	; Set new value of Gap
+	LD	(SJJ),HL	; Set J = Index = Gap for following loop
+
+; For (I = GAP + 1; I <= N; I = I + 1)
+
+RIGHT:	LD	HL,(SJJ)	; New index, New J
+	INC	HL
+	LD	(SJJ),HL
+	EX	DE,HL		; Hold J in DE
+
+; Having saved the Index in Variable J for the next iteration of RIGHT,
+; the DE pair will hold volatile J around calls to ICOMPARE and ISWAP.
+; Test for I <= N
+
+	LD	HL,(SNREC)	; Get N
+	OR	A		; Compare by subtraction
+	SBC	HL,DE		; ..carry set means I > N
+	JR	C,SORT0		; Start over if I > N
+
+; For (J = I - GAP; J > 0; J = J - GAP)
+
+LEFT:	LD	HL,(SGAP)	; Get Gap
+	EX	DE,HL		; ..J to HL, Gap to DE
+	SBC	HL,DE		; Compute J - Gap
+	JR	C,RIGHT		; If Carry from subtractions, J < 0
+	JR	Z,RIGHT		; If zero, J = 0
+
+; Set JG = J + GAP
+
+	EX	DE,HL		; J to DE, Gap to HL
+	ADD	HL,DE		; J + Gap to HL
+
+; If (V(J) <= V(JG))
+
+	CALL	ICOMPARE	; J in DE, JG in HL  (Indices preserved)
+
+; ...Then Break
+
+	JR	NC,RIGHT	; Loop if in order or equal
+
+; ...Else Exchange
+
+	CALL	ISWAP		; J in DE, JG in HL  (Indices preserved)
+
+; End of Inner-most For Loop
+
+	JR	LEFT		; ..back for more
+
+	END
+

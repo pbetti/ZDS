@@ -1,0 +1,160 @@
+; Modified from:
+;
+; SYSLIB Module Name:  SINLINE
+; Author:  Richard Conn
+; SYSLIB Version Number:  3.6
+; Module Version Number:  1.1
+;
+; MNLINE -- 
+;	Input line editor
+;	Input a line from CON: into the buffer pointer to by HL
+;	Input Parameters:
+;		HL= Pointer to buffer
+;		A = Echo flag (A=0 No echo)
+;	Output Parameters:
+;		No registers affected
+;	Input Line Editing Characters Are --
+;		<bksp> - Delete previous character and back up cursor
+;		<CR>   - Terminate input
+;		^X     - Erase current line and start over
+;
+mnline:	putrg			; save registers
+	push	af		; save PSW
+	ld	a,0ffh		; echo on
+	ld	(echo),a	; save echo flag
+	ld	(stadd),hl	; save start of string
+
+inl0:	ld	hl,(stadd)	; get start of string
+	ld	c,0		; set character count
+	
+inl1:	call	cin		; get input character from console
+	cp	'^'		; lead-in character?
+	jp	z,leadin
+	cp	bksp		; backspace?
+	jp	z,inbs
+	cp	del		; delete?
+	jp	z,indel
+	cp	tab		; tabulate?
+	jp	z,intab
+	cp	cr		; carriage return?
+	jp	z,incr
+	cp	lf		; line feed?
+	jp	z,inlf
+	cp	ctlx		; ^X?
+	jp	z,rexstrt
+	call	isctrl		; did user input a control character?
+	jp	z,inl1
+	ld	(hl),a		; store character
+	inc	hl		; point to next
+	call	ctrl		; print character
+	inc	c		; increment character count
+	ld	a,(bfsize)	; get maximum character count
+	cp	c		; have we reached the end of the field?
+	jp	z,incr		; yes - do carriage return routine
+	jp	inl1		; otherwise - get another character
+	
+intab:	ld	(hl),a		; store <TAB>
+	inc	hl		; point to next character position
+	call	intab0		; tabulate
+	jp	inl1
+
+rexstrt: ld	a,c		; check for empty line
+	or	a		; 0 characters?
+	jp	z,inl0
+	call	exbs		; <bksp>
+	jp	rexstrt
+
+inlf:	jp	inl1
+
+indel:
+inbs:	call	exbs		; execute <bksp>
+	jp	inl1
+
+exbs:	call	bol		; beginning of line?
+	ret	z		; continue if so
+	ld	a,(ashex)	; ascii/hex flag 0=ASCII FF=HEX
+	jp	z,bsex		; if ascii - backspace once
+	call	bsex		; backspace twice for HEX
+bsex: 	dec	c		; decrement count
+	dec	hl		; back up
+	ld	a,(echo)	; echo on?
+	or	a		; 0=NO
+	ret	z
+	ld	a,bksp		; print <bksp>
+	call	cout
+	ld	a,' '		; print <SP>
+	call	cout
+	ld	a,bksp		; print <bksp>
+	call	cout
+	ret
+
+incr:	ld	(hl),0		; store ending zero
+	ld	a,c		; get character count in A
+	ld	(bfccnt),a	; save count
+	pop	af		; restore PSW
+	getrg			; restore regs
+	ret
+
+leadin:	call	capin		; get another character and capitolize
+	call	isalpha		; is it A-Z?
+	jp	nz,leadin	; if not, get another character
+	sbc	40h		; make into control character
+	ld	(hl),a		; store character
+	inc	hl		; point to next
+	call	pa2hc		; print as HEX characters
+	inc	c		; increment character count
+	ld	a,(bfsize)	; get maximum character count
+	cp	c		; have we reached the end of the field?
+	jp	z,incr		; yes - do carriage return routine
+	jp	inl1		; otherwise - get another character
+
+bol:	ex	de,hl		; DE=HL
+	ld	hl,(stadd)	; get start address
+	ex	de,hl		; HL restored
+	ld	a,d		; check for match
+	cp	h		; match?
+	ret	nz		; no match
+	ld	a,e		; check for complete match
+	cp	l
+	ret	nz		; no match
+	push	af		; save flags
+	ld	a,bell		; beep
+	call	cout
+	pop	af
+	ret
+
+ctrl: 	push	bc		; save BC	
+	ld	b,a		; save character in B
+	ld	a,(echo)	; check echo flag
+	or	a		; 0=no echo
+	ld	a,b		; restore char
+	pop	bc		; restore BC
+	ret	z		; no output if no echo
+	cp	' '		; <SP>?
+	jp	c,ctrl1
+	jp	cout		; print it normally
+ctrl1:	cp	tab		; trap <TAB>
+	jp	z,intab0
+ 	jp	ccout		; print with ctrl-char processing
+
+stadd:	ds	2		; temporary storage for buffer start address
+echo:	ds	1		; echo flag (0=no echo)
+
+intab0:	ld	a,c		; get character count
+	and	7		; mask for difference from 8
+	ld	b,a		; store in reg B temporarily
+	ld	a,8		; subtract from 8
+	sub	b
+	ld	b,a		; <SP> count in B
+	add	a,c		; add to character count
+	ld	c,a	
+	ld	a,(echo)	; echo on?
+	or	a		; 0=no
+	ret	z
+	ld	a,' '		; <SP> in A
+intab1:	call	cout		; print <SP>
+ 	dec	b		; count down
+	jp	nz,intab1
+	ret
+
+

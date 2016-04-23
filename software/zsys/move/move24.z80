@@ -1,0 +1,916 @@
+; Program: MOVE
+; Author: Joe Wright
+; Date: 28 February 1986
+; Version: 2.0
+
+vers	equ	24
+subvers	equ	' '
+			; "S" option now used to include or exclude system
+			; files.  Old option "O" still available as synonym
+			; for option "E".  Corrected bug in inspect mode,
+			; found by Howard Goldstein, which caused the program
+			; to be aborted sometimes by the BDOS when "No" was
+			; selected.
+			; November 24, 1992  Gene Pizzetta
+
+; vers	equ	23	; More robust check for Z-System.  Corrected check
+			; for CP/M Plus (BDOS returns 31h, not 30h).  No
+			; longer prints "NoName" if DU has no name.  Added
+			; "E" option to erase existing file at destination
+			; and "N" to skip the move if file exists at
+			; destination.  Old options "O" and "S", respectively,
+			; still work.  Old "Q" option, which did nothing
+			; anyway, now toggles quiet mode.  Added "I" inspect
+			; mode option.  Also obeys quiet flag.  These option
+			; changes make MOVE more compatible with COPY and
+			; other Z utilities.  Now reports number of files
+			; moved and can be configured to print this report
+			; even in quiet mode.  All command line options
+			; configurable as defaults.  Slash no longer required
+			; before options if they are the third token on the
+			; command line.  Can now abort ("Q" or ^C) at any
+			; prompt.  Intelligent help screen shows current
+			; effect of options.  On error invokes error handler
+			; and sets program error flag as follows:  19 =
+			; invalid option; 2 = invalid directory; 10 = no
+			; matching source file found; 255 (FFh) = user abort;
+			; 4 = Z3Plus (we cannot run under that system) or no
+			; vacant user area (which is required).  Can be
+			; configured to consider user abort as an error or
+			; not.  Configuration via ZCNFG.  Thanks to Howard
+			; Goldstein for his beta testing.
+			; October 30, 1992  Gene Pizzetta
+
+; vers	equ	22	; Fixed bug in handling of large files.  Needed to
+			; set S2, not s1 wild.  Modified move algorithm for
+			; increased speed.  Now uses "search next" and does
+			; only one write per directory sector per file
+			; instead of possibly four.  Cleaned up command
+			; line parsing code.  Removed special handling for
+			; stand-alone user numbers as DUSCAN seems to do it
+			; right.  Shortened code in SCANER: and fixed
+			; IFCBG: to work with extended environment.
+			; Shortened code in several other places as well.
+			; Added a call to FRESET just before deleting a
+			; file in the destination area to avoid problems
+			; when running under DRI BDOS.  Added conditional
+			; assembly for type 4.
+			; December 4, 1989  Howard Goldstein
+
+; vers	equ	21	; "B" version, one Bridger hint, one bug fix.
+			; Wildcard to both extent bytes before file
+			; existence test in "mainloop:", clear carry
+			; flag before the "sbc hl,de" a little after 
+			; the call to "eval10".
+			; December 31, 1987	Bruce Morgen
+			; "A" version, incorporated Bridger's FRESET
+			; December 30, 1987	Bruce Morgen
+			; ZCPR33 Type 3 format with safety header, search
+			; for an empty user area instead of bombing out
+			; everything in user 31, established DSEG - with
+			; initialization to assure predictable re-entrance.
+			; Fixed wildcard FCB (had too many "?"s).  Allow
+			; legitimate DU/DIR destination specs without
+			; colons, ditto standalone user numbers.  Added
+			; intelligent help message (change name to MAKE or
+			; MV, help also changes).  Scanning code ATTEMPTS
+			; to following all Z33/BGii stipulations where
+			; applicable....
+			; December 28, 1987	Bruce Morgen
+
+;vers	equ	20	; Fixed drive selection bug. Add Query as default
+			; option. Report directories in DU:DIR form.
+			;  28 Feb 86  jww
+
+	.accept	'Program type (3 or 4) ',type
+
+biosv	equ	001h
+fcb1	equ	05ch
+usr1	equ	fcb1+13
+fcb2	equ	06ch
+usr2	equ	fcb2+13
+tbuf	equ	080h
+
+ctrlc	equ	3
+bel	equ	7
+bs	equ	8
+tab	equ	9
+cr	equ	13
+lf	equ	10
+
+	.request	freset,zslib,z3lib,syslib
+
+	ext	freset
+	ext	eatspc,eatnspc,gcomnam,comnam,paudc		; ZSLIB
+	ext	z3init,zsyschk,z33chk,getccp,dutdir,dnscan	; Z3LIB
+	ext	duscan,dirscan,getquiet,puter2,inverror
+	ext	cout,eprint,epstr,pfn1,bdos,caps,cin,phl4hc	; SYSLIB
+	ext	phldc,hfilb,fillb,@fncmp
+
+
+; TYPE 3 HEADER
+
+; Code modified as suggested by Charles Irvine to function correctly with
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+
+entry:
+ IF TYPE EQ 3
+	jr	start0		; Must use relative jump
+	nop			; Filler
+ ELSE
+	rst	0
+	dw	start
+ ENDIF	; TYPE EQ 3
+	db	'Z3ENV'
+z3type:	db	type
+z3eadr:	dw	0		; Filled in by Z33
+	dw	entry		; Intended load address
+;
+; Configuration . . .
+;
+	db	'MOVE'		; for ZCNFG
+	db	vers/10+'0',vers mod 10+'0','  '
+ovrflg:	db	0		; FFh=overwrite existing file
+skpflg:	db	0		; FFh=skip existing file
+qryflg:	db	0		; FFh=query before moving file
+sysflg:	db	0FFh		; FFh=exclude system files
+qtflag:	db	0		; FFh=quiet mode
+sumflg:	db	0		; FFh=summary even if quiet
+abterr:	db	0FFh		; 0=no error on abort
+ IF TYPE EQ 3
+start0:	ld	hl,0		; Point to warmboot entry
+	ld	a,(hl)		; Save the byte there
+	di			; Protect against interrupts
+	ld	(hl),0c9h	; Replace warmboot with a return opcode
+	rst	0		; Call address 0, pushing RETADDR
+				; onto stack
+retaddr:
+	ld	(hl),a		; Restore byte at 0
+	dec	sp		; Get stack pointer to point
+	dec	sp		; To the value of RETADDR
+	pop	hl		; Get it into HL and restore stack
+	ei			; We can allow interrupts again
+	ld	de,retaddr	; This is where we should be
+	xor	a		; Clear carry flag
+	push	hl		; Save address again
+	sbc	hl,de		; Subtract -- we should have 0 now
+	pop	hl		; Restore value of RETADDR
+	jr	z,start		; If addresses matched, begin real code
+
+	ld	de,notz33msg-retaddr	; Offset to message
+	add	hl,de
+	ex	de,hl		; Switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; Return via BDOS print string function
+notz33msg:
+	db	'Not Z33+$'	; Abort message if not Z33-compatible
+ ENDIF	; TYPE EQ 3
+
+start:	ld	hl,(z3eadr)
+	call	zsyschk		; must have Z-System
+	ret	nz		; (we don't)
+	call	z3init		; initialize environment
+	ld	(stack),sp	; store stack pointer
+	ld	sp,stack	; ..and set up new stack
+;
+; Turn off ZRDOS PUBLIC
+;
+	ld	de,126
+	add	hl,de		; point to PUBLIC bytes
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	(public),de	; save them
+	xor	a
+	ld	(hl),a
+	dec	hl
+	ld	(hl),a		; Turn public off
+	ld	c,12		; Get dos version
+	call	bdos
+	cp	30h
+	jp	nc,badver	; (can't run under Z3Plus)
+	ld	hl,(ovrflg)	; move default options
+	ld	(opeflg),hl
+	ld	hl,(qryflg)
+	ld	(opiflg),hl
+	call	getquiet	; is ZCPR quiet flag set?
+	rra			; make it 0 or FF
+	sbc	a,a
+	jr	nz,start2	; (yes)
+	ld	a,(qtflag)	; no, get quiet config byte
+start2:	ld	(opqflg),a	; ..and store in Q option flag
+	ld	hl,0		; initialize file count
+	ld	(filcnt),hl
+	ld	hl,dftnam	; point default program name
+	call	gcomnam		; ..and get invocation name
+	ld	a,32
+	ld	(empusr),a
+	ld	hl,fcbwild
+	ld	(hl),0
+	inc	hl
+	ld	b,11
+	ld	a,'?'
+	call	hfilb
+	xor	a
+	ld	b,4
+	call	fillb
+	ld	hl,fcb1+1
+	ld	a,(hl)
+	cp	' '
+	jp	z,help		; Invoked without command tail
+	cp	'/'
+	jr	nz,gotname
+	inc	hl
+	ld	a,(hl)
+	cp	'/'
+	jp	z,help		; Help is asked for
+;
+;  Search for options
+;
+gotname:
+	ld	hl,tbuf+2	; Beginning of command tail
+	call	eatspc		; skip over first token
+	call	eatnspc
+	call	eatspc
+	jr	z,got0		; (no options)
+	cp	'/'
+	jr	z,gotopt	; (we've got options)
+	call	eatnspc		; skip over second token
+	call	eatspc
+	jr	z,got0		; (no options)
+	cp	'/'
+	jr	nz,gotop1	; (no slash)
+gotopt:	inc	hl		; point to next option
+gotop1:	ld	a,(hl)		; Get option character
+	or	a
+	jr	z,got0		; (end of options)
+	cp	'E'		; erase existing file
+	jr	z,opte
+	cp	'O'		; same as E
+	jr	z,opte
+	cp	'N'		; skip option
+	jr	z,optn
+	cp	'S'		; system files
+	jr	z,opts
+	cp	'I'		; inspect mode
+	jr	z,opti
+	cp	'Q'		; quiet mode
+	jr	z,optq
+	cp	' '		; allow trailing and embedded spaces
+	jr	z,gotopt
+	call	eprint
+	db	'Invalid option.',0
+	ld	a,19		; error code
+	jp	exit
+;
+opte:	ld	de,opeflg
+	jr	setopt
+optn:	ld	de,opnflg
+	jr	setopt
+opti:	ld	de,opiflg
+	jr	setopt
+opts:	ld	de,opsflg
+	jr	setopt
+optq:	ld	de,opqflg
+setopt:	ld	a,(de)
+	cpl
+	ld	(de),a
+	jr	gotopt
+;
+;  Resolve Drive/User with ZCPR3 constructs
+;
+got0:	ld	a,(fcb2+15)	; Check for valid z33 parse
+	or	a
+	jr	nz,jpinvdu	; Complain immediately if we detect it
+	ld	a,(fcb1+15)
+	or	a
+	jr	nz,jpinvdu
+	ld	a,(fcb1)	; Source
+	dec	a		; 0ffh if current drive, otherwise drvno.
+	call	m,getdsk	; Return selected disk
+	ld	(drvno),a	; Save drive number
+	ld	hl,fcb2+1	; Point second FCB name area
+	ld	a,(hl)
+	cp	'/'		; options?
+	jr	z,got1		; (it looks like it)
+	cp	' '		; Is it blank?
+	jr	nz,doscan	; If not, go parse possible DU
+got1:	dec	hl		; Point back to drive byte
+	ld	a,(hl)
+	dec	a
+	call	m,getdsk	; Via BDOS if necessary
+	ld	b,a		; Stow in B
+	ld	a,(usr2)	; Get CCP-parsed user code
+	ld	c,a		; Into C
+got2:	ld	a,(usr1)
+	ld	(srcusr),a
+	cp	c
+	jr	z,jpinvdu	; Users must be different
+	ld	a,c
+	ld	(desusr),a
+	ld	a,(drvno)
+	cp	b
+	jr	nz,jpinvdu	; Drives must be the same
+	ld	c,14		; Select drive
+	ld	e,a
+	call	bdos
+	jr	search0
+;
+doscan:	call	scaner		; Parse du or dir
+	jr	nz,got2		; Use that if successful
+jpinvdu:
+	jp	invdu
+;
+;  Find a scratchpad user area
+;
+search0:
+	ld	hl,desusr
+	ld	a,(empusr)
+search1:
+	dec	a
+	jp	m,usfail
+	cp	(hl)
+	jr	z,search1
+	ld	(empusr),a
+	call	gsuser
+	ld	de,fcbwild	; All wildcards
+	call	searchf
+	jr	nz,search0
+;
+;  Confirm file existence
+;
+userok:	ld	a,(srcusr)
+	call	gsuser
+	ld	de,fcb1
+	call	searchf
+	jp	z,nofile
+	ld	a,(fcb1+7)	; Get "found via ZDOS public" flag
+	bit	7,a
+	jp	nz,nofile	; File considered not found if so
+;
+;  Check for CON: abort, then do per-file main loop
+;
+mainloop:
+	ld	a,(opiflg)	; inspect mode?
+	or	a
+	jp	nz,inspect	; (yep, ask)
+mloop1:	ld	c,6		; Direct console input
+	ld	e,0ffh
+	call	bdos
+	cp	3		; Control C?
+	jp	z,abort
+	ld	de,fcb1
+	call	searchf		; Search First function
+	jp	z,quit		; No more found
+	call	findir		; Point to specific entry in tbuf
+	ld	bc,16		; Move 16 bytes
+	ld	de,fcbdrv
+	ldir
+	ld	a,(fcb1)	; Drive number
+	ld	(fcbdrv),a	; Replace user number from BDOS
+	call	chksys		; Including system files?
+	jp	nz,filex3	; (no, and this file is one)
+	ld	a,(desusr)
+	call	gsuser
+	ld	a,'?'		; Wild card
+	ld	(fcb1+12),a
+	ld	(fcb1+14),a
+	ld	(fcbext),a	; Make extents wild
+	ld	(fcbs2),a
+
+	ld	de,fcbdrv
+	call	searchf
+	jp	nz,filexists	; Bail out if file exists in destination
+	ld	a,(opqflg)
+	or	a
+	jr	nz,nofn
+	call	eprint
+	db	'Moving ',0
+	ld	a,(srcusr)
+	call	pdir
+	ld	de,fcbname	; Point to name
+	call	pfn1
+	call	eprint
+	db	' to ',0
+	ld	a,(desusr)
+	call	pdir
+	call	eprint
+	db	cr,lf,0
+nofn:	ld	a,(srcusr)
+	call	gsuser
+	call	moveit
+	ld	hl,(filcnt)
+	inc	hl
+	ld	(filcnt),hl
+	jp	mainloop
+
+moveit:	ld	c,17		; Start with "search first"
+	ld	de,fcbdrv
+;
+; At this point, de points to fcb and c contains function code
+;
+mvt0:	call	search		; Find matching entry
+	ret	z		; Not this one, try again
+	ld	b,0		; Init counter
+	call	findir		; point hl to dir entry
+mvt1:	ld	a,(desusr)
+	ld	(hl),a		; Replace current with destination
+	inc	b		; Bump count of entries changed in this sector
+;
+; Check for additional matches in current dir sector
+;
+mvt2:	ld	a,20h
+	add	a,l		; Point to next entry
+	jr	z,mvt3		; No more entries; write sector
+	ld	l,a
+	ld	a,(srcusr)	; Source user
+	cp	(hl)		; Compare with user in dir entry
+	jr	nz,mvt2
+
+	push	hl		; Save regs
+	push	de
+	push	bc
+	inc	hl		; Point to filename
+	inc	de
+	ld	b,11		; Compare 11 bytes (file name and type)
+	call	@fncmp
+	pop	bc
+	pop	de		; restore pointers
+	pop	hl
+	jr	z,mvt1		; Match.  Fix user number and check next
+	jr	mvt2		; No match.  Check next entry
+
+mvt3:	call	write		; Write the buffer back to disk
+	call	sync		; Do "search nexts" to keep in sync
+	jr	mvt0
+;
+;  SYNC does "search next" calls to keep BDOS in sync with
+;  additional changes we might have made in the directory sector.  On
+;  entry, DE contains pointer to FCB and B contains the count of
+;  searches necessary plus 1.  On exit DE still has the FCB pointer and
+;  C contains 18, the function code for "search next" to be used by
+;  the call to SEARCH at MVT0.
+;
+sync:	ld	c,18		; Search next code
+
+syncloop:
+	dec	b		; Count down
+	ret	z		; Exit if no more
+	call	bdos		; Do function
+	jr	syncloop	; ..and loop back
+;
+;  PDIR prints the drive, user and directory name
+;
+pdir:	ld	c,a		; Store user number in c
+	ld	a,(drvno)	; Get drive
+	ld	b,a		; ..and store in b
+	add	a,'A'
+	call	cout
+	ld	a,c
+	call	paudc
+	ld	a,':'
+	call	cout
+	call	dutdir		; Attempt to find directory name
+	ret	z		; (none found)
+
+name:	ld	b,8		; Print 8 chars max
+name1:	ld	a,(hl)		; Get dir name char
+	cp	' '		; Was it a space?
+	jr	z,name2		; (if so, we're through)
+	call	cout		; print it
+	inc	hl
+	djnz	name1
+name2:	ld	a,'/'
+	jp	cout
+;
+; Return current disk in A
+;
+getdsk:	ld	c,25
+	jp	bdos
+;
+; Get/Set user function
+;
+gsuser:	ld	c,32
+	ld	e,a
+	jp	bdos
+;
+;  Search For First function
+;
+searchf:
+	ld	c,17
+search:	call	bdos
+	cp	0ffh
+	ret
+;
+;  Point hl to the found directory entry
+;
+findir:	rrca
+	rrca
+	rrca
+	add	a,tbuf
+	ld	l,a
+	ld	h,0
+	ret
+;
+; Bios Write function, preserve regs
+;
+write:	push	bc
+	push	de
+	call	wrt1
+	pop	de
+	pop	bc
+	ret
+
+wrt1:	ld	hl,(biosv)
+	ld	l,42		; Bios write entry
+	ld	c,1		; Directory write
+	jp	(hl)		; Jump to bios, return to syncloop
+;
+; Convert D, U, DU, or named DIR to drive in B, user in C
+;
+scaner:	call	ifcbg		; Running BGii? (Returns a=0 if so)
+	jr	z,scanjp	; BG is always DU before DIR
+	call	z33chk		; Running Z33 or later? (a=0 if so)
+	jr	nz,scanjp	; If not Z33, assume dir first
+	push	hl		; Save pointer
+	call	getccp		; Get start of CCP
+	ld	de,7		; Offset to the option flag
+	add	hl,de
+	ld	a,(hl)		; Option flag to a
+	pop	hl		; Restore pointer
+	bit	0,a		; Do we take DU prefixes at all?
+	jr	nz,chkdir	; If so, see if DIRs are also OK
+	and	10b		; If not, DIR is our only hope
+	jp	nz,dirscan	; OK, scan for DIR only
+	ret			; Otherwise return Z for failure
+chkdir:	bit	1,a		; Let's see if both DIR and DU
+	jp	z,duscan	; If not, scan for DU only
+	and	100b		; Isolate du-first bit
+	xor	100b		; Invert (0 = du first)
+scanjp:	jp	dnscan		; Central JP so we can use JRs
+;
+; Adapted from Jay Sage's COMIF -- Condition: BG (BackGrounder).
+; This option tests for the presence of the 'BGii' ID string that
+; shows that BackGrounder ii is running.  The code looks for the
+; ID at an offset of IDOFF from the beginning of the CPR code.	The
+; value of IDOFF was determined by examination.
+;
+idoff	equ	5bh
+
+ifcbg:	push	hl
+	call	getccp		; Point to beginning of ccp
+	ld	de,idoff	; Offset to 'BGii' ID string in BG CPR
+	add	hl,de
+	ld	de,idstr	; Point to reference ID string
+	ld	b,idlen		; Length of ID string
+bgchk1:	ld	a,(de)		; Get reference character
+	sub	(hl)		; Compare to actual character
+	jr	nz,bgfals	; Set false if mismatch
+	inc	hl		; Move to next characters
+	inc	de
+	djnz	bgchk1		; Loop through all characters
+bgfals:	pop	hl
+	ret
+
+idstr:	db	'BGii'
+idlen	equ	[$-idstr]
+;
+;  Error message routines (most of them)
+;
+invdu:	call	eprint
+	db	'Invalid directory.',0
+	ld	a,2		; error code
+	jp	exit
+
+badver:	call	eprint
+	db	'Not for Z3Plus.',0
+	ld	a,4		; error code
+	jp	exit
+
+abort:	call	eprint
+	db	'Aborted',cr,lf,0
+	ld	a,(abterr)	; error code (configurable)
+	jp	quit0
+
+nofile:	call	eprint
+	db	'Source file not found.',0
+	ld	a,10		; error code
+	jp	exit
+
+usfail:	call	eprint
+	db	'No vacant user area on drive.',0
+	ld	a,4		; error code
+	jp	exit
+
+inspect:
+	ld	de,fcb1
+	call	searchf		; Search First function
+	jp	z,quit		; No more found
+	call	findir		; Point to specific entry in tbuf
+	ld	bc,16		; Move 16 bytes
+	ld	de,fcbdrv
+	ldir
+	ld	a,(fcb1)
+	ld	(fcbdrv),a
+	call	chksys		; Including system files?
+	jr	nz,filex3	; (No, and this file is one)
+	ld	a,(srcusr)
+	call	pdir
+	ld	de,fcbname
+	call	pfn1
+	call	eprint
+	db	' Move',0
+	call	ask		; get response
+	jr	nz,filex2
+	call	qcrlf		; new line if quiet mode
+	jp	mloop1
+;
+filexists:
+	ld	a,(opnflg)
+	or	a		; (skip it)
+	jr	nz,fskip
+	ld	a,(opeflg)
+	or	a
+	jp	nz,overwr	; (overwrite)
+	ld	a,(opiflg)	; if inspect mode
+	or	a
+	jr	z,filex1	; (nope)
+	ld	a,(opqflg)	; ..but not quiet mode
+	or	a
+	call	z,crlf		; send a new line
+filex1:	ld	a,(desusr)
+	call	pdir
+	ld	de,fcbname
+	call	pfn1
+	call	eprint
+	db	bel,' exists, Erase',0
+	call	ask		; get response
+	jr	nz,filex2
+	call	qcrlf		; new line if quiet mode
+	jr	overwr
+;
+fskip:	ld	a,(opiflg)	; if inspect mode
+	or	a
+	jr	z,filex3	; (nope)
+	ld	a,(opqflg)	; ..and quiet mode
+	or	a		; ..send a new line
+	jr	nz,filex3	; (otherwise, move on)
+;
+; Move temporarily to scratchpad user area
+;
+filex2:	call	crlf
+filex3:	ld	a,(desusr)
+	push	af		; save it on the stack
+	ld	a,(empusr)
+	ld	(desusr),a	; temporarily
+
+	ld	a,(srcusr)
+	call	gsuser
+	call	moveit
+
+	pop	af
+	ld	(desusr),a
+	ld	a,255
+	ld	(wrflag),a
+	ld	a,(srcusr)
+	call	gsuser
+	jp	mainloop
+;
+; Reset drive and delete the destination file
+;
+overwr:	ld	a,(drvno)
+	call	freset
+	ld	de,fcbdrv
+	ld	c,19
+	call	bdos
+filexex:
+	ld	a,(srcusr)
+	call	gsuser
+	jp	mloop1
+;
+; Main and ONLY program exit
+;
+quit:	xor	a
+quit0:	push	af		; store error code
+	ld	a,(wrflag)
+	or	a
+	jr	z,quit5
+;
+; Move any files in scratchpad user area back to source
+;
+	ld	a,(empusr)
+	call	gsuser
+	ld	c,17		; Start with "search first"
+	ld	de,fcb1		; use ambiguous fcb
+quit1:	call	search
+	jr	z,quit5		; No entries left
+	ld	b,0		; Init counter
+	call	findir		; point hl to dir entry
+quit2:	ld	a,(srcusr)
+	ld	(hl),a		; Replace current with destination
+	inc	b		; Bump count of entries changed in this sector
+quit3:	ld	a,20h
+	add	a,l		; Point to next entry
+	jr	z,quit4		; No more entries; write sector
+	ld	l,a
+	ld	a,(empusr)	; Scratch pad user
+	cp	(hl)		; Compare with user in dir entry
+	jr	z,quit2		; Match.  Fix user number and check next
+	jr	quit3		; No match.  Check next entry
+quit4:	call	write		; Write the buffer back to disk
+	call	sync		; Do "search nexts" to keep in sync
+	jr	quit1
+quit5:	ld	a,(sumflg)
+	or	a
+	jr	nz,quit6	; (always show results)
+	ld	a,(opqflg)
+	or	a
+	jr	nz,quit7	; (skip results when quiet)
+quit6:	ld	hl,(filcnt)
+	call	phldc
+	call	eprint
+	db	' file',0
+	call	prtess
+	call	eprint
+	db	' moved',0
+quit7:	ld	a,(drvno)
+	call	freset
+	pop	af		; recover error code
+;
+; Exit -- Enter with error code in A.  Turn PUBLIC on again, set program
+; error flag, restore stack, and return to Z.
+;
+exit:	ld	hl,(z3eadr)	; restore PUBLIC
+	ld	de,126
+	add	hl,de		; Point to PUBLIC area
+	ld	de,(public)	; Get original bytes
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	call	puter2		; load program error flag
+	ld	b,a		; copy error code to B
+	or	a
+	call	nz,inverror	; call error handler on error
+exit1:	ld	sp,(stack)
+	ret
+;
+; Return Z if we're not checking for system files, or if file is not one.
+;
+chksys:	ld	a,(opsflg)	; are we checking system files?
+	or	a
+	ret	z		; (nope)
+	ld	a,(fcbdrv+10)	; yes, check for system attribute
+	bit	7,a		; return NZ, if it's set
+	ret
+;
+; Get response from user.  Return Z if "Y", NZ otherwise.  Abort program
+; on ^C or "Q".
+;
+ask:	call	eprint
+	db	'? (Y/N/Q) N',BS,0
+	call	cin		; Wait for response
+	call	caps
+	cp	'Q'
+	jp	z,abort
+	cp	CtrlC
+	jp	z,abort
+	cp	'Y'
+	ret	nz
+	call	eprint
+	db	'Y..',0
+	ret
+;
+; New line if in quiet mode
+;
+qcrlf:	ld	a,(opqflg)
+	or	a
+	ret	z
+crlf:	call	eprint
+	db	cr,lf,0
+	ret
+;
+; Checks if HL is exactly 1.  If not, prints an "s".
+; Uses:	AF, HL
+;
+prtess:	dec	hl		; 1 becomes 0
+	ld	a,h
+	or	l
+	ld	a,'s'
+	call	nz,cout		; (if it's not 1, print "s")
+	ret
+;
+help:	call	eprint
+dftnam:	db	'MOVE  Version '	; used by GCOMNAM (maybe)
+	db	vers/10+'0','.',vers mod 10+'0',subvers
+	db	' (Type ',0
+	ld	a,(z3type)	; print program type and load address
+	call	paudc
+	call	eprint
+	db	' loaded at ',0
+	ld	hl,entry
+	call	phl4hc
+	call	eprint
+	db	'h)',cr,lf,'Usage:',cr,lf,'  ',0
+	ld	hl,comnam
+	call	epstr
+	call	eprint
+	db	' {dir:}afn {dir{:}} {{/}options}',cr,lf
+	db	'Source and destination must be on same drive.',cr,lf
+	db	'Options:',cr,lf
+	db	'  E  ',0
+	ld	hl,ovrflg
+	ld	a,(hl)
+	call	prdont
+	call	eprint	
+	db	'erase existing destination file without asking',cr,lf
+	db	'  N  ',0
+	inc	hl
+	ld	a,(hl)
+	cpl
+	call	prdont
+	call	eprint
+	db	'move if destination file exists',cr,lf
+	db	'  I  inspect mode'0
+	inc	hl
+	ld	a,(hl)
+	call	proff
+	call	eprint
+	db	cr,lf
+	db	'  S  ',0
+	inc	hl
+	ld	a,(hl)
+	call	prexin
+	call	eprint
+	db	'clude system files',cr,lf
+	db	'  Q  quiet mode',0
+	ld	a,(opqflg)
+	call	proff
+	call	eprint
+	db	cr,lf
+	db	'Option N ',0
+	ld	a,(skpflg)
+	or	a
+	call	z,provrd
+	call	nz,prreq
+	call	eprint
+	db	' Option E.',0
+	xor	a		; reset error flag
+	jp	exit
+;
+prdont:	or	a
+	ret	z
+	call	eprint
+	db	'don''t ',0
+	ret
+;
+proff:	or	a
+	ret	z
+	call	eprint
+	db	' off',0
+	ret
+;
+prexin:	or	a
+	ld	hl,exmsg
+	jp	z,epstr
+	ld	hl,inmsg
+	jp	epstr
+;
+inmsg:	db	'in',0
+exmsg:	db	'ex',0
+;
+provrd:	call	eprint
+	db	'overrides',0
+	ret
+;
+prreq:	call	eprint
+	db	'required by',0
+	ret
+;
+; uninitialized data
+;
+	DSEG
+;
+wrflag:	ds	1		; disk write flag
+empusr:	ds	1		; vacant user area
+srcusr:	ds	1		; source user
+drvno:	ds	1		; drive number
+desusr:	ds	1		; destination user
+fcbwild:ds	16		; ambiguous search fcb
+fcbdrv:	ds	16		; working fcb
+fcbname	equ	fcbdrv+1	; filename offset
+fcbext	equ	fcbdrv+12	; filetype offset
+fcbs2	equ	fcbdrv+14	; S2 byte offset
+
+filcnt:	ds	2		; number of files moved
+opeflg:	ds	1		; option E and O (overwrite) flag
+opnflg:	ds	1		; option N and S (skip) flag
+opiflg:	ds	1		; option I (inspect) flag
+opsflg:	ds	1		; option S (system) flag
+opqflg:	ds	1		; option Q (quiet) flag 
+public:	ds	2		; ZRDOS public flag storage
+	ds	48		; stack area
+stack:	ds	2		; original stack storage
+
+	end
+

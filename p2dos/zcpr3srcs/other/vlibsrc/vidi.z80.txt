@@ -1,0 +1,213 @@
+	TITLE	"VIDI - Vlib 4.1"
+	NAME	('VIDI')
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+; Date    : 4 Mar 89
+; Version : 1.0
+; Module  : VIDI
+; Abstract:  This module contains the routines DRVERT and ERAVERT
+;	which draw and erase a thin vertical graphics line, res-
+;	pectively, and DRVBAR which draws a heavy graphics verti-
+;	cal bar based on parameters passed on the stack.  Calling
+;	sequences are:
+;		CALL	DRVERT		; ..or ERAVERT
+;		DEFB	3,10,5,0	; Start Row, Col, Count,
+;					; Dir where 0=down, 1=up
+;		CALL	DRVBAR
+;		DEFB	1,3,10,5,1	; Mode where: 1=Dark Single blk
+;					; ..2=Dark Double blk, 3=Hash
+;					; ..Single blk, 4=Hash Double blk
+;					; Row, Col, Count
+;	The module also containg GVBAR and ERAVBAR which draw and
+;	erase a vertical line based on parameters passed in regis-
+;	ters.  Bounds checking is done in all routines to insure
+;	that the top of screen margin is not exceeded, but no
+;	checks are done on the bottom screen margin, or on the
+;	right margin.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		DRVBAR, DRVERT, ERAVERT, GVBAR, ERAVBAR
+
+; ..from VLIB Get..
+
+	EXT		@GVL, @GFB, @GHB, GOTOXY
+	EXT		VIDOUT, GRXON, GRXOFF
+
+; ..from SYSLIB Get..
+
+	EXT		COUT
+
+	.Z80
+	CSEG
+;===============================================================
+; DRVBAR - Draw vertical bar with block graphics char from stack
+;  Entry: - None, Top of stack addresses parameters
+;  Exit : - None, Bar is printed
+;  Uses : - None
+; Special Requirements: None
+;===============================================================
+
+DRVBAR:	EX	(SP),HL		; Get parm ptr
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+	LD	A,(HL)		; Get mode byte
+	INC	HL
+DRVBA0:	PUSH	AF
+	CALL	SETUP		; Get rest of parms
+	POP	AF
+	CALL	GVBAR		; ..and do the work
+DRVBA2:	POP	AF		; Restore regs
+	POP	BC
+	EX	DE,HL		; Swap return addr to HL
+	POP	DE
+	EX	(SP),HL		; Restore HL & put return addr to stack
+	RET
+
+;===============================================================
+; DRVERT - Draw a thin vertical graphics line from parms on stack
+;  Entry: - None.  Top of stack points to parms
+;  Exit : - None.  The line is printed
+;  Uses : - None
+; Special Requirements: None
+;===============================================================
+
+DRVERT:	EX	(SP),HL		; Get addr of parms
+	PUSH	DE		; Save regs
+	PUSH	BC
+	PUSH	AF
+	XOR	A		; Show that this is single thin bar
+	JR	DRVBA0		; ..join common code to get parms & act
+
+;===============================================================
+; GVBAR - Draw vertical bar from parameters from registers
+;  Entry:  A = Type (0=Thin, 1=Single Full, 2=Double Full,
+;			3=Single Hash, 4=Double Hash block)
+;	   B = Length (# of chars)
+;	   C = Direction (0=Top down, 1=Bottom Up)
+;	   H = Row to start
+;	   L = Column
+;  Exit : - None, Registers destroyed and Bar is printed
+;  Uses : HL,BC,AF
+; Special Requirements: None
+;===============================================================
+
+GVBAR:	PUSH	DE		; Preserve this reg pair
+	PUSH	HL		; ..and this one temporarily
+	LD	HL,@GVL		; Prepare for single line
+	OR	A		; Is it thin line request?
+	JR	Z,GVBAR0	; ..jump if so
+	DEC	A		; Else make mode 0..3
+	LD	HL,@GFB		; Prepare for Full Block
+	BIT	1,A		; Is it Full Block?
+	JR	Z,GVBAR0	; ..jump if so
+	LD	HL,@GHB		; Else must be Hashed Block
+GVBAR0:	LD	(FLAG),A	; Save flag
+	LD	(STRING),HL	; ..and string address
+	POP	HL		; Restore starting position XY coords
+	CALL	SETDIR		; Set appropriate dir, check bounds
+GVBAR1:	CALL	GOTOXY		; ..and Position cursor
+	INC	H		; Advance to next line
+	PUSH	HL		; Preserve XY coords
+	CALL	GRXON		; Go to graphics mode
+	CALL	DRWBLK		; Draw respective block
+	LD	A,(FLAG)	; Get flag
+	RRA			; Double print?
+	CALL	C,DRWBLK	; ..print again if not
+	CALL	GRXOFF		; Back to normal mode
+	POP	HL		; Restore XY coords
+	DJNZ	GVBAR1		; ..loop til done
+	POP	DE		; Restore regs
+	RET
+
+DRWBLK:	LD	HL,(STRING)	; Get appropriate block string
+	LD	A,(HL)
+	JP	COUT
+
+;===============================================================
+; ERAVERT - Erase vert line from stack parms by writing w/spaces
+;  Entry: - None.  Top of stack points to parms
+;  Exit : - None.  The line is printed
+;  Uses : - None
+; Special Requirements: None
+;===============================================================
+
+ERAVERT: EX	(SP),HL		; Get addr of parms
+	PUSH	DE		; Save regs
+	PUSH	BC
+	PUSH	AF
+	CALL	SETUP		; Get rest of parms
+	CALL	ERAVBAR		; Do the work
+	JR	DRVBA2		; ..and continue above
+
+;===============================================================
+; ERAVBAR - Erase vert line from register parms by overwriting
+;  Entry:  B = Length (Count value)
+;	   C = Direction (0=Top Down, 1=Bottom Up)
+;	   H = Row to start
+;	   L = Column
+;  Exit : - None.  Regs are destroyed and the line is printed
+;  Uses : HL,BC,AF
+; Special Requirements: None
+;===============================================================
+
+ERAVBAR: PUSH	DE		; Save regs
+	CALL	SETDIR		; Set direction and length
+ELOOP:	CALL	GOTOXY		; Position cursor
+	INC	H		; .prepare for next Row
+	LD	A,' '
+	CALL	COUT		; ..and print a space
+	DJNZ	ELOOP		; Loop til done
+	POP	DE
+	RET
+
+;.....
+; Load registers from stack parameter list
+
+SETUP:	LD	D,(HL)		; Row
+	INC	HL
+	LD	E,(HL)		; Col
+	INC	HL
+	LD	B,(HL)		; Count
+	INC	HL
+	LD	C,(HL)		; Direction
+	INC	HL
+	EX	DE,HL
+	RET
+
+;.....
+; Set direction, and validate starting point and length
+
+SETDIR:	LD	A,C		; Get direction
+	OR	A		; Draw down?
+	RET	Z		; ..return if so
+	LD	A,H		; Get Starting row #
+	INC	A		; Get count, not difference
+	SUB	B		; ..subtract count
+	JR	C,SETDI0	; Jump if too much
+	LD	H,A		; Put new starting row back
+	RET	NZ		; ..and quit if row > 0
+	DEC	B		; Else starts @ 0, correct count
+	JR	SETDI1		; ..and move to row 1
+
+SETDI0:	ADD	A,B		; Subtract overflow from count (A is neg diff)
+	LD	B,A
+	DEC	B		; ..compensate for previous inc
+SETDI1:	LD	H,1		; and set to Row 1
+	RET
+
+;.....
+; Data Storage in Data Segment
+
+	DSEG
+
+FLAG:	DEFS	1		; Flag. Bit 1 = 0 for single, 1 for double
+STRING:	DEFS	2		; Storage for string starting address
+
+	END
+

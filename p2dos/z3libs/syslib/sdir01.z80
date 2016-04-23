@@ -1,0 +1,81 @@
+	TITLE	"SDIR01 - Syslib 4.3"
+	NAME	('DBUFFE')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SDIR01.Z80 Ver 1.5 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.6
+; Module  : SDIR01
+; Abstract: This module contains the routine DBUFFER which
+;	accepts a base address for the bynamic buffers required,
+;	determines how much space is required for the buffers,
+;	and sets the ORDER pointer to point to the First buffer,
+;	and DIRBUF to point to the second buffer.  Order space
+;	is equal to DIRMAX * 2, and DIRBUF is equal to DIRMAX
+;	* ESIZE.
+; Revision:
+;  1.7 - 25 Nov 90 - Revised to establish SSB values to use
+;	generalized Sort routine.			HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		DBUFFER
+	PUBLIC		SSB, ORDER, DIRBUF, FCOUNT, SDCOMP
+
+; From SYSLIB Get..
+
+	EXT		DIRMAX, DPARAMS, SSBINIT
+
+; Definitions
+
+BDOS	EQU	5		; CP/M, ZRDOS, P2DOS entry point
+ESIZE	EQU	16		; Size of directory records in bytes
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DBUFFER
+; Entry: HL - Points to Available base of memory
+; Exit : HL - Points to DIRBUF
+;	  A = 0 and Zero flag Set (Z) if CCP Overrun
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+DBUFFER: PUSH	DE		; Save DE
+	PUSH	BC		; Save BC
+	EX	DE,HL		; Save the pointer to free memory in DE
+	CALL	DPARAMS		; Get Parameters
+	LD	HL,(DIRMAX)	; Get Max Number of Entries
+	LD	(FCOUNT),HL	; ..and place in SSB
+	LD	HL,ESIZE	; Get Size of records
+	LD	(ELSIZ),HL	; ..save in SSB
+	LD	HL,0000		; Let SSBINIT set buffer addr
+	LD	(DIRBUF),HL
+	LD	HL,00FFH	; Use ptrs and reorder after sort
+	LD	(PTRFLG),HL	; ..place in POINT (L) and NOREC (H) in SSB
+	EX	DE,HL		; Put Memory base back in HL
+	LD	DE,SSB		; .point to SSB
+	CALL	SSBINIT		; ..and Initialize the Sort routine
+	POP	BC		; Restore BC
+	POP	DE		; Restore DE
+	RET			; ..with DIRBUF in HL
+
+; Data Area
+
+	DSEG
+
+SSB:
+DIRBUF:	DEFS	2		; Pointer to first Directory Entry
+FCOUNT:	DEFS	2		; Total Number of Files/Number of Sel Files
+ELSIZ:	DEFS	2		; Size of each element
+SDCOMP:	DEFS	2		; Address of Compare routine
+ORDER:	DEFS	2		; Address of Order Table Buffer
+PTRFLG:	DEFS	1		; FF = Use Ptrs, 0 = Don't Use Ptrs
+NOREC:	DEFS	1		; If PTRFLG <>0 (Use pointers),
+				;  <>0 = Don't Reorder after sort, 0 = Reorder
+
+	END
+

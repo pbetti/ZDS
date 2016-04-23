@@ -1,0 +1,87 @@
+ Introduction to CRC Routines
+ Initialization  - CRCnCLR, CRC3INIT
+ CRC Updating    - CRCnUPD
+ CRC Completion  - CRCnDONE
+:                   CRC Routines 
+
+The CRC Routines may be used to check the validity of an
+incoming serial byte stream or check for validity of data
+copies.  These routines compute and check a true 16-bit
+Cyclic  Redundancy Code (CRC).
+
+    The use of these routines will guarantee detection of:
+	1) all single- and double-bit errors
+	2) all errors with an odd number of error bits
+	3) all burst errors of length 16 or less
+
+    Additionally, the following statistics:
+	1) 99.9969% of all 17-bit error bursts
+	2) 99.9984% of all possible longer error bursts
+
+CRC and CRC3 routines use the X^16+X^12+X^5+1 polynomial
+commonly used in Floppy disk controllers and Modem programs.
+The CRC1 routine uses the X^16+X^15+X^2+1 polynomial also
+used in Synchronous communications while CRC2 uses the
+X^16+X^15+X^13+X^7+X^4+X^2+X+1 polynomial found in Public-
+Domain File CRC checking programs.
+
+All four families of routines are used in the same way, except
+that a unique initialization routine, CRC3INIT, is required
+with CRC3 before any processing is performed.  This is because
+the CRC3 update routine is Table-driven compared to the others
+which calculate the CRC "on the fly".  The added routine builds
+the table of pre-computed remainders.  Typical use is as:
+
+ CRCMAKE:		; Call CRC3INIT here if using CRC3
+	CALL	CRCCLR		; Clear the CRC
+	  <loop CALLing CRCUPD>	; ..acquire values
+	CALL	CRCDONE		; Get the finished value
+	LD	(CRCVAL),HL	; ..and save
+ CRCCK:			; Routine to check incoming CRC
+	CALL	CRCCLR		; Clear CRC
+	  <loop CALLing CRCUPD>	; ..acquire new set of values
+	CALL	CRCDONE		; Get the finished value in HL
+	LD	DE,(CRCVAL)	; Get the first value in DE
+	CALL	COMPHD		; Compare HL to DE
+	JR	NZ,ERROR	; ..Error if CRC's Don't match
+
+:CRCCLR, CRC1CLR, CRC2CLR, CRC3CLR - Clear CRC Accumulator
+
+  ENTER: None
+  EXIT : None
+  USES : None
+
+ Usage:  These routines must be executed before beginning a new
+  operation on a File, Block or Sector of data.  Do NOT call
+  these routines before completing calculations on a block or
+  the accumulated data will be incorrect.
+
+ CRC3INIT - Initialize CRC3 table for use
+
+  ENTER: HL = Pointer to 512-byte space for table
+  EXIT : None
+  USES : AF,BC,DE
+
+ Usage:  This routine MUST be executed before using the CRC3
+  Updating routine, or incorrect results will be obtained.  It
+  initializes a table with pre-computed CRC remainders for use
+  by the updating routine.
+
+:CRCUPD, CRC1UPD, CRC2UPD, CRC3UPD - Update CRC Accum. Count
+
+  ENTER: A = Byte to be included in CRC
+  EXIT : None
+  USES : None
+
+ Usage: This routine is called once for every byte to be
+  included in the CRC calculation.
+
+:CRCDONE, CRC1DONE, CRC2DONE, CRC3DONE - Return CRC Value
+
+  ENTER: None
+  EXIT : HL = Calculated CRC Value
+  USES : HL
+
+ Usage: This routine is used to terminate CRC accumulation and
+  return the calculated 16-bit CRC value.
+

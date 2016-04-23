@@ -1,0 +1,171 @@
+; Library:	RCPECHO for Z34RCP
+; Command:	ECHO
+; Function:	Echo text to console or printer
+; Version:	1.0b
+; Author:	Gene Pizzetta
+; Date:		November 3, 1990
+; Mods:		Added six more bytes which allow sending a delete (rub-out)
+;		character using %D escape sequence.
+;
+; Version:	1.0a
+; Author:	Gene Pizzetta
+; Date:		October 21, 1990
+; Mods:		Added six bytes which allow sending a semi-colon character
+;		using %S escape sequence.
+;
+; Version:	1.0
+; Author:	Carson Wilson
+; Date:		June 15, 1988
+;
+ECHO:	xor	a		; Lower case/printer off flag setting
+	ld	(crtfl),a	; Printer off by default
+
+ IF UPCASE			; If upper case default
+	dec	a
+ ENDIF ; UPCASE
+
+	ld	(casefl),a	; Store flag in code below
+	ld	hl,tbuff+1	; Point to first character
+	call	getchar		; Get first character (should be blank)
+				; If none, exit from routine
+
+; Loop to echo chars
+
+echo2:	call	getchar
+
+ IF ECHOLST
+	cp	ff		; Form feed?
+	jr	z,echo3
+ ENDIF	; ECHOLST
+
+	cp	'^'
+	jr	nz,echo2a	; Not control character prefix
+	call	getchar		; Get next character
+	and	1fh		; Convert to control character
+	jr	echo2e		; Echo it
+
+echo2a:	cp	cmdchar		; Case shift prefix?
+	jr	nz,echo2e	; No, normal echo
+	call	getchar		; Get next character
+
+ IF ECHOLST
+	cp	prtchar		; Turn printer on?
+	jr	z,echo2b	; Store non-zero in crt flag
+	cp	crtchar		; Turn printer off?
+	jr	nz,echo2c	; No, test for shift characters
+	xor	a		; Yes, clear crt flag
+echo2b:	ld	(crtfl),a
+	jr	echo2		; On to next character
+
+echo2c:	
+ ENDIF	; ECHOLST
+	cp	ucasechar	; Up-shift character?
+	jr	z,echo2d	; Store non-zero value in case flag
+	cp	lcasechar	; Lower-case character?
+	jr	nz,echo2f	; No, echo the character as is
+	xor	a		; Else, clear case flag
+echo2d:	ld	(casefl),a
+	jr	echo2		; On to next character
+;
+; Added by GP so we can send all ASCII characters
+echo2f:	cp	'S'		; request for semi-colon?
+	jr	nz,echo2g	; (no)
+	ld	a,';'		; print semi-colon
+	jr	echo2e
+echo2g:	cp	'D'		; request for delete char?
+	jr	nz,echo2e
+	ld	a,07Fh		; print DEL
+;
+echo2e:	call	echout		; Send char
+	jr	echo2
+
+; Form feed - send new line followed by form feed if printer output
+
+ IF ECHOLST
+echo3:	ld	a,(crtfl)	; Check for printer output
+	or	a		; Non-zero?
+	jr	z,echoff	; No, send form feed normally
+	call	echonl		; Send new line
+	ld	a,ff		; Send form feed
+	jr	echout
+
+; Send form feed char to console
+
+echoff:	ld	a,ff		; Get char
+	jr	echo2e
+ ENDIF	; ECHOLST
+
+; End of print loop - check for printer termination
+
+echo4:
+ IF NOT ECHOLST
+	ret
+
+ ELSE
+	ld	a,(crtfl)	; Get list mode flag
+	or	a
+	ret	z		; Done if no printer output
+
+; Output a new line
+
+echonl:	ld	a,cr		; Output new line on printer
+	call	echout
+	ld	a,lf		; Fall thru to echout
+ ENDIF	; NOT ECHOLST
+
+; Output char to printer or console
+
+echout:	ld	c,a		; Char in c
+	cp	'A'		; If less than 'A'
+	jr	c,echouta	; Leave as is
+	cp	'Z'+1		; If greater than 'Z'
+	jr	nc,echouta	; Leave as is
+	add	20h		; Else convert to lower case
+echouta:
+	ld	d,a		; Save lower case version in d
+casefl	equ	$+1		; Pointer for in-the-code modification
+	ld	a,0
+	or	a		; Upper case?
+	jr	nz,echoutb	; If upper case selected, go on as is
+	ld	c,d		; Else substitute lower case version
+echoutb:
+	push	hl		; Save hl
+	push	bc		; Save bc
+	ld	de,0ch-3	; Offset for BIOS console output
+
+ IF ECHOLST
+crtfl	equ	$+1
+	ld	a,0
+	or	a		; Printer?
+	jr	z,echout1	; No
+	inc	de		; Offset for BIOS printer output
+	inc	de
+	inc	de
+ ENDIF	; ECHOLST
+
+; Output char in C with BIOS offset in DE
+
+echout1:
+	call	biout		; Bios output
+	pop	bc		; Restore bc,hl
+	pop	hl
+	ret
+
+; Get a character from the command tail buffer
+
+getchar:
+	ld	a,(hl)		; Get character
+	inc	hl		; Point to next one
+	or	a		; Check for end of string
+	ret	nz		; If not end, return
+	pop	hl		; Else, clean up stack
+	jr	echo4		; And exit from routine
+
+; Output char in C to BIOS with offset in DE
+
+biout:	ld	hl,(wboot+1)	; Get address of warm boot
+	add	hl,de		; Pt to routine
+	jp	(hl)		; Jump to it
+
+; End RCPECHO.LIB
+

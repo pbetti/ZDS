@@ -1,0 +1,258 @@
+	title	'RAM-disk driver for the Modular CP/M 3 BIOS'
+
+;	CP/M-80 Version 3	-- Modular BIOS
+;	RAM-disk I/O Module for P112
+;	Version 1.0
+;	Compile with M80
+
+	.z80
+Z80182	equ	1
+	include	Z180.INC
+	include	P112EQU.INC
+
+	dseg
+
+	; disk drive dispatching tables for linked BIOS
+
+	public	@rdsize,rdM
+
+	; Variables containing parameters passed by BDOS
+
+	extrn	@adrv,@rdrv
+	extrn	@dma,@trk,@sect
+	extrn	@dbnk
+	extrn	@dtbl
+	extrn	@dMbase
+	extrn	?abs$addr
+
+	; System Control Block variables
+
+	extrn	@ermde		; BDOS error mode
+
+	; Utility routines in standard BIOS
+
+	extrn	?wboot		; warm boot vector
+	extrn	?pmsg		; print message @<HL> up to 00, saves <BC> & <DE>
+	extrn	?pdec		; print binary number in <A> from 0 to 99
+	extrn	?pderr		; print BIOS disk error header
+	extrn	?conin,?cono	; con in and out
+	extrn	?const		; get console status
+        extrn   ?bank           ; select bank in <A>
+
+	; CP/M 3 Disk definition macros
+
+	;maclib	cpm3
+
+cr	equ	0Dh
+lf	equ	0Ah
+
+	; Extended Disk Parameter Headers (XDPHs)
+
+	dw	rd$write
+	dw	rd$read
+	dw	rd$login
+	dw	rd$init0
+	db	0,0		; relative drive zero
+rdM:	dw	0		; translate table address
+	db	0,0,0,0,0,0,0,0,0 ; BDOS scratch area
+	db	0		; media flag
+	dw	dpbrdM		; disk parameter block
+	dw	0		; no checksum vector neccessary
+	if	banked
+	dw	alvM
+	else
+	dw	0FFFEh		; allocation vector by GENCPM
+	endif
+	dw	0FFFEh		; DIRBCB allocated by GENCPM
+	dw	0FFFFh		; no DTABCB allocated
+	dw	0FFFFh		; disable directory hashing
+	db	0		; HASH bank
+;
+	cseg	;DPB must be resident
+
+;	dpb	128,32,256,2048,64,0	; 1M
+
+dpbrdM:	dw	32		; sectors per track (4k tracks)
+	db	4		; block shift
+	db	15		; block mask
+	db	0		; null mask
+dsmM:	dw	511		; disk size - 1, set by the init code
+drmM:	dw	127		; dir max
+	db	11000000b	; alloc 0
+	db	00000000b	; alloc 1
+	dw	8000h		; check size = 0 (non removable media)
+offM:	dw	0		; track offset
+	db	0		; physical sector shift factor
+	db	0		; physical sector mask
+
+	dseg	;this may be banked
+
+	; Disk I/O routines for standardized BIOS interface
+
+	; Initialization entry point.
+	;	called for first time initialization
+
+rd$init0:
+	ld	a,(@dMbase)	; get BBR base value for ramdisk
+	ld	c,a
+	or	a		; zero (not initialized)?
+	jr	nz,rd1		; yes, so use it
+	in0	a,(cbr)		; otherwise use just all available memory
+	add	a,10h		; free mem area starts 64k after CBR
+	ld	c,a
+	jp	c,nodskm	; if overflow -> error, no space
+rd1:	in0	b,(ramubr)
+	cp	b
+	jp	nc,nodskm	; if below or equal upr ram bound -> no space
+	ld	(@dMbase),a	; save disk M base address
+	add	a,08h
+	cp	b
+	jr	nc,nodskm	; must have at least 32k
+	ld	a,b
+	add	a,1
+	rra
+	srl	c
+	sub	c		; disk size in 8k pages
+	ld	c,a
+	ld	b,8
+	mlt	bc		; BC = size in kbytes (or 1k alloc blocks)
+	ld	(@rdsize),bc	; save for later display
+	ld	de,64		; dir entries for disks with 1k blocks
+	ld	hl,dpbrdM+2
+	ld	a,b		; DSM > 255 1k-blocks?
+	or	a
+	jr	nz,b2k		; yes -> use 2k-blocks instead
+	ld	(hl),3		; block shift for 1k-blocks
+	inc	hl
+	ld	(hl),7		; block mask
+	inc	hl
+	ld	(hl),0		; extent mask
+	jr	bdone
+b2k:	ex	de,hl
+	add	hl,hl		; double the number of dir entries
+	ex	de,hl
+	srl	b
+	rr	c		; BC /= 2 -> DSM in 2k alloc blocks
+	ld	(hl),4		; block shift for 2k-blocks
+	inc	hl
+	ld	(hl),15		; block mask
+	inc	hl
+	ld	(hl),1		; extent mask for DSM < 256
+	ld	a,b
+	or	a
+	jr	z,bdone
+	ld	(hl),0		; extent mask for DSM > 255
+bdone:	dec	bc
+	ld	(dsmM),bc	; dsm = # of blocks - 1
+	dec	de
+	ld	(drmM),de	; drm = # of dir entries - 1
+	ld	hl,0
+	ld	(offM),hl	; no reserved tracks
+
+; initialize directory area, clear the first 32 128-byte sectors
+
+	ld	hl,0080h
+	ld	(@dma),hl
+	xor	a
+	ld	(@dbnk),a
+fill:	ld	(hl),0E5h
+	inc	l
+	jr	nz,fill
+	ld	hl,0
+	ld	(@trk),hl
+	ld	bc,0
+	ld	e,32
+loop:	push	bc
+	push	de
+	ld	(@sect),bc
+	call	rd$write
+	pop	de
+	pop	bc
+	inc	bc
+	dec	e
+	jr	nz,loop
+	ret
+
+nodskM:	ld	hl,0
+	ld	(dsmM),hl	; dsm = 0 means no RAM disk present
+	ld	(@rdsize),hl
+	ld	(@dtbl+24),hl	; delete entry in drvtbl [@dtbl+('M'-'A')*2]
+	ret
+
+	; This entry is called when a logical drive is about to
+	; be logged into for the purpose of density determination.
+	; It may adjust the parameters contained in the disk
+	; parameter header pointed at by <DE>.
+
+rd$login:
+	ret			; no login action neccessary for ramdisk
+
+
+	; read a sector from disk M using Z80182 DMA channel 0
+rd$read:
+	call	seccnv
+	out0	(sar0l),c	; LSB source address
+	out0	(sar0h),b	; middle byte
+	out0	(sar0b),a	; source bank
+	call	?abs$addr	; in fdio.asm
+	out0	(dar0l),l
+	out0	(dar0h),h
+	out0	(dar0b),a
+	jr	rd$common
+
+	; write a sector to disk M using Z80182 DMA
+rd$write:
+	call	seccnv
+	out0	(dar0l),c	; LSB destination address
+	out0	(dar0h),b	; middle byte
+	out0	(dar0b),a	; source bank
+	call	?abs$addr	; in fdio.asm
+	out0	(sar0l),l
+	out0	(sar0h),h
+	out0	(sar0b),a
+rd$common:
+	ld	a,2		; set DMA mode to burst mode
+	out0	(dmode),a
+	ld	hl,128
+	out0	(bcr0l),l
+	out0	(bcr0h),h
+	ld	a,40h		; enable DMA0
+	out0	(dstat),a	; move the block
+	xor	a		; return OK to BDOS
+	ret			; done.
+
+; convert sector and track number to physical address for Z180 DMA
+; on return ABC contain the 20-bit address (A = 4 MSBits)
+
+seccnv:
+	ld	bc,(@trk)
+	ld	a,(@dMbase)
+	add	a,c
+	rlca
+	rlca
+	rlca
+	rlca
+	ld	e,a
+	ld	a,(@sect)
+	and	1Fh		; just in case...
+	rra
+	ld	b,a
+	ld	a,0
+	rra
+	ld	c,a
+	ld	a,e
+	and	0F0h
+	add	a,b
+	ld	b,a
+	ld	a,e
+	and	0Fh		; bits 19-16 in A
+	ret
+
+@rdsize: dw	0		; ramdisk size in kbytes
+
+	if	banked
+alvM:	ds	(511/4)+2	; space for double-bit alloc vector
+	endif
+
+	end
+

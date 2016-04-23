@@ -1,0 +1,770 @@
+
+; ZCPR34-5.Z80
+
+; Revisions to ZCPR Version 3.3 to make Version 3.4 (C) Copyright Jay P. Sage,
+; 1988, all rights reserved.
+
+;=============================================================================
+;
+;		R E S I D E N T    C O M M A N D    C O D E
+;
+;=============================================================================
+
+; Command:	DIR
+; Function:	To display a directory of the files on disk
+; Forms:
+;	DIR <afn>	Displays the DIR-attribute files
+;	DIR		Same as DIR *.*
+;	DIR <afn> S	Displays the SYS-attribute files
+;	DIR /S		Same as DIR *.* S
+;	DIR <afn> A	Display both DIR and SYS files
+;	DIR /A		Same as DIR *.* A
+
+	 if	diron
+
+dir:
+	ld	hl,(tfcb+1)	; Get first 2 chars from first FCB
+	ld	a,l		; Get first character
+
+	 if	slashfl		; If allowing "DIR /S" and "DIR /A" formats
+	cp	'/'		; If name starts with '/'
+	jr	z,dir1		; ..pretend we had empty FCB
+	ld	hl,(tfcb2)	; ..Otherwise, get first char from second FCB
+	 endif	;slashfl
+
+	cp	' '		; If space, make all wild
+	jr	nz,dir2
+dir1:
+	ld	de,tfcb+1	; Point to target FCB
+	ld	b,11
+	ld	a,'?'
+	call	fill
+
+dir2:
+	 if	whldir
+	call	whlchk		; Check wheel status
+	ld	a,h		; Get option character for comparison
+	push	af		; Save result of whlchk and option character
+	 else	;not whldir
+	push	hl		; Save option character
+	 endif	;whldir
+
+	ld	de,tfcb		; Point to target FCB
+	call	fcblog		; Log in the specified directory
+	ld	b,7fh		; Flag for both DIR and SYS files
+
+	pop	af		; Get option character (& Z-flag) back
+	 if	whldir
+	jr	z,dir2a		; If wheel byte not set, then ignore options
+	 endif	;whldir
+
+	cp	allchar		; See if all (SYS and DIR) option letter
+	jr	z,dirpr		; Branch if so
+	xor	syschar		; See if SYS-only option letter
+	jr	z,dirpr1	; Branch if so
+dir2a:
+	inc	b		; Flag for DIR-only selection
+				; Drop into DIRPR to print directory
+
+	 endif	; diron
+
+;--------------------
+
+; Directory display routine
+
+; On entry, if attribute checking is required, the B register is
+; set as follows:
+;	00H for SYS files only
+;	80H for DIR files only
+;	7FH for both
+
+	 if	diron or eraon
+
+dirpr:
+	 if	diron		; Attribute checking needed only for DIR
+	ld	a,b		; Get flag
+dirpr1:
+	ld	(systst),a	; Set system test flag
+	 endif
+
+	ld	e,0		; Set column counter to zero
+	push	de		; Save column counter (E)
+	call	srchfst1	; Search for specified file (first occurrence)
+	jr	nz,dir3
+	call	prnnf		; Print no-file message
+	pop	de		; Restore DE
+	xor	a		; Set Z to show no files found
+	ret
+
+; Entry selection loop.  On entering this code, A contains the offset in the
+; directory block as returned by the search-first or search-next call.
+
+dir3:
+	 if	diron		; Attribute checking needed only for DIR cmd
+
+	call	getsbit		; Get and test for type of files
+	jr	z,dir6
+
+	 else	;not diron
+
+	dec	a		; Adjust returned value from 1..4 to 0..3
+	rrca			; Multiply by 32 to convert number to
+	rrca			; ..offset into TBUFF
+	rrca
+	ld	c,a		; C = offset to entry in TBUFF
+
+	 endif	;diron
+
+	pop	de		; Restore count of
+	ld	a,e		; ..entries displayed
+	inc	e		; Increment entry counter
+	push	de		; Save it
+	and	03h		; Output CRLF if 4 entries printed in line
+	jr	nz,dir4
+	call	crlf		; New line
+	jr	dir5
+dir4:
+	call	print
+
+	 if	wide
+
+	defb	'  ',fence	; 2 spaces, then fence char
+	dc	'  '		; Then 2 more spaces
+
+	 else	;not wide
+
+	defb	' ',fence	; Space, then fence char
+	dc	' '		; Then another space
+
+	 endif	; wide
+
+dir5:
+	ld	a,1
+	call	dirptr		; HL now points to 1st byte of file name
+	call	prfn		; Print file name
+dir6:
+	call	break		; Check for abort
+	jr	z,dir7
+	call	srchnxt		; Search for next file
+	jr	nz,dir3		; Continue if file found
+
+dir7:
+	pop	de		; Restore stack
+	dec	a		; Set NZ flag
+	ret
+
+	 endif	; diron or eraon
+
+;-----------------------------------------------------------------------------
+
+	 if	diron or attchk or eraon
+
+; This routine returns a pointer in HL to the directory entry in TBUFF that
+; corresponds to the offset specified in registers C (file offset) and A
+; (byte offset within entry).
+
+dirptr:
+	ld	hl,tbuff
+	add	a,c		; Add the two offset contributions
+	call	addah		; Set pointer to desired byte
+	ld	a,(hl)		; Get the desired byte
+	ret
+
+	 endif	; diron or attchk or eraon
+
+;-----------------------------------------------------------------------------
+
+; Test File in FCB for existence, ask user to delete if so, and abort if he
+;  choses not to
+
+	 if	saveon or renon
+
+extest:
+	ld	de,tfcb		; Point to FCB
+	push	de		; ..and save it for later
+	call	fcblog		; Log into specified directory
+	call	srchfst1	; Look for specified file
+	pop	de		; Restore pointer
+	ret	z		; OK if not found, so return
+	call	printc
+	 if	bellfl
+	defb	bell
+	 endif	;bellfl
+	dc	'Erase '
+	ld	hl,tfcb+1	; Point to file name field
+	call	prfn		; Print it
+	call	print		; Add question mark
+	dc	'?'
+	call	conin		; Get user response
+	cp	'Y'		; Test for permission to erase file
+	jp	nz,restart	; If not, flush the entire command line
+	jp	delete		; Delete the file
+
+	 endif	; saveon or renon
+
+;-----------------------------------------------------------------------------
+
+; Print file name pointed to by HL
+
+	 if	diron or renon or saveon
+
+prfn:
+	ld	b,8		; Display 8 characters in name
+	call	prfn1
+	call	print		; Put in dot
+	dc	'.'
+	ld	b,3		; Display 3 characters in type
+prfn1:
+	ld	a,(hl)		; Get character
+	inc	hl		; Point to next
+	call	conout		; Print character
+	djnz	prfn1		; Loop through them all
+	ret
+
+	 endif	;diron or renon or saveon
+
+;-----------------------------------------------------------------------------
+
+; This routine returns NZ if the file has the required attributes and Z if
+; it does not.  It works by performing the 'exclusive or' of the mask passed
+; in register A and the filename attribute obtained by masking out all but
+; the highest bit of the character.  For the 'both' case, setting any bit
+; in the mask other than bit 7 will guarantee a nonzero result.
+;
+;	File name: : X 0 0 0  0 0 0 0	(After 80H mask, X=1 if SYS, 0 if DIR)
+;
+;	SYS-ONLY   : 0 0 0 0  0 0 0 0	(XOR gives 00H if X=0 and 80H if X=1)
+;	DIR-ONLY   : 1 0 0 0  0 0 0 0	(XOR gives 80H if X=0 and 00H if X=1)
+;	BOTH	   : 0 1 1 1  1 1 1 1	(XOR gives 7FH if X=0 and FFH if X=1)
+
+	 if	diron or attchk
+
+getsbit:
+	dec	a		; Adjust to returned value from 1..4 to 0..3
+	rrca			; Multiply by 32 to convert number to
+	rrca			; ..offset into TBUFF
+	rrca
+	ld	c,a		; Save offset in TBUFF in C
+	ld	a,10		; Add 10 to point to SYS attribute bit
+	call	dirptr		; A = SYS byte
+	and	80h		; Look only at attribute bit
+systst	equ	$+1		; In-the-code variable
+	xor	7fh		; If SYSTST=0, SYS only; if SYSTST=80H, DIR
+				; ..only; if SYSTST=7FH, both SYS and DIR
+	ret			; NZ if OK, Z if not OK
+
+	 endif	;diron or attchk
+
+;-----------------------------------------------------------------------------
+
+; Command:	REN
+; Function:	To change the name of an existing file
+; Forms:	REN <New UFN>=<Old UFN>
+; Notes:	If either file spec is ambiguous, or if the source file does
+;		not exist, the error handler will be entered.  If a file with
+;		the new name already exists, the user is prompted for deletion
+;		and ZEX is turned off during the prompt.
+
+	 if	renon
+
+ren:
+	ld	hl,tfcb		; Check for ambiguity in first file name
+	call	ambchk
+	call	fcblog		; Login to fcb
+	ld	hl,tfcb2	; Check for ambiguity in second file name
+	call	ambchk
+	xor	a		; Use current drive for 2nd file
+	ld	(de),a
+	call	srchfst		; Check for old file's existence
+	jr	nz,ren1		; Branch if file exists
+jpnofile:
+	ld	a,ecnofile	; Set error code for file not found
+	jp	error		; ..and invoke error handler
+ren1:
+	call	extest		; Test for file existence and return if not
+	ld	bc,16		; "Exchange" new and old file names
+	ex	de,hl		; HL now points to new name for FCB
+	ld	de,tfcb2+16	; Point to 16 bytes beyond second FCB
+	ldir			; Now copy name: On completion,
+				; ..HL points to second FCB
+	ex	de,hl		; ..and now DE points there
+
+; Perform rename function
+
+	ld	c,17h		; BDOS rename function
+	jp	bdostest
+
+	 endif	;renon
+
+;-----------------------------------------------------------------------------
+
+; Command:	ERA
+; Function:	Erase files
+; Forms:
+;	ERA <afn>	Erase specified files and dislay their names
+;	ERA <afn> I	Display names of files to be erased and prompt for
+;			inspection before erase is performed. (Character 'I'
+;			is defined by INSPCH in Z34HDR.LIB; if it is ' ', then
+;			any character triggers inspection.)
+
+	 if	eraon
+
+era:
+	 if	inspfl and eraok; 'I' flag and verification enabled?
+	ld	a,(tfcb2+1)	; Get flag, if any, entered by user
+	ld	(eraflg),a	; Save it in code below
+	 endif	;erav and eraok
+
+	ld	de,tfcb		; Point to target FCB
+	call	fcblog		; ..and log into the specified directory
+
+	 if	diron or attchk	; Attribute checking only in these cases
+	ld	a,7fh		; Display all matching files
+	call	dirpr1		; Print directory of erased files
+	 else	;not diron and not attchk
+	call	dirpr		; Print directory of erased files
+	 endif	;diron or attchk
+
+	ret	z		; Abort if no files
+
+	 if	eraok		; Print prompt
+
+	 if	inspfl		; Test verify flag
+
+eraflg	equ	$+1		; Address of flag (in-the-code modification)
+	ld	a,0
+	cp	inspch		; Is it an inspect option?
+
+	 if	inspch ne ' '	; If an explicit inspect character is specified
+	jr	nz,era2		; ..skip prompt if it is not that character
+	 else			; If INSPCH is the space character
+	jr	z,era2		; ..then skip prompt only if FCB has a space
+	 endif	;inspch ne ' '
+
+	 endif	;inspfl
+
+	call	printc
+	dc	'OK to Erase?'
+	call	conin		; Get reply
+	cp	'Y'		; Yes?
+	ret	nz		; Abort if not
+
+	 endif	; eraok
+
+era2:
+	ld	de,tfcb
+	jp	delete		; Delete files and return
+
+	 endif			; Eraon
+
+;-----------------------------------------------------------------------------
+
+; Command:	LIST
+; Function:	Print out specified file on the LST: device
+; Forms:	LIST <ufn>	Print file (No Paging)
+; Notes:	The flags which apply to TYPE do not take effect with LIST
+
+	 if	lton
+
+list:
+	ld	a,[lc1-[lcout+2]+80h] xor 80h
+			; Turn on printer flag
+	defb	06h	; Along with "xor a", below, becomes "ld b,0afh"
+
+;-----------------------------------------------------------------------------
+
+; Command:	TYPE
+; Function:	Print out specified file on the CON: Device
+; Forms:	TYPE <ufn>	Print file with default paging option
+;		TYPE <ufn> P	Print file with paging option reversed
+
+type:
+	xor	a		; Turn off printer flag
+
+; Common entry point for LIST and TYPE functions
+
+type0:
+	ld	(prflg),a	; Set printer/console flag
+	ld	a,(tfcb2+1)	; Check for user page toggle ('P') option
+	ld	(pgflg),a	; Save it as a flag in code below
+	ld	hl,tfcb		; Point to target file FCB
+	call	ambchk		; Check for ambiguous file spec (vectors to
+				; ..error handler if so)
+	call	fcblog		; Log into specified directory
+	call	open		; Open the file
+
+	 if	renon		; If REN on, share code
+	jr	z,jpnofile
+	 else	;not renon	; Otherwise repeat code here
+	ld	a,ecnofile
+	jp	z,error
+	 endif	;renon
+
+	call	crlf		; New line
+	ld	a,(crttxt0)	; Set line count using value from the
+				; ..environment for CRT0
+	inc	a		; One extra the first time through
+	ld	(pagcnt),a
+	ld	bc,080h		; Set character position and tab count
+				; (B = 0 = tab, C = 080h = char position)
+
+; Main loop for loading next block
+
+type2:
+	ld	a,c		; Get character count
+	cp	80h		; If not end of disk record
+	jr	c,type3		; ..then skip
+
+	call	readf		; Read next record of file
+	ret	nz		; Quit if end of file
+
+	ld	c,0		; Reset character count
+	ld	hl,tbuff	; Point to first character
+
+; Main loop for printing characters in TBUFF
+
+type3:
+	ld	a,(hl)		; Get next character
+	and	7fh		; Mask out MSB
+	cp	1ah		; Check for end of file (^z)
+	ret	z		; Quit if so
+
+; Output character to CON: or LST: device with tabulation
+
+	cp	tab		; If tab
+	jr	z,type5		; ..expand to spaces
+	cp	lf		; If line feed, then output
+	jr	z,type4b	; ..with no change in tab count
+	cp	cr		; If carriage return,
+	jr	nz,type4a	; ..branch to reset tab count
+
+; Output CR and reset tab count
+
+type4:
+	ld	b,0ffh		; Reset tab counter
+
+; Output character and increment character count
+
+type4a:
+	inc	b		; Increment tab count
+
+; Output LF and leave tab count as is
+
+type4b:
+	call	lcout		; Output <cr> or <lf>
+
+; Continue processing
+
+type6:
+	inc	c		; Increment character count
+	inc	hl		; Point to next character
+	push	bc
+	call	break		; Check for user abort
+	pop	bc
+	ret	z		; Quit if so
+	jr	type2		; Else back for more
+
+; Process tab character
+
+type5:
+	ld	a,' '		; Space
+	call	lcout
+	inc	b		; Increment tab count
+	ld	a,b
+	and	7
+	jr	nz,type5	; Loop until column = n * 8 + 7
+	jr	type6
+
+;--------------------
+
+; Output character in A to console or list device depending on a flag.
+; Registers are preserved.  This code is used only by the LIST and TYPE
+; commands.
+
+				; Output to list device
+
+lc1:
+	push	bc
+	ld	c,5		; LISTOUT function
+	jp	output
+
+lcout:
+prflg	equ	$+1		; Pointer for in-the-code modification
+	jr	lc1
+
+				; Output to console with paging
+
+	cp	lf		; Check for new line (paging)
+	jp	nz,conout	; If not new line, print character and return
+	call	conout		; Output to console
+
+				; Paging routines
+
+pager:
+	push	hl
+	ld	hl,pagcnt	; Decrement lines remaining on screen
+	dec	(hl)
+	jr	nz,pager1	; Jump if not end of page
+
+				; New page
+	ld	a,(crttxt0)	; Get full page count from environment
+	ld	(hl),a		; Reset count to a full page
+pgflg	equ	$+1		; Pointer to in-the-code buffer pgflg
+	ld	a,0
+	cp	pagech		; Page default override option wanted?
+
+	 if	pagech ne ' '	; If using explicit character for page toggle
+
+	 if	pagefl		; If paging is default
+	jr	z,pager1	; ..PAGECH means no paging
+	 else			; If paging not default
+	jr	nz,pager1	; ..PAGECH means please paginate
+	 endif	;pagefl
+
+	 else			; Any character toggles paging
+
+	 if	pagefl		; If paging is default
+	jr	nz,pager1	; ..any character means no paging
+	 else			; If paging not default
+	jr	z,pager1	; ..any character means please paginate
+	 endif	;pagefl
+
+	 endif	;pagech ne ' '
+
+				; End of page
+	push	bc
+	call	bios+9		; Wait for user input (BIOS console input)
+	pop	bc
+	cp	ctrlc		; Did user enter control-c?
+	jp	z,nextcmd	; If so, terminate this command
+
+pager1:
+	pop	hl		; Restore HL
+	ret
+
+	 endif	; lton
+
+;-----------------------------------------------------------------------------
+
+; Command: SAVE
+; Function:  To save the contents of the TPA onto disk as a file
+; Forms:
+;	SAVE <Number of Pages> <ufn>
+;		Save specified number of pages (starting at 100H) from TPA
+;		into specified file
+;
+;	SAVE <Number of Sectors> <ufn> <S>
+;		Like SAVE above, but numeric argument specifies
+;		number of sectors rather than pages
+
+	 if	saveon
+
+; Entry point for SAVE command
+
+save:
+	call	number		; Extract number from command line
+	jr	c,badnumber	; Invoke error handler if bad number
+	push	de		; Save the number
+	call	reparse		; Reparse tail after number of sectors/pages
+	pop	hl		; Get sector/page count back into HL
+	ld	a,(tfcb2+1)	; Check sector flag in second FCB
+	cp	sectch
+
+	 if	sectch ne ' '	; If using a specific character, then jump
+	jr	z,save0		; ..if it is that character
+	 else			; If allowing any character (SECTCH=' ')
+	jr	nz,save0	; ..jump if it is anything other than space
+	 endif	;sectch ne ' '
+
+	add	hl,hl		; Double page count to get sector count
+save0:
+	ld	a,1		; Maximum allowed value in H
+	cp	h		; Make sure sector count < 512 (64K)
+	jr	c,badnumber	; If >511, invoke error handler
+
+	push	hl		; Save sector count
+	ld	hl,tfcb
+	call	ambchk		; Check for ambiguous file spec (vectors to
+				; ..error handler if so)
+
+	call	extest		; Test for existence of file and abort if so
+	ld	c,16h		; BDOS make file function
+	call	bdostest
+	jr	z,save3		; Branch if error in creating file
+
+	pop	bc		; Get sector count into BC
+	ld	hl,tpa-80h	; Set pointer to one record before TPA
+
+save1:
+	ld	a,b		; Check for BC = 0
+	or	c
+	dec	bc		; Count down on sectors (flags unchanged,
+				; ..B=0FFH if all records written successfully)
+	jr	z,save2		; If BC=0, save is done so branch
+
+	push	bc		; Save sector count
+	ld	de,80h		; Advance address by one record
+	add	hl,de
+	push	hl		; Save address on stack
+	ex	de,hl		; Put address into DE for BDOS call
+	call	dmaset		; Set DMA address for write
+	ld	de,tfcb		; Write sector
+	ld	c,15h		; BDOS write sector function
+	call	bdossave
+	pop	hl		; Get address back into HL
+	pop	bc		; Get sector count back into BC
+	jr	z,save1		; If write successful, go back for more
+
+	ld	b,0		; B=0 if write failed
+
+save2:
+	call	close		; Close file even if last write failed
+	and	b		; Combine close return code with
+				; ..write success flag
+	ret	nz		; Return if all ok
+
+save3:				; Disk must be full
+	ld	a,ecdiskfull	; Disk full error code
+	jr	jperror
+
+	 endif	; saveon
+
+;-----------------------------------------------------------------------------
+
+	 if	lton or	saveon or renon or geton
+
+; Check file control block pointed to by HL for any wildcard characters ('?').
+; Return to calling program if none found.  Otherwise branch to error handler.
+; The routine also treats an empty file name as ambiguous.
+
+ambchk:
+	push	hl		; Save pointer to FCB
+	inc	hl		; Point to first character in file name
+	ld	a,(hl)		; See if first character is a space
+	cp	' '
+	jr	z,ambchk1	; If so, branch to error return
+
+	ld	a,'?'		; Set up for scan for question mark
+	ld	bc,11		; Scan 11 characters
+	cpir
+	pop	de		; Restore pointer to FCB in DE
+	ret	nz		; Return if no '?' found
+ambchk1:
+	ld	a,ecambig	; Error code for ambiguous file name
+	jr	jperror
+
+	 endif	;lton or renon or saveon or geton
+
+	 if	lton or renon or saveon or geton or jumpon
+
+badnumber:
+	ld	a,ecbadnum	; Error code for bad number value
+jperror:			; Local entry point for relative jump
+	jp	error		; ..to go to error handler
+
+	 endif	;lton or renon or saveon or geton or jumpon
+
+;-----------------------------------------------------------------------------
+
+; Command:	JUMP
+; Function:	To execute a program already loaded into some specified memory
+;		address
+; Forms:	JUMP <adr> <tail>
+;		The address is in hex; the tail will be parsed as usual
+
+	 if	jumpon
+
+jump:
+	call	hexnum		; Get load address into DE
+	jr	c,badnumber	; If bad number, invoke error handling
+	push	de		; ..otherwise save it
+	call	reparse		; Reparse tail after address value
+	pop	hl		; Restore execution address to HL
+	 if	goon
+	jr	getproglf	; Perform call via code below
+	 endif	; goon
+
+	 endif	;jumpon
+
+;-----------------------------------------------------------------------------
+
+; Command:	GO
+; Function:	To Call the program in the TPA without loading
+;		loading from disk. Same as JUMP 100H, but much
+;		more convenient, especially when used with
+;		parameters for programs like STAT. Also can be
+;		allowed on remote-access systems with no problems.
+;
+;Form:		GO <tail>
+
+	 if	goon
+
+go:
+	ld	hl,tpa		; Set up TPA as the execution address
+
+	 endif	; goon
+
+	 if	jumpon or goon	; Common code
+
+getproglf:
+	ld	(execadr),hl
+	xor	a		; Set zero flag to enable leading CRLF
+	jp	callproglf	; Perform call (with leading CRLF)
+
+	 endif	;jumpon or goon
+
+;-----------------------------------------------------------------------------
+
+; Command:	GET
+; Function:	To load the specified file from disk to the specified address
+; Forms:	GET <adr> <ufn> 
+;		Loads the specified file to the specified hexadecimal address
+;		Note that the normal file search path is used to find the file.
+;		If SCANCUR is off, the file may not be found in the current
+;		directory unless a colon is included in the file spec.
+
+	 if	geton
+
+get:
+
+; TMPCOLON was set when the file name was parsed.  We use that as the colon
+; flag so that the file will be loaded from a directory just as if it had
+; been entered as the command name.
+
+	 if	drvprefix and [not scancur]
+	ld	a,(tmpcolon)	; Allow GET to load from specified
+	ld	(colon),a	; directory
+	 endif	;drvprefix and [not scancur]
+
+	ld	hl,tfcb2	; Copy TFCB2 to CMDFCB for load
+	push	hl
+	ld	de,cmdfcb
+	ld	bc,14
+	ldir
+	pop	hl
+	call	ambchk		; Make sure file is not ambiguous (vectors
+				; ..to error handler if so)
+
+; If GET fails to find the specified file along the search path, we do not
+; want the ECP to be engaged.  To prevent that, we fool the command processor
+; by telling it that the ECP is already engaged.
+
+	ld	hl,cmdstatfl	; Point to command status flag
+	set	2,(hl)		; Turn on ECP flag to prevent use of ECP
+	call	hexnum		; Get load address into DE
+	jr	c,badnumber	; If invalid number, invoke error handler
+
+	 if	not fullget
+	ld	a,d		; If trying to load into base page
+	or	a		; ..treat as error
+	jr	z,badnumber
+	 endif	;not fullget
+
+	ex	de,hl		; Move address into HL
+	ld	a,0ffh		; Disable dynamic loading
+				; Fall through to mload
+
+	 endif	; geton
+
+; End ZCPR34-5.Z80
+

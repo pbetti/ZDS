@@ -1,0 +1,554 @@
+;BCOMP 1.1x BYTE EDITING ROUTINES
+
+;
+; EDIT A WINDOW
+;
+edit:
+
+	ld	hl,(block)	; Yank block to buffer in case of abort
+	ld	de,blkbuf
+	ld	bc,128
+	ldir
+
+	xor	a	
+	ld	(eindex),a	; Init index to first element
+	ld	(edflag),a	; Init edflag to HEX
+	ld	(edchnge),a	; No changes yet
+	ld	(eblockf),a	; Block mark undefined
+
+;
+; SET UP ARROW KEYS
+;
+	ld	hl,(z3eadr)	; Pt to environment descriptor
+	ld	de,80h+10h	; Pt to arrow key info
+	add	hl,de
+	ld	de,edcurt	; Pt to cursor table
+	ld	bc,404h		; 4 arrow keys
+arrow:
+	ldi			; (Decrements c)
+	inc	de		; Point to next entry
+	inc	de
+	djnz	arrow
+
+;
+; Command entry displaying help message
+;
+edhlp:
+	call	clrpr
+	 if	helpon
+	call	print
+	db	1,'<ESC>-Quit  ^A-Hex/Ascii '
+	db	'^B - Block  '
+	db	'^S-lt ^D-rt ^E-up ^X-dn'
+	db	2,0
+	 endif	;helpon
+
+;
+; Command entry with cursor positioning
+;
+editcmd0:
+	call	edcur		; Put cursor at current element, hex or ascii
+editcmd:
+	call	edbyte		; Point to current byte
+	ld	a,(edflag)	; Which field?
+	or	a
+	jp	nz,edtext	; Text field
+
+;
+; ENTER IN HEX FIELD
+;
+	xor	a		; Get first nibble
+	call	ednib
+	jr	nc,editc0	; Not a hex char, check for cursor command
+	xor	a
+	dec	a
+	call	ednib		; Get next nibble
+	push	af		; Has char and result flag
+	push	hl		; -> byte
+	or	-1
+	ld	(edchnge),a	; Signal a change
+	call	edasciicur	; Update text field
+	pop	hl		; ...recover the byte
+	ld	a,(hl)
+	call	asciibyte	; ...and print it
+	pop	af
+	jp	c,edright	; Done with this byte, fall through if not
+	
+;
+; CURSOR COMMAND TABLE
+;
+editc0:	call	case		; Scan list of cursor commands
+	db	esc
+	dw	editx		; Exit edit mode
+	db	'E'-'@'		; WordStar diamond
+	dw	edup
+	db	'X'-'@'
+	dw	eddown
+	db	'S'-'@'
+	dw	edleft
+	db	bs		; Alternate left = backspace
+	dw	edleft
+	db	'D'-'@'
+	dw	edright
+	db	' '
+	dw	edright		; Alternate right = space (in hex field)
+	db	'A'-'@'
+	dw	edtoggle
+	db	'B'-'@'		; Block marking functions
+	dw	edbmenu
+	db	0		; End of table
+
+;
+; CHECK FOR ARROW KEYS
+;
+	ex	af,af'		; Save input char
+	ld	a,(edcurt)	; Arrow keys defined?
+	or	a
+	jp	z,editcmd	; No, loop
+	ex	af,af'
+	call	case		; Scan arrow keys
+;
+; ARROW KEY DEFINITONS FROM TCAP
+;
+edcurt:
+	db	0		; 0 indicates no arrow keys
+	dw	edup
+	db	0
+	dw	eddown
+	db	0
+	dw	edright
+	db	0
+	dw	edleft
+	db	0		; End of table
+	jp	editcmd
+
+;
+; EDIT MOVE: UP
+;
+edup:
+	ld	a,(eindex)	; Backup index by 16
+	sub	16
+	jr	edmove
+;
+; EDIT MOVE: DOWN
+;
+eddown:
+	ld	a,(eindex)	; Increment index by 16
+	add	16
+	jr	edmove		; Common routine
+;
+; EDIT MOVE: RIGHT
+;
+edright:
+	ld	a,(eindex)	; Increment index by 1
+	inc	a
+	jr	edmove		; Common routine
+;
+; EDIT MOVE: LEFT
+;
+edleft:
+	ld	a,(eindex)	; Decrement index by 1
+	dec	a
+
+;
+; Common EDIT MOVE Routine - on input, A=new index
+;
+edmove:
+	and	7fh		; Mod 128
+	ld	(eindex),a
+	jp	editcmd0
+
+
+;
+; EDIT SUBROUTINE: EDCUR
+;  Position Editor Cursor at EINDEX
+;
+edcur:
+	push	hl
+	ld	a,(edflag)	; Which field?
+	or	a
+	call	nz,edasciicur	; ASCII
+	call	z,edhexcur	; Hex
+	pop	hl
+	ret
+
+;
+; POSITION CURSOR IN HEX FIELD
+;
+edhexcur:
+	call	edrow		; Compute row
+	and	0fh		; Compute col mod 16
+	ld	b,a		; Result in b
+	add	a,a		; *2
+	add	a,b		; *3
+	add	fcol+7		; Add in col
+	ld	l,a		; Col position set
+	call	gotoxy		; Position cursor
+	ret
+;
+; Compute Row from EINDEX
+;
+edrow:
+	ld	a,(frow)
+	ld	c,a
+	ld	a,(eindex)	; Get index
+	ld	b,a		; Save in b
+	rrca			; Divide by 16
+	rrca
+	rrca
+	rrca
+	and	0fh		; Mask for lsb only
+	add	c		; Compute row
+	ld	h,a		; Row set
+	ld	a,b		; Get index
+	ret
+
+;
+; POSITION CURSOR IN ASCII FIELD
+;
+edasciicur:
+	call	edrow
+	and	0fh
+	ld	b,a
+	ld	a,fcolc+1
+	add	b
+	ld	l,a
+	call	gotoxy
+	or	-1
+	ret
+
+;
+; ENTER DATA IN ASCII FIELD
+;
+edtext:
+	call	cin		; Get char
+	cp	7fh
+	jr	z,edtext0	; Skip delete
+	cp	20h
+	jr	c,edtext0	; Control char
+	call	conout		; Print char
+	ld	(hl),a		; Update memory
+	ld	(edchnge),a	; Signal change
+	push	af
+	call	edhexcur	; Update hex field
+	pop	af
+	call	pa2hc
+	jp	edright		; Next position
+edtext0:
+	jp	editc0
+
+
+;
+; TOGGLE HEX/TEXT FLAG
+;
+edtoggle:
+	ld	a,(edflag)
+	cpl
+	ld	(edflag),a
+	jp	editcmd0
+
+;
+; POINT TO BYTE AT EINDEX
+;
+edbyte:
+	ld	a,(eindex)
+	ld	hl,(block)
+	add	a,l
+	ld	l,a
+	ld	a,h
+	adc	0
+	ld	h,a		; Hl pts to byte at cursor
+	ret
+
+
+;
+; EXIT EDITOR SECTION
+;
+editx:
+	call	edblk1		; Erase block marker
+	ld	a,(edchnge)
+	or	a
+	jp	z,command	; No changes, done
+	call	shadow		; Show comparison with alt file
+	call	clrpr		; Clear prompt line
+	call	print
+	dc	1,'Save changes? (y/N)',2,' '
+	call	cin
+	call	caps
+	cp	'Y'
+	call	z,conout
+	jr	z,editx01
+	ld	de,(block)	; Abort, restore yanked block
+	ld	hl,blkbuf
+	ld	bc,128
+	ldir
+	jr	editx0
+editx01:
+	call	writerec
+editx0:
+	jp	newscr
+
+;
+; WRITEREC:  Write random record just edited
+;  Since we could well be on a record boundary, two records will be written
+;  (unless we are in last record)
+writerec:
+	ld	a,(mflag)	; Memory or file?
+	or	a
+	ret	nz		; No file to write
+
+; Prepare a separate fcb for random write
+	ld	hl,fcb		; Pick up the fcb for random write
+	ld	de,wrecfcb
+	call	movfcb1
+	ld	hl,wrecfcb+12	; Zero fill last 24 bytes
+	call	zfill1
+	call	setusr		; Log in this user
+	ld	c,openf		; Open the base extent
+	call	bdoswrec
+
+; Set DMA to record edited
+	call	getrec		; Find the previous record boundary
+	ex	de,hl		; Start to DE
+	push	de
+	ld	c,setdmaf
+	call	bdos		; Data to write
+	call	calcrec		; What record are we in?
+	dec	hl		; Computers start with record 0
+	call	wrandom
+	pop	de
+	ld	hl,128
+	add	hl,de		; HL -> next record
+
+; Are we at end?
+	push	hl
+	ld	bc,(eofptr)
+	xor	a
+	sbc	hl,bc
+	pop	hl
+	jr	nc,wrecx	; Done
+
+; Write one more record
+	ex	de,hl
+	ld	c,setdmaf
+	call	bdos
+	call	calcrec
+	call	wrandom
+wrecx:
+	ld	c,closef
+bdoswrec:
+	ld	de,wrecfcb
+	jp	bdos
+
+wrandom:
+	ld	(wrecfcb+21h),hl	; Random record offset
+	ld	c,34
+	call	bdoswrec
+	or	a
+	ret	z
+	call	print
+	dc	cr,'>>DOS ERR ',bell
+	jp	cin
+;
+; Figure out start address of current record
+;
+getrec:
+	ld	hl,(block)	; Start of screen
+	ld	de,(filloc)	; Start of file in memory
+	ld	bc,128		; One record
+getrec1:
+	push	hl
+	xor	a
+	sbc	hl,de	; hl = (block), de = start + n*128
+	pop	hl
+	ex	de,hl
+	jr	c,getrec2
+	add	hl,bc
+	ex	de,hl
+	jr	getrec1
+getrec2:
+	xor	a
+	sbc	hl,bc	; Back up a record
+	ret
+
+;
+; BLOCK COMMANDS
+;
+; Controls:
+;  ^B - block menu -->  B - mark   V - yank  C - copy
+;
+
+edbmenu:
+	call	clrpr
+	call	print
+	db	1,'  B- Mark  V- Yank from Mark  C- Copy Block ',2,0
+
+	call	cin
+	cp	20h		; Convert entry to control char
+	jr	c,edbm1
+	call	caps
+	sub	'@'
+edbm1:
+	call	case
+	db	'B'-'@'
+	dw	edblock
+	db	'V'-'@'
+	dw	edbsave
+	db	'C'-'@'
+	dw	edbmove
+	db	0
+	jp	edhlp
+
+;
+; SET BLOCK MARKER
+;  Byte displayed as >XX
+;  This marker will be one end of block, cursor will be other end
+;
+
+edblock:
+	call	edblk1
+	call	edblk10
+	jp	edhlp
+edblk1:
+	ld	hl,(edptr)	; First, delete marker on screen
+	call	edhlcur		; Move to it
+	ret	z		; Not here
+	call	print
+	dc	bs,' '		; Erase previous marker indicator
+	ret
+edblk10:
+	call	edhexcur	; Position to byte in HEX field
+	call	edbyte		; Address of current byte in HL
+	ld	(edptr),hl	; Save it
+	call	print
+	dc	bs,'>'		; On screen marker
+	or	80h		; MSB set for this pointer
+	ld	(eblockf),a
+	ret
+
+;
+; SAVE BLOCK TO BUFFER
+;
+edbsave:
+	call	edbs0
+	call	z,edberr
+	jp	edhlp
+;
+; Save the block to a buffer
+;  Return Z if block invalid
+;
+edbs0:
+	ld	a,(eblockf)	; Block defined?
+	or	a
+	ret	z		; No
+
+	call	edbyte		; Get current address
+	ld	de,(edptr)	; Other end of block
+edbs1:
+	xor	a
+	sbc	hl,de
+	jr	c,edbs2		; End before start
+	inc	hl		; Count of bytes in block
+	ld	(edblk),hl	; Heads block (only L will be significant)
+	push	hl
+	pop	bc		; Count in BC
+	ex	de,hl
+	ld	de,edblk+1
+	ldir			; Move it to buffer
+	or	-1		; Return NZ = OK
+	ret
+edbs2:
+	call	edbyte		; Get current address again
+	ex	de,hl		; Reverse endpoints
+	jr	edbs1		; Now save block
+
+edberr:
+	call	clrpr
+	call	print
+	dc	1,'>>Mark Block First',2,' '
+	jp	cin
+
+;
+; MOVE BLOCK TO CURSOR
+;
+edbmove:
+	call	edbmv0
+	jp	edhlp
+;
+;Move block
+; Return Z = block empty
+;
+edbmv0:
+	call	edbyte		; Point to current byte
+	ex	de,hl
+	ld	hl,edblk	; Block buffer
+	ld	c,(hl)		; Size to C
+	xor	a
+	ld	b,a		; 0 to B
+	or	c
+	ret	z		; No block data
+	ld	a,(eindex)	; Make sure block will fit on current screen
+	add	c		; Current position + buffer size
+	jr	c,edbmv1	; Ovfl (should not be possible)
+	sub	129
+	jr	nc,edbmv1	; Ovfl
+	inc	hl		; Point to data
+	ldir
+	call	prnscr		; Update screen
+	or	-1
+	ld	(edchnge),a	; Indicate a change made
+	ret
+
+edbmv1:
+	call	clrpr		; Print error message and abort
+	call	vprint
+	dc	1,'>>Ovfl ',2,bell
+	jp	cin
+	
+;
+; PUT CURSOR ON @HL
+;  Don't reset any of the editing pointers.
+;  If the byte isn't on the screen, return Z.
+;  If OK, return NZ, offset from start in DE, don't affect HL
+;
+edhlcur:
+	ld	a,(eindex)	; Grab this and save it
+	push	af
+	push	hl		; Save our pointer
+
+	ld	bc,(block)	; Compare to start of screen
+	xor	a
+	sbc	hl,bc
+	jr	c,edherr	; Oops
+	ex	de,hl		; Offset from start in DE
+
+	ld	hl,127		; Compare to end of screen
+	add	hl,bc
+	pop	bc		; Retrieve pointer
+	push	bc		; And save it again
+	sbc	hl,bc
+	jr	c,edherr	; Oops
+
+	ld	a,e		; Offset will all be in E
+	ld	(eindex),a	; New index
+	call	edcur		; Position cursor
+	pop	hl
+	pop	af
+	ld	(eindex),a
+	or	-1		; Return NZ
+	ret
+
+edherr:	pop	hl		; Return the pointer
+	pop	af
+	xor	a		; Return Z on error
+	ret
+
+
+;END OF EDITING ROUTINES
+rn NZ
+	ret
+
+edherr:	pop	hl		; Return the pointer
+	pop	af
+	xor	a		; Return Z on error
+	ret

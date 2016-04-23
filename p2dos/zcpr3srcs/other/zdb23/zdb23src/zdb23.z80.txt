@@ -1,0 +1,573 @@
+; * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; *								  *
+; *				 ZDB				  *
+; *								  *
+; *			 The Z-System Database			  *
+; *		       Name/Address File Manager		  *
+; *								  *
+; *	     Copyright (C) 1990-93 by Joseph I. Mortensen	  *
+; *								  *
+; *								  *
+; * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;
+;
+;	Original Author:	Joseph I. Mortensen
+;				4214 Chelsea Ct.
+;				Midland, MI
+;				517-835-6923
+;				Compuserve 70037,3161
+;				GEnie J.MORTENSEN3
+;				Ladera Z-Node
+;
+;	Major Collaborator
+;	and Co-Author:		Terry Hazen
+;
+;	Assembler/Linker:	ZMAC/ZML or Z80ASM/SLRNKP
+;
+;	For revision history see ZDBxx.HIS
+;	For documentation see ZDBxx.HLP
+;
+vers	equ	23		; Version
+suffix	equ	' '		; Suffix character or ' ' if none
+month	equ	03		; Revision month
+day	equ	18		; Day
+year	equ	94		; Year
+;
+; Equates
+;
+bdos	equ	05h
+bel	equ	07h
+bs	equ	08h
+tab	equ	09h
+lf	equ	0ah
+ff	equ	0ch
+cr	equ	0dh
+eof	equ	1ah
+esc	equ	1bh
+del	equ	7fh
+fcb	equ	5ch
+cmdbuf	equ	80h
+false	equ	00h
+true	equ	0ffh
+on	equ	true
+off	equ	0
+lstat	equ	15
+gsusr	equ	32		; Get/set user
+;
+ctrla	equ	'A'-40h		; Move cursor one word left
+ctrlc	equ	'C'-40h
+ctrld	equ	'D'-40h		; Move cursor right
+ctrle	equ	'E'-40h		; Move cursor up one field
+ctrlf	equ	'F'-40h		; Move cursor one word right
+ctrlg	equ	'G'-40h		; Delete character
+ctrlk	equ	'K'-40h		; Save image in copy buffer
+ctrll	equ	'L'-40h
+ctrlq	equ	'Q'-40h		; Quit add/edit without saving changes
+ctrlr	equ	'R'-40h		; Refresh screen
+ctrls	equ	'S'-40h		; Move cursor left
+ctrlt	equ	'T'-40h		; Delete word right
+ctrlv	equ	'V'-40h		; Insert character mode
+ctrlw	equ	'W'-40h		; Quit add/edit and save changes
+ctrlx	equ	'X'-40h		; Move cursor down one field
+ctrly	equ	'Y'-40h		; Delete from cursor to end of field
+;
+; Length of barcode buffer
+;
+buflen	equ	(12*5+2)*6	; Bar + 11 zip + 1 correction chr + bar
+;
+; Request library routines
+;
+	public	mfn2		 ; Use simplified version
+
+	.request jthlib
+	ext	pdfcb,pdffcb,fnamz,zprdfn,dispfn,zmvdfn
+;
+	.request zslib
+	ext	mdata1,binbcd,gcomnam,comnam,pahc
+;
+	.request dslib
+	ext	timini,rclock
+;
+	.request vlib
+	ext	stndout,stndend,at,gxymsg,vprint,vpstr
+	ext	cls,ereol,z3vinit,@ghl,gotoxy
+	ext	tinit,dinit,@goxy,curon,curoff,grxon,grxoff
+;
+	.request z3lib
+	ext	zsyschk,gzmtop,z3log,waitp1s,dirtdu
+;
+	.request syslib
+	ext	f$mopen,f$make,f$close,f$write,f$appl,getfs
+	ext	f$exist,r$write,r$read,setdma,f$rename,f$delete
+	ext	codend,condin,bios,retud
+	ext	isctrl,compb,acase3,isdigit,ssbini,sort
+	ext	capin,cin,cout,pa2hc,phldc,phlfdc
+	ext	caps,lout,lcrlf,eval10,pout
+
+;-----------------------------------------------------------------------
+;
+; Program begins here
+;
+	jp	start
+	db	'Z3ENV'		; Standard z3 header
+	db	1		; Type 1 program
+z3addr:	dw	0
+
+;-----------------------------------------------------------------------
+;
+; Bios printer ready check flag.  Normally set to on (0ffh) to call the
+; bios list status routine to check for printer ready.	If your system
+; hangs on a call to the bios list status routine, set this flag to 0:
+;
+pchkf:	db	on		; Set to 0 to skip bios printer check
+;
+; Character used to terminate data fields
+;
+termf:	db	'<'		; Char to terminate fields, 00h if none
+;
+; Default implied CFG filename at 010Dh for use with ZCFNG (8 characters):
+;
+cfg:	db	'ZDB',vers/10+ '0',vers	mod 10 + '0'
+	ds	cfg+8-$,' '	; Space for 8 bytes, space-filled
+mterm:	db	0		; Termination
+;
+; Default data file name (16 characters - fill unused positions with
+; spaces):
+;		'duu:filename.typ'
+deffn:	db	'ZDB.DTA'	; Default data file name
+;
+	ds	deffn+16-$,' '	; Space for 16 bytes, space-filled
+	db	0		; Termination
+;
+; The barcode is composed of full bars and half bars.  Full bars must be
+; .115"-.135" (about 1/8") high.  Half bars must be .04"-.06" (about 3/64")
+; high.  The barcode is printed in one or two graphics passes, depending on
+; the type of printer you are using.
+;
+; The default graphics strings, below, produce conforming bars on the
+; 9-pin Epson MX80 with Graftrax, which requires two passes to produce a
+; 1/8" full bar.  The following are the barcode character definitions for
+; pass 1.  Each bit represents a printer graphics dot.	Pass 2 prints both
+; characters as half bars to provide enough bottom barcode to make full and
+; half bars the required height.
+;
+; Epson LQ-850-compatible 24-pin printers such as the Panasonic KX-P1123 and
+; KX-P1124 can produce 1/8" full bars with one pass.  When using a 24-pin
+; printer, you may wish to change HBAR, below, to set the last 3 bits and
+; change the SETLF length byte, below, to 0 to turn off the second graphics
+; pass.
+;
+fbar:	db	11111111b	; Full bar character (top 8 bits)
+hbar:	db	00000011b	; Half bar character (top 8 bits and
+;				;    bottom 2 bits)
+;
+; The following are length-prefixed printer strings.  Each string begins
+; with a length byte.  Extra space is provided for longer printer codes.
+; To eliminate any of these strings, make the first byte 0.  The sample
+; codes are for the Epson FX-85:
+;
+; Printer reset string, sent at start and end of each label/envelope
+; printing session.  4 characters maximum:
+;
+reset:	db	reset0-$-1	; Length byte
+	db	esc,'@'		; Reset printer
+;
+reset0:	ds	reset+5-$,0	; Space for 4 bytes, 0-filled
+;
+; Set printer for printing return address.  This string is sent to the
+; printer after it is reset each time the return address is printed.
+; 12 characters maximum:
+;
+rin:	db	rin0-$-1	; Length byte
+	db	0fh		; Set condensed print
+	db	esc,'x',1	; Set nlq mode
+	db	esc,'p',1	; Set proportional print
+;
+rin0:	ds	rin+13-$,0	; Space for 12 bytes, 0-filled
+;
+; Set printer for printing main address.  Cancel any return address
+; settings that may require it.  Do NOT use reset, as it will cancel
+; the label form length.  12 characters maximum:
+;
+ain:	db	ain0-$-1	; Length byte
+	db	12h		; Cancel condensed print
+	db	esc,'E'		; Set emphasized print
+	db	esc,'x',1	; Set nlq mode
+	db	esc,'p',1	; Set proportional print
+;
+ain0:	ds	ain+13-$,0	; Space for 12 bytes, 0-filled
+;
+; Set number of columns for envelope address left margin:
+;
+lemarg:	db	40		; Start address at column 40
+;
+; Labels must be at least 3.5" wide to print barcodes, 4" labels are best.
+;  With no return address:	 15/16" high minimum (labln=6, llmarg=0)
+;  With 3-line return address:	1 7/16" high minimum (labln=9, llmarg=7)
+;
+; Set number of columns for label address left margin:
+;
+llmarg:	db	0		; 0 for flush left
+;
+; Use return address in label (if labels are at least 4" x 1 7/16"):
+;
+dlra:	db	0		; 0 if no return address is desired
+;
+; Set number of lines per label.  8 characters maximum:
+;
+labln:	db	labln0-$-1	; Length byte
+	db	esc,'C',6	; Set lines per label
+;
+labln0:	ds	labln+9-$,0	; Space for 8 bytes, 0-filled
+;
+; Use return address in envelope
+;
+dera:	db	on		; 0 if no return address is desired
+;
+; Return address flag character marks record as the default return
+; address if it appears as the first character in the COMMENTS2 field.
+; Any character not often used in the comment field, such as !@#$%^&~+
+; is suitable:
+;
+raflag:	db	'*'
+;
+; Space from return address to address.  For normal business envelopes,
+; the total number of line feeds in the return address and addrsp
+; should be 14.  If the number of line feeds in the return address is
+; the normal 3, addrsp should be set to 10 lines:
+;
+addrsp:	db	10
+;
+; The following string is used to configure your printer to print the
+; postal barcode following the address.  The printer must be set to
+; print the next buflen (372) bytes in 960 dots/line (120 dots/inch)
+; graphics.  Set the length byte to 0 if you don't wish to print
+; barcodes.  8 bytes maximum:
+;
+setgraf:db	setg0-$-1	; Length byte
+	db	esc,'L'
+	dw	buflen		; Set graphics
+;
+setg0:	ds	setgraf+9-$,0	; Space for 8 bytes, 0-filled
+;
+; Most printers will require two passes to print a conforming height
+; barcode (see the barcode module, ZDB.C, for barcode definitions.)  The
+; following strings are used to change the line spacing for graphics.
+; The first pass prints the top 7 dots of the barcode.	The following
+; string sets the line spacing to 2 dots to move the paper just enough
+; to print the bottom 2 dots.  You might have to adjust it slightly for
+; your printer to avoid gaps between dots or overlaps on the bottom of
+; the barcode characters.  If your printer will do an conforming barcode
+; in one pass, set the following byte to 0 to skip the second pass.
+; 8 bytes maximum:
+;
+setlf:	db	setlf0-$-1	; Length byte
+	db	esc,'3',5	; Set linefeed for second pass
+;
+setlf0:	ds	setlf+9-$,0	; Space for 8 bytes, 0-filled
+;
+; The following string is used to restore the default line spacing of
+; 6 lines/inch.  8 bytes maximum:
+;
+deflf:	db	deflf0-$-1	; Length byte
+	db	esc,'2'		; Restore default line spacing
+;
+deflf0:	ds	deflf+9-$,0	; Space for 8 bytes, 0-filled
+;
+; Number of strikes/pass for barcode printing.	Normally 1, but can
+; be increased if a darker barcode is required.  1-3 allowed:
+;
+strikes:db	1		; Number of strikes/pass (1-3)
+;
+; The USPS recommends but doesn't require that the address be printed
+; in capital letters.  Set to 0 to print the address in mixed case, just
+; as entered into the database.  Set to 1 to print the address in caps.
+; The return address will always be printed in mixed case.
+;
+adrcaps:db	0		; 0=address in mixed case, 1=caps
+;
+; ZDB may be configured to clear the screen on exit.
+;
+clr:	db	off		; Set to ON to clear screen on exit
+;
+; Display 12 or 24 hour time
+;
+time:	db	off		; Set to OFF for 12 hr time
+				; Set to ON for 24 hr time
+
+;-----------------------------------------------------------------------
+;
+; Command line help message
+;
+hlpmsg:	call	vprint
+	db	'ZDB Name and Address Database vers '
+	db	 vers/10+ '0','.',vers mod 10 +	'0'
+	db	suffix
+	db	cr,lf
+	db	'Syntax:',cr,lf
+	dc	'   '
+	ld	b,8		; Display current filename
+	ld	hl,comnam
+	call	dispfn
+	call	vprint
+	db	' [dir:][datafile[.typ]] ',cr,lf
+	dc	'   (Default datafile is '
+	ld	b,16
+	ld	hl,deffn	; Display default filename
+	call	dispfn
+	call	vprint
+	dc	')',cr,lf
+	jp	exit2
+;
+; Program starts here
+;
+start:	ld	(stack),sp
+	ld	sp,stack	; Set up internal stack
+;
+	ld	hl,data		; Initialize data area
+	ld	de,data+1
+	ld	(hl),0
+	ld	bc,datalen
+	ldir
+;
+	ld	hl,(z3addr)	; Check for z3 system
+	call	zsyschk
+	jp	nz,exit2	; Not present, exit
+;
+	call	z3vinit		; Initialize vlib stuff
+	ld	de,90h		; Add TCAP offset from env
+	add	hl,de
+	ld	(tcap),hl	; Store it for use by edloop
+	call	tinit		; Initialize terminal
+;
+	call	retud		; Get current du:
+	ld	a,b		; Get drive
+	inc	a		; Make it A=1
+	ld	(outfcb),a	; Save output file drive
+	ld	a,c		; Get user
+	ld	(outfcb+13),a	; Save output file user
+;
+	ld	hl,cfg		; Point to default filename
+	call	gcomnam		; Put it in buffer
+	call	raflgs		; Initialize return address flags
+;
+	ld	a,(fcb+1)	; Check command tail
+	cp	'/'		; Asking for help?
+	jp	z,hlpmsg	; Yes, print help message
+	call	gettim		; Get the time
+	call	nz,noclk	; Otherwise get date from manual entry
+;
+	ld	bc,cmdbuf	; Point to command buffer
+	ld	a,(bc)		; Get length
+	or	a
+	jr	z,st01		; No command line, skip parsing
+;
+	inc	bc		; Point to first command line token
+	inc	bc
+;
+st01:	ld	de,fcb		; Point to fcb
+	ld	hl,deffn	; Point to default datafile
+	call	pdfcb		; Parse filename to fcb
+;
+	ld	a,(fcb+13)	; Get user for file
+	ld	(sfusr),a	; Store it
+;
+; After writing a new sorted file, program loops to reopen
+;
+reopen:	xor	a
+	ld	(fcb+12),a	; Set extent to 0
+	ld	(fcb+32),a	; Likewise w/ current record
+;
+	ld	de,fcb
+	call	z3log		; Log into datafile du
+	call	f$exist		; Check to see if file exists
+	jr	nz,open		; Yes, open it
+;
+	push	de		; Save fcb pointer
+	pop	hl		; Copy it to HL
+	inc	hl		; Point to filename
+	ld	c,8
+	call	atest		; Test for wildcards
+	jr	z,badf		; None allowed!
+;
+	push	de
+	ld	de,8		; Point to filetype
+	add	hl,de
+	pop	de
+	ld	c,3
+	call	atest		; Test for wildcards
+	jr	nz,nofm		; Ok
+;
+badf:	call	vprint
+	dc	' - Bad Filespec!',bel
+	jp	exit1
+;
+nofm:	push	de		; Save fcb pointer
+	call	vprint
+	dc	bel,'No File '
+	ld	de,pdffcb	; Display datafile name
+	call	zprdfn
+	pop	de		; Restore fcb pointer
+	call	vprint
+	dc	' - Create it y/[N] ?',bs
+	call	getchar
+	cp	'Y'
+	jp	nz,exit1
+;
+open:	call	f$mopen		; Open datafile
+	jp	nz,nogood
+;
+	ld	hl,datafil
+	call	zmvdfn		; Expand datafile name to header
+;
+	ld	de,fcb
+	call	getfs		; Get file size in records
+	ld	(recs),hl
+	call	frame		; Do frame and screen layout
+	call	index		; Create index
+;
+	ld	hl,(recs)	; Save it
+	ld	a,h		; Check for empty file
+	or	l
+	jr	nz,dotop	; Not empty
+;
+doadd:	call	curtim		; Display time and date
+	ld	a,'A'		; Empty file, so adding new record
+	jp	menua		; Is the only choice!
+;
+dotop:	call	firstr		; Display first record and wait for cmd
+;
+menu:	ld	sp,stack	; Reset stack pointer
+	call	gxymsg
+	db	23,1,1		; Position for menu
+	db	'I=Index   F=Find  X=Xfind ^L=Repeat       A=Add '
+	db	' E=Edit  D=Delete      O=Output'
+	db	2,cr,lf,1
+	db	'^S=Sort   T=Top B=Bot <>=Prev/Next    ^C=Copy>Buff '
+	db	'^A=RetAddr C=Call   Q=Quit '
+	dc	2,4
+;
+; Main program loop
+;
+main:	call	curtim		; Display current time & date
+	call	at
+	db	24,79		; Position cursor at '?' in menu line
+;
+	call	savcurr
+;
+main0:	call	getchar		; Wait for command
+;
+menua:	ld	de,cmdtbl	; Run command through command table
+	call	acase3
+	jp	menu
+;
+menub:	call	beep
+	jr	main0
+;
+; Command table
+;
+cmdtbl:	db	22		; No. of entries in command table
+	dw	menub
+	db	'Q'
+	dw	exit
+	db	esc
+	dw	exit
+	db	'A'
+	dw	new
+	db	'E'
+	dw	edit
+	db	'D'
+	dw	delete
+	db	'F'
+	dw	find
+	db	','
+	dw	prev
+	db	'<'
+	dw	prev
+	db	'.'
+	dw	next
+	db	'>'
+	dw	next
+	db	'O'
+	dw	output
+	db	ctrlr		; ^R to refresh screen if it gets out of whack
+	dw	refscr
+	db	ctrls		; ^S for sort
+	dw	asksrt
+	db	'I'
+	dw	settyp
+	db	'T'
+	dw	firstr
+	db	'X'
+	dw	qfind
+	db	'B'
+	dw	last
+	db	'C'
+	dw	dial
+	db	ctrll
+	dw	repsrch
+	db	'L'
+	dw	repsrch
+	db	ctrla
+	dw	setradr		; Set temporary return address
+	db	ctrlc
+	dw	cpyblk		; Save image of current record in copy buffer
+;
+; Exit routines
+;
+exit:	ld	de,fcb		; Close file
+	call	f$close
+;
+exit1:	ld	a,(clr)		; Check clear screen flag
+	or	a
+	call	nz,cls		; Clear screen if requested
+	call	curon		; Turn on cursor
+	call	dinit		; Deinitialize terminal
+;
+exit2:	ld	sp,(stack)	; Restore stack
+	ret
+;
+; Error handlers and messages
+;
+nogood:	call	vprint
+	dc	'Can''t open file '
+	ld	de,pdffcb
+	call	zprdfn
+	jr	exit1
+;
+wrterr:	call	errmsg
+	dc	'Write'
+	jr	errend
+;
+ermgr1:	call	errmsg		; Random read error handler
+	dc	'Read'
+;
+errend:	call	vprint
+	dc	' Error'
+	jp	menu
+;
+errmsg:	call	gxymsg		; Common error message
+	dc	21,1,bel,0
+	jp	vprint
+;
+; Include the rest of the modules
+;
+; zdbxx.a		; Output module
+; zdbxx.b		; Phone dialer module
+; zdbxx.c		; Barcode module
+; zdbxx.d		; Data module
+; zdbxx.e		; Editor module
+; zdbxx.f		; File output module
+; zdbxx.s		; Subroutine module
+;
+incl	 macro	msg1,n,msg2,ft
+	msg1&n&msg2&ft
+	 endm
+;
+	 irp	ft,<A,B,C,E,F,S,D>
+	incl	<.printx - Reading ZDB>,%vers,<.>,ft
+	incl	<include zdb>,%vers,<.>,ft
+	 endm
+
+	end
+

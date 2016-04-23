@@ -1,0 +1,362 @@
+			      DU-V90.DOC
+			      ----------
+
+		By Ward Christensen (revised 04/29/91)
+additional notes by Ron Fowler, Irv Hoff, Jeffrey Nonken & Stephen Younger
+
+This version of DU is compatible with CP/M Plus only.  Advantage  has  been
+taken of this to set the console mode & use the versatile CP/M  10  routine
+to edit the command line buffer.  This  allows a command  line  to  be  re-
+entered by use of Ctrl-W.  Scrolling  during  the  running  of  the  'Yank'
+command is inhibited by the use of ESC A (scroll up) issued to the console.
+DU adjusts itself automatically to  the  correct number of sectors, tracks,
+directory size, etc.  Use  has  been  made of Z80 only codes and the IX and
+IY registers are used in the Map routine.
+
+
+				 INDEX
+
+		   1.0	   INSTALLATION:
+		   2.0	   USE:
+		   2.1	   COMMANDS, BY FUNCTION
+		   2.2	   ALPHABETIC COMMAND SUMMARY
+		   3.0	   NOTES
+		   4.0	   INTERPRETATING DIRECTORY DATA
+		   4.1	   SINGLE DENSITY
+		   4.2	   DOUBLE DENSITY
+
+
+
+1.0	INSTALLATION:
+===
+"DU" should require no changes to the source file because of the use of the
+automatic adaption feature. For the "Z" SLEEP command a clock speed of 4MHz
+is assumed.
+
+
+2.0	USE:
+===
+	To invoke "DU", simply enter "DU" at the CP/M prompt.
+
+	A>DU
+
+	An initial command string may optionally be placed as an operand of
+the original "DU" command, i.e.:
+
+	A>DU M;X
+
+for example, if you want to only map the disk, and then exit:
+
+
+Once "DU" is running, it expects single-letter commands much like "SID" OR
+"DDT". For ease of use, multiple commands may be placed on one line, separ-
+ated by  ";".  In addition,  a given command or string of  commands may be
+repeated -- either indefinitely (until ^C is pressed) or a given number of
+times.
+
+To avoid an accidental ^C from dropping out of "DU", only the explicit "X"
+command will exit "DU".
+
+
+2.1	COMMANDS, BY FUNCTION
+===
+
+HELP:
+	?	 displays the help guide
+
+POSITIONING:
+
+	Gxx	by allocation group
+	Snn	by sector
+	Tnn	by track
+	+xx	going ahead nn sectors
+	-xx	going back nn sectors
+
+		where 'xx' is hexadecimal entry and 'nn' decimal entry.
+		All entry can be the opposite of the default notation
+		if prefixed by a '#'.  e.g. G#nn and T#xx accept decimal
+		and hex entry respectively.
+I/O:
+	{	puts 4 current sectors "away" into a buffer (512 byte 
+                physical sector)
+	}	recalls 4 previously saved sectors and writes to disk
+		at the current location
+	<	puts current sector "away" into a buffer
+	>	recalls previously saved sector
+	K	writes "yanked" sectors to a file
+		    (see "saving sequential memory" in notes below)
+	R	reads sector
+	W	writes sector
+	Y	"yanks" current sector into sequential memory
+
+DISPLAYING:
+
+	#	shows disk parameters
+	A	dump sector in ASCII
+	D	dump the sector (hex + ASCII)
+	G	shows current group, track, sector
+	H	dump sector in hex
+	M	maps the disk -- where the files are located
+	Mxx	map starting at group xx
+	Vxx	views (like CP/M type) xx sectors
+
+CHANGING:
+
+	CAxx,VAL change data in ASCII (with <xx> escape to hex)
+	CHxx,VAL change data in hex
+	Unn	 change user to nn
+
+SEARCHING:
+
+	=Abc	scan for Abc (IN ASCII) from current sector on (very
+		    slow, allow up to 15 minutes to scan an entire disk.
+		    Either finds the answer or says: "out of bounds".
+	FNAME	find a file in the directory
+	F	find next occurrence (extent) of same name
+
+MISC:
+	(	toggles the map display to show/not show erased files
+	/nn	repeat previous command nn times (up to 65534)
+	Bnn	boot nn sectors per track
+	LX	log in disk X
+	P	printer toggle
+	Q	before a command does it "quietly"
+	X	exit to CP/M
+	Zxx	sleep (xx tenths of a second) to allow viewing data
+		    before it scrolls off
+
+2.2	ALPHABETIC COMMAND SUMMARY
+===
+
+	#	Prints the disk parameters
+	+	Advance 1 sector (if below track 2, this advances to
+		    next numerical, if 2 or more, advances based on
+		    CP/M"s normal sector scrambling algorithm, i.e.,
+		    allows + to the next logical sector of the file.
+	-	backs up 1 logical sector
+		    NOTE:  + and - may take an amount:	For example,
+			   +15 advances 15 sectors
+	/	repeats entire command
+	/nn	nn may be 2 TO 65535
+	(	toggles the map display to show/not show erased files.
+		    When showing erased files "*" indicates that block
+		    duplicates a block in another file.  It may not be
+		    possible to restore this program without errors.  If
+		    there are no "*" in this complete file, it can be
+		    correctly restored.
+	<	saves current sector in a "save" buffer
+	=Abc	ASCII search, starting at current sector.  <xx> hex
+		    may be imbedded or used alone.  To find the ASM
+		    instruction: "IN 0FEH"
+		    use:  =<DB><FE>  (Ignores bit 7 unless using <xx>.)
+		    Since ";" is a command delimiter, you have to use
+		    <3B> to search for a ";".  Also, since "<" is a hex
+		    escape character, use << to mean a single "<".
+
+		    NOTE:  This is a very slow routine.  It can take 15
+			   minutes or longer to search an entire double-
+			   density double-sided disk so be patient.  It
+			   either finds the string or says:  "OUT OF
+			   BOUNDS".
+	>	gets saved buffer.  < and > may be used to move
+		     a sector to another place.
+	?	displays the help guide
+	A	dump sector (ASCII only)
+	Bnn	boot nn sectors per track -- not all disks have 26.
+	CHADDR,VAL,VAL,VAL...	change hex values in sector
+	CAADDR,CHAR STRING...	change ASCII values in sector
+		    NOTE:  <xx> may be hex imbedded in the ASCII
+			   string:  CA00,OK<0D><0A><1A>
+		    ---->  W writes changes to disk
+			   note that the "C" command echoes the over-
+			   laid data for verification.
+	CHADDR-ADDR,BYTE	repeats a change
+	CAADDR-ADDR,BYTE	repeats a change
+	D	dump sector (hex + ASCII)
+	FNAME	print directory for file "NAME", then positions to
+		    its directory sector.
+	F	find next occurrence of name in directory
+	Gxx	position to group xx and read
+	G	shows current position
+	H	dump sector, hex only
+	Kdu:filename.ext   save a file from "yanked" sectors.
+		    drive, user are optional.  Resets "yank" address.
+		    see "saving sequential memory" in notes below.
+	L	re-logs in the current disk -- you may pull out a
+		    disk, put in a new one, and "L" just to log it in.
+		    (see "logging in disk" in notes below)
+	LX	logs in disk "X", such as: LB, LC, LA, etc.
+	M	dumps a map of the group allocations for files.  Also
+		shows fcbs which have a group number outwith the possible
+		range, or a discepancy between the number of groups and
+		    the record count.
+	Mxx	displays the map from group "xx"
+	N	resets CP/M via BDOS -- this may make it possible under
+		    some implementations of CP/M to change the disk
+		    format, i.e., density, sides, etc.
+	P	toggles the printer on/off
+	Q	quiet -- preceedintg any command, suppresses CRT output
+	R	reads into memory the sector currently positioned at.
+		    NOTE:  "R" (read) is implicit in the G, +, and -
+			   commands but NOT in the "S" and "T" commands
+	Snn	position to sector nn, and read
+	Tnn	seek to track nn (no read)
+	Un	logs user "x" for next "F" command
+	V	views the current sector -- assumes ASCII data
+	Vxx	views xx sectors
+	W	writes the current sector to disk
+		    NOTE:  may NOT be used after an "F" command as
+			   CP/M was used to find file in the directory
+	X	exit back to CP/M (must press return).	^C was too
+		    easy to hit over modem lines -- requires two bytes:
+		    (X,CR) to exit.
+	Y	"yank" the current sector into sequential memory
+		    (starts at 4000H, increments for each yank)
+	Z	sleep -- causes the program to pause -- such as to look
+		    at a dump.	Z is 1 second
+      	Zxx	xx tenths of a second	Z50 = 8 seconds
+        {       moves 4 current sectors (corresponding to the usual 512 byte 
+                physical sector) in a save buffer.  It is not necessary to 
+                be positioned at the first sector of the group.
+        }       puts the saved sectors into the current physical sector of 
+                the disk.  Positioning at the first sector of the group is 
+                not necessary.  If the commands "<" and "}" or "{" and">" 
+                are mixed an error is generated.  
+      
+
+3.0	NOTES
+===
+
+* Multiple commands:  May be separated by ";"
+
+EXAMPLE:  The following commands will erase the B: disk directory to all
+	  E5"s:
+
+
+	LB		 log in B: drive
+	G0		 position to directory
+	CH0-7F,E5	 fill with E5
+	<		 save the sector
+	>;W;+;/16	 restore, write, next, repeat 16
+
+
+---- this could be shortened to:
+
+
+	LB;G0;CH0-7F,E5;<
+	>;W;+;/16
+
+
+* DUMP COMMANDS:  All dump commands (D, A, H) may be optionally followed
+		  by a starting and ending address:
+
+	D0,7F		 the same as just "D"
+	D3,5
+	A20,3F
+
+
+* LOGGING IN DISK:  If you have  a  disk  with  a  "blown  directory",  try
+logging in a good disk of the same density, then put in  the  "blown"  disk
+without logging it in.	You  are  opening  yourself  to  possible  problems
+because of the buffering of physical  sectors  in  the  "BIOS".   The  best
+technique, (but not guaranteed), would be  to  seek  to  the  unused  inner
+tracks of the first disk, do the read, then change disks.  That way, if  it
+writes anything, you won"t have destroyed anything -- assuming the disk  is
+not completely full. Another technique (assuming the second disk  does  not
+contain a CP/M system, would be to seek to track  1,  do  the  read  there,
+then change disks to the blown one.
+
+
+* SAVING SEQUENTIAL MEMORY:
+Since CP/M v 3.0 does not have a SAVE function, one has been added.
+Syntax is:
+	Kdu:filename.ext
+	^^^	 ^     ^
+	|||	 |     +-- file extension (0-3 characters)
+	|||	 +-------- file name (1-8 characters)
+	||+--------------- user # (or none)
+	|+---------------- drive designation (A-P or none)
+	+----------------- DU command
+
+Drive and user may be omitted.	If so, omit the colon as well.	Drive  must
+be specified if the user is.  If the user # is omitted, the current user is
+used.  If the drive is omitted, the current CP/M default drive is used.
+
+This function saves the current contents of sequential memory into  a  disk
+file.  The contents of sequential  memory  are  determined  by  the  "yank"
+function, and the pointer of that function is used  here.  If  nothing  has
+been yanked, you get an error.	Once the file has been  saved,  the  "yank"
+pointer is re-initialized to its original value  (4000H).  Control  is  re-
+turned to DU.  Data can be added to the end of an existing file by  quoting
+it's name in the command.  The options when an existing file is  found  are
+to Add to the file, Delete it or abort the command.
+
+
+4.0	INTERPRETATING DIRECTORY DATA
+===
+
+4.1	SINGLE DENSITY
+===
+
+	The following explains the format of  a  CP/M  directory  entry  as
+shown by "DU", using either the "F" (find file) command, or just doing  "D"
+(dump) of the directory sectors, which are located in groups 0 and 1  on  a
+single-density disk.
+
+
+SAMPLE RESULT OF "FSID.COM" COMMAND:
+
+40  00534944 20202020  20434F4D 0000003A  *.SID     COM...:*
+50  33343536 3738393A  00000000 00000000  *3456789:........*
+
+
+FIRST LINE -
+
+40  00534944 20202020  20434F4D 0000003A  *.SID     COM...:*
+||  ||| 		      | ||    ||    |	      |
+||  ||^---hex file name/type--^ ||    ||    ^file name^
+||  ||				||    ||     in ASCII
+||  ||			 extent-^^    ||
+||  ||				      ||
+||  ||		 file size in sectors-^^
+||  ||
+||  ^^-00 = file active  other values (E.G 03) = user #
+||     E5 = file erased
+^^-displacement of line in directory sector
+
+
+SECOND LINE -
+
+50  33343536 3738393A  00000000 00000000  *3456789:........*
+    |				       |   |
+    |				       |   ^- allocation groups
+    ^-----allocation group numbers-----^	 (just happened to
+						 be printable)
+
+
+4.2	DOUBLE DENSITY
+===
+	The following is a sample of "FSID.COM" running on a double-
+density system:
+
+:FSID.COM
+00  00534944 20202020  20434F4D 0000003A  *.SID     COM...:*
+10  38003900 3A003B00  00000000 00000000  *8.9.:.;.........*
+G=0000:00, T=2, S=1, PS=0
+
+
+	The primary difference is that the groups now occupy 2 bytes, i.e.,
+38 00" "39 00" ...  this follows the Intel and CP/M convention  of  putting
+16-bit values high-byte-first.	This it means group 0038, 0039 etc.
+
+	Note that in double-density, each group stood for  2k  not  1K,  so
+there were half as many groups for the same file.
+
+	Be very careful when patching a directory under double-density.
+For example:
+
+	CH10,38,39,3A,3B...
+
+	This might try to access group 3938 with resultant angry noise from
+the disk stepper as it attempts to find where it should go for the data.
+

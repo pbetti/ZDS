@@ -1,0 +1,75 @@
+;	TITLE	"SGRR1 - Syslib 4.0
+	NAME	('GETRR1')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SGRR1.Z80 Ver 1.1 by Richard Conn
+; Date    : 4 Jul 89
+; Version : 1.3
+; Module  : SGRR1
+; Abstract: This module provides two two functions: GETRR1 and
+;	GETFS1.  With the file FCB pted to by DE, GETRR1 gets
+;	the random record number of the last record read or
+;	written sequentially from the file.  GETFS1 gets the file
+;	size of the file in terms of records.  The FCB passed to
+;	these two routines is not affected.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Entry Points
+
+	PUBLIC		GETRR1, GETFS1
+
+;  External References
+
+	EXT		@BDOSA
+
+; Definitions
+
+GFS	EQU	35		; Get file size command
+SRR	EQU	36		; Set Random Record command
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - GETFS1 - Get the file size (in records) of the
+;		   specified file.
+; Entry: DE - Address of File Control Block (FCB)
+; Exit :  A = 0, Zero flag Set (Z) if Ok
+;	      A = 1, Zero flag Reset (NZ) if overflow
+;	 HL - Contains file size in records
+; Uses : AF,HL
+; Requirements: None
+;===============================================================
+
+GETFS1:	LD	A,GFS		; Get File Size
+	JR	GET1		; ..and join with common code
+
+;===============================================================
+; NAME - GETRR1 - Get number of the last record read from
+;		   or written to the specified file.
+; Entry: DE - Address of File Control Block (FCB)
+; Exit :  A = 0, Zero flag Set (Z) if OK
+;	      A = 1, Zero flag Reset (NZ) if overflow
+;	 HL - Contains Record number
+; Uses : AF,HL
+; Requirements: None
+;===============================================================
+
+GETRR1:	LD	A,SRR		; Set Random Record Number
+GET1:	PUSH	DE		; Save regs
+	CALL	@BDOSA
+	LD	HL,33		; Offset to Random Record Number
+	ADD	HL,DE
+	LD	E,(HL)		; Get Random Record Number in HL
+	INC	HL
+	LD	D,(HL)
+	INC	HL
+	LD	A,(HL)		; Overflow
+	EX	DE,HL		; Number in HL
+	POP	DE		; Restore Registers
+	OR	A		; Set error code
+	RET
+	END
+

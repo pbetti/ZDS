@@ -1,0 +1,110 @@
+
+                          Notes on DU3 Version 1.4
+                                Carson Wilson
+                                  05 Jan 88
+
+     In version 1.4 I have taken the best parts of versions 1.3 and 1.3CW, 
+combined them, and added a few new features and fixes.  The major change I 
+have made is an attempt at resolving the problem with the Map command on hard 
+disks described by Jay Sage below.  The map command now removes erased 
+directory entries while reading the directory tracks to memory, rather than 
+simply reading all directory tracks in as in version 1.3.  This will reduce 
+the amount of space needed for directory Mapping only if there are erased 
+entries, but my packing code should form the basis of the more ambitious plan 
+discussed by Jay Sage below.  I find that removal of erased entries also 
+speeds up Map output somewhat.  The syntax for the map command ("M[hh]") 
+remains unchanged.
+
+     I have also taken the liberty of adding a few built-in macros to those 
+of version 1.3, namely:
+
+
+	5.	T0,S1,D         	; display first disk sector
+
+	6.	+D,*			; forward 1 sector, display, repeat
+
+	7.	D,<B,+,*		; display, put in queue, forward, 
+                                        ; repeat
+
+The procedure for altering the built-in macros is still the same as described 
+below.
+
+-----------------------------------------------------------------------------
+
+                          Notes on DU3 Version 1.3
+                                  Jay Sage
+
+
+     The biggest change in DU3 version 1.3 is the permanent macro facility. 
+There are certain macros that I found I used very frequently, and I decided
+it would be very nice if the program loaded with them already defined and
+ready to use.  I had added this feature long ago to a personalized version
+of DU3 but had never incorporated it into the official release.  With the
+very useful fix to the <Gnn and >Gnn commands that James Moore performed in
+DU312, I now had the incentive to merge my permanent macro code with DU312.
+
+     In the distributed version of DU313, the following initial macros are
+defined:
+
+	0:	G0,D			; go to first record of the
+					; directory and display it
+
+	1:	-D			; display previous record
+
+	2:	+D			; display the next record
+
+	3:	-8D			; back up 8 records and display
+
+	4:	+8D			; skip forward 8 records and display
+
+The initial macros are stored in a 128-byte buffer at the very beginning of
+the code and marked with an ASCII string of 'INITIAL MACROS:'.  You can
+easily change or add to the permanent macros using a debugger or patcher
+(ZPATCH would be my tool of choice).
+
+     You must observe the following structure in the initial-macro string. 
+All ten macros must be defined (even if they are defined as a null string)
+and must be separated by carriage returns.  The above macros are defined as
+follows:
+
+string:		G0,-D<cr>-D<cr>+D<cr>-8D<cr>+8D<cr><cr><cr><cr><cr><cr>
+macro:	 	0        1     2     3      4      5   6   7   8   9
+
+As distributed the string is padded out to 128 bytes with carriage returns. 
+If there are not at least ten carriage returns in the string, the code that
+parses the string into the working macro area will produce unpredictable
+results (possibly a crash).
+
+     While I was at it, I worked on the various display routines to make the
+screen tolerable on a reverse-video terminal.  More work could be done, but
+I now find the screens acceptable to look at.  Previous verions of DU3
+produced very odd and unpleasant screens.
+
+     There is one major change that I would have liked to make but do not
+have time to take care of now.  That is with the 'M'ap function.  It
+presently works by reading the entire directory into memory and then
+analyzing it.  On a hard disk, the directory is usually too big to fit in
+memory at one time, and so that function aborts with an error message.  I
+would like to see the code rewritten to accept the following syntax forms:
+
+	Mfff-lll	; display files associated with groups in the
+			; ..range from ff to ll (e.g., M200-27f)
+	Mfff		; equivalent to Mff-ff, displays file associated
+			; ..with group ff
+	Mfff-		; equivalent to Mfff-infinity, i.e., display files
+			; ..for all groups starting at fff
+
+If fff is smaller than the first group assigned to files (and not to a
+directory entry), the lowest file group would be used instead.
+
+     The code should scan through the directory sector by sector collecting
+information on the groups of interest only.  The easiest method that comes
+to my mind is to build a table based on the group number.  The table would
+have entries 12 (or does one need 13) bytes long, 11 for the file name
+associated with that group and 1 (or is it 2) for the extent number.  For my
+hard disk with 1024 directory entries, the table would have a maximum length
+of 12,288 (3000H) if 12 bytes are needed per entry, far less than the 8000H
+bytes needed to hold the entire directory.  This much buffer space would
+almost always be available, and in most cases one could probably even handle
+directories with up to 2048 entries.
+

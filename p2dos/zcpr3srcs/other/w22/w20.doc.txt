@@ -1,0 +1,227 @@
+ 
+                W -- THE WILDCARD SHELL PROCESSOR
+                ---------------------------------
+
+
+WHAT IS W?
+---- -- -
+
+     W is a ZCPR3 shell that enables wildcard processing for
+programs that do not usually accept wildcard parameters.  E.g.
+The ZCPR3 utility COMP.COM will reject this command line
+
+          COMP A:*.* B:
+
+because COMP.COM does not accept wildcards.  However, with W, 
+this operation can now be achieved.  Simply type
+
+          W COMP A:*.* B:
+
+and one by one, every file on A: will be compared to a file with
+the same name on B:.
+
+     W can also be used with ZEX command files like this:
+
+          W ZEX COMMAND A:*.* C:
+
+where COMMAND refers to a file called COMMAND.ZEX which normally 
+runs under ZEX and does not accept wild cards.
+
+     In general, then, the syntax to use with W is as follows
+
+          W COMMAND AFN [parm parm ... parm]
+                         or
+          W ZEX COMMAND AFN [parm parm ... parm]
+
+     where COMMAND is, in the first case, any ZCPR3 executable 
+command such as a .COM file, a resident command, or an alias; or 
+in the second case, a .ZEX command script file
+
+     and where AFN refers to any legitimate CP/M wildcard 
+specification, such as *.ASM, *.?Q?, or *.*.
+
+     Please note these rules:
+
+1> No more than 6 parameters can follow after W including COMMAND 
+and AFN.    
+
+2> The total length of the command line invoking W, including the 
+'W ' but not including the ambiguous file name and its trailing 
+space must be 32 or less.
+
+3> W.COM must be located somewhere along the ZCPR3 path or on the 
+logged drive.  I.E.  B:W COMP A:*.* C: will not work.
+
+4> Stay away from shell commands as parameters to W.  Don't
+expect to get away with stuff like W VFILER *.* or W SH *.*
+or stuff like that.  It may work, it may not, I couldn't begin to 
+say.
+
+5> THE AMBIGUOUS FILE NAME parameter must be located DIRECTLY 
+FOLLOWING the COMMAND parameter; i.e. the wildcard parameter
+must be the second parameter of W when W calls a regular command 
+and the third parameter of W when W calls a ZEX command.  Some 
+programs take their parameters differently -- in this case an 
+alias can be constructed which rearranges the command line in a 
+form suitable for W.  
+
+For example, the resident command CP does not take wildcards.  
+However, since CP expects a parameter in the form F1.T1=F2.T2, 
+W cannot handle it directly.  So we concoct an alias called 
+CPAL which goes as follows (in arunz script format):
+
+cpal cp $2=$1.
+
+Thus CPAL SYS.ENV B: yields a command of
+     CP B:=SYS.ENV.
+
+NOW we can run CPAL with W as follows:
+
+     W CPAL *.* B: which copies all files on A: to B:
+ 
+6> Since W is a Z3 utility it must be installed with Z3INS to 
+your system.
+
+ABORTING W IN THE MIDDLE
+-------- - -- --- ------
+
+It may be necessary sometimes to abort W when its actions are not
+quite what you had in mind.  Since every program differs in its
+reactions to random console input, we decided it was necessary to
+include a short delay at the beginning of each invocation of the
+W shell ( that is as W is creating each of its command lines. )
+This delay is user settable, either by changing the QSEC equate
+in W12.Z80 and reassembling (QSEC represents the delay in 
+quarter-seconds, more or less so a value of 4 would be a 1 second 
+delay) or by patching at location 	with the number of 
+quarter-seconds.  Default is a QSEC value of 1 or a .25 second 
+delay which really should be more than adequate.
+
+ 
+In order to get W to abort then, it is necessary to hit the <ESCAPE> 
+key.  Try to hit it several times, at about the time that whatever
+program you are executing under W is ending.  This should produce
+the <W aborted> message, and return you to the regular ZCPR3 prompt.
+
+SUGGESTED USES FOR W
+--------- ---- --- -
+
+>>> To assemble many files:
+
+	W ASM *.ASM
+	W MAC *.ASM $SZPZ
+	
+	etc.
+
+>>> To post-process text files:
+
+	W ENSOFT *.TXT
+	W WSDOCON *.TXT
+
+	etc.
+
+But probably the most fertile area of utility for W is with 
+aliases, especially when used with ARUNZ.COM.  As explained above, 
+you can create aliases to allow W to work on programs that accept 
+parameters in a different fashion than W demands.  But that is
+only the beginning.  
+
+The fact is that W adds an entirely new dimension of utility to the
+alias concept.  Below are but two examples of what can be done.
+
+
+>>> To install a number of Z3 utilities:
+
+Create an alias INS whose ARUNZ script iS
+
+	Z3INS SYS.ENV $:1.COM
+
+Then use this with W as follows
+
+	W INS *.COM
+
+and you can quickly install all the Z3 utilities in a directory.
+Much easier than using an .INS file.
+
+To transfer multiple files from one computer to another:
+
+Use Bruce Morgen's SEND alias which is
+
+	IF ~EX $1;
+	ECHO NO SUCH FILE;
+	ELSE;
+	A0:SENDOUT SYSTEM:XMODEM RP $1;
+	A0:XMODEM S $1;
+	FI;
+	IF ~NU $2;A0:TERM;
+	ELSE;
+	ECHO;
+	ECHO OPERATION COMPLETE;
+	FI
+
+Now picture how much added utility is added to the process
+when you available the command
+
+	W SEND C12:*.*
+
+We could of course go on and on here, but that is really
+a job for the user.
+
+
+WHY A SHELL?
+--- - -----
+
+Good question.  The idea for W came from Frank Gaude's article in 
+Z-NEWS 402 in which he speaks of a conditional copy script that 
+compares on file to another and then copies or does not copy 
+based on whether the files are identical or not.  Frank then goes 
+on to say that it would be good to set up a ZEX script using GOTO
+that would accept wildcards and thus automate the whole process.
+But two problems appear to exist with this approach.  First there
+is no utility that can easily yield the "next" filename in a 
+directory.  While it is extremely easy to write such a utility, 
+the harder question, is where do you store in memory the FCB of 
+the last file operated upon?  Not so easy.  There are, it is 
+true, spaces in the environment descriptors called "system-wide
+file names" but what guarantee is there that other programmers
+will not use these for their own needs?  None at all, in fact,
+Rick Conn recommends this usage in "ZCPR3 -- the Manual."
+
+The answer to this dilemma was to reserve space on the shell 
+stack just beneath the W shell to store this info.  This area
+is much safer.  True it requires two spaces on the shell stack, 
+but since the average Z-system uses four, there should be room
+to run W in most situations.  In particular I can easily run W on 
+top of both VCED and VFILER.
+
+I will admit that this is a non-standard use of the shell stack 
+and a hacked together fix of a small problem -- the real solution
+would be to rewrite ZEX to include buffers to hold a couple of
+FCB's specifying the operative Ambiguous file name and the last
+unambiguous filename found matching it.  Then GOTO would do some 
+good, and the Filenames would be safe.  Until we get that W will
+have to do and I think it does a lot.
+
+So have fun with W, find new uses for it, let your imagination
+run wild.       
+
+Acknowledgements go to Paul Pomerleau, Al Dunsmuir and Richard 
+Conn, from whose code I liberally cribbed.
+
+W IS RELEASED THROUGH THE NEW NAOG/ZSIG USER'S GROUP, WHICH
+I HOPE WILL BECOME A NEW CENTER FOR THE CONTINUING USER-FED
+DEVELOPMENT OF THE Z-SYSTEM.  FOR MORE INFORMATION ON THIS
+GROUP CALL THE NUMBER BELOW.
+
+Comments, brickbats, compliments, etc. can be directed to
+me at Richard Jacobson's Lillipute Z-Node (312)-664-1730
+or (312)-649-1730 which are the central numbers for NAOG/ZSIG.
+
+                              
+                         Steve Cohen
+                         Feb. 20, 1986
+or NAOG/ZSIG.
+
+                              
+                         Steve Cohen
+            

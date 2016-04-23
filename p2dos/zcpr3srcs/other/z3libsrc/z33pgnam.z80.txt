@@ -1,0 +1,82 @@
+	TITLE	"Z33PGNAM - Z3lib 4.0"
+;=================================================================
+;    Copyright (C) 1989 by Jay Sage.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Jay Sage (4/10/88).  Modified by Harold F. Bower
+; Date    : 19 Apr 92
+; Version : 1.1
+; Module  : Z33PGNAM
+; Abstract: This module contains the routines GETNAME and PRTNAME
+;	which returns a pointer to the internal buffer with the
+;	program name, and prints the name of the program respectively.
+;	The use of GETNAME will prevent an apparent name of "GO" or
+;	"JUMP" from appearing in the external FCB.
+; Revision:
+;	1.1 Masked off Hi bit in Print		    4/19/92.  HFB
+;	1.0 Restructured PRTNAME saving some code.  4/24/88.  HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		GETNAME, PRTNAME
+
+; External References
+
+	EXT		GETEFCB, COUT
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - GETNAME
+; Entry: - None
+; Exit :  A = 0, Zero Flag Set (Z) if NO External FCB exists
+;	      A <> 0, Zero Clear (NZ) if External FCB IS present
+;	 HL - Points to name in internal buffer
+; Uses : AF,BC,HL
+; Special Requirements: None
+;===============================================================
+
+GETNAME: LD	HL,NAMBUF
+	LD	A,(HL)		; See if name has been fetched already
+	OR	A
+	RET	NZ		; If so, return with HL pointing to it
+	PUSH	DE		; Protect DE register
+	EX	DE,HL		; Make namebuf the destination
+	CALL	GETEFCB		; Make the external FCB the source
+	JR	Z,GETNA1	; Nothing we can do if no XFCB
+	INC	HL		; Point to first character of name
+	LD	BC,8		; Copy 8 characters
+	PUSH	DE		; Save pointer to namebuf
+	LDIR
+	POP	HL		; Return pointer to namebuf in HL
+GETNA1:	POP	DE		; Restore DE
+	RET
+
+NAMBUF:	DEFB	0,0,0,0,0,0,0,0	; Initialized to nulls
+
+;===============================================================
+; NAME - PRTNAME
+; Entry: - None
+; Exit : - None
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+PRTNAME: PUSH	HL
+	PUSH	AF
+	CALL	GETNAME		; Get pointer to name
+	JR	Z,PREXIT	; ..exit if no way to determine name
+	LD	B,8		; Maximum number of characters
+PRTNA0:	LD	A,(HL)
+	AND	7FH		;1.1 Insure High bit clear
+	CP	' '		; Are we at end of characters?
+	JR	Z,PREXIT	; ..return if so
+	CALL	COUT		; Otherwise display it
+	INC	HL
+	DJNZ	PRTNA0		; Loop til all done
+PREXIT:	POP	AF		; ..then fall thru to exit
+	POP	HL
+	RET
+
+	END
+

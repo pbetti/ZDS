@@ -1,0 +1,179 @@
+
+; ZCPR34-1.Z80
+
+;=============================================================================
+;
+;    E N T R Y    P O I N T S    A N D    H E A D E R    S T R U C T U R E
+;
+;=============================================================================
+
+; Revisions to ZCPR Version 3.3 to make Version 3.4 (C) Copyright Jay P. Sage,
+; 1988, all rights reserved.
+
+entry:
+
+; ENTRY POINTS INTO ZCPR34
+;
+; For compatibility with CP/M, two entry points are provided here.  In
+; standard CP/M if the code is entered from the first entry point, then the
+; command in the resident command buffer is executed; if entered from the
+; second entry point, the command line is flushed.  With ZCPR34 and its
+; multiple command line buffer, these two entry points function identically
+; and go to the same address.
+;
+; We have kept the entry points in their standard locations but have used a
+; relative jump for the second entry point and replaced the last byte with the
+; version number.  In this way the version number occupies a position that
+; would otherwise contain the page number at which the CPR runs.  It will
+; always be possible, therefore, to distinguish ZCPR33 and later versions
+; from other command processors.  The first jump is kept as an absolute jump
+; so that 1) the code will be compatible with Z-COM and Z3-DOT-COM and 2) the
+; execution address of a CPR module can always be determined.
+
+	jp	zcpr
+
+	jr	zcpr
+
+version:
+	defb	34h		; Version ID squeezed in here (offset = 5)
+
+;-----------------------------------------------------------------------------
+
+; Configuration information
+
+options:			; (offset = 6)
+  optflag badduecp,rootonly,ndrenv,fcpenv,rcpenv,inclenv,aduenv,duenv
+  optflag highuser,drvprefix,scancur,incldir,incldu,dufirst,accptdir,accptdu
+  optflag badcmdecp,pwcheck,pwnoecho,wdu,wpass,wprefix,fastecp,skippath
+
+attdir	defl	[ comatt eq 80h ] or [ comatt eq 01h ] or [ not attchk ]
+attsys	defl	[ comatt eq 00h ] or [ comatt eq 01h ] or [ not attchk ]
+subquiet defl	[ subnoise eq 1 ]
+subecho	defl	[ subnoise gt 1 ]
+
+  optflag shellif,attsys,attdir,attchk,subecho,subquiet,subclue,subon
+
+; Byte with information about the alternate colon option.  If the byte is
+; zero, the option is not supported.  Otherwise the byte contains the
+; prefix character that serves as an alias for a colon prefix.  Offset = 10.
+
+	 if	altcolon
+	defb	altchar
+	 else
+	defb	0
+	 endif	;altcolon
+
+; Byte with information about the FASTECP implementation (option bit above
+; indicates whether the feature is enabled at all).  If no character appears
+; here (zero byte), then only a leading space can be used.  Otherwise, the
+; first seven bits contain the character, and the high bit, if set, indicates
+; that ONLY this character will be recognized and not a space.  Offset = 11.
+
+	 if	fastecp and altspace
+	 if	altonly
+	defb	ecpchar + 80h
+	 else	;not altonly
+	defb	ecpchar
+	 endif	;altonly
+	 else	;no alternate character
+	defb	0
+	 endif	;fastecp and altspace
+
+zexquiet defl	[ zexnoise eq 1 ]
+zexecho	defl	[ zexnoise gt 1 ]
+
+	optflag	longsub,zexecho,zexquiet,no,no,no,no,no
+
+	defb	0,0,0			; Space reserved for expansion
+
+;-----------------------------------------------------------------------------
+
+; Entry points to file name parsing code.
+
+; Entry point REPARSE.  A call to this point can be used to parse a command
+; line tail into the default file control blocks at 5CH and 6CH.  Each time
+; the parser is called it leaves the starting address of the second token in
+; the PARESPTR address below so that successive calls to the routine reparse
+; the command tail one token later.  A program can load its own pointer into
+; PARSEPTR as well.  Offset = 16 (10h).
+
+reparse:
+parseptr equ	$+1		; Pointer for in-the-code modification
+	ld	hl,0
+	jp	parsetail
+
+; Entry point SCAN.  A call to this point can be used to parse a single token
+; pointed to by HL into the FCB pointed to by DE.  Offset 22 (16h).
+
+scan:
+	jp	scanner
+
+;-----------------------------------------------------------------------------
+
+; BUFFERS
+;
+; In this area various data items are kept.  First comes the list of commands
+; supported by ZCPR34; then comes the name of the extended command processor
+; (ECP).  By putting these items here, an 'H' command in the RCP or a utility
+; like SHOW.COM can find this information and report it to the user.
+
+
+; ----------   RESIDENT COMMAND TABLE
+
+; The command table entry is structured as follows:  First there is a byte
+; which indicates the number of characters in each command.  Then there is a
+; series of entries comprising the name of a command followed by the address
+; of the entry point to the code for carrying out that command.  Finally,
+; there is a null byte (00h) to mark the end of the table.  Offset = 25 (19h).
+
+
+cmdtbl:
+	defb	cmdsize		; Length of command names
+	ctable			; Define table via macro in Z34HDR.LIB
+	defb	0		; End of table
+
+; ----------  NAME FOR EXTENDED COMMAND PROCESSOR
+
+; The name of the extended command processor is placed here after the command
+; table so that utilities like SHOW or an RCP 'H' command can find it.
+
+ecpfcb:
+	ecpname			; From Z34HDR.LIB
+
+
+; ----------   FILE TYPE FOR TRANSIENT COMMANDS (usually COM)
+
+; This file type also applies to the extended command processor name.
+
+commsg:
+	comtyp			; From Z34HDR.LIB
+
+
+
+; ----------   SUBMIT FILE CONTROL BLOCK
+
+	 if	subon		; If submit facility enabled ...
+
+subfcb:
+	defb	subdrv-'A'+1	; Explicit drive for submit file
+	defb	'$$$     '	; File name
+	subtyp			; From Z34HDR.LIB
+	defb	0		; Extent number
+	defb	0		; S1 (user number 0)
+subfs2:
+	defs	1		; S2
+subfrc:
+	defs	1		; Record count
+	defs	16		; Disk group map
+subfcr:
+	defs	1		; Current record number
+
+	 if	longsub
+subfr:
+	defs	3		; Random record number and overflow
+	 endif	;longsub
+
+	 endif	; subon
+
+; End ZCPR34-1.Z80
+

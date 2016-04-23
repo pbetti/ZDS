@@ -1,0 +1,398 @@
+New-ZEX Update Report
+=====================
+
+                          Pending Items and Status
+
+These are items that need to be or are intended to be dealt with but have 
+not yet been.  Following this section is a description of the new features 
+and other changes to this release.
+
+1.  Nesting of ZEX scripts:  I have worked out in detail how to handle this.  
+    All that is needed is the actual coding.  I had hoped to have this ready 
+    for release D, but it will have to wait.  One question is how to handle 
+    the ^: directive.  It could simply go back to the beginning of the 
+    complete script; it could be disallowed and treated as an error in 
+    nested scripts; or special labels could be provided to mark each section 
+    of script so that the repeat would work like GOTO with a label at the 
+    beginning.  Since the third possibility can be handled by GOTO, I am 
+    inclined to go with one of the first two possibilities, and probably the 
+    former (and let it be the user's responsibility to employ ^: 
+    responsibly).  Another question is whether to provide a special control 
+    directive to drop any part of the script that has already been executed 
+    (to save memory space).  My inclination is to add this possibility, 
+    though perhaps not in the first version.
+
+2.  Management of the control-s problem:  With Bridger Mitchell's help, I 
+    think I understand this very tricky issue.  A significant change in the 
+    ZEX coding will be required -- ZEX will have to monitor DOS calls so 
+    that it knows when a call that does console status checking has been 
+    made.  Perhaps I will find a simpler solution, but the one I tried so 
+    far does not seem to work.  I would like to make the aborting of ZEX 
+    with control-c prompted.  Many times I have entered it by mistake and 
+    ruined a long procedure.  It would be much nice to get a message 
+    "Abort?" and be allowed to reconsider.
+
+3.  Incorporation of ARUNZ-style parameter parsing:  This should be 
+    straighforward conceptually, but a number of detailed changes are 
+    required in the way ZEX handles parameters.  This item is low on my list 
+    of priorities because it does not involve any fundamentally challenging 
+    issues.
+
+-----------------------------------------------------------------------------
+
+
+                     Notes on test release D of New-ZEX
+
+The following changes have been made for release D:
+
+1.  This was actually done in version C, but the documentation did not 
+    reflect this properly.  The configuration process has been simplified.  
+    All configuration is now done from the initiator code (this is easier 
+    for the user and saves code in the RSX).  I have added ASCII labels in 
+    the file so that you can easily perform the configuration using ZPATCH 
+    or a debugger instead of using NZEXCNF.Z80.
+
+2.  The help screen has been improved to show the default states (inside 
+    bracket characters) of the various toggle directives.  The help screen 
+    adapts automatically to configuration changes made by patching.
+
+3.  As distributed, NZEX-D does not echo command lines it provides.  When 
+    used with ZCPR34, which can be configured to omit the prompt when ZEX is 
+    running, there will be no echoing, and ZEX scripts will generate the 
+    same screen appearance as corresponding alias scripts.  The status of 
+    this feature can be toggled using the ^, directive, and the default 
+    status of this feature can be patched.
+
+4.  There has been an ongoing problem with programs run from ZEX scripts 
+    that request user input and/or use control-c.  A new feature has been 
+    added with release D to help take care of this.
+
+    There is a new status flag (toggled for the next command only by the ^% 
+    directive ) that automatically turns off ZEX redirection after the next 
+    command line has been fed to the command processor.  With ZEX in this 
+    state the user can enter control-c with no problem, and unexpected input 
+    requests will not be answered from the ZEX stream.  The default state of 
+    this flag (UINCR) can be patched; in the distributed version it is on.
+
+    If you want a command to take its input from the ZEX stream, then the 
+    command should have a ^% directive with it.  Here is an example.
+
+        vde myfile.z80
+        assemble myfile
+        if no error
+        ^%ddt myfile.com
+        s10a|fe
+        g0
+        save 10 myfile1.com
+
+    In this example, only DDT receives input from the ZEX stream.
+
+-----------------------------------------------------------------------------
+
+
+                     Notes on test release C of New-ZEX
+
+The following changes have been made for release C:
+
+1.  The directive to repeat the entire ZEX script is now obeyed only when 
+    the current flow state is true.  If it is false, the directive is 
+    ignored and the rest of the script is processed.  This should be quite 
+    useful in writing recursive scripts with alternative exit points.  Here 
+    is an example:
+
+            command 1
+            if in do you want to start over now? 
+            ^:fi
+            command 2
+            if in do you want to start over now? 
+            ^:fi
+            command 3
+
+    Whenever the script is rerun, the system is reinitialized.  The flow 
+    control state from when ZEX was first entered and the default control 
+    flags (print suppression, message suppression, etc.) are reestablished.
+
+2.  A new directive, ^!, has been added.  It aborts the script if the 
+    current flow state is false.  Thus it acts much like a control-c typed 
+    by the user, but it is calculated by the system.  This makes it easy to 
+    exit the script if certain conditions exist.  On abort, the flow state 
+    is restored to the value it had before ZEX started running.
+
+3.  A pair of directives has been added to facilitate flow control 
+    operations in a script.  Consider a case in which two different 
+    operations are desired in a script.  Take the following example:
+
+            if condition
+            command 1
+            else
+            command 2
+            fi
+
+    This script poses no problems so long as 'command 1' and 'command 2' are 
+    single commands or groups of commands to be sent to the command 
+    processor.  But what if they include text to be used as input to a 
+    program?  Then there could be trouble (for example, suppose that text 
+    happened to include the word 'else').  One solution is to use the GOTO 
+    utility program and put labels in the script.  The new directives take 
+    care of this without requiring the use of GOTO.  If the current flow 
+    state is false when it is encountered, the new directive ^( causes all 
+    script characters up to and including ^) to be skipped.  Thus we could 
+    have the following:
+
+            if nu $1
+            ^(ddt default.com
+            commands for ddt
+            g0
+            ^)else
+            ^(ddt $1.com
+            commands for ddt
+            g0
+            ^)fi
+            other commands
+
+    This pair of directives eliminates the need for GOTO for simple forward 
+    conditional jumps; GOTO will still be needed in more complex situations 
+    (this concept for directives could be extended to replace GOTO in many 
+    more elaborate cases as well -- would anyone be interested in this?).
+
+4.  Many people have had trouble with the concept of prompted input in such 
+    utilities as VFILER/ZFILER and ARUNZ.  With these utilities, the user's 
+    input is incorporated at the time the script is built, not at the time 
+    the script is run.  Many people have experienced the problem of scripts 
+    not working as desired because they failed to understand this point.
+
+    What people really wanted is run-time prompted input.  For entering a 
+    sequence of commands, the utility CMD.COM can be used.  Thus one might 
+    have an alias with the following script:
+
+            edit file;assemble file
+            if ~error
+            link file
+            if ~error
+            echo enter command to run file if desired;cmd
+            fi;fi
+
+    This script could be invoked recursively.  So long as the assembly 
+    produced errors, the edit/assemble loop would continue uninterrupted.  
+    Once the assembly worked, linkage would proceed, and if that also 
+    succeeded, the user would be able to enter additional commands, such as 
+    a command to test-run the program if desired.  The loop would then 
+    continue.
+
+    However, what can you do if you want to provide not command line input 
+    but run-time input to a running program.  For example, suppose you want 
+    to provide just the file name to your debugger but have ZEX carry out 
+    other operations.  Previously this could not be done.  Now it can!
+
+    The user input directive (^") has been expanded to allow the input 
+    provided by ZEX to be interrupted but then to resume again.  I call this 
+    triggered input.  If there is a character other than carriage return 
+    after the ^" in the script, that character will be taken as the 
+    character that triggers ZEX to resume control.  User input will continue 
+    until that character is entered.  Here are two example just to get you 
+    thinking.
+
+    In the first example, the debugger is invoked, memory is cleared, and 
+    the user is prompted for the name of the file to work with.  After the 
+    name is entered followed by the trigger character, ZEX continues by 
+    reading in the file and displaying the first page.  Control is then 
+    returned to the user.
+
+            ddt
+            f100,8000,0
+            i^< Enter file name: ^>^"|
+            r|d100
+            ^"
+
+    Note that the special symbol '|' is used as the trigger character.  This 
+    symbol is used throughout ZEX to represent a carriage return.  By 
+    setting CR as the trigger, only one line of input will be taken from the 
+    user and then ZEX will resume control.  If you use a real carriage 
+    return, as in the last line of the script, ZEX will not resume control 
+    until the next command line is requested by the command processor.  The 
+    user can then enter any number of command lines to DDT.
+
+    One other note.  In 'old' ZEX, any characters on a line after ^" were 
+    ignored.  That is no longer true.  The line "r|d100" could have been 
+    included on the same line after the ^"|.
+
+    In the second example ZEX script, the user can enter any number of 
+    command lines to the command processor before signalling ZEX to resume 
+    operation by entering the trigger character '\'.  This is somewhat like 
+    using CMD except that one can enter command lines indefinitely.
+
+            command line 1
+            command line 2
+            ^<-- enter user commands, exit with '\'^|^|^>^"\
+            command line n
+            command line n+1
+
+    During the time that triggered input is in effect, the command processor 
+    prompt includes a special additional prompt to remind the user that 
+    triggered input is in effect and to indicate what that character is.  
+    Note also the use of the ^| directive in the direct console output to 
+    produce CRLFs.
+
+-----------------------------------------------------------------------------
+
+                     Notes on test release B of New-ZEX
+
+
+The following changes have been made for this release:
+
+1.  The code for treating immediate mode output has been significantly 
+    changed.  When the ZEX script is processed, from the time the immediate-
+    mode-on expression ^< has been encountered and until the terminating 
+    expression ^> is encountered, special control characters in the script 
+    are not processed with the exception of (1) |, which is converted to a 
+    CR alone, (2) ^|, which is converted to CRLF, and (3) valid control 
+    character expressions of the form ^c, where the character 'c' is not 
+    less than '@'.  If an invalid control expression is encountered (at any 
+    time during script interpretation) the error is reported with a pointer 
+    to the offending character.
+
+2.  A conditional immediate mode has been introduced.  Script text that 
+    begins with ^[ will be echoed only if the flow state at the time it is 
+    encountered (runtime) is true.  Conditional or unconditional immediate 
+    mode output is terminated with either ^> or ^].  Here is a sample 
+    script:
+
+        ^<^| ( This is unconditional direct console output )^|^>
+        if null $1
+        ^[ ( There is NO first parameter )^|^>
+        else
+        ^[ ( There IS a first parameter )^|^]
+        fi
+        ^< ( END OF TEST )^|^|^>
+
+3.  The code for suppressing console output has been modified and corrected 
+    so that carriage returns are processed properly.  You can now write a 
+    script of the form:
+
+            ^< [turning console off]^>^.
+            first command
+            second command
+            ^.^< [console back on]^>
+
+    I never understood the console-off directive until I studied it in order 
+    to correct the bug that prevented real carriage returns from being 
+    recognized (so that '|' had to be used instead).  The ^. directive turns 
+    console output off only during the time that characters are being read 
+    from the ZEX script.  Characters produced by a running program are 
+    echoed to the screen.
+
+4.  I have added additional controls over console output.  For compatibility 
+    with existing scripts, the ^. control works as before if only it is used 
+    to control console output.  Toggles like ^. can easily lead to errors, 
+    and in many cases it is preferable to have controls to set the state of 
+    a system directly.  Thus I have added the directives ^, to turn off the 
+    echoing of command lines and ^+ to turn console output back on.  In 
+    addition, I have added the directive ^- that turns off ALL console 
+    output until ^+ turns it back on.  In this way, programs can run without 
+    the user seeing anything on the screen.  This is the ultimate quiet 
+    mode.
+
+
+-----------------------------------------------------------------------------
+
+            Notes on initial release of test version of New-ZEX
+
+
+This document describes the development of New-ZEX.  It is a quite radical 
+departure from the original ZEX in the way it performs, but it is designed 
+to carry out the same functions.
+
+To use it, you must place the file ZEX.RSX in the appropriate directory (see 
+the file NZEX1CNF.Z80 for configuration information on NZEX.COM).  The 
+distributed version is designed to be run from whatever your root directory 
+(last element in path) is.  The initiator file, NZEX.COM, can be placed 
+anywhere you wish, but it will be most convenient if it is somewhere along 
+the path.  ZEX.RSX has some configuration data that can be changed using 
+NZEX2CNF.Z80.
+
+There is one way that New-ZEX differs from the old ZEX.  Whenever the end of 
+the script is reached, a warm boot is performed.  Something funny happened 
+with the restoration of the pending command line when I did not do this, and 
+until I can figure out better what is happening, I have made New-ZEX 
+terminate with a warmboot.  Old ZEX could supply the input stream to a 
+program up to a point, and the user could then continue.  With New-ZEX you 
+must end the script with the ^" user input directive if you want to do this.
+
+
+Changes made from ZEX32:
+
+1.  The ZEX code was broken into two pieces for easier development and more 
+    flexible operation.  The initiator code is linked as a COM file, and the 
+    RSX code is linked as a PRL file.  The initiator code loads the RSX code 
+    from the separate file.  By setting things up this way, data segments in 
+    the initiator code do not have to be part of the COM file.  This saves 
+    almost 1K bytes in the COM file!
+
+2.  The code has been extensively modified to make use of library routines 
+    (SYSLIB, Z3LIB).  This makes the code more readable and easier to 
+    maintain.  Zilog opcodes have been used extensively (but more could be 
+    used undoubtedly).
+
+3.  In the RSX code, the flags that control ZEX messages and the echoing of 
+    commands during false IF states can be configured.  In the standard 
+    version, both flags are set to suppress output.  See the file 
+    NZEX2CNF.Z80 for configuration instructions.
+
+4.  In the RSX code, when the user aborts ZEX with a control-c, the flow 
+    control state that existed when ZEX started running is restored, since 
+    this is presumably the state that would have resulted if ZEX had run to 
+    completion.
+
+5.  Commands pending in the multiple command line buffer after the ZEX 
+    command are now saved in a separate buffer and restored on exit from 
+    ZEX.  The previous method was seriously flawed in several respects.  By 
+    treating the pending commands as if they were an additional line at the 
+    end of the normal ZEX script, characters in the command would be 
+    processed as ZEX control characters.  Thus the line
+
+            ZEX;PATH A15 $$ A15
+
+    would end up setting the path to "A15 $ A15", since the '$$' would be 
+    converted to a single '$' by ZEX.  Secondly, if the ZEX script contained 
+    the directive "^:" to repeat the entire script, the pending command line 
+    would never be executed, since the repeat would always occur before it.  
+    Finally, this method of treating pending commands prevented one from 
+    using a command line like
+
+            ZEX SCRIPT1 PARMS1;other commands;ZEX SCRIPT2 PARMS2;etc.
+
+    With New-ZEX one can have any commands at all after a ZEX invocation.  
+    New-ZEX works by saving the pending commands, clearing the command line, 
+    running the script, and then restoring the pending command line.
+
+6.  The process of finding the script file has been made much more powerful 
+    and flexible.
+
+    First let's consider where the script is sought.  If an explicity DU or 
+    DIR prefix is given, the file is sought only in the specified directory.  
+    Otherwise, a configuraton flag determines how the search is performed.  
+    As distributed, only the current directory will be searched.  If a 
+    configuration flag as changed, the entire path will be searched (this 
+    makes operation much slower when a mistake is made).
+
+    Second, let's discuss what file name is used for the script.  If an 
+    explicit file type is used (e.g., "NZEX TEST.SPT PARAMS"), then only 
+    that explicit file name will be used.  If no type is given, then New-ZEX 
+    will behave as the original ZEX did.  It will first try finding a file 
+    of type ZEX (searching the entire path if so configured); then it will 
+    try to find a file of type SUB.
+
+8.  There is a user configurable option for sounding a bell with error 
+    messages generated by the initiator code (the loader part of New-ZEX).  
+    As distributed, the bell will sound.
+
+9.  ZEX can be rerun with GO up to the point where it establishes the RSX. 
+    (Frankly, I don't know why protection against this was put in in the 
+    first place; I left the protection, but moved it to the point after 
+    which ZEX could not be rerun, but I don't see how one would have the 
+    opportunity after this point.  Any comments, anyone?)
+
+10. When an error is encountered in expanding a script line, not only is the 
+    line displayed to the user, but a pointer to the offending character is 
+    also provided (try entering a line with a bad parameter such as "$x").
+                                                                                       

@@ -1,0 +1,148 @@
+; HARDVID.LIB - Rob Friefeld
+
+; Hard-coded CRT protocol to replace some VLIB routines.
+
+;STANDARD EQUATES REQUIRED
+;wrconf	equ	2
+;cr	equ	0dh
+;lf	equ	0ah
+;esc	equ	1bh
+;dim	equ	1
+;bright	equ	2
+
+
+clr_scr	macro
+	db	1ah+80h
+	endm
+
+clr_eol	macro
+	db	esc,'T'+80h
+	endm
+
+dim_on	macro
+	db	esc,')'+80h
+	endm
+
+dim_off	macro
+	db	esc,'('+80h
+	endm
+
+; Clear screen.  Return NZ.
+cls:	call	vprint
+	clr_scr
+	or	-1
+	ret
+
+; Erase to end of line.  Return NZ.
+ereol:	call	vprint
+	clr_eol
+	or	-1
+	ret
+
+; Dim video
+stndout:
+	call	vprint
+	dim_on
+	ret
+
+; Normal video
+stndend:
+	call	vprint
+	dim_off
+	ret
+
+; Position cursor to row, column of next two data bytes.  Home = 1,1!!!
+; Use sequence esc,'=',row+20h,col+20h
+; Return NZ
+
+at:	ex	(sp),hl
+	call	at1		; HL -> position bytes
+	ex	(sp),hl
+	ret
+at1:
+	ld	a,31		; Offset
+	add	a,(hl)		; Row byte
+	ld	(atrow),a	; Save it
+	inc	hl		; Col byte
+	ld	a,31
+	add	a,(hl)
+	ld	(atcol),a
+	inc	hl		; Return address from AT
+	push	hl
+	call	vprint		; Print leadin sequence
+	db	esc,'='
+atrow:	ds	1		; Output computed row,col
+atcol:	ds	1
+	db	0
+	pop	hl
+	or	-1	; Function complete
+	ret
+
+; Position cursor to H = row, L = column
+gotoxy:
+	ld	a,h	; Save row, col bytes and use AT routine
+	ld	(gtxyr),a
+	ld	a,l
+	ld	(gtxyc),a
+	call	at
+gtxyr:	ds	1
+gtxyc:	ds	1
+	ret
+
+
+tinit:
+	ret
+
+dinit:
+	ret
+
+; Inline string output
+print:
+vprint:
+	ex	(sp),hl
+	call	vprint1
+	ex	(sp),hl
+	ret
+
+
+;
+;  Print String (terminated in 0 or with MSB set) pted to by HL
+;
+vprint1:
+	ld	a,(hl)		; Done?
+	inc	hl		; Pt to next
+	or	a		; 0 terminator
+	ret	z
+	cp	dim		; Standout?
+	jr	z,vprint1d
+	cp	bright		; Standend?
+	jr	z,vprint1b
+	call	conout		; Print char
+	or	a
+	ret	m		; MSB terminator
+	jr	vprint1
+vprint1d:
+	call	stndout		; Dim
+	jr	vprint1
+vprint1b:
+	call	stndend		; Bright
+	jr	vprint1
+
+
+conout:
+	push	hl
+	push	de
+	push	bc
+	push	af
+	and	7fh	; Mask MSB
+	ld	e,a
+	ld	c,wrconf
+	call	bdos
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+sh	de
+	push

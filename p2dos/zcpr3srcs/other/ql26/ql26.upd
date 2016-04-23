@@ -1,0 +1,116 @@
+QL26 update notes:
+
+Introduced conditionals to create ZCPR3-compatible version which gets  
+all its terminal data from the Z3 environment and accepts DU:/DIR:     
+specs from the command line.  This option requires assembly to a REL   
+file and linkage with VLIB, Z3LIB and SYSLIB.  Most linkers will       
+leave a substantial vestigial DSEG at the end of the resulting COM     
+file which can be safely deleted with a debugger and the SAVE command. 
+The Z1 assembler (or Z80MR) cannot be used if ZCPR3 is equated TRUE.   
+Use the "/6" option if using an SLR assembler, "/Z" with M80 (so you   
+won't have to concern yourself at all with the ".Z80" directive, as a  
+matter of fact, "M80 =QL25.AZM/Z" will work just fine, no renaming!).  
+Linkage with L80 or the non-"virtual" SLR linker is tedious and will   
+require a two passes, the first to determine the end of the CSEG, the  
+second to create the COM file.  DRI's LINK or Echelon's ZLINK are much 
+more convenient because they automatically put the DSEG after the      
+CSEG.  If ZCPR3 is equated FALSE, the traditional QL assembly methods  
+will work as before, resulting in a copy equivalent to version 2.5.    
+
+					Bruce Morgen	April 6, 1988                    
+
+----------------------------------------------------------------------
+QL25 update notes:
+
+- Corrected a bug which prevented all previous versions from being able to
+uncrunch a file if the system's BDOS started at an address other than a
+page boundary or a page boundary plus six. This would cause an "unknown
+uncrunch error", which wasn't even the "correct" error message due to
+another bug in the error message reporting code (also fixed).
+
+- Eliminated the use of alternate registers and the associated EQUate.
+Use of the alternate registers (without saving) conflicts with some systems.
+This problem reared itself as of v2.4 because earlier versions were distrib-
+uted with the alternate register equate set "false", and most people did not
+fool with the equate. Now it is foolproof.
+
+- Added Wordstar-like ability to display control characters not otherwise
+handled (eg "02" in a file will display as "^B").
+
+-  Other misc. changes; see doc file or source.
+--> Many thanks to Ken Reid and Mike Greenhill.
+
+                                                -S. Greenberg
+                                                 28 Feb 1988
+
+----------------------------------------------------------------------
+QL24 update notes:
+
+NOTE: Many changes for this version were intended to make QL a  viable
+online utility for RCP/M systems, allowing the user the convenience of
+finding, skipping, and going backwards thru crunched / libraried files
+as  well as previewing non-text files. Most of these features are  not
+available on current RCP/M systems.
+----------------------------------------------------------------------
+
+(Note tab expansion was added as of v2.3)
+
+v2.4 Summary of changes:
+
+1.  Checks for existence of BYE. If BYE is present, QL will limit  its
+memory usage to 2k below the BDOS base. Previous "CCP overwrite"  ver-
+sions  had shown conflicts with some installations of BYE.  Note  that
+when  existence of BYE is not detected, the full  memory usage of pre-
+vious QL versions is retained.
+
+2.  Furthermore, it is assumed that if BYE is present, the program  is
+being operated remotely. It is also assumed to be undesirable to  send
+video  attribute sequences to unknown remote terminals. Thus when  BYE
+is present, dim, reverse video, and clear screen sequences are  inhib-
+ited.
+
+3. Checks WHEEL byte. It is assumed it would be undesirable to allow a
+normal (non-wheel) user to do any of the following:
+
+a)  examine  .COM files, eg those on A0: of an RCP/M (for  example,  a
+user could dump the contents of a passworded WHEEL.COM program and get
+the password, etc.).
+
+b) examine or even acknowledge existance of files w/ SYS attribute set.
+
+c) to do a "core dump" of system memory, which could probably make him
+privy  to all sorts of meaty information lurking around.  Note all  of
+these  functions are deactivated based on WHEEL, not BYE, so  a  SYSOP
+could  remotely  examine his system memory.  Also note that  the  user
+WOULD  be  allowed to examine any OBJ or CZM files which  are  on  the
+system- these are presumably there for downloading anyway. This  gives
+serious RCP/M users a new flexibility.
+
+4. Continuous monitoring and processing for ^S (pause) and the various
+abort characters have been added during remote operation.
+
+5.  Annoying unintended aborts have been minimized ( eg. v2.3 aborted
+if "+" was hit).  The user must actively type something like X, Q, ^C,
+or ^K to abort.
+
+6. Additional "forward" and "backward" synonyms "+" and "-" added  for
+EDFILE  compatibility  (also "C" for "R" [repeat find]). "/" for  help
+added for ZCPR types.
+
+7. Generalized the code so it can be assembled by any of Z1 (included),
+M80 or SLR Z80ASM by changing a single EQU.  A change in the way memory
+is allocated at the end prevents generation of a large amount of excess
+zeroes at the end of the COM file, regardless of which assembler/linker
+is used.
+
+(Other  small  details changed to numerous to mention here.  Some  are
+cosmetic.  With apologies to author Nick Dobronovich's  style  prefer-
+ence, this release has been "FORM7"'d to upper case source, lower case
+comments.  This  was done partly to avoid possible problems  with  the
+"Z1" assembler, which insists that the "condition letters" of all  Z80
+conditional  instructions  be  capitalized, even if the  rest  of  the
+source isn't).
+
+                                              - Steven Greenberg
+                                                25 January 88
+

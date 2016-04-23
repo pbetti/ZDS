@@ -1,0 +1,447 @@
+program Z3KEY_CONFIG;
+
+type EnvironmentDescriptor = record
+                             Jp0     : array[1..3] of byte;
+                             ID      : array[1..5] of char;
+                             Class   : byte;
+                             ExPath  : integer;
+                             ExPathS : byte;
+                             RCP     : integer;
+                             RCPS    : byte;
+                             IOP     : integer;
+                             IOPS    : byte;
+                             FCP     : integer;
+                             FCPS    : byte;
+                             Z3NDR   : integer;
+                             Z3NDRS  : byte;
+                             Z3CL    : integer;
+                             Z3CLS   : byte;
+                             Z3ENV   : integer;
+                             Z3ENVS  : byte;
+                             ShStk   : integer;
+                             ShStkS  : byte;
+                             ShSize  : byte;
+                             Z3Msg   : integer;
+                             ExtFCB  : integer;
+                             ExtStk  : integer;
+                             Quiet   : byte;
+                             Z3Whl   : integer;
+                             Speed   : byte;
+                             MaxDisk : byte;
+                             MaxUser : byte;
+                             DuOk    : byte;
+
+                             Crt     : byte;
+                             Printer : byte;
+                             Crt0W   : byte;
+                             Crt0L   : byte;
+                             Crt0T   : byte;
+                             Crt1W   : byte;
+                             Crt1L   : byte;
+                             Crt1T   : byte;
+                             Prt0W   : byte;
+                             Prt0L   : byte;
+                             Prt0T   : byte;
+                             Prt0FF  : byte;
+                             Prt1W   : byte;
+                             Prt1L   : byte;
+                             Prt1T   : byte;
+                             Prt1FF  : byte;
+                             Prt2W   : byte;
+                             Prt2L   : byte;
+                             Prt2T   : byte;
+                             Prt2FF  : byte;
+                             Prt3W   : byte;
+                             Prt3L   : byte;
+                             Prt3T   : byte;
+                             Prt3FF  : byte;
+                             ShName  : array[1..8] of char;
+                             ShType  : array[1..3] of char;
+                             F1Name  : array[1..8] of char;
+                             F1Type  : array[1..3] of char;
+                             F2Name  : array[1..8] of char;
+                             F2Type  : array[1..3] of char;
+                             F3Name  : array[1..8] of char;
+                             F3Type  : array[1..3] of char;
+                             F4Name  : array[1..8] of char;
+                             F4Type  : array[1..3] of char;
+                             Filler  : integer;
+                             TName   : array[1..16] of char;
+                             Up      : char;
+                             Down    : char;
+                             Right   : char;
+                             Left    : char;
+
+                             end;
+
+
+     KeyDefHdr = record
+                 ID         :array[1..5] of char;
+                 Name       :array[1..8] of char;
+                 Null1      :byte;
+                 CaseFlag   :boolean;
+                 Delay      :integer;
+                 InstallFlag:boolean;
+                 ExpRate    :byte;
+                 TableSize  :integer;
+                 Attn       :char;
+                 LeadIn     :char;
+                 LeadDef    :char;
+                 Null2      :byte;
+                 Table      :byte;
+                 end;
+
+
+     SysEnvPtr =^EnvironmentDescriptor;
+     KeyDefPtr =^KeyDefHdr;
+
+var Z3ENV       :array[1..6] of char absolute $103;
+    SysEnvAddr  :SysEnvPtr absolute $109;
+    KeyHdr      :KeyDefPtr;
+    RCP         :integer;
+    CmdSize     :byte;
+
+function GetKeyHdr:boolean;
+
+  begin
+  RCP:=SysEnvAddr^.RCP;
+  RCP:=RCP+5;
+  CmdSize:=mem[RCP]+2;
+  RCP:=RCP+1+CmdSize;
+  while mem[RCP]<>0 do
+    RCP:=RCP+CmdSize;
+  KeyHdr:=ptr(RCP+1);
+  if KeyHdr^.ID='Z3KEY' then GetKeyHdr:=true
+  else GetKeyHdr:=false;
+  end;
+
+type Str2=string[2];
+
+function DisChar(C:char):str2;
+
+  begin
+  if C<' ' then DisChar:='^'+chr(ord(C)+ord('@'))
+  else DisChar:=C;
+  end;
+
+procedure ClearScreen;
+
+
+  var I:integer;
+
+  begin
+  writeln;
+  for I:=1 to 48 do write(^J);
+  end;
+
+ procedure DisplayHdr;
+
+  begin
+  ClearScreen;
+  writeln('Z 3 K E Y . R C P':50);
+  writeln('Version 1.4':47);
+  writeln('Configuration Program, Copyright (C) 1985,1986 Arnold L. Bailey':74);
+  writeln;writeln;
+  writeln('Key file Name is  ':45,KeyHdr^.Name);
+  writeln;
+  write('Case flag is  ':45);
+  if KeyHdr^.Caseflag then writeln('ON')
+  else writeln('OFF');
+  writeln;
+  writeln('Attention Character is  ':45,DisChar(KeyHdr^.Attn));
+  writeln;
+  writeln('Lead In Character is  ':45,DisChar(KeyHdr^.LeadIn));
+  writeln;
+  writeln('Delay is  ':45,KeyHdr^.Delay:4);
+  writeln;
+  writeln('Expansion Rate is  ':45,KeyHdr^.ExpRate);
+  writeln;writeln;writeln;writeln;
+  end;
+
+{$I Z3KEY.INC}
+
+procedure SaveRcp;
+
+ type BytePtr = ^byte;
+
+  var SFile:file;
+      SName:string[14];
+      RName:string[8];
+      SPos:BytePtr;
+      Temp:boolean;
+      I:integer;
+
+  begin
+  writeln;
+  writeln;
+  write('Enter name of File to write to -> ');
+  readln(SName);
+  while pos('.',SName)<>0 do
+    delete(SName,length(SName),1);
+  for I:=1 to length(SName) do
+    SName[I]:=UpCase(SName[I]);
+  RName:=SName;
+  while Length(RName)<8 do RName:=RName+' ';
+  for I:=1 to 8 do
+    KeyHdr^.Name[I]:=RName[I];
+  SName:=SName+'.RCP';
+  assign(SFile,SName);
+  rewrite(SFile);
+  Temp:=KeyHdr^.InstallFlag;
+  KeyHdr^.InstallFlag:=false;
+  SPos:=ptr(SysEnvAddr^.RCP);
+  blockwrite(SFile,SPos^,SysEnvAddr^.RCPS);
+  close(SFile);
+  KeyHdr^.InstallFlag:=Temp;
+  end;
+
+procedure GetRate;
+
+  begin
+  writeln;
+  writeln;
+  write('Enter Expansion Rate Count -> ');
+  read(KeyHdr^.ExpRate);
+  end;
+
+
+procedure GetAttn;
+
+  var Ch:char;
+
+  begin
+  writeln;
+  writeln;
+  write('Enter Attention Character -> ');
+  read(kbd,Ch);
+  KeyHdr^.Attn:=Ch;
+  end;
+
+
+procedure GetLeadIn;
+
+
+  begin
+  writeln;
+  writeln;
+  write('Enter Lead In Character -> ');
+  read(kbd,KeyHdr^.LeadIn);
+  KeyHdr^.LeadDef:=KeyHdr^.LeadIn;
+  end;
+
+procedure GetDelay;
+
+
+  begin
+  writeln;
+  writeln;
+  write('Enter Delay Count -> ');
+  read(KeyHdr^.Delay);
+  end;
+
+procedure KeyOff;    {Turns off key redefinition}
+
+  type CmdPtr = ^CEntry;
+       CEntry=record
+              Cmd:array[1..5] of char;
+              Loc:integer;
+              end;
+
+
+  var  Code:integer;
+       CPtr:CmdPTr;
+
+  begin
+  RCP:=SysEnvAddr^.RCP;
+  RCP:=RCP+5;
+  CmdSize:=mem[RCP]+2;
+  RCP:=RCP+1;
+  CPtr:=ptr(RCP);
+  while (mem[RCP]<>0) AND NOT (CPtr^.Cmd='KEY- ') do
+    begin
+    RCP:=RCP+CmdSize;
+    CPtr:=ptr(RCP);
+    end;
+  if mem[RCP]<>0 then
+    begin
+    Code:=CPtr^.Loc;
+    inline($2A/Code/        {LD HL,(CODE) }
+           $11/*+4/         {LD DE,$+4    }
+           $D5/             {PUSH DE      }
+           $E9);            {JP (HL)      }
+    end;
+  end;
+
+
+procedure KeyOn;    {Turns on key redefinition}
+
+  type CmdPtr = ^CEntry;
+       CEntry=record
+              Cmd:array[1..5] of char;
+              Loc:integer;
+              end;
+
+
+  var  Code:integer;
+       CPtr:CmdPTr;
+
+  begin
+  RCP:=SysEnvAddr^.RCP;
+  RCP:=RCP+5;
+  CmdSize:=mem[RCP]+2;
+  RCP:=RCP+1;
+  CPtr:=ptr(RCP);
+  while (mem[RCP]<>0) AND NOT (CPtr^.Cmd='KEY+ ') do
+    begin
+    RCP:=RCP+CmdSize;
+    CPtr:=ptr(RCP);
+    end;
+  if mem[RCP]<>0 then
+    begin
+    Code:=CPtr^.Loc;
+    inline($2A/Code/        {LD HL,(CODE) }
+           $11/*+4/         {LD DE,$+4    }
+           $D5/             {PUSH DE      }
+           $E9);            {JP (HL)      }
+    end;
+  end;
+
+procedure Keys;    {Displays Key definitions}
+
+  type CmdPtr = ^CEntry;
+       CEntry=record
+              Cmd:array[1..5] of char;
+              Loc:integer;
+              end;
+
+
+  var  Code:integer;
+       CPtr:CmdPTr;
+       TC:char;
+
+  begin
+  writeln;
+  RCP:=SysEnvAddr^.RCP;
+  RCP:=RCP+5;
+  CmdSize:=mem[RCP]+2;
+  RCP:=RCP+1;
+  CPtr:=ptr(RCP);
+  while (mem[RCP]<>0) AND NOT (CPtr^.Cmd='KEYS ') do
+    begin
+    RCP:=RCP+CmdSize;
+    CPtr:=ptr(RCP);
+    end;
+  if mem[RCP]<>0 then
+    begin
+    Code:=CPtr^.Loc;
+    inline($2A/Code/        {LD HL,(CODE) }
+           $11/*+4/         {LD DE,$+4    }
+           $D5/             {PUSH DE      }
+           $E9);            {JP (HL)      }
+    end;
+  writeln;
+  write('Press any key to continue ');
+  read(kbd,TC);
+  end;
+
+procedure GetChange;
+
+var Response:char;
+
+begin
+repeat
+  DisplayHdr;
+  write('Option: S)ave: C)ase: A)ttention: L)eadIn: D)elay: R)ate: F)ile: K)eys Q)uit> ');
+  read(kbd,Response);
+  case Upcase(Response) of
+
+    'S' :  SaveRCP;
+
+    'C' :  begin
+           KeyHdr^.CaseFlag:=not KeyHdr^.CaseFlag;
+           end;
+
+    'A' :  GetAttn;
+
+    'L' :  GetLeadIn;
+
+    'D' :  GetDelay;
+
+    'R' :  GetRate;
+
+    'F' :  KeyCompile;
+
+    'K' :  Keys;
+  end;
+until Upcase(Response)='Q';
+WRITELN;
+writeln;
+end;
+
+procedure Help;
+
+  begin
+  writeln;
+  writeln('    To install use Z3KEY HHHH where HHHH is the');
+  writeln('    address  of the System Environment Descriptor');
+  writeln('    in HEX format.');
+  writeln;
+  writeln('    Use SHOW.COM or MU3.COM to find the address');
+  writeln('    of the Environment Descriptor.');
+  writeln;
+  writeln('    Once installed just use Z3KEY to start program.');
+  writeln('    Z3KEY will abort if a Z3KEY type RCP is not Loaded');
+  writeln;
+  end;
+
+
+var KeysEnabled:boolean;
+    Prog:file;
+    Temp:string[10];
+    EnvAddr:integer;
+    Code: Integer;
+
+begin
+if ParamCount<>0 then Temp:='$'+ParamStr(1)
+else Temp:='';
+if Z3ENV<>'Z3ENV'^A then
+  begin
+  Z3ENV:='Z3ENV'^A;
+  writeln('    Not installed.');
+  Help;
+  write('    Enter the address of the Environment Descriptor in Hex -> ');
+  readln(Temp);
+  Temp:='$'+Temp;
+  end;
+if Temp<>'' then
+  begin
+  assign(Prog,'Z3KEY.COM');
+  {$I-} reset(Prog); {$I+}
+  if ioresult=0 then
+    begin
+    val(Temp,EnvAddr,Code);
+    if Code=0 then
+      begin
+      SysEnvAddr:=ptr(EnvAddr);
+      blockwrite(Prog,mem[$100],1);
+      close(prog);
+      end
+    else Help;
+    end;
+  end;
+if GetKeyHdr then
+  begin
+  KeysEnabled:=KeyHdr^.InstallFlag;
+  if KeysEnabled then KeyOff;
+  DELAY(1000);
+  GetChange;
+  if KeysEnabled then KeyOn;
+  DELAY(1500);
+  ClearScreen;
+  end
+else
+  begin
+  writeln;
+  writeln('    Z3KEY type RCP is not installed.',^G);
+  end;
+end.

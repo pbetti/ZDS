@@ -1,0 +1,65 @@
+	TITLE	"Z33FNAME - Z3lib 4.0"
+;=================================================================
+;    Copyright (C) 1989 by Jay Sage.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Jay Sage/Howard Goldstein.  Modified by Harold F. Bower
+; Date    : 24 Apr 88
+; Version : 1.1
+; Module  : Z33FNAME
+; Abstract: This module contains the routine Z33FNAME which first
+;	initializes a specified FCB and then calls the SCAN entry
+;	point in the Command Processor to parse a single specified
+;	token into it.  Is is the user's responsibility to be sure
+;	that the Command Processor has not been overwritten in
+;	memory.  The routine returns a pointer to the character that
+;	delimited the token.  Valid delimiters are space, comma,
+;	semicolon, equals, greater than, less than, underscore, or
+;	any control character less than space.
+; Revision: Revised scan loop to save a byte & gain speed. HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		Z33FNAME
+
+; External References
+
+	EXT		SCAN
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - Z33FNAME
+; Entry: DE - Points to an FCB
+; Exit : HL - Points to the character that delimited the token
+; Uses : HL
+; Special Requirements: CCP must not have been overwritten
+;===============================================================
+
+Z33FNAME:
+	PUSH	AF
+	PUSH	BC
+	PUSH	DE
+	CALL	SCAN		; Parse token
+	EX	DE,HL		; Command line pointer in de
+Z33FN1:	LD	A,(DE)		; Get character from command line
+	CP	' '+1		; This is delimiter if space or less
+	JR	C,Z33FN2	; Got delimiter, go exit
+	LD	HL,DLMTB	; HL pts to table of delimiters
+	LD	BC,DLMTBLEN	; BC has length
+	CPIR			; Search table
+	INC	DE		; ..bump command line pointer
+	JR	NZ,Z33FN1	; Jump to test next char if no delim
+			;..else fall thru..
+	DEC	DE		; We found a delim, so correct pointer
+Z33FN2:	EX	DE,HL		; get address of delimiter back in HL
+	POP	DE
+	POP	BC
+	POP	AF
+	RET
+
+DLMTB:	DEFB	',=;<>_'	; List of delimiters
+DLMTBLEN EQU	$-DLMTB		; Length of table
+
+	END
+

@@ -1,0 +1,52 @@
+;
+;Program to initialize the entire 128 bytes of the shell stack 
+;This is necessary for Wordstar CPM Version 4 only
+;November, 1987--Biff Bueffel
+;
+Z3ENV	equ	0fe00h		;for debugging purposes only
+shsize	equ	128		;usual size of shell stack
+;
+	org	100h
+	jp	start
+	db	'Z3ENV'
+	db	1
+z3eadr	dw	Z3ENV		;Z3ENV address
+start:
+	ld	hl,0		;save CPM stack
+	add	hl,sp		;
+	ld	(cpmstk),hl	;	
+	call	shloc		;get address of z3shell stack
+	call	inshl		;initialize shell stack
+	ld	hl,(cpmstk)	;get CPM stack
+	ld	sp,hl		;
+	ret			;back to CPM
+;
+;	Find and save shell stack address
+;
+shloc:	ld	hl,(z3eadr)	;get z3env address
+	ld	a,30		;offset to find shell stack address
+	add	a,l		;add offset to l
+	ld	l,a		;place result in l
+	xor	a		;zero a
+	adc	a,h		;add any carry to h
+	ld	h,a		;place result in h
+	ld	a,(hl)		;get low byte shell stack address
+	ld	(shladr),a	;store it
+	inc	hl		;bump pointer
+	ld	a,(hl)		;get high byte shell stack address
+	ld	(shladr+1),a	;store it
+	ret
+;
+;	Initialize the shell stack
+;
+inshl:	ld	hl,(shladr)	;get shell stack address into hl register
+	ld	b,(shsize)	;128 bytes
+zerom:	ld	(hl),0		;0 memory
+	inc	hl		;point to next byte
+	djnz	zerom		;
+	ret
+;
+shladr	ds	2		;storage for shell stack address
+cpmstk	equ	$
+end	start
+

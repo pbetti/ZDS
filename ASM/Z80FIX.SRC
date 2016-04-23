@@ -1,0 +1,172 @@
+   28 July 1997
+   These are my Z80 fixed point routines
+   The routines have various sources.
+
+;==================================================
+; Library to do 16/32 bit fixed point math on Z80.
+; NOTE that they have not yet checked to run on the GameBoy CPU.
+;==================================================
+; Fixed Point and ASCII Conversion Package
+; Version 1.0 by Thorleif Bundgaard
+; No RAM area is needed for computations
+;==================================================
+; CALL MULT32A ;Multiply 16*16bit=32bit [DEHL]=DE*BC
+; CALL HL100   ;HL=HL*100
+; CALL HL10    ;HL=HL*10
+; CALL DIV8    ;DIVIDE L=INT(L/H) A=FRAC(L/H) (Use:A B H L)
+; CALL DIV32B  ;Division 32bit/16bit [DEHL]=INT(DE,HL/BC) [BC]=FRAC(DE,HL/BC)
+; CALL TOBC5   ;Convert DE to 5 digits ASCII in (HL+)
+;              ;Also use TOBC4 TOBC3 TOBC2 TOBC1
+; CALL GET5    ;DE=A=Binary value of 5 digits from (HL+)
+;              ;Also use GET4 GET3 GET2 GET1
+; CALL TOBIN   ;HL = Binary value of (B) digits from (DE+)
+
+
+;==================================================
+;MULTIPLY ROUTINE 16*16bit=32bit
+;DEHL=DE*BC 457usec
+MULT32A: LD     A,16
+         LD     HL,0000
+MULT32B: ADD    HL,HL       ;LSB OF MULTIPLIER
+         EX     DE,HL
+         ADC    HL,HL       ;PROPAGATE CY TO MSB
+         EX     DE,HL
+         JR     NC,MULT32C
+         ADD    HL,BC       ;ADD MULTIPLICAND
+         JR     NC,MULT32C  ;NO CY THEN NEXT
+         INC    DE          ;CY THEN PROPAGATE TO MSB
+MULT32C: DEC    A
+         JR     NZ,MULT32B  ;REPEAT
+         RET
+
+;==================================================
+;HL=HL*100
+HL100:   CALL HL10        ;HL=HL*100
+HL10:    ADD  HL,HL       ;HL=HL*10
+         PUSH DE
+         LD   D,H
+         LD   E,L
+         ADD  HL,HL
+         ADD  HL,HL
+         ADD  HL,DE
+         POP  DE
+         RET
+
+;==================================================
+;DIVIDE L=INT(L/H) A=FRAC(L/H) (Use:A B H L)
+DIV8:    LD     B,9      ;FIRST RUN IS TO LOAD A
+         XOR    A
+DIV81:   RLA
+         SUB    H
+         JR     NC,DIV82 ;NO CY IF A>E
+         ADD    A,H      ;UPDATE CY=1
+DIV82:   CCF             ;COMPLEMENT CY
+         RL     L        ;SHIFT IN BIT
+         DJNZ   DIV81
+         RET
+
+;==================================================
+;DIVISION ROUTINE 32bit/16bit 39 bytes app1000usec
+;DEHL=INT(DE,HL/BC)
+; BC=FRAC(DE,HL/BC)
+;DIV 4 BYTE DIVIDEND BY 2 BYTE DIVISOR HL SP DA / BC
+DIV32B:  PUSH   DE        ;SP=LOW WORD
+         LD     D,H
+         LD     A,L       ;DA=HL
+         LD     HL,0000
+         LD     E,32      ;LOOP COUNTER
+DIV1:    ADD    A,A       ;HLSPDA/BC DIVIDEND LEFT
+         RL     D         ;WITH CARRY
+         EX     (SP),HL
+         ADC    HL,HL
+         EX     (SP),HL
+         ADC    HL,HL
+         JR     C,DIV4
+         SBC    HL,BC     ;SUB DIVISOR
+         JR     NC,DIV2   ;OK IF HL>=BC
+         ADD    HL,BC     ;ELSE RESTORE HL
+         DEC    A
+DIV2:    INC    A
+DIV3:    DEC    E         ;DEC LOOP COUNTER
+         JR     NZ,DIV1
+         LD     E,A       ;PUT QUOTIENT BYTE IN E
+         LD     C,L       ;FRACTION IN BC
+         LD     B,H
+         POP    HL
+         EX     DE,HL     ;DEHL=RESULT
+         RET
+; OVERFLOW
+DIV4:    OR     01        ;CY INTO A,CY=0
+         SBC    HL,BC     ;SUB DIVISOR
+         JR     DIV3
+
+     .ENDIF
+
+;==================================================
+;CONVERT DE TO ASCII IN (HL+)
+TOBC5:   LD     BC,10000
+         CALL   TOBCD1
+TOBC4:   LD     BC,1000
+         CALL   TOBCD1
+TOBC3:   LD     BC,100
+         CALL   TOBCD1
+TOBC2:   LD     BC,10
+         CALL   TOBCD1
+TOBC1:   LD     BC,1
+TOBCD1:  LD     A,30H      ;PREPARE FOR ASCII
+         EX     DE,HL
+TOBCD2:  LD     (DE),A
+         XOR    A
+         SBC    HL,BC      ;CY IF HL<BC
+         JR     NC,TOBCD3
+         ADD    HL,BC      ;RESTORE
+         INC    DE
+         EX     DE,HL
+         RET
+TOBCD3:  LD     A,(DE)
+         INC    A
+         JR     TOBCD2
+
+;==================================================
+;DE=A=BIN VAL OF X DIGITS (HL+)
+GET5:    LD     B,5
+         JR     TOBI
+GET4:    LD     B,4
+         JR     TOBI
+GET3:    LD     B,3
+         JR     TOBI
+GET2:    LD     B,2
+         JR     TOBI
+GET1:    LD     B,1
+TOBI:    EX     DE,HL
+         CALL   TOBIN
+         LD     A,L
+         EX     DE,HL
+         RET
+
+;HL = BIN VAL OF (B) DIGITS (DE+)
+TOBIN:   LD     HL,0000
+TOBIN1:  PUSH   DE
+         LD     A,(DE)     ;GET CHAR
+         CP     '.'        ;IGNORE .
+         JR     NZ,TOBIN2
+         POP    DE
+         INC    DE
+         JR     TOBIN1
+TOBIN2:  AND    0FH        ;MAKE VALUE
+         ADD    HL,HL
+         LD     D,H
+         LD     E,L
+         ADD    HL,HL
+         ADD    HL,HL
+         ADD    HL,DE      ;HL=HL*10
+         LD     E,A
+         LD     D,00
+         ADD    HL,DE      ;ADD VALUE
+         POP    DE         ;RESTORE POINTER
+         INC    DE
+         DJNZ   TOBIN1
+         RET
+
+;==================================================
+

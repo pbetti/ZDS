@@ -1,0 +1,119 @@
+;	TITLE	"SPAUSE - Syslib 4.0"
+	NAME	('PAUSE')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SPAUSE.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SPAUSE
+; Abstract:  This module contains the routine PAUSE which creates
+;	a delay for a number of 1/10ths of a second determined by
+;	the user.  A parameter can also be passed to adjust for
+;	the CPU clock speed.
+;     Computation of Time Delay Constant:
+;	Initial Overhead	49 Cycles
+;	Terminating Overhead	50 Cycles
+;	Processor Speed (P)	(10 + 15) * P Cycles
+;	Major Overhead		TIME * 132 Cycles
+;	N-Count Overhead	(5 + 24) * N Cycles
+;	** Required Total **	100,000 Cycles (1/10 Sec at P = 1)
+;
+;  Since this is a guestimate anyway and processor speed will not be exactly
+;  P MHz, I will throw out the processor speed delay (At most 100 Cycles)
+;
+;  Calculations:  100,000 = 49 + 50 + (Time * 132) + (29 * N)
+;		Time = (100,000 - 49 - 50 - (29 * N)) / 132
+;		Time = (99,901 - (29 * N)) / 132
+;  Chart:
+;		 N	Time
+;		  1	 757   1/10 Sec
+;		  2	 756
+;		  3	 756
+;		  4	 756
+;		  5	 756	1/2 Sec
+;		 10	 755	  1 Sec
+;		 15	 754
+;		 20	 752	  2 Secs
+;		 25	 751
+;		 50	 746	  5 Secs
+;		100	 735	 10 Secs
+;		500	 647	 50 Secs
+;
+;  Since most calls to this routine will require between 1/10 and 5 Secs,
+;  I shall select an "Average" time constant of (757+746)/2 = 752
+;  Since an "Average" clock is 2+ or 4+ MHz, I shall fudge this (thru practice)
+;  to 740
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		PAUSE
+
+; Definitions
+
+BOOT	EQU	0		; Warm Boot address
+CS$OFF	EQU	6		; Console Status Offset
+CIN$OFF	EQU	9		; Console Input Offset
+TIME	EQU	700		; Time Constant
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PAUSE
+; Entry: HL - Contains the number of 1/10ths of a second to pause
+;	  B - Contains the processor speed in MHz
+; Exit : - Nothing returned
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+PAUSE:	PUSH	HL		; Save regs [4*11 = 44]
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+	LD	C,B		; Save processor speed in C [5]
+
+;  The above instructions represent the initial overhead = 49 cycles
+
+PAUSL:	LD	B,C		; Get processor speed [5]
+PAUSL1:	LD	DE,TIME		; Get delay constant [10]
+
+;  The above instructions represent part of the processor speed overhead = 15
+
+PAUSL2:	EX	(SP),HL		; Long instruction for delay [6*18 = 108]
+	EX	(SP),HL
+	EX	(SP),HL
+	EX	(SP),HL
+	EX	(SP),HL
+	EX	(SP),HL
+	DEC	DE		; Count down inner-most loop [5]
+	LD	A,D		; Done?	[5]
+	OR	E		; [4]
+	JR	NZ,PAUSL2	; [10]
+
+; The above instr represent the major overhead = Time*(108+5+5+4+10)
+;	= Time*132
+
+	DJNZ	PAUSL1		; Count down 10TH-Sec Loop [5]
+
+; The above instr represent the rest of the processor speed overhead = 15
+
+	DEC	HL		; Count down N 10ths loop [5]
+	LD	A,H		; Done? [5]
+	OR	L		; [4]
+	JR	NZ,PAUSL	; [10]
+
+; The above instructions represent the N-Count overhead = 24 Cycles
+
+	POP	AF		; Restore Regs [4*10 = 40]
+	POP	BC
+	POP	DE
+	POP	HL
+	RET			; [10]
+
+; The above instructions represent the terminating overhead = 50 Cycles
+
+	END
+

@@ -1,0 +1,324 @@
+	title	'Character I/O Module for the Modular CP/M 3 BIOS'
+
+;	CP/M-80 Version 3	-- Modular BIOS
+;	Character I/O Module for P112
+;	Initial version 1.0
+;	Compile with M80
+
+	public	?cinit,?ci,?co,?cist,?cost
+	public	@ctbl
+
+	extrn	@cbnk,?bank
+
+	include MODEBAUD.INC	; define mode bits and baud eqautes
+	include	P112EQU.INC
+
+	.z80
+Z80182	equ	1
+	include Z180.INC
+	include	BIOSEQU.INC
+
+max$device	equ 3
+
+	cseg	; must be in common memory
+
+; c = device
+
+?cinit:				; init devices
+	ld	b,c
+	call	vector$io
+	dw	?init$com1
+	dw	?init$com2
+	dw	?init$lpt
+	dw	rret
+
+; b = device, c = output char, a = input char
+
+?ci:				; character input
+	call	vector$io
+	dw	?com1$in
+	dw	?com2$in
+	dw	null$input
+	dw	null$input
+
+?cist:				; character input status
+	call	vector$io
+	dw	?com1$ist
+	dw	?com2$ist
+	dw	null$status
+	dw	null$status
+
+?co:				; character output
+	call	vector$io
+	dw	?com1$out
+	dw	?com2$out
+	dw	?lpt$out
+	dw	rret
+
+?cost:				; character output status
+	call	vector$io
+	dw	?com1$ost
+	dw	?com2$ost
+	dw	?lpt$ost
+	dw	ret$true
+
+vector$io:
+	ld	a,max$device
+	ld	e,b
+vector:
+	pop	hl
+	ld	d,0
+	cp	e
+	jr	nc,exist
+	ld	e,a		; use null device if a >= max$device
+exist:	add	hl,de
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	(hl)
+
+
+null$input:
+	ld	a,1Ah
+rret:
+	ret
+ret$true:
+	or	0FFh
+	ret
+
+null$status:
+	xor	a
+	ret
+
+;--------------------------------------------------------------
+
+?init$com1:
+	ld	hl,itab
+	ld	b,(hl)
+ic1:	inc	hl
+	ld	a,(hl)
+	out0	(sccacnt),a
+	djnz	ic1
+;	ret
+
+?com1$set$baud:
+	ld	a,(com1$baud)
+	cp	baud$19200+1	; max allowed
+	ret	nc
+	sub	baud$300	; min allowed
+	ret	c
+	ld	hl,com1$baud$div
+	add	a,a
+	ld	e,a
+	ld	d,0
+	add	hl,de
+	ld	e,(hl)
+	inc	h
+	ld	d,(hl)
+	ld	a,WR12
+	out0	(sccacnt),a
+	out0	(sccacnt),e
+	ld	a,WR13
+	out0	(sccacnt),a
+	out0	(sccacnt),d
+	ret
+
+itab:	db	tabend-$-1
+	db	WR4,  01000100b	; x16, 1 stop bit, no parity
+	db	WR1,  00000100b	; Parity is special RX condition
+	db	WR3,  11000000b	; RX 8 bits/char
+	db	WR5,  01100000b	; TX 8 bits/char
+	db	WR9,  00000001b	; Status affects int. vector
+	db	WR11, 01010110b	; RX & TX <- BRG, RTxC <- BRG
+	db	WR12, 50	; Baud rate divisor LSB: 9600bps
+	db	WR13, 0		;  Ditto,  MSB
+	db	WR14, 01100010b	; BRG source (internal) DPLL off
+	db	WR14, 00000011b	; BRG enabled
+	db	WR1,  00000100b	; Enable ints. here, if reqd.
+	db	WR15, 00000000b	; No "advanced" features
+	db	WR0,  00010000b	; Reset pending external ints.
+	db	WR0,  00010000b	; Repeat, to be sure of it
+	db	WR3,  11000001b	; RX enabled
+	db	WR5,  01101010b	; TX enabled, RTS active
+tabend	equ	$
+
+com1$baud$div:			; 16.000 MHz CPU!
+	dw	1665		;   300
+	dw	831		;   600
+	dw	415		;  1200
+	dw	276		;  1800
+	dw	206		;  2400
+	dw	137		;  3600
+	dw	102		;  4800
+	dw	67		;  7200
+	dw	50		;  9600
+	dw	24		; 19200
+	dw	11		; 38400
+
+?com1$ist:
+	in0	a,(sccacnt)
+	rra			; input ready (bit 0) -> CY
+	sbc	a,a		; A = FF if CY = 1
+	ret
+
+?com1$in:
+	call	?com1$ist
+	jr	z,?com1$in
+	in0	a,(sccad)
+	and	7Fh
+	ret
+
+?com1$ost:
+	in0	a,(sccacnt)
+	bit	2,a
+	ld	a,0
+	ret	z
+	dec	a
+	ret
+
+?com1$out:
+	call	?com1$ost
+	jr	z,?com1$out
+	ld	a,c
+	and	7Fh
+	out0	(sccad),a
+	ret
+
+;--------------------------------------------------------------
+
+?init$com2:
+?com2$set$baud:
+	ld	a,(com2$baud)
+	cp	baud$19200+1	; max allowed
+	ret	nc
+	sub	baud$300	; min allowed
+	ret	c
+	ld	hl,com2$baud$div
+	add	a,a
+	ld	e,a
+	ld	d,0
+	add	hl,de
+	ld	a,(hl)
+	ld	(auxinz+3),a
+	inc	hl
+	ld	a,(hl)
+	ld	(auxinz+5),a
+	ld	hl,auxinz
+	ld	a,0FFh
+ic2:	ld	b,0		; MS address bits
+	ld	c,(hl)		; output port zero?
+	tst	c
+	ret	z		; yes, return
+	inc	hl		; point to data
+	outi			; send, alters B
+	jr	ic2
+
+auxinz:	db	_lcr, 80h	; select divisor
+	db	_ddl, 0Ch	; 9600 bps (60h [96d] = 1200 bps)
+	db	_dlm, 0		; divisor MSB
+	db	_lcr, 03h	; 8 bits, 1 stop, no parity
+	db	_ier, 0		; no ints
+	db	_mcr, 03h	; DTR, RTS active
+	db	0		; end
+
+com2$baud$div:
+	dw	384		;   300
+	dw	192		;   600
+	dw	96		;  1200
+	dw	64		;  1800
+	dw	48		;  2400
+	dw	32		;  3600
+	dw	24		;  4800
+	dw	16		;  7200
+	dw	12		;  9600
+	dw	6		; 19200
+	dw	3		; 38400
+
+?com2$ist:
+	in0	a,(_lsr)
+	rra
+	sbc	a,a
+	ret
+
+?com2$in:
+	call	?com2$ist
+	jr	z,?com2$in
+	in0	a,(_rbr)
+	res	7,a
+	ret
+
+?com2$ost:
+	in0	a,(_lsr)
+	bit	5,a
+	ld	a,0
+	ret	z
+	dec	a
+	ret
+
+?com2$out:
+	call	?com2$ost
+	jr	z,?com2$out
+	ld	a,c
+	and	7Fh
+	out0	(_thr),a
+	ret
+
+;--------------------------------------------------------------
+
+?init$lpt:
+	ld	a,8
+	out0	(cport),a	; init\ low
+	ld	bc,0010h
+lpw1:	djnz	lpw1
+	dec	c
+	jr	nz,lpw1
+	ld	a,0Ch
+	out0	(cport),a	; init\ high
+	in0	a,(sport)
+	in0	a,(sport)
+	ret
+
+?lpt$ost:
+	in0	a,(sport)
+	rlca
+	sbc	a,a
+	ret
+
+?lpt$out:
+	call	?lpt$ost
+	jr	nz,lpo2
+	ld	b,40
+	djnz	$
+	jr	?lpt$out
+lpo2:	out0	(dport),c
+	ld	a,0Dh
+	out0	(cport),a	; stb = 1
+	nop
+	nop
+	ld	a,0Ch
+	out0	(cport),a	; stb = 0
+	ret
+
+;--------------------------------------------------------------
+
+@ctbl:
+	db 'COM1  '	; device 0
+	db mb$in$out+mb$serial+mb$soft$baud
+com1$baud:
+	db baud$19200
+
+	db 'COM2  '	; device 1
+	db mb$in$out+mb$serial+mb$soft$baud
+com2$baud:
+	db baud$9600
+
+	db 'LPT   '	; device 2
+	db mb$output
+	db baud$none
+
+	db 0		; table terminator
+
+	end
+

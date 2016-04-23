@@ -1,0 +1,116 @@
+ Introduction
+ BDOS-Based Input Line Editors  - BBLINE, BLINE
+ Independent Input Line Editor  - INLINE
+:                     Introduction 
+
+An Input Line Editor is used to accept a line of text from the
+terminal, allowing you to issue commands like backspace and
+Ctrl-X (erase all of line typed so far) to edit text as you
+enter it.  Once the text has been entered, the Input Line
+Editor returns to the calling program with your text stored in
+a buffer.  This text is terminated by a binary 0.
+
+Two of the Input Line Editors in SYSLIB use the CP/M BDOS to
+provide the line editor function.  They mainly serve to
+preserve the registers during the function call and to store
+the terminating zero at the end of the text.  They occupy less
+space than the third Input Line Editor, INLINE.
+
+
+The third Input Line Editor, INLINE, is used when security is
+important.  Unlike the other two, when typing a Ctrl-C to
+INLINE, the Input Line Editor (and calling program) is not
+aborted and control returned to CP/M.  Instead, the Ctrl-C char
+is simply stored in your line.  Also, unlike the other two,
+INLINE can be instructed to echo or not echo the input
+characters.  This feature is useful for programs which want to
+input a password.  INLINE can be instructed not to echo the
+password, but it will still provide the line editing functions
+so that you can correct any mistakes.
+
+
+:BBLINE - BDOS-Based Line Editor with Internal Buffer
+
+  ENTER:  A = 0 to NOT Capitalize Line, A <> 0 to Capitalize
+  EXIT : HL = Pointer to first char in the line
+	  A = # of chars in the line (excluding ending zero)
+  USES : AF,HL
+
+ Usage:  BBLINE provides a very convenient interface to the
+  BDOS for input line editor functions.  It contains an
+  internal buffer for storage of the input line (200 bytes
+  allocated), and it returns a pointer to the first byte of
+  the line upon return.  The line stored in this buffer is
+  terminated by a Null (0).
+
+  To use BBLINE, you only need to call it with the Capitali-
+  zation flag set for the desired action.
+
+BLINE - BDOS-Based Line Editor with User-Supplied Buffer
+
+  ENTER:  A = 0 to Not Capitalize Line, A <> 0 to Capitalize
+	 HL = Pointer to first byte of user-supplied buffer
+  EXIT : HL = Pointer to first char in the line
+	  A = # of chars in the line (excluding ending zero)
+  USES : AF,HL
+
+ Usage:  BLINE performs the same type of function as BBLINE,
+  but does not contain an internal buffer.  You are expected
+  to provide a buffer, structured as:
+
+		SIZE:	DEFB	<Size of Buffer>
+		CCNT:	DEFS	1
+		LINE:	DEFS	<Size of Buffer + 1>
+
+  To use BLINE, call it with the address of the Buffer (SIZE in
+  the example), and the capitalization flag.  BLINE returns a
+  pointer to the first byte of the line (LINE) upon return.
+  The line stored in this buffer is Null-terminated.
+
+:INLINE - Independent Input Line Editor
+
+  ENTER: HL = Pointer to Input Line Buffer
+	  A = Echo Flag (A=0 for NO Echo, A<>0 to Echo Input)
+  EXIT : None
+  USES : None
+  Special Error Conditions: A BEL character (Beep on Console)
+  is output if attempt is made to delete characters with BS or
+  DEL before the beginning of the line.  No limit or error
+  checking is made on the size of the input line buffer, so
+  you should made the buffer arbitrarily large to avoid buffer
+  overflow.  A Hash mark (#) is printed in response to Ctrl-R,
+  Ctrl-U, and Ctrl-X.
+
+ Usage:  INLINE essentially provides all of the conventional
+  input line editor functions.  It is somewhat more flexible
+  than BLINE and BBLINE, but the tradeoff is that INLINE takes
+  up more space.  If security is not required, you should use
+  BLINE or BBLINE instead of INLINE.
+
+
+  You may edit the text as you type it with the following
+  editor commands:
+
+   Key Command		Function
+      <BS>	Delete previous character and back up cursor
+      <DEL>	Delete previous character and echo it
+      <CR>	Input complete -- return to calling program
+      <LF>	Go to next physical line; adding a <CR><LF>
+			to Buffer
+      <TAB>	Tabulate to next tab stop (every 8)
+     Ctrl-U,	Erase line (clear buffer) and restart input
+       Ctrl-X
+     Ctrl-R	Retype current line
+     Ctrl-E	Go to next physical line; add nothing to Buffer
+
+  On exit, the buffer contains the text entered followed by a
+  <NULL> (binary 0);  the <CR> typed to end the input is NOT
+  placed in the buffer.
+
+  Note: INLINE offers two features not found in BLINE and
+  BBLINE.  First, it cannot be aborted by a Ctrl-C; this is
+  good, since it can be used in "secure" programs without fear
+  of breaking out of the program.  Second, it can be made to
+  echo or not echo the input; this provides some protection
+  for inputting sensitive information, such as passwords.
+

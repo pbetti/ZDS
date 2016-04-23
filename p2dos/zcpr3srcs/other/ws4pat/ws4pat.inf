@@ -1,0 +1,190 @@
+
+This is the header section of WS4PAT.MAC.  The .HEX file is released
+today for your use and comments.  The source is not available yet.
+
+I have been reading of the problems involving the ZCPR3 shell stack.
+This patch does not address that at all.  If we determine that WS4 
+could solve the problem itself, I will put the necessary code in the
+next WS4PAT.
+
+; Overlay: WS4PAT.MAC
+; Author:  Joe Wright
+; Date:    20 November 87
+; Version: 1.0
+
+VERS	EQU	10		; Release
+
+MONTH	EQU	11		; November
+DAY	EQU	20		; 20th
+YEAR	EQU	87		; 1987
+
+; The purpose of this overlay is to provide a generic ZCPR3 version of
+; WordStar which will not require specific terminal installation but will
+; take its lead from the TCAP.  NZTCAP is expanded to include all (and more)
+; that WordStar requires for its operation.
+
+; Based on PATCH.LST in the WordStar 4.0 release, this overlay installs
+; all but Printer patches.  All new code is at EXTRA.  MORPAT and CRTPAT
+; areas are unused and therefore still available for small patches.
+
+; Assemble WS4PAT.MAC to a .HEX file with SLRMAC and overlay your current
+; WS.COM with it as follows:
+
+;	MLOAD WSZ.COM=WS.COM,WS4PAT.HEX
+
+; The overlay supports video attributes of the TeleVideo 955 and Wyse 60.
+; It was tested only superficially for VT-100, using the Wyse 60 in VT-100
+; emulation mode.
+
+; This overlay expects a ZCPR3 system with extended NZTCAP.  All the code
+; at VIDATT: and EXTRA: is my own.  Before running WordStar with this
+; overlay, you must create and install a NZTCAP for your terminal.  I have
+; provided an example here for TeleVideo 955 and the file NZWYS60.MAC
+; as prototypes for your NZTCAP.  If you run it with your normal TCAP,
+; WordStar will not know how to do LINE INSERT and LINE DELETE functions
+; and will slow a little and paint the screen more.
+
+;----------------------------------------------------
+;
+; NZCPR TERMINAL CAPABILITIES DATA
+;  In order determine specific terminals without regard to the ascii name,
+;  we now use the last byte of the name field as a 'type' byte.  Until now,
+;  the types are assigned as follows:
+;
+;	ASCII types (0-15)
+;
+;	TeleVideo 955	00h
+;	TeleVideo 925	01h
+;	Wyse 60		02h
+;	Wyse 50		03h
+;
+;	ANSI types (16-31)
+;
+;	VT-100		10h
+;
+; WS4PAT simply looks at bit 4 to determine ASCII or ANSI types.
+;
+;NZTCAP:
+;	DB	'TVI-955        ' ; Name of terminal (Always 15 characters)
+;	DB	0		; ASCII type (TeleVideo 955)
+;	DB	'K'-'@'		; Cursor up
+;	DB	'J'-'@'		; Cursor down (re-programmed from ^V)
+;	DB	'L'-'@'		; Cursor right
+;	DB	'H'-'@'		; Cursor left
+;	DB	0		; CL delay
+;	DB	0		; CM delay
+;	DB	0		; CE delay
+;	DB	ESC,'+',0	; CL string		1st (NZTCAP+17H)
+;	DB	ESC,'=%+ %+ ',0	; CM string		2nd
+;	DB	ESC,'T',0	; CE string		3rd
+;	DB	ESC,')',0	; SO string		4th
+;	DB	ESC,'(',0	; SE string		5th
+;	DB	0		; TI string		6th
+;	DB	0		; TE string		7th
+;
+; Extensions to Standard Z3TCAP
+;
+;	DB	ESC,'R',0	; Line Delete		8th
+;	DB	ESC,'E',0	; Line Insert		9th
+;	DB	ESC,'G',0	; Set Attributes	10th
+;
+;  FILL UNUSED SPACE WITH NULLS
+;
+;	REPT	128-($-NZTCAP)
+;	DB	0
+;	 ENDM
+;----------------------------------------------------
+;
+; WS4PAT will treat the full complement of TeleVideo functions and attributes.
+; Any of the functions may be omitted (replaced with null) with the exception
+; of the CM (Cursor Movement) string.  WordStar will work around any other
+; missing capabilities if your particular terminal doesn't support them.
+; 
+; The custom routine POSCUR uses WordStar's cursor position in HL and sends
+; the expanded CM string to the terminal.
+;
+; The CM string in NZTCAP is a macro of sorts.  Characters in the string will
+; be sent to the terminal as they appear.  The special case is the COMMAND
+; lead-in character '%'.  The character following the '%' indicates the action
+; required.  Nine commands are supported as follows:
+;
+;	%I		Increment Row/Col by 1 (before D, 2, 3 or .)
+;	%D		Send Row/Col as one, two or three ascii digits
+;	%2		Send Row/Col as two ascii digits
+;	%3		Send Row/Col as three ascii digits
+;	%.		Send Row/Col as binary
+;
+;	%R		Send Col before Row
+;	%+		Add the next character to Row/Col and send it
+;	%N		Send a NULL (00h)
+;
+;	\		Send the next character literally (except null)
+;
+; The %N command, new in NZTCAP, allows a null (00h) to be sent to the
+; terminal (no nulls are allowed within CM strings).
+;
+; The \ command permits sending a literal % or \ to the terminal.
+; Use '\%' to send the percent sign or '\\' to send backslant.
+;
+; These commands allow virtually any terminal to be supported by WordStar.
+;
+; The prototype TeleVideo command is  ESC = ROW COL  where row and col
+; are biased by the space character (20h).  The CM string for this in
+; assembly language:  1BH,'=%+ %+ ',0  or..
+;
+;	DB	1BH,'='		; Lead-in string
+;	DB	'%+ '		; Send Row + 32
+;	DB	'%+ '		; Send Col + 32
+;	DB	0		; Terminate the string (not sent)
+;
+; The prototype ANSI (VT-100) command is  ESC [ ROW ; COL H  where row and
+; col are ascii decimal digits beginning with 1 rather than 0.  The CM string
+; for this is:  1BH,'[%I%D;%DH',0  or if you prefer..
+;
+;	DB	1BH,'['		; Lead in string
+;	DB	'%I'		; Row/Col begin at 1 instead of 0
+;	DB	'%D'		; Send Row in decimal
+;	DB	';'		; Send delimiter
+;	DB	'%D'		; Send Col in decimal
+;	DB	'H'		; Send trailing H
+;	DB	0		; Terminate the string (not sent)
+;
+; The Hazeltine 1500 is strange enough to demonstrate NZTCAP flexibility.
+; The CM string is  7EH,11H,'%R%.%+ ',0  or..
+;
+;	DB	7EH,11H		; Lead-in string
+;	DB	'%R'		; Reverse Row/Col
+;	DB	'%.'		; Send Col in binary
+;	DB	'%+ '		; Send Row + 32
+;	DB	0		; Terminate the string (not sent)
+;
+; In order to use this powerful parser for attribute strings as well as
+; CM strings, enter PARSE with HL pointing to the first character of a
+; null-terminated string and DE containing the value to be parsed.
+; A complex VT-200 SGR string is prototyped as:
+;
+;SGR:	DB	ESC,'[%R%D;%Dm',0
+;
+; You would clear attributes with the following code.
+;
+;	LXI	H,SGR
+;	LXI	D,0
+;	CALL	PARSE
+;	...
+;
+; The resulting string to the terminal is:
+;
+;	ESC [ 0 ; 0 m
+;
+; To set the VT-200 to blinking:
+;
+;	LXI	H,SGR
+;	LXI	D,4
+;	CALL	PARSE
+;
+; The terminal gets:
+;
+;	ESC [ 0 ; 4 m
+;
+; End of WS4PAT.INF
+

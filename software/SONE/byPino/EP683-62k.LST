@@ -1,0 +1,1967 @@
+0001   0000             ;
+0002   0000             ;
+0003   0000             ;
+0004   0000             ;********************************************************
+0005   0000             ;*							*
+0006   0000             ;*		N E W   R O M   Vers. 4.8		*
+0007   0000             ;*		    For N.E. Computer			*
+0008   0000             ;*							*
+0009   0000             ;********************************************************
+0010   0000             ;
+0011   0000             ;
+0012   0000             	.title  Rom 4.8 for NE CP/M 2.2 with Hard-Disk
+0013   0000             	;subttl	Copyright Studio Lg, Genova - Last rev 18/08/1984 17:30
+0014   0000             ;	Programmer: Martino Stefano
+0015   0000             ;	All Modified by Gallerani Paolo
+0016   0000             ;
+0017   0000             ;
+0018   0000             ;
+0019   0000             vers	.equ	'H'		; Version for Hard-Disk
+0020   0000             rev	.equ	48		; Revision level
+0021   0000             ;
+0022   0000             ;
+0023   0000             false	.equ	0
+0024   0000             true	.equ	1
+0025   0000             ;
+0026   0000             ;
+0027   0000             rom	.equ	0f800h		; <--- rom start
+0028   0000             necnt	.equ	true		; fdd controller by n.e.
+0029   0000             mdcnt	.equ	false		; fdd controller by micro design
+0030   0000             md80vid	.equ	false		; video int. 80*24 by micro design
+0031   0000             ne80vid	.equ	true		; video int. 80*24 by n.e.
+0032   0000             hard	.equ	true		; hard disk with xebec cnt
+0033   0000             ;
+0034   0000             ;
+0035   0000             ;********************************************************
+0036   0000             ;*							*
+0037   0000             ;*		Ram data areas equates			*
+0038   0000             ;*							*
+0039   0000             ;********************************************************
+0040   0000             ;
+0041   0000             ram	.equ	00040h		; top of ram data areas
+0042   0000             fd0otr	.equ	ram		; fdd0 old track num.	
+0043   0000             fd1otr	.equ	ram+1		; fdd1 old track num.	
+0044   0000             fd2otr	.equ	ram+2		; fdd2 old track num.	
+0045   0000             fd3otr	.equ	ram+3		; fdd3 old track num.	
+0046   0000             unit	.equ	ram+4		; fdd old unit select
+0047   0000             hladrs	.equ	ram+5		; two byte for HL save
+0048   0000             pnt.ix	.equ	ram+7		; routines table address
+0049   0000             spare	.equ	ram+9		; not used
+0050   0000             task	.equ	ram+10		; six byte for wdd cmd out
+0051   0000             ipldma	.equ	01000h		; IPL dma address
+0052   0000             stack	.equ	ipldma		; stack ram area for IPL
+0053   0000             ;
+0054   0000             ;
+0055   0000             ;********************************************************
+0056   0000             ;*							*
+0057   0000             ;*		ASCII EQUIVALENTS			*
+0058   0000             ;*							*
+0059   0000             ;********************************************************
+0060   0000             ;
+0061   0000             bell	.equ	'G'-'@'		; ring beeper
+0062   0000             backsp	.equ	'H'-'@'		; back space char.
+0063   0000             ffeed	.equ	'L'-'@'		; form feed char.
+0064   0000             cr	.equ	'M'-'@'		; carriage-return char.
+0065   0000             lf	.equ	'J'-'@'		; line-feed char.
+0066   0000             endmsg	.equ	'$'		; end of print message
+0067   0000             ;
+0068   0000             ;
+0069   0000             ;********************************************************
+0070   0000             ;*							*
+0071   0000             ;*			ROM				*
+0072   0000             ;*							*
+0073   0000             ;********************************************************
+0074   0000             ;
+0075   F800             	.org	rom		; EPROM PC
+0076   F800             ;
+0077   F800 C3 61 F8    	jp	reset		; jmp here to hardware reset
+0078   F803 C3 09 FA    	jp	cin		; console input
+0079   F806 C3 33 FA    	jp	cout		; console output
+0080   F809 C3 02 FA    	jp	csts		; console status
+0081   F80C C3 F8 F9    	jp	lout		; printer output
+0082   F80F C3 F2 F9    	jp	lsts		; printer status
+0083   F812 C3 6F FD    	jp	fdios		; fdd I/O 128 byte
+0084   F815 C3 72 FD    	jp	fdiod		; fdd I/O 256 byte
+0085   F818 C3 52 FF    	jp	wdini		; wdd initialization
+0086   F81B C3 B4 FE    	jp	wdio		; wdd I/O 256 byte
+0087   F81E C3 62 FD    	jp	strout		; print string -> DE until endmsg
+0088   F821 C3 CC F8    	jp	boot		; load IPL and exec. it
+0089   F824 C3 5D FD    	jp	printat		; print string -> DE until endmsg at cursor -> HL
+0090   F827 C3 44 FB    	jp	movcurs		; move video cursor at -> HL
+0091   F82A C3 E5 FC    	jp	initialize	; initialize video
+0092   F82D             ;
+0093   F82D             CompFlg:
+0094   F82D 30          	.byte	rev		; current revision level
+0095   F82E             ;
+0096   F82E             ;
+0097   F82E             ;
+0098   F82E             ;********************************************************
+0099   F82E             ;*							*
+0100   F82E             ;*		    Rom data areas			*
+0101   F82E             ;*							*
+0102   F82E             ;********************************************************
+0103   F82E             ;
+0104   F82E             DPBIPL:	;
+0105   F82E             	; Disk Parameter Block
+0106   F82E             	; for fd & wd IPL boot
+0107   F82E             	;
+0108   F82E 00          	.byte	0		; first unit & side 0
+0109   F82F 00 00       	.word	0		; first track  = 0000
+0110   F831 01          	.byte	1		; first sector = 1
+0111   F832 00 10       	.word	ipldma		; ipl dma address
+0112   F834 00          	.byte	0		; read code
+0113   F835 01          	.byte	1		; 1 sector read
+0114   F836             				; for wdd read
+0115   F836             ;
+0116   F836             ;
+0117   F836             ;
+0118   F836             inimsg:
+0119   F836 0C0D0A134C  	.byte	ffeed,cr,lf,19,'L'
+0120   F83B 20204E455720	.text	"  NEW FIRMWARE Vers. "
+0120   F841 4649524D5741524520566572732E20
+0121   F850 48          	.byte	vers
+0122   F851 2072657620  	.text	" rev "
+0123   F856 34 2E 38    	.byte	rev/10+'0','.',rev%10+'0'
+0124   F859 20 20       	.text	"  "
+0125   F85B 1340070D0A24	.byte	19,'@',bell,cr,lf,endmsg
+0126   F861             ;
+0127   F861             ;
+0128   F861             ;********************************************************
+0129   F861             ;*							*
+0130   F861             ;*	      Jump here after hardware reset		*
+0131   F861             ;*							*
+0132   F861             ;********************************************************
+0133   F861             ;
+0134   F861             reset:
+0135   F861 AF          	xor	a			; clear accumulator
+0136   F862 D3 D6       	out	(fddlch),a		; deselect any drive
+0137   F864 31 00 10    	ld	sp,stack		; set stack pointer
+0138   F867 21 40 00    	ld	hl,ram			; top of ram data areas
+0139   F86A 06 10       	ld	b,16			; number of byte to clear
+0140   F86C             rst00:
+0141   F86C 77          	ld	(hl),a			; clear ram
+0142   F86D 23          	inc	hl			; inc. ram pointer
+0143   F86E 10 FC       	djnz	rst00			; repeat until end of ram data areas
+0144   F870 DD 21 00 15 	ld	ix,ipldma+500h		; IX = reset routines table
+0145   F874 CD E5 FC    	call	initialize		; initialize video and video table
+0146   F877             ;
+0147   F877 11 36 F8    	ld	de,inimsg		; D.E = initial message
+0148   F87A CD 62 FD    	call	strout			; print it
+0149   F87D             ;
+0150   F87D             ;
+0151   F87D             	#if	hard			;
+0152   F87D             ;
+0153   F87D             ;
+0154   F87D             ;************************************************
+0155   F87D             ;* W D B O O T					*
+0156   F87D             ;* Do Boot according if there is		*
+0157   F87D             ;* Hard Disk interface and reading errors	*
+0158   F87D             ;* else boot from Floppy			*
+0159   F87D             ;************************************************
+0160   F87D             ;
+0161   F87D             ; Last Revision 08/05/85 17:18 by Gallerani Paolo
+0162   F87D             ;
+0163   F87D             	; Now test if there are hard disk interface
+0164   F87D             ;
+0165   F87D DB B9       	in	a,(rport1)		; load cntlr status
+0166   F87F E6 E0       	and	11100000b		; mask bit 5,6,7. Hard disk exist ?
+0167   F881 20 31       	jr	nz,fdbtwt		; no, then go to fdd boot
+0168   F883             ;
+0169   F883             ;
+0170   F883 D3 B9       	out	(wport1),a		; reset hard cntrl
+0171   F885 11 23 F9    	ld	de,wdfdmsg		; D.E = question message
+0172   F888 CD 5A FD    	call	pr_AT_12.12		; print it @ 12,12
+0173   F88B             ;
+0174   F88B             ;
+0175   F88B             WaitKey:
+0176   F88B             	; wait for push 'F' or wdd ready
+0177   F88B CD 02 FA    	call	csts			; get console status
+0178   F88E             					; key pushed ?
+0179   F88E 28 19       	jr	z,CkRdy			; no, then check for wdd ready
+0180   F890 CD 09 FA    	call	cin			; wait one char.
+0181   F893 CB AF       	res	5,a			; convert up-case
+0182   F895 FE 46       	cp	'F'			; is 'F' ?
+0183   F897 20 F2       	jr	nz,WaitKey		; no, then ignore
+0184   F899             	;
+0185   F899             	; Selected boot from floppy
+0186   F899             	; Wait for Hard-Disk ready
+0187   F899             	;
+0188   F899 11 5E F9    	ld	de,fdbtmsg		; D.E = 'ok for .. ' message
+0189   F89C CD 5A FD    	call	pr_AT_12.12		; print it @ 12,12
+0190   F89F             ;
+0191   F89F             WtHdRdy:
+0192   F89F CD 92 FF    	call	wtwdrdy			; wdd ready ?
+0193   F8A2 20 FB       	jr	nz,WtHdRdy		; no, loop
+0194   F8A4 CD 52 FF    	call	wdini			; yes, then initialize wdd
+0195   F8A7 18 17       	jr	FddBot			; and go to fdd boot
+0196   F8A9             ;
+0197   F8A9             CkRdy:
+0198   F8A9 CD 92 FF    	call	wtwdrdy			; wdd ready ?
+0199   F8AC 20 DD       	jr	nz,WaitKey		; no, return to test console
+0200   F8AE CD 52 FF    	call	wdini			; else can initialize wdd
+0201   F8B1 AF          	xor	a			; set A=0 for wdd boot
+0202   F8B2 18 1B       	jr	WdBoot			; do boot
+0203   F8B4             ;
+0204   F8B4             ; Wait aproax 3 seconds
+0205   F8B4             ; then boot from floppy
+0206   F8B4             ;
+0207   F8B4             fdbtwt:
+0208   F8B4 06 04       	ld	b,4
+0209   F8B6             timer:
+0210   F8B6 11 00 80    	ld	de,8000h		; set soft timer
+0211   F8B9             timer1:
+0212   F8B9 1B          	dec	de			; timer 1 down
+0213   F8BA 7B          	ld	a,e			;
+0214   F8BB B2          	or	d			;
+0215   F8BC 20 FB       	jr	nz,timer1		;
+0216   F8BE 10 F6       	djnz	timer			; timer 2 down
+0217   F8C0             ;
+0218   F8C0             ; Restore Unit 1 (option)
+0219   F8C0             ;
+0220   F8C0             FddBot:
+0221   F8C0 3E 02       	ld	a,2			;
+0222   F8C2 D3 D6       	out	(fddlch),a		; set unit 1
+0223   F8C4 AF          	xor	a			; restore cmd without verify
+0224   F8C5 D3 D0       	out	(fddcmd),a		; send out to 1771
+0225   F8C7 CD 41 FE    	call	waitfd			; wait until end command
+0226   F8CA 18 47       	jr	FdBoot			; set boot from FDD
+0227   F8CC             ;
+0228   F8CC             ;
+0229   F8CC             ;
+0230   F8CC             ; ***********************************************
+0231   F8CC             ; *		Boot Entry point		*
+0232   F8CC             ; *	If A=0 then boot from Hard else Floppy	*
+0233   F8CC             ; ***********************************************
+0234   F8CC             ;
+0235   F8CC             boot:
+0236   F8CC B7          	or	a			; Is A = 0 ?
+0237   F8CD 20 44       	jr	nz,FdBoot		; no, then go to fdd boot
+0238   F8CF             ;
+0239   F8CF             ;
+0240   F8CF             ; ***********************************************
+0241   F8CF             ; *		Boot from Hard			*
+0242   F8CF             ; ***********************************************
+0243   F8CF             ;
+0244   F8CF             WdBoot:
+0245   F8CF F5          	push	af			; save flag
+0246   F8D0 21 2E F8    	ld	hl,DPBIPL		; H.L -> IPL boot para adrs
+0247   F8D3 CD B4 FE    	call	wdio			; read one sector
+0248   F8D6             	;
+0249   F8D6             	; Check for Errors
+0250   F8D6             	; then test for IPL ok
+0251   F8D6             	;
+0252   F8D6             ipltest:
+0253   F8D6 B7          	or	a			; read error ?
+0254   F8D7 20 21       	jr	nz,ioerr		; yes, then goto I/O error
+0255   F8D9             	; test for IPL
+0256   F8D9 21 06 10    	ld	hl,ipldma+6		; H.L = IPL message
+0257   F8DC 7E          	ld	a,(hl)			; get 1' char.
+0258   F8DD FE 49       	cp	'I'			; is 'I' ?
+0259   F8DF 20 14       	jr	nz,noipl		; no, then go to no IPL
+0260   F8E1 23          	inc	hl			; H.L point next char.
+0261   F8E2 7E          	ld	a,(hl)			; get 2' char.
+0262   F8E3 FE 50       	cp	'P'			; is 'P' ?
+0263   F8E5 20 0E       	jr	nz,noipl		; no. then go to no IPL
+0264   F8E7 23          	inc	hl			; H.L point next char.
+0265   F8E8 7E          	ld	a,(hl)			; get 3' char.
+0266   F8E9 FE 4C       	cp	'L'			; is 'L' ?
+0267   F8EB 20 08       	jr	nz,noipl		; yes, then goto IPL ok
+0268   F8ED             	;
+0269   F8ED             	; IPL has been loaded
+0270   F8ED             	; compute entry point
+0271   F8ED             	;
+0272   F8ED             iplok:
+0273   F8ED F1          	pop	af			; IPL Flag
+0274   F8EE B7          	or	a			;
+0275   F8EF CA 00 10    	jp	z,ipldma		; if A = 0 then wdd bios boot
+0276   F8F2 C3 03 10    	jp	ipldma+3		; 	   else fdd bios boot
+0277   F8F5             	;
+0278   F8F5             	;
+0279   F8F5             	;
+0280   F8F5             	; ***** No IPL Error *****
+0281   F8F5             noipl:
+0282   F8F5 11 A9 F9    	ld	de,noiplmsg		; D.E = no IPL message
+0283   F8F8 18 03       	jr	io.01			; print it and retry
+0284   F8FA             	;
+0285   F8FA             	; Print I/O error msg then boot from floppy
+0286   F8FA             	; ***** I/O Error *****
+0287   F8FA             ioerr:
+0288   F8FA 11 9A F9    	ld	de,ioermsg		; D.E = I/O error message
+0289   F8FD             io.01:
+0290   F8FD CD 62 FD    	call	strout			; print it
+0291   F900 F1          	pop	af			; take off boot flag
+0292   F901 11 BD F9    	ld	de,setnew		; D.E = set new disk message
+0293   F904 CD 62 FD    	call	strout			; print message
+0294   F907             waitcr:
+0295   F907 CD 09 FA    	call	cin			; wait one char.
+0296   F90A FE 0D       	cp	cr			; is return ?
+0297   F90C 20 F9       	jr	nz,waitcr		; no, wait cr
+0298   F90E 0E 07       	ld	c,bell			;
+0299   F910 CD 33 FA    	call	cout			; ring beeper
+0300   F913             ;
+0301   F913             ;
+0302   F913             ; ***********************************************
+0303   F913             ; *		Boot from floppy 0		*
+0304   F913             ; ***********************************************
+0305   F913             ; Recalibrate Unit 0, then load IPL from it
+0306   F913             ;
+0307   F913             FdBoot:
+0308   F913 3E 01       	ld	a,1			;
+0309   F915 D3 D6       	out	(fddlch),a		; set unit 0
+0310   F917 F5          	push	af			; use for Boot from floppy flag
+0311   F918 CD 19 FE    	call	fdsek0			; move fdd head to track 0
+0312   F91B 21 2E F8    	ld	hl,DPBIPL		; H.L -> IPL boot para adrs.
+0313   F91E CD 72 FD    	call	fdiod			; read one sector
+0314   F921 18 B3       	jr	ipltest			; check for errors
+0315   F923             ;
+0316   F923             ;
+0317   F923             ;************************************************
+0318   F923             ;*						*
+0319   F923             ;*		Data area			*
+0320   F923             ;*						*
+0321   F923             ;************************************************
+0322   F923             ;
+0323   F923             wdfdmsg:
+0324   F923 50757368205B	.text	"Push [F] for boot from floppy disk or wait hard disk ready"
+0324   F929 465D20666F7220626F6F742066726F6D20666C6F707079206469736B206F7220776169742068617264206469736B207265616479
+0325   F95D 24          	.byte	endmsg
+0326   F95E             ;
+0327   F95E             fdbtmsg:
+0328   F95E 07          	.byte	bell
+0329   F95F 4F6B20666F72	.text	"Ok for boot from floppy disk. Wait until hard disk ready. "
+0329   F965 20626F6F742066726F6D20666C6F707079206469736B2E205761697420756E74696C2068617264206469736B2072656164792E20
+0330   F999 24          	.byte	endmsg
+0331   F99A             ;
+0332   F99A             ;
+0333   F99A             ioermsg:
+0334   F99A 0D 0A 13 48 	.byte	cr,lf,19,'H'
+0335   F99E 4449534B2045	.text	"DISK ERROR"
+0335   F9A4 52524F52
+0336   F9A8 24          	.byte	endmsg
+0337   F9A9             ;
+0338   F9A9             noiplmsg:
+0339   F9A9 0D 0A 13 48 	.byte	cr,lf,19,'H'
+0340   F9AD 4E6F2049504C	.text	"No IPL on disk."
+0340   F9B3 206F6E206469736B2E
+0341   F9BC 24          	.byte	endmsg
+0342   F9BD             ;
+0343   F9BD             setnew:
+0344   F9BD 0D 0A       	.byte	cr,lf
+0345   F9BF 536574207379	.text	"Set system diskette in disk A,"
+0345   F9C5 7374656D206469736B6574746520696E206469736B20412C
+0346   F9DD 0D 0A       	.byte	cr,lf
+0347   F9DF 616E64207075	.text	"and push return"
+0347   F9E5 73682072657475726E
+0348   F9EE 13 40 07 24 	.byte	19,'@',bell,endmsg
+0349   F9F2             ;
+0350   F9F2             	#endif	; hard
+0351   F9F2             ;
+0352   F9F2             ;
+0353   F9F2             ;********************************************************
+0354   F9F2             ;*							*
+0355   F9F2             ;*		   Console routines			*
+0356   F9F2             ;*							*
+0357   F9F2             ;********************************************************
+0358   F9F2             ;
+0359   F9F2             	#if	ne80vid
+0360   F9F2             ;
+0361   F9F2             ;********************************************************
+0362   F9F2             ;*							*
+0363   F9F2             ;*	    Video, Keyboard, Printer routines		*
+0364   F9F2             ;* 	       for video interface 80*24		*
+0365   F9F2             ;*		 by Nuova Eletronica			*
+0366   F9F2             ;*							*
+0367   F9F2             ;********************************************************
+0368   F9F2             ;
+0369   F9F2             ;
+0370   F9F2             ; Copyright (C) 1983, 1984 by Studio Lg, Genova - Italy
+0371   F9F2             ; Author: Martino Stefano
+0372   F9F2             ; Third Modify by Gallerani Paolo
+0373   F9F2             ; Last Revision 06/08/84 21:00
+0374   F9F2             ;
+0375   F9F2             ; Compatibility Version 4.1-1
+0376   F9F2             ;
+0377   F9F2~            	#if	rev < 41
+0378   F9F2~            	.echo	".*** Warning:Incompatible Video Board Driver ***."
+0379   F9F2             	#endif	; rev < 41
+0380   F9F2             ;
+0381   F9F2             ;
+0382   F9F2             strvid	.equ	0		; start video cursor
+0383   F9F2             endvid	.equ	77fh		; end video cursor
+0384   F9F2             ;
+0385   F9F2             ;	*****  PIO command code  ****
+0386   F9F2             ;
+0387   F9F2             mode0	.equ	00fh		; mode 0 command code (output)
+0388   F9F2             mode1	.equ	04fh		; mode 1 command code (input)
+0389   F9F2             mode2	.equ	08fh		; mode 2 command code (bidiretional)
+0390   F9F2             mode3	.equ	0cfh		; mode 3 command code (bit control)
+0391   F9F2             ;
+0392   F9F2             ;
+0393   F9F2             ioadd	.equ	080h		; i/o port top address
+0394   F9F2             ;
+0395   F9F2             	; PIO 0 data and control port address
+0396   F9F2             data0a	.equ	ioadd+0		; read/write ram 0
+0397   F9F2             data0b	.equ	ioadd+1		; write printer
+0398   F9F2             cont0a	.equ	ioadd+2
+0399   F9F2             cont0b	.equ	ioadd+3
+0400   F9F2             ;
+0401   F9F2             	; PIO 1 data and control port address
+0402   F9F2             data1a	.equ	ioadd+4		; read/write ram 1
+0403   F9F2             data1b	.equ	ioadd+5		; read keyboard
+0404   F9F2             cont1a	.equ	ioadd+6
+0405   F9F2             cont1b	.equ	ioadd+7
+0406   F9F2             ;
+0407   F9F2             	; PIO 2 data and control port address
+0408   F9F2             data2a	.equ	ioadd+8		; read/write ram 2
+0409   F9F2             data2b	.equ	ioadd+9		; board flag
+0410   F9F2             cont2a	.equ	ioadd+10
+0411   F9F2             cont2b	.equ	ioadd+11
+0412   F9F2             ;
+0413   F9F2             ;
+0414   F9F2             addreg	.equ	ioadd+12		; 6545 address register port
+0415   F9F2             datreg	.equ	ioadd+13		; 6545 register port
+0416   F9F2             ;
+0417   F9F2             vidatr	.equ	ioadd+14		; video ram attribute
+0418   F9F2             ;
+0419   F9F2             beep	.equ	ioadd+15		; beeper port address
+0420   F9F2             ;
+0421   F9F2             ;
+0422   F9F2             ;	*****  board flag  (data2b)  *****
+0423   F9F2             ;
+0424   F9F2             ;	bit	direction	    function
+0425   F9F2             ;
+0426   F9F2             ;	 0	  <---		   Printer Busy
+0427   F9F2             ;	 1	  --->		1 = 40  0 = 80 char/line
+0428   F9F2             ;	 2	  --->		      Spare
+0429   F9F2             ;	 3	  --->		      Spare
+0430   F9F2             ;	 4	  <---		      Spare
+0431   F9F2             ;	 5	  <---		      Spare
+0432   F9F2             ;	 6	  <---		      Spare
+0433   F9F2             ;	 7	  <---		      Spare
+0434   F9F2             ;
+0435   F9F2             ;
+0436   F9F2             ;	*****  Video Attributes  (vidatr)  *****
+0437   F9F2             ;
+0438   F9F2             ;	bit	direction	    function
+0439   F9F2             ;
+0440   F9F2             ;	 0	  <--->		    Blinking
+0441   F9F2             ;	 1	  <--->		    Reverse
+0442   F9F2             ;	 2	  <--->		  Under-score
+0443   F9F2             ;	 3	  <--->		   High-light
+0444   F9F2             ;	 4	  <--->		    Graphics
+0445   F9F2             ;	 5	   ---		    Not used
+0446   F9F2             ;	 6	   ---		    Not used
+0447   F9F2             ;	 7	   ---		    Not used
+0448   F9F2             ;
+0449   F9F2             ;
+0450   F9F2             ;
+0451   F9F2             ;
+0452   F9F2             ;********************************************************
+0453   F9F2             ;* L s t S						*
+0454   F9F2             ;*		Return printer status			*
+0455   F9F2             ;********************************************************
+0456   F9F2             ;
+0457   F9F2             lsts:
+0458   F9F2 DB 89       	in	a,(data2b)	; read board flag
+0459   F9F4 E6 01       	and	00000001b	; mask printer busy bit
+0460   F9F6 3D          	dec	a		; 0 -> ff, 1 -> 00
+0461   F9F7 C9          	ret			;   0 printer not ready
+0462   F9F8             				; 255 printer ready
+0463   F9F8             ;
+0464   F9F8             ;
+0465   F9F8             ;********************************************************
+0466   F9F8             ;* L O u t						*
+0467   F9F8             ;*		Print char on printer			*
+0468   F9F8             ;********************************************************
+0469   F9F8             ;
+0470   F9F8             lout:
+0471   F9F8 DB 89       	in	a,(data2b)	; wit printer ready
+0472   F9FA CB 47       	bit	0,a		;
+0473   F9FC 20 FA       	jr	nz,lout		;
+0474   F9FE 79          	ld	a,c		; load char. to print
+0475   F9FF D3 81       	out	(data0b),a	; send out to printer
+0476   FA01 C9          	ret			; and ret
+0477   FA02             ;
+0478   FA02             ;
+0479   FA02             ;********************************************************
+0480   FA02             ;* C S t s						*
+0481   FA02             ;*		Return console status			*
+0482   FA02             ;********************************************************
+0483   FA02             ;
+0484   FA02             csts:
+0485   FA02 DB 85       	in	a,(data1b)	; read console
+0486   FA04 E6 80       	and     10000000b	; only strobe
+0487   FA06 07          	rlca			; to bit 1
+0488   FA07 3D          	dec	a		; 1 -> 0, 0 -> ff
+0489   FA08 C9          	ret			; 0 if no key pushed
+0490   FA09             				; 255 if key pushed
+0491   FA09             ;
+0492   FA09             ;
+0493   FA09             ;********************************************************
+0494   FA09             ;* C I n						*
+0495   FA09             ;*		Wait a Key from console			*
+0496   FA09             ;********************************************************
+0497   FA09             ;
+0498   FA09             cin:
+0499   FA09 DD 2A 47 00 	ld	ix,(pnt.ix)	; IX = routines table
+0500   FA0D DB 85       	in	a,(data1b)	; wait pushed key
+0501   FA0F CB 7F       	bit	7,a		;
+0502   FA11 20 F6       	jr	nz,cin		;
+0503   FA13 F5          	push	af		; save key
+0504   FA14             cinp00:
+0505   FA14 DB 85       	in	a,(data1b)	; wait depress key
+0506   FA16 CB 7F       	bit	7,a		;
+0507   FA18 28 FA       	jr	z,cinp00	;
+0508   FA1A F1          	pop	af		; restore pushed key
+0509   FA1B EE 7F       	xor	01111111b	; complements
+0510   FA1D DD CB 04 6E 	bit	5,(ix+004)	; key beep bit on ?
+0511   FA21 20 02       	jr	nz,cinp11	; no, then count
+0512   FA23 D3 8F       	out	(beep),a	; yes, then ring bell
+0513   FA25             cinp11:
+0514   FA25 DD CB 04 76 	bit	6,(ix+004)	; alpha lock bit on ?
+0515   FA29 C0          	ret	nz		; no, then return
+0516   FA2A FE 61       	cp	'a'		; yes, then convert upper case
+0517   FA2C D8          	ret	c		; ret if A < 'a'
+0518   FA2D FE 7B       	cp	'z'+1		;
+0519   FA2F D0          	ret	nc		; ret if A > 'z'
+0520   FA30 CB AF       	res	5,a		; convert up-case
+0521   FA32 C9          	ret			; and ret
+0522   FA33             ;
+0523   FA33             ;
+0524   FA33             ;********************************************************
+0525   FA33             ;* C O u t						*
+0526   FA33             ;*		Print char on console			*
+0527   FA33             ;********************************************************
+0528   FA33             ;
+0529   FA33             cout:
+0530   FA33 DD 2A 47 00 	ld	ix,(pnt.ix)	; IX = routines table
+0531   FA37 DD 6E 00    	ld	l,(ix+000)	; load video pointer (L)
+0532   FA3A DD 66 01    	ld	h,(ix+001)	; load video pointer (H)
+0533   FA3D DD 7E 05    	ld	a,(ix+005)	; load prefix location
+0534   FA40 B7          	or	a		; any prefix are set ?
+0535   FA41 20 20       	jr	nz,pfxset	; yes, then goto prefix set
+0536   FA43 79          	ld	a,c		; load char. to print
+0537   FA44 FE 20       	cp	' '		; if char. < space
+0538   FA46 DA 64 FB    	jp	c,cntchar	; then go to control caracter
+0539   FA49 CD F2 FB    	call	charout		; print char. at HL
+0540   FA4C 23          	inc	hl		; increase video pointer
+0541   FA4D             cout11:
+0542   FA4D CD 18 FC    	call	vidcompare	; end of screen ?
+0543   FA50 38 07       	jr	c,cout00	; no, then count
+0544   FA52 11 B0 FF    	ld	de,0ffb0h	;
+0545   FA55 19          	add	hl,de		;
+0546   FA56 CD 60 FC    	call	updtdstart	; update display start (scrolling)
+0547   FA59             cout00:
+0548   FA59 DD 75 00    	ld	(ix+000),l	; save video pointer
+0549   FA5C DD 74 01    	ld	(ix+001),h	;
+0550   FA5F CD 3B FC    	call	updtvid		; update video pointer
+0551   FA62 C9          	ret			; and ret
+0552   FA63             ;
+0553   FA63             ;
+0554   FA63             pfxset:
+0555   FA63             	; any prefix are set
+0556   FA63 FD 21 78 FA 	ld	iy,pfxtab-2	; IY -> prefix table
+0557   FA67 87          	add	a,a		; A prefix code * 2
+0558   FA68 5F          	ld	e,a		;
+0559   FA69 16 00       	ld	d,0		; DE = pfx * 2
+0560   FA6B FD 19       	add	iy,de		; IY -> pfx routine address
+0561   FA6D 11 5F FB    	ld	de,clrpfx	; DE = clear prefix address
+0562   FA70 D5          	push	de		; store in stack
+0563   FA71 FD 5E 00    	ld	e,(iy+000)	;
+0564   FA74 FD 56 01    	ld	d,(iy+001)	; DE = pfx routine address
+0565   FA77 D5          	push	de		; store in stack
+0566   FA78 79          	ld	a,c		; A = char. to print
+0567   FA79 C9          	ret			; and go to pfx routine
+0568   FA7A             ;
+0569   FA7A             ;
+0570   FA7A             pfxtab:
+0571   FA7A 8E FA       	.word	pfx01		; video attribute prefix
+0572   FA7C 21 FC       	.word	pfx02		; cursor off/on	prefix
+0573   FA7E 9F FA       	.word	pfx03		; scroll/no scroll
+0574   FA80 AD FA       	.word	pfx04		; keyboard normal/alpha look prefix
+0575   FA82 C9 FA       	.word	pfx05		; escape prefix
+0576   FA84 DD FA       	.word	pfx06		; ESC '+' prefix
+0577   FA86 17 FB       	.word	pfx07		; ESC '=' prefix
+0578   FA88 F5 FA       	.word	pfx08		; ESC '+' Yco prefix
+0579   FA8A 24 FB       	.word	pfx09		; ESC '=' Yco prefix
+0580   FA8C BB FA       	.word	pfx10		; keyboard mute/beep
+0581   FA8E             ;
+0582   FA8E             ;
+0583   FA8E             ;
+0584   FA8E             pfx01:
+0585   FA8E             	; set video attribute
+0586   FA8E D6 40       	sub	'@'		; subcrtact offset
+0587   FA90 FE 10       	cp	16		; max number attribute
+0588   FA92 D0          	ret	nc		; ret if A > 15
+0589   FA93 2F          	cpl			; complements
+0590   FA94 47          	ld	b,a		; save video attribute on B
+0591   FA95 DD 7E 04    	ld	a,(ix+004)	; load old video attribute
+0592   FA98 F6 1F       	or	00011111b	; clear old attribute
+0593   FA9A A0          	and	b		; mask new attribute with scroll and keyb. para
+0594   FA9B DD 77 04    	ld	(ix+004),a	; set new video attribute
+0595   FA9E C9          	ret			; and return
+0596   FA9F             ;
+0597   FA9F             ;
+0598   FA9F             ;
+0599   FA9F             pfx03:
+0600   FA9F             	; set scroll/no scroll
+0601   FA9F CB 47       	bit	0,a		; is pair
+0602   FAA1 20 05       	jr	nz,pfx033	; no, then no scrolling
+0603   FAA3 DD CB 04 FE 	set	7,(ix+004)	; set scrolling flag
+0604   FAA7 C9          	ret			; and ret
+0605   FAA8             pfx033:
+0606   FAA8 DD CB 04 BE 	res	7,(ix+004)	; reset scrolling flag
+0607   FAAC C9          	ret			; and ret
+0608   FAAD             ;
+0609   FAAD             ;
+0610   FAAD             pfx04:
+0611   FAAD             	; set keyboard normal/alpha lock
+0612   FAAD CB 47       	bit	0,a		; is pair
+0613   FAAF 20 05       	jr	nz,pfx044	; no, then alpha lock
+0614   FAB1 DD CB 04 F6 	set	6,(ix+004)	; set normal keyb.
+0615   FAB5 C9          	ret			; and ret
+0616   FAB6             pfx044:
+0617   FAB6 DD CB 04 B6 	res	6,(ix+004)	; set alpha lock keyb
+0618   FABA C9          	ret			; and ret
+0619   FABB             ;
+0620   FABB             ;
+0621   FABB             pfx10:
+0622   FABB             	; set keyboard mute/beep
+0623   FABB CB 47       	bit	0,a		; is pair
+0624   FABD 20 05       	jr	nz,pfx101	; no, then beep key
+0625   FABF DD CB 04 EE 	set	5,(ix+004)	; set mute keyb.
+0626   FAC3 C9          	ret			; and ret
+0627   FAC4             pfx101:
+0628   FAC4 DD CB 04 AE 	res	5,(ix+004)	; set beep keyb.
+0629   FAC8 C9          	ret			; and ret
+0630   FAC9             ;
+0631   FAC9             ;
+0632   FAC9             pfx05:
+0633   FAC9             	; escape prefix (move cursor and graphics)
+0634   FAC9 D1          	pop	de		; take off clear prefix address
+0635   FACA FE 2B       	cp	'+'		; is '+' ?
+0636   FACC 20 05       	jr	nz,pfx055	; no, then retry
+0637   FACE             
+0638   FACE             ;
+0639   FACE             	; ESC '+'
+0640   FACE DD 36 05 06 	ld	(ix+005),6	; set ESC '+' prefix
+0641   FAD2 C9          	ret			; and return
+0642   FAD3             ;
+0643   FAD3             pfx055:
+0644   FAD3 FE 3D       	cp	'='		; is '=' ?
+0645   FAD5 C2 5F FB    	jp	nz,clrpfx	; * no, then retry
+0646   FAD8             ;
+0647   FAD8             	; ESC '='
+0648   FAD8 DD 36 05 07 	ld	(ix+005),7	; set ESC '=' prefix
+0649   FADC C9          	ret			; and return
+0650   FADD             ;pfx056:
+0651   FADD             ; ESC 'graphics comands'
+0652   FADD             ; da implementare
+0653   FADD             ;
+0654   FADD             ;pfx05end:
+0655   FADD             ;	push	de		; set clear prefix address
+0656   FADD             ;	ret			; go to it
+0657   FADD             ;
+0658   FADD             ;
+0659   FADD             pfx06:
+0660   FADD             	; compute Yco in ESC '+'
+0661   FADD CD 07 FB    	call	relcompute	; subct. offset and return X,Y curs. pos.
+0662   FAE0 20 03       	jr	nz,pfx066	; BIT 7 of A = 1 then cursor <--
+0663   FAE2 84          	add	a,h		; BIT ' of A = 0 then cursor -->
+0664   FAE3 18 03       	jr	pfx067		;
+0665   FAE5             pfx066:
+0666   FAE5 94          	sub	h		; compute Yco
+0667   FAE6 ED 44       	neg			;
+0668   FAE8             pfx067:
+0669   FAE8 06 18       	ld	b,24		; max Yco
+0670   FAEA CD 59 FB    	call	xy1compare	; compare A with max Yco
+0671   FAED DD 77 06    	ld	(ix+006),a	; set new Yco
+0672   FAF0 3E 08       	ld	a,8		; set ESC '+' Yco prefix
+0673   FAF2 C3 C9 FB    	jp	setpfx		; restore clear prefix address
+0674   FAF5             ;
+0675   FAF5             pfx08:
+0676   FAF5             	; compute Xco in ESC '+' and move cursor
+0677   FAF5 CD 07 FB    	call	relcompute	; subct. offset and return X,Y curs. pos.
+0678   FAF8 20 03       	jr	nz,pfx088	; BIT 7 of A = 1 then cursor up
+0679   FAFA 85          	add	a,l		; BIT ' of A = 0 then cursor down
+0680   FAFB 18 03       	jr	pfx089		;
+0681   FAFD             pfx088:
+0682   FAFD 95          	sub	l		; compute Xco
+0683   FAFE ED 44       	neg			;
+0684   FB00             pfx089:
+0685   FB00 06 50       	ld	b,80		; max Xco
+0686   FB02 CD 59 FB    	call	xy1compare	; compare A with max Xco
+0687   FB05 18 22       	jr	pfx099		; compute cursor address and set it
+0688   FB07             ;
+0689   FB07             relcompute:
+0690   FB07 D6 20       	sub	' '		; subctract offset
+0691   FB09 F5          	push	af		; save relative Xco or Yco
+0692   FB0A 01 50 00    	ld	bc,80		; BC = char/row
+0693   FB0D CD DC FC    	call	divide		; compute actual Xco and Yco
+0694   FB10 67          	ld	h,a		; H = Yco, L = Xco
+0695   FB11 F1          	pop	af		; restore relative X/Y
+0696   FB12 CB 7F       	bit	7,a		; set flag for plus or minus
+0697   FB14 CB BF       	res	7,a		;
+0698   FB16 C9          	ret			; and ret
+0699   FB17             ;
+0700   FB17             ;
+0701   FB17             pfx07:
+0702   FB17             	; compute Yco in ESC '='
+0703   FB17 06 18       	ld	b,24		; max Yco
+0704   FB19 CD 57 FB    	call	xycompare	; compare with max Yco
+0705   FB1C DD 77 06    	ld	(ix+006),a	; set Yco
+0706   FB1F 3E 09       	ld	a,9		; set ESC = '=' Yco prefix
+0707   FB21 C3 C9 FB    	jp	setpfx		; restore clear prefix address
+0708   FB24             ;
+0709   FB24             pfx09:
+0710   FB24             	; compute Xco in ESC '=' and move cursor
+0711   FB24 06 50       	ld	b,80		; max Xc0
+0712   FB26 CD 57 FB    	call	xycompare	; compare with max Xco
+0713   FB29             pfx099:
+0714   FB29 DD 6E 06    	ld	l,(ix+006)	;
+0715   FB2C             pfx09a:
+0716   FB2C 26 00       	ld	h,0		; HL = Yco
+0717   FB2E             ;
+0718   FB2E 29          	add	hl,hl		; multiplay Yco per 16
+0719   FB2F 29          	add	hl,hl		; multiplay Yco per 16
+0720   FB30 29          	add	hl,hl		; multiplay Yco per 16
+0721   FB31 29          	add	hl,hl		; multiplay Yco per 16
+0722   FB32             ;
+0723   FB32 E5          	push	hl		; save Yco * 16
+0724   FB33             ;
+0725   FB33 29          	add	hl,hl		; multiplay Yco per 16
+0726   FB34 29          	add	hl,hl		; multiplay Yco per 16
+0727   FB35             ;
+0728   FB35 D1          	pop	de		; DE = Yco * 16
+0729   FB36 19          	add	hl,de		; HL = Yco * 80
+0730   FB37 5F          	ld	e,a		;
+0731   FB38 16 00       	ld	d,0		; DE = Xco
+0732   FB3A 19          	add	hl,de		; HL = Yco*80 + Xco
+0733   FB3B             setnwcpos:
+0734   FB3B             	; set new cursor position
+0735   FB3B DD 75 07    	ld	(ix+007),l	; set last cursor position
+0736   FB3E DD 74 08    	ld	(ix+008),h	;
+0737   FB41 C3 59 FA    	jp	cout00		; set new video pointer and ret
+0738   FB44             ;
+0739   FB44             ;
+0740   FB44             movcurs:
+0741   FB44             	; move cursor at H = Yco, L = Xco
+0742   FB44 DD 2A 47 00 	ld	ix,(pnt.ix)	; IX = routines table
+0743   FB48 7C          	ld	a,h		; load Yco
+0744   FB49 06 18       	ld	b,24		; max Yco
+0745   FB4B CD 59 FB    	call	xy1compare	; compare with max Yco
+0746   FB4E 7D          	ld	a,l		; load Xco
+0747   FB4F 06 50       	ld	b,80		; max Xco
+0748   FB51 CD 59 FB    	call	xy1compare	; compare with max Xco
+0749   FB54 6C          	ld	l,h		; L = Yco, A = Xco
+0750   FB55 18 D5       	jr	pfx09a		; compute cursor address, move it and ret
+0751   FB57             ;
+0752   FB57             ;
+0753   FB57             xycompare:
+0754   FB57             	; A = Xco or Yco + offset, B = max Xco or Yco
+0755   FB57 D6 20       	sub	' '		; subctract offset
+0756   FB59             xy1compare:
+0757   FB59 B8          	cp	b		; compare with max Xco or Yco
+0758   FB5A D8          	ret	c		; ret if A < Xco or Yco
+0759   FB5B D3 8F       	out	(beep),a	; ring beeper
+0760   FB5D D1          	pop	de		; restore normal return address
+0761   FB5E C9          	ret			; and retunr to clear prefix
+0762   FB5F             ;
+0763   FB5F             ;
+0764   FB5F             clrpfx:
+0765   FB5F             	; clear prefix
+0766   FB5F DD 36 05 00 	ld	(ix+005),0	; clear prefix
+0767   FB63 C9          	ret			; and ret
+0768   FB64             ;
+0769   FB64             ;
+0770   FB64             cntchar:
+0771   FB64             	; control character
+0772   FB64 FE 04       	cp	4		;
+0773   FB66 D8          	ret	c		; ret if char. < 4
+0774   FB67 FE 1C       	cp	28		;
+0775   FB69 D0          	ret	nc		; ret if char. > 27
+0776   FB6A 11 59 FA    	ld	de,cout00	; DE = return address
+0777   FB6D D5          	push	de		; store in stack
+0778   FB6E FD 21 7B FB 	ld	iy,chrtab - 8	; IY -> chr$ table (char 4 - 27)
+0779   FB72 87          	add	a,a		; A = A*2
+0780   FB73 5F          	ld	e,a		;
+0781   FB74 16 00       	ld	d,0		;
+0782   FB76 FD 19       	add	iy,de		; IY -> chr$ routine address
+0783   FB78 FD 5E 00    	ld	e,(iy+000)	; load routine address (L)
+0784   FB7B FD 56 01    	ld	d,(iy+001)	; load routine address (H)
+0785   FB7E D5          	push	de		; put it on stack
+0786   FB7F 11 50 00    	ld	de,80		; DE = char for line for utility
+0787   FB82 C9          	ret			; go to chr$(xx) routine
+0788   FB83             ;
+0789   FB83             chrtab:
+0790   FB83             	; control character table
+0791   FB83 D2 FB       	.word	chr04		; move cursor at last addressement
+0792   FB85 93 FC       	.word	chr05		; clear to end of line
+0793   FB87 A0 FC       	.word	chr06		; clear to end of screen
+0794   FB89 CE FB       	.word	chr07		; beeper
+0795   FB8B E9 FB       	.word	chr08		; cursor left (back space)
+0796   FB8D CC FB       	.word	nochr		; not implemented
+0797   FB8F D9 FB       	.word	chr10		; cursor down (line feed)
+0798   FB91 DE FB       	.word	chr11		; cursor beginning of screen (home)
+0799   FB93 9D FC       	.word	chr12		; clear screen
+0800   FB95 CC FC       	.word	chr13		; cursor beginning of line (carriage return)
+0801   FB97 E2 FB       	.word	chr14		; cursor right
+0802   FB99 EC FB       	.word	chr15		; cursor up
+0803   FB9B CC FB       	.word	nochr		; not implemented
+0804   FB9D CC FB       	.word	nochr		; not implemented
+0805   FB9F CC FB       	.word	nochr		; not implemented
+0806   FBA1 B3 FB       	.word	chr19		; video attribute prefix
+0807   FBA3 B7 FB       	.word	chr20		; cursor off/on	prefix
+0808   FBA5 BB FB       	.word	chr21		; scroll yes/no prefix
+0809   FBA7 BF FB       	.word	chr22		; keyboard normal/alpha look prefix
+0810   FBA9 C3 FB       	.word	chr23		; keyboard mute/beep
+0811   FBAB CC FB       	.word	nochr		; not implemented
+0812   FBAD CC FB       	.word	nochr		; not implemented
+0813   FBAF CC FB       	.word	nochr		; not implemented
+0814   FBB1 C7 FB       	.word	chr27		; cursor and graphics prefix
+0815   FBB3             ;
+0816   FBB3             ;
+0817   FBB3             chr19:
+0818   FBB3             	; video attribute prefix
+0819   FBB3 3E 01       	ld	a,001		; set pfx code
+0820   FBB5 18 12       	jr	setpfx		; and ret
+0821   FBB7             ;
+0822   FBB7             ;
+0823   FBB7             chr20:
+0824   FBB7             	; cursor off/on prefix
+0825   FBB7 3E 02       	ld	a,002		; set pfx code
+0826   FBB9 18 0E       	jr	setpfx		; and ret
+0827   FBBB             ;
+0828   FBBB             ;
+0829   FBBB             chr21:
+0830   FBBB             	; scroll/no scroll prefix
+0831   FBBB 3E 03       	ld	a,003		; set pfx code
+0832   FBBD 18 0A       	jr	setpfx		; and ret
+0833   FBBF             ;
+0834   FBBF             ;
+0835   FBBF             chr22:
+0836   FBBF             	; keyboard normal/alpha look prefix
+0837   FBBF 3E 04       	ld	a,004		; set pfx code
+0838   FBC1 18 06       	jr	setpfx		; and ret
+0839   FBC3             ;
+0840   FBC3             ;
+0841   FBC3             chr23:
+0842   FBC3             	; keyboard mute/beep prefix
+0843   FBC3 3E 0A       	ld	a,010		; set pfx code
+0844   FBC5 18 02       	jr	setpfx		; and ret
+0845   FBC7             ;
+0846   FBC7             ;
+0847   FBC7             chr27:
+0848   FBC7             	; escape prefix
+0849   FBC7 3E 05       	ld	a,005		; set pfx code
+0850   FBC9             				; and ret
+0851   FBC9             ;
+0852   FBC9             setpfx:
+0853   FBC9 DD 77 05    	ld	(ix+005),a	; set prefix code
+0854   FBCC             ;
+0855   FBCC             nochr:
+0856   FBCC D1          	pop	de		; restore cout00 return address
+0857   FBCD C9          	ret			; and return to caller
+0858   FBCE             ;
+0859   FBCE             ;
+0860   FBCE             chr07:
+0861   FBCE             	; beeper
+0862   FBCE D3 8F       	out	(beep),a	; ring beeper
+0863   FBD0 18 FA       	jr	nochr		; and ret
+0864   FBD2             ;
+0865   FBD2             ;
+0866   FBD2             chr04:
+0867   FBD2             	; move cursor at last addressement
+0868   FBD2 DD 6E 07    	ld	l,(ix+007)	; load last cursor position
+0869   FBD5 DD 66 08    	ld	h,(ix+008)	;
+0870   FBD8 C9          	ret			; set it and return
+0871   FBD9             ;
+0872   FBD9             ;
+0873   FBD9             chr10:
+0874   FBD9             				; DE = char. for line
+0875   FBD9 19          	add	hl,de		; HL point to next line
+0876   FBDA D1          	pop	de		; restore return address
+0877   FBDB C3 4D FA    	jp	cout11		; and go to eventually scrolling
+0878   FBDE             ;
+0879   FBDE             chr11:
+0880   FBDE             	; move cursor at start of screen
+0881   FBDE 21 00 00    	ld	hl,strvid	; HL = start video
+0882   FBE1 C9          	ret			; return
+0883   FBE2             ;
+0884   FBE2             ;
+0885   FBE2             chr14:
+0886   FBE2             	; cursor right
+0887   FBE2 23          	inc	hl		; increase video pointer
+0888   FBE3 CD 18 FC    	call	vidcompare	; end of screen + 1 ?
+0889   FBE6 D8          	ret	c		; no, then ret
+0890   FBE7 2B          	dec	hl		; dec. video pointer
+0891   FBE8 C9          	ret
+0892   FBE9             ;
+0893   FBE9             chr08:
+0894   FBE9             	; back space
+0895   FBE9 11 01 00    	ld	de,1		; DE = one char. to subctract
+0896   FBEC             				; go to subctract HL with DE
+0897   FBEC             ;
+0898   FBEC             chr15:
+0899   FBEC             	; cursor up
+0900   FBEC             				; DE = character for line
+0901   FBEC             ;
+0902   FBEC             subpointer:
+0903   FBEC AF          	xor	a		; clear carry
+0904   FBED ED 52       	sbc	hl,de		; HL = video pointer - one line
+0905   FBEF D0          	ret	nc		; ret if HL >= start video
+0906   FBF0 19          	add	hl,de		; restore originally video pointer
+0907   FBF1 C9          	ret			; and ret
+0908   FBF2             ;
+0909   FBF2             ;
+0910   FBF2             ;	*****  various routines entry point  *****
+0911   FBF2             ;
+0912   FBF2             ;
+0913   FBF2             charout:
+0914   FBF2             	; send out character contained in A register at HL cursor position
+0915   FBF2 D5          	push	de		; save register
+0916   FBF3 E5          	push	hl		;
+0917   FBF4 F5          	push	af		;
+0918   FBF5 CD 3B FC    	call	updtvid		; update video pointer
+0919   FBF8 F1          	pop	af		; restore char. to print
+0920   FBF9 CD FF FB    	call	sendout		; send out to RAM 0
+0921   FBFC E1          	pop	hl		; restore register
+0922   FBFD D1          	pop	de		;
+0923   FBFE C9          	ret			; and ret
+0924   FBFF             ;
+0925   FBFF             ;
+0926   FBFF             sendout:
+0927   FBFF             	; send out character contained in reg. A to video RAM 0
+0928   FBFF F5          	push	af		; save character
+0929   FC00             sendo0:
+0930   FC00 DB 8C       	in	a,(addreg)	; load 6545 status
+0931   FC02 CB 7F       	bit	7,a		; test sync bit
+0932   FC04 28 FA       	jr	z,sendo0	; wait if busy
+0933   FC06 E3          	ex	(sp),hl		; delay
+0934   FC07 E3          	ex	(sp),hl		; delay
+0935   FC08 DD 7E 04    	ld	a,(ix+004)	; load video attribute
+0936   FC0B F6 F0       	or	11110000b	; mask video attribute
+0937   FC0D D3 8E       	out	(vidatr),a	; send out on video attribute ram (RAM 3)
+0938   FC0F F1          	pop	af		; restore char.
+0939   FC10 F5          	push	af		; resave char.
+0940   FC11 D3 80       	out	(data0a),a	; write char. on video ram (RAM 0)
+0941   FC13 AF          	xor	a		; clear accumulator
+0942   FC14 D3 8D       	out	(datreg),a	; write 0 to register 6545
+0943   FC16 F1          	pop	af		; restore character
+0944   FC17 C9          	ret			; and ret
+0945   FC18             ;
+0946   FC18             ;
+0947   FC18             vidcompare:
+0948   FC18             	; compare for HL = endvid+1
+0949   FC18 E5          	push	hl		; save video pointer
+0950   FC19 11 80 07    	ld	de,endvid+1	; DE = end video + 1
+0951   FC1C AF          	xor	a		; clear carry
+0952   FC1D ED 52       	sbc	hl,de		; subctract HL with DE
+0953   FC1F E1          	pop	hl		; restore video pointer
+0954   FC20 C9          	ret			; and ret
+0955   FC21             ;
+0956   FC21             pfx02:
+0957   FC21             	; set cursor off/on
+0958   FC21 CB 47       	bit	0,a		; is pair
+0959   FC23 20 0E       	jr	nz,curson	; no, then cursor on
+0960   FC25             				; yes, then cursor off
+0961   FC25             ;
+0962   FC25             ;
+0963   FC25             cursoff:
+0964   FC25             	; cursor off
+0965   FC25 06 20       	ld	b,00100000b	; no cursor type
+0966   FC27             outdat:
+0967   FC27 3E 0A       	ld	a,10		; cursor start register
+0968   FC29 D3 8C       	out	(addreg),a	; set 6545 cursor start register
+0969   FC2B 78          	ld	a,b
+0970   FC2C D3 8D       	out	(datreg),a	; send out to 6545 cursor start register
+0971   FC2E             ;
+0972   FC2E             setdummy:
+0973   FC2E 3E 1F       	ld	a,31		; A = dummy location
+0974   FC30 D3 8C       	out	(addreg),a	; send out to 6545 register address
+0975   FC32 C9          	ret			; and return
+0976   FC33             ;
+0977   FC33             ;
+0978   FC33             curson:
+0979   FC33             	; cursor on
+0980   FC33 3E 0A       	ld	a,10		; cursor start register
+0981   FC35 D3 8C       	out	(addreg),a	; set 6545 cursor start register
+0982   FC37 06 00       	ld	b,00000000b	; cursor fixed (blinking hardware)
+0983   FC39 18 EC       	jr	outdat		; set it
+0984   FC3B             ;
+0985   FC3B             ;
+0986   FC3B             updtvid:
+0987   FC3B             	; update video pointer
+0988   FC3B DD 5E 02    	ld	e,(ix+002)	; load curently display start (L)
+0989   FC3E DD 56 03    	ld	d,(ix+003)	; load curently display start (H)
+0990   FC41 19          	add	hl,de		; compute relative position
+0991   FC42             				; and count with updtcpur
+0992   FC42             updtcpur:
+0993   FC42             	; update 6545 cursor position and 6545 update register at HL
+0994   FC42 3E 0E       	ld	a,14		; cursor position (H) register
+0995   FC44 D3 8C       	out	(addreg),a	; set it
+0996   FC46 7C          	ld	a,h		; load cursor address (H)
+0997   FC47 D3 8D       	out	(datreg),a	; set it
+0998   FC49 3E 0F       	ld	a,15		; cursor position (L) register
+0999   FC4B D3 8C       	out	(addreg),a	; set it
+1000   FC4D 7D          	ld	a,l		; load cursor address (L)
+1001   FC4E D3 8D       	out	(datreg),a	; set it
+1002   FC50             ;
+1003   FC50             updtureg:
+1004   FC50             	; update 'update register' at HL
+1005   FC50 3E 12       	ld	a,18		; update address (H) register
+1006   FC52 D3 8C       	out	(addreg),a	; set it
+1007   FC54 7C          	ld	a,h		; load cursor address (H)
+1008   FC55 D3 8D       	out	(datreg),a	; set it
+1009   FC57 3E 13       	ld	a,19		; update address (L) register
+1010   FC59 D3 8C       	out	(addreg),a	; set it
+1011   FC5B 7D          	ld	a,l		; load cursor address (L)
+1012   FC5C D3 8D       	out	(datreg),a	; set it
+1013   FC5E 18 CE       	jr	setdummy	; set dummy location and return
+1014   FC60             ;
+1015   FC60             ;
+1016   FC60             updtdstart:
+1017   FC60             	; update display start
+1018   FC60 DD CB 04 7E 	bit	7,(ix+004)	; test no scroll flag; is zero ?
+1019   FC64 28 26       	jr	z,noupdstart	; yes, then no scrolling
+1020   FC66 E5          	push	hl		; save video pointer
+1021   FC67 DD 6E 02    	ld	l,(ix+002)	; load curently display start (L)
+1022   FC6A DD 66 03    	ld	h,(ix+003)	; load curently display start (H)
+1023   FC6D 11 50 00    	ld	de,80		; DE = char. for line
+1024   FC70 19          	add	hl,de		; point to next line
+1025   FC71 CB 9C       	res	3,h		;
+1026   FC73 DD 75 02    	ld	(ix+002),l	; save curently display start (L)
+1027   FC76 DD 74 03    	ld	(ix+003),h	; save curently display start (H)
+1028   FC79 3E 0C       	ld	a,12		; disp. start (H) register
+1029   FC7B D3 8C       	out	(addreg),a	; set it
+1030   FC7D 7C          	ld	a,h		; load disp. start address (H)
+1031   FC7E D3 8D       	out	(datreg),a	; set it
+1032   FC80 3E 0D       	ld	a,13		; disp. start (L) register
+1033   FC82 D3 8C       	out	(addreg),a	; set it
+1034   FC84 7D          	ld	a,l		; load disp. start adress (L)
+1035   FC85 D3 8D       	out	(datreg),a	; set it
+1036   FC87 21 80 07    	ld	hl,endvid+1	; set new video pointer
+1037   FC8A 18 1E       	jr	cescr1		; go to clear to end screen
+1038   FC8C             ;
+1039   FC8C             noupdstart:
+1040   FC8C 01 50 00    	ld	bc,80		; BC = char/row
+1041   FC8F CD DC FC    	call	divide		; HL = Xco
+1042   FC92 C9          	ret			; and ret
+1043   FC93             ;
+1044   FC93             ;
+1045   FC93             chr05:
+1046   FC93             cendlin:
+1047   FC93             	; clear to end line starting at HL
+1048   FC93 E5          	push	hl		; save video pointer
+1049   FC94 CD CC FC    	call	cbeglin		; call cursor begin of line
+1050   FC97 19          	add	hl,de		;
+1051   FC98 EB          	ex	de,hl		;
+1052   FC99 E1          	pop	hl		; restore video pointer
+1053   FC9A E5          	push	hl		; resave it
+1054   FC9B 18 07       	jr	cescr0		; go to clear 'DE' char.
+1055   FC9D             ;
+1056   FC9D             chr12:
+1057   FC9D             	; clear screen
+1058   FC9D 21 00 00    	ld	hl,strvid	; HL = start video
+1059   FCA0             				; and clear to end of screen
+1060   FCA0             ;
+1061   FCA0             chr06:
+1062   FCA0             cendscr:
+1063   FCA0             	; clear to end of screen starting at HL
+1064   FCA0 E5          	push	hl		; save video pointer
+1065   FCA1 11 D0 07    	ld	de,endvid +81	; DE = end video + one line + 1
+1066   FCA4             cescr0:
+1067   FCA4 F3          	di			;
+1068   FCA5 AF          	xor	a		; clear carry
+1069   FCA6 EB          	ex	de,hl		; computer number of
+1070   FCA7 ED 52       	sbc	hl,de		; character then remaining
+1071   FCA9 EB          	ex	de,hl		; until end (line or screen)
+1072   FCAA             cescr1:
+1073   FCAA D5          	push	de		; save number of char.
+1074   FCAB CD 3B FC    	call	updtvid		; update video pointer
+1075   FCAE D1          	pop	de		; restore char. number
+1076   FCAF             cescr2:
+1077   FCAF 7A          	ld	a,d		; DE is zero ?
+1078   FCB0 B3          	or	e		;
+1079   FCB1 28 16       	jr	z,cescr3	; yes, then exit
+1080   FCB3             cescr4:
+1081   FCB3 DB 8C       	in	a,(addreg)	; load 6545 status
+1082   FCB5 CB 7F       	bit	7,a		; test sync bit
+1083   FCB7 28 FA       	jr	z,cescr4	; wait if busy
+1084   FCB9 E3          	ex	(sp),hl		; delay
+1085   FCBA E3          	ex	(sp),hl		; delay
+1086   FCBB 3E 20       	ld	a,' '		; load space
+1087   FCBD D3 80       	out	(data0a),a	; write char. on video ram (RAM 0)
+1088   FCBF 3E FF       	ld	a,11111111b	; video normal mode attribute
+1089   FCC1 D3 8E       	out	(vidatr),a	; send out on video attribute ram (RAM 3)
+1090   FCC3 AF          	xor	a		; clear accumulator
+1091   FCC4 D3 8D       	out	(datreg),a	; write 0 to register 6545
+1092   FCC6 1B          	dec	de		; dec. char counter
+1093   FCC7 18 E6       	jr	cescr2		; and count
+1094   FCC9             cescr3:
+1095   FCC9 E1          	pop	hl		; restore video pointer
+1096   FCCA FB          	ei			;
+1097   FCCB C9          	ret			; and return
+1098   FCCC             ;
+1099   FCCC             ;
+1100   FCCC             chr13:
+1101   FCCC             cbeglin:
+1102   FCCC             	; cursor beginning of line
+1103   FCCC C5          	push	bc		; save register
+1104   FCCD 42          	ld	b,d
+1105   FCCE 4B          	ld	c,e		; bc = char. for line
+1106   FCCF CD DC FC    	call	divide		;
+1107   FCD2 2E 00       	ld	l,0		;
+1108   FCD4 50          	ld	d,b		;
+1109   FCD5 59          	ld	e,c		;
+1110   FCD6 C1          	pop	bc		; restore register
+1111   FCD7             cbegl0:
+1112   FCD7 C8          	ret	z		;
+1113   FCD8 19          	add	hl,de		;
+1114   FCD9 3D          	dec	a		;
+1115   FCDA 18 FB       	jr	cbegl0		;
+1116   FCDC             ;
+1117   FCDC             ;
+1118   FCDC             divide:
+1119   FCDC             	; division routine: divide HL with BC; quoto in A, resto in HL
+1120   FCDC AF          	xor	a		; clear accumulator and carry flag
+1121   FCDD             hl.gt.0:
+1122   FCDD ED 42       	sbc	hl,bc		;
+1123   FCDF 3C          	inc	a		;
+1124   FCE0 30 FB       	jr	nc,hl.gt.0	;
+1125   FCE2 3D          	dec	a		;
+1126   FCE3 09          	add	hl,bc		;
+1127   FCE4 C9          	ret
+1128   FCE5             ;
+1129   FCE5             ;
+1130   FCE5             ;
+1131   FCE5             initialize:
+1132   FCE5             	; PIO, 6545 and IX table initialization
+1133   FCE5             ;
+1134   FCE5 DD 22 47 00 	ld	(pnt.ix),ix	; set IX table address
+1135   FCE9 3E 8F       	ld	a,mode2		; bidirectional mode
+1136   FCEB D3 82       	out	(cont0a),a	; set port a PIO 0
+1137   FCED D3 86       	out	(cont1a),a	; set port a PIO 1
+1138   FCEF D3 8A       	out	(cont2a),a	; set port a PIO 2
+1139   FCF1 3E CF       	ld	a,mode3		; control mode
+1140   FCF3 D3 83       	out	(cont0b),a	;
+1141   FCF5 08          	ex	af,af'		; save control mode
+1142   FCF6 3E 00       	ld	a,00000000b	; set i/o bit
+1143   FCF8 D3 83       	out	(cont0b),a	; set port b PIO 0
+1144   FCFA 08          	ex	af,af'		; restore control mode
+1145   FCFB D3 87       	out	(cont1b),a	;
+1146   FCFD 08          	ex	af,af'		; save control mode
+1147   FCFE 3E FF       	ld	a,11111111b	; set i/o bit
+1148   FD00 D3 87       	out	(cont1b),a	; set port b PIO 1
+1149   FD02 08          	ex	af,af'		; restore control mode
+1150   FD03 D3 8B       	out	(cont2b),a	;
+1151   FD05 3E F1       	ld	a,11110001b	; set i/o bit
+1152   FD07 D3 8B       	out	(cont2b),a	; set port b PIO 2
+1153   FD09             ;
+1154   FD09 DB 89       	in	a,(data2b)	; read board flag
+1155   FD0B CB 8F       	res	1,a		; set 80 char for line
+1156   FD0D D3 89       	out	(data2b),a	;
+1157   FD0F             ;
+1158   FD0F 21 3D FD    	ld	hl,tab6545	; HL -> 6545 initialization table
+1159   FD12 06 0C       	ld	b,12		; data output counter
+1160   FD14             init00:
+1161   FD14 78          	ld	a,b		; load on a
+1162   FD15 3D          	dec	a		;
+1163   FD16 D3 8C       	out	(addreg),a	; set 6545 register
+1164   FD18 7E          	ld	a,(hl)		; get data for init
+1165   FD19 D3 8D       	out	(datreg),a	; send out on 6545 register
+1166   FD1B 23          	inc	hl		; point to next data
+1167   FD1C 10 F6       	djnz	init00		; and count until are output
+1168   FD1E             ;
+1169   FD1E 06 08       	ld	b,8		; filling rimanents register with 00
+1170   FD20             init01:
+1171   FD20 78          	ld	a,b		;
+1172   FD21 C6 0B       	add	a,11		;
+1173   FD23 D3 8C       	out	(addreg),a	; set 6545 register
+1174   FD25 AF          	xor	a		; clear accumulator
+1175   FD26 D3 8D       	out	(datreg),a	; send out to 6545 register
+1176   FD28 10 F6       	djnz	init01		; and count until all are output
+1177   FD2A             ;
+1178   FD2A 3E 1F       	ld	a,31		; A = dummy location
+1179   FD2C D3 8C       	out	(addreg),a	; send out to 6545 register
+1180   FD2E             ;
+1181   FD2E AF          	xor	a		; clear accumulator
+1182   FD2F 2A 47 00    	ld	hl,(pnt.ix)	; HL -> routines table
+1183   FD32 06 10       	ld	b,16		; 16 byte to clear
+1184   FD34             init02:
+1185   FD34 77          	ld	(hl),a		; clear byte of table
+1186   FD35 23          	inc	hl		; increase table pointer
+1187   FD36 10 FC       	djnz	init02		; count until all are cleared
+1188   FD38             ;
+1189   FD38 3D          	dec	a		; initial video attribute, scroll flag,
+1190   FD39             				; no alpha look and mute keyboard
+1191   FD39 DD 77 04    	ld	(ix+004),a	; set initial video attribute
+1192   FD3C C9          	ret			; and return to caller
+1193   FD3D             ;
+1194   FD3D             tab6545:
+1195   FD3D             	; 6545 initialization table
+1196   FD3D             ;
+1197   FD3D             ;	.radix	16
+1198   FD3D             ;
+1199   FD3D 0B 00       	.byte	0bh,00h		; cursor end, cursor start
+1200   FD3F 0B          	.byte	0bh		; scan line-1
+1201   FD40 48          	.byte	48h		; mode control
+1202   FD41 18          	.byte	18h		; vert. sync position
+1203   FD42 18          	.byte	18h		; vert. displayed
+1204   FD43 00          	.byte	00h		; vert. total adjust
+1205   FD44 1A          	.byte	1ah		; vert. total-1
+1206   FD45 28          	.byte	28h		; vsync, hsync widths
+1207   FD46 57          	.byte	57h		; horiz. sync position
+1208   FD47 50          	.byte	50h		; horiz. displayed
+1209   FD48 6F          	.byte	6fh		; horiz. total-1
+1210   FD49             ;
+1211   FD49             ;	.radix	10
+1212   FD49             ;
+1213   FD49             ;
+1214   FD49             ;
+1215   FD49             ;
+1216   FD49             ;
+1217   FD49             rdcpos:
+1218   FD49             	; read cursor pos and set update reg = cpos reg
+1219   FD49 3E 0E       	ld	a,14		; cursor position (H) register
+1220   FD4B D3 8C       	out	(addreg),a	; set it
+1221   FD4D DB 8D       	in	a,(datreg)	; read cursor address (H)
+1222   FD4F 67          	ld	h,a		; store it in H reg.
+1223   FD50 3E 0F       	ld	a,15		; cursor position (L) register
+1224   FD52 D3 8C       	out	(addreg),a	; set it
+1225   FD54 DB 8D       	in	a,(datreg)	; read cursor address (L)
+1226   FD56 6F          	ld	l,a		; store it in L reg.
+1227   FD57 C3 50 FC    	jp	updtureg	; and update 'update register'
+1228   FD5A             ;
+1229   FD5A             	#endif	; ne80vid
+1230   FD5A             ;
+1231   FD5A             ;
+1232   FD5A             ;********************************************************
+1233   FD5A             ;*							*
+1234   FD5A             ;*		Print string pointed by DE		*
+1235   FD5A             ;*							*
+1236   FD5A             ;********************************************************
+1237   FD5A             ;
+1238   FD5A             ;
+1239   FD5A             ; *** Print @ position 12,12 ***
+1240   FD5A             ;
+1241   FD5A 21 0C 0C    pr_AT_12.12: ld	hl,12 * 256 + 12 ; @ 12,12
+1242   FD5D             ;
+1243   FD5D             ;
+1244   FD5D             ; *** Print string @ position HL
+1245   FD5D             ;
+1246   FD5D             printat:
+1247   FD5D D5          	push	de		; save string pointer
+1248   FD5E CD 44 FB    	call	movcurs		; move cursor at HL
+1249   FD61 D1          	pop	de		; restore str pointer and count
+1250   FD62             				; with strout
+1251   FD62             ;
+1252   FD62             ;
+1253   FD62             ; *** Print string pointed by DE ***
+1254   FD62             ;
+1255   FD62             strout:
+1256   FD62 1A          	ld	a,(de)		; load char.
+1257   FD63 FE 24       	cp	endmsg		; end message
+1258   FD65 C8          	ret	z		; yes, then return
+1259   FD66 4F          	ld	c,a		; else move to register C
+1260   FD67 D5          	push	de		; save text pointer
+1261   FD68 CD 33 FA    	call	cout		; and print it
+1262   FD6B D1          	pop	de		; restore text pointer
+1263   FD6C 13          	inc	de		; point to next char
+1264   FD6D 18 F3       	jr	strout		; and repeat
+1265   FD6F             	;
+1266   FD6F             ;
+1267   FD6F             ;
+1268   FD6F             ;********************************************************
+1269   FD6F             ;*							*
+1270   FD6F             ;*		   Floppy disk routines			*
+1271   FD6F             ;*							*
+1272   FD6F             ;********************************************************
+1273   FD6F             ;
+1274   FD6F             ;
+1275   FD6F             	#if	necnt
+1276   FD6F             ;
+1277   FD6F             ;********************************************************
+1278   FD6F             ;*							*
+1279   FD6F             ;*	     Floppy disk driver and subroutine		*
+1280   FD6F             ;*	  For N.E. 5 Inc. floppy disk controller	*
+1281   FD6F             ;*							*
+1282   FD6F             ;********************************************************
+1283   FD6F             ;
+1284   FD6F             ; Copyright (C) 1983, 1984 by Studio Lg, Genova - Italy
+1285   FD6F             ; Author: Martino Stefano
+1286   FD6F             ; Third Modify by Gallerani Paolo
+1287   FD6F             ; Last Revision 06/08/84 21:00
+1288   FD6F             ;
+1289   FD6F             ; Compatibility Version 4.2-1
+1290   FD6F             ;
+1291   FD6F~            	#if	rev < 42
+1292   FD6F~            	.echo	".*** Warning:Incompatible Floppy Disk Driver ***."
+1293   FD6F             	#endif	; rev < 42
+1294   FD6F             ;
+1295   FD6F             rtycnt	.equ	3		; max retries before disk I/O error
+1296   FD6F             rstcnt	.equ	2		; max restore before disk I/O error
+1297   FD6F             	;
+1298   FD6F             ;
+1299   FD6F             ;
+1300   FD6F             ;********************************************************
+1301   FD6F             ;*							*
+1302   FD6F             ;*		FD 1771 I/O port			*
+1303   FD6F             ;*							*
+1304   FD6F             ;********************************************************
+1305   FD6F             ;
+1306   FD6F             fddsts	.equ	0d0h		; fdd status port
+1307   FD6F             fddtrk	.equ	0d1h		; fdd track port
+1308   FD6F             fddsec	.equ	0d2h		; fdd sector port
+1309   FD6F             fddlch	.equ	0d6h		; fdd lach port
+1310   FD6F             fdddat	.equ	0d7h		; fdd data port
+1311   FD6F             fddcmd	.equ	fddsts		; fdd command port
+1312   FD6F             ;
+1313   FD6F             ;
+1314   FD6F             ;********************************************************
+1315   FD6F             ;*							*
+1316   FD6F             ;*		FD 1771 Command Summary			*
+1317   FD6F             ;*							*
+1318   FD6F             ;********************************************************
+1319   FD6F             ;
+1320   FD6F             fddrest	.equ	00000110b	; fdd restore command code
+1321   FD6F             fddsek	.equ	00010110b	; fdd seek command code
+1322   FD6F             fddrd	.equ	10001000b	; fdd read command code
+1323   FD6F             fddwt	.equ	10101000b	; fdd write command code
+1324   FD6F             fddrst	.equ	11010000b	; fdd reset int. command code
+1325   FD6F             	;
+1326   FD6F             ;
+1327   FD6F             ;
+1328   FD6F             ;********************************************************
+1329   FD6F             ;*							*
+1330   FD6F             ;*		Routines Entry point			*
+1331   FD6F             ;*							*
+1332   FD6F             ;********************************************************
+1333   FD6F             ;
+1334   FD6F             ;
+1335   FD6F             ;
+1336   FD6F             ;********************************************************
+1337   FD6F             ;* F D I O S 	Fdd I/O 128 byte			*
+1338   FD6F             ;********************************************************
+1339   FD6F             ;
+1340   FD6F             fdios:
+1341   FD6F AF          	xor	a		; CY = 0 then 128 byte r/w
+1342   FD70 18 01       	jr	fdio		; go to common entry point
+1343   FD72             ;
+1344   FD72             ;
+1345   FD72             ;********************************************************
+1346   FD72             ;* F D I O D 	Fdd I/O 128 byte			*
+1347   FD72             ;********************************************************
+1348   FD72             ;
+1349   FD72             fdiod:
+1350   FD72 37          	scf			; CY = 1 then 256 byte r/w
+1351   FD73             ;
+1352   FD73             ;
+1353   FD73             fdio:
+1354   FD73 DD 2A 47 00 	ld	ix,(pnt.ix)	; IX = routines table
+1355   FD77 DD CB 09 C6 	set	0,(ix+009)	; set 256 byte r/w
+1356   FD7B 38 04       	jr	c,fdio00	; jmp if cy = 1
+1357   FD7D DD CB 09 86 	res	0,(ix+009)	; set 128 byte r/w
+1358   FD81             fdio00:
+1359   FD81 7E          	ld	a,(hl)		; get unit num. and side
+1360   FD82 57          	ld	d,a		; save for side select
+1361   FD83 E6 03       	and	00000011b	; mask bit 0 and bit 1 (unit num.)
+1362   FD85 CD 61 FE    	call	newdrv		; select drive and restore old trk num.
+1363   FD88 23          	inc	hl		; H.L track para adrs
+1364   FD89 22 45 00    	ld	(hladrs),hl
+1365   FD8C 0E 02       	ld	c,rstcnt	; C = restore count
+1366   FD8E             rty00:
+1367   FD8E 06 03       	ld	b,rtycnt	; B = retry count
+1368   FD90             rty01:
+1369   FD90 C5          	push	bc
+1370   FD91 2A 45 00    	ld	hl,(hladrs)	; H.L track para adrs
+1371   FD94 46          	ld	b,(hl)		; B = track num.
+1372   FD95 23          	inc	hl		; skip track hi byte for Wdd comp.
+1373   FD96 23          	inc	hl		; H.L sector para adrs
+1374   FD97 7E          	ld	a,(hl)		; A = sector num.
+1375   FD98 D3 D2       	out	(fddsec),a	; set sector num.
+1376   FD9A 78          	ld	a,b		; set new track
+1377   FD9B D3 D7       	out	(fdddat),a	; number and
+1378   FD9D 3E 16       	ld	a,fddsek	; execute seek
+1379   FD9F D3 D0       	out	(fddcmd),a	; command
+1380   FDA1 CD 23 FE    	call	err1get		; wait until end command
+1381   FDA4 B7          	or	a		; error detect ?
+1382   FDA5 20 54       	jr	nz,fdderchk	; yes ! go to error check
+1383   FDA7             trkok:
+1384   FDA7             	; track and sector are ok
+1385   FDA7 23          	inc	hl		; H.L dma para adrs 
+1386   FDA8 5E          	ld	e,(hl)		; E = dma adrs low
+1387   FDA9 23          	inc	hl		;
+1388   FDAA 56          	ld	d,(hl)		; D = dma adrs high
+1389   FDAB 23          	inc	hl		; H.L R/W para adrs (0 = read, 1 = write)
+1390   FDAC DD CB 09 46 	bit	0,(ix+009)	; test bit 0 of (ix+009) for fdd num byte
+1391   FDB0 3E 80       	ld	a,128		; if bit 0 = 0 then 128 byte r/w
+1392   FDB2 28 01       	jr	z,trkok1	;
+1393   FDB4 AF          	xor	a		; else 256 byte r/w
+1394   FDB5             trkok1:
+1395   FDB5 47          	ld	b,a		; B = num. byte to R/W
+1396   FDB6 0E D7       	ld	c,fdddat	; C = fdd data I/O port
+1397   FDB8             ;
+1398   FDB8 7E          	ld	a,(hl)		; A = R/W para
+1399   FDB9 EB          	ex	de,hl		; HL = dma adrs
+1400   FDBA B7          	or	a		; test for read or write
+1401   FDBB 20 18       	jr	nz,fdwrite	; if nz then write
+1402   FDBD             fdread:
+1403   FDBD             	; else fdd read
+1404   FDBD 3E 88       	ld	a,fddrd		; fdd read command
+1405   FDBF D3 D0       	out	(fddcmd),a	; exec. command
+1406   FDC1 CD 3C FE    	call	fddelay		; wait aproax 56 microS
+1407   FDC4 18 03       	jr	fdrd01
+1408   FDC6             ;
+1409   FDC6             fdrd00:
+1410   FDC6 0F          	rrca			; busy bit --> CY
+1411   FDC7 30 22       	jr	nc,fdioend	; if busy = 0 then end read
+1412   FDC9             fdrd01:
+1413   FDC9 DB D0       	in	a,(fddsts)	; test fdd status
+1414   FDCB CB 4F       	bit	1,a		; data request active ?
+1415   FDCD 28 F7       	jr	z,fdrd00	; no ! then test busy bit
+1416   FDCF ED A2       	ini			; read one byte
+1417   FDD1 20 F6       	jr	nz,fdrd01	; and wait until all are read
+1418   FDD3             ;
+1419   FDD3 18 16       	jr	fdioend		; go to end fdio
+1420   FDD5             fdwrite:
+1421   FDD5             	; fdd write
+1422   FDD5 3E A8       	ld	a,fddwt		; fdd write command
+1423   FDD7 D3 D0       	out	(fddcmd),a	; exec. command
+1424   FDD9 CD 3C FE    	call	fddelay		; wait aproax 56 microS
+1425   FDDC 18 03       	jr	fdwt01
+1426   FDDE             ;
+1427   FDDE             fdwt00:
+1428   FDDE 0F          	rrca			; busy bit --> CY
+1429   FDDF 30 0A       	jr	nc,fdioend	; if busy = 0 then end write
+1430   FDE1             fdwt01:
+1431   FDE1 DB D0       	in	a,(fddsts)	; test fdd status
+1432   FDE3 CB 4F       	bit	1,a		; data request active ?
+1433   FDE5 28 F7       	jr	z,fdwt00	; no ! then test busy bit
+1434   FDE7 ED A3       	outi			; write one byte
+1435   FDE9 20 F6       	jr	nz,fdwt01	; and wait until all are write
+1436   FDEB             ;
+1437   FDEB             fdioend:
+1438   FDEB             	; end of read or write
+1439   FDEB 60          	ld	h,b		; save byte counter
+1440   FDEC CD 33 FE    	call	err2get		; wait until end command
+1441   FDEF B7          	or	a		; error occurs ?
+1442   FDF0 20 09       	jr	nz,fdderchk	; then error check else A = 0
+1443   FDF2 B4          	or	h		; all byte are read or write ?
+1444   FDF3 3E 02       	ld	a,00000010b	; set density error
+1445   FDF5 20 04       	jr	nz,fdderchk	; no, then i/o error
+1446   FDF7 AF          	xor	a		; clear accumulator for normal return
+1447   FDF8 C1          	pop	bc		; else restore BC
+1448   FDF9 18 18       	jr	fddret		; and ret to call
+1449   FDFB             ;
+1450   FDFB             ;
+1451   FDFB             fdderchk:
+1452   FDFB             	; fdd check for any error
+1453   FDFB C1          	pop	bc		; B = rtycnt. C = rstcnt
+1454   FDFC F5          	push	af		; save fdd status
+1455   FDFD E6 03       	and	00000011b	; bit 0 = time-out error
+1456   FDFF             				; bit 1 = density error
+1457   FDFF 20 13       	jr	nz,fddrt1	; ret if one
+1458   FE01 F1          	pop	af		; restore fdd status
+1459   FE02 05          	dec	b		; retry count down
+1460   FE03 20 8B       	jr	nz,rty01	; repeat until rtycnt = 0
+1461   FE05 0D          	dec	c		; restore count down
+1462   FE06 28 0B       	jr	z,fddret	; retry error return
+1463   FE08 F5          	push	af		; save fdd status
+1464   FE09 CD 19 FE    	call	fdsek0		; fdd seek to track 0
+1465   FE0C B7          	or	a		; error ?
+1466   FE0D 20 05       	jr	nz,fddrt1	; then rty err
+1467   FE0F F1          	pop	af		; restore fdd status
+1468   FE10 C3 8E FD    	jp	rty00		; and retry
+1469   FE13             fddret:
+1470   FE13 F5          	push	af		; save fdd status
+1471   FE14             fddrt1:
+1472   FE14 AF          	xor	a		; clear register A
+1473   FE15 D3 D6       	out	(fddlch),a	; deselect any drive
+1474   FE17 F1          	pop	af		; restore fdd status
+1475   FE18 C9          	ret			; and ret
+1476   FE19             ;
+1477   FE19             ;
+1478   FE19             fdsek0:
+1479   FE19             	; fdd seek to track 0
+1480   FE19 C5          	push	bc		; save register
+1481   FE1A 3E 06       	ld	a,fddrest	; fdd restore command
+1482   FE1C D3 D0       	out	(fddcmd),a	; exec. command
+1483   FE1E CD 41 FE    	call	waitfd		; wait until end command
+1484   FE21 C1          	pop	bc		; restore register
+1485   FE22 C9          	ret			; and ret
+1486   FE23             ;
+1487   FE23             ;
+1488   FE23             err1get:
+1489   FE23             	; return error in A register for type 1 command
+1490   FE23 CD 41 FE    	call	waitfd		; wait until end command
+1491   FE26 B7          	or	a		; time out error ?
+1492   FE27 C0          	ret	nz		; yes, return to call
+1493   FE28 78          	ld	a,b		; else load fdd status
+1494   FE29 E6 10       	and	00010000b	; mask bit 4 (seek error)
+1495   FE2B CB 27       	sla	a		; move to bit 5
+1496   FE2D 4F          	ld	c,a		; save seek error bit
+1497   FE2E 78          	ld	a,b		; reload fdd status
+1498   FE2F E6 08       	and	00001000b	; mask bit 3 (crc error)
+1499   FE31 B1          	or	c		; A: bit 3 = crc, bit 5 = seek
+1500   FE32 C9          	ret			; return to call
+1501   FE33             ;
+1502   FE33             err2get:
+1503   FE33             	; return error in A register for type 2 command
+1504   FE33 CD 41 FE    	call	waitfd		; wait until end comand
+1505   FE36 B7          	or	a		; time out error ?
+1506   FE37 C0          	ret	nz		; yes, return to caller
+1507   FE38 78          	ld	a,b		; load fdd status
+1508   FE39 E6 5C       	and	01011100b	; mask wrt-prtc,rnf,crc,lst-dat error
+1509   FE3B C9          	ret			; and return
+1510   FE3C             ;
+1511   FE3C             fddelay:
+1512   FE3C E3          	ex	(sp),hl		; delay beetwen write command reg.
+1513   FE3D E3          	ex	(sp),hl		; to read status reg.
+1514   FE3E E3          	ex	(sp),hl		;
+1515   FE3F E3          	ex	(sp),hl		;
+1516   FE40 C9          	ret
+1517   FE41             ;
+1518   FE41             waitfd:
+1519   FE41             	; wait until fdd busy is reset
+1520   FE41 CD 3C FE    	call	fddelay		; wait aproax 56 microS
+1521   FE44 06 02       	ld	b,2		; set soft timer
+1522   FE46             wait00:
+1523   FE46 11 00 00    	ld	de,0		; for aproax five seconds
+1524   FE49             wait01:
+1525   FE49 DB D0       	in	a,(fddsts)	; input to fdd status
+1526   FE4B CB 47       	bit	0,a		; test busy bit
+1527   FE4D 28 0F       	jr	z,wait02	; jump if no command is in progress
+1528   FE4F 1B          	dec	de		;
+1529   FE50 7A          	ld	a,d		; timer down
+1530   FE51 B3          	or	e		;
+1531   FE52 20 F5       	jr	nz,wait01	;
+1532   FE54 05          	dec	b		;
+1533   FE55 20 EF       	jr	nz,wait00	; time out
+1534   FE57             timeout:
+1535   FE57 3E D0       	ld	a,fddrst	; reset fdd controller
+1536   FE59 D3 D0       	out	(fddcmd),a	; exec. command
+1537   FE5B 3E 01       	ld	a,00000001b	; set time-out bit error
+1538   FE5D C9          	ret			; and ret
+1539   FE5E             wait02:
+1540   FE5E 47          	ld	b,a		; save fdd status in B register
+1541   FE5F AF          	xor	a		; clear accumulator for
+1542   FE60 C9          	ret			; normal return
+1543   FE61             ;
+1544   FE61             newdrv:
+1545   FE61             	; select new drive and restore old trk num.
+1546   FE61 E5          	push	hl		; save para pointer
+1547   FE62 4F          	ld	c,a		;
+1548   FE63 06 00       	ld	b,0		; BC = new unit num.
+1549   FE65 21 8A FE    	ld	hl,fddtab	;
+1550   FE68 09          	add	hl,bc		; HL. byte to select drive
+1551   FE69 5E          	ld	e,(hl)		; E = byte to select drive
+1552   FE6A 7A          	ld	a,d		; A = unit num. and side
+1553   FE6B E6 10       	and	00010000b	; mask bit 4 (side)
+1554   FE6D CB 27       	sla	a		; move side to bit 5
+1555   FE6F B3          	or	e		; A = unit + 5/8 sel + side
+1556   FE70 D3 D6       	out	(fddlch),a	; select new drive and side
+1557   FE72 21 44 00    	ld	hl,0044h	; H.L old unit num.
+1558   FE75 7E          	ld	a,(hl)		; A = old unit num.
+1559   FE76 B9          	cp	c		; old unit equ new unit ?
+1560   FE77 28 0F       	jr	z,drvequ	; skip if yes
+1561   FE79 71          	ld	(hl),c		; save new unit num.
+1562   FE7A 21 40 00    	ld	hl,fd0otr	;
+1563   FE7D E5          	push	hl		;
+1564   FE7E 85          	add	a,l		; * Version for less space (4/6)
+1565   FE7F 6F          	ld	l,a		;	add only low byte *
+1566   FE80             ;;	ld	e,a		;
+1567   FE80             ;;	ld	d,0		; DE = old unit num.
+1568   FE80             ;;	add	hl,de		; H.L old trk of unit num.
+1569   FE80 DB D1       	in	a,(fddtrk)	; save track num.
+1570   FE82 77          	ld	(hl),a		;of old unt num.
+1571   FE83 E1          	pop	hl		;
+1572   FE84 09          	add	hl,bc		; H.L old trk of new unit num.
+1573   FE85 7E          	ld	a,(hl)		; select old track
+1574   FE86 D3 D1       	out	(fddtrk),a	; num. of new unit
+1575   FE88             drvequ:
+1576   FE88 E1          	pop	hl		; restore para pointer
+1577   FE89 C9          	ret			; and ret
+1578   FE8A             ;
+1579   FE8A             fddtab:
+1580   FE8A             	; if fdd controller by n.e.
+1581   FE8A 01 02 04 08 	.byte	01,02,04,08	; unit 0 to 3 are 5 inch (bit 5 = 0)
+1582   FE8E             ;
+1583   FE8E             	#endif	; necnt
+1584   FE8E             ;
+1585   FE8E             ;
+1586   FE8E             ;********************************************************
+1587   FE8E             ;*							*
+1588   FE8E             ;*		    Hard disk routines			*
+1589   FE8E             ;*							*
+1590   FE8E             ;********************************************************
+1591   FE8E             ;
+1592   FE8E             ;
+1593   FE8E             	#if	hard		; hard disk exist
+1594   FE8E             ;
+1595   FE8E             ; ***************************************
+1596   FE8E             ; * Size Table for			*
+1597   FE8E             ; *		Hard Disk BASF 6188	*
+1598   FE8E             ; ***************************************
+1599   FE8E             ;
+1600   FE8E             ;
+1601   FE8E             Cyls	.equ	360		; number of cylinders
+1602   FE8E             hCyls	.equ	01h		; high Cyls
+1603   FE8E             lCyls	.equ	68h		; low Cyls
+1604   FE8E             Heads	.equ	4		; number of heads
+1605   FE8E             ;
+1606   FE8E             initab:
+1607   FE8E 01 68       	.byte	hCyls,lCyls	; number of cylinders
+1608   FE90 04          	.byte	Heads		; number of heads
+1609   FE91 00 80       	.byte	0,128		; starting reduced current cylinder
+1610   FE93 00 40       	.byte	0,64		; starting write precompensation cylinder
+1611   FE95 0B          	.byte	11		; maximum ECC data burst length
+1612   FE96             ;
+1613   FE96             ;
+1614   FE96             ;
+1615   FE96             ;********************************************************
+1616   FE96             ;*							*
+1617   FE96             ;*	Winchester disk driver and subroutine		*
+1618   FE96             ;*							*
+1619   FE96             ;********************************************************
+1620   FE96             ;
+1621   FE96             ; Copyright (C) 1983, 1984 Studio Lg, Genova - Italy
+1622   FE96             ; Author: Martino Stefano
+1623   FE96             ; Third Modify by Gallerani Paolo
+1624   FE96             ; Last Revision 06/08/84 21:07
+1625   FE96             ;
+1626   FE96             ; Compatibility Versione 4.2-1
+1627   FE96             ;
+1628   FE96~            	#if	rev < 42
+1629   FE96~            	.echo	".*** Warning:Incompatible Hard Disk Driver ***."
+1630   FE96             	#endif	; rev < 42
+1631   FE96             ;
+1632   FE96             ;
+1633   FE96             ;
+1634   FE96             ;********************************************************
+1635   FE96             ;*							*
+1636   FE96             ;*	HARD DISK OUTPUT AND INPUT PORTS		*
+1637   FE96             ;*							*
+1638   FE96             ;********************************************************
+1639   FE96             ;
+1640   FE96             wport0	.equ	0b8h		; sasi write port 0 - write data
+1641   FE96             wport1	.equ	0b9h		; sasi write port 1 - software reset
+1642   FE96             wport2	.equ	0bah		; sasi write port 2 - cntlr select
+1643   FE96             wport3	.equ	0bbh		; sasi write port 3 - not used
+1644   FE96             rport0	.equ	0b8h		; sasi read port 0 - read data
+1645   FE96             rport1	.equ	0b9h		; sasi read port 1 - read status
+1646   FE96             rport2	.equ	0bah		; sasi read port 2 - not used
+1647   FE96             rport3	.equ	0bbh		; sasi read port 3 - not used
+1648   FE96             ;
+1649   FE96             ;********************************************************
+1650   FE96             ;*							*
+1651   FE96             ;*	HARD DISK VARIOUS EQUATES			*
+1652   FE96             ;*							*
+1653   FE96             ;********************************************************
+1654   FE96             ;
+1655   FE96             reqbit	.equ	000h		; request line bit position
+1656   FE96             reqmsk	.equ	001h		; request mask for bit test
+1657   FE96             busybit	.equ	001h		; busy line bit posistion
+1658   FE96             busymsk	.equ	002h		; busy mask for bit test
+1659   FE96             msgbit	.equ	002h		; message line bit position
+1660   FE96             msgmsk	.equ	004h		; message mask for bit test
+1661   FE96             cdbit	.equ	003h		; command/data bit posistion
+1662   FE96             cdmsk	.equ	008h		; command/data mask for bit test
+1663   FE96             iobit	.equ	004h		; input/output bit position
+1664   FE96             iomsk	.equ	010h		; input/output mask for bit test
+1665   FE96             errmsk	.equ	002h		; test for an error
+1666   FE96             ;
+1667   FE96             ;********************************************************
+1668   FE96             ;*							*
+1669   FE96             ;*	HARD DISK CONTROLLER COMMAND EQUATES		*
+1670   FE96             ;*							*
+1671   FE96             ;********************************************************
+1672   FE96             ;
+1673   FE96             drvrdy	.equ	000h		; test drive ready command
+1674   FE96             format	.equ	004h		; format command code
+1675   FE96             read	.equ	008h		; read command code
+1676   FE96             write	.equ	00ah		; write command code
+1677   FE96             sense	.equ	003h		; status sense command code
+1678   FE96             initl	.equ	00ch		; initialize disk size command
+1679   FE96             seek	.equ	00bh		; seek command size
+1680   FE96             recal	.equ	001h		; recalibrate command code
+1681   FE96             ramdiag	.equ	0e0h		; ram diagnostic command code
+1682   FE96             ;
+1683   FE96             ;
+1684   FE96             parowmsg:
+1685   FE96 0D 0A       	.byte	cr,lf,
+1686   FE98 486172644469	.text	"HardDisk Parameter overflow"
+1686   FE9E 736B20506172616D65746572206F766572666C6F77
+1687   FEB3 24          	.byte	endmsg
+1688   FEB4             ;
+1689   FEB4             ;
+1690   FEB4             ;
+1691   FEB4             ;********************************************************
+1692   FEB4             ;*							*
+1693   FEB4             ;*		Routines Entry point			*
+1694   FEB4             ;*							*
+1695   FEB4             ;********************************************************
+1696   FEB4             ;
+1697   FEB4             ;
+1698   FEB4             wdio:
+1699   FEB4             	; wdd i/o 256 byte
+1700   FEB4 DB B9       	in	a,(rport1)	; load cntlr status
+1701   FEB6 E6 E0       	and	11100000b	; mask bit 5,6,7. Hard disk exist ?
+1702   FEB8 C0          	ret	nz		; ret in not
+1703   FEB9 22 45 00    	ld	(hladrs),hl	; save r/w para adrs
+1704   FEBC             wdio1:
+1705   FEBC 7E          	ld	a,(hl)		; A = unit & side
+1706   FEBD 47          	ld	b,a		; save in B for unit
+1707   FEBE E6 30       	and	00110000b	; mask side number
+1708   FEC0 CB 3F       	srl	a		; move side number to bit 0,1
+1709   FEC2 CB 3F       	srl	a		; move side number to bit 0,1
+1710   FEC4 CB 3F       	srl	a		; move side number to bit 0,1
+1711   FEC6 CB 3F       	srl	a		; move side number to bit 0,1
+1712   FEC8 FE 02       	cp	Heads/2		; test for side overflow
+1713   FECA D2 32 FF    	jp	nc,parower	; if side > /Heads/2)-1 then para overflow
+1714   FECD CB 40       	bit	0,b		; test unit number
+1715   FECF 28 02       	jr	z,wdio2		; jump if unit 0
+1716   FED1 C6 02       	add	a,(Heads/2)	;
+1717   FED3             wdio2:
+1718   FED3 4F          	ld	c,a		; C = head address (0 to Heads-1)
+1719   FED4 23          	inc	hl		; H.L = track para adrs.
+1720   FED5 5E          	ld	e,(hl)		; E = low byte track number
+1721   FED6 23          	inc	hl		; point to high byte
+1722   FED7 56          	ld	d,(hl)		; D = track hugh byte
+1723   FED8 23          	inc	hl		; point to sector
+1724   FED9 E5          	push	hl		; save sec para pointer
+1725   FEDA A7          	and	a		; cy=0
+1726   FEDB 21 67 01    	ld	hl,Cyls-1	; Max # of Cyl
+1727   FEDE ED 52       	sbc	hl,de		; compare with par
+1728   FEE0 38 4F       	jr	c,parov0	; overflow: out of disk bounds
+1729   FEE2 21 00 00    	ld	hl,0		; reset product
+1730   FEE5 44          	ld	b,h		; BC = head address
+1731   FEE6 19          	add	hl,de		; HL = track * Heads
+1732   FEE7 19          	add	hl,de		; HL = track * Heads
+1733   FEE8 19          	add	hl,de		; HL = track * Heads
+1734   FEE9 19          	add	hl,de		; HL = track * Heads
+1735   FEEA 09          	add	hl,bc		; HL = (track * Heads) + head address
+1736   FEEB 29          	add	hl,hl		; HL = (track * Heads + head address)*32
+1737   FEEC 29          	add	hl,hl		; HL = (track * Heads + head address)*32
+1738   FEED 29          	add	hl,hl		; HL = (track * Heads + head address)*32
+1739   FEEE 29          	add	hl,hl		; HL = (track * Heads + head address)*32
+1740   FEEF 29          	add	hl,hl		; HL = (track * Heads + head address)*32
+1741   FEF0 EB          	ex	de,hl		; DE = (track * Heads + head address)*32
+1742   FEF1 E1          	pop	hl		; H.L = track para adrs.
+1743   FEF2 7E          	ld	a,(hl)		; A = sector number
+1744   FEF3 3D          	dec	a		; convert sector to base 0
+1745   FEF4 FE 20       	cp	32		; test for sector overflow
+1746   FEF6 30 3A       	jr	nc,parower	; if sector-1 > 31 then para overflow
+1747   FEF8 4F          	ld	c,a		; BC=sector number
+1748   FEF9 EB          	ex	de,hl		; HL= (trk*Hds+hda)*32 , D.E = sec para adrs
+1749   FEFA 09          	add	hl,bc		; HL= (track * Hds + head address)*32 + sec num
+1750   FEFB 7C          	ld	a,h		; A = mddle address
+1751   FEFC 65          	ld	h,l		;
+1752   FEFD 6F          	ld	l,a		; swap H with L
+1753   FEFE 22 4C 00    	ld	(task+2),hl	; set middle and low address
+1754   FF01 EB          	ex	de,hl		; H.L = sec para adrs
+1755   FF02 23          	inc	hl		; H.L = dma para adrs
+1756   FF03 5E          	ld	e,(hl)		;
+1757   FF04 23          	inc	hl		;
+1758   FF05 56          	ld	d,(hl)		; DE = dma address
+1759   FF06 D5          	push	de		; save dma address
+1760   FF07 23          	inc	hl		; H.L = r/w para adrs
+1761   FF08 7E          	ld	a,(hl)		; A = r/w flag (0 = read, 1 = write)
+1762   FF09 F5          	push	af		;
+1763   FF0A 23          	inc	hl		; H.L = block count
+1764   FF0B 7E          	ld	a,(hl)		; A = num sec to r/w
+1765   FF0C 32 4E 00    	ld	(task+4),a	; set block count
+1766   FF0F 5F          	ld	e,a		; E = num sec to r/w
+1767   FF10 F1          	pop	af		; A = r/w flag
+1768   FF11 E1          	pop	hl		; HL = dma address
+1769   FF12 01 B8 00    	ld	bc,wport0	; wdd data port
+1770   FF15             				; B = 0 = r/w 256 byte
+1771   FF15 B7          	or	a		; read or write ?
+1772   FF16 20 23       	jr	nz,wdwrite	; A = 1 then write
+1773   FF18             ;
+1774   FF18             wdread:
+1775   FF18             	; wdd read 256 byte
+1776   FF18 CD 7F FF    	call	selcntlr	; select the controller
+1777   FF1B 3E 08       	ld	a,read		; read sector command
+1778   FF1D CD 9E FF    	call	taskout		; send out to controller
+1779   FF20             wdrd1:
+1780   FF20 CD DE FF    	call	reqwait		; wait for the controller request
+1781   FF23 C0          	ret	nz		; no cntlr request then error (wd.rty)
+1782   FF24 E6 08       	and	cdmsk		; check for input status
+1783   FF26 20 05       	jr	nz,wdsts	; C/D- active, read status
+1784   FF28 ED B2       	inir			; read 256 byte (one sector)
+1785   FF2A 1D          	dec	e		; sector counter down
+1786   FF2B 20 F3       	jr	nz,wdrd1	; no zero then read next sector
+1787   FF2D             wdsts:
+1788   FF2D CD B2 FF    	call	getstat		; get completion status
+1789   FF30 C9          	ret			; return status
+1790   FF31             ;
+1791   FF31             ;
+1792   FF31             parov0:
+1793   FF31 E1          	pop	hl		; pop parameter pointer
+1794   FF32             parower:
+1795   FF32             	; wdd i/o para overflow
+1796   FF32 11 96 FE    	ld	de,parowmsg	; D.E = par overflow message
+1797   FF35 CD 62 FD    	call	strout		; print it
+1798   FF38 3E 40       	ld	a,40h		; 'Parameter Overflow'
+1799   FF3A C9          	ret			; return with error
+1800   FF3B             ;
+1801   FF3B             ;
+1802   FF3B             wdwrite:
+1803   FF3B             	; wdd write 256 byte
+1804   FF3B CD 7F FF    	call	selcntlr	; select the controller
+1805   FF3E 3E 0A       	ld	a,write		; write sector command
+1806   FF40 CD 9E FF    	call	taskout		; send out to controller
+1807   FF43             wdwt1:
+1808   FF43 CD DE FF    	call	reqwait		; wait for controller request
+1809   FF46 C0          	ret	nz		; no cntlr request then error
+1810   FF47 E6 08       	and	cdmsk		; check for input status
+1811   FF49 20 E2       	jr	nz,wdsts	; C/D- active, read status
+1812   FF4B ED B3       	otir			; write 256 byte (one sector)
+1813   FF4D 1D          	dec	e		; sector counter down
+1814   FF4E 20 F3       	jr	nz,wdwt1	; no zero then read next sector
+1815   FF50 18 DB       	jr	wdsts		; return with status
+1816   FF52             ;
+1817   FF52             ;
+1818   FF52             wdini:
+1819   FF52             	; initialize Drive Characteristics
+1820   FF52 D3 B9       	out	(wport1),a	; send out a reset pulse
+1821   FF54             ;
+1822   FF54             wddrdy:
+1823   FF54 CD 92 FF    	call	wtwdrdy		; wdd ready ?
+1824   FF57 C0          	ret	nz		; error if not
+1825   FF58             ;
+1826   FF58 CD 7F FF    	call	selcntlr	; select the controller
+1827   FF5B 3E 0C       	ld	a,initl		; initialize disk size command
+1828   FF5D CD 9E FF    	call	taskout		; send out the command
+1829   FF60 21 8E FE    	ld	hl,initab	; point to drive size tab.
+1830   FF63 06 08       	ld	b,8		; set up a byte counter
+1831   FF65 CD DE FF    	call	reqwait		; wait for controller request
+1832   FF68 C0          	ret	nz		; no zero then error
+1833   FF69             iniz00:
+1834   FF69 7E          	ld	a,(hl)		; get a byte to send out
+1835   FF6A D3 B8       	out	(wport0),a	; send it to the controller
+1836   FF6C 23          	inc	hl		; bump the drive size tab. pointer
+1837   FF6D 10 FA       	djnz	iniz00		; decrement the byte count and
+1838   FF6F             				; wait until all are output
+1839   FF6F CD B2 FF    	call	getstat		; get completion status
+1840   FF72 C0          	ret	nz		; ret if error completion
+1841   FF73             ;
+1842   FF73 CD 7F FF    	call	selcntlr	; select the controller
+1843   FF76 3E 01       	ld	a,recal		; recalibrate command code
+1844   FF78 CD 9E FF    	call	taskout		; send command to cntlr
+1845   FF7B CD B2 FF    	call	getstat		; get completion status
+1846   FF7E C9          	ret			; ret with status
+1847   FF7F             ;
+1848   FF7F             selcntlr:
+1849   FF7F             	; selects the default controller
+1850   FF7F DB B9       	in	a,(rport1)	; read status port
+1851   FF81 E6 02       	and	busymsk		; mask busy bit
+1852   FF83 20 FA       	jr	nz,selcntlr	; loop if busy
+1853   FF85 3E 01       	ld	a,1		; cntrl default select code
+1854   FF87 D3 B8       	out	(wport0),a	; send it to trasparent latch
+1855   FF89 D3 BA       	out	(wport2),a	; generate a select strobe
+1856   FF8B             selc00:
+1857   FF8B DB B9       	in	a,(rport1)	; get cntrl response
+1858   FF8D E6 02       	and	busymsk		; isolate the busy mask
+1859   FF8F 28 FA       	jr	z,selc00	; wait for cntrl busy
+1860   FF91 C9          	ret			; busy has arrived,exit
+1861   FF92             ;
+1862   FF92             wtwdrdy:
+1863   FF92             	; test for drive ready
+1864   FF92 CD 7F FF    	call	selcntlr	; select the controller
+1865   FF95 3E 00       	ld	a,drvrdy	; drive ready command
+1866   FF97 CD 9E FF    	call	taskout		; send out the command
+1867   FF9A CD B2 FF    	call	getstat		; get completion status
+1868   FF9D C9          	ret			; and ret to caller
+1869   FF9E             ;
+1870   FF9E             ;
+1871   FF9E             taskout:
+1872   FF9E             	; send out the command contained in A register
+1873   FF9E E5          	push	hl		; Save Ptr
+1874   FF9F 21 4A 00    	ld	hl,task		; Point to table
+1875   FFA2 77          	ld	(hl),a		; store command
+1876   FFA3 16 06       	ld	d,6		; six bytes
+1877   FFA5 CD DE FF    	call	reqwait		; wait for request
+1878   FFA8 C0          	ret	nz		; no, error
+1879   FFA9             task1:
+1880   FFA9 7E          	ld	a,(hl)		; get one byte
+1881   FFAA D3 B8       	out	(wport0),a	; send it
+1882   FFAC 23          	inc	hl		; point	to next
+1883   FFAD 15          	dec	d		; dec counter
+1884   FFAE 20 F9       	jr	nz,task1	; loop until zero
+1885   FFB0 E1          	pop	hl		; restore
+1886   FFB1 C9          	ret			; cmd send
+1887   FFB2             ;
+1888   FFB2             getstat:
+1889   FFB2 CD DE FF    	call	reqwait		; wait for request
+1890   FFB5 C0          	ret	nz		; no, error
+1891   FFB6 DB B8       	in	a,(rport0)	; get status byte
+1892   FFB8 57          	ld	d,a		; save
+1893   FFB9 CD DE FF    	call	reqwait		; wait for another
+1894   FFBC C0          	ret	nz		; no, error
+1895   FFBD DB B8       	in	a,(rport0)	; get fill byte
+1896   FFBF 7A          	ld	a,d		; restore
+1897   FFC0 E6 02       	and	errmsk		; only status bit
+1898   FFC2 C8          	ret	z		; no error, return A=0
+1899   FFC3             ;
+1900   FFC3             ; Get Sense Status
+1901   FFC3             ;
+1902   FFC3 CD 7F FF    	call	selcntlr	; select the controller
+1903   FFC6 3E 03       	ld	a,sense		; sense status command
+1904   FFC8 CD 9E FF    	call	taskout		; send out to controller
+1905   FFCB CD DE FF    	call	reqwait		; wait for controller request
+1906   FFCE C0          	ret	nz		; no cntlr request then error
+1907   FFCF DB B8       	in	a,(rport0)	; get error code
+1908   FFD1 5F          	ld	e,a		; save
+1909   FFD2 DB B8       	in	a,(rport0)	; get one byte
+1910   FFD4 DB B8       	in	a,(rport0)	; get one byte
+1911   FFD6 DB B8       	in	a,(rport0)	; get one byte
+1912   FFD8 CD B2 FF    	call	getstat		; get completion status
+1913   FFDB 7B          	ld	a,e		; restore error code
+1914   FFDC B7          	or	a		; set flag
+1915   FFDD C9          	ret			; return it
+1916   FFDE             ;
+1917   FFDE             ;
+1918   FFDE             reqwait:
+1919   FFDE C5          	push	bc		; save register
+1920   FFDF D5          	push	de		;
+1921   FFE0 06 08       	ld	b,8		; set soft timer for aproax 15 Second
+1922   FFE2             reqwt0:
+1923   FFE2 11 00 00    	ld	de,0		;
+1924   FFE5             reqwt1:
+1925   FFE5 DB B9       	in	a,(rport1)	; get cntlr status bits
+1926   FFE7 4F          	ld	c,a		; save on c
+1927   FFE8 E6 01       	and	reqmsk		; only request bit (A=0 or A=1)
+1928   FFEA 20 09       	jr	nz,reqwtex	; exit if (REQ=1)
+1929   FFEC 1B          	dec	de		; timer 1 down
+1930   FFED 7A          	ld	a,d		; check for elapsed
+1931   FFEE B3          	or	e		;
+1932   FFEF 20 F4       	jr	nz,reqwt1	; no, loop
+1933   FFF1 10 EF       	djnz	reqwt0		; timer 2 down
+1934   FFF3 0E FF       	ld	c,0ffh		; time out error (A=FF)
+1935   FFF5             reqwtex:
+1936   FFF5 3D          	dec	a		; A=A-1    (A=0  ,  A=FF)
+1937   FFF6             				; set flag (Z=REQ, NZ=timeout)
+1938   FFF6 79          	ld	a,c		; return status on A
+1939   FFF7 D1          	pop	de		; restore
+1940   FFF8 C1          	pop	bc		;	registers
+1941   FFF9 C9          	ret			; and ret
+1942   FFFA             ;
+1943   FFFA~            	#else	; hard		; hard disk don't exist
+1944   FFFA~            ;
+1945   FFFA~            wdio:
+1946   FFFA~            	ld	a,1		; wdd i/o error
+1947   FFFA~            	ret			;
+1948   FFFA~            ;
+1949   FFFA~            wdini:
+1950   FFFA~            	ret			; return
+1951   FFFA~            ;
+1952   FFFA             	#endif	;hard
+1953   FFFA             ;
+1954   FFFA             ;
+1955   FFFA             ;
+1956   FFFA FFFFFFFFFFFF	.fill	6
+1957   10000             	.end			; end of this program
+1958   10000             
+tasm: Number of errors = 0

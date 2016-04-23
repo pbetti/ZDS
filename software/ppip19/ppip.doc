@@ -1,0 +1,510 @@
+
+PPIP.DOC		   5 Dec 1995
+------------------------------------------------------------------------
+	       Documentation for the PPIP program
+------------------------------------------------------------------------
+
+			    OVERVIEW
+			    --------
+
+PPIP is a file copy program for use with CP/M 80.  It was written to
+supplement, not replace, SWEEP, NSWP or PIP.  If you want to copy or
+backup just a few files, you can do so with PPIP and you won't have to
+wait for SWEEP, VFILER, etc. to load and start.  In addition, PPIP can
+be included in SUBMIT files.  The standard PPIP.COM occupies less than
+4K.
+
+PPIP has the ability, unlike most copy programs, to PUSH or PULL files
+between user areas. Areas from 0 to 31 are supported.
+
+Wildcards are accepted for BOTH the source and destination file names.
+This is another feature that gives you flexibility not offered by most
+other copy programs.
+
+CRC verification can be done on all operations, and the CRC value can be
+reported if you desire.  The algorithm used by PPIP is the same one used
+by IMP, KMD, MDM7, MEX, MODEM7, NSWP207, NULU, VFILER, XMODEM, etc.
+
+You can specify whether you want to be notified before an existing file
+is overwritten.  You can also specify, separately, whether you want to
+be alerted before a Read-Only file is overwritten.
+
+PPIP supports the CP/M file name archive attribute.  This allows you to
+quickly select and copy new files that have not been copied before.
+
+You can use this program to write directly from the console to a disk
+file as you can with the Digital Research PIP.COM program.  However PPIP
+gives you a little more editing freedom.  PPIP does not support devices
+other than CON:.
+
+File appends are also not supported.
+
+PPIP supports Plu*Perfect Systems DateStamper, if present.  The copied
+file is given the same date stamp as the source file.  Note that PPIP
+must be assembled with the DATESTAMP equate set to YES.  Starting with
+version 1.7, the datestamper option works on 8080 and 8085 systems.
+PPIP can be assembled as a ZCPR utility by setting the ZCPR3 equate to
+YES.  Be sure to install PPIP with Z3INS unless your ZCPR system auto-
+installs all utilities at run time (BGii does).
+
+Beginning with version 1.8, Z80DOS timestamping support has been added
+and placed in the public domain. This is controlled by an equate that
+must be set to YES.
+
+Beginning with version 1.9, CP/M 3 timestamping support has been added;
+this is also controlled by an equate that must be set to YES.
+
+			       OPERATION
+			       ---------
+
+THE COMMAND MODE
+----------------
+This program may operate in either the CP/M (tm - Digital Research) com-
+mand mode or the MS-DOS (tm - Microsoft) command mode.	The mode is
+determined by PPIP by looking for '='.
+
+In the "CP/M mode" the destination file name comes first in the command
+line, as it does when you use DRI's PIP.COM.  You must separate the
+source file name from the destination file name with an equals sign
+('=').  If only one argument is given, it is assumed to be the SOURCE
+file and the destination file will have the same name on the current
+drive and user area.  So the command format is:
+
+	    A>PPIP [[DU:]<DEST.EXT>=][DU:]<SOURCE.EXT>
+
+In the "MS-DOS mode", the source file name comes first, followed by the
+destination file name.	The names should be be separated by a space.
+
+	   A>PPIP [DU:]<SOURCE.EXT>[ [DU:]<DEST.EXT>]
+
+As in the CP/M mode, if only one argument is specified, it is assumed to
+be the source file name.
+
+In either mode, the DU: (drive/user) or DIR: spec is optional.
+
+If the program is invoked with no arguments then a HELP message is
+printed on the console.
+
+Control-C may be used to abort the program.  The copy in progress will
+be completed before the ^C command is obeyed.
+
+
+DRIVE/USER SPECIFICATIONS
+-------------------------
+You may include a DU: spec (or DIR: spec if running under ZCPR with a
+NDR file loaded) with any file name (except CON:, of course).  The drive
+may range from 'A' to 'P' unless the maximum accessible drive is
+otherwise specified in the source program before assembly.  Similarly,
+user areas from 0 to 31 can be accessed unless this is specifically over-
+ridden.  You may specify a drive alone, in which case the program will
+assume the current user area, and you may specify a user area alone and
+the program will assume that you want to use the current drive.  If you
+specify neither a drive nor a user area then the program will fill in
+both the current drive and current user for you.
+
+
+WILDCARDS
+---------
+Both the source and destination file names can contain wildcards.  Wild-
+cards in a source file name are expanded in the usual way.  Wildcards in
+the destination file name are resolved from characters in the source file
+name by a "matching" process.  A couple of examples will illustrate this.
+
+	       source:		   COPY    .ASM
+	       wild destination:   ??????10.*
+	       final destination:  COPY10  .ASM
+
+	       source:		   PPIP    .COM
+	       wild destination:   Q*	   .OBJ
+	       final destination:  QPIP    .OBJ
+
+(You would not enter the spaces that occur between the file name and type
+in the examples above.	These are included for clarification only.)
+
+As you may realize, this wildcard format makes it quite possible for the
+program to create duplicate files.  For example you could enter:
+
+		    A0>PPIP *.BAK=PPIP.*
+
+If the files PPIP.ASM and PPIP.DOC are both on the current DU: then the
+destination files would both be named PPIP.BAK.  Clearly this is unde-
+sirable.  In a limited effort to eliminate this kind of error, PPIP
+stores the name of the LAST file copied and compares it to the name of
+the file currently being copied.  If they are the same then a "Dupli-
+cate!" error is issued and the current file is skipped.  It is still
+possible for a duplicate file to be written when the two files with the
+same names are not copied one right after another.  The only guards
+against this are the 'E' and 'W' switches which, if OFF, will tell you
+that the file about to be written already exists.  As you can see, care
+should be exercised in using wildcards.  If used correctly this wildcard
+scheme will allow you to do your copying and renaming all in one step.
+
+The distributed version of PPIP will handle up to 512 file names.
+
+
+FILE ATTRIBUTES
+---------------
+All eleven file attribute bits, including Read-Only, System, and Archive
+are supported by PPIP and are handled as follows:
+
+     1) If the destination file existed before the copy operation
+	then its original attributes are retained, unless the copy
+	was made with the archive option in effect.
+
+     2) If the destination file did not exist before the copy
+	operation then it receives the same attributes as the
+	source file.
+
+     3) If the copy is made with the archive option ON,
+	then the archive attribute is SET in the source
+	file and RESET in the destination file.
+
+
+  NB: The "Bytewise file lengths" of CP/M + and DOS + are supported. The
+system call used to set these may set the f6' attribute on some replacement
+DOSses. In general, the use of attributes f5'-f8' should be avoided since
+they are used internally by some CP/M versions.
+
+
+COMMAND EXAMPLES
+----------------
+
+       Command Line		Mode	     Action Performed
+------------------------------------------------------------------------
+A0>PPIP 			either	print the PPIP help menu
+
+A0>PPIP B0:*.*			either	copy all files on drive B: and
+					user 0 to the current drive and
+					drive and user area (A0:)
+
+C8>PPIP A:*.COM 5:*.OBJ 	MS-DOS	copy all .COM files on A8: to
+					.OBJ files with the same names
+					on C5:
+
+A0>PPIP B15:X*.* C0:Z*.*	MS-DOS	copy all files on B15: that have
+					names starting with the letter
+					'X' to files with the same names
+					except starting with the letter
+					'Z', on drive/user C0:
+
+B14>PPIP *.* C0:?????BAK.*	MS-DOS	copy all files on B14: to C0:
+					and insert the letters "BAK" at
+					the end of the file name field.
+
+B8>PPIP D0:=A0:KMD.COM		CP/M	copy the KMD.COM file on A0: to
+					D0:
+
+A0>PPIP D0:=B11:*.?Q?		CP/M	copy all files with a 'Q' in the
+					extension that appear on B11: to
+					to D0:
+
+A15>PPIP COPY.COM=0:PPIP.COM	CP/M	copy PPIP.COM on A0: to COPY.COM
+					on A15:
+
+D5>PPIP B0:MYFILE.DOC=CON:	CP/M	copy console input to MYFILE.DOC
+					drive B: and user 0.
+
+
+RUN-TIME OPTIONS
+----------------
+There are six options that you can switch ON/OFF from the command line.
+Each of these options has a default value which is specified when the
+program is assembled.  The default settings will be reported in the HELP
+menu.
+
+Options are activated from the command line by a special character.  This
+character must be specified before assembly and will be reported in the
+HELP menu.  In our examples we will use the traditional MS-DOS switch
+character '/'.	This is the switch used in the distributed version of
+PPIP.
+
+The options can appear anywhere in the command line, can be bundled to-
+gether, and can appear more than once.	If an option occurs more than
+once in the command line, it is toggled each time it is encountered.
+Thus all the following commands mean the same thing:
+
+		  A0>PPIP /V SOURCE /K DEST /W
+		  A0>PPIP SOURCE DEST /V /K /W
+		  A0>PPIP /WKV SOURCE DEST
+		  A0>PPIP /C SOURCE /W DEST /VKC
+
+  NOTE: Only two arguments, excluding options, are accepted by
+	PPIP. Thus file appends and multiple file operations with
+	unambiguous names are not supported.  You will be warned
+	about extra arguments.	You will also be warned about un-
+	recognized options.
+
+
+Here is a list of the valid options and their default status in the dis-
+tributed version.
+
+  Character		  Function			  Default Status
+ -----------------------------------------------------------------------
+
+    A	if ON, only files that have their archive attributes	OFF
+	not set (off) will be copied.
+
+    C	if ON, the CRC value will be reported in hex (if the	OFF
+	/V switch is also ON)
+
+    E	if ON, you will NOT be warned before Read/Write files	OFF
+	are overwritten.
+
+    M   if ON, the source file is erased after the copy is      OFF
+        successfully completed.  This option does not toggle.
+        If /M is specified, the move mode is enabled and the
+        V mode is forced on to provide CRC verification.
+
+    W	if ON, you will NOT be warned before Read/Write and	OFF
+	Read/Only files are overwritten.
+
+    V	if ON, verifies the CRC of the copies (needs /C to	OFF
+	also display the CRC value in hex).
+
+If the /V or /M switch is on and the Cyclic Redundancy Check fails, the
+copy will be retried.  In the distributed version the copy will be
+retried three times before PPIP gives up.
+
+The archiving option has limited usefulness under CP/M 2.x since the
+operating system resets archive attributes only when files are created
+anew, not when they are updated as should be the case.  You must either
+reset the archive bit "by hand" with an utility program or create a new
+file before PPIP will recognize that a file has been changed.  Still,
+the /A option gives you an easy way to find and copy new files on your
+system.	 Many BDOS replacements such as ZRDOS, P2DOS and PZDOS properly
+support the archive attribute.
+
+
+THE EDITOR
+----------
+PPIP contains a very crude text editor that is still a step above
+what DRI's PIP.COM offers.  The important differences are:
+
+     1) backspaces are not interpreted literally and placed
+	into the file.	Instead, you can use BACKSPACE or RUBOUT
+	to back up and make corrections to the current line.
+	This is a destructive backspace so text to the right
+	of the cursor will have to be retyped.	There is no
+	provision for editing lines other than the current one
+	as this would require terminal-specific code.
+
+     2) line feeds are automatically added to carriage
+	returns.
+
+     3) any control characters can be entered literally
+	into the file.	Most control characters can be
+	entered just as you would expect, by holding down
+	the CONTROL key and hitting the appropriate alpha-
+	betic key.  The exceptions to this are:  backspace
+	(^H), carriage return (^M) and EOF (^Z).  These
+	characters have special meaning to the editor.	To
+	enter them you must first enter a "trigger" char-
+	acter.	The trigger in the distributed version of
+	PPIP is the tilde ('~').  So, to insert a carriage
+	return into the text you would enter '~' and then
+	the letter 'M'.  The editor will convert lower-case
+	characters entered after the trigger to upper-case.
+	If the character entered after the trigger will not
+	produce a valid control character then it is ignored.
+	To enter the trigger character itself, you type it
+	two times.
+
+     4) lines are automatically wrapped.  Word wrap occurs
+	at the first space that you type after there are 10
+	characters left on the console line.  If no spaces
+	occur during the last 10 characters on the line then
+	the line is wrapped one character before the end of
+	the line.  Once you leave a line you can't get back
+	back to it.
+
+Wildcards are inappropriate in the destination file name for a console
+copy.  The program will print an error message if you use them.
+
+To quit entering text, use CTL-Z, just as you do with PIP.COM.
+
+It is unlikely that you will ever fill the memory buffer when entering
+console text.  If you do, however, PPIP will ring the console bell when
+there are only five characters left in the buffer.  You may heed this
+warning and exit the program or you may keep on typing.  When you hit
+the end of the buffer, PPIP will write the buffer to disk and return you
+to CP/M.
+
+
+PROGRAM ALTERATION AND NOTES
+----------------------------
+This program was written primarily because I got tired of bringing up
+SWEEP just to make a quick back-up of work in progress.  And I wanted a
+copy program that would be easy to use from a submit file.  Also, I like
+the MS-DOS copy program and wanted a program that could (a) accept just
+one argument to copy a file to the current drive/user area and (b) would
+accept the source file first on the command line.  PPIP fits the bill
+and has a few other niceties to boot.
+
+If you are so inclined, you may make changes to the data listed as "User
+customizable" to tailor the program to your system.  There's not much to
+do here, but you can set your maximum accessible drive and user areas,
+and you can change the option switch characters if the ones being used
+do not suit you.
+
+For your reference, here are the important locations in a NON-ZCPR3
+version of PPIP.  For ZCPR3 versions, add 08H to all addresses.
+
+ LABEL	 LOCATION		  PURPOSE			 DEFAULT
+------------------------------------------------------------------------
+TRIGGER equate	specifies the trigger you want to use to	 '~'
+	in	enter literal control character from the
+	source	CON:  Note, don't use '^; as trigger since
+	code	doing so will prevent you from entering
+		the control character '^^'.
+
+SWID	equate	your screen width in characters 		  80
+
+
+***  Note  ***  The following are for NON-ZCPR !!!  Add 8 bytes for ZCPR !!!
+
+
+RETRY	0103H	the number of retrys you want PPIP to attempt	  3
+		if CRC verification fails.
+
+MAXDRV	0104H	your maximum accessible drive letter in caps	 'P'
+
+MAXUSR	0105H	your maximum accessible user number		  15
+
+SWITCH	0106H	specifies the character to be used to activate	 '/'
+		options in the command line
+		   line
+
+VERIFY	0108H	the CRC verification option			V - off
+
+REPORT	010AH	the CRC report option (shows value in hex)	C - off
+
+ARCHIV	010CH	the archive option				A - off
+
+EMEND	010EH	the option to allow overwriting R/W  files	E - off
+		without asking
+
+WIPE	0110H	the option to allow erasing of all files	W - off
+		(both R/W and R/O) without asking
+
+MOVF	0112H   thhe move option				M - off
+
+OPTIONS
+------------------------------------------------------------------------
+A note regarding the options:  The options table is terminated
+with a zero in the options-character position.	If you want to
+"hard-wire" the options, you can simply terminate the table at
+the appropriate place.	The options status bytes must remain
+intact and must be set the way you want.  For instance, to turn
+the EMEND and WIPE options off permanently, you would substitute
+a zero for the 'E' at 0110H.
+
+			    Messages
+			    --------
+Here is a list of PPIP messages and their meaning:
+
+
+	    MESSAGE			      MEANING
+--------------------------------   ------------------------------
+"<?> - unrecognized option"	   you have used an option
+				   character that is invalid
+
+"Archived"			   a copy operation is being
+				   skipped because a file has
+				   already been archived
+
+"bad drive/user spec in <filename>" either the drive or the user
+				   area you have specified is out
+				   of bounds
+
+"Can't close destination"	   the destination file has been
+				   written but can't be closed
+
+"Can't copy to same drive/user"    an attempt has been made to
+				   write the destination file on
+				   top of the source file
+
+"can't open source"		   the source file has been
+				   located but can't be opened
+
+"Directory is full"		   there is no room left for
+				   another entry in the disk
+				   directory
+
+"Disk full. Deleting file."	   the destination file is too
+"Disk full. Copy deleted."	   big to fit on the specified
+				   disk. The partial file will be
+				   deleted.
+
+"Duplicate!"			   a copy operation is being
+				   skipped because it will over-
+				   write the file just written
+
+"Exists! Delete?"		   the file about to be written
+"R/O! Delete?"			   exists. You should enter the
+				   single character 'Y' or 'N' to
+				   indicate whether the file
+				   should be deleted.
+
+"Ignoring:"			   the program will list and
+				   ignore all arguments other
+				   than the source and
+				   destination file names and
+				   options.
+
+"invalid characters in <filename>" you have used an illegal
+				   character in the file name.
+				   Unacceptable characters are
+				   the comma, semi-colon, colon,
+				   equals sign, and single and
+				   double quotes
+
+"No destination file specified"    issued only when CON: is the
+				   source file and a destination
+				   file name must be specified
+
+"no file <filename>"		   the file name you have used
+				   cannot be found on the
+				   specified drive and user area
+
+"Ok"				   tells you how the CRC check
+"failed"			   came out
+
+"Out of memory" 		   PPIP puts all the expanded
+				   source file names in memory
+				   and uses all memory above that
+				   for disk buffering. If no
+				   memory is left after the
+				   source file name is expanded
+				   you will get this error
+				   message
+
+"Please check your disk"	   CRC has failed retry + 1 times
+				   so something is seriously
+				   wrong
+
+"User abort"			   you have used control-C to
+				   abort the copy process
+
+"verify file open error"	   the destination file has been
+				   written but can't be reopened
+				   for verification
+
+"Verifying"			   tells you that CRC
+				   verification is being done
+
+"Wildcards not allowed" 	   issued only when CON: is the
+				   source file. The destination
+				   file name must be unambiguous
+
+-----------------------------------------------------------------
+Feel free to toy with PPIP all you want, but do not use it for
+commercial purposes or for monetary gain without expressed
+written permission from the author.
+
+       PPIP is Copyright (C) by David Jewett, III - 1985.
+
+		      10376 Iron Mill Road
+		       Richmond, VA  23235
+		    Day Phone: (804) 794-7667
+-----------------------------------------------------------------
+

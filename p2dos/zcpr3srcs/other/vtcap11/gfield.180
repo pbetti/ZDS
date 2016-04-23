@@ -1,0 +1,462 @@
+; GFIELD
+; 
+; This routine is responsible for the field input from the console.
+; Input is processed with a modified version of the INLINE syslib
+; routine. Modifications have been added to filter out control 
+; character input and allow the '^' to be used as a lead-in key to
+; signal that the next character input is to be entered as a control
+; character.
+
+gfld:	push	hl		; save registers
+	push	de
+	push	bc
+	push	af
+
+; Initialize buffers
+
+	ld	a,0ffh		; set echo flag
+	ld	(echo),a
+	
+; copy contents of TBUF into VBUF by expanding fields.
+
+	call	t2v
+
+; Position cursor to proper location on display. Pick up values for
+; length of field to be input and address in VBUF to write data.
+
+	ld	hl,cursor
+curpos:	ld	(curad),hl	; save current cursor database pointer
+	xor	a		; reset
+	ld	(bfccnt),a	; reset # input chars
+	ld	a,(hl)		; field length
+	ld	(bfsize),a	; set input bfr length
+	inc	hl
+	ld	e,(hl)		; lsb input bfr adr
+	inc	hl
+	ld	d,(hl)		; msb input bfr adr
+	push	de		; save input buffer on stack
+	pop	hl		; get it back in HL
+	ld	(tpadd),hl	; save it in buffer
+	ld	ix,(curad)	; get cursor database pointer
+	ld	a,(ix+4)	; get X value of cursor position
+	cp	3		; is it row 3?
+	jp	nz,ghex		; if not, set to HEX
+	ld	a,0		; set flag for ASCII
+	ld	(ashex),a	; save flag
+	jr	gascii		; skip to ASCII
+ghex:	ld	a,0ffh		; set flag for HEX
+	ld	(ashex),a
+gascii:	ld	hl,(curad)	; get cursor database pointer
+	call	poscur		; load x,y
+	call	gotoxy		; position it
+
+; Read command from console. We allow the user to position the cursor
+; at any field for the purpose of updating the information in the field.
+; Entry of control characters is not allowed. Only alphanumeric data
+; will be allowed. To input a control character into the database, preceed
+; the character with the '^'. This will indicate to the program that the
+; next character entered is to be converted to the proper control character
+; value.
+
+cmdrd:	call	cin		; get character from console
+	push	hl		; save cursor address
+	ld	hl,tcap+16	; a(base of arrow keys)
+	cp	(hl)		; up arrow?
+	jp	z,cup		; yes, previous field
+	inc	hl
+	cp	(hl)		; dn arrow?
+	jp	z,cdown		; yes, next field
+	cp	ctlq		; quit?
+	jp	z,qexit		; yes
+	cp	ctlr		; top?
+	jp	z,curpos	; yes
+	cp	ctlw		; write?
+	jp	z,write		; yes
+	cp	'^'		; leading for control character
+	jp	nz,nold		; no - don't account for control character
+	call	cin		; get the next character
+	sbc	40h		; make into control character
+	jp	wchr		; get next character
+nold:
+  	cp	bksp		; backspace
+	jp	z,inbs
+	cp	del		; delete
+	jp	z,inbs 		  
+	cp	cr		; carriage return
+	jp	z,incr
+	cp	ctlx		; ^X
+	jp	z,rxstrt
+	call	isctrl		; did user input a control character
+	jp	z,cmdrd		; get another character
+ 
+; All checks have been made on the character and anything left at this 
+; point must be a usable character. The input data is saved in the 
+; buffer, the character count is advanced and the length of the input
+; is compared to the maximum allowable input for the field passed in
+; the buffer BFSIZE.
+
+wchr:	ld	hl,(tpadd)	; load address of write buffer
+	ld	(hl),a		; save character in buffer
+	inc	hl		; point to next position
+	ld	(tpadd),hl	; save new write buffer
+	call	ctrl		; print character
+	inc	c		; advance character counter
+	ld	a,(bfsize)	; get maximum character count
+	cp	c		; have we reached the end
+	jp	z,incr		; if yes - terminate input
+	jp	cmdrd		; get next character
+
+; Cursor is positioned at the previous field. If user is presently at
+; the first field on the display, the cursor will remain in that field.
+
+cup:	ld	hl,(curad)	; get cursor database pointer
+	push	hl		; save registers
+	push	de
+	ld	de,cursor	; a(top of cursor table)
+	sbc	hl,de		; top?
+	pop	de		; restore registers
+	pop	hl
+	jp	z,cmdrd		; read command
+  	push	bc		; save character count
+	ld	bc,5		; table length
+	sbc	hl,bc		; previous field
+	ld	(curad),hl	; save new cursor database pointer
+	pop	bc		; restore character count
+	jp	curpos		; re-position
+
+; Cursor is positioned at the next field. If user is presently at the
+; last field on the display, the cursor will remain in that field.
+
+cdown:	ld	hl,(curad)	; get cursor database pointer
+	push	hl		; save registers
+	push	de
+	ld	de,cursor+70	; a(end of cursor table)
+	sbc	hl,de		; end?
+	pop	de		; restore registers
+	pop	hl	
+	jp	z,cmdrd		; read command
+	push	bc		; save character count
+	ld	bc,5		; table length
+	add	hl,bc		; next field
+	ld	(curad),hl	; save new cursor database pointer
+	pop	bc		; restore character count
+	jp	curpos		; re-position
+
+; Registers are restored and user is returned to the appropriate place
+; in the calling program. Checks are made to see if the user came from
+; the ADD or the UPDATE routine.
+
+qexit:	pop	bc		; load regs
+	pop	de
+	pop	hl
+	pop	af
+	jp	quit		; exit to command line
+
+; The information in VBUF is moved to TBUF and the record is written 
+; to the database. The terminal name is also transfered to the buffer.
+
+write:	call	v2t		; transfer vbuf to tbuf for write
+	ld	de,fcb4		; a(write bfr)
+	call	f$write		; write the record
+	or	a		; set flags
+	jp	nz,f?write	; yes, error handler
+	ld	hl,tbuf		; a(write bfr)
+	ld	de,(buf)	; a(terminal name)
+	ld	bc,16		; length of name
+	ldir			; move it
+	ld	a,(rec)		; record number (in TCAP)
+	or	a		; set flags
+	jr	nz,wrtff	; write fields
+	ld	a,-1		; set to -1 if it is zero
+
+wrtff:	ld	(de),a		; set record #
+	inc	de		; pnt to delete flag
+	ld	a,' '		; set to non-deleted
+	ld	(de),a		; save in buffer
+	inc	de		; pnt to terminal name
+	ld	(buf),de	; a(terminal name)
+	ld	a,(obuf)	; option flag
+	cp 	'A'		; Add?
+	jp	nz,quit		; no, exit
+	ld	hl,(rec)	; record number
+	inc	hl		; next record
+	ld	(rec),hl	; save it again
+	jp	addrec		; add a record
+
+; Check for calling option. Did user come from ADD or UPDATE?
+
+quit:	ld	a,(obuf)	; get option
+	cp	'A'		; are we in update mode
+	jp	nz,upexit	; if yes - exit
+	ld	a,' '		; get end of buffer terminator
+	ld	de,(buf)	; get end of buffer
+	ld	(de),a		; save terminator
+	call	gxymsg		; print message
+	db	23,5
+	db	2,'Writing File: ',1
+	db	0
+	jp	amerge
+
+; Clear field and reposition cursor at the beginning of the current field.
+
+rxstrt: ld	a,c		; check for empty line
+	or	a 		; 0 characters?
+	jp	z,cmdrd		; get next character
+	call	exbs		; backspace
+	jp	rxstrt		; loop until done	
+
+; Backspace input by user
+
+inbs:	call	exbs		; execute backspace
+	jp	cmdrd
+
+exbs:	call	bol		; beginning of line?
+	ret	z 		; continue if so
+	push	hl		; save HL on stack
+	ld	hl,(tpadd)	; get buffer write address
+	ld	a,' '		; load space in A
+	dec	hl		; decrement buffer pointer
+	ld	(hl),a		; put space in buffer
+	ld	(tpadd),hl	; save new buffer pointer
+	pop	hl		; restore HL
+	ld	a,(ashex)	; ascii/hex flag 0=ASCII FF=HEX
+	cp	0		; is flag set to ASCII
+	jp	z,bsex		; if ascii - backspace once
+	call	bsex		; backspace twice for HEX
+bsex:	dec	c		; decrement count
+	dec	hl		; back up
+	ld	a,(echo)	; echo on?
+	or	a		; 0=no
+	ret	z
+	ld	a,bksp		; print backspace
+	call	cout
+	ld	a,' '		; print space
+	call	cout
+	ld	a,bksp		; print backspace
+	call	cout
+	ret
+
+; Carriage return input by user. Field is terminated and the pointers
+; are updated.
+
+incr:	ld	hl,(tpadd)	; get temporary address of buffer
+	ld	a,(ashex)	; get ASCII/HEX flag
+	cp	0
+	jp	z,noterm
+	ld	(hl),0		; store ending zero
+	jp	ntrm
+noterm:	ld	(hl),' '	; store space
+ntrm:	call	clrvbf		; clear remainder of buffer
+	ld	a,c		; get character count in A
+	ld	(bfccnt),a	; save count
+	ld	a,0		; zero A for reset of character count
+	ld	c,a		; reset character count
+	jp	cdown		; send cursor to next field
+
+; Are we backspacing to a position that would be beyond the limits
+; of the input buffer. (Beginning of Line).
+
+bol:	ex	de,hl		; DE=HL
+	ld	hl,(tpadd) 	; get start address
+	ex	de,hl		; HL restored
+	ld	a,d		; check for match
+	cp	h		; match?
+	ret	nz		; no match
+	ld	a,e		; check for complete match
+	cp	l
+	ret	nz		; no match
+	push	af		; save flags
+	ld	a,bell		; beep
+	call	cout		  
+	pop	af
+	ret
+
+; The following routine will clear the remainder of the field to binary
+; zero's.
+	
+clrvbf:	push	bc		; save character count
+	push	hl		; save buffer address
+	ld	hl,16		; get maximum length of input field
+	sbc	hl,bc		; subtract number of characters input
+	push	hl		; save on stack
+	pop	bc		; restore in BC
+	pop	hl		; get input buffer address
+clop:	ld 	a,(ashex)
+	cp	0
+	jp	nz,clasc
+	ld	a,' '
+	jp	clhex
+clasc:	ld	a,0		; place '0' in A
+clhex:	ld	(hl),a		; place 0 in memory
+	inc	hl		; advance memory pointer
+	dec	bc		; decrement number of spaces left
+	ld	a,c  		; get MSB of count left
+	cp	0		; is it 0?
+	jp	nz,clop		; no -> loop until done
+	ld	a,c		; get LSB of count left
+	cp	0		; is it 0?
+	jp	nz,cloop	; no -> loop until done
+	pop	bc		; restore character count
+	ld	(tpadd),hl	; save input buffer address
+	ret
+
+; These routines are responsible for moving the information from VBUF
+; to TBUF for writing to the disk file. The information in VBUF is read,
+; until a binary zero is found, into TBUF. Terminators are inserted at
+; the end of the variable length string entries. The reverse of this is
+; accomplished by entering at T2V rather than V2T.
+
+v2t:	ld	hl,vbuf		; point to start of VBUF
+	ld	de,tbuf		; point to beginning of TBUF
+vname:	ld	bc,16		; length of terminal name
+	ldir
+vcup:	ld	bc,1		; length of cursor up
+	ldir
+	ld	bc,15
+	add	hl,bc		; point to next VBUF field
+vdwn:	ld	bc,1		; length of cursor down
+	ldir
+	ld	bc,15
+	add	hl,bc		
+vrht:	ld	bc,1		; length of cursor right
+	ldir
+	ld	bc,15
+	add	hl,bc
+vlft:	ld	bc,1		; length of cursor left
+	ldir
+	ld	bc,15
+	add	hl,bc
+vdcls:	ld	bc,1		; length of cls delay
+	ldir
+	ld	bc,15
+	add	hl,bc
+vddca:	ld	bc,1		; length of dca delay
+	ldir
+	ld	bc,15
+	add	hl,bc
+vdeol:	ld	bc,1		; length of eol delay
+	ldir
+	ld	bc,15
+	add	hl,bc
+ 
+; Variable length string entries. Each entry will be terminated with
+; a binary zero.
+
+	ld	bc,16
+	call	mhlde		; clear screen sequence
+	call	mhlde		; direct cursor address sequence
+	call	mhlde		; erase to end of line sequence
+	call	mhlde		; standout begin sequence
+	call	mhlde		; standout end sequence
+	call	mhlde		; terminal initialization sequence
+	call	mhlde		; terminal de-initialization sequence
+	ret
+
+; Move HL to DE until 0 terminator is reached or B is decremented to zero. 
+; Increment HL and DE and decrement B (character countdown). 
+
+mhlde:	ld	a,(hl)		; get VBUF character in A
+	inc	hl		; increment VBUF pointer
+	cp	0		; is character the terminator?
+	jp	z,nfield	; if so -> new field
+	ld	(de),a		; put character in TBUF
+	inc	de		; increment TBUF pointer
+	dec	bc		; decrement character counter
+	ld	a,b		; get MSB of character count
+	cp	0		; is it zero
+	jp	nz,mhlde	; if so -> return
+	ld	a,c		; get count in A
+	cp	0		; have we reached the end of buffer?
+	jp	z,nf1		; if so -> do next buffer
+	jp	mhlde
+ 
+; Move information in TBUF to VBUF.
+
+t2v:	ld	hl,tbuf
+	ld	de,vbuf
+	ld	a,' '
+	ld	bc,16
+	ldir
+	ld	hl,tbuf
+	ld	de,vbuf
+	ld	bc,16
+	ldir
+	ld	de,vtcup
+	ld	bc,1
+	ldir
+	ld	de,vtcdwn
+	ld	bc,1
+	ldir
+	ld	de,vtclft
+	ld	bc,1
+	ldir
+	ld	de,vtcrht
+	ld	bc,1
+	ldir
+	ld	de,vtdcls
+	ld	bc,1
+	ldir
+	ld	de,vtddca
+	ld	bc,1
+	ldir
+	ld	de,vtdeol
+	ld	bc,1
+	ldir
+	ld	de,vtcls
+	call	mt2v
+	ld	de,vtdca
+	call	mt2v
+	ld	de,vteol
+	call	mt2v
+	ld	de,vtsb
+	call	mt2v
+	ld	de,vtse
+	call	mt2v
+	ld	de,vtti
+	call	mt2v
+	ld	de,vttd
+	call	mt2v
+	ret
+
+; move variable length strings from TBUF to VBUF.
+
+mt2v:	ld	a,(hl)		; put character in A
+	ld	(de),a		; put character in buffer
+	inc	de		; increment VBUF
+	inc	hl		; increment TBUF
+	cp	0		; was character a NULL
+	ret	z		; if so => quit
+	jr	mt2v		; continue until done
+
+; Go to new field. Adjust HL to point to next VBUF field and restart 
+; character countdown register.
+
+nfield:	ld	(de),a		; put terminator in TBUF
+	inc	de		; advance TBUF pointer
+	dec	bc		; decrement character count
+	add	hl,bc		; adjust VBUF pointer to next field
+nf1:	ld	bc,16		; restart character counter
+	ret
+
+; Check for echo flag and display character if echo flag is set
+
+ctrl:	push	bc		; save BC
+	ld	b,a		; save character in B
+	ld	a,(echo)	; check echo flag
+	cp	0		; 0=no echo
+	ld	a,b		; restore character
+	pop	bc		; restore BC
+	ret	z		; no output if no echo
+	push	af		; save character
+	ld	a,(ashex)	; get ASCII/HEX flag
+	cp	0		; is it set?
+	jp	nz,ctrl1	; no, print HEX
+	pop	af		; restore character
+	jp	cout		; print ASCII
+ctrl1:	pop	af		; restore character
+	jp	pa2hc		; print character as two HEX characters
+
+tpadd:	ds	2		; start address storage
+echo:	ds	1		; echo flag (0=no echo)
+
+

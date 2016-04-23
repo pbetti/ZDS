@@ -1,0 +1,154 @@
+
+; Package: NZIOP.Z80
+; Author:  Joe Wright
+; Date:    30 July 1987
+; Version: 1.0
+
+; NZ-COM and all its associated files are Copyright (C) 1987, 1988
+; by Joe Wright and by Alpha Systems Corporation.  This file is released
+; for information and use by registered owners of NZ-COM for personal
+; non-commercial purposes.  Any commercial use (resale) of any part of
+; NZ-COM requires specific license by:
+;
+; Alpha Systems Corporation
+; 711 Chatsworth Place
+; San Jose, CA 95128
+; 408/297-5594
+
+; Version 1.2  24 Feb 88
+; Modified to avoid Named COMMONs, checking everything dynamically.
+; It is always assumed that TINIT is called by an appropriate Z3 loader.
+
+; This is the basis of the 'extended' IOP.  This particular file
+; is used by NZ-COM to create the initial IOP structure in memory.
+; It may also be used as a 'DUMMY' to overlay (remove) an existing
+; IOP.	
+
+; The discerning reader may determine to use this file as the basis
+; for his own custom IOP.
+
+	name	('IOP')		; REL module name
+;
+iop:	jp	status		; Internal status routine
+	jp	select		; Device select routine
+	jp	namer		; Device name routine
+	jp	tinit		; Initialize terminal. ldr jumps here
+;
+cons:	jp	const		; Console input status
+	jp	conin		; Console input char
+	jp	conout		; Console output char
+	jp	list		; List output char
+	jp	punch		; Punch output char
+	jp	reader		; Reader input char
+	jp	listst		; List output status
+;
+	jp	newio		; New i/o driver installation routine
+	jp	copen		; Open con: disk file
+	jp	cclose		; Close con: disk file
+	jp	lopen		; Open lst: disk file
+	jp	lclose		; Close lst: disk file
+;
+;  I/O Package Identification at IOP+48
+;
+	db	'Z3IOP'		; Read by LDR.COM for identification.
+;
+;  Name of this package at IOP+53
+;
+	db	'NZ-IOP  '	; Name of this package (always 8 bytes)
+;
+; Direct entry to the bios, filled in by TINIT (IOP+61).
+;
+auxjmp:
+;
+const:	jp	0
+conin:	jp	0
+conout:	jp	0
+list:	jp	0
+punch:	jp	0
+reader:	jp	0
+listst:	jp	0
+;
+; The main body of the IO Package starts here.
+; The preceding jumps and package ID MUST remain in their present
+; positions.  Code that follows is free-form.
+;
+status:				; Internal status routine
+namer:				; Device name routine
+newio:				; New i/o driver installation routine
+copen:				; Open con: disk file
+cclose:				; Close con: disk file
+lopen:				; Open lst: disk file
+lclose:				; Close lst: disk file
+;
+zero:	xor	a		; Any call to this pak returns zero
+	ret
+;
+; Select (B=0ffh) will effectively remove this IOP
+;
+select:	inc	b
+	jr	nz,zero		; Not recognized
+;
+; Point our jump table to auxjmp so that all character IO
+; is vectored directly to the bios, effectively removing us.
+;
+	ld	hl,cons		; Our jump table
+	ld	de,auxjmp	; Our auxiliary jumps to bios
+	ld	b,7		; Seven of them
+	jr	target		; Change the jump targets
+;
+; Modify  bios' jump targets at HL by DE
+;
+modjmp:	ld	l,6		; Bios CONST entry
+	ld	b,6		; Six targets to change
+	call	target
+	ld	l,45		; Point to LISTST
+	ld	b,1		; One target
+;
+; Replace jump target at HL+1 with DE, increment HL and DE by 3.
+;
+target:	inc	hl		; Point to target
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	inc	de
+	inc	de
+	inc	de
+	djnz	target
+	or	255		; Set NZ
+	ret
+;
+; Initialize this package (called by NZCOM, LDR and/or JetLDR)
+; Get address of bios in HL and bios aux jumps in DE
+;
+tinit:	ld	hl,(1)		; Bios entry
+	dec	hl
+	ld	d,(hl)
+	dec	hl
+	ld	e,(hl)
+	ld	a,(108h)	; Z3 Environment Type (01h if LDR or JetLDR)
+	cp	1
+	jr	z,instal	; Called by LDR or JetLDR
+;
+	ld	hl,(145h)	; Indirect BIO address if NZCOM
+	ld	d,h
+	ld	e,82h		; Offset to NZBIO aux jumps
+;
+; Enter with DE pointing to BIOS aux jumps. Install ours.
+;
+instal:	push	hl		; Bios jumps
+	ld	hl,auxjmp	; Our auxjmp table
+	ld	b,7
+	call	target
+	pop	hl		; Bios jump table
+;
+; Point bios jumps to our jump table.
+;  HL points into bios jumps
+;
+	ld	de,cons		; Our jump table
+	jr	modjmp		; Quit.
+;
+	end
+;
+; End of NZIOP.Z80
+

@@ -1,0 +1,1279 @@
+   1:			;
+   2:			; disk test
+   3:			;
+   4:			
+   5:			rsym ../../bios.sym
+   6:			
+   7:			;DSELBF	EQU	$004E
+   8:			;CR	EQU	$0D
+   9:			;--------------------
+  10:	0100          		org $0100
+  11:			
+  12:			
+  13:	0100  C39103  	START:	JP	RECOVER
+  14:			
+  15:	0103          	SCRTCH:	DEFS	128			; local stack area
+  16:	0183          	SPAREA	EQU	$
+  17:			
+  18:				; include routines to print ascii values
+  19:			include ../../ASM/bit2040.asm
+**** ../../ASM/bit2040.asm ****
+   1:			;;
+   2:			;; Routines for binary to decimal conversion
+   3:			;;
+   4:			;; (C) Piergiorgio Betti <pbetti@lpconsul.net> - 2006
+   5:			;;
+   6:			;; The active part is taken from:
+   7:			;; David Barrow - Assembler routines for the Z80
+   8:			;; CENTURY COMMUNICATIONS LTD - ISBN 0 7126 0506 1
+   9:			;;
+  10:			
+  11:			
+  12:			;;
+  13:			;; BIN2A8 - Convert an 8 bit value to ASCII
+  14:			;;
+  15:			;; INPUT	C = Value to be converted
+  16:			;; OUTPUT	DE = Converted string address
+  17:			;
+  18:	0183  E5      	BIN2A8: PUSH	HL
+  19:	0184  F5      		PUSH	AF
+  20:	0185  0600    		LD	B,0
+  21:	0187  ED43B301		LD	(IVAL16),BC
+  22:	018B  21B301  		LD	HL,IVAL16
+  23:	018E  11B501  		LD	DE,OVAL16
+  24:	0191  3E01    		LD	A,1			; one byte conversion
+  25:	0193  CDBD01  		CALL	LNGIBD
+  26:	0196  11B501  		LD	DE,OVAL16
+  27:	0199  F1      		POP	AF
+  28:	019A  E1      		POP	HL
+  29:	019B  C9      		RET
+  30:				;
+  31:			;;
+  32:			;; BN2A16 - Convert a 16 bit value to ASCII
+  33:			;;
+  34:			;; INPUT	BC = Value to be converted
+  35:			;; OUTPUT	DE = Converted string address
+  36:			;
+  37:	019C  E5      	BN2A16: PUSH	HL
+  38:	019D  F5      		PUSH	AF
+  39:	019E  ED43B301		LD	(IVAL16),BC
+  40:	01A2  21B301  		LD	HL,IVAL16
+  41:	01A5  11B501  		LD	DE,OVAL16
+  42:	01A8  3E02    		LD	A,2			; two byte conversion
+  43:	01AA  CDBD01  		CALL	LNGIBD
+  44:	01AD  11B501  		LD	DE,OVAL16
+  45:	01B0  F1      		POP	AF
+  46:	01B1  E1      		POP	HL
+  47:	01B2  C9      		RET
+  48:				;
+  49:			;; Generic storage
+  50:			
+  51:	01B3          	IVAL16:	DEFS	2
+  52:	01B5          	OVAL16:	DEFS	6
+  53:			
+  54:			;;
+  55:			;;
+  56:			;; LNGIBD - Convert long integer of given precision to ASCII
+  57:			;;
+  58:			;; INPUT	HL addresses the first byte of the binary value
+  59:			;;		which must be stored with the low order byte in
+  60:			;;		lowest memory.
+  61:			;;		DE addresses the first byte of the destination
+  62:			;;		area which must be larger enough to accept the
+  63:			;;		decimal result (2.42 * binary lenght + 1).
+  64:			;;		A = binary byte lenght (1 to 255)
+  65:			
+  66:			;;
+  67:	000A          	CVBASE	EQU	10		; CONVERSION BASE
+  68:	01BB          	VPTR	EQU	HILO		; STORAGE AREA EQU
+  69:			
+  70:			
+  71:	01BB          	HILO:	DEFS	2		; STORAGE AREA
+  72:			
+  73:	01BD  4F      	LNGIBD:	LD	C,A
+  74:	01BE  0600    		LD	B,0
+  75:	01C0  2B      		DEC	HL
+  76:	01C1  22BB01  		LD	(VPTR),HL
+  77:	01C4  3EFF    		LD	A,-1
+  78:	01C6  12      		LD	(DE),A
+  79:	01C7  09      		ADD	HL,BC
+  80:				;
+  81:	01C8  7E      	NXTMSB:	LD	A,(HL)
+  82:	01C9  B7      		OR	A
+  83:	01CA  C2D901  		JP	NZ,MSBFND
+  84:	01CD  2B      		DEC	HL
+  85:	01CE  0D      		DEC	C
+  86:	01CF  C2C801  		JP	NZ,NXTMSB
+  87:				;
+  88:	01D2  EB      		EX	DE,HL
+  89:	01D3  3630    		LD	(HL),'0'
+  90:	01D5  23      		INC	HL
+  91:	01D6  3600    		LD	(HL),0
+  92:	01D8  C9      		RET
+  93:				;
+  94:	01D9  47      	MSBFND:	LD	B,A
+  95:	01DA  3E80    		LD	A,$80
+  96:				;
+  97:	01DC  B8      	NXTMSK:	CP	B
+  98:	01DD  DAE701  		JP	C,MSKFND
+  99:	01E0  CAE701  		JP	Z,MSKFND
+ 100:	01E3  0F      		RRCA
+ 101:	01E4  C3DC01  		JP	NXTMSK
+ 102:				;
+ 103:	01E7  47      	MSKFND:	LD	B,A
+ 104:	01E8  C5      		PUSH	BC
+ 105:	01E9  2ABB01  		LD	HL,(VPTR)
+ 106:	01EC  0600    		LD	B,0
+ 107:	01EE  09      		ADD	HL,BC
+ 108:	01EF  A6      		AND	(HL)
+ 109:	01F0  C6FF    		ADD	A,$FF
+ 110:	01F2  6B      		LD	L,E
+ 111:	01F3  62      		LD	H,D
+ 112:				;
+ 113:	01F4  7E      	NXTOPV:	LD	A,(HL)
+ 114:	01F5  3C      		INC	A
+ 115:	01F6  CA0802  		JP	Z,OPVDON
+ 116:	01F9  3D      		DEC	A
+ 117:	01FA  8F      		ADC	A,A
+ 118:				;
+ 119:	01FB  FE0A    		CP	CVBASE
+ 120:	01FD  DA0202  		JP	C,NOCOUL
+ 121:	0200  D60A    		SUB	CVBASE
+ 122:	0202  3F      	NOCOUL:	CCF
+ 123:				;
+ 124:	0203  77      		LD	(HL),A
+ 125:	0204  23      		INC	HL
+ 126:	0205  C3F401  		JP	NXTOPV
+ 127:				;
+ 128:	0208  D21002  	OPVDON:	JP	NC,EXTDON
+ 129:	020B  3601    		LD	(HL),1
+ 130:	020D  23      		INC	HL
+ 131:	020E  36FF    		LD	(HL),-1
+ 132:				;
+ 133:	0210  C1      	EXTDON:	POP	BC
+ 134:	0211  78      		LD	A,B
+ 135:	0212  0F      		RRCA
+ 136:	0213  D2E701  		JP	NC,MSKFND
+ 137:	0216  0D      		DEC	C
+ 138:	0217  C2E701  		JP	NZ,MSKFND
+ 139:				;
+ 140:				; REVERSE DIGIT ORDER. ADD ASCII DIGITS HI-NIBBLES
+ 141:	021A  3600    		LD	(HL),0
+ 142:				;
+ 143:	021C  2B      	NXTCNV:	DEC	HL
+ 144:	021D  7D      		LD	A,L
+ 145:	021E  93      		SUB	E
+ 146:	021F  7C      		LD	A,H
+ 147:	0220  9A      		SBC	A,D
+ 148:	0221  D8      		RET	C
+ 149:				;
+ 150:	0222  1A      		LD	A,(DE)
+ 151:	0223  F630    		OR	$30
+ 152:	0225  47      		LD	B,A
+ 153:	0226  7E      		LD	A,(HL)
+ 154:	0227  F630    		OR	$30
+ 155:	0229  70      		LD	(HL),B
+ 156:	022A  12      		LD	(DE),A
+ 157:				;
+ 158:	022B  13      		INC	DE
+ 159:	022C  C31C02  		JP	NXTCNV
+ 160:			
+ 161:			;-----------------------------------------------
+**** nedcopy.asm ****
+  20:			
+  21:			;START:	jp	STEP4
+  22:			;
+  23:	0001          	NDRIVE	EQU	1
+  24:	0100          	SECSIZ	EQU	256
+  25:	000A          	SECNUM	EQU	10
+  26:	0028          	NTRACK	EQU	40
+  27:	0005          	NTRYS	EQU	5
+  28:			
+  29:	0008          	BS	EQU	08H		;ASCII 	backspace
+  30:	0009          	TAB	EQU	09H		;	tab
+  31:	000A          	LF	EQU	0AH		;	line feed
+  32:	000C          	FORMF	EQU	0CH		;	form feed
+  33:	000D          	CR	EQU	0DH		;	carriage return
+  34:	001B          	ESC	EQU	1BH		;       escape
+  35:	0018          	CTLX	EQU	'X' and	1fh	;	control	x - delete line
+  36:	0003          	CTLC	EQU	'C' and	1fh	;	control	c - warm boot
+  37:	001A          	EOF	EQU	'Z' and	1fh	;	control	z - logical eof
+  38:	0027          	QUOTE	EQU	27H		;	quote
+  39:	007E          	TILDE	EQU	7EH		;	tilde
+  40:	007F          	DEL	EQU	7FH		;	del
+  41:			
+  42:	0005          	BDOSA	EQU	5
+  43:	0003          	CTLC	EQU	'C' and	1fh	;	control	c - warm boot
+  44:			
+  45:			
+  46:	022F  2054726B	STMSG1:	defb	" Trk.: ",0
+	      2E3A2000
+  47:	0237  20536563	STMSG2:	defb	" Sec.: ",0
+	      2E3A2000
+  48:	023F  20205265	RSTMOK:	defb	"  Read -> ",0
+	      6164202D
+	      3E2000
+  49:	024A  20577269	WSTMOK:	defb	" Write -> ",0
+	      7465202D
+	      3E2000
+  50:	0255  56657269	VSTMOK:	defb	"Verify -> ",0
+	      6679202D
+	      3E2000
+  51:	0260  4552524F	ESTMOK:	defb	"ERROR! -> ",0
+	      5221202D
+	      3E2000
+  52:	026B  5A383020	SGON:	DEFB	"Z80 DarkStar - NE-DOS DISK IMAGE TRANSFER.",CR,LF
+	      4461726B
+	      53746172
+	      202D204E
+	      452D444F
+	      53204449
+	      534B2049
+	      4D414745
+	      20545241
+	      4E534645
+	      522E0D0A
+  53:	0297  28632920		DEFB	"(c) 2006 Piergiorgio Betti <pbetti@lpconsul.net>",CR,LF
+	      32303036
+	      20506965
+	      7267696F
+	      7267696F
+	      20426574
+	      7469203C
+	      70626574
+	      7469406C
+	      70636F6E
+	      73756C2E
+	      6E65743E
+	      0D0A
+  54:	02C9  0D0A00  	MCRLF:	DEFB	CR,LF,0
+  55:	02CC  53656C65	SDCHO:	DEFB	"Select SOURCE drive : ",$00
+	      63742053
+	      4F555243
+	      45206472
+	      69766520
+	      3A2000
+  56:	02E3  53656C65	DDCHO:	DEFB	"Select DESTINATION drive : ",$00
+	      63742044
+	      45535449
+	      4E415449
+	      4F4E2064
+	      72697665
+	      203A2000
+  57:	02FF  2A2A2053	MEQUAL:	DEFB	"** Source and destination cannot be the same.",CR,LF,0
+	      6F757263
+	      6520616E
+	      64206465
+	      7374696E
+	      6174696F
+	      6E206361
+	      6E6E6F74
+	      20626520
+	      74686520
+	      73616D65
+	      2E0D0A00
+  58:	032F  0D0A5072	MCONF:	DEFB	CR,LF,"Press any key to start, CTRL+C to abort.  ",0
+	      65737320
+	      616E7920
+	      6B657920
+	      746F2073
+	      74617274
+	      2C204354
+	      524C2B43
+	      20746F20
+	      61626F72
+	      742E2020
+	      00
+  59:	035C  42756666	MBFSZ:	DEFB	"Buffer size   : ",0
+	      65722073
+	      697A6520
+	      20203A20
+	      00
+  60:	036D  53746F72	MTRSZ:	DEFB	"Stored tracks : ",0
+	      65642074
+	      7261636B
+	      73203A20
+	      00
+  61:	037E  0D0A436F	MCOMP:	DEFB	CR,LF,"Copy complete.",CR,LF,0
+	      70792063
+	      6F6D706C
+	      6574652E
+	      0D0A00
+  62:			
+  63:			;
+  64:			;       begin the load operation
+  65:			;
+  66:	0391          	RECOVER:
+  67:	0391  318301  		LD	SP,SPAREA		; init stack
+  68:	0394  216B02  		LD	HL,SGON
+  69:	0397  CD4307  		CALL	ZSDSP
+  70:	039A  3A4B00  		LD	A,(TMPBYTE)
+  71:	039D  CB7F    		BIT	7,A
+  72:	039F  2805    		JR	Z,RAFSVD
+  73:	03A1  3E01    		LD	A,1
+  74:	03A3  327B08  		LD	(RAFS),A		; save RAF status
+  75:	03A6          	RAFSVD:
+  76:	03A6  3A4B00  		LD	A,(TMPBYTE)
+  77:	03A9  CBBF    		RES	7,A
+  78:	03AB  324B00  		LD	(TMPBYTE),A		; ... and clear it
+  79:			; 	CALL	TTYI
+  80:			; 	CP	CTLC
+  81:			; 	JP	Z,EXIT
+  82:			
+  83:				; get source drive
+  84:	03AE  21CC02  	DRVID:	LD	HL,SDCHO		; ask for drive id
+  85:	03B1  CD4307  		CALL	ZSDSP			;
+  86:	03B4  CD2A07  		CALL	GCHR			;
+  87:	03B7  FE03    		CP	$03			; CTRL+C ?
+  88:	03B9  CA1207  		JP	Z,EXIT			; exit
+  89:	03BC  FE41    		CP	'A'			; is A -> P ?
+  90:	03BE  FAAE03  		JP	M,DRVID			;
+  91:	03C1  FE51    		CP	'Q'			;
+  92:	03C3  F2AE03  		JP	P,DRVID			; no
+  93:	03C6  D641    		SUB	'A'			; makes number
+  94:	03C8  326108  		LD	(RDSK),A
+  95:	03CB  CD4005  		CALL	LFEED
+  96:			
+  97:				; get destination drive
+  98:	03CE  21E302  	DDRVID:	LD	HL,DDCHO		; ask for drive id
+  99:	03D1  CD4307  		CALL	ZSDSP			;
+ 100:	03D4  CD2A07  		CALL	GCHR			;
+ 101:	03D7  FE03    		CP	$03			; CTRL+C ?
+ 102:	03D9  CA1207  		JP	Z,EXIT			; exit
+ 103:	03DC  FE41    		CP	'A'			; is A -> P ?
+ 104:	03DE  FACE03  		JP	M,DDRVID			;
+ 105:	03E1  FE51    		CP	'Q'			;
+ 106:	03E3  F2CE03  		JP	P,DDRVID		; no
+ 107:	03E6  D641    		SUB	'A'			; makes number
+ 108:	03E8  326208  		LD	(DDSK),A
+ 109:	03EB  CD4005  		CALL	LFEED
+ 110:	03EE  216208  		LD	HL,DDSK
+ 111:	03F1  3A6108  		LD	A,(RDSK)		; are equals ?
+ 112:	03F4  BE      		CP	(HL)
+ 113:	03F5  2008    		JR	NZ,CONFIRM
+ 114:	03F7  21FF02  		LD	HL,MEQUAL
+ 115:	03FA  CD4307  		CALL	ZSDSP
+ 116:	03FD  18AF    		JR	DRVID
+ 117:			
+ 118:	03FF          	CONFIRM:
+ 119:	03FF  212F03  		LD	HL,MCONF
+ 120:	0402  CD4307  		CALL	ZSDSP
+ 121:	0405  CD2A07  		CALL	GCHR			;
+ 122:	0408  FE03    		CP	$03			; CTRL+C ?
+ 123:	040A  CA1207  		JP	Z,EXIT			; exit
+ 124:	040D  CD4005  		CALL	LFEED
+ 125:	0410  CD4005  		CALL	LFEED
+ 126:			
+ 127:				; how many blocks ?
+ 128:	0413  11A109  		LD	DE,ENDSTO
+ 129:	0416  2A0600  		LD	HL,(6)			; bios base
+ 130:	0419  ED52    		SBC	HL,DE			; available space in HL
+ 131:			
+ 132:	041B  E5      		PUSH	HL			; save in stack
+ 133:	041C  215C03  		LD	HL,MBFSZ
+ 134:	041F  CD4307  		CALL	ZSDSP
+ 135:	0422  C1      		POP	BC			; move size in BC
+ 136:	0423  C5      		PUSH	BC			; saves again
+ 137:	0424  CD9C01  		CALL	BN2A16			;
+ 138:	0427  21B501  		LD	HL,OVAL16		;
+ 139:	042A  CD4307  		CALL	ZSDSP			;
+ 140:	042D  CD4005  		CALL	LFEED
+ 141:	0430  C1      		POP	BC			; re-get
+ 142:	0431  11000A  		LD	DE,SECSIZ*SECNUM	; block (track) size
+ 143:	0434  CD8707  		CALL	LDIV16			; calculate
+ 144:	0437  79      		LD	A,C
+ 145:	0438  327408  		LD	(ABLK),A
+ 146:	043B  CD8301  		CALL	BIN2A8
+ 147:	043E  216D03  		LD	HL,MTRSZ
+ 148:	0441  CD4307  		CALL	ZSDSP
+ 149:	0444  21B501  		LD	HL,OVAL16		;
+ 150:	0447  CD4307  		CALL	ZSDSP			;
+ 151:	044A  CD4005  		CALL	LFEED
+ 152:	044D  CD4005  		CALL	LFEED
+ 153:			
+ 154:				; read start
+ 155:	0450  210000  		LD	HL,0			; init read counters
+ 156:	0453  226C08  		LD	(RTRK),HL
+ 157:	0456  226E08  		LD	(DTRK),HL
+ 158:	0459  227008  		LD	(VTRK),HL
+ 159:	045C  23      		INC	HL
+ 160:	045D  226608  		LD	(RSEC),HL
+ 161:	0460  226408  		LD	(DSEC),HL
+ 162:	0463  226808  		LD	(VSEC),HL
+ 163:	0466  21A109  		LD	HL,ENDSTO
+ 164:	0469  227708  		LD	(RDMA),HL
+ 165:	046C  AF      		XOR	A
+ 166:	046D  327508  		LD	(CBLK),A
+ 167:			
+ 168:	0470          	STEP1:
+ 169:	0470  CD7107  		CALL	TTYQ
+ 170:	0473  FE03    		CP	CTLC
+ 171:	0475  CA1207  		JP	Z,EXIT
+ 172:			
+ 173:	0478  ED4B7708		LD	BC,(RDMA)
+ 174:	047C  CDB305  		CALL	SETSEK
+ 175:	047F  CDB007  		CALL	READ256
+ 176:			
+ 177:	0482  CD5506  		CALL	RAVMSG
+ 178:	0485          	STEP2:
+ 179:			; 	CALL	GCHR
+ 180:	0485  2A7708  		LD	HL,(RDMA)	; next DMA addr.
+ 181:	0488  110001  		LD	DE,SECSIZ
+ 182:	048B  19      		ADD	HL,DE
+ 183:	048C  227708  		LD	(RDMA),HL
+ 184:			
+ 185:	048F  216608  		LD	HL,RSEC
+ 186:	0492  34      		INC	(HL)
+ 187:	0493  3A6608  		LD	A,(RSEC)
+ 188:	0496  FE0B    		CP	SECNUM+1	; EOT ?
+ 189:	0498  2802    		JR	Z, STEP3	; NXT TRK
+ 190:	049A  18D4    		JR	STEP1		; NXT SEC
+ 191:	049C          	STEP3:
+ 192:	049C  216C08  		LD	HL,RTRK		; EOD ?
+ 193:	049F  34      		INC	(HL)
+ 194:	04A0  3A6C08  		LD	A,(RTRK)
+ 195:	04A3  FE28    		CP	NTRACK
+ 196:	04A5  2812    		JR	Z,WRITEIMG
+ 197:			
+ 198:	04A7  217508  		LD	HL,CBLK		; buffer full ??
+ 199:	04AA  34      		INC	(HL)
+ 200:	04AB  3A7408  		LD	A,(ABLK)
+ 201:	04AE  BE      		CP	(HL)
+ 202:	04AF  2808    		JR	Z,WRITEIMG
+ 203:			
+ 204:	04B1  3E01    		LD	A,1
+ 205:	04B3  326608  		LD	(RSEC),A	; LOOP
+ 206:	04B6  C37004  		JP	STEP1
+ 207:			
+ 208:				; write start
+ 209:	04B9          	WRITEIMG:
+ 210:			; 	CALL	LFEED
+ 211:			; 	CALL	WBGSAV
+ 212:	04B9  3E05    		LD	A,NTRYS
+ 213:	04BB  327C08  		LD	(TRYC),A
+ 214:	04BE  21A109  		LD	HL,ENDSTO
+ 215:	04C1  227708  		LD	(RDMA),HL
+ 216:	04C4  AF      		XOR	A
+ 217:	04C5  327508  		LD	(CBLK),A
+ 218:	04C8          	WRTRET:
+ 219:	04C8  3E01    		LD	A,1
+ 220:	04CA  326408  		LD	(DSEC),A	; LOOP
+ 221:	04CD  CDEB05  		CALL	WBGSAV
+ 222:	04D0          	STEP4:
+ 223:	04D0  CD7107  		CALL	TTYQ
+ 224:	04D3  FE03    		CP	CTLC
+ 225:	04D5  CA1207  		JP	Z,EXIT
+ 226:			
+ 227:	04D8  ED4B7708		LD	BC,(RDMA)
+ 228:	04DC  CDCF05  		CALL	WSETSEK
+ 229:	04DF  CDE007  		CALL	WRITE256
+ 230:			
+ 231:	04E2  CD8C06  		CALL	WAVMSG
+ 232:	04E5          	STEP5:
+ 233:			; 	CALL	GCHR
+ 234:	04E5  2A7708  		LD	HL,(RDMA)	; next DMA addr.
+ 235:	04E8  110001  		LD	DE,SECSIZ
+ 236:	04EB  19      		ADD	HL,DE
+ 237:	04EC  227708  		LD	(RDMA),HL
+ 238:			
+ 239:	04EF  216408  		LD	HL,DSEC
+ 240:	04F2  34      		INC	(HL)
+ 241:	04F3  3A6408  		LD	A,(DSEC)
+ 242:	04F6  FE0B    		CP	SECNUM+1	; EOT ?
+ 243:	04F8  2802    		JR	Z, STEP6	; NXT TRK
+ 244:	04FA  18D4    		JR	STEP4		; NXT SEC
+ 245:	04FC          	STEP6:
+ 246:	04FC  CD4705  		CALL	VERIFY
+ 247:	04FF  B7      		OR	A
+ 248:	0500  20C6    		JR	NZ,WRTRET
+ 249:	0502  216E08  		LD	HL,DTRK		; EOD ?
+ 250:	0505  34      		INC	(HL)
+ 251:	0506  3A6E08  		LD	A,(DTRK)
+ 252:	0509  FE28    		CP	NTRACK
+ 253:	050B  2827    		JR	Z,CPYCMP
+ 254:			
+ 255:	050D  217508  		LD	HL,CBLK		; buffer empty ??
+ 256:	0510  34      		INC	(HL)
+ 257:	0511  3A7408  		LD	A,(ABLK)
+ 258:	0514  BE      		CP	(HL)
+ 259:	0515  280B    		JR	Z,NXTBUF
+ 260:			
+ 261:				; CALL CHKTRK QUI!!!!!!!!
+ 262:	0517  3E01    		LD	A,1
+ 263:	0519  326408  		LD	(DSEC),A	; LOOP
+ 264:	051C  CDEB05  		CALL	WBGSAV
+ 265:	051F  C3D004  		JP	STEP4
+ 266:			
+ 267:				; perform another cycle
+ 268:	0522          	NXTBUF:
+ 269:			; 	CALL	VERIFY
+ 270:	0522  21A109  		LD	HL,ENDSTO
+ 271:	0525  227708  		LD	(RDMA),HL
+ 272:	0528  AF      		XOR	A
+ 273:	0529  327508  		LD	(CBLK),A
+ 274:	052C  3E01    		LD	A,1
+ 275:	052E  326608  		LD	(RSEC),A	; LOOP
+ 276:			; 	CALL	LFEED
+ 277:	0531  C37004  		JP	STEP1
+ 278:			
+ 279:	0534          	CPYCMP:
+ 280:			; 	CALL	VERIFY
+ 281:	0534  217E03  		LD	HL,MCOMP
+ 282:	0537  CD4307  		CALL	ZSDSP
+ 283:	053A  C31807  		JP	EXIT1
+ 284:	053D          	RECOVEND:
+ 285:	053D  C31207  		JP	EXIT
+ 286:			
+ 287:	0540          	LFEED:
+ 288:	0540  21C902  		LD	HL,MCRLF
+ 289:	0543  CD4307  		CALL	ZSDSP
+ 290:	0546  C9      		RET
+ 291:			
+ 292:	0547          	VERIFY:
+ 293:	0547  2A7908  		LD	HL,(BDMA)
+ 294:	054A  227708  		LD	(RDMA),HL
+ 295:			; 	XOR	A
+ 296:			; 	LD	(CBLK),A
+ 297:	054D  3E01    		LD	A,1
+ 298:	054F  326808  		LD	(VSEC),A	; LOOP
+ 299:	0552          	VSTEP1:
+ 300:	0552  CD7107  		CALL	TTYQ
+ 301:	0555  FE03    		CP	CTLC
+ 302:	0557  CA1207  		JP	Z,EXIT
+ 303:			
+ 304:	055A  017D08  		LD	BC,BUFDMA
+ 305:	055D  CD3906  		CALL	VSETSEK
+ 306:	0560  CDB007  		CALL	READ256
+ 307:			
+ 308:	0563  217D08  		LD	HL,BUFDMA
+ 309:	0566  ED5B7708		LD	DE,(RDMA)
+ 310:	056A  010001  		LD	BC,SECSIZ
+ 311:	056D  1A      	CTBUF:	LD	A,(DE)
+ 312:	056E  EDA1    		CPI
+ 313:	0570  2007    		JR	NZ,CTNOK
+ 314:	0572  13      		INC	DE
+ 315:	0573  78      		LD	A,B
+ 316:	0574  B1      		OR	C
+ 317:	0575  20F6    		JR	NZ,CTBUF
+ 318:	0577  181E    		JR	VSTEP2
+ 319:	0579          	CTNOK:
+ 320:	0579  216002  		LD	HL,ESTMOK
+ 321:	057C  CDC606  		CALL	VAVMS1
+ 322:	057F  0E0A    		LD	C,LF
+ 323:	0581  CD5007  		CALL	TTYO
+ 324:	0584  CD4005  		CALL	LFEED
+ 325:	0587  3A7C08  		LD	A,(TRYC)
+ 326:	058A  3D      		DEC	A
+ 327:	058B  CA1207  		JP	Z,EXIT
+ 328:	058E  327C08  		LD	(TRYC),A
+ 329:	0591  CD1006  		CALL	WBGRST
+ 330:	0594  3E01    		LD	A,1
+ 331:	0596  C9      		RET
+ 332:			
+ 333:	0597          	VSTEP2:
+ 334:	0597  CDC306  		CALL	VAVMSG
+ 335:			; 	CALL	GCHR
+ 336:	059A  2A7708  		LD	HL,(RDMA)	; next DMA addr.
+ 337:	059D  110001  		LD	DE,SECSIZ
+ 338:	05A0  19      		ADD	HL,DE
+ 339:	05A1  227708  		LD	(RDMA),HL
+ 340:			
+ 341:	05A4  216808  		LD	HL,VSEC
+ 342:	05A7  34      		INC	(HL)
+ 343:	05A8  3A6808  		LD	A,(VSEC)
+ 344:	05AB  FE0B    		CP	SECNUM+1	; EOT ?
+ 345:	05AD  2802    		JR	Z, VSTEP3	; NXT TRK
+ 346:	05AF  18A1    		JR	VSTEP1		; NXT SEC
+ 347:	05B1          	VSTEP3:
+ 348:	05B1  AF      		XOR	A
+ 349:	05B2  C9      		RET
+ 350:			; 	LD	HL,VTRK		; EOD ?
+ 351:			; 	INC	(HL)
+ 352:			; 	LD	A,(VTRK)
+ 353:			; 	CP	NTRACK
+ 354:			; 	RET	Z
+ 355:			;
+ 356:			; 	LD	HL,CBLK		; buffer full ??
+ 357:			; 	INC	(HL)
+ 358:			; 	LD	A,(ABLK)
+ 359:			; 	CP	(HL)
+ 360:			; 	RET	Z
+ 361:			;
+ 362:			; 	LD	A,1
+ 363:			; 	LD	(VSEC),A	; LOOP
+ 364:			; 	JP	VSTEP1
+ 365:			
+ 366:			
+ 367:	05B3          	SETSEK:
+ 368:			; 	LD	BC,BUFDMA		; set DMA to buffer
+ 369:	05B3  CDF8F3  		CALL	BSETDMA
+ 370:	05B6  3A6108  		LD	A,(RDSK)		; set disk
+ 371:	05B9  4F      		LD	C,A
+ 372:	05BA  CDFDF3  		CALL	BSELDSK			; ... hw
+ 373:	05BD  CD74DA  		CALL	SELDSK			; ... logical
+ 374:	05C0  ED4B6C08		LD	BC,(RTRK)		; set track
+ 375:	05C4  CDEEF3  		CALL	BSETTRK
+ 376:	05C7  3A6608  		LD	A,(RSEC)		; set sector
+ 377:	05CA  3D      		DEC	A
+ 378:	05CB  325FDD  		LD	(HSTLGS),A
+ 379:	05CE  C9      		RET
+ 380:			
+ 381:	05CF          	WSETSEK:
+ 382:			; 	LD	BC,BUFDMA		; set DMA to buffer
+ 383:	05CF  CDF8F3  		CALL	BSETDMA
+ 384:	05D2  3A6208  		LD	A,(DDSK)		; set disk
+ 385:	05D5  4F      		LD	C,A
+ 386:	05D6  CDFDF3  		CALL	BSELDSK			; ... hw
+ 387:	05D9  CD74DA  		CALL	SELDSK			; ... logical
+ 388:	05DC  ED4B6E08		LD	BC,(DTRK)		; set track
+ 389:	05E0  CDEEF3  		CALL	BSETTRK
+ 390:	05E3  3A6408  		LD	A,(DSEC)		; set sector
+ 391:	05E6  3D      		DEC	A
+ 392:	05E7  325FDD  		LD	(HSTLGS),A
+ 393:	05EA  C9      		RET
+ 394:			
+ 395:	05EB          	WBGSAV:
+ 396:	05EB  3A6208  		LD	A,(DDSK)		; set disk
+ 397:	05EE  326308  		LD	(BDSK),A
+ 398:	05F1  ED4B6E08		LD	BC,(DTRK)		; set track
+ 399:	05F5  ED437208		LD	(BTRK),BC
+ 400:	05F9  ED4B6408		LD	BC,(DSEC)		; set sector
+ 401:	05FD  ED436A08		LD	(BSEC),BC
+ 402:	0601  ED4B7708		LD	BC,(RDMA)		; set sector
+ 403:	0605  ED437908		LD	(BDMA),BC
+ 404:	0609  3A7508  		LD	A,(CBLK)		; set disk
+ 405:	060C  327608  		LD	(BBLK),A
+ 406:	060F  C9      		RET
+ 407:			
+ 408:	0610          	WBGRST:
+ 409:	0610  3A6308  		LD	A,(BDSK)		; set disk
+ 410:	0613  326208  		LD	(DDSK),A
+ 411:	0616  ED4B7208		LD	BC,(BTRK)		; set track
+ 412:	061A  ED436E08		LD	(DTRK),BC
+ 413:	061E  ED437008		LD	(VTRK),BC
+ 414:	0622  ED4B6A08		LD	BC,(BSEC)		; set sector
+ 415:	0626  ED436408		LD	(DSEC),BC
+ 416:	062A  ED4B7908		LD	BC,(BDMA)		; set sector
+ 417:	062E  ED437708		LD	(RDMA),BC
+ 418:	0632  3A7608  		LD	A,(BBLK)		; set disk
+ 419:	0635  327508  		LD	(CBLK),A
+ 420:	0638  C9      		RET
+ 421:			
+ 422:	0639          	VSETSEK:
+ 423:			; 	LD	BC,BUFDMA		; set DMA to buffer
+ 424:	0639  CDF8F3  		CALL	BSETDMA
+ 425:	063C  3A6208  		LD	A,(DDSK)		; set disk
+ 426:	063F  4F      		LD	C,A
+ 427:	0640  CDFDF3  		CALL	BSELDSK			; ... hw
+ 428:	0643  CD74DA  		CALL	SELDSK			; ... logical
+ 429:	0646  ED4B6E08		LD	BC,(DTRK)		; set track
+ 430:	064A  CDEEF3  		CALL	BSETTRK
+ 431:	064D  3A6808  		LD	A,(VSEC)		; set sector
+ 432:	0650  3D      		DEC	A
+ 433:	0651  325FDD  		LD	(HSTLGS),A
+ 434:	0654  C9      		RET
+ 435:			
+ 436:	0655          	RAVMSG:
+ 437:	0655  213F02  		LD	HL,RSTMOK
+ 438:	0658  CD4307  		CALL	ZSDSP			;
+ 439:	065B  212F02  		LD	HL,STMSG1		; inform user about progress
+ 440:	065E  CD4307  		CALL	ZSDSP			;
+ 441:	0661  3A6C08  		LD	A,(RTRK)		; track
+ 442:	0664  4F      		LD	C,A			;
+ 443:	0665  CD8301  		CALL	BIN2A8			;
+ 444:	0668  21B501  		LD	HL,OVAL16		;
+ 445:	066B  CD4307  		CALL	ZSDSP			;
+ 446:	066E  213702  		LD	HL,STMSG2		;
+ 447:	0671  CD4307  		CALL	ZSDSP			;
+ 448:	0674  3A6608  		LD	A,(RSEC)		; side
+ 449:	0677  4F      		LD	C,A			;
+ 450:	0678  CD8301  		CALL	BIN2A8			;
+ 451:	067B  21B501  		LD	HL,OVAL16		;
+ 452:	067E  CD4307  		CALL	ZSDSP			;
+ 453:	0681  0E20    		LD	C,' '
+ 454:	0683  CD5007  		CALL	TTYO
+ 455:	0686  0E0D    		LD	C,CR			;
+ 456:	0688  CD5007  		CALL	TTYO			; at beginning of line
+ 457:	068B  C9      		RET
+ 458:			
+ 459:	068C          	WAVMSG:
+ 460:	068C  214A02  		LD	HL,WSTMOK
+ 461:	068F  CD4307  		CALL	ZSDSP			;
+ 462:	0692  212F02  		LD	HL,STMSG1		; inform user about progress
+ 463:	0695  CD4307  		CALL	ZSDSP			;
+ 464:	0698  3A6E08  		LD	A,(DTRK)		; track
+ 465:	069B  4F      		LD	C,A			;
+ 466:	069C  CD8301  		CALL	BIN2A8			;
+ 467:	069F  21B501  		LD	HL,OVAL16		;
+ 468:	06A2  CD4307  		CALL	ZSDSP			;
+ 469:	06A5  213702  		LD	HL,STMSG2		;
+ 470:	06A8  CD4307  		CALL	ZSDSP			;
+ 471:	06AB  3A6408  		LD	A,(DSEC)		; side
+ 472:	06AE  4F      		LD	C,A			;
+ 473:	06AF  CD8301  		CALL	BIN2A8			;
+ 474:	06B2  21B501  		LD	HL,OVAL16		;
+ 475:	06B5  CD4307  		CALL	ZSDSP			;
+ 476:	06B8  0E20    		LD	C,' '
+ 477:	06BA  CD5007  		CALL	TTYO
+ 478:	06BD  0E0D    		LD	C,CR			;
+ 479:	06BF  CD5007  		CALL	TTYO			; at beginning of line
+ 480:	06C2  C9      		RET
+ 481:			
+ 482:	06C3          	VAVMSG:
+ 483:	06C3  215502  		LD	HL,VSTMOK
+ 484:	06C6  CD4307  	VAVMS1:	CALL	ZSDSP			;
+ 485:	06C9  212F02  		LD	HL,STMSG1		; inform user about progress
+ 486:	06CC  CD4307  		CALL	ZSDSP			;
+ 487:	06CF  3A6E08  		LD	A,(DTRK)		; track
+ 488:	06D2  4F      		LD	C,A			;
+ 489:	06D3  CD8301  		CALL	BIN2A8			;
+ 490:	06D6  21B501  		LD	HL,OVAL16		;
+ 491:	06D9  CD4307  		CALL	ZSDSP			;
+ 492:	06DC  213702  		LD	HL,STMSG2		;
+ 493:	06DF  CD4307  		CALL	ZSDSP			;
+ 494:	06E2  3A6808  		LD	A,(VSEC)		; side
+ 495:	06E5  4F      		LD	C,A			;
+ 496:	06E6  CD8301  		CALL	BIN2A8			;
+ 497:	06E9  21B501  		LD	HL,OVAL16		;
+ 498:	06EC  CD4307  		CALL	ZSDSP			;
+ 499:	06EF  0E20    		LD	C,' '
+ 500:	06F1  CD5007  		CALL	TTYO
+ 501:	06F4  0E0D    		LD	C,CR			;
+ 502:	06F6  CD5007  		CALL	TTYO			; at beginning of line
+ 503:	06F9  C9      		RET
+ 504:			
+ 505:	06FA  0D0A0D0A	MTRM:	DEFB	CR,LF,CR,LF,"*** TERMINATED...",CR,LF,0
+	      2A2A2A20
+	      5445524D
+	      494E4154
+	      45442E2E
+	      2E0D0A00
+ 506:	0712          	EXIT:
+ 507:	0712  21FA06  		LD	HL,MTRM
+ 508:	0715  CD4307  		CALL	ZSDSP
+ 509:	0718          	EXIT1:
+ 510:	0718  3A7B08  		LD	A,(RAFS)
+ 511:	071B  B7      		OR	A
+ 512:	071C  CA0000  		JP	Z,$0000
+ 513:	071F  3A4B00  		LD	A,(TMPBYTE)
+ 514:	0722  CBFF    		SET	7,A
+ 515:	0724  324B00  		LD	(TMPBYTE),A
+ 516:	0727  C30000  		JP	$0000
+ 517:			
+ 518:	072A          	GCHR:
+ 519:	072A  CD5F07  		CALL	TTYI			; take from console
+ 520:	072D  E67F    		AND	$7F			;
+ 521:	072F  FE60    		CP	$60			;
+ 522:	0731  FA3B07  		JP	M,GCDSP			; verify alpha
+ 523:	0734  FE7B    		CP	$7B			;
+ 524:	0736  F23B07  		JP	P,GCDSP			;
+ 525:	0739  CBAF    		RES	5,A			; convert to uppercase
+ 526:	073B  C5      	GCDSP:	PUSH	BC			;
+ 527:	073C  4F      		LD	C,A			;
+ 528:	073D  CD5007  		CALL	TTYO			;
+ 529:	0740  79      		LD	A,C			;
+ 530:	0741  C1      		POP	BC			;
+ 531:	0742  C9      		RET				;
+ 532:			
+ 533:			
+ 534:	0743  7E      	ZSDSP:	LD	A,(HL)			; pick char pointed by HL
+ 535:	0744  B7      		OR	A			; is the terminating NUL ?
+ 536:	0745  C8      		RET	Z			; yes
+ 537:	0746  E5      		PUSH	HL			; no
+ 538:	0747  4F      		LD	C,A			;
+ 539:	0748  CD5007  		CALL	TTYO			; display it
+ 540:	074B  E1      		POP	HL			;
+ 541:	074C  23      		INC	HL			;
+ 542:	074D  C34307  		JP	ZSDSP			;
+ 543:			
+ 544:	0750          	TTYO:
+ 545:	0750  F5      		PUSH	AF
+ 546:	0751  C5      		PUSH	BC
+ 547:	0752  D5      		PUSH	DE
+ 548:	0753  E5      		PUSH	HL
+ 549:	0754  59      		LD	E,C
+ 550:	0755  0E02    		LD	C,2
+ 551:	0757  CD0500  		CALL 	BDOSA
+ 552:	075A  E1      		POP	HL
+ 553:	075B  D1      		POP	DE
+ 554:	075C  C1      		POP	BC
+ 555:	075D  F1      		POP	AF
+ 556:	075E  C9      		RET
+ 557:			
+ 558:	075F          	TTYI:
+ 559:	075F  C5      		PUSH	BC
+ 560:	0760  D5      		PUSH	DE
+ 561:	0761  E5      		PUSH	HL
+ 562:	0762  0E06    	TTYI00:	LD	C,6
+ 563:	0764  1EFF    		LD	E,0FFH
+ 564:	0766  CD0500  		CALL 	BDOSA
+ 565:	0769  E67F    		AND	7FH
+ 566:	076B  28F5    		JR	Z,TTYI00
+ 567:	076D  E1      		POP	HL
+ 568:	076E  D1      		POP	DE
+ 569:	076F  C1      		POP	BC
+ 570:	0770  C9      		RET
+ 571:	0771          	TTYQ:
+ 572:	0771  C5      		PUSH	BC
+ 573:	0772  D5      		PUSH	DE
+ 574:	0773  E5      		PUSH	HL
+ 575:	0774  0E0B    		LD	C,11
+ 576:	0776  CD0500  		CALL	BDOSA
+ 577:	0779  A7      		AND	A
+ 578:	077A  0E06    		LD	C,6
+ 579:	077C  1EFF    		LD	E,0FFH
+ 580:	077E  C406CA  		CALL	NZ,BDOS
+ 581:	0781  E1      		POP	HL
+ 582:	0782  D1      		POP	DE
+ 583:	0783  C1      		POP	BC
+ 584:	0784  E67F    		AND	7FH
+ 585:	0786  C9      		RET
+ 586:			
+ 587:			;;
+ 588:			;; DIV16 - 16 BY 16 BIT DIVISION
+ 589:			;;
+ 590:			;; in BC = dividend
+ 591:			;; in DE = divisor
+ 592:			;; ----
+ 593:			;; out BC = quotient
+ 594:			;; out HL = remainder
+ 595:	0787  78      	LDIV16:	LD	A,B
+ 596:	0788  0610    		LD	B,16
+ 597:	078A  210000  		LD	HL,0
+ 598:	078D  CB11    	LDIVLO:	RL	C
+ 599:	078F  17      		RLA
+ 600:	0790  ED6A    		ADC	HL,HL
+ 601:	0792  ED52    		SBC	HL,DE
+ 602:	0794  3001    		JR	NC,$+3
+ 603:	0796  19      		ADD	HL,DE
+ 604:	0797  3F      		CCF
+ 605:	0798  10F3    		DJNZ	LDIVLO
+ 606:	079A  CB11    		RL	C
+ 607:	079C  17      		RLA
+ 608:	079D  47      		LD	B,A
+ 609:	079E  C9      		RET
+ 610:			
+ 611:	079F          	PHYDOS:
+ 612:	079F  217D09  		LD	HL,TR256
+ 613:	07A2  3A5FDD  		LD	A,(HSTLGS)
+ 614:	07A5  4F      		LD	C,A
+ 615:	07A6  0600    		LD	B,0
+ 616:	07A8  09      		ADD     HL,BC			; HL = trans sec offset
+ 617:	07A9  6E      		LD      L,(HL)
+ 618:	07AA  2600    		LD      H,0			; HL = trans(sector)
+ 619:	07AC  224400  		LD	(FSECBUF),HL
+ 620:	07AF  C9      		RET				; with value in HL
+ 621:			
+ 622:	07B0          	READ256:
+ 623:	07B0  CD9F07  		CALL	PHYDOS
+ 624:	07B3  DDE5    		PUSH	IX
+ 625:	07B5  DD218709		LD	IX,PHY256		; IX point to current CHS info
+ 626:	07B9  3A4600  		LD	A,(FDRVBUF)		; get active drive
+ 627:	07BC  FE02    		CP	2			; is floppy ?
+ 628:	07BE  3806    		JR	C,NRDFLO		; yes
+ 629:	07C0  FE0E    		CP	14			; is hard disk ?
+ 630:	07C2  3811    		JR	C,NRDVRT		; yes (fake call: HDD aren't implemented yet)
+ 631:	07C4  180F    		JR	NRDVRT			; then is a virtual drive
+ 632:				;
+ 633:	07C6  CDAADB  	NRDFLO:	CALL	CHKSID			; side select
+ 634:	07C9  CD98F3  		CALL	DRVSEL			; activate driver
+ 635:	07CC  CD6CF4  		CALL	BREAD			; do read
+ 636:	07CF  3251DD  		LD	(ERFLAG),A		; store error status
+ 637:	07D2  DDE1    		POP	IX
+ 638:	07D4  C9      		RET
+ 639:				;
+ 640:	07D5  CD4BF2  	NRDVRT:	CALL	VDSKRD			; call par. read
+ 641:	07D8  CB47    		BIT	0,A			; adjust Z flag for error test
+ 642:	07DA  3251DD  		LD	(ERFLAG),A		; store error status
+ 643:	07DD  DDE1    		POP	IX
+ 644:	07DF  C9      		RET
+ 645:			
+ 646:	07E0          	WRITE256:
+ 647:	07E0  CD9F07  	 	CALL	PHYDOS
+ 648:	07E3  DDE5    		PUSH	IX
+ 649:	07E5  DD218709		LD	IX,PHY256		; IX point to current CHS info
+ 650:	07E9  3A4600  		LD	A,(FDRVBUF)		; get active drive
+ 651:	07EC  FE02    		CP	2			; is floppy ?
+ 652:	07EE  3806    		JR	C,NWRFLO		; yes
+ 653:	07F0  FE0E    		CP	14			; is hard disk ?
+ 654:	07F2  3862    		JR	C,NWRVRT		; yes (fake call: HDD aren't implemented yet)
+ 655:	07F4  1860    		JR	NWRVRT			; then is a virtual drive
+ 656:				;
+ 657:	07F6  3A4700  	NWRFLO:	LD	A,(FTRKBUF)
+ 658:	07F9  5F      		LD	E,A			; save FTRKBUF in case of side switch
+ 659:	07FA  1605    		LD	D,RAFRTR		; # retrys
+ 660:				;
+ 661:	07FC  CDAADB  	NWRFLT:	CALL	CHKSID			; side select
+ 662:	07FF  CD98F3  		CALL	DRVSEL			; activate drive
+ 663:	0802  CD73F4  		CALL	BWRITE			; do write
+ 664:	0805  3251DD  		LD	(ERFLAG),A		; store error status
+ 665:	0808  2040    		JR	NZ,NWRFL2		; Ouch !!
+ 666:				;
+ 667:	080A  3A4B00  		LD	A,(TMPBYTE)		; check for read-after-write on
+ 668:	080D  CB7F    		BIT	7,A
+ 669:	080F  2839    		JR	Z,NWRFL2		; off, normal operations
+ 670:				; read-after-write check
+ 671:	0811  7B      		LD	A,E
+ 672:	0812  324700  		LD	(FTRKBUF),A		; restore FTRKBUF
+ 673:	0815  CDAADB  		CALL	CHKSID			; side select
+ 674:	0818  CD98F3  		CALL	DRVSEL			; activate drive
+ 675:	081B  CD3BF4  		CALL	FSEEK			; re-seek
+ 676:	081E  2021    		JR	NZ,NWRFL0
+ 677:				;
+ 678:	0820  2A4200  		LD	HL,(FRDPBUF)
+ 679:	0823  3E88    		LD	A,FDCREADC		; load read command
+ 680:	0825  CD02F4  		CALL	SFDCCMD			; send to 1771
+ 681:	0828  1803    		JR	NWRAF1
+ 682:	082A  0F      	NWRAF2:	RRCA
+ 683:	082B  300F    		JR	NC,NWRAFE
+ 684:	082D  DBD0    	NWRAF1:	IN	A,(FDCCMDSTATR)
+ 685:	082F  CB4F    		BIT	1,A			; sec found
+ 686:	0831  28F7    		JR	Z,NWRAF2
+ 687:	0833  DBD7    		IN	A,(FDCDATAREG)		; data in
+ 688:	0835  BE      		CP	(HL)			; check it
+ 689:	0836  2015    		JR	NZ,NWRFER		; check failed !
+ 690:	0838  23      		INC	HL
+ 691:	0839  C32D08  		JP	NWRAF1
+ 692:	083C  CD11F4  	NWRAFE:	CALL	GFDCSTAT
+ 693:	083F  E65C    		AND	$5C			; test for other errors
+ 694:	0841          	NWRFL0:
+ 695:	0841  2807    		JR	Z,NWRFL2			; OK
+ 696:	0843  AF      	NWRFL3:	XOR	A
+ 697:	0844  D3D6    		OUT	(FDCDRVRCNT),A
+ 698:	0846  3C      		INC	A
+ 699:	0847  3251DD  		LD	(ERFLAG),A		; store error status
+ 700:	084A  DDE1    	NWRFL2:	POP	IX
+ 701:	084C  C9      		RET
+ 702:	084D          	NWRFER:
+ 703:	084D  15      		DEC	D			; retry ?
+ 704:	084E  28F3    		JR	Z,NWRFL3		; no, unrecoverable
+ 705:	0850  7B      		LD	A,E
+ 706:	0851  324700  		LD	(FTRKBUF),A		; restore FTRKBUF
+ 707:	0854  18A6    		JR	NWRFLT			; yes, once more
+ 708:				;
+ 709:	0856  CDBAF2  	NWRVRT:	CALL	VDSKWR			; call par. write
+ 710:	0859  CB47    		BIT	0,A			; adjust Z flag for error test
+ 711:	085B  3251DD  		LD	(ERFLAG),A		; store error status
+ 712:	085E  DDE1    		POP	IX
+ 713:	0860  C9      		RET
+ 714:			
+ 715:	0861          	ENDTXT	EQU	$
+ 716:			
+ 717:	0861  01      	RDSK:	DEFB	NDRIVE
+ 718:	0862  00      	DDSK:	DEFB	0
+ 719:	0863          	BDSK:	DEFS	1
+ 720:	0864  0100    	DSEC:	DEFW	1
+ 721:	0866  0100    	RSEC:	DEFW	1
+ 722:	0868  0100    	VSEC:	DEFW	1
+ 723:	086A          	BSEC:	DEFS	2
+ 724:	086C  0000    	RTRK:	DEFW	0
+ 725:	086E  0000    	DTRK:	DEFW	0
+ 726:	0870  0000    	VTRK:	DEFW	0
+ 727:	0872          	BTRK:	DEFS	2
+ 728:	0874  00      	ABLK:	DEFB	0
+ 729:	0875  00      	CBLK:	DEFB	0
+ 730:	0876          	BBLK:	DEFS	1
+ 731:	0877  0000    	RDMA:	DEFW	0
+ 732:	0879          	BDMA:	DEFS	2
+ 733:	087B  00      	RAFS:	DEFB	0
+ 734:	087C  05      	TRYC:	DEFB	NTRYS
+ 735:	087D          	BUFDMA:	DEFS	SECSIZ
+ 736:			
+ 737:				; 256 byte/sec. native sector translation table (skew = 6)
+ 738:			; TR256:	DEFB	1,7		 	; sector 1,2
+ 739:			; 	DEFB	3,9		 	; sector 3,4
+ 740:			; 	DEFB	5,2		 	; sector 5,6
+ 741:			; 	DEFB	8,4		 	; sector 7,8
+ 742:			; 	DEFB	10,6		 	; sector 9,10
+ 743:				; 256 byte/sec. native sector translation table (skew = 0)
+ 744:	097D  0102    	TR256:	DEFB	1,2		 	; sector 1,2
+ 745:	097F  0304    		DEFB	3,4		 	; sector 3,4
+ 746:	0981  0506    		DEFB	5,6		 	; sector 5,6
+ 747:	0983  0708    		DEFB	7,8		 	; sector 7,8
+ 748:	0985  090A    		DEFB	9,10		 	; sector 9,10
+ 749:				;----------------------------------------------
+ 750:				; Native size ported to 3,5" 80 track double side drive
+ 751:				; (256 * 10 * 40)
+ 752:				; non-standard part (Phisical CHS infos)
+ 753:	0987  0A00    	PHY256:	DEFW	10			; sectors per track
+ 754:	0989  0001    		DEFW	256			; sector lenght
+ 755:	098B  02      		DEFB	2			; heads
+ 756:	098C  2800    		DEFW	40			; tracks
+ 757:	098E  01      		DEFB	1			; deblock shift
+ 758:	098F  01      		DEFB	1			; deblock mask
+ 759:	0990  10      		DEFB	16			; 128 byte sectors per block
+ 760:			
+ 761:	0991  7D090000	DPBDOS:	DEFW	TR256, 0000
+ 762:	0995  00000000		DEFW	0000,  0000
+ 763:	0999  00000000		DEFW	0000,  0000
+ 764:	099D  00000000		DEFW	0000,  0000
+ 765:			
+ 766:	09A1          	ENDSTO	EQU	$
+ 767:			
+ 768:			
+ 769:	09A1          		END
+
+
+
+Statistics:
+
+   758	symbols
+  1807	bytes
+
+
+
+Symbol Table:
+
+ablk             874     fsecbuf           44     phydos           79f     
+aftrio          dcec+    fseek           f43b     phydpt          d8a6+    
+alibn           f74a+    fsekbuf           40+    phylen             a+    
+all00           e097+    fshtm           f4de+    phyoff             f+    
+all01           e0ce+    fterr           f468+    phyprm          d89b+    
+all02           dfe9+    ftrkbuf           47     physpt          d8a5+    
+all03           e020+    fvlp0           f0f1+    phystr          dad8+    
+alloc           dc44+    fwend           f4c2+    pop1prm         f684+    
+altprnprt          3+    fwrdy           f4b3+    pop2prm         f992+    
+appbuf            2a+    gcdsp            73b     pop3num         f8c0+    
+base               0+    gchr             72a     portin          f769+    
+bblk             876     gcurtrk         f418+    portout         f771+    
+bconin          f7d6+    gdcua           f755+    ppakstb            1+    
+bconout         f9e3+    gentr           f68c+    ppcntrp            2+    
+bconsp          f9ac+    get1hnum        f67b+    ppdatap            3+    
+bconst          f9a0+    gethnum         f686+    ppdini             0+    
+bdma             879     getlpen         f85b+    ppdokg             2+    
+bdnxt           f7c4+    gfdcstat        f411     ppdrdy             4+    
+bdos            ca06     gnxtc           f689+    ppdstp             6+    
+bdosa          =   5     gocpm           d9f7+    ppstrob            0+    
+bdosb           ca00+    goexec          f750+    ppuack             7+    
+bdsk             863     greet           f980+    ppuini             1+    
+bdwtyp          dd54+    h2aen1          f93a+    ppuokg             3+    
+begdat          dd50+    h2aj1           f93f+    ppurdy             5+    
+bfailmsg        d8ff+    h2aj2           f948+    prbend          f183+    
+bhome           f421+    h2aj3           f94d+    prbloo          f151+    
+bias            8e00+    hdboot          fd47+    prcvblk         f136+    
+bin2a8           183     hdrvv           f394+    prnak           f17d+    
+bindisp         f7c2+    hehex           f682+    prnchr          f966+    
+biohby            d8+    hilo             1bb     prntbusybit        0+    
+bioreas          a00+    hl2asc          f937+    prvtop            4f+    
+bios            d800+    hl2ascb         f954+    prwcsm          f170+    
+biosiz           550+    hlistst         fdd3+    psbok           f228+    
+biostds          600+    hnhex           f69a+    psndblk         f1da+    
+bldoffs         2000+    home            da5d+    psndch          f1bb+    
+bmpro           f5ff+    homflo          da6b+    psnxtc          f1f2+    
+bn2a16           19c     hstact          dd50+    pwackb          f1c9+    
+boot            f59f+    hstbsz           200+    quote          =  27+    
+bootfail        d9ef+    hstbuf          dd69+    rafchr            7e+    
+bootm           f5ef+    hstdsk          dd61+    rafdflt         ffff+    
+botdsk          d836+    hstfil          dcb7+    rafrtr             5     
+botok           d949+    hstfrd          dce9+    rafs             87b     
+bread           f46c     hstful          dc91+    rafshow         ffff+    
+bs             =   8+    hstlgs          dd5f     rafsvd           3a6     
+bsec             86a     hstloa          dc80+    ram0buf           34+    
+bseldsk         f3fd     hstrdd          dc83+    ram1buf           35+    
+bsetdma         f3f8     hstrsf          dd0e+    ram2buf           36+    
+bsetsec         f3f3+    hstsec          dd64+    ram3buf           37+    
+bsettrk         f3ee     hstsyn          dc8e+    ravmsg           655     
+btpasiz            6+    hsttmp          dd60+    rcp             e200+    
+btrk             872     hsttrk          dd62+    rcps              10+    
+bufdma           87d     hstwrt          dd52+    rdflo           db0a+    
+bwaitio         f478+    iclp1           f09f+    rdma             877     
+bwrite          f473     ictlp0          f57b+    rdrr19r12       f09d+    
+calchlde        f929+    idisk1            24+    rdsk             861     
+cbboot          d916+    idisk2            24+    rdvrt           db19+    
+cbkend          f8d3+    idisk3             1+    read256          7b0     
+cblk             875     idisk4             1+    readhst         daf4+    
+cbread          dbc4+    ini6545         f575+    recovend         53d+    
+cbrev              b+    inicrt          f073+    recover          391     
+ccp             c200+    inicrtcur       fafc+    res3miob        fd41+    
+cdisk              4+    inicrtreg       f563+    resattr         fbc0+    
+cfil1           fcf7+    init0           f526+    resroom          400+    
+chk00           e105+    intron             0+    rhstfi          dcaf+    
+chk01           e125+    iobval            95+    rsec             866     
+chk02           e057+    iobyte             3+    rst7spc           38+    
+chk03           e077+    iocac2          fc3a+    rstmok           23f     
+chkbrk          f8d6+    iocack          fafc+    rtcbuf          da58+    
+chkctr          f8fd+    iocbas2         fbcf+    rtrk             86c     
+chkeor          f8c9+    iocbase         faf3+    rwm1            f7a0+    
+chkhex          f8ea+    iocbe2          fc10+    rwm2            f7a2+    
+chksid          dbaa     iocbel          fb06+    rwm3            f787+    
+chkuna          dbff+    iocbs           fb09+    rwmem           f783+    
+chome           fb38+    iocbs1          fb19+    rwmove          dd38+    
+cibt1           f813+    iocbs2          fb29+    rwoper          dc4b+    
+cieqb           f7e9+    iocca2          fbec+    rwoshf          dc52+    
+cigon           f7f9+    ioccan          fbc6+    s_dlpr          f329+    
+cigrtog         f88d+    ioccr           fb6d+    s_vhdr          f32b+    
+cihcr           f84c+    ioccr1          fb75+    savcolb         fa27+    
+cijp4           f87e+    iocd12          fc4c+    scrtch           103+    
+cilop           f806+    iocdc1          fbc0+    scrtst          f91a+    
+ciprc           f7ec+    iocdc2          fc6a+    scurof          f05d+    
+cirbf           f7d2+    iocdc3          fc6d+    scuron          f06a+    
+ciren           f848+    iocdc4          fc58+    sdcho            2cc     
+cisti           f7ed+    iocdle          fc1c+    sdcuae          f03f+    
+citc1           f821+    iocem           fbf0+    sdcuae1         f04d+    
+citc2           f828+    iocen2          fc0a+    sdsta           f89f+    
+cld1            da2b+    iocenq          fb91+    secnum         =   a     
+cldcmnd         da28+    ioceo2          fc34+    secsiz         = 100     
+clreol          fb97+    ioceot          fbcc+    sectran         dad5+    
+clrj0           fb8a+    ioces2          fc2e+    seg1            e200+    
+clrlin          fc74+    iocesc          fbb9+    seg10           ec00+    
+clrlin1         fc77+    iocet2          fc70+    seg11           ef00+    
+clrlp1          fc80+    iocetb          fbad+    seg12           efd0+    
+clrscr          fb49+    iocetx          fc04+    seg2            ea00+    
+clrscrgr        f0ac+    iocff           fb49+    seg3            ea00+    
+clsnc           fb5e+    iocff2          fc9c+    seg4            ed00+    
+cmdset          da4f+    iocfs           fbb1+    seg5            ed80+    
+coire           f97f+    iocfs2          fbfe+    seg6            edd0+    
+coiupc          f970+    iocgs           fbb5+    seg7            edf4+    
+cojp1           fa07+    iocgs2          fc22+    seg8            edff+    
+cojp2           fa16+    iocht           fc40+    seg9            ee00+    
+colbuf            4f+    ioclf           fbbd+    sekdsk          dd57+    
+coldbeg         da3e+    iocnak          fbd0+    sekhst          dd66+    
+coldend         da45+    iocnul          fc66+    seksec          dd5a+    
+confirm          3ff     iocrs           fbc9+    sektrk          dd58+    
+conou2          fa2b+    iocrs2          fc52+    selact          da8f+    
+constr          f983+    iocs2           fc16+    seldsk          da74     
+cont            d9d7+    iocsi           fb97+    selflp          dab7+    
+coutch          f8b8+    iocsi2          fc46+    selhdd          dabd+    
+cpmboot         f3c0+    iocso           fb78+    selndb          dab2+    
+cpmsiz          1bd0+    iocso2          fbf8+    selvrt          dabe+    
+cpycmp           534     iocsoh          faf4+    set3miob        fd3b+    
+cr             =   d     iocst2          fc28+    setdma          dad0+    
+crlftab         f560+    iocstx          faf8+    setrow          fa50+    
+crt6545adst       8c+    iocsub          fbf4+    setsec          dacb+    
+crt6545data       8d+    iocsy2          fbd3+    setsek           5b3     
+crtbase           80+    iocsyn          fba9+    setsid          f3b2+    
+crtbeepport       8f+    iocus           fb94+    settrk          dac6+    
+crtblinkbit        0+    iocus2          fbe9+    sfdccmd         f402     
+crtfil          fce9+    iocvec          fc9f+    sgon             26b     
+crthilitbit        3+    iocvec2         fcbf+    shsize            20+    
+crtkeybcnt        87+    iocvt           fb38+    shstk           ed00+    
+crtkeybdat        85+    iocvt2          fc99+    shstks             4+    
+crtmodebit         4+    ioflag          dd53+    sidone          f3bd+    
+crtprgend       f065+    iop                0+    signon          d8a8+    
+crtprntcnt        83+    iops               0+    sk2hst          dcfb+    
+crtprntdat        81+    iptrckbd        f8d5+    sndcl           f403+    
+crtram0cnt        82+    iuser1            24+    spacer          f957+    
+crtram0dat        80+    iuser2             f+    sparea         = 183     
+crtram1cnt        86+    iuser3            24+    ssiz1           f37e+    
+crtram1dat        84+    iuser4             f+    ssiz2           f37c+    
+crtram2cnt        8a+    ival16           1b3     ssiz5           f37a+    
+crtram2dat        88+    jboot           f000+    start            100+    
+crtram3port       8e+    jconin          f003+    step1            470     
+crtrevrsbit        1+    jconou          f006+    step2            485+    
+crtservcnt        8b+    jconst          f039+    step3            49c     
+crtservdat        89+    jcpmbt          f033+    step4            4d0     
+crttab1         f512+    jcurtr          f024+    step5            4e5+    
+crtunderbit        2+    jdispg          f02d+    step6            4fc     
+crtwidthbit        1+    jdrvsl          f02a+    stmsg1           22f     
+csglp0          f0c1+    jfdcmd          f021+    stmsg2           237     
+cslp0           f984+    jfseek          f027+    str100          f540+    
+ctbuf            56d     jfstat          f01e+    strload         f336+    
+ctlc           =   3     jgethn          f036+    strwait         f32f+    
+ctlx           =  18+    jhome           f009+    synpnd          dd3b+    
+ctnok            579     jprnch          f03c+    tab            =   9+    
+curadr          fa3e+    jread           f018+    tilde          =  7e+    
+curbfb          fac1+    jselds          f00c+    time            da54+    
+curbfl          fac5+    jsetdm          f015+    tmpbyte           4b     
+curblb          fab9+    jsetse          f012+    togju           f917+    
+curbll          fabd+    jsettr          f00f+    togpr           f915+    
+curfxb          facd+    jusrcm          f030+    togprnio        f90a+    
+curfxl          fad1+    jwrite          f01b+    tpa              100+    
+curofb          fac9+    kbdbyte           4d+    tr256            97d     
+curofs          fa63+    keybstrbbit        7+    trans           d877+    
+curpbuf           49+    ldiv16           787     transk          fe23+    
+currgt          fa19+    ldivlo           78d     trask1          fe27+    
+cursetmode      fad3+    lf             =   a     true            ffff+    
+cvbase         =   a     lfeed            540     tryc             87c     
+cwflg           da3d+    lindn           fc58+    ttyi             75f     
+datsiz           3f5+    lngibd           1bd     ttyi00           762     
+dblank          fcdf+    lsect           d9c5+    ttyo             750     
+ddcho            2e3     mbfsz            35c     ttyq             771     
+ddrvid           3ce     mbmenu          f62c+    ucmdtab         f9af+    
+ddsk             862     mcblist         fd89+    ucrej           f6a5+    
+del            =  7f+    mco1            f6f9+    unacnt          dd56+    
+delay           f102+    mcomp            37e     unadsk          dd5b+    
+dfmt128            0+    mconf            32f     unasec          dd5e+    
+dfmt256            0+    mconin          fd50+    unatrk          dd5c+    
+dfmt512         ffff+    mconout         fd63+    uplchr          f111+    
+dgclp0          f0d9+    mconst          fd76+    upload          f190+    
+diff16          dd4a+    mconx           f6e7+    upwstrb         f11e+    
+dirbf           df69+    mcrlf            2c9     urestr          f909+    
+dismvc          faed+    mdjmp0          fa95+    usenodeblock       0+    
+dispch          f0d8+    mdjmp1          faab+    usrcmd          f6ab+    
+dispgr          fd05+    mdp1            f73d+    valgetchr       f8fa+    
+dispnortr       fd0b+    mdp2            f70a+    vavms1           6c6     
+dispstr         f380+    mdp3            f72e+    vavmsg           6c3     
+div16           fe0b+    mdp4            f730+    vcpmbt          f33a+    
+divlo           fe11+    mdp5            f722+    vcresreg        fa76+    
+dlight          fadf+    mdp6            f702+    vdbufsz            a+    
+dly1            f106+    mdp7            f71b+    vdrdsec            0+    
+dly2            f104+    mejp            fab6+    vdrend          f2b3+    
+dmaadr          dd67+    memcomp         f6e4+    vdrnok          f2b4+    
+dmpalia         f748+    memdump         f6ff+    vdrok           f29a+    
+dmpalib         f743+    memmove         f779+    vdrsl1          f25b+    
+dogetchr        f8b5+    memtest         f7ab+    vdrtry          f252+    
+doprompt        f8b2+    mequal           2ff     vdskbuf           2c+    
+dpbase          d837+    miobyte           4c+    vdskrd          f24b     
+dpbdos           991+    ml1601          fe3e+    vdskwr          f2ba     
+dpbnds          d882+    ml1602          fe44+    vdwend          f321+    
+dpbvrt          d857+    mlistst         fd9c+    vdwnok          f323+    
+dreadh          daf7+    mmnxt           f77c+    vdwok           f309+    
+drvid            3ae     mnohd           fdfa+    vdwrsec            1+    
+drvsel          f398     monmaj            32+    vdwsl1          f2ca+    
+dsec             864     monmin            32+    vdwtry          f2c1+    
+dselbf            4e+    movdn           fa7b+    verify           547     
+dslp0           f38a+    movdn1          fa7f+    vers              16+    
+dtrk             86e     mprompt         f950+    vptr           = 1bb     
+dwrith          db27+    mpunch          fdaf+    vsec             868     
+enddat          e145+    mreader         fdc0+    vsetsek          639     
+endsto         = 9a1     msbfnd           1d9     vstep1           552     
+endtxt         = 861+    mscnt             f6+    vstep2           597     
+eof            =  1a+    msize             3c+    vstep3           5b1     
+epfill          fe7c+    mskfnd           1e7     vstmok           255     
+erflag          dd51     msnodev         fdee+    vtrk             870     
+esc            =  1b+    mterr           f7bd+    wavmsg           68c     
+estmok           260     mtnxt           f7ae+    wbgrst           610     
+exit             712     mtrm             6fa     wbgsav           5eb     
+exit1            718     mtrsz            36d     wboot           d98a+    
+expath          edf4+    mul16           fe37+    wboote          d803+    
+expaths            5+    ndevmsg         fdde+    whstfi          dca8+    
+extdon           210     ndrive         =   1     wraf1           db71+    
+extfcb          edd0+    nextop          d9da+    wraf2           db6e+    
+extrabias       1200+    nib2asc         fc8f+    wrafe           db80+    
+extstk          efd0+    nocoul           202     wrall              0+    
+false              0+    noovf           dc3d+    wrdir              1+    
+fcp             ea00+    noprow          dd55+    wrfer           db91+    
+fcps               4+    nrdflo           7c6     wrfl0           db85+    
+fdcbase           d0+    nrdvrt           7d5     wrfl2           db8e+    
+fdccmdstatr       d0     ntrack         =  28     wrfl3           db87+    
+fdcdatareg        d7     ntrys          =   5     wrflo           db3a+    
+fdcdrvrcnt        d6     nulfn2          fddb+    wrflt           db40+    
+fdcreadc          88     nwraf1           82d     write           dbd7+    
+fdcrestc           7+    nwraf2           82a     write256         7e0     
+fdcsectreg        d2+    nwrafe           83c     writehst        db24+    
+fdcseekc          17+    nwrfer           84d     writeimg         4b9     
+fdctrakreg        d1+    nwrfl0           841     wrtret           4c8     
+fdcwritc          a8+    nwrfl2           84a     wrttmp          dd65+    
+fdrvbuf           46     nwrfl3           843     wrual              2+    
+ff                 c+    nwrflo           7f6     wrvrt           db9f+    
+fgtrk           f465+    nwrflt           7fc     wsetsek          5cf     
+fillmem         f6d8+    nwrvrt           856     wstmok           24a     
+filvramg        f0eb+    nxtbuf           522     z3cl            ef00+    
+flme1           f6db+    nxtcnv           21c     z3cls             d0+    
+flopio          f4f1+    nxtmsb           1c8     z3env           ec00+    
+floppyread      f4e5+    nxtmsk           1dc     z3envs             2+    
+floppywrit      f4ec+    nxtopv           1f4     z3msg           ed80+    
+fmemnp          f58f+    ocjpv           f963+    z3ndir          ee00+    
+fmemsiz         f588+    ocrlf1          f998+    z3ndirs           1c+    
+fmestp          f59c+    offcal          fe4a+    z3rev             21+    
+fok0            f436+    offgt1          fe5d+    z3whl           edff+    
+formf          =   c+    offgtz          fe5c+    zbufbas         e200+    
+frbsy           f49a+    offzer          fe64+    zdsmntr         f000+    
+frdpbuf           42     opvdon           208     zero128         da35+    
+fretr0          f424+    outchr          f959+    zerom           da37+    
+fretr1          f444+    outcrlf         f997+    zflopkg          200+    
+frrdy           f49d+    outgrbuf        fd22+    ziopkg             0+    
+frwbsy          f4b0+    oval16           1b5     zrespkg          800+    
+frwlp           f47c+    path            da46+    zsdsp            743     
+frwnxt          f483+    pdnload         f22b+    zstdovr          400+    
+frwwro          f4a9+    phy256           987     

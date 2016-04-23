@@ -1,0 +1,81 @@
+;; [ This script is for ZEX Version 5. ]
+;;
+;; ZEX file to patch SLRNK version 1.3x to correct a bug in the reading
+;; of command lines with commands separated by commas.  Here is an example
+;; of the problem: SLRNK PROG/A:100,PROG/N/E produces an output file with
+;; the name ROG.COM instead of PROG.COM.  The patch information was provided
+;; by SLR Systems.
+;;
+;; This program assumes that SLRNK.COM exists on the current drive.  It loads
+;; it, patches it using the debugger (assumed to have a DDT-compatible
+;; S command) specified as the first command line parameter.  If no debugger
+;; is specified explicitly, then DDT is assumed.  The original file is renamed
+;; to SLRNK0.COM, and a new SLRNK.COM is produced.
+;;
+;;					Jay Sage, 12/08/89
+;;
+
+^$1DDT
+
+if ex slrnk.com
+
+|'|
+
+* * *    Patching SLRNK.COM using $1   * * *
+
+|'|
+if ex slrnk0.com;era slrnk0.com;fi
+ren slrnk0.com=slrnk.com
+
+$1 slrnk0.com
+<s014e
+<cd
+<8b
+<01
+<c0
+<2a
+<68
+<22
+<7e
+<fe
+<0d
+<28
+<04
+<2b
+<22
+<68
+<22
+<af
+<c9
+<.
+<s08a7
+<9c
+<.
+<g0
+save 34 slrnk.com
+|'|
+
++--------------------------------------------------+
++                                                  +
++        test new version called SLRNK.COM         +
++                                                  +
++   (original version was renamed to SLRNK0.COM)   +
++                                                  +
++--------------------------------------------------+
+
+|'|
+
+else
+
+|'|
+
++--------------------------------------------------+
++                                                  +
++    SLRNK.COM not found in current directory      +
++                                                  +
++--------------------------------------------------+
+
+|'|
+
+fi
+

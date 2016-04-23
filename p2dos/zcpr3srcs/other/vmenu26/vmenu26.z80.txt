@@ -1,0 +1,4319 @@
+;  Program:  VMENU
+;  Version:  2.5
+;  Date:     21 November 1986
+;
+Z3ENV	EQU	0fe00H
+VERS	EQU	26		;version number
+
+; VMENU is copyright (c) 1984, 1985 by Richard Conn
+; All Rights Reserved
+; VMENU may be used freely by the ZCPR3 Community
+
+;
+; Version 2.6 by D.McCord 05/29/87
+; Small change for enhanced functioning under ZCPR 3.3, using jay's code.
+;
+
+;
+; Version 2.5 by D.McCord 11/21/86
+; Cosmetic changes to permit assembly with ZAS.  Removed SFENV/FENV code
+; as this crashes certain computers (See notes at START: below).  Restored
+; subroutines IFUFN and MOVTOK to this file.
+;
+
+;
+;  Version: 2.4
+;  Revised: Michael Bate
+;  Changes:    - fixed bugs and problems:
+;
+;			1. VMENU could not be renamed to a full 8-character
+;			   name.
+;			2. To simplify the mechanism of 'remembering' menu
+;			   names with system file 3, made VMENU check on entry
+;			   that this file is in fact unambiguous.  Also made
+;			   it check that file 4 (file mask) is defined.
+;			   If these conditions are not met, attempts to get
+;			   the "missing" information (mask or menu name) from
+;			   the command line, even if VMENU was invoked as
+;			   a shell.
+;			3. &dir;menuname didn't work in 2.3
+;
+;		Attempted a new "final solution" to the problem of
+;		remembering menu names and masks, even when VMENU invokes
+;		itself with different settings of these values:
+;
+;			a.  VMENU now pushes its entire command line onto
+;			    the shell stack.
+;			b.  When exiting menu system with ctrl-c or due to
+;			    abort, VMENU sets system file 3 to *.* and 4
+;			    to undefined.  Then the mechanism is bug fix 2,
+;			    above, forces VMENU, if reinvoked at a lower
+;			    stack level, to set up the correct mask-menu.
+;			c.  The ability to specify file display from a
+;			    directory other than the current one is now an
+;			    assembler-time option.  By default it is OFF.
+;
+;	The result of all this is, hopefully, a much more user-friendly and
+;	straightforward program.  Note that if you display and try to operate
+;	on files that are not in the currently logged directory, then each
+;	file reference in the menu command lines MUST explicitly specify
+;	the directory, and each program must understand the "du:" notation -
+;	which leaves out Wordstar, dBase, and just about everything except
+;	Z-system utilities.  In addition, the inclusiong of the "du:" spec
+;	in the shell stack means that some invokations of VMENU may not fit
+;	in a standard 32-byte shell stack entry.  This may still happen if
+;	you insist on including the file type in the menu file name.  If
+;	the entry does not fit, VMENU fails "softly", behaving like version
+;	2.3, and may not get the correct mask-menu.
+;
+;	If you have menus that exit via "shctrl c/p", then, in order to take
+;	maximum advantage of the stacking feature in this release, you should
+;	include a "setfile 3 *.*" before or after the "shctrl".  If you don't
+;	know what I'm talking about, you don't need to worry about it.
+;
+;
+;  Version: 2.3
+;
+;  Revised: Terry Carroll
+;  Changes:	- Fixed three bugs:
+;
+;			1. Beginning with version 2.0, ^N log to new directory
+;			   command would not accept named directories greater
+;			   than 7 characters.
+;
+;			2. The default menu name -- MENU.VMN -- is now
+;			   overridden by the menu name contained in
+;			   System File 3 (if any).  VMENU will now 'remember'
+;			   its menu name across directories, without 
+;			   depending on REG 9 as its 'tickler flag'.
+;			   This is an assembly time option (turned ON
+;			   in the release library).  If you do NOT want
+;			   VMENU to remember its menu name (other than the
+;                          standard default MENU.VMN) across directory
+;                          changes, this option should be turned off.
+;			   (If you do nothing and just install the release
+;                          VMENU23.COM, MENU.VMN will be the default
+;                          menu file).
+;
+;                       3. Sort by file name within type sorted 8 positions
+;                          beginning with position 2 of the file name
+;                          rather than position 1 (novel sequence!).
+;
+;               - ^N -- log in to new directory -- now requires wheel
+;                 byte ON to work.  If wheel byte is off, ^N function is
+;                 disabled.
+;
+;               - $ (System Menu) command will NOT require a password
+;                 if wheel byte is on.
+;
+;	There seems to be a considerable amount of confusion over the proper
+;	syntax and functioning of VMENU as it relates to menu names
+;	and file mask(s).  BOTH the file mask AND menu name CAN be specified
+;	from the command line, e.g.,
+;
+;		VMENU *.TXT WORDPROC.VMN
+;
+;	The menu name specified on the command line becomes the new default
+;	(with the change introduced above) and is stored in System File 3.
+;	The file mask is reinitialized whenever a directory change occurs.
+;
+;
+;  Version: 2.2 ----- Skipped
+;
+;  Version: 2.1
+;
+;  Revised: Michael Bate
+;  Changes:	- Fixed three bugs:
+;			1. (long-standing)  The last selected file was
+;			   left out of the sort.  Note that this was fixed
+;			   by removing the sort code from VMENU and calling
+;			   the sort in SYSLIB.
+;			2. When the "current file" is at the beginning
+;			   of a screen other than the first screen, the 
+;			   previous screen would mistakenly be displayed.
+;			3. VMENU attempted to display the R/O status of
+;			   "no file" and mess up the screen on some
+;			   terminals (including Kaypro).
+;		- Added more Z80 code to save space (version 2.0 was already
+;		  Z80-specific).
+;
+;  Revised the .HLP file to reflect the recent changes (described below).
+;
+;
+;  Version: 2.0
+;
+;  Revised: Bob Peddicord
+;  Changes:     - There are three bytes at the begining of the program
+;                 that control - byte: 11C - Display of sys$ files
+;                              - byte: 11D - Display of number of k left
+;                              - byte: 11E - Enforce DU passwords
+;                 to turn them on byte must be non-zero (0ffh)
+;                             off byte must be zero (0)
+;
+;               - Added display of amount of free space left on disk.
+;                 This can be turned off by setting the byte
+;                 at 11D to '0'.
+;
+;               - The display of $SYS files can now be controled
+;                 with the wheel byte. This can also be controled
+;                 by setting the byte at 11C to '0'.
+;
+;               - Added ^T to move the cursor to first file in current
+;                 screen.
+;
+;               - Added ^B to move the cursor to last file in current
+;                 screen.
+;
+;               - Added the character "&" to the list of special
+;                 controls, this is used to move to different
+;                 disks and user areas.
+;                 Example:
+;                      T&a15 or T&root (used in menu.vmn file)
+;                      ^ ^        ^
+;                      calling letter
+;                      T&a15 or T&root
+;                        ^        ^
+;                      DU   or  DIR to go to.
+;                 When using the menu change char, after the du or dir
+;                 specification you may declare a menu change by inserting
+;                 a ';' between the du or dir and the name.
+;                 example:
+;                 t&a15;test (case is not significant)
+;                 On secure systems the toggle DUPSWD byte 11E should be
+;                 set to enforce DU: passwords (non-zero).
+;
+;               - ^N added to log into another DU: or DIR:.
+;
+;               - Display now shows if file is R/O (ala vfiler).
+;
+;               - Cleaned up file display, no more wierd characters
+;                 due to $SYS, ARC or any other bits being set.
+;
+;           Version: 1.9 (not released)
+;  Revised: Bob Peddicord
+;  Previous Version: 1.8 (25 july 86)
+;  Changes:     - Fixed code for "< & >" commands no longer bombs out.
+;
+;               - Fixed "Z" command so it no longer bothers display.
+;
+;               - Now displays four lines by five columns, no blank line
+;                 between display and menu.
+;                 Also added 1 line to menu display.
+;
+;               - Cosmetic changes in banner.
+;
+;               - Vmenu now knows what menu to use when changing user areas.
+;                 In order to do this had to use register 9 as a flag.
+;                 The only way to specify a menu, if not using setfile,
+;                 is at the prompt type:
+;                 Vmenu *.* menuname.vmn
+;
+;  Revised: Bob Peddicord
+;  Previous Version: 1.7 (23 july 86)
+;  Changes:
+;               - Fixed long time bug. if files and number to display
+;                 were equal, would not display or access 1 file.
+;
+;               - The program installs itself to your environment
+;                 so there is no need to run Z3INS on it. (See FENV:)
+;                 Thanks to Joe Wright for the code.
+;
+;               - No longer displays $SYS files (assembly option)
+;
+;               - The files display now has five columns. This may be
+;                 changed back to four columns at FCOLS EQU 5 .
+;
+;               - Added code to disable ZRDOS public directeries,
+;                 reset on exit from VMENU.
+;
+;  Revised: Al Dunsmuir
+;   Previous Version:	1.6 (5 Aug 85)
+;  Changes:	- $c menu command added.  Allows VMN files to
+;		  return control to the current directory in a
+;		  secure (i.e. no DU:) system.	If no DIR is
+;		  available, 'Noname' is returned.
+;
+;  Revised: Al Dunsmuir
+;   Previous Version:	1.5 (20 July 85)
+;    Changes:	- Eliminate redundant program load if multiple command line
+;		  contains no pending commands.
+;		- Eliminate redundant checking for pending commands when
+;		  changing menus. VMENU will only be re-entered by ZCPR3 as a
+;		  SHELL COMMAND when pending commands have ALL been executed.
+;		- Search for VMN file starting at DU passed in FCB by ZCPR3.
+;		- Completely restructure, share code with VFILER and MENU.
+;		- Change ring sort to Shell sort
+;		- Check during ring build for TPA overflow.
+;		- Combine load and masking operations on MENU.VMN file load.
+;		- Eliminate non-essential GETSHM's and PUTSHM's.
+;		- Prevent exit via ^C in user input if not enabled.
+;		- Correct processing of local option flags (especially ^C).
+;		- Simplify 'More Files]' indicator calculation.
+;		- Minimize rewriting of display. File and Menu sections of
+;		  the screen are refreshed separately, and only when req'd
+;		- Add ring resort command from VFILER
+;		- Add C option and System menu from MENU
+;		- Eliminate intermediate cursor positioning
+;		  during cursor movement.
+;		- Make TAB character expansion optional
+;		  (faster I/O if terminal understands TAB).
+;		- Remove CCP equate conflict with Z3base.lib.
+;		- Eliminate all references to ^Z as clear screen code.
+;		- Correct simulated erase-to-end-of-line function
+;		  calculation, and use CPSEL info
+;		- Add optional screen clear on exit.
+;		- Eliminate extraneous masking of msb after load.
+;		- Z80 macros used where possible. Banner states processor type.
+;		- Removed EXT's for unused routines. L80 is not very smart.
+;
+;  Revised: Frank J. Gaude'
+;   Previous Version:	1.4 (12 May 85)
+;    Changes:	- Changed ^C checking code.
+;
+;  Revised: Joe W. Wright
+;   Previous Version:	1.3 (28 Nov 84)
+;    Changes:	- Fixed 'Change Menu' bug.
+;
+;  Revised: Joe W. Wright
+;   Previous Version:	1.2 (6 Oct 84)
+;    Changes:	- Added INLIN and GRACE subroutines to fix re-entry problems
+;		  when user enters ^C under PROMPT.
+;		- Clear wait indicator at SAK
+;		- Leave cursor at end of command prompt.
+;		- Fixed 'return to first menu' code
+;		- Clean up command line after invalid command
+;
+;  Revised: Joe W. Wright
+;   Previous Version:	1.1 (3 Oct 84)
+;    Changes:	- Added call to tinit.
+;
+;  Author:  Richard Conn
+;   Previous Versions:	3.2 (22 Nov 84)
+;   Previous Versions:	3.1 (2 Nov 84), 1.0 (26 June 84)
+;-----------------------------------------------------------------------
+;   VMENU is a screen-oriented, ZCPR3-specific Menu Processor.  It can not
+; be installed to run under conventional CP/M.
+
+;   VMENU loads, searches for the MENU.VMN file, and then displays it to the
+; user with the list of selected files in the target directory and prompts
+; the user for a single-character command.  VMENU extensively employs cursor
+; addressing to position a pointer on the screen, allow the user to manipulate
+; the file pointer (up, down, right, left, next screen, previous screen).  The
+; pointer points to files in the current user directory and displays the user's
+; position dynamically on the screen.  Once pointing to a file, user commands
+; can be used to manipulate the file according to options presented in the menu
+; displayed to the user.  These commands can cause VMENU to chain to a selected
+; program, and then return to the same point in the MENU.VMN file after that
+; command has completed.  Multiple menus are supported within one MENU.VMN file.
+; When a command is invoked, VMENU returns to the menu from which the command
+; was entered.
+;   MENU and VMENU are compatible, except for the following unique features:
+;	MENU	- D, P (local and global)
+;	VMENU	- Pointer Command line builder constant
+
+;   In the way of being ZCPR3-specific, VMENU  requires the ZCPR3 Multiple
+; Command Line Buffer, and the ZCPR3 Shell Stack to be available.  VMENU can
+; chain to external programs via the MCL and then return (ala MENU), and it
+; recognizes Named Directories (so the user can log into B:, B4:, and MYDIR:,
+; for example).
+
+; VMENU is installed by Z3INS.
+
+; VMENU works with ZCPR3 only, with 32k or more of RAM.
+
+;
+;  SYSLIB, Z3LIB, and VLIB References
+;
+	EXT	GETSRUN,Z33CHK
+	EXT	Z3VINIT,TINIT,CLS,STNDOUT,STNDEND,GOTOXY,EREOL
+	EXT	ENVPTR,GETCRT,VPRINT,GETWHL
+	EXT	Z3LOG,LOGUD,RETUD,ZPRSFN
+	EXT	INITFCB,F$OPEN,F$READ,F$CLOSE
+	EXT	SKSP,SKNSP,PUTCL,GETMDISK,GETMUSER
+	EXT	CIN,COUT,CCOUT,CAPS,CRLF,PAFDC,PHLFDC
+	EXT	PFIND,DNSCAN,DUTDIR,PFN2,SHFTRH
+	EXT	GETSH,QSHELL,SHPUSH,SHPOP,GETSH1
+	EXT	GETCL1,GETCL2,GETZRUN,PUTZEX,PUTCST
+	EXT	GETEFCB,GETFN2,GETFNX,GETSHM,PUTSHM
+	EXT	CODEND
+	EXT	SSBINIT,SORT
+
+;
+;  Basic Definitions
+;
+TRUE	EQU	-1		;define true and..
+FALSE	EQU	0		;false.
+;
+DIM	EQU	1		;goto dim
+BRIGHT	EQU	2		;goto bright
+;
+
+;
+; User-Customized Definitions
+;
+VMNAME	  MACRO			;name of vmenu
+	 DB	'VMENU'
+	  ENDM
+VMNFILL	  MACRO			;spaces to fill out name to 8 chars
+	 DB	'   '
+	  ENDM
+
+; User-Customized Options
+;
+WARMBOOT EQU	FALSE		;set true to warmboot on exit
+XLOGOK	EQU	FALSE		; set true to allow display of directory
+				; that you are not logged into
+SYSMENU	EQU	TRUE		;true to enable system menu
+ENCRIPT	EQU	FALSE		;set true to "encript" the password.
+ECHOPASS EQU	FALSE		;set true to echo password to operator.
+EXITCLS	EQU	TRUE		;true to clear screen on exit.
+EXPTAB	EQU	TRUE		;set true to expand tabs on display
+DEFALPHA EQU	TRUE		;set true to alpha by name and type,
+				;false for type and name by default
+USESYS3	EQU	TRUE		;true, use system file 3 for menu name
+SHOWINS	EQU	TRUE		;true, display 'shell installed' message
+ALPHCMD	EQU	'Q'-'@'		;command to toggle alpha sort (now ^q)
+
+;  Command Line Builder Constants
+;
+FPESC	EQU	'%'		;escape char
+FPCDIR	EQU	'C'		;current dir only
+FPDISK	EQU	'D'		;disk only (d)
+FPUSER	EQU	'U'		;user only (u)
+FPFILE	EQU	'F'		;filename.typ
+FPNAME	EQU	'N'		;file name only
+FPTYPE	EQU	'T'		;file type only
+FPPTR	EQU	'P'		;file entry being pointed to
+MNOTE	EQU	'#'		;denotes comment area in macro file
+UIN1	EQU	"'"             ;Single quote for user input
+UIN2	EQU	'"'		;double quote for user input
+
+
+;  Menu Constants
+;
+
+;
+;  1 Special Menu Command Chars
+RNM	EQU	'>'		;next menu
+RNMP	EQU	'.'		;next menu prime (alternate)
+RLM	EQU	'<'		;last menu
+RLMP	EQU	','		;last menu prime (alternate)
+RFM	EQU	'*'		;first menu
+RSM	EQU	'$'		;system menu (password required)
+
+;  2 Internal Menu Control Chars
+MCMD	EQU	':'		;command to jump to another menu
+PCHAR	EQU	'"'		;indicates auto prompt for specific cmd
+MINDIC	EQU	'#'		;menu section indicator
+MINDICS	EQU	'#'+ 80H	;menu section indicator (msb set)
+MFIRST	EQU	'%'+ 80H	;first menu indicator	(msb set)
+GOPTION	EQU	'-'		;global option indicator
+WOPTION	EQU	'!'		;activates wait upon return
+DCHGC	EQU	'&'		;character to change disks and user areas
+
+;  3 Menu Option Chars
+COPTION	EQU	'C'		;display command line to user
+DOPTION	EQU	'D'		;display menu to user
+POPTION	EQU	'P'		;page out menu display to user
+XOPTION	EQU	'X'		;disable zcpr3 return
+
+;  4 Miscellaneous
+IBUFSZ	EQU	254		;size of input line buffer
+VARFLAG	EQU	'$'		;variable flag
+				;(followed by d,u,fn,nn,tn)
+CMDSEP	EQU	';'		;zcpr3 command separator
+
+;
+; Cursor Positioning Addresses
+;
+FROW	EQU	3		;first row of files display
+FROWS	EQU	4		;rows of the file screen
+FCOLS	EQU	5		;colums of the file screen
+
+ELTSIZ	EQU	12		;size of filename, type and attribute
+ENTSIZ	EQU	79/FCOLS	;screen columns per file entry
+EPSLINE	EQU	FROW+FROWS	;position of last line of eps
+EPS	EQU	FROWS*FCOLS	;eps = entries per screen
+LMNLINE	EQU	23		;position of last menu line
+BANADR	EQU	1*256+26	;banner address
+CURHOME	EQU	3*256+1		;home address of cursor
+MNUADR	EQU	EPSLINE*256+1	;first menu line
+BOTADR	EQU	23*256+1	;bottom of screen
+CPMADR	EQU	LMNLINE*256+1	;command prompt message
+ERADR	EQU	[LMNLINE+1]*256+15 ;error message
+FNADR	EQU	1*256+63	;address of current file name
+DUADR	EQU	1*256+3		;address of current du
+MOREADR	EQU	2*256+63	;address of '[more files]' message
+PUBADR	EQU	2*256+3		;address of '[public]' message
+FRSPADR	EQU	2*256+22	;address of free space display
+DISADR	EQU	3*256+30	;address of y/n display
+;
+; System Functions
+;
+RDCON	EQU	1
+WRCON	EQU	2
+PUNCH	EQU	4
+LIST	EQU	5
+DIRCON	EQU	6
+RDBUF	EQU	10
+CONST	EQU	11
+RESETDK	EQU	13
+LOGIN	EQU	14
+OPEN	EQU	15
+CLOSE	EQU	16
+SRCHF	EQU	17
+SRCHN	EQU	18
+ERASE	EQU	19
+READ	EQU	20
+WRITE	EQU	21
+MAKE	EQU	22
+REN	EQU	23
+INQDISK	EQU	25
+SETDMA	EQU	26
+INQALC	EQU	27
+ATTR	EQU	30
+GETPARM	EQU	31
+SGUSER	EQU	32
+COMPSZ	EQU	35
+
+ZRDVER	EQU	48
+STRAP	EQU	50
+RTRAP	EQU	52
+
+;
+; System Addresses
+;
+OS$BASE	EQU	000H		;system base..
+CCP_LN	EQU	800H		;and 'ccp' length in bytes.
+GET	EQU	0FFH		;get user area e-reg value
+BDOS	EQU	OS$BASE+05H
+FCB	EQU	OS$BASE+5CH
+FCBEXT	EQU	FCB+12
+FCBRNO	EQU	FCB+32
+FCB2	EQU	OS$BASE+6CH
+TBUFF	EQU	OS$BASE+80H
+TPA	EQU	OS$BASE+100H
+
+;
+; ASCII Definitions
+;
+CTRLA	EQU	'A'-'@'
+CTRLB	EQU	'B'-'@'
+CTRLC	EQU	'C'-'@'		;..control-c..
+CTRLD	EQU	'D'-'@'
+CTRLE	EQU	'E'-'@'
+CTRLF	EQU	'F'-'@'
+CTRLN	EQU	'N'-'@'
+CTRLR	EQU	'R'-'@'
+CTRLS	EQU	'S'-'@'		;..xoff..
+CTRLT	EQU	'T'-'@'
+CTRLU	EQU	'U'-'@'
+CTRLX	EQU	'X'-'@'
+CTRLZ	EQU	'Z'-'@'
+NULL	EQU	00H		;..null
+BEL	EQU	07H		;..bell
+BS	EQU	08H		;..backspace..
+TAB	EQU	09H		;..tab..
+LF	EQU	0AH		;..linefeed..
+FF	EQU	0CH		;..formfeed..
+CR	EQU	0DH		;..carriage return..
+CAN	EQU	18H		;..cancel..
+EOF	EQU	1AH		;..end-of-file
+EOFCHAR	EQU	1AH		;..end-of-file..
+ESC	EQU	1BH		;..escape character.
+DEL	EQU	7FH		;..and delete.
+
+;
+; Environment Definition
+;
+	 IF	Z3ENV NE 0
+;
+; External ZCPR3 Environment Descriptor
+;
+	JP	START
+	DB	'Z3ENV'		;this is a zcpr3 utility
+	DB	1		;external environment descriptor
+Z3EADR:	DW	Z3ENV
+
+START:	
+;
+; Removed the FENV routine as it causes Apple Z80 coprocessors to crash.
+; Do not restore this code unless you have a way to keep FENV from
+; accessing RAM above BIOS which is not part of the ZCPR3 segments.
+; (This is what causes the problem.)
+; D.McCord
+;
+;	CALL	FENV		;find the zcpr3 environment
+;	JR	Z,STRT1		;no environment found
+;	LD	(Z3EADR),HL	;store the found environment
+;STRT1:
+	LD	HL,(Z3EADR)	;pt to zcpr3 environment
+;
+	 ELSE
+;
+; Internal ZCPR3 Environment Descriptor
+;
+	MACLIB	Z3BASE.LIB
+	MACLIB	SYSENV.LIB
+Z3EADR:
+	JP	START
+	SYSENV
+START:	LD	HL,Z3EADR	;pt to zcpr3 environment
+	 ENDIF
+
+;
+; Start of Program -- Initialize ZCPR3 Environment
+;  Once Environment is Initialized, One of Three Major Functions
+;  will be Performed:
+;	1.  VMENU will be installed as a Shell if invoked explicitly
+;		by user command
+;	2.  The VMENU Function will be performed if VMENU is invoked
+;		by ZCPR3 as a Shell and ZEX is not Running
+;	3.  A Command Line will be Input by VMENU from ZEX and Passed
+;		on to ZCPR3 without Processing
+;
+	CALL	Z3VINIT		;initialize the zcpr3 env and the vlib env
+	JR	START0
+;
+SYS$:	DB	0FFH		;0=no, display $sys files
+KBYTE:	DB	0FFh		;0=no, display number of k bytes left
+DUPSWD:	DB	0FFh		;0=no,	enforce du: passwords
+;
+START0:	CALL	TINIT		;initialize the terminal.
+	 if	not xlogok
+	XOR	A
+	LD	(FCB),A		; force default drive
+	 endif	; (not xlogok)
+
+;
+; For ZRDOS 1.3 and later, we disable the public facility for
+;  the duration of VMENU. It is re-enabled in OS$CCP exit.
+;
+	LD	DE,126		; offset to zrdos public bytes
+	ADD	HL,DE
+	LD	DE,PUBYTS	; point to save area
+	LD	A,(HL)		; drives
+	LD	(DE),A		; save it
+	LD	(HL),0		; clear it
+	INC	HL
+	INC	DE
+	LD	A,(HL)		; users
+	LD	(DE),A		; save it
+	LD	(HL),0		; clear it
+;
+;  Set Opsys Stack Pointer
+;
+	 IF	NOT WARMBOOT
+	LD	(STACK),SP
+	 ENDIF			;not warmboot
+;
+; Check to see if VMENU was executed as a shell
+;
+	CALL	QSHELL		;get and test message from zcpr3
+	JR	NZ,NOTSHELL	;execute shell procedures
+	LD	A,3		; Was called from shell stack
+	CALL	GETFNX		; See if System file 3  (Menu file)
+	CALL	IFUFN		;  is UFN
+	JR	NZ,LOOK4	; Jump if System file 3 is UFN
+	EX	DE,HL
+	LD	HL,FCB2+1	; System file 3 not UFN
+	CALL	IFUFN
+	JR	NZ,USEFCB2	; set it from FCB2 or default
+	LD	HL,MENUFILE
+USEFCB2:
+	LD	B,11
+	CALL	MOVEB
+	LD	BC,8
+	EX	DE,HL		; If system file 3 type is not blank,
+	ADD	HL,BC
+	LD	A,(HL)
+	CP	' '
+	JR	NZ,LOOK4	; go check system file 4
+	EX	DE,HL		; otherwise move "VMN" into type
+	LD	HL,MENUFILE+8
+	LD	B,3
+	CALL	MOVEB
+LOOK4:	LD	A,4
+	CALL	GETFNX		; Check system file 4 (file mask)
+	LD	A,(HL)		; if defined,
+	CP	' '+1
+	JP	NC,RUNSH	; go run the shell
+	EX	DE,HL		; System file 4 is undefined --
+	LD	HL,FCB+1
+	LD	A,(HL)		; Fill in with FCB unless it is blank,
+	CP	A,' '
+	JR	NZ,MOVE4
+	LD	HL,JOKER	; in which case fill with *.*
+MOVE4:	LD	B,11
+	CALL	MOVEB
+	JP	RUNSH
+;
+; Initialize VMENU as a Shell - was called from command line
+;
+NOTSHELL:
+	CALL	SHTEST1		;there must be a shell stack
+	CALL	SHTEST2		;there must be a command line buffer
+
+
+; FUNCTION 1:  Set Up VMENU as a Shell
+;  If no pending commands exist, begin program execution immediately.
+;  Otherwise, run Shell Via Exit to Opsys
+;
+	CALL	GETEFCB		;determine name of program
+	JR	Z,SHGO1		;name not given, so use default
+	INC	HL		;pt to name
+	LD	DE,VMENUCMD	;define name of program
+	LD	B,8
+	CALL	MOVEB		;copy name
+SHGO1:	CALL	IDU		;set initial disk/user
+
+;
+;  Establish File Selection
+;
+
+	 IF	USESYS3
+
+	LD	A,3		; get address of system file 3 into hl
+	CALL	GETFNX
+	LD	A,(HL)		; load first byte of system file 3 to a
+	LD	DE,MENUFILE     ; load default menu name address to de
+	LD	B,11		; number of characters to move
+	CALL	IFUFN		; Is this an unambiguous file name?
+	CALL	NZ,MOVEB	; if so, move system file 3 name to default
+
+	 ENDIF
+
+	XOR	A		;0 = put system mask.
+	CALL	FILEMASK	;set system file spec.
+
+	LD	HL,081h		;Try to form shell stack entry with
+	LD	DE,VMENUTAIL	; whole command -- strip extra blanks
+	CALL	SKSP
+	LD	A,(HL)
+	OR	A
+	JR	Z,NOARGS
+	CALL	MOVTOK
+	OR	A
+	JR	NZ,GETMENUF
+	LD	HL,VMENUFILE-1	; if no menu specified, use MENU
+	LD	B,6
+	CALL	MOVEB
+	JR	PUSHTRYB
+NOARGS:	LD	HL,NOARGNAME	; If no args specified, use "*.* MENU"
+	LD	B,9
+	CALL	MOVEB
+	JR	PUSHTRYB
+GETMENUF:
+	INC	DE		;  Get Menu Specification from command line
+	CALL	SKSP
+	CALL	MOVTOK
+PUSHTRYB:
+	XOR	A		; Indicate first try to push into shell
+PUSHTRYA:
+	LD	(PUSHTRY),A
+	LD	HL,VMENUCMD	; establish shell
+	CALL	SHPUSH		;push onto shell stack
+	JR	NZ,SHGO2		;error?
+;
+;  Initialize Shell messages
+;
+	LD	B,0		;shell message 0
+	XOR	A		;no wait
+	CALL	PUTSHM		;set shell message.
+;
+	LD	B,1		;shell message 1
+	XOR	A		;default to first menu.
+	CALL	PUTSHM		;set shell message.
+;
+;  Shell Successfully installed
+;
+	 IF	SHOWINS
+	CALL	VPRINT
+	DB	' Shell Installed',0
+	 ENDIF
+;
+;  Check for pending commands (either in command line or because ZEX or
+;  SUBMIT is running).  We can only check for SUBMIT running with ZCPR33,
+;  so we check first to see that ZCPR33 is running.
+;
+	call	getcl2		; See if any more commands pending
+	jr	nz,goccp	; If so, go back to CCP
+	call	getzrun		; If ZEX is running
+	jr	nz,goccp	; ..go back to CCP
+	call	z33chk		; See if ZCPR33 is running
+	jp	nz,runsh	; If not, assume SUBMIT is not running
+	call	getsrun		; Otherwise, check to see if SUBMIT is running
+	jr	z,runsh		; If not, run shell immediately.
+
+;  Command pending. Start execution via return to CCP.
+
+goccp:	JP	CHAIN2		;set idu into command line and go
+;
+;  Error in Shell Stack Installation
+;
+SHGO2:	CP	2		;shell stack full?
+	JR	NZ,SHGO3
+	CALL	VPRINT
+	DB	' Shell Stack Full',0
+	RET
+;
+;  Shell Stack Entry Size is too small for command line
+;
+SHGO3:	LD	A,(PUSHTRY)		; If can't fit the whole command,
+	OR	A
+	JR	NZ,SHGO3A
+	LD	(VMENUTAIL),A		; try with just "VMENU"
+	LD	HL,VMENUCMD
+	LD	A,0FFh
+	JP	PUSHTRYA
+SHGO3A:	CALL	VPRINT
+	DB	' Shell Stack Entry Size',0
+	RET
+
+
+; Check for Presence of Shell Stack
+;
+SHTEST1:
+	CALL	GETSH		;get shell stack data
+	RET	NZ
+	POP	AF		;clear stack
+	CALL	VPRINT
+	DB	'No Shell Stack',0
+	RET
+
+
+; Check for Presence of Command Line
+;
+SHTEST2:
+	CALL	GETCL1		;get command line data
+	RET	NZ
+	POP	AF		;clear stack
+	CALL	VPRINT
+	DB	'No Command Line',0
+	RET
+
+;  VMENU was invoked as a Shell
+;    Check for ZEX Input in Progress
+;
+RUNSH:	CALL	GETZRUN		;check zex message byte
+	JR	NZ,ZEXRUN		;process zex command line if zex running
+;
+; FUNCTION 2: Run VMENU and Perform Main Function
+;
+	XOR	A		;set no shell message
+	CALL	PUTCST
+	CALL	SETUP		;init buffers and pointers
+	CALL	STACKSET	;setup stack
+;
+;  Check for Delay Before Resuming VMENU and Delay if Set
+;
+	LD	B,0
+	CALL	GETSHM		;get shell message 0
+	AND	80H		;check msb
+	CALL	NZ,SAK		;pause for input
+;
+;  Begin VMENU Processing
+;
+RUNSH1:	CALL	FILELOAD	;load files
+	CALL	FINDCFILE	;locate current file, set screen variables
+	CALL	REBUILD		;build heading and file display.
+	CALL	MENULOAD	;load menu file, set global options.
+;
+;  Entry Point to Update Current Menu and Input/Process Command
+;
+RUNSH2:	CALL	STACKSET	;reset stack
+	CALL	GETMENU		;get current menu, set local options.
+;
+;  Entry Point to Redisplay Current Menu and Input/Process Command
+;
+RUNSH3:	CALL	STACKSET	;reset stack
+	CALL	DISPMENU	;display current menu
+	JR	LOOPFN		;continue
+;
+;
+;  Entry Point to Refresh Current Files and Input/Process Command
+;
+RUNSH4:	CALL	STACKSET	;reset stack
+	CALL	REFRESH		;update file portion of display.
+;
+;  Display Current File and Input/Process Command
+;
+LOOPFN:	CALL	DISPCFN		;display current file name
+;
+;  Input/Process Command
+;
+LOOP:	CALL	STACKSET	;reset stack
+	CALL	PROMPT		;get command from user
+	CALL	CTPROC		;process possible table command.
+	CALL	MNUPROC		;process possible menu option command.
+	CALL	ICMSG		;print 'invalid command' message.
+	JR	LOOP		;continue
+
+
+; FUNCTION 3: Run ZEX on Top of VMENU
+;  Command line is currently empty and ZEX is active.
+;  Accept New Command Line from ZEX and Pass it to ZCPR3.
+;
+ZEXNUL:	CALL	CRLF		;new line
+ZEXRUN:	CALL	VPRINT		;print prompt
+	DB	'VMENU> ',0
+	LD	A,1		;tell zex that it is prompted
+	CALL	PUTZEX
+	CALL	GETCL1		;pt to command line buffer
+	LD	D,H		;copy pointer
+	LD	E,L
+	INC	DE		;pt to 1st char
+	INC	DE
+	INC	DE
+	INC	DE
+	LD	(HL),E		;set ptr to first character.
+	INC	HL
+	LD	(HL),D
+	INC	HL		;pt to char count
+	EX	DE,HL			;... in de
+	PUSH	DE		;save ptr
+	LD	C,RDBUF		;input line via bdos
+	CALL	BDOS
+	POP	HL		;pt to char count
+	INC	HL
+	LD	E,(HL)		;get char count
+	INC	HL		;pt to first char
+	PUSH	HL		;save ptr
+	LD	D,0		;de=char count
+	ADD	HL,DE
+	LD	(HL),0		;store ending 0
+	POP	HL		;pt to first char
+	CALL	SKSP		;skip over leading spaces
+	LD	A,(HL)		;check for comment
+	CP	';'		;if comment,
+	JR	Z,ZEXNUL		;loop until real command is found
+	XOR	A		;a=0
+	CALL	PUTZEX		;resume zex (a=0)
+	JP	PUTCST		;set command status to normal (a=0),
+				;... then return to opsys
+
+
+; E X I T
+
+; Return to CCP
+
+;
+; Entry point for VMENU exit
+;
+OS$CCP:	LD	A,3		; Return to system -- set system file 3 (menu)
+	CALL	GETFNX		; to *.*
+	EX	DE,HL
+	LD	HL,JOKER
+	LD	B,11
+	CALL	MOVEB
+	LD	A,4		; Set system file 4 (file mask) undefined
+	CALL	GETFNX
+	EX	DE,HL
+	LD	HL,BLANK11
+	LD	B,11
+	CALL	MOVEB
+	XOR	A		; Set menu # to zero
+	LD	B,1
+	CALL	PUTSHM
+	 IF	EXITCLS
+	CALL	VCLS		;clear screen on exit.
+	 ENDIF			;exitcls
+;
+; Entry point for VMENU exit due to Fatal Error
+;
+OS$CCPE:
+	CALL	SHPOP		;clear shell stack
+;
+; Entry point for command line exec
+;
+OS$CCP1:
+	CALL	RESDMA		;reset dma address
+;
+	LD	BC,(DU$ORIG)	;get and set original du:
+	CALL	LOGUD
+;
+	LD	HL,(Z3EADR)	; environment address
+	LD	DE,126		; offset to zrdos public bytes
+	ADD	HL,DE
+	EX	DE,HL		; to de
+	LD	HL,PUBYTS	; point to save area
+	LD	A,(HL)
+	LD	(DE),A
+	INC	HL
+	INC	DE
+	LD	A,(HL)
+	LD	(DE),A		; public reinstated
+;
+	 IF WARMBOOT
+	JP	OS$BASE
+	 ENDIF			;warmboot
+
+	 IF	NOT WARMBOOT
+	LD	HL,(STACK)	;put pointer back to 'sp'.
+	LD	SP,HL
+	RET			;return to ccp
+	 ENDIF			;not warmboot
+
+
+;******************************************************************************
+;
+; V M E N U    C O M M A N D	S U B R O U T I N E S
+;
+
+;  STACKSET - Set Stack Pointer
+;
+STACKSET:
+	POP	DE		;get return address
+	LD	HL,(IBUFF)	;top of stack
+	LD	SP,HL		;start local stack
+	PUSH	DE		;return address on new stack
+	RET
+
+
+; DISPCFN - Display file name of current file
+;	- also update 2nd System File to current file
+;
+DISPCFN:
+	LD	HL,FNADR	;position cursor for file name print
+	CALL	GOTOXY
+	CALL	GETFN2		;pt to system file name
+	LD	DE,11		;pt to 2nd system file name
+	ADD	HL,DE
+	EX	DE,HL		;..in de
+	LD	HL,(RINGPOS)	;pt to current file name
+	LD	B,11		;copy into 2nd system file name
+	CALL	MOVEB
+	JP	PRFN
+
+; PROMPT - Get command from user and clear error line if any
+;
+PROMPT:	LD	A,0FFH		;turn off paging
+	LD	(PAGCNT),A
+	CALL	REFCMD		;refresh command line, pos'n cursor.
+	JP	DKEYIN		;wait for character from keyboard, then return.
+
+
+; ICMSG - Display 'Invalid Command' error Message
+;
+ICMSG:	CALL	ERMSG
+	DB	'Invalid Cmd: ',0
+	LD	A,B		;get char
+	CP	' '		;expand if less than space
+	JR	NC,ICMSG1
+	LD	A,'^'		;control
+	CALL	COUT
+	LD	A,B		;get byte
+	ADD	'@'		;convert to letter
+ICMSG1:	JP	COUT		;return for loop processing
+
+
+; CTPROC - Process command from table
+;
+CTPROC:	LD	B,A		;command in b
+	LD	HL,CTABLE	;pt to table
+	LD	A,(HL)		;any cursor commands?
+	OR	A
+	JR	NZ,CTPR1
+	LD	HL,CTAB1
+;
+; Command table scanner
+;	HL = Table
+;	B  = Command Letter
+;
+CTPR1:	LD	A,(HL)		;get table command char
+	OR	A		;end of table?
+	RET	Z			;done if so
+	CP	B		;match?
+	INC	HL		;-> command wheel flag
+	JR	Z,CTPR2		;br if command found.
+;
+	INC	HL		;skip to next entry
+	INC	HL
+	JR	CTPR1
+;
+CTPR2:
+	LD	A,(HL)		;get low command addr byte
+	INC	HL
+	LD	H,(HL)		;get high
+	LD	L,A
+	EX	(SP),HL		;address on stack
+	LD	A,(ERMFLG)	;error message?
+	OR	A		;0=no
+	CALL	NZ,ERCLR	;erase old error message
+	RET			;"jump" to routine
+
+
+; CTABLE - Command Table
+;
+CTABLE:	DB	0		;user cursor positioning
+	DW	UP
+
+	DB	0
+	DW	DOWN
+
+	DB	0
+	DW	FORWARD
+
+
+	DB	0
+	DW	REVERSE
+
+;
+CTAB1:	DB	CTRLC		;if exit, then to opsys
+	DW	OSEXIT
+
+	DB	CTRLR		;screen refresh?
+	DW	RUNSH3
+
+	DB	CTRLE		;system cursor positioning
+	DW	UP
+
+	DB	CTRLX
+	DW	DOWN
+
+	DB	CTRLD
+	DW	FORWARD
+
+	DB	CTRLS
+	DW	REVERSE
+
+	DB	CR		;nop
+	DW	LOOP
+
+;
+	DB	CTRLT		;top of screen
+	DW	LOCTOP
+
+	DB	CTRLB		;bottom of screen
+	DW	LOCBOT
+
+	DB	CTRLN		;new directory
+	DW	LOGDIR
+
+;
+
+	DB	'+'		;jump forward
+	DW	JUMPF
+
+	DB	CTRLF
+	DW	JUMPF
+
+	DB	'-'		;jump backward
+	DW	JUMPB
+
+	DB	CTRLA
+	DW	JUMPB
+
+	DB	' '		;go forward
+	DW	FORWARD
+
+	DB	BS		;back up?
+	DW	REVERSE
+
+	DB	ALPHCMD		;alphabetize?
+	DW	ALPHASW
+
+	DB	RFM		;go to first menu?
+	DW	FIRSTMNU
+
+	DB	RLM		;go to last menu?
+	DW	LASTMNU
+
+	DB	RLMP		;go to last menu? (alternate)
+	DW	LASTMNU
+
+	DB	RNM		;go to next menu?
+	DW	NEXTMNU
+
+	DB	RNMP		;go to next menu? (alternate)
+	DW	NEXTMNU
+
+	 IF	SYSMENU
+	DB	RSM		;go to system menu?
+	DW	SYSTMNU
+	 ENDIF			;sysmenu
+;
+	DB	0		;end of table
+
+; COMMAND: - ^T  Jump to beginning of local screen
+;
+LOCTOP:	CALL	CLRCUR		; clear the cursor
+	LD	HL,(LOCBEG)	; first entry of this screen
+	LD	(RINGPOS),HL	; new ring position
+	CALL	CUR$FIRST	; position the cursor
+	CALL	SETCUR		; print it
+	JP	LOOPFN		; print new current file and continue
+
+; COMMAND: - ^B  Jump to end of local screen
+;
+LOCBOT:	CALL	CLRCUR		; clear the cursor
+	CALL	CUR$LAST	; position the cursor
+	CALL	SETCUR		; print it
+	LD	HL,(LOCEND)	; end of current screen
+	LD	DE,-ELTSIZ	; element size
+	ADD	HL,DE		; back up to last
+	LD	(RINGPOS),HL	; new ring position
+	JP	LOOPFN		; print new current file and continue
+
+; COMMAND: - (Previous Screen)
+;
+JUMPB:	LD	HL,(RINGCNT)	;get # files in ring.
+	LD	DE,EPS		;..and maximum number that can be displayed.
+	CALL	CMPDEHL
+	JR	Z,JB1
+	JP	NC,LOOP		;done if all files will be displayed.
+;
+JB1:	LD	HL,CURHOME	;set cursor home
+	LD	(CURAT),HL
+	LD	HL,(RING)	;at front?
+	EX	DE,HL
+	LD	HL,(LOCBEG)
+	CALL	CMPDEHL
+	JR	Z,JUMPBW	;back up and wrap around
+	LD	(LOCEND),HL	;set new end
+	LD	DE,-EPS*ELTSIZ	;back up
+	ADD	HL,DE
+	LD	(LOCBEG),HL	;new beginning
+	LD	(RINGPOS),HL	;new position
+	JP	RUNSH4		;refresh files.
+;
+JUMPBW:	LD	HL,(LOCBEG)	;at first screen?
+	EX	DE,HL
+	LD	HL,(RING)	;pt to first element of ring
+	CALL	CMPDEHL
+	JR	Z,JBW0		;advance to end
+	LD	HL,-EPS*ELTSIZ	;back up
+	ADD	HL,DE		;first element of new local ring
+	JR	JFW0
+;
+JBW0:	LD	DE,EPS*ELTSIZ	;pt to next screen
+	ADD	HL,DE
+	EX	DE,HL
+	LD	HL,(RINGEND)
+	CALL	CMPDEHL
+	EX	DE,HL
+	JR	Z,JBW1
+	JR	C,JBW0
+;
+JBW1:	LD	DE,-EPS*ELTSIZ
+	ADD	HL,DE		;pt to first element of new local ring
+	JR	JFW0
+
+
+; COMMAND: + (Next Screen)
+;
+JUMPF:	LD	HL,(RINGCNT)	;get # files in ring.
+	LD	DE,EPS		;..and maximum number that can be displayed.
+	CALL	CMPDEHL
+	JR	Z,JF1
+	JP	NC,LOOP		;done if all files will be displayed.
+;
+JF1:	LD	HL,CURHOME	;set cursor to home
+	LD	(CURAT),HL
+	LD	HL,(LOCEND)	;see if local end <= ring end
+	EX	DE,HL
+	LD	HL,(RINGEND)
+	CALL	CMPDEHL
+	JR	Z,CMDLOOP
+	LD	HL,(LOCEND)	;new screen starting at locend
+;
+;  JFW0 - Reset RING Position to HL
+;
+JFW0:	CALL	SETSCR1		;reset ringpos on ...
+	JP	RUNSH4		;refresh files.
+
+
+;  CMDLOOP - Reset to Beginning of RING and Resume Command Looping
+;
+CMDLOOP:
+	CALL	SETSCR		;reset all screen pointers
+	JP	RUNSH4		;refresh files.
+
+
+; COMMAND: ' ', Left-Arrow
+;
+FORWARD:
+	CALL	CLRCUR		;clear cursor
+	CALL	FOR0		;position on screen and in ring
+	CALL	SETCUR		;set cursor
+	JP	LOOPFN
+
+
+; COMMAND: BS, Right-Arrow
+;
+REVERSE:
+	CALL	CLRCUR		;clear cursor
+	CALL	REV0		;position on screen and in ring
+	CALL	SETCUR		;set cursor
+	JP	LOOPFN
+
+
+; COMMAND: Up-Arrow
+;
+UP:	CALL	CLRCUR		;clear cursor
+	CALL	TOC		;top of column?
+	JR	C,UP2		;wrap around
+	LD	B,FCOLS		;back up 4 or 5 entries
+;
+UP1:	PUSH	BC		;save count
+	CALL	REV0		;back up in ring and on screen (no print)
+	POP	BC		;get count
+	DJNZ	UP1
+	JR	DOWN1A
+;
+UP2:	CALL	BOC		;bottom of column?
+	JR	C,UP3		;yes
+	LD	(RINGPOS),HL	;new ring position
+	LD	HL,(CURAT)	;advance cursor
+	INC	H
+	LD	(CURAT),HL
+	JR	UP2
+;  Top of column check. Return carry if at top
+;   Return new ring position in DE
+;
+TOC:	LD	HL,(RINGPOS)	;see if wrap around
+	LD	DE,-ELTSIZ*FCOLS ;4 or 5 entries
+	ADD	HL,DE
+	EX	DE,HL
+	LD	HL,(LOCBEG)	;beginning of local screen
+	CALL	CMPDEHL
+	RET
+;
+;
+BOC:	LD	HL,(RINGPOS)	;current position
+	LD	DE,ELTSIZ*FCOLS
+	ADD	HL,DE		;down 1
+	LD	DE,(LOCEND)
+	DEC	DE		;ensure carry if not at or past end
+	CALL	CMPDEHL
+	RET
+;
+UP3:	CALL	REV0		;move back one column
+	CALL	BOC		;check if bottom of this column
+	JR	C,DOWN1A	;yes, quit. else fall down
+
+; COMMAND: Down-Arrow
+;
+DOWN:	CALL	CLRCUR		;clear cursor
+	CALL	BOC		;bottom of column?
+	JR	C,DOWN2		;wrap around
+	LD	B,FCOLS		;forward 4 or 5 entries
+;
+DOWN1:	PUSH	BC		;save count
+	CALL	FOR0		;advance in ring and on screen (no print)
+	POP	BC		;get count
+	DJNZ	DOWN1
+;
+DOWN1A:	CALL	SETCUR		;set cursor
+	JP	LOOPFN
+;
+DOWN1B:	LD	HL,(CURAT)	;current cursor
+	LD	A,L		;column to a
+	ADD	ENTSIZ		;one entry
+	CP	ENTSIZ*[FCOLS-1]+2 ;last column?
+	LD	B,1		;just in case
+	JR	C,DOWN1		;move forward one position, else..
+	LD	HL,(LOCBEG)	;beginning of local screen..
+	LD	(RINGPOS),HL	;to ring position and..
+	CALL	CUR$FIRST	;cursor to top left
+	JR	DOWN1A		;quit
+;
+; Move to top of current column
+;
+DOWN2:	CALL	TOC		;top of column?
+	JR	C,DOWN1B	;yes
+	EX	DE,HL		;new ring position
+	LD	(RINGPOS),HL
+	LD	HL,(CURAT)	;current cursor
+	DEC	H		;up one
+	LD	(CURAT),HL
+	JR	DOWN2		;try again
+;
+;  FOR0 - advance routine
+;
+FOR0:	LD	HL,(RINGPOS)	;at end of loop yet?
+	LD	DE,ELTSIZ	;i.e., will we be at end of loop?
+	ADD	HL,DE
+	EX	DE,HL
+	LD	HL,(LOCEND)
+	CALL	CMPDEHL		;compare 'present' to 'end'
+	JR	NZ,FORW		;to next print position
+	CALL	CUR$FIRST	;position cursor
+	LD	HL,(LOCBEG)	;set position pointer to beginning and..
+	LD	(RINGPOS),HL
+	RET
+;
+FORW:	LD	HL,(RINGPOS)	;advance in ring
+	LD	DE,ELTSIZ
+	ADD	HL,DE
+	LD	(RINGPOS),HL	;new position
+	JP	PSN$NEXT	;position cursor
+
+
+;  REV0 - Back Up Routine
+;
+REV0:	LD	HL,(LOCBEG)
+	EX	DE,HL
+	LD	HL,(RINGPOS)	;see if at beginning of ring
+	CALL	CMPDEHL
+	JR	NZ,REV1		;skip position pointer reset if not..
+	CALL	PSN$LAST	;...end of local ring
+	LD	HL,(LOCEND)	;set to end +1 to backup to end
+	LD	DE,-ELTSIZ
+	ADD	HL,DE
+	LD	(RINGPOS),HL
+	RET
+;
+REV1:	CALL	PSN$BACK	;back up 1
+REV2:	LD	HL,(RINGPOS)
+	LD	DE,-ELTSIZ	;one ring position..
+	ADD	HL,DE		;..backwards.
+	LD	(RINGPOS),HL
+	RET
+
+; LOGDIR - Select drive and user area
+;	    (system reset for disk change on-the-fly)
+;
+LOGDIR:
+	CALL	GETWHL
+	JP	Z,LOOP
+	CALL	CPRMPT		; prompt to get drive/user selection
+	DB	'Login DIR: ',0
+;
+; Get file spec - directory
+;
+	LD	A,0FFH		; echo input
+	LD	HL,(CMDBUFF)	;input line buffer
+	CALL	INLIN		; get file specification from user
+	OR	(HL)
+	JR	NZ,LOG1		; br if new directory
+;
+	JP	LOOP
+;
+;  Check for VMENU exit.
+;
+LOG1:
+	CP	20H+1
+	JR	NC,LOG2
+	CP	CTRLC		; exit?
+	JP	Z,OSEXIT
+;
+	INC	HL		; check for space or eol
+	LD	A,(HL)
+	DEC	HL
+	AND	7FH		; mask msb
+	CP	' '+1
+	JP	C,OS$CCP	; abort
+;
+LOG2:	CALL	VFY$D$U		; resolve, verify du or dir access.
+	JR	Z,LOGE1		; not defined?
+	JR	C,LOGE2		; access error?
+;
+	LD	A,0		; find end of du or dir
+	LD	BC,10		; max characters for directory
+	CPIR
+	DEC	HL
+	DEC	HL
+	LD	A,':'
+	CP	(HL)		; was colon added
+	JR	Z,LOG3		; yes
+				; no, must be specification
+	INC	HL
+	LD	(HL),A		;..so put colon in cmdline
+LOG3:	INC	HL
+	LD	(HL),';'	; place seperator
+	INC	HL
+	EX	DE,HL
+	CALL	GETSH1		; load command from shell stack
+	CALL	MOVEB
+	EX	DE,HL
+	LD	BC,9
+	ADD	HL,BC
+	 if	xlogok
+	EX	DE,HL
+	LD	HL,BLANK11	; blank over duu:
+	LD	B,4
+	CALL	MOVEB
+	EX	DE,HL
+	 endif
+	LD	A,(IFLOGMENU)	; Are we changing menus?
+	OR	A
+	JR	Z,LOG4
+	CALL	SKSP		; If so, skip over file mask in command
+	LD	A,(HL)
+	OR	A
+	JR	Z,LOG4		; (jump if no file mask)
+	CALL	SKNSP
+	LD	A,(HL)
+	OR	A
+	JR	Z,LOG4		; (jump if no file mask)
+	INC	HL
+	EX	DE,HL
+	LD	A,3		; Get new menu from sys file 3
+	CALL	GETFNX
+	LD	B,8
+	CALL	MOVEB
+	LD	BC,8
+	EX	DE,HL
+	ADD	HL,BC
+	LD	(HL),0
+LOG4:	CALL	SHPOP		; pop the shell and place the cmdline
+				; in the multi-command line and go.
+	JP	RNCMDX
+
+;
+;  LOGDIR error messages
+;
+LOGE1:	CALL	ERMSG
+	DB	'Directory Entry Invalid',0
+	JP	LOGDIR		; loop on error
+;
+LOGE2:	CALL	ERMSG
+	DB	'Directory Access Denied',0
+	JP	LOGDIR		; loop on error
+
+; VFY$D$U - Resolve DU or DIR and verify Access
+;	on entry, HL -> file specification
+;	on exit,  HL is unchanged
+;		  BC =	DU for DU/DIR
+;		  Z  = Z if DU/DIR resolution error,
+;		       NZ if DU/DIR resolved ok.
+;		  C  = C if access denied,
+;		       NC if no password or password OK
+;
+;
+VFY$D$U:
+	PUSH	HL		; save file spec pointer.
+	LD	A,1		; look for dir:, then du:
+	CALL	DNSCAN		; resolve dir: or du: form and return du
+	JR	NZ,VFYDU1	; br if resolved.
+	POP	HL		; restore file spec pointer.
+	SCF			; not resolved - return with z, nc
+	CCF
+	RET
+;
+VFYDU1:	CALL	GETMDISK	; get maximum disk (a=1)
+	DEC	A		; offset to du format (drive a = 0)
+	CP	B		; compare to requested drive.
+	JR	C,VFYDU4	; br if access denied by env.
+;
+	CALL	GETMUSER	; get maximum disk (0-31)
+	CP	C		; compare to requested user.
+	JR	C,VFYDU4	; br if access denied by env.
+
+	LD	A,(DUPSWD)	; check and see if we want
+	OR	A		; password enforced
+	JR	Z,VFYDU3
+	CALL	DUTDIR		; get dir: for du:
+	JR	Z,VFYDU3	; ok if no dir (or password)
+	LD	DE,8		; pt to password
+	ADD	HL,DE
+	LD	A,(HL)		; get 1st char of password
+	CP	' '		; no password?
+	JR	Z,VFYDU3	; br if no check required.
+;
+	PUSH	BC		; save du:
+	PUSH	HL		; save ptr to valid password.
+	CALL	CPRMPT		; prompt to get du: password
+	DB	'Password?: ',0
+;
+	LD	HL,PSWDBUF	; get password buffer location
+	LD	B,8		; get password length
+	LD	(HL),B		; get command line length
+	INC	HL
+	INC	HL
+	CALL	FILL		; initialize buffer to blanks.
+;
+	LD	DE,PSWDBUF	; get password buffer location again
+	LD	C,RDBUF		; console read-buffer function
+	CALL	BDOS
+;
+	LD	HL,PSWDBUF+2	; point to password.
+	LD	B,8		; 8 chars in password.
+VFYDU2:	LD	A,(HL)		; capitalize character.
+	CALL	CAPS
+	LD	(HL),A		; put back into buffer
+	INC	HL		; point at character to capitalize
+	DJNZ	VFYDU2		; loop
+;
+	LD	DE,PSWDBUF+2	; point to password.
+	POP	HL		; and to valid password.
+	LD	B,8		; 8 chars in password.
+	CALL	CMPSTR		; compare for exact match
+	POP	BC		; restore du:
+	JR	NZ,VFYDU4	; access denied - invalid password.
+;
+VFYDU3:
+	POP	HL		; restore file spec pointer.
+	OR	0FFH		; resolved ok, access allowed.
+	RET			; return with nz, nc
+;
+VFYDU4:	POP	HL		; restore file spec pointer.
+	OR	0FFH		; access denied - return with nz, c
+	SCF
+	RET
+;
+; Fill - Fill buffer with 'spaces' with count in b-reg
+;
+FILL:	LD	(HL),' '
+	INC	HL
+	DJNZ	FILL
+	RET
+;
+; Change directory (invoked from "&" command)
+;
+CHGDIR:	INC	HL		; point to first character
+	LD	DE,(CMDBUFF)	; get command buffer address
+CHGDIR1:LD	A,(HL)		; get character
+	CP	CR		; carriage return is end of string
+	JR	Z,CHGDIR2
+	CP	';'
+	JR	Z,CHGDIR4
+	LD	(DE),A		; store character
+	INC	HL
+	INC	DE
+	JR	CHGDIR1
+CHGDIR2:
+	LD	A,0
+	LD	(DE),A		; store ending 0
+CHGDIR3:LD	HL,(CMDBUFF)
+	JP	LOG2		; convert du or dir and log into new dir
+CHGDIR4:
+	LD	A,0
+	LD	(DE),A		; store ending 0
+	INC	HL		; point to next char
+	PUSH	HL		; and save it
+	CALL	GETFN2		; get system file address
+	LD	DE,11*2		; point to third file name
+	ADD	HL,DE
+	EX	DE,HL		; de points to file name
+	POP	HL		; get new name back
+	PUSH	HL
+	LD	A,CR
+	LD	BC,10
+	CPIR			; find cr at end of inst.
+	POP	HL
+	PUSH	BC		; save number of blanks
+	LD	A,10
+	SUB	C		; get number to move
+	DEC	A
+	LD	C,A
+CHGDIR5:LD	A,(HL)		; get letter
+	CALL	CAPS		; and capatilize
+	LD	(DE),A		; move char.
+	INC	DE
+	INC	HL
+	DEC	C		; count down
+	JR	NZ,CHGDIR5
+	POP	BC		; get number of blanks back
+	DEC	BC
+	EX	DE,HL
+CHGDIR6:LD	(HL),' '	; move blanks to rest of field
+	INC	HL
+	DEC	C
+	JR	NZ,CHGDIR6
+	LD	A,0FFh
+	LD	(IFLOGMENU),A
+	JR	CHGDIR3		; go log in drive/user
+
+;
+; COMMAND: OSEXIT
+;
+; Exit to CCP IF allowed.
+;
+OSEXIT:	LD	A,(CPMOK)	;ok to abort?
+	OR	A		;0=no
+	JP	Z,LOOP		;no...ignore it, but return to main loop.
+	JP	OS$CCP		;yes..return to ccp if so.
+
+
+; COMMAND: ALPHASW
+;
+; Toggle alphabetize switch and redisplay files
+;
+ALPHASW:
+	LD	A,(ALPHA)	;toggle flag
+	CPL
+	LD	(ALPHA),A
+	CALL	CPRMPT		;tell user what is happening
+	DB	'Sorting by File ',0
+	LD	A,(ALPHA)	;get flag
+	OR	A		;check it
+	JR	Z,ASWTN
+	CALL	VPRINT
+	DB	'Name and Type',0
+	JR	ASWT1
+;
+ASWTN:	CALL	VPRINT
+	DB	'Type and Name',0
+;
+ASWT1:	XOR	A		;do not use pointers in this sort
+	LD	(SSBFLG),A
+	CALL	SORTX		;sort files in new order.
+	CALL	FINDCFILE	;locate current files
+	JP	RUNSH4		;refresh file display only
+
+
+; COMMAND: RFM (Go to First Menu)
+;
+FIRSTMNU:
+	LD	HL,(CSTART)	;pt to first character of current menu
+	LD	A,(HL)		;get it
+	CP	MFIRST		;at first menu already?
+	JP	Z,LOOP		;yes - return with error.
+	XOR	A		;no - select first menu.
+	LD	(CMENU),A	;update current menu number.
+	JP	RUNSH2		;goto new menu and display it.
+
+
+; COMMAND: RLM (Go to Last Menu)
+;
+LASTMNU:
+	LD	HL,(CSTART)	;pt to first character of current menu
+	LD	A,(HL)		;get it
+	CP	MFIRST		;at first menu already?
+	JP	Z,LOOP		;yes - return with error.
+	LD	A,(CMENU)	;get current menu number
+	DEC	A
+	LD	(CMENU),A	;update current menu number.
+	JP	RUNSH2		;goto new menu and display it.
+
+
+; COMMAND: RNM (Go to Next Menu)
+;
+NEXTMNU:
+	LD	A,(NMENFL)	;next menu available?
+	OR	A		;0=no
+	JP	Z,LOOP		;no - return with error.
+	LD	A,(CMENU)	;get current menu number
+	INC	A
+	LD	(CMENU),A	;update current menu number.
+	JP	RUNSH2		;goto new menu and display it.
+
+
+	 IF	SYSMENU
+
+; COMMAND: RSM (Go to System Menu)
+;
+SYSTMNU:
+	LD	A,(SMENFL)	;system menu available?
+	OR	A		;0=no
+	JP	Z,LOOP		;no - return with error.
+	CALL	GETWHL		;no need for password if wheel
+	JR	NZ,SYSTM1
+	CALL	PASSWORD	;prompt for and get password
+	JP	NZ,LOOP		;reprompt if error
+	CALL	ERCLR		;erase 'password?' prompt.
+SYSTM1:	LD	A,(SMENO)	;get system menu number
+	LD	(CMENU),A	;update current menu number.
+	JP	RUNSH2		;goto new menu and display it.
+
+	 ENDIF			;sysmenu
+
+
+;  MNUPROC - Process Menu User Option
+;
+MNUPROC:
+;
+;  Determine if Selected Option Letter is Valid.
+;
+	LD	HL,(OPTSTRT)	;pt to first option char
+MNUPR1:	LD	A,(HL)		;get it
+	CP	MINDICS		;at next menu?
+	RET	Z		;yes - invalid command entered.
+	CALL	CAPS		;capitalize
+	CP	B		;match user selection?
+	JR	Z,MNUPR2
+	CALL	LSKIP		;skip to next line
+	JR	MNUPR1
+;
+;  Process Selected Option
+;
+MNUPR2:	LD	A,B		;echo selected option.
+	CALL	COUT
+	PUSH	HL		;save menu file pointer
+	LD	A,(ERMFLG)	;error message?
+	OR	A		;0=no
+	CALL	NZ,ERCLR	;erase old error message
+	POP	HL		;restore menu file pointer
+;
+	INC	HL		;pt to first letter of command
+	LD	A,(HL)		;get it
+	CP	MCMD		;invoke other menu?
+	JP	Z,MCHCMD	;menu change command
+	CP	DCHGC		;disk or user change char?
+	JP	Z,CHGDIR	;disk change routine
+	CP	WOPTION		;turn on wait?
+	LD	A,0		;assume no wait.
+	JR	NZ,PRMPTG	;br if no wait desired.
+	INC	HL		;skip wait option char
+	LD	A,80H		;set wait flag
+PRMPTG:	LD	(WFLAG),A	;update wait flag
+	CALL	EXPAND		;expand line, de pts to result
+
+
+; RUNCMD - Run Command Pted to by DE
+;
+RUNCMD:	LD	HL,(CMDBUFF)	;get command buffer address.
+;
+; Copy Command Line in DE into Buffer in HL
+;
+RNCMD1:	LD	A,(DE)		;get command letter
+	OR	A		;end of string?
+	JR	Z,RNCMD7	;mark end of buffer and go.
+	CP	CR		;eol?
+	JR	Z,RNCMD7
+;
+	CP	PCHAR		;start user input prompt?
+	JR	Z,RNCMD2	;prompt user and get responce.
+	LD	(HL),A		;no..store character...
+	INC	HL		;..and continue.
+	INC	DE
+	JR	RNCMD1
+;
+;  User input required - print prompt and get it.
+;
+RNCMD2:	INC	DE		;pt to first char of prompt
+	LD	A,CR
+	CALL	COUT
+	CALL	EREOL		;erase to end of line
+RNCMD3:	LD	A,(DE)		;get char
+	CP	CR		;end of line forces end of prompt?
+	JR	Z,RNCMD4	;ok. now get response.
+	INC	DE		;point to next char of prompt.
+	CP	PCHAR		;end of user input prompt?
+	JR	Z,RNCMD4	;continue with de -> char after pchar.
+	CALL	COUT		;echo char
+	JR	RNCMD3		;continue looping
+;
+RNCMD4:	PUSH	DE		;save ptr to next char
+	EX	DE,HL		;de pts to buffer
+	LD	A,0FFH		;echo input to user
+	LD	HL,(IBUFF)	;input line buffer
+	CALL	INLIN		;get input from user
+	EX	DE,HL		;hl pts to buffer, de pts to user input
+;
+RNCMD5:	LD	A,(DE)		;get char from user
+	OR	A		;end of input?
+	JR	Z,RNCMD6	;yes. return and store rest of line
+	CP	CTRLC		;return to ccp?
+	JP	Z,OSEXIT	;maybe.. go check for authorization.
+	LD	(HL),A		;store user char
+	INC	HL		;pt to next
+	INC	DE
+	JR	RNCMD5		;loop.
+;
+RNCMD6:	POP	DE		;de pts to next menu char, hl pts to buffer
+	JR	RNCMD1		;resume copying
+;
+;  Command in buffer. Display loaded command if required.
+;
+RNCMD7:	LD	(HL),0		;store ending 0
+	LD	A,(CFLAG)	;display command?
+	OR	A		;0=no
+	JR	Z,RNCMDX	;ok. go directly to attempt to run command
+	CALL	CRLF		;new line
+	LD	HL,(CMDBUFF)	;get command buffer address.
+RNCMD8:	LD	A,(HL)		;get char
+	OR	A		;print command string until null
+	JR	Z,RNCMDX	;ok. go directly to attempt to run command
+	INC	HL		;pt to next
+	CALL	COUT		;print char
+	JR	RNCMD8
+;
+;  Test command buffer for content
+;
+RNCMDX:	LD	HL,(CMDBUFF)	;get command buffer address.
+	LD	A,(HL)		;get first character
+	OR	A		;empty line?
+	JP	Z,LOOP		;nothing to do. do it quickly.
+;
+;  Command lines seems OK. Try to chain.
+;
+	CALL	CHAIN		;chain to command line pointed to by hl
+	JP	LOOP		;next command.
+
+; CHAIN - chain to command pted to by HL ending in zero
+;
+CHAIN:	CALL	PUTCL		;store command line
+	JR	NZ,CHAIN1	;br if successful.
+	CALL	ERMSG
+	DB	'CL Err',0
+	RET
+
+CHAIN1:	LD	B,0		;set shell message 0
+	LD	A,(WFLAG)	;get current wait flag
+	CALL	PUTSHM
+;
+	LD	A,(CMENU)	;get current menu number.
+	LD	B,1		;shell message 1 is menu number
+	CALL	PUTSHM		;reenter shell at current menu
+;
+CHAIN2:
+	 if	xlogok
+	LD	A,(DU$REQ+1)	;get current disk
+	ADD	'A'		;convert to ascii
+	LD	(MENU$D),A	;store in proper place
+	LD	A,(DU$REQ)	;get current user
+	LD	HL,MENU$U	;store user number
+	LD	C,'0'		;set char
+CHAIN3:	SUB	10		;convert to ascii
+	JR	C,CHAIN4
+	INC	C		;increment 10's char
+	JR	CHAIN3
+
+CHAIN4:	LD	(HL),C		;store 10's digit char
+	INC	HL		;pt to 1's digit
+	ADD	10+'0'		;add back for 1's digit
+	LD	(HL),A		;store 1's digit char
+	CALL	GETSH1		;pt to shell buffer
+	LD	DE,9		;skip 9 chars (menu name)
+	ADD	HL,DE
+	LD	DE,MENU$D	;place du
+	EX	DE,HL
+	LD	B,4		;store 4 chars (duu:)
+	CALL	MOVEB
+	 endif	; (xlogok)
+	JP	OS$CCP1		;run command line
+
+
+;******************************************************************************
+;
+; V M E N U    S U P P O R T	S U B R O U T I N E S
+;
+
+;  SETUP - Set up VMENU buffers, pointers, CRT information.
+;
+SETUP:	CALL	CODEND		;pt to menu file buffer.
+	LD	DE,100H		;allow room for stack
+	ADD	HL,DE
+	LD	(IBUFF),HL	;set ptr to input line buffer
+	LD	(HL),IBUFSZ	;set size
+	ADD	HL,DE
+	LD	(EXPLINE),HL	;set ptr to expand line
+	ADD	HL,DE
+	LD	(CMDBUFF),HL	;set ptr to command buffer
+	ADD	HL,DE
+	LD	(DMY$FCB),HL	;dummy fcb
+	LD	DE,40
+	ADD	HL,DE
+	LD	(RING),HL	;set beginning of ring
+;
+;  Set CRT Data
+;
+	CALL	GETCRT		;get cpsel info for current crt
+	LD	A,(HL)		;width
+	SUB	[CPMADR	MOD 256]-1
+	LD	(CPECNT),A	;set # chars for command line simulated eol
+	LD	A,(HL)
+	SUB	[ERADR MOD 256]-1
+	LD	(ERECNT),A	;set # chars for error line simulated eol
+;
+	INC	HL		;pt to number of lines
+	LD	A,(HL)		;get count
+	DEC	A		;subtract 1 for footer
+	LD	(CRTLCNT),A	;set number of lines on crt.
+;
+;  Get Cursor Key definitions from the Environment
+;
+	LD	HL,(ENVPTR)	;pt to zcpr3 env desc
+	LD	DE,80H+10H	;pt to cursor commands
+	ADD	HL,DE
+	LD	DE,CTABLE	;pt to area
+	LD	B,4		;4 commands
+;
+CURINIT:
+	LD	A,(HL)		;get command
+	LD	(DE),A		;put it
+	INC	HL		;pt to next
+	INC	DE
+	INC	DE
+	INC	DE
+	DJNZ	CURINIT
+;
+;  Begin Further Inits
+;
+	LD	A,DEFALPHA	;alpha by name and type
+	LD	(ALPHA),A
+;
+	LD	HL,CURHOME	;home address for cursor
+	LD	(CURAT),HL
+;
+	LD	A,(BDOS+2)	;get bdos page
+	 IF	WARMBOOT
+	DEC	A		;next page below bdos
+	 ELSE
+	SUB	10		;10 pages below bdos is the limit.
+	 ENDIF			;warmboot
+	LD	(MAXPAGE),A	;set page limit.
+;
+	JP	IDU		;set initial disk/user, return to caller.
+
+
+
+;  FILEMASK - GET/PUT File Selection
+;	- 2nd System File = name of current file
+;	  3rd System File = Name of Menu File
+;	  4th System File = File Selection Mask
+;	on entry, A = 0 to PUT current file to *.*
+;			       menu name from FCB
+;			       file mask from FCB2
+;		    = 1 to GET file mask into FCB
+;		    = 2 to GET menu name into FCB
+;
+FILEMASK:
+	PUSH	AF		;save command
+	CALL	GETFN2		;pt to first system file name
+	LD	DE,11		;pt to 2nd system file.
+	ADD	HL,DE
+	EX	DE,HL		;de has destination
+	LD	HL,JOKER	;pt to joker
+	LD	B,11		;11 bytes
+	POP	AF		;restore command
+	PUSH	AF		;save it again
+	OR	A		;test command
+	CALL	Z,MOVEB		;set selection to first file if put
+;
+	LD	HL,11		;pt to 3rd system file.
+	ADD	HL,DE
+	POP	AF		;restore get/put flag
+	PUSH	AF		;save it again
+	CP	1		;get file selection mask?
+	JR	Z,FMASK2	;br if so.
+	PUSH	HL		;save ptr to 3rd system file.
+	LD	DE,FCB+1	;pt to menu file name
+	OR	A		;test command.
+	JR	NZ,FMASK1	;br if get menu file name.
+	LD	DE,FCB2+1	;pt to menu file name
+	EX	DE,HL		;swap pointers for put.
+;
+FMASK1:	LD	B,11		;11 bytes
+	CALL	MOVEB
+;
+	LD	HL,MENUFILE	;pt to default menu file name.
+	LD	B,11		; # of characters to move
+	EX	DE,HL
+	CALL	IFUFN		; If file name is not UFN,
+	EX	DE,HL
+	CALL	Z,MOVEB		;..set file id to default.
+;
+	LD	BC,8		;check file type
+	ADD	HL,BC
+	EX	DE,HL
+	ADD	HL,BC
+	EX	DE,HL
+	LD	B,3		; # of characters to move
+	LD	A,(DE)		;get first char of file type
+	CP	' '		;if space,
+	CALL	Z,MOVEB		;..set file type to default.
+	POP	HL		;restore ptr to 3rd system file
+;
+FMASK2:	LD	DE,11		;pt to 4th file name.
+	ADD	HL,DE
+	POP	AF		;restore get/put flag
+	CP	2		;get menu file name?
+	RET	Z		;done if so.
+	LD	DE,FCB+1	;pt to file selection mask.
+	LD	B,11		;11 bytes
+	OR	A		;test command.
+	JR	NZ,FMASK3	;br if get file selection mask.
+	EX	DE,HL		;swap pointers for put.
+;
+FMASK3:	LD	B,11		;11 bytes
+	CALL	MOVEB
+;
+	LD	B,11		;11 bytes
+	CALL	MOVEB
+;
+	LD	HL,JOKER	;treat as '*.*' with 'joker'..
+	LD	B,11		;# of characters to move
+	LD	A,(DE)		;get first char of file name
+	CP	' '		;if space, fill with *.*
+	CALL	Z,MOVEB		;set file id to *.*
+;
+	LD	A,(DE)		;get first char of file name
+	CP	'/'		;if opt, fill with *.*
+	CALL	Z,MOVEB
+;
+	RET
+
+
+;  FILELOAD loads the files into the buffer, setting up the ring
+;  - Return with Z if load OK,
+;		NZ if no files loaded
+;
+FILELOAD:
+;
+	LD	HL,0		;no files found (so far)
+	LD	(RINGCNT),HL
+;
+;  Set up file name from System File 4
+;    Select all files if no entry in System File 4
+;
+	LD	A,1		;1 = get system mask.
+	CALL	FILEMASK	;get system file spec.
+;
+; Build ring with filename positioned in default FCB area
+;
+	LD	HL,(RING)	;pt to ring
+	LD	(HL),CTRLA	;set first element to 'noname'
+	INC	HL		; indicated by ^a followed by spaces
+	LD	B,ELTSIZ-1	;
+FILEL1:	LD	(HL),' '
+	INC	HL		;loop for all 12 'noname' position
+	DJNZ	FILEL1
+;
+	LD	(RINGPOS),HL	;initialize ring pointers
+	LD	(RINGEND),HL	;..so ring is almost empty,..
+	LD	(BUFSTART),HL	;...and menu-buffer start.
+	LD	(SSBAT),HL	; and address of first real filename
+;
+	XOR	A		;clear search 'fcb'..
+	LD	(FCBEXT),A	;...extent byte..
+	LD	(FCBRNO),A	;...and record number.
+	LD	DE,FCB		;default fcb for search
+	LD	C,SRCHF		;...of first occurrence.
+	CALL	BDOS
+	INC	A		;0ffh --> 00h if no file found
+	RET	Z
+
+;  SETRING - Establish ring (circular list) of filenames
+;	 - put each found name in ring.
+;	 - A = offset into 'TBUFF' name storage
+;
+SETRING:
+	DEC	A		;un-do 'inr' from above and below
+	RRCA
+	RRCA
+	RRCA			;times 32 --> position index
+	ADD	TBUFF+1		;add page offset and..
+	LD	L,A		;...put address into hl.
+	LD	H,0
+;
+	LD	A,(SYS$)	; get sysflag if not 0 display it
+	OR	A
+	JR	NZ,SETRG0
+	CALL	GETWHL		; get wheel
+	JR	NZ,SETRG0	; if wheel, display it
+;
+	PUSH	HL		; save hl
+	LD	DE,9
+	ADD	HL,DE		; point to $sys attribute
+	LD	A,(HL)		; get the byte
+	POP	HL		; restore hl
+	RLA			; rotate attribute into carry
+	LD	A,' '
+	JR	C,SETRG3	; skip $sys files
+
+;
+;
+SETRG0:	LD	DE,(RINGPOS)	;pointer to current load point in ring
+	LD	B,ELTSIZ-1	;move name to ring
+	CALL	MOVEC		;move attributes as well
+	EX	DE,HL		;de contains next load point address
+	PUSH	HL
+	DEC	HL
+	DEC	HL
+	DEC	HL		;point to r/o attribute
+	LD	A,128
+	CP	(HL)		;check if set
+	POP	HL
+	LD	A,' '
+	JR	NC,SETRG1	;not r/o
+	LD	A,'r'
+SETRG1:	LD	(HL),A
+	INC	HL
+	LD	(RINGPOS),HL	;store and search..
+;
+	LD	A,(MAXPAGE)	;get maximum page of memory allowed.
+	CP	H		;about to overflow zcpr3?
+	JR	NC,SETRG2	;br if above valid range
+;
+	CALL	ERMSG
+	DB	'No room for file list',0
+	JP	OS$CCPE		;exit to ccp
+;
+SETRG2:	LD	HL,(RINGCNT)	;another file found.
+	INC	HL
+	LD	(RINGCNT),HL	;update file count.
+;
+SETRG3:	LD	C,SRCHN		;..for next occurrence.
+	LD	DE,FCB		;filename address field
+	CALL	BDOS
+	INC	A		;if all done, 0ffh --> 00h.
+	JR	NZ,SETRING	;if not, put next name into ring.
+
+;
+; All filenames in ring -- setup ring size and copy-buffer start point
+;
+	LD	HL,(RINGPOS)	;next load point of ring is start of buffer
+	LD	(RINGEND),HL	;set ring end..
+	LD	(BUFSTART),HL	;...and menu-buffer start.
+;
+; Sort ring of file entries
+;   - Shell sort algoritm used
+;
+SORTX:
+	LD	HL,(BUFSTART)		; hl -> scratch area
+	LD	(SSB),HL
+	LD	(SSBPT),HL
+	LD	DE,SSB
+	CALL	SSBINIT
+	LD	HL,(SSBAT)		; hl -> 1st record
+	LD	(SSB),HL
+	LD	DE,SSB
+	CALL	SORT
+	RET
+
+
+;  RINGCMP - Compare Ring Elements
+;	- DE - First element number
+;	- HL - Second element number
+;
+RINGCMP:
+	PUSH	BC
+	PUSH	HL		;save position pointers..
+	PUSH	DE		;for potential swap.
+	LD	A,(ALPHA)	;check for type of alphabetization
+	OR	A		;if zero, alpha by type and name
+	JR	Z,SORTTN
+;
+; sort by file name and type
+;
+
+	LD	B,ELTSIZ	;# of characters to compare
+	CALL	CMPSTR		;do comparison
+	JR	NOCMP		;final test
+;
+; sort by file type and name
+;
+SORTTN:	PUSH	HL		;save ptrs
+	PUSH	DE
+	LD	BC,8		;pt to type
+	ADD	HL,BC
+	EX	DE,HL
+	ADD	HL,BC
+	EX	DE,HL
+	LD	B,3		;3 chars in file type
+	CALL	CMPSTR		;compare type
+	POP	DE		;get ptrs
+	POP	HL
+	JR	NZ,NOCMP	;final test
+	PUSH	HL
+	PUSH	DE
+	LD	B,8		;8 chars in file name
+	CALL	CMPSTR		;compare name
+	POP	DE		;get ptrs
+	POP	HL
+	JR	NZ,NOCMP	;final test
+	LD	A,(DE)		;final compare and fall thru
+	CP	(HL)
+;
+; final test for swapping purposes
+;
+NOCMP:	POP	DE
+	POP	HL
+	POP	BC
+	RET
+
+
+;
+; CMPSTR- left to right compare of two strings
+;	 DE -> to 'a' string,
+;	 HL -> to 'b' string,
+;	 B     contains string length.)
+;
+CMPSTR:
+	CALL	CMPDH
+	RET	NZ		; if not equal, set flag.
+	INC	HL		; bump compare..
+	INC	DE		; pointers and do next character.
+	DJNZ	CMPSTR		; if done compare, strings are equal
+	RET
+
+;  CMPDH - Make comparison without regard to the attribute bit
+;
+CMPDH:	PUSH	BC		; save bc
+	LD	C,7FH		; mask
+	LD	A,(HL)		; b character
+	AND	C		; strip attribute
+	LD	B,A		; save it
+	LD	A,(DE)		; a character
+	AND	C		; strip attribute
+	CP	B		; set flags, carry if b > a
+	POP	BC		; restore bc
+	RET
+
+;  FINDCFILE - Search for current file
+;		- Current file is stored in 2nd system file.
+;
+FINDCFILE:
+	LD	HL,(RINGCNT)	;get number of files in the ring
+	LD	A,H		;any files?
+	OR	L
+	JR	Z,FNCFL2	;no search if no files.
+;
+	CALL	GETFN2		;get address of current file
+	LD	DE,11
+	ADD	HL,DE
+	LD	DE,(DMY$FCB)	;pt to dummy fcb
+	LD	B,11
+	CALL	MOVEB		;get current file id
+;
+	LD	HL,(RING)	;pt to first element of ring
+	LD	(LOCBEG),HL	;set local beginning
+	LD	DE,ELTSIZ	;point past 'no-name'.
+	ADD	HL,DE
+	LD	(RINGPOS),HL	;set position
+;
+	LD	A,1		;reset search counter.
+	LD	(FNCFCTR),A
+;
+	LD	HL,CURHOME	;set cursor to first file.
+	LD	(CURAT),HL
+;
+FNCFL:	LD	DE,(RINGPOS)	;pt to current entry via de.
+	LD	HL,(DMY$FCB)	;pt to file selector id.
+	CALL	FMATCH		;check for file match.
+	JR	Z,FNCFF		;we are there
+;
+	LD	A,(FNCFCTR)	;next entry
+	INC	A
+	LD	(FNCFCTR),A
+;
+	CP	EPS		;moved an entire screen yet?
+	JR	NZ,FNCFL1	;br if not
+
+	XOR	A		;reset search counter.
+	LD	(FNCFCTR),A
+
+	LD	HL,(LOCBEG)	;reset local beginning to new screen.
+	LD	DE,EPS*ELTSIZ
+	ADD	HL,DE
+	LD	(LOCBEG),HL
+
+FNCFL1:	LD	HL,(RINGPOS)	;advance to next entry
+	LD	DE,ELTSIZ
+	ADD	HL,DE
+	LD	(RINGPOS),HL	;new position
+	EX	DE,HL		;...in de
+	LD	HL,(RINGEND)	;check for completion
+	CALL	CMPDEHL		;compare current position with end of ring
+	JR	NZ,FNCFL	;loop if not - there is still hope.
+;
+; File not found - point to 'no-name' entry in ring.
+;
+FNCFL2:	JP	SETSCR		;point to first ring position and return.
+;
+; File found. Set cursor position.
+;
+FNCFF:	LD	HL,(LOCBEG)	;we have req'd local beginning
+	PUSH	HL		;(possibly new screen)
+	EX	DE,HL		;ring location in de
+;
+FNCFF0:	LD	HL,(RINGPOS)	;at requested file's position yet?
+	CALL	CMPDEHL
+	JR	Z,FNCFF1	;br if so.
+	LD	HL,ELTSIZ	;advance to next file id.
+	ADD	HL,DE
+	PUSH	HL
+	CALL	PSN$NEXT	;advance cursor too.
+	POP	DE		;pt to next ring position
+	JR	FNCFF0
+
+FNCFF1:	POP	HL		;pt to new local ring start
+	JP	SETSCR2		;set up local ring and return
+
+
+;	FMATCH - Check two file ID's for a match
+;
+;	Input:	HL	-> Match File ID
+;			    - possibly ambiguous
+;		DE	-> Current File ID
+;	Output: Z	Match
+;		NZ	Not a match
+;
+FMATCH:	PUSH	BC		;save regs.
+	PUSH	DE
+	PUSH	HL
+;
+	LD	B,11		;length of file name and file type.
+FMAT1:	LD	A,(HL)		;get match character.
+	CP	'?'		;wild char?
+	JR	Z,FMAT2		;yes - automatic match.
+	LD	A,(DE)		;get current file id char
+	CP	(HL)		;match?
+	JR	NZ,FMAT3	;exit on first difference. (nz)
+;
+FMAT2:	INC	DE		;next char
+	INC	HL
+	DJNZ	FMAT1		;loop until all chars checked.
+;
+FMAT3:	POP	HL		;restore regs
+	POP	DE
+	POP	BC
+	RET			;exit
+
+
+;  IDU	-  Set Initial Disk/User
+;
+IDU:	CALL	RETUD		;get original du in bc.
+	LD	(DU$ORIG),BC	;save for exit.
+;
+	 if	xlogok
+	LD	DE,FCB		;log into du specification
+	CALL	Z3LOG		;perform login
+	CALL	RETUD		;get current du in bc.
+	 endif	; (xlogok)
+	LD	(DU$REQ),BC	;save as requested du:
+	RET
+
+
+;  MENULOAD - Load Menu File, Set up for processing.
+;	Major routines are:
+;		- MLOAD  - Load Menu File
+;		- OPTION - Process Global options
+;
+MENULOAD:
+	CALL	GETFN2
+	LD	DE,11
+	ADD	HL,DE		;point to 2nd system file
+	ADD	HL,DE		;point to 3rd system file
+	LD	DE,FCB+1
+	LD	BC,11
+	LDIR
+	LD	DE,FCB		;pt to menu.vmn fcb
+	CALL	INITFCB		;init fcb
+	LD	A,0FFH		;search current directory.
+	CALL	PFIND		;  and along path for menu.vmn file.
+	JP	NZ,MLOAD	;vmn file found. read it in.
+;
+;  Error - MENU file not found
+;
+	CALL	ERMSG
+	DB	CR,LF,' File ',0
+	LD	DE,FCB+1	;pt to menu.vmn fcb
+	CALL	PFN2		;print menu file name
+	CALL	VPRINT
+	DB	' NOT Found',0
+	JP	OS$CCPE		;exit to ccp
+
+;
+;  Load MENU.VMN from disk
+;
+MLOAD:	CALL	LOGUD		;log into du: in bc.
+	LD	DE,FCB		;pt to menu.vmn fcb
+	CALL	F$OPEN		;open file
+;
+	CALL	RESDMA		;init dma address to tbuff
+	LD	HL,(BUFSTART)	;pt to beginning of menu file.
+;
+MLOAD1:	LD	DE,FCB		;pt to menu.vmn fcb
+	CALL	F$READ		;read in next block
+	OR	A		;error?
+	JR	NZ,MLOAD3	;load done if error
+;
+	LD	DE,TBUFF	;copy from tbuff into memory pted to by hl
+	LD	B,128		;128 bytes
+MLOAD2:	LD	A,(DE)		;get menu byte.
+	AND	7FH		;mask msb.
+	LD	(HL),A		;put byte.
+	INC	HL		;pt to next.
+	INC	DE
+	DJNZ	MLOAD2		;count down.
+;
+	LD	A,(MAXPAGE)	;get maximum page of memory allowed.
+	CP	H		;about to overflow zcpr3?
+	JR	NC,MLOAD1	;continue read if within valid range.
+;
+	CALL	ERMSG
+	DB	CR,LF,' TPA Full',0
+	JP	OS$CCPE		;exit to ccp
+
+;
+;  Read is Done -- Store Ending ^Z and Set Initial Values.
+;
+MLOAD3:	LD	(HL),EOF	;ensure eof mark
+	LD	DE,FCB		;pt to menu.vmn fcb
+	CALL	F$CLOSE		;close input file
+	LD	BC,(DU$REQ)	;get requested du:
+	CALL	LOGUD		;log in.
+;
+	XOR	A		;a=0
+	LD	(GCFLAG),A	;turn off command display
+	LD	(GCPMOK),A	;disable exit to zcpr3.
+	LD	(CPMOK),A
+;
+;  Mark all Menu Sections
+;
+	LD	HL,(BUFSTART)	;pt to beginning of menu file.
+	LD	B,0FFH		;set menu counter
+;
+;  Skip to Next Menu
+;
+MLOAD4:	LD	A,(HL)		;get byte
+	CP	EOF		;error?
+	JP	Z,MSTRERR	;structure error if so
+	CP	MINDIC		;menu indicator (start of menu?)
+	JR	NZ,MLOAD6
+;
+	LD	(HL),MINDICS	;beginning of menu found -- set msb
+	INC	B		;increment menu count
+	INC	HL		;pt to next
+	LD	A,(HL)		;get byte
+	CP	MINDIC		;menu indicator (end of menu?)
+	JR	Z,MLOAD7	;done if so
+	CP	EOF		;premature eof?
+	JP	Z,MSTRERR
+;
+	 IF	SYSMENU
+	CP	RSM		;system menu indicator?
+	JR	NZ,MLOAD5
+	LD	A,B		;set system menu number
+	LD	(SMENO),A
+	LD	A,0FFH		;set flag
+	LD	(SMENFL),A	;system menu present
+	 ENDIF			;sysmenu
+;
+;  Skip out Menu Display
+;
+MLOAD5:	CALL	LSKIPT		;skip to beginning of next line
+	JR	Z,MLOAD6	;found menu indicator
+	CP	EOF		;error?
+	JP	Z,MSTRERR
+	JR	MLOAD5		;continue if not
+;
+;  Skip to Next Menu
+;
+MLOAD6:	CALL	LSKIP		;skip to beginning of next menu
+	JR	MLOAD4
+;
+;  Set current menu number
+;
+MLOAD7:	LD	B,1		;shell message 1 is menu number
+	CALL	GETSHM		;get saved menu number.
+	LD	(CMENU),A	;set current menu number.
+;
+; Load complete - Process Global Menu Options
+;
+	LD	HL,(BUFSTART)	;pt to beginning of menu file.
+	LD	A,(HL)		;check for option
+	CP	GOPTION		;global option char?
+	JR	NZ,MFILE	;if no global option, scan for menu files.
+;
+	INC	HL		;pt to option char
+OPTION:	LD	A,(HL)		;get option char
+	CALL	CAPS		;capitalize
+	INC	HL		;pt to next
+	CP	CR		;done?
+	JR	Z,OPTDN
+	CP	COPTION		;display command?
+	JR	Z,OPTC
+	CP	XOPTION		;zcpr3 exit disable?
+	JP	NZ,MSTRERR	;option error if not
+;
+;  Global 'X' option - Process ZCPR3 Exit Option
+;
+	LD	A,0FFH		;enable exit to zcpr3.
+	LD	(GCPMOK),A
+	LD	(CPMOK),A
+	JR	OPTION
+;
+;  Global 'C' option - Process Display Command Option
+;
+OPTC:	LD	A,0FFH		;enable global display of commands.
+	LD	(GCFLAG),A
+	JR	OPTION
+;
+;  Global Option Processing Done
+;
+OPTDN:	INC	HL		;skip <lf>
+;
+;  MFILE - Point to First Menu in VMN 'File'.
+;
+MFILE:	LD	A,(HL)		;get first byte
+	CP	MINDICS		;start of first menu?
+	JP	NZ,MSTRERR	; no? structure error.
+;
+	LD	(MSTART),HL	;save start address of first menu item
+	LD	(HL),MFIRST	;set first menu indicator.
+	RET			;return - menu 'file' ready for processing.
+
+
+;  GETMENU - Find Current Menu, Process Local Options
+;	On entry, MSTART pts to first byte of first menu
+;
+GETMENU:
+	LD	HL,(MSTART)	;pt to first menu
+	LD	A,(CMENU)	;get current menu number
+	OR	A		;first menu?
+	CALL	NZ,FMENU	;find new menu if not already there.
+;
+;  Set local flags for the current menu being processed
+;
+	LD	A,(GCFLAG)	;local display command flag = global flag
+	LD	(CFLAG),A
+	LD	A,(GCPMOK)	;local zcpr3 exit flag = global flag
+	LD	(CPMOK),A
+	LD	(CSTART),HL	;save start address of current menu
+	INC	HL		;pt to first char after menu indicator char
+;
+GETMN1:	LD	A,(HL)		;get char
+	CALL	CAPS		;capitalize
+	INC	HL		;pt to next
+	CP	CR		;end of options?
+	JR	Z,GETMN2	;yes - set current menu options address
+;
+	 IF	SYSMENU
+	CP	RSM		;system menu?
+	JR	Z,GETMN1	;ok if so
+	 ENDIF			;sysmenu
+;
+	CP	COPTION		;command display?
+	JR	Z,GETMNC
+	CP	XOPTION		;zcpr3 return?
+	JP	NZ,MSTRERR	;error if not
+;
+;  Local 'X' option - Toggle ZCPR3 Return Option
+;
+	LD	A,(GCPMOK)	;get global zcpr3 exit flag
+	CPL			;toggle
+	LD	(CPMOK),A	;save local flag.
+	JR	GETMN1
+;
+;  Local 'C' option - Toggle Display Command Option
+;
+GETMNC:	LD	A,(GCFLAG)	;get global display command option flag
+	CPL			;toggle
+	LD	(CFLAG),A	;save local flag.
+	JR	GETMN1
+;
+;  Set address of command for current menu.
+;
+GETMN2:	CALL	LSKIPT		;skip to beginning of command
+	JR	NZ,GETMN2
+	CALL	LSKIP		;skip over end of display indicator
+	LD	(OPTSTRT),HL	;set pointer to options
+;
+;  Determine if Another Menu Follows
+;
+GETMN3:	XOR	A		;a=0
+	LD	(NMENFL),A	;set for no next menu
+	LD	A,(HL)		;ok?
+	CP	EOF		;error if eof
+	JP	Z,MSTRERR
+	CP	MINDICS		;next menu?
+	JR	Z,GETMN4	;yes - do final checks.
+	CALL	LSKIP		;not yet...skip to next line.
+	JR	GETMN3
+;
+GETMN4:	INC	HL		;double indicator if end
+	LD	A,(HL)
+	CP	MINDIC		;end?
+	RET	Z		;exit if no further menus
+;
+	 IF	SYSMENU
+	CP	RSM		;system menu = no next menu
+	RET	Z		;exit if system menu.
+	 ENDIF			;sysmenu
+;
+	LD	A,0FFH		;set next menu
+	LD	(NMENFL),A
+	RET			;return to caller
+
+
+;  DISPMENU - Display Current Menu
+;	On entry, CSTART pts to first byte of current menu
+;
+DISPMENU:
+	LD	HL,MNUADR	;clear menu line starting at the beginning.
+DISPMC:	CALL	GOTOXY		;position to menu line.
+	CALL	VEREOL		;clear line.
+	INC	H		;down to next line
+	LD	DE,CPMADR	;menu area cleared yet?
+	CALL	CMPDEHL
+	JR	NZ,DISPMC	;loop if not
+;
+	LD	HL,MNUADR	;position cursor at first menu line
+	CALL	GOTOXY
+	LD	HL,(CSTART)	;get start address of current menu
+	CALL	LSKIP		;skip to lf
+	LD	A,(CRTLCNT)	;get number of lines on crt
+	LD	(PAGCNT),A	;set count
+;
+;  Print Next Line of Menu if not Starting with ESCAPE Char (MINDIC)
+;
+DISPM1:	LD	A,(HL)		;get first char of line
+	CP	MINDIC		;done?
+	RET	Z		;yes - exit to caller.
+	CALL	EXPAND		;expand line pted to by hl
+	PUSH	HL		;save ptr to next line
+	EX	DE,HL		;hl pts to expanded line
+	CALL	LPRINTX		;print line pted to by hl ending in <cr>
+	POP	HL		;pt to next line
+	JR	DISPM1
+
+
+; EXPAND - Expand Line Pted to by HL into Scratch Area
+;	Return with HL pting to next line, DE pting to current line
+;
+EXPAND:	EX	DE,HL		;de -> line to be expanded
+	LD	HL,NONAME	;initialize no-name file.
+	LD	(HL),CTRLA
+	LD	HL,(EXPLINE)	;pt to buffer
+	EX	DE,HL		;hl -> line to be expanded
+				;de -> expansion buffer
+EXP1:	LD	A,(HL)		;get next char
+	LD	(DE),A		;store char
+	CP	CR		;end of line?
+	JR	Z,EXPX
+	INC	HL		;pt to next
+	INC	DE
+	CP	VARFLAG		;variable follows?
+	JR	NZ,EXP1
+;
+; Variable Identified - Process it
+;
+	LD	A,(HL)		;get next char
+	INC	HL		;pt to next
+	CP	VARFLAG		;one variable char?
+	JR	Z,EXP1		;resume if double varflag
+	DEC	DE		;pt to variable position
+	CALL	CAPS		;capitalize variable
+	CP	FPCDIR		;current dir?
+	JR	Z,EXPCDIR	;br if so.
+	CP	FPDISK		;current disk?
+	JR	Z,EXPDISK
+	CP	FPUSER		;current user?
+	JR	Z,EXPUSER
+	CP	FPFILE		;filename.typ?
+	JR	Z,EXPFILE
+	CP	FPNAME		;filename?
+	JR	Z,EXPNAME
+	CP	FPTYPE		;filetype?
+	JP	Z,EXPTYPE
+	CP	FPPTR		;pointed-to-file?
+	JP	Z,EXPPFILE
+	JR	EXP1		;resume expansion
+;
+; Expand Exit
+;
+EXPX:	INC	HL		;pt to line feed
+	LD	A,(HL)		;get it
+	CP	LF		;line feed?
+	JR	NZ,EXPX1
+	INC	HL		;pt to char after line feed
+EXPX1:	LD	DE,(EXPLINE)	;pt to expanded line via de
+	RET
+
+;
+; Expand Current DIR
+;
+EXPCDIR:			;build current dir.
+	PUSH	HL		;save pointer to menu data
+	LD	BC,(DU$REQ)	;get current du:
+	CALL	DUTDIR		;scan named directory table.
+	JR	NZ,EXPCD1	;br if resolved.
+	LD	HL,NODIR	;use 'noname'.
+EXPCD1:	LD	B,8		;maximum dir length
+EXPCD2:	LD	A,(HL)		;get character.
+	CP	' '		;done if space encountered.
+	JR	Z,EXPCD3	;yes - resume expansion
+	LD	(DE),A		;save character
+	INC	HL		;pt to next char
+	INC	DE
+	DJNZ	EXPCD2		;loop until end or blank.
+EXPCD3:	POP	HL		;restore pointer to menu data
+	JR	EXP1		;resume expansion
+;
+; Expand Disk
+;
+EXPDISK:
+	LD	A,(DU$REQ+1)	;get disk number (a=0)
+	ADD	'A'		;convert to ascii
+	LD	(DE),A		;store letter
+	INC	DE		;pt to next
+	JR	EXP1		;resume expansion
+;
+; Expand User
+;
+EXPUSER:
+	LD	A,(DU$REQ)	;get user number
+	LD	B,10		;subtract 10's
+	LD	C,'0'		;set char
+EXPU1:	SUB	B		;-10
+	JR	C,EXPU2
+	INC	C		;increment digit
+	JR	EXPU1
+;
+EXPU2:	ADD	A,B		;+10
+	ADD	'0'		;convert 1's to ascii
+	LD	B,A		;b=1's
+	LD	A,C		;get 10's
+	LD	(DE),A		;store 10's
+	INC	DE
+	LD	A,B		;get 1's
+	LD	(DE),A		;store 1's
+	INC	DE		;pt to next
+	JP	EXP1		;resume
+;
+; Expand File
+;
+EXPFILE:
+	CALL	GETFNUM		;get file number
+	JP	Z,EXP1		;resume if error
+	PUSH	HL		;save ptr to next char
+	CALL	PTFN		;set ptr to file name
+	CALL	PUTN		;put file name
+	LD	A,'.'
+	LD	(DE),A		;store dot
+	INC	DE		;pt to next
+	CALL	PUTT		;put file type
+	POP	HL		;restore ptr
+	JP	EXP1		;resume
+;
+; Expand Name
+;
+EXPNAME:
+	CALL	GETFNUM		;get file number
+	JP	Z,EXP1		;resume if error
+	PUSH	HL		;save ptr to next char
+	CALL	PTFN		;set ptr to file name
+	CALL	PUTN		;put file name
+	POP	HL		;restore ptr
+	JP	EXP1		;resume
+;
+; Expand Type
+;
+EXPTYPE:
+	CALL	GETFNUM		;get file number
+	JP	Z,EXP1		;resume if error
+	PUSH	HL		;save ptr to next char
+	CALL	PTFN		;set ptr to file name
+	LD	BC,8		;add 8
+	ADD	HL,BC
+	CALL	PUTT		;put file type
+	POP	HL
+	JP	EXP1		;resume
+;
+; Expand File at Pounter
+;
+;
+; Expand File at Pointer
+;
+EXPPFILE:
+	LD	A,(HL)		;get option char
+	AND	7FH		;mask
+	CALL	CAPS		;capitalize
+	CP	FPFILE		;filename.typ?
+	JR	Z,EXPPF
+	CP	FPNAME		;filename only?
+	JR	Z,EXPPN
+	CP	FPTYPE		;filetype only?
+	JR	Z,EXPPT
+	JP	EXP1		;abort if error
+;
+; Extract full filename.typ of file being pointed to
+;
+EXPPF:	INC	HL		;pt to next char
+	PUSH	HL		;save ptr to next char
+	LD	HL,(RINGPOS)	;set ring position
+	CALL	CKNONAME	;check and substitute no file
+	CALL	PUTN		;put name pted to by hl
+	LD	A,'.'		;store dot
+	LD	(DE),A
+	INC	DE
+	CALL	PUTT		;put type pted to by hl
+	POP	HL
+	JP	EXP1		;continue
+;
+; Expand file name of file being pointed to
+;
+EXPPN:	INC	HL		;pt to next char
+	PUSH	HL		;save ptr to next char
+	LD	HL,(RINGPOS)	;set ring position
+	CALL	CKNONAME	;check and substitute no file
+	CALL	PUTN		;put name
+	POP	HL
+	JP	EXP1
+;
+; Expand file type of file being pointed to
+;
+EXPPT:	INC	HL		;pt to next char
+	PUSH	HL		;save ptr to next char
+	PUSH	DE		;save de
+	LD	HL,(RINGPOS)	;pt to ring entry
+	CALL	CKNONAME	;check and substitute no file
+	LD	DE,8		;pt to file type
+	ADD	HL,DE
+	POP	DE		;get de
+	CALL	PUTT		;put type
+	POP	HL
+	JP	EXP1
+
+CKNONAME:
+	PUSH	DE		;save de
+	PUSH	BC		;save bc
+	LD	A,(HL)		;get char
+	CP	1		;no name?
+	JR	NZ,CKNNM1	;..exit if not.
+	LD	HL,NONAME	;pt to no name
+	LD	A,(HL)		;check for definition
+	CP	1		;no name?
+	JR	NZ,CKNNM1	;..exit if not.
+	EX	DE,HL		;hl pts to file name
+	CALL	ERMSG
+	DB	'File Name? ',0
+	LD	A,0FFH		;echo input to user
+	LD	HL,(IBUFF)	;pt to input buffer
+	CALL	INLIN		;get line from user
+	CALL	SKSP		;skip spaces
+;
+	LD	DE,(DMY$FCB)	;pt to dummy fcb
+	CALL	ZPRSFN		;parse file name into fcb
+	INC	DE		;pt to first char
+	LD	HL,NONAME	;pt to name buffer
+	EX	DE,HL
+	LD	B,11		;copy into buffer
+	CALL	MOVEB
+;
+CKNNM1:	POP	BC		;get bc
+	POP	DE		;restore de
+	RET			;hl pts to name
+
+
+; PTFN - Pt to File Name whose Number (1-4) is in A
+;
+PTFN:	LD	B,A		;get number in b
+	CALL	GETFN2		;pt to file name 2
+	PUSH	DE		;save de
+	LD	A,B		;file 0?
+	OR	A
+	JR	Z,PTFNX
+	LD	DE,11		;size of file name and type
+;
+PTFN1:	ADD	HL,DE		;pt to next
+	DJNZ	PTFN1
+;
+PTFNX:	POP	DE		;restore de
+	RET
+
+
+; PUTN - Put File Name pted to by HL
+;
+PUTN:	LD	B,8		;8 chars
+	JR	PUTC
+;
+; PUTT - Put File Type pted to by HL
+;
+PUTT:	LD	B,3		;3 chars
+;
+; PUTC - Copy Chars from HL to DE for up to B bytes -- flush if space
+;
+PUTC:	LD	A,(HL)		;get next char
+	CP	' '		;skip spaces
+	JR	Z,PUTC1
+	LD	(DE),A		;put next char
+	INC	DE		;pt to next
+PUTC1:	INC	HL		;pt to next
+	DJNZ	PUTC
+	RET
+
+
+; GETFNUM - Get File Number (1 to 4)
+;	If valid number, return with value in A and HL pting to next char
+;	If not valid, return with Z and HL pting to last char (F, N, T)
+;
+GETFNUM:
+	LD	A,(HL)		;get char
+	SUB	'1'		;convert
+	JR	C,GETFNE	;error
+	CP	4		;range?
+	JR	NC,GETFNE
+	INC	HL		;pt to next char
+	RET			;nz from cpi 4
+;
+GETFNE:	DEC	HL		;error return
+	XOR	A
+	RET
+
+
+;  MCHCMD - Menu Change Command -- Jump to Specified Menu
+;
+MCHCMD:	INC	HL		;pt to menu number
+	CALL	EVAL		;convert to decimal number in a
+	DEC	A		;make it rel 0
+	LD	(CMENU),A	;update current menu number.
+	JP	RUNSH2		;goto new menu and display it.
+
+
+;  FMENU - Find Selected Menu
+;	On input, A = Menu number (0 = first).
+;
+FMENU:	LD	B,A		;menu number in b
+;
+FMENU1:	CALL	LSKIP		;skip to start of next line
+	LD	A,(HL)		;get 1st char in new line.
+	CP	MINDICS		;start of next menu?
+	JR	NZ,FMENU1	;no - keep looking.
+;
+	INC	HL		;end of menu.vmn?
+	LD	A,(HL)		;yes if double mindic
+	CP	MINDIC
+	JR	Z,MSTRERR	;not found if so - error.
+	DEC	HL		;pt to first char
+	DJNZ	FMENU1		;count down menu number.
+	RET			;done if found.
+
+
+;  MSTRERR - Menu Structure Error -- FATAL
+;    This message is printed to indicate an error in the structure of
+; the MENU.VMN file.
+;
+MSTRERR:
+	CALL	ERMSG
+	DB	CR,LF,' Structure Error',0
+	JP	OS$CCPE		;exit to ccp
+
+
+;  PASSWORD - Prompt for, input, and check password (only one chance)
+;    If accepted, return with Zero Flag Set; if not, return with NZ
+;
+;
+	 IF	SYSMENU
+PASSWORD:
+	CALL	ERMSG
+	DB	DIM,' Password? ',BRIGHT,0
+	LD	HL,(IBUFF)	;pt to input line buffer
+	 IF	ECHOPASS
+	OR	0FFH
+	 ELSE
+	XOR	A		;don't echo user input
+	 ENDIF			;echopass
+	CALL	INLIN		;get line from user
+	LD	DE,PPASS	;pt to system password
+PASS1:	LD	A,(DE)		;get sys pass char
+	 IF	ENCRIPT
+	ADD	13		;encription bias
+	 ENDIF			;encript
+	CP	(HL)		;ok?
+	JR	NZ,PASSERR	;error if no match
+	INC	HL		;pt to next
+	INC	DE
+	OR	A		;end of strings?
+	JR	NZ,PASS1
+	RET			;return with zero set to show match
+;
+;  PASSERR - Error in Password entry
+;
+PASSERR:
+	CALL	ERMSG
+	DB	BEL,'  Password Error!  ',0
+	OR	0FFH		;set no zero
+	RET
+	 ENDIF			;sysmenu
+
+
+
+;  INLIN - main inline entry point
+;
+INLIN:	PUSH	BC		;save registers
+	PUSH	DE
+	PUSH	HL
+	PUSH	AF		;save psw
+	LD	(ECHO),A	;save echo flag
+	LD	(STLINE),HL	;save start of string
+;
+;  inline restart loop
+;
+INL0:	LD	HL,(STLINE)	;get start of string
+	LD	C,0		;set char count
+;
+;  main loop
+;
+INL1:	CALL	CIN		;get input char
+	CP	NULL		;do not permit <null>
+	JR	Z,INL1
+	CP	BS		;backspace?
+	JP	Z,INBS
+	CP	DEL		;delete?
+	JP	Z,INDEL
+	CP	TAB		;tabulate?
+	JP	Z,INTAB
+	CP	CR		;carriage return?
+	JP	Z,INCR
+	CP	LF		;line feed?
+	JP	Z,INLF
+	CP	CTRLU		;ctrl-u?
+	JR	Z,RESTRT
+	CP	CTRLX		;ctrl-x?
+	JR	Z,REXSTRT
+	CP	CTRLR		;ctrl-r?
+	JR	Z,RETYPE
+	CP	CTRLE		;ctrl-e?
+	JR	Z,NEWLINE
+	LD	(HL),A		;store char
+	CP	CTRLC		;ctrl-c?
+	CALL	Z,INCTRLC
+	INC	HL		;pt to next
+	CALL	CTRL		;print char
+	INC	C		;incr char cnt
+	JR	INL1
+;
+;  ** inline modules **
+;
+;  newline -- echo <CR> <LF> and continue
+;
+NEWLINE:
+	CALL	CRLF
+	JR	INL1
+;
+;  tab -- tabulate to next tab stop
+;
+INTAB:	LD	(HL),A		;store <tab>
+	INC	HL		;pt to next char position
+	CALL	INTAB0		;tabulate
+	JR	INL1
+;
+;  ctrl-r -- retype current line
+;
+RETYPE:	LD	(HL),0		;store end of string char
+	LD	C,0		;reset char cnt
+	LD	HL,(STLINE)	;get start address
+	CALL	HASH		;print hash char
+RETY1:	LD	A,(HL)		;get char
+	OR	A		;zero?
+	JR	Z,INL1		;continue
+	CALL	CTRL		;print it
+	LD	A,(HL)		;get char again
+	CP	TAB		;don't count if <tab>
+	JR	Z,RETY2
+	CP	BEL		;don't count if <bel>
+	JR	Z,RETY2
+	INC	C		;incr char cnt
+RETY2:	INC	HL		;pt to next char
+	JR	RETY1
+;
+;  ctrl-u -- erase line and restart
+;
+RESTRT:	CALL	HASH		;print hash char
+	JP	INL0		;start up again
+;
+;  ctrl-x -- erase (and backspace) line and restart
+;
+REXSTRT:
+	LD	A,C		;check for empty line
+	OR	A		;0 chars?
+	JP	Z,INL0
+	CALL	EXBS		;<bs>
+	JR	REXSTRT
+;
+;  line feed -- insert <CR> <LF> and echo <CR> <LF>
+;
+INLF:	LD	(HL),CR		;store <cr>
+	INC	HL		;pt to next
+	LD	(HL),LF		;store <lf>
+	INC	HL		;pt to next
+	LD	C,0		;reset char cnt
+	LD	A,(ECHO)	;echo on?
+	OR	A		;0=no
+	CALL	NZ,CRLF		;new line
+	JP	INL1
+;
+;  delete -- delete previous char and echo deleted char
+;
+INDEL:	CALL	BOL		;beginning of line?
+	JP	Z,INL1		;continue
+	DEC	HL		;back up
+	LD	A,(HL)		;get char
+	CALL	CTRL		;print char
+	CP	BEL		;don't change count if <bel>
+	JP	Z,INL1
+	INC	C		;incr display char count
+	JP	INL1
+;
+;  backspace -- delete previous char and back up cursor
+;
+INBS:	CALL	EXBS		;execute <bs>
+	JP	INL1
+;
+;  backspace routine
+;
+EXBS:	CALL	BOL		;beginning of line?
+	RET	Z		;continue if so
+	DEC	C		;decr count
+	DEC	HL		;back up
+	LD	A,(ECHO)	;echo on?
+	OR	A		;0=no
+	RET	Z
+	LD	A,BS		;print <bs>
+	CALL	COUT
+	LD	A,' '		;<sp>
+	CALL	COUT
+	LD	A,BS		;<bs>
+	JP	COUT		;(and return)
+;
+;  carriage return -- done; store ending zero
+;
+INCR:	LD	(HL),0		;store ending zero
+	POP	AF		;restore regs
+	POP	HL		;
+	POP	DE
+	POP	BC
+	RET
+;
+;  Control C -- 'called' as a subroutine
+;
+INCTRLC:
+	CALL	BOL		;beginning of line?
+	LD	A,CTRLC		;replace character in a
+	RET	NZ		;no.  forget it
+	CALL	CTRL		;print it
+	INC	HL		;point to next position
+	POP	AF		;adjust stack
+	JR	INCR		;quit
+
+;
+;  ** support routines **
+;  bol -- returns w/zero flag set if user at beginning of line
+;
+BOL:	LD	DE,(STLINE)	;get start adr in de
+	LD	A,D		;check for match
+	CP	H		;match?
+	RET	NZ		;no match
+	LD	A,E		;check for complete match
+	CP	L
+	RET	NZ		;no match
+	PUSH	AF		;save flags
+	LD	A,BEL		;beep
+	CALL	COUT
+	POP	AF
+	RET
+;
+;  ctrl -- if char>=<sp>, print it; otherwise, print as ctrl-char
+;
+CTRL:	PUSH	BC		;save bc
+	LD	B,A		;save char in b
+	LD	A,(ECHO)	;check echo flag
+	OR	A		;0=no echo
+	LD	A,B		;restore char
+	POP	BC		;restore bc
+	RET	Z		;no output if no echo
+	CP	' '		;<sp>?
+	JR	C,CTRL1
+	JP	COUT		;print it normally
+;
+CTRL1:	CP	TAB		;trap <tab>
+	JR	Z,INTAB0
+	JP	CCOUT		;print with ctrl-char processing
+;
+;  hash -- print hash mark followed by <CR> <LF>
+;
+HASH:	LD	A,'#'		;print hash char
+	CALL	COUT
+	JP	CRLF
+
+
+;  intab0 -- tabulate on screen
+;
+INTAB0:	LD	A,C		;get char cnt
+	AND	7		;mask for difference from 8
+	LD	B,A		;store in reg b temporarily
+	LD	A,8		;subtract from 8
+	SUB	B
+	LD	B,A		;<sp> count in b
+	ADD	A,C		;add to char count
+	LD	C,A
+	LD	A,(ECHO)	;echo on?
+	OR	A		;0=no
+	RET	Z
+	LD	A,' '		;<sp> in a
+INTAB1:	CALL	COUT		;print <sp>
+	DJNZ	INTAB1		;count down
+	RET
+
+
+;  EVAL - Convert char string pted to by HL into decimal number in A
+;	On Entry, HL pts to first digit char
+;	On Exit, HL pts to after last digit char and A=number
+;
+EVAL:	PUSH	BC		;save bc
+	LD	B,0		;set value
+EVAL1:	LD	A,(HL)		;get digit
+	SUB	'0'		;convert to binary
+	JR	C,EVAL2
+	CP	10		;range?
+	JR	NC,EVAL2
+	INC	HL		;pt to next digit
+	LD	C,A		;new digit in c
+	LD	A,B		;multiply b by 10
+	ADD	A,A		;*2
+	ADD	A,A		;*4
+	ADD	A,B		;*5
+	ADD	A,A		;*10
+	ADD	A,C		;add in new digit
+	LD	B,A		;result in b
+	JR	EVAL1
+;
+EVAL2:	LD	A,B		;result in a
+	POP	BC		;restore ptr
+	RET
+
+
+;  LSKIPT - Skip to Beginning of Next Line and Test First Char for Menu Indicator
+;
+LSKIPT:	CALL	LSKIP		;skip
+	LD	A,(HL)		;get char
+	AND	7FH		;mask
+	CP	MINDIC		;test
+	RET
+
+
+;  LSKIP - Skip to Beginning of Next Line
+;
+LSKIP:	LD	A,(HL)		;get char
+	CP	EOF		;end of file
+	RET	Z
+	INC	HL		;pt to next
+	CP	LF
+	JR	NZ,LSKIP
+	RET
+;
+;  PUBLIC - Test the ZRDOS public status of the requested DU:
+;  Return NZ if public, Z if not.
+;
+PUBLIC:	LD	BC,(DU$REQ)
+	LD	HL,(PUBYTS)	;get zrdos public bytes
+	LD	A,H
+	OR	L
+	JR	Z,NOPUB		;nothing is public
+	LD	A,B		;get drive number
+	CP	8
+	JR	NC,NOPUB	;out of range
+	LD	A,C
+	OR	A
+	JR	Z,NOPUB		;user 0 cannot be public
+	CP	9
+	JR	NC,NOPUB	;out of range
+	LD	D,C		;user byte to d (minimun 1)
+	XOR	A		;clear a
+	SCF			;set carry flag
+PUBUL:
+	RLA			;shift user bit into a
+	DEC	D
+	JR	NZ,PUBUL	;shift until d is zero
+	AND	H		;and it with a
+	JR	Z,NOPUB		;not public
+	LD	D,B		;drive byte to d
+	XOR	A		;get a zero
+	SCF			;set carry
+PUBDL:
+	RLA
+	DEC	D
+	JP	P,PUBDL		;loop until d is negative
+	AND	L		;and it with a
+	JR	Z,NOPUB		; not public
+	XOR	A
+	DEC	A
+	RET
+NOPUB:
+	XOR	A
+	RET
+;
+;  MOVE - move subroutine -- move B-reg # of bytes from HL to DE
+;
+MOVE:	LD	A,(HL)		;get hl referenced source byte
+	AND	7FH		;strip attributes
+	LD	(DE),A		;put to de referenced destination
+	INC	HL		;fix pointers for next search
+	INC	DE
+	DJNZ	MOVE
+	RET
+
+
+;  MOVEB - Move subroutine (DE, HL not altered)
+;
+MOVEB:	PUSH	HL		;save hl, de
+	PUSH	DE
+	CALL	MOVE
+	POP	DE		;restore de, hl
+	POP	HL
+	RET
+
+MOVEC:	LD	A,(HL)		;get hl referenced source byte
+	LD	(DE),A		;put to de referenced destination
+	INC	HL		;fix pointers for next search
+	INC	DE
+	DJNZ	MOVEC
+	RET
+
+;  CMPDEHL - Compare DE to HL and set flags accordingly
+;
+CMPDEHL:
+	LD	A,D		;see if high bytes set flags
+	CP	H
+	RET	NZ		;return if not equal
+	LD	A,E
+	CP	L		;low bytes set flags instead
+	RET
+
+
+;  PRFN - Print file name pted to by HL
+;		- Advance HL by 11 bytes
+;
+PRFN:	LD	A,(HL)		;check for no-name
+	CP	1		;'no-name'?
+	JR	Z,PRFN1
+;
+	LD	B,8		;8 chars
+	CALL	PRFNS1
+	LD	A,'.'
+	CALL	COUT
+	LD	B,3		;file type and fall thru
+;
+PRFNS1:	LD	A,(HL)		;get char
+	AND	7FH
+	CALL	COUT
+	INC	HL		;pt to next
+	DJNZ	PRFNS1
+	RET
+;
+PRFN1:	CALL	VPRINT
+	DB	' No File '
+	DB	'   ',0
+	INC	HL
+	RET
+
+
+;******************************************************************************
+;
+; V M E N U    M E S S A G E	S U B R O U T I N E S
+;
+
+; REBUILD - Build Entire Screen
+;
+REBUILD:
+	LD	HL,(CURAT)	;save cursor and ring positions
+	LD	(SCURAT),HL
+	LD	HL,(RINGPOS)
+	LD	(SRINGPOS),HL
+	CALL	BANNER		;print banner
+	CALL	DIRMORE		;print current du:dir (and '[more files]' msg).
+	CALL	DISPFILES	;display files
+	LD	HL,(SCURAT)	;restore cursor and ring positions
+	LD	(CURAT),HL
+	LD	HL,(SRINGPOS)
+	LD	(RINGPOS),HL
+	JP	SETCUR		;restore cursor on screen
+
+
+; REFRESH - Refresh Files Portion of Screen
+;
+REFRESH:
+	LD	HL,(CURAT)	;save cursor and ring positions
+	LD	(SCURAT),HL
+	LD	HL,(RINGPOS)
+	LD	(SRINGPOS),HL
+	CALL	CUR$FIRST	;position cursor at first position
+;
+REF1:	CALL	VEREOL		;clear line.
+	CALL	CUR$DOWN	;down to next line
+	LD	HL,(CURAT)	;wrapped around to home position yet?
+	LD	DE,CURHOME
+	CALL	CMPDEHL
+	JR	NZ,REF1		;loop if not
+;
+	CALL	DISPFILES	;display files
+	LD	HL,(SCURAT)	;restore cursor and ring positions
+	LD	(CURAT),HL
+	LD	HL,(SRINGPOS)
+	LD	(RINGPOS),HL
+	JP	SETCUR		;restore cursor on screen
+
+
+;  BANNER - Print VMENU Banner
+;
+BANNER:	CALL	VCLS		;clear screen
+	LD	HL,BANADR
+	CALL	GOTOXY
+	CALL	VPRINT		;print banner
+	DB	'VMENU, Version '
+	DB	VERS/10+'0','.',[VERS MOD 10]+'0'
+	DB	'      ',DIM,'Current File:',BRIGHT
+	DB	0
+	RET
+
+;  DIRMORE - Print Current Directory (and Possibly '[More Files]') messages
+;
+DIRMORE:
+	LD	HL,DUADR	;du screen address
+	CALL	GOTOXY
+	CALL	PRDU		;print du:dir>
+;
+	CALL	PUBLIC
+	JR	Z,DIRMR0
+	LD	HL,PUBADR	;public message address
+	CALL	GOTOXY
+	CALL	VPRINT
+	DB	DIM,' [PUBLIC]',BRIGHT,0
+;
+DIRMR0:
+	LD	A,(KBYTE)
+	OR	A
+	JR	Z,DIRMR1
+	CALL	RESET		;reset system
+	LD	C,INQDISK
+	CALL	BDOS
+	ADD	'A'
+	LD	(FREE$DRV),A
+	CALL	GETDPB		;set dpb values
+	CALL	FRESTOR		;determine free space remaining
+	CALL	PRINT$FRE	;print value
+
+DIRMR1:	LD	HL,MOREADR	;more screen address
+	CALL	GOTOXY
+	LD	HL,(RINGCNT)	;get # files in ring.
+	LD	DE,EPS		;..and maximum number that can be displayed.
+	CALL	CMPDEHL
+	JR	Z,DIRMR2
+	JR	NC,DIRMR3
+DIRMR2:	CALL	VPRINT
+	DB	DIM,'[More Files]',BRIGHT,0
+	RET
+;
+DIRMR3:	CALL	VPRINT
+	DB	BRIGHT,'            ',0
+	RET
+
+;  GETDPB - Determine Disk Parameter values for current drive.
+;
+GETDPB:	LD	C,INQDISK	; determine current drive
+	CALL	BDOS		; returns 0 as a:, 1 as b:, etc.
+	INC	A		; make 1 --> a:, 2 --> b:, etc.
+	LD	(FCB),A
+	LD	C,GETPARM	; current disk parameter block
+	CALL	BDOS
+	INC	HL		; bump to..
+	INC	HL
+	LD	A,(HL)		; block shift factor.
+	LD	(BSHIFTF),A	; 'bsh'
+	INC	HL		; bump to..
+	LD	A,(HL)		; block mask.
+	LD	(B$MASK),A	; 'blm'
+	INC	HL		; bump to..
+	INC	HL		; get..
+	LD	E,(HL)		; maximum block number..
+	INC	HL		; double..
+	LD	D,(HL)		; byte.
+	EX	DE,HL
+	LD	(B$MAX),HL	; 'dsm'
+	RET
+
+
+; FRESTOR - Determine free storage remaining on selected drive
+;	    - GETDPB ***MUST*** be called first to set current DPB values.
+FRESTOR:
+	LD	C,INQALC	; address of allocation vector
+	CALL	BDOS
+	EX	DE,HL		; get its length
+	LD	HL,(B$MAX)
+	INC	HL
+
+	LD	BC,0		; initialize block count to zero
+GSPBYT:	PUSH	DE		; save allocation address
+	LD	A,(DE)
+	LD	E,8		; set to process 8 bits (blocks)
+
+GSPLUP:	RLA			; test bit
+	JR	C,NOT$FRE
+	INC	BC
+NOT$FRE:
+	LD	D,A		; save bits
+	DEC	HL
+	LD	A,L
+	OR	H
+	JR	Z,END$ALC	; quit if out of blocks
+	LD	A,D		; restore bits
+	DEC	E		; count down 8 bits
+	JR	NZ,GSPLUP	; branch to do another bit
+	POP	DE		; bump to next count..
+	INC	DE		; of allocation vector.
+	JR	GSPBYT		; process it
+
+END$ALC:
+	POP	DE		; clear alloc vector pointer from stack
+	LD	L,C		; copy # blocks to hl
+	LD	H,B
+	LD	A,(BSHIFTF)	; get block shift factor
+	SUB	3		; convert from sectors to thousands (k)
+	JR	Z,PRT$FRE	; skip shifts if 1k blocks
+FREK$LP:
+	ADD	HL,HL		; multiply blocks by k-bytes per block
+	DEC	A		; multiply by 2, 4, 8, or 16.
+	JR	NZ,FREK$LP
+PRT$FRE:
+	LD	(DISKSP),HL	; save disk space
+	RET
+
+
+;  PRINT$FRE - Print free space on disk
+;
+PRINT$FRE:
+	LD	HL,FRSPADR
+	CALL	GOTOXY
+	CALL	VPRINT
+	DB	DIM,0
+	LD	HL,(DISKSP)
+	CALL	PHLFDC		; # of free k-bytes in hl
+	CALL	VPRINT
+	DB	BRIGHT,' K Bytes free on Disk ',DIM
+FREE$DRV:
+	DB	'X:',BRIGHT,0
+	RET
+
+; DISPFILES - Refresh File Display
+;
+DISPFILES:
+	CALL	CUR$FIRST	;position cursor at first position
+	LD	HL,(LOCBEG)	;pt to first file name
+	LD	(LOCPOS),HL	;save local position
+;
+DSPF1:	LD	HL,(LOCEND)	;at end?
+	EX	DE,HL
+	LD	HL,(LOCPOS)
+	CALL	CMPDEHL
+	RET	Z		;return if done.
+;
+	CALL	VPRINT
+	 IF	FCOLS EQ 4
+	DB	'    ',0
+	 ELSE
+	DB	'  ',0
+	 ENDIF
+;
+	PUSH	HL		;save location
+	CALL	PRFN		;go print filename
+	LD	A,(HL)		;if r/o attribute set display it
+	CALL	COUT
+	POP	HL
+	LD	DE,ELTSIZ
+	ADD	HL,DE		;point to next location
+	LD	(LOCPOS),HL	;and save it.
+	CALL	CUR$NEXT
+	JR	DSPF1
+
+
+;  PRDU - Print Current DU
+;
+PRDU:	PUSH	HL		;save regs
+	PUSH	BC
+	CALL	STNDOUT		;dim
+	LD	A,(DU$REQ+1)	;get drive
+	ADD	'A'		;convert to letter
+	CALL	COUT
+	LD	A,(DU$REQ)	;get user
+	CALL	PAFDC		;print user as floating
+	LD	A,':'		;print colon
+	CALL	COUT
+	LD	BC,(DU$REQ)	;get current du in bc
+	CALL	DUTDIR		;scan named directory table
+	JR	Z,PRDU2		;no name?
+	LD	B,8		;print name
+PRDU1:	LD	A,(HL)		;get char
+	CP	' '		;done if space encountered
+	JR	Z,PRDU3
+	CALL	COUT
+	INC	HL
+	DJNZ	PRDU1
+	JR	PRDU3
+;
+PRDU2:	CALL	VPRINT
+	DB	'Noname',0
+PRDU3:	CALL	STNDEND		;bright
+	POP	BC		;restore regs
+	POP	HL
+	RET
+
+
+;  REFCMD - Refresh the Command Line
+;
+REFCMD:	LD	HL,CPMADR	;position cursor at start of command line.
+	CALL	GOTOXY
+	CALL	EREOL		;erase line
+	CALL	VPRINT
+	DB	DIM,'Command (CR=Menu',0
+	LD	A,(CPMOK)	;ok to return to zcpr3?
+	OR	A		;0=no
+	CALL	NZ,PRMPTC
+;
+	LD	HL,(CSTART)	;pt to first char
+	LD	A,(HL)		;get it
+	CP	MFIRST		;first menu?
+	CALL	NZ,PRMPTF	;print previous menu prompt if not first menu
+;
+	LD	A,(NMENFL)	;next menu available?
+	OR	A		;0=no
+	CALL	NZ,PRMPTN	;print next menu prompt
+;
+	CALL	VPRINT
+	DB	') - ',BRIGHT,0
+	RET
+
+
+;  PRMPTC - Print ZCPR3 Return Prompt
+;
+PRMPTC:	CALL	VPRINT
+	DB	', ^C=Z3',0
+	RET
+
+
+;  PRMPTF - Print First/Last Menu Chars
+;
+PRMPTF:	CALL	VPRINT
+	DB	', ',RFM,'=1st Menu, ',RLM,'=Prev Menu',0
+	RET
+
+
+;  PRMPTN - Print next menu message
+;
+PRMPTN:	CALL	VPRINT
+	DB	', ',RNM,'=Next Menu',0
+	RET
+
+
+;  SETSCR - Setup Screen Display Variables
+;
+SETSCR:	LD	HL,CURHOME	;set cursor home
+	LD	(CURAT),HL
+	LD	HL,(RING)	;set ring position
+;
+;  Entry to Reset Ring Position at HL
+;
+SETSCR1:
+	LD	(RINGPOS),HL
+;
+;  Entry to Reset Local Ring Position at HL
+;
+SETSCR2:
+	LD	(LOCBEG),HL	;front of ring
+	LD	DE,EPS*ELTSIZ	;new end?
+	ADD	HL,DE
+	LD	DE,(RINGEND)	;end of ring
+	CALL	CMPDEHL
+	JR	NC,SETSCR3
+	EX	DE,HL
+SETSCR3:
+	LD	(LOCEND),HL
+	RET
+
+
+;  LPRINTX - Print Line pted to by HL Ending in <CR>
+;    Decrement PAGCNT
+;
+LPRINTX:
+	CALL	LPRINT		;print without <cr>
+	JP	CRLF		;do <cr> <lf>
+
+
+;  LPRINT - Print Line Pted to by HL
+;	    - Optionally expand TABS.
+;	    - Decrement PAGCNT
+;
+LPRINT:	LD	A,(PAGCNT)	;check for page overflow
+	OR	A		;too many lines for display?
+	JP	Z,LSKIP		;..yes. just skip out the line.
+
+	 IF	EXPTAB
+	LD	B,0		;set tab counter
+	 ENDIF
+
+LPRNT0:	LD	A,(HL)		;get char
+	INC	HL		;pt to next
+	AND	7FH		;mask msb
+	CP	DIM		;goto standout mode?
+	JR	Z,LPRNT1
+	CP	BRIGHT		;end standout mode?
+	JR	Z,LPRNT2
+
+	 IF	EXPTAB
+	CP	TAB		;tabulate?
+	JR	Z,LPRNT3
+	 ENDIF
+
+	CP	CR		;done?
+	JR	Z,LPRNT4
+	CALL	COUT		;print
+
+	 IF	EXPTAB
+	INC	B		;incr tab counter
+	 ENDIF
+	JR	LPRNT0
+;
+LPRNT1:	CALL	STNDOUT		;enter standout mode
+	JR	LPRNT0
+;
+LPRNT2:	CALL	STNDEND		;end standout mode
+	JR	LPRNT0
+;
+	 IF	EXPTAB
+LPRNT3:	LD	A,' '		;print <sp>
+	CALL	COUT
+	INC	B		;incr tab counter
+	LD	A,B		;done?
+	AND	7		;every 8
+	JR	NZ,LPRNT3
+	JR	LPRNT0
+	 ENDIF
+;
+LPRNT4:	INC	HL		;pt to first char of next line
+	LD	A,(PAGCNT)	;count down pages
+	DEC	A
+	LD	(PAGCNT),A
+	RET
+
+
+; VCLS - Clear Screen
+;
+VCLS:	CALL	CLS		;try to clear the screen
+	RET	NZ		;ok if done
+	PUSH	HL		;save regs
+	PUSH	BC
+	CALL	GETCRT		;get crt data
+	INC	HL		;get number of lines on screen
+	LD	B,(HL)		;b=number of lines
+VCLS1:	CALL	CRLF		;new line
+	DJNZ	VCLS1
+	POP	BC		;restore regs
+	POP	HL
+	RET
+
+
+; VEREOL - Erase To End-of-Line
+;
+VEREOL:	CALL	EREOL		;try to erase to eol
+	RET	NZ		;ok if done
+	PUSH	BC		;save count
+	LD	A,' '		;space out
+	CALL	VEREOL1		;send b spaces
+	POP	BC		;get count
+	LD	A,BS		;backspace in
+VEREOL1:
+	CALL	COUT		;send char
+	DJNZ	VEREOL1		;count down
+	RET
+
+;  RESET - Disk system reset
+;		- log in requested DU
+;
+RESET:	PUSH	BC		; save regs
+	PUSH	DE
+	PUSH	HL
+	LD	C,RESETDK	; reset system
+	CALL	BDOS
+	LD	BC,(DU$REQ)	; get current du
+	CALL	LOGUD		; and set it up.
+	POP	HL		; restore regs
+	POP	DE
+	POP	BC
+	RET
+
+; CUR$FIRST - Home the Cursor
+;
+CUR$FIRST:
+	LD	HL,CURHOME	;home address
+	LD	(CURAT),HL	;set cursor position
+	JP	GOTOXY
+
+
+; CUR$LAST - Move Cursor to Last File Position
+;
+CUR$LAST:
+	CALL	PSN$LAST	;position cursor
+CUR$NEW:
+	LD	HL,(CURAT)	;set new cursor position
+	JP	GOTOXY
+
+
+; CUR$NEXT - Move Cursor to Next File Position
+;
+CUR$NEXT:
+	CALL	PSN$NEXT	;position cursor
+	JR	CUR$NEW		;set new cursor position
+
+
+; CUR$BACK - Move Cursor to Previous File Position
+;
+CUR$BACK:
+	CALL	PSN$BACK	;position cursor
+	JR	CUR$NEW		;set new cursor position
+
+
+; CUR$DOW - Move Cursor Down a File Position
+;
+CUR$DOWN:
+	CALL	PSN$DOWN	;position cursor
+	JR	CUR$NEW		;set new cursor position
+
+
+; PSN$LAST - Set Last File Position
+;
+PSN$LAST:
+	LD	HL,(RINGPOS)	;advance
+PL0:	LD	DE,ELTSIZ
+	ADD	HL,DE
+	EX	DE,HL
+	LD	HL,(LOCEND)	;end of local ring?
+	CALL	CMPDEHL
+	RET	Z
+	CALL	PSN$NEXT	;advance cursor position.
+	EX	DE,HL		;get position
+	JR	PL0
+
+
+; PSN$NEXT - Advance the Cursor Position
+;
+PSN$NEXT:
+	LD	HL,(CURAT)	;compute new position
+	LD	A,L		;check for new line
+	ADD	ENTSIZ		;size of each entry
+	CP	ENTSIZ*[FCOLS-1]+2 ;last column?
+	JR	NC,PN1		;advance to enxt line
+	LD	L,A		;new position
+	LD	(CURAT),HL
+	RET
+;
+PN1:	LD	A,H		;get line
+	LD	HL,CURHOME	;get col
+	LD	H,A		;set line and continue with psn$down
+	LD	(CURAT),HL
+
+
+; PSN$DOWN - Move Cursor Position Down One Line
+;
+PSN$DOWN:
+	LD	HL,CURHOME	;get home address
+	LD	B,H		;line in b
+	LD	HL,(CURAT)	;get current address
+	INC	H		;move down
+	LD	A,H		;check for too far
+	SUB	B
+	CP	EPS/FCOLS
+	JR	C,PD1		;ok, so save position
+	LD	A,L		;get col
+	LD	HL,CURHOME
+	LD	L,A
+PD1:	LD	(CURAT),HL
+	RET
+
+
+; PSN$BACK - Back Up the Cursor Position
+;
+PSN$BACK:
+	LD	DE,CURHOME	;get home address
+	LD	HL,(CURAT)
+	CALL	CMPDEHL		;compare
+	JR	Z,PSN$LAST	;goto end if last
+	LD	A,L		;check for first col
+	CP	E
+	JR	Z,PB1
+	SUB	ENTSIZ		;back up one col
+	LD	L,A
+	LD	(CURAT),HL	;new pos
+	RET
+;
+PB1:	LD	A,E		;get home col
+	ADD	ENTSIZ*[FCOLS-1] ;get last col
+	LD	L,A
+	DEC	H		;prev line
+	LD	(CURAT),HL
+	RET
+
+
+; SETCUR - Position Cursor at CURAT
+;
+SETCUR:	LD	HL,(CURAT)
+	CALL	GOTOXY
+	CALL	VPRINT
+	 IF	FCOLS EQ 4
+	DB	'--> ',0
+	 ELSE
+	DB	'->',0
+	 ENDIF
+	RET
+
+
+; CLRCUR - Clear Cursor
+;
+CLRCUR:	LD	HL,(CURAT)
+	CALL	GOTOXY
+	CALL	VPRINT
+	 IF	FCOLS EQ 4
+	DB	'    ',0
+	 ELSE
+	DB	'  ',0
+	 ENDIF
+	RET
+
+
+; CPRMPT - Command Prompt
+;
+CPRMPT:	LD	HL,CPMADR	;get command line cursor address
+	PUSH	BC
+	LD	A,(CPECNT)	;get # chars to erase.
+MPRINT:	LD	B,A		;in b.
+	PUSH	HL		;save cursor address
+	CALL	GOTOXY		;set cursor.
+	CALL	VEREOL		;erase to eol
+	POP	HL		;restore address
+	POP	BC
+	CALL	GOTOXY		;position cursor
+	JP	VPRINT		;print message and return
+
+
+; ERMSG - Error Message
+;
+ERMSG:	LD	A,0FFH		;set error message flag
+	LD	(ERMFLG),A
+	LD	HL,ERADR	;get error line cursor address
+	PUSH	BC
+	LD	A,(ERECNT)	;get # chars to erase.
+	JR	MPRINT		;print message.
+
+
+; ERCLR - Clear Error Message
+;
+ERCLR:	XOR	A		;clear error flag.
+	LD	(ERMFLG),A
+	LD	HL,ERADR	;position cursor
+	CALL	GOTOXY
+	PUSH	BC
+	LD	A,(ERECNT)	;get # chars to erase.
+	LD	B,A		;in b.
+	CALL	VEREOL		;erase to eol
+	POP	BC
+	RET
+
+
+;  SAK - Prompt for Continuation
+;
+SAK:	CALL	VPRINT
+	DB	DIM,'Strike Any Key -- ',BRIGHT,0
+
+
+;  DKEYIN - direct console input w/o echo (waits for input)
+;
+DKEYIN:	CALL	CIN		;get char from bios
+	JP	CAPS		;capitalize
+
+
+;  KEYIN - Conin routine (waits for response)
+;
+KEYIN:	CALL	CIN		;get input
+	CALL	CAPS		;capitalize
+	JP	COUT		;echo
+
+
+;  RESDMA - Reset DMA Address
+;
+RESDMA:	LD	DE,TBUFF	;pt to tempory buffer
+	LD	C,SETDMA
+	JP	BDOS
+;
+; Program: SFENV
+; Author: Joe Wright
+; Date: 22 Feb 86
+; Version: 1.0
+
+; Purpose:  Find the address of the zcpr environment descriptor.
+;
+; Method:  On the assumption that the environment descriptor is
+;	   in high memory, we will start at 0ffffh and search backward
+;	   for the string 'Z3ENV' until the beginning of the bios.  Mark
+;	   the address of 'Z'-3 as the possible environment location, ENV.
+;	   Look at ENV+1bh and check ENV=Z3ENV. If so, we have found it.
+
+;
+; Declare ourselves PUBLIC
+;
+;	public	fenv
+
+;TARGET	EQU	103H		; z3env identifier string in header
+
+;
+; Subroutine entry point
+; On the assumption that this is the first call in the program
+; no registers are saved.
+;
+;FENV:
+;	LD	HL,-1		; beginning of search
+;SEARCH:
+;	LD	DE,TARGET+4	; search target end.
+;SEARCH0:
+;	LD	A,(2)		; bios page
+;	CP	H		; page being searched
+;	JR	Z,NOENV		; give up.  we can't find it.
+;	LD	A,(DE)		; get the 'v'
+;	CP	(HL)		; is hl pointing to it yet?
+;	JR	Z,MATCH		; yes.
+;	DEC	HL		; next byte
+;	JR	SEARCH0		; again
+;MATCH:
+;	LD	B,4		; check four more bytes
+;MATCH0:
+;	DEC	DE		; next byte in target
+;	DEC	HL		; next byte in memory
+;	LD	A,(DE)		; get target byte
+;	CP	(HL)		; compare it with memory
+;	JR	NZ,SEARCH	; start over
+;	DEC	B		; decrement byte count
+;	JR	NZ,MATCH0	; continue checking
+;
+;  Eureka (We may have found it)
+;
+;	DEC	HL
+;	DEC	HL
+;	DEC	HL		; back up to potential environment address
+;	PUSH	HL		; save it
+;	LD	DE,1BH		; offset to envptr in z3env
+;	ADD	HL,DE		; point hl to it
+;	LD	E,(HL)		; low byte to e
+;	INC	HL
+;	LD	D,(HL)		; move envptr to de
+;	POP	HL		; retrieve potential environment address
+;	LD	A,H
+;	CP	D		; compare high order
+;	JR	NZ,NOTYET
+;	LD	A,L
+;	CP	E		; compare low order
+;	JR	Z,FOUNDIT
+;
+; Otherwise back up to the last byte
+;
+;NOTYET:
+;	INC	HL
+;	INC	HL
+;	INC	HL
+;	JR	SEARCH		; continue searching
+;
+; Can't find the environment
+;
+;NOENV:
+;	LD	HL,0
+;
+; Set flags and exit
+;
+;FOUNDIT:
+;	LD	A,H
+;	OR	L
+;	RET			; return zero if not found.
+;
+;	end			; End of SFENV subroutine
+
+;
+;  At entry, HL -> 11 character file name
+;  At exit,  NZ set if unambiguous, else Z set
+;	     A is clobbered
+;
+
+IFUFN:	PUSH	BC
+	PUSH	HL
+	LD	A,(HL)			; If first char is space or ctl-char
+	CP	A,' '+1
+	JR	C,RTNNO			; then not UFN
+	LD	B,11
+LOOPUFN:
+	LD	A,(HL)
+	CP	A,'?'			; not UFN if "?" in file name
+	JR	Z,RETURN
+	CP	A,' '			; or if space or ctl-char
+	JR	NC,LOOP1
+RTNNO:	XOR	A
+	JR	RETURN
+LOOP1:	INC	HL
+	DJNZ	LOOPUFN
+	OR	H			; set NZ
+RETURN:	POP	HL
+	POP	BC
+	RET
+
+;
+; At entry, HL -> source string
+;	    DE -> destination
+; At exit,  HL and DE point to last byte moved in their respective
+;	strings.  A contains the last byte.
+; No testing is done that size is reasonable
+
+MOVTOK:	LD	A,(HL)
+	LD	(DE),A
+	CP	A,' '		; test for blank
+	RET	Z
+	OR	A		; test for zero
+	RET	Z
+	INC	HL		; advance to next byte
+	INC	DE
+	JR	MOVTOK
+
+;
+; S T O R A G E
+;
+; Initialized
+;
+VMENUCMD:
+	VMNAME			;menu name
+	VMNFILL			;filler
+	DB	' '		;one space
+	 if	xlogok
+	DB	'    '		; space for duu:
+	 endif
+VMENUTAIL:
+	DS	128		;end of shell command
+;
+MENU$D:	DB	'x'
+MENU$U:	DB	'xx'
+	DB	':'		;colon
+	DB	0
+;
+MENUFILE:
+	DB	'MENU    '	;default menu file
+	DB	'VMN'
+NOARGNAME:
+	DB	'*.* '
+VMENUFILE:
+	DB	'MENU',0	;default menu file
+
+JOKER:	DB	'???????????'	;*.* equivalent
+
+BLANK11:
+	DB	'           '	; 11 blanks (= undefined system file)
+
+NODIR:	DB	'Noname  '	;current dir if not resolved.
+
+; This is the Password area, if sysmenu is declared.
+;  Password may be echoed and/or encripted as desired.
+;
+	 IF	SYSMENU		;system menu is declared.
+	 IF	ENCRIPT		;encript the password.
+PPASS:
+; 'SysTem'  System password, case is significant
+;   A modest attempt to encript the password to defeat detection
+;
+	DB	'S'-13
+	DB	'y'-13
+	DB	's'-13
+	DB	'T'-13
+	DB	'e'-13
+	DB	'm'-13
+
+	DB	-13,-13,-13	;terminators
+
+	 ELSE
+;
+; No attempt to defeat detection
+;
+PPASS:	DB	'SYSTEM'
+	DB	0,0,0		;terminators
+
+	 ENDIF			;encript
+	 ENDIF			;sysmenu
+
+;
+; Uninitialized
+;
+PUBYTS:	DS	2		;save area for zrdos public bytes
+B$MAX:	DS	2		;highest block number on drive
+B$MASK:	DS	1		;sec/blk-1
+BSHIFTF:DS	1		;# of shifts to multiply by sec/blk
+DISKSP:	DS	2		;space remaining on disk
+STACK:	DS	2		;entry stack pointer
+IBUFF:	DS	2		;input line buffer addr.
+EXPLINE:
+	DS	2		;menu line expansion buffer address.
+CMDBUFF:
+	DS	2		;command line buffer address.
+;
+STLINE:	DS	2		;inlin buffer addr temporary storage
+ECHO:	DS	1		;inlin echo flag (0=no echo)
+;
+DU$ORIG:
+	DS	2		;original du:
+DU$REQ:	DS	2		;requested du:
+;
+CRTLCNT:
+	DS	1		;# lines available on crt
+PAGCNT:	DS	1		;paging counter
+
+MAXPAGE:
+	DS	1		;highest legal page in memory
+;
+CPECNT:	DS	1		;# chars to clear command line.
+ERECNT:	DS	1		;# chars to clear error line.
+
+ALPHA:	DS	1		;alphabetization flag (0=type and name, 0ffh=
+				;name and type)
+BUFSTART:
+	DS	2		;and begin pointer.
+
+CURAT:	DS	2		;current cursor position
+DMY$FCB:
+	DS	2		;dummy fcb for file attributes
+
+ERMFLG:	DS	1		;error message present flag
+
+LOCBEG:	DS	2		;local beginning of ring
+LOCEND:	DS	2		;local end of ring
+LOCPOS:	DS	2		;local ring position (temp)
+
+NONAME:	DS	11		;dummy user-defined file name
+
+RING:	DS	2		;ptr to beginning of ring
+RINGEND:
+	DS	2		;current ring end pointer
+RINGPOS:
+	DS	2		;current ring position in scan
+
+SSB:				; sort specification block
+	DS	2		; -> 1st record to be sorted
+RINGCNT:
+	DS	2		;number of array elements
+	DW	12		; size of each element
+	DW	RINGCMP		; address of compare routine
+SSBPT:	DW	0		; -> pointer table
+SSBFLG:	DB	0FFH,0		; use pointers
+SSBAT:	DS	2		; save location of first record here
+SCURAT:
+	DS	2		;save cursor position
+SRINGPOS:
+	DS	2		;save ring position
+
+FNCFCTR:
+	DS	1		;eps counter for findcfile.
+;
+;  Menu Buffers
+;
+MSTART:	DS	2		;address of first menu
+CSTART:	DS	2		;address of current menu
+OPTSTRT:
+	DS	2		;address of first option in current menu
+;
+CMENU:	DS	1		;current menu number.
+;
+NMENFL:	DS	1		;next menu available flag (0=no)
+;
+SMENFL:	DS	1		;system menu available flag (0=no)
+SMENO:	DS	1		;system menu number
+;
+GCFLAG:	DS	1		;global display command line flag
+GCPMOK:	DS	1		;global zcpr3 return flag (0=disable)
+;
+CFLAG:	DS	1		;local display command line flag
+CPMOK:	DS	1		;local zcpr3 return flag (0=disable)
+;
+WFLAG:	DS	1		;wait for user keypress on entry (0 = disable)
+PUSHTRY:DS	1		;1st or 2nd attempt to store in shell stack
+IFLOGMENU:
+	DB	0		; Tells on log to new dir if also new menu
+;
+PSWDBUF:DS	10		;buffer for user password entry
+
+	END
+

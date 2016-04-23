@@ -1,0 +1,71 @@
+;	TITLE	"SHGO2 - Syslib 4.0"
+	NAME	('HGOTO2')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SHGO2.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SHGO2
+; Abstract: This module contains the single routine HGOTO2 which
+;	is a computed GOTO.  When called, register pair HL contains
+;	the index into a table of 3-byte JP xxxx instructions to
+;	which execution can be transferred.  No error or range
+;	checking is performed on the index.  The routine is used as:
+;
+;	  LD	HL,INDEX ; zero-relative
+;	  CALL	HGOTO2
+;	  JP	ADDR0	; IF HL=0
+;	  JP	ADDR1	; IF HL=1
+;	  JP	ADDR2	; IF HL=2
+;	  ...
+;	ADDR0:		; COME HERE IF HL=0
+;	  ...
+;	ADDR1:		; COME HERE IF HL=1
+;	  ...
+;	ADDR2:		; COME HERE IF HL=2
+;	  ...
+;  Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+
+	PUBLIC		HGOTO2
+
+	.Z80
+	CSEG
+;=========================================================================
+; NAME - HGOTO2
+; Entry: HL - Contains a 0-based index into a table of Jump instructions
+; Exit : - No parameters returned, program execution is transferred
+; Uses : - None.  (all values preserved for destination routine)
+; Special Requirements:  Since no range or error checking is done, the user
+;	is responsible for insuring that the index does not evaluate to an
+;	address outside of the table boundaries.
+;=========================================================================
+
+HGOTO2:	LD	(HLSAVE),HL	; save HL
+	EX	(SP),HL		; get return address, save HL
+	PUSH	DE		; save regs
+	PUSH	AF
+	PUSH	HL		; save return address
+	LD	HL,(HLSAVE)	; HL = index value
+	LD	D,H		; DE = HL = index value
+	LD	E,L
+	ADD	HL,HL		; HL = index * 2
+	ADD	HL,DE		; HL = offset = index * 3
+	POP	DE		; get return address
+	ADD	HL,DE		; HL = destination address
+	POP	AF		; get regs
+	POP	DE
+	EX	(SP),HL		; restore HL, set address of routine
+	RET
+
+; Save buffer
+
+	DSEG			; Put in Data Segment
+
+HLSAVE:	DEFS	2		; Temporary storage for HL
+
+	END
+

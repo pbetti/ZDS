@@ -1,0 +1,1321 @@
+;SHOWFUNC.Z80		   BDOS function tracer			Nov. 12, 1986
+;
+;	This program modifies the jump instruction at location 5 and
+;	relocates itself to high TPA. It then loads the program specified
+;	in the command tail and executes it. As the program is being
+;	executed, the BDOS function numbers that are being called by the
+;	program are intercepted and acted upon according to commands
+;	entered at the command prompt. This allows a program to be
+;	traced via it's BDOS function calls.
+;
+;			A T T E N T I O N
+;
+;	This program is released to public domain. I went to a great
+;	deal of effort to comment it fully. You may add	enhancements
+;	if you wish but they must be similarly commented and the users
+;	manual updated with the features that you added for the benefit
+;	of others. My name is imbedded in the program and must not be
+;	removed. This program MUST NOT BE SOLD or used to gain a profit
+;	of any kind.				- Jim Apolis
+;
+;	USAGE: A>SHOWFUNC d:filename d:file1 d:file2 options<cr>
+;
+;  **************************************************************************
+;	    DATE	REVISION		      COMMENTS
+;	-------------	--------	-------------------------------------
+;	Nov. 12, 1986	  1.0		Original creation  - Jim Apolis
+;
+;  **************************************************************************
+;
+VERS	EQU	1			;Version
+REVS	EQU	0			;Revision
+;
+;	BDOS FUNCTION CALLS
+;	-------------------
+BDOS	EQU	5			;BDOS entry point
+RESET	EQU	0			;BDOS system reset
+PRINTS	EQU	9			;BDOS print string function
+RDCNBUF	EQU	10			;BDOS read console buffer
+OPENF	EQU	15			;BDOS open file
+CLOSEF	EQU	16			;BDOS close file
+READSEQ	EQU	20			;BDOS read sequential
+SETDMA	EQU	26			;BDOS set DMA address
+;
+;	MEMORY DEFINITIONS
+;	------------------
+DFCB	EQU	5CH			;Default FCB
+DFCB2	EQU	6CH			;Default FCB #2
+BUFFER	EQU	80H			;Command tail buffer
+TPA	EQU	100H			;Transient program area
+;
+;	ASCII DEFINITIONS
+;	-----------------
+CR	EQU	0DH			;Carrage return
+LF	EQU	0AH			;Line feed
+TAB	EQU	8			;Tab
+RUB	EQU	7FH			;Rubout/delete
+;
+;------------------------------------------------------------------------------
+;	**** Start of program ****
+;
+	ORG	TPA
+;
+	JR	BEGIN
+;
+	DB	CR,LF,'SHOWFUNC  v',VERS+'0','.',REVS+'0'  ;DO NOT
+	DB	' by Jim Apolis San Jose, Ca.',CR,LF,1AH   ;CHANGE THIS!!!
+;
+BEGIN:
+	LD	SP,TEMPSTK		;Temporary stack
+;
+;  Print version message
+;
+	LD	DE,VERMSG		;Version message
+	LD	C,PRINTS		;Print string function
+	CALL	BDOS			;Execute function
+;
+;  Check for command tail
+;
+	LD	A,(BUFFER)		;Command tail buffer
+	OR	A			;Command tail present?
+	JP	NZ,ISTAIL		;If so continue else give help
+;
+	LD	DE,USGMSG		;Usage message
+;
+;  Print error message and exit
+;
+EXERR:
+	LD	C,PRINTS		;Print string function
+	CALL	BDOS			;Execute function
+;
+	LD	C,RESET			;System reset function
+	JP	BDOS			;Execute function
+;
+USGMSG:
+	DB	CR,LF,' USAGE: A>SHOWFUNC d:filename d:file1 d:file2 '
+	DB	'options<cr>',CR,LF,LF
+	DB	'        Where "d:" is an optional drive '
+	DB	'specifier and "filename"',CR,LF
+	DB	'        is the name of the target COM '
+	DB	'file and "file1" and "file2"',CR,LF
+	DB	'        are part of the command tail for '
+	DB	'the target program',CR,LF
+	DB	'        and "options" are the options for '
+	DB	'the target program.',CR,LF,'$'
+;
+FNFMSG:
+	DB	CR,LF,'File not found',CR,LF,'$'
+;
+VERMSG:
+	DB	CR,LF,'SHOWFUNC  v',VERS+'0','.',REVS+'0',CR,LF,'$'
+;
+COMMSG:
+	DB	'COM'			;File type
+;
+;  Move COM into DFCB
+;
+ISTAIL:
+	LD	HL,COMMSG		;COM string
+	LD	DE,DFCB+9		;File type in FCB
+	LD	BC,3			;Byte count
+	LDIR				;Move COM into FCB
+;
+;  Zero the rest of the FCB
+;
+	LD	L,E			;Copy HL
+	LD	H,D			;	to DE
+	LD	(HL),0			;Put 0 after filename
+	INC	DE			;Destination = source + 1
+	LD	BC,23			;Remaining bytes in FCB
+	LDIR				;Zero remainder of FCB
+;
+;  Open the target file
+;
+	LD	C,OPENF			;Open file function
+	LD	DE,DFCB			;Default FCB
+	CALL	BDOS			;Execute function
+	INC	A			;Check for successful open
+	JR	NZ,RELOC		;If successful go relocate the program
+;
+	LD	DE,FNFMSG		;File not found message
+	JP	EXERR			;Print message and exit
+;
+;  Relocate code to high TPA
+;
+RELOC:
+	LD	HL,(BDOS+1)		;Get BDOS entry address
+	LD	(ENTRY+1),HL		;Save it in the new entry point
+	LD	(ENTRY1+1),HL		;Save it in the new entry point
+	LD	DE,PGMEND-START1	;Size of BDOS intercept code
+	XOR	A			;Clear carry
+	SBC	HL,DE			;Calculate address to relocate to
+	LD	(BDOS+1),HL		;Set new BDOS jump address
+	LD	DE,START1		;Calculate number to ADD
+	SBC	HL,DE			;	to words for relocating
+	LD	BC,RELTBL		;Address relocation table
+;
+RELLUP:
+	LD	A,(BC)			;Get LS byte of table entry
+	LD	E,A			;Put it in E
+	INC	BC			;Point to MS byte
+	LD	A,(BC)			;Get MS byte of table entry
+	LD	D,A			;Put it in D
+	INC	BC			;Point to next table entry
+	PUSH	BC			;Preserve table pointer
+	LD	A,(DE)			;Get LS data pointed to by table entry
+	LD	C,A			;Put it in C
+	INC	DE			;Point to MS data
+	LD	A,(DE)			;Get MS data pointed to by table entry
+	LD	B,A			;Put it in B
+	ADD	HL,BC			;Calculate relocated value
+	LD	A,H			;Put calculated MS data in A
+	LD	(DE),A			;Store new MS data
+	DEC	DE			;Point to LS data
+	LD	A,L			;Put calculated LS data in A
+	LD	(DE),A			;Store new LS data
+	XOR	A			;Clear carry
+	SBC	HL,BC			;Restore HL to previous value
+	POP	BC			;Restore table pointer
+	LD	A,(ECLOC)		;Get loop count
+	DEC	A			;Decrement loop count
+	LD	(ECLOC),A		;Save loop count
+	JR	NZ,RELLUP		;Loop until all table entries relocated
+;
+	LD	HL,(BDOS+1)		;Get end of TPA
+	LD	DE,START1-START		;Size of code segment to be moved
+	XOR	A			;Clear carry
+	SBC	HL,DE			;Calculate destination of LDIR
+	EX	DE,HL			;Put destination in DE
+	PUSH	DE			;Preserve start of relocated code
+	LD	HL,START		;Source address in HL
+	LD	BC,PGMEND-START		;Byte count
+	LDIR				;Move program
+;
+;  Go to start of relocated code
+;
+	POP	HL			;Restore start of relocated code
+	JP	(HL)			;Jump to start of relocated code
+;------------------------------------------------------------------------------
+;	**** Address relocation table ****
+;
+RELTBL:
+	DW	RL01
+	DW	RL02
+	DW	RL03
+	DW	RL04
+	DW	RL05
+	DW	RL06
+	DW	RL07
+	DW	RL08
+	DW	RL09
+	DW	RL10
+	DW	RL11
+	DW	RL12
+	DW	RL13
+	DW	RL14
+	DW	RL15
+	DW	RL16
+	DW	RL17
+	DW	RL18
+	DW	RL19
+	DW	RL20
+	DW	RL21
+	DW	RL22
+	DW	RL23
+	DW	RL24
+	DW	RL25
+	DW	RL26
+	DW	RL27
+	DW	RL28
+	DW	RL29
+	DW	RL30
+	DW	RL31
+	DW	RL32
+	DW	RL33
+	DW	RL34
+	DW	RL35
+	DW	RL36
+	DW	RL37
+	DW	RL38
+	DW	RL39
+	DW	RL40
+	DW	RL41
+	DW	RL42
+	DW	RL43
+	DW	RL44
+	DW	RL45
+	DW	RL46
+	DW	RL47
+	DW	RL48
+	DW	RL49
+	DW	RL50
+	DW	RL51
+	DW	RL52
+	DW	RL53
+	DW	RL54
+	DW	RL55
+	DW	RL56
+	DW	RL57
+	DW	RL58
+	DW	RL59
+	DW	RL60
+	DW	RL61
+	DW	RL62
+	DW	RL63
+	DW	RL64
+	DW	RL65
+	DW	RL66
+	DW	RL67
+	DW	RL68
+	DW	RL69
+	DW	RL70
+	DW	RL71
+	DW	RL72
+	DW	RL73
+	DW	RL74
+	DW	RL75
+	DW	RL76
+	DW	RL77
+	DW	RL78
+	DW	RL79
+	DW	RL80
+	DW	RL81
+	DW	RL82
+	DW	RL83
+	DW	RL84
+	DW	RL85
+	DW	RL86
+	DW	RL87
+
+;
+ECLOC:	DB	($-RELTBL)/2		;Table entry count
+;
+	DS	8			;Temporary stack
+;
+TEMPSTK:
+;------------------------------------------------------------------------------
+;	**** Start of relocatable code ****
+;
+START:
+	LD	SP,STACK		;Stack
+RL03	EQU	$-2			;Relocatable label
+;
+	LD	DE,128			;One record legnth
+	XOR	A			;Clear carry
+	SBC	HL,DE			;Subtract 1 record from start address
+	PUSH	HL			;Preserve start address
+	PUSH	DE			;Preserve DMA location
+;
+;  Calculate DMA address
+;
+RDLOOP:
+	POP	DE			;Restore DMA location
+	LD	HL,128			;Size of 1 record
+	ADD	HL,DE			;Offset to next record in memory
+	EX	DE,HL			;Put new DMA address in DE
+	POP	HL			;Restore start address
+	PUSH	HL			;Preserve start address
+	XOR	A			;Clear carry
+	SBC	HL,DE			;See if DMA > START
+	JR	NC,FSOK			;If less then continue
+;
+;  Target file to big, print error and exit
+;
+	POP	HL			;Clear stack
+	LD	DE,BIGMSG		;File not found message
+RL02	EQU	$-2			;Relocatable label
+;
+EXITERR:
+	LD	C,PRINTS		;Print string function
+	CALL	ENTRY			;Execute function
+RL04	EQU	$-2			;Relocatable label
+	LD	HL,(ENTRY+1)		;Get original entry address
+RL40	EQU	$-2			;Relocatable label
+	LD	(BDOS+1),HL		;Restore BDOS jump address
+	LD	C,RESET			;System reset function
+	JP	BDOS			;Execute function
+;
+BIGMSG:
+	DB	CR,LF,'File to big',CR,LF,'$'
+;
+;  Set DMA address
+;
+FSOK:
+	PUSH	DE			;Preserve DMA location
+	LD	C,SETDMA		;Set DMA address function
+	CALL	ENTRY			;Execute function
+RL05	EQU	$-2			;Relocatable label
+;
+;  Read a record
+;
+	LD	C,READSEQ		;Read sequential function
+	LD	DE,DFCB			;Default FCB
+	CALL	ENTRY			;Execute function
+RL06	EQU	$-2			;Relocatable label
+	CP	1			;Successful read?
+	JR	C,RDLOOP		;If so loop
+	JR	Z,CLOSFIL		;If end of file close the file
+	LD	DE,BIGMSG		;File not found message
+RL47	EQU	$-2			;Relocatable label
+	JR	EXITERR			;Exit with an error
+;
+FREMSG:
+	DB	CR,LF,'File read error',CR,LF,'$'
+;
+;  Close file
+;
+CLOSFIL:
+	POP	DE			;Clear
+	POP	HL			;	stack
+	LD	C,CLOSEF		;Close file function
+	LD	DE,DFCB			;Default FCB
+	CALL	ENTRY			;Execute function
+RL07	EQU	$-2			;Relocatable label
+;
+;  Zero DFCB
+;
+	XOR	A			;Zero A
+	LD	DE,DFCB			;Point to default FCB
+	LD	(DE),A			;Set drive in FCB to default
+	LD	L,E			;Load HL
+	LD	H,D			;	with source
+	INC	DE			;Destination = source + 1
+	LD	BC,BUFFER-DFCB-1	;Byte count - 1
+	LDIR				;Fill FCB with 0
+;
+;  Check for leading delimiters in command tail
+;
+	LD	HL,BUFFER		;Command tail
+	LD	C,(HL)			;Get character count
+;
+PAR1:
+	INC	HL			;Increment buffer pointer
+	LD	A,(HL)			;Get character
+	CALL	CKDELIM			;Delimiter?
+RL81	EQU	$-2			;Relocatable label
+	JR	NZ,PAR3			;If not jump
+	DEC	C			;Decrement character count
+	JR	Z,NOTAIL		;If zero then no tail
+	JR	PAR1			;Loop
+;
+;  Find end of target program name
+;
+PAR2:
+	INC	HL			;Point to next character
+	LD	A,(HL)			;Get character
+	CALL	CKDELIM			;Delimiter?
+RL82	EQU	$-2			;Relocatable label
+	JR	Z,PAR5			;If so go parse out spaces
+;
+PAR3:
+	DEC	C			;Decrement character count
+	JR	NZ,PAR2			;Loop until char count = 0
+;
+;  NO command tail after target file name
+;
+NOTAIL:
+	XOR	A			;Zero A
+	LD	(BUFFER),A		;Char count = 0, no command tail
+	JP	TPA			;Go execute program
+;
+;  Ckeck for delimiters after target file name
+;
+PAR4:
+	INC	HL			;Point to next character
+	LD	A,(HL)			;Get character
+	CALL	CKDELIM			;Delimiter?
+RL83	EQU	$-2			;Relocatable label
+	JR	NZ,MOVIT		;If not go move remaining command tail
+;
+PAR5:
+	DEC	C			;Decrement character count
+	JR	NZ,PAR4			;Loop until char count = 0
+;
+	JR	NOTAIL			;No command tail
+;
+;  Move command tail to overwrite the target program name
+;
+MOVIT:
+	LD	B,0			;MS byte count = 0
+	LD	A,C			;Store new
+	LD	(BUFFER),A		;	byte count
+	LD	DE,BUFFER+1		;Destination start of buffer
+	LDIR				;Move command tail
+	XOR	A			;Terminate
+	LD	(DE),A			;	with 0
+;
+;  Put first command tail file name into DFCB
+;
+	LD	HL,BUFFER+1		;Start of new command tail
+	LD	DE,DFCB			;Default FCB
+	CALL	PARFN			;Parse filename 1
+RL08	EQU	$-2			;Relocatable label
+	JP	NZ,TPA			;If parse unsuccessful go execute pgm
+;
+;  Find second filename in command tail
+;
+SECFN:
+	LD	A,(HL)			;Get delimiter
+	INC	HL			;Point to next character
+	OR	A			;End of string?
+	JP	Z,TPA			;If end of string go execute pgm
+	CALL	CKDELIM			;Delimiter?
+RL85	EQU	$-2			;Relocatable label
+	JR	Z,SECFN			;Loop until not delimiter
+	DEC	HL			;Point HL at first character in string
+;
+;  Put second command tail file name into DFCB+16
+;
+	LD	DE,DFCB2		;Default FCB for second file
+	CALL	PARFN			;Parse second filename
+RL09	EQU	$-2			;Relocatable label
+;
+;  Go execute target program
+;
+	JP	TPA			;Go execute target program
+;
+;------------------------------------------------------------------------------
+;	**** Parse file name from string to FCB ****
+;		CALL WITH:	HL = Zero terminated string address
+;				DE = FCB address
+;		RETURNS WITH:	HL = Delimiter address
+;				DE = FCB address
+;				A = 0 if parse successful
+;				A = -1 if parse unsuccessful
+PARFN:
+	PUSH	BC			;Save
+	PUSH	DE			;	registers
+	PUSH	HL
+;
+;  Initialize FCB data to spaces
+;
+	INC	DE			;Point to filename field
+	LD	A,' '			;Space
+	LD	(DE),A			;Put space in filename
+	LD	L,E			;Load HL
+	LD	H,D			;	with source
+	INC	DE			;Destination = source + 1
+	LD	BC,11-1			;11 chars in filename
+	LDIR				;Fill filename in FCB with spaces
+;
+;  Check for drive spec & handle it if necessary
+;
+	POP	HL			;Restore string pointer
+	POP	DE			;Restore & preserve
+	PUSH	DE			;	FCB address
+	LD	BC,108H			;Max characters in C
+					;Flag in B indicates filename pass
+	INC	HL			;Point to possible ':'
+	LD	A,(HL)			;Get 2nd character
+	DEC	HL			;Point back at 1st character
+	CP	':'			;Drive spec?
+	JR	NZ,MOVFN		;If not jump, go move the filename
+;
+	LD	A,(HL)			;Get drive code
+	SUB	'A'-1			;Convert to binary
+	LD	(DE),A			;Store Drive in FCB
+	INC	HL			;Increment string pointer
+;
+;  Move filename into FCB while checking for delimiters
+;
+MOVFNLP:
+	INC	HL			;Increment string pointer
+;
+MOVFN:
+	INC	DE			;Increment FCB pointer
+;
+MOVFN1:
+	LD	A,(HL)			;Get character from string
+	CP	'a'			;Lower case?
+	JR	C,ISCAP3		;If not jump
+	SUB	20H			;Convert to upper case
+;
+ISCAP3:
+	OR	A			;Zero delimiter?
+	JR	Z,PARFNEX		;If so exit
+;
+	CALL	CKDELIM			;Delimiter?
+RL84	EQU	$-2			;Relocatable label
+	JR	Z,PARFNEX		;If so exit
+;
+	JR	C,INVFN			;If control char, invalid filename
+;
+	CP	':'			;Colon?
+	JR	Z,INVFN			;If so exit
+;
+	CP	RUB			;RUB character?
+	JR	Z,INVFN			;If so exit
+;
+	CP	'*'			;Asterisk?
+	JR	Z,FILWILD		;If so fill rest of name with ?
+;
+	CP	'.'			;Period?
+	JR	NZ,NOPERI		;If so check for file type
+;
+	DEC	B			;Filename or filetype pass?
+	JR	NZ,INVFN		;If filetype then '.' is invalid
+;
+	LD	C,3			;Max character count
+	INC	HL			;Increment string pointer
+	POP	DE			;Restore
+	PUSH	DE			;	FCB address
+	PUSH	HL			;Preserve string pointer
+	LD	HL,9			;Calculate file
+	ADD	HL,DE			;	type address
+	EX	DE,HL			;Put it into DE
+	POP	HL			;Restore string pointer
+	JR	MOVFN1			;Loop
+;
+NOPERI:
+	DEC	C			;Decrement character count
+	JP	M,INVFN			;If overlong then invalid
+;
+RL16	EQU	$-2			;Relocatable label
+	LD	(DE),A			;Store char in FCB
+	JR	MOVFNLP			;Loop
+;
+;  Successful parse
+;
+PARFNEX:
+	POP	DE			;Clear stack
+	POP	BC
+	XOR	A			;Return with 0 and Z flag set
+	RET
+;
+;  Unsuccessful parse
+;
+INVFN:
+	XOR	A			;Zero A
+	POP	DE			;Restore FCB pointer
+	LD	(DE),A			;Zero drive field in FCB
+	LD	L,E			;Load HL
+	LD	H,D			;	with source
+	INC	DE			;Destination = source + 1
+	LD	BC,11			;11 chars in filename
+	LDIR				;Zero filename in FCB
+;
+	POP	BC			;Clear stack
+	XOR	A			;Return with
+	DEC	A			;	0FFH and Z flag cleared
+	RET
+;
+;  '*' in string, fill filename in FCB with '?'
+;
+FILWILD:
+	LD	A,'?'			;Wildcard
+;
+FILW1:
+	LD	(DE),A			;Put '?' in FCB
+	INC	DE			;Point to next char in FCB
+	DEC	C			;Decrement character count
+	JR	NZ,FILW1		;Loop till done
+;
+	INC	HL			;Increment string pointer
+	JR	MOVFN1			;Go look for delimiter
+;
+;------------------------------------------------------------------------------
+;	**** Check for delimiter ****
+;		CALL WITH:	A = Character to check
+;		RETURNS WITH:	Z flag = set if A is a delimiter
+;				Z flag = reset if A is not a delimiter
+;				If NZ the C flag = set if control character
+CKDELIM:
+	CP	';'			;Delimiter?
+	RET	Z			;If so exit
+	CP	'='			;Delimiter?
+	RET	Z			;If so exit
+	CP	','			;Delimiter?
+	RET	Z			;If so exit
+	CP	'/'			;Delimiter?
+	RET	Z			;If so exit
+	CP	'['			;Delimiter?
+	RET	Z			;If so exit
+	CP	']'			;Delimiter?
+	RET	Z			;If so exit
+	CP	'>'			;Delimiter?
+	RET	Z			;If so exit
+	CP	'<'			;Delimiter?
+	RET	Z			;If so exit
+	CP	TAB			;Delimiter?
+	RET	Z			;If so exit
+	CP	' '			;Space Delimiter?
+	RET				;If so exit
+;
+;------------------------------------------------------------------------------
+;	**** Start of BDOS intercept code ****
+;
+START1:
+	PUSH	AF			;Preserve
+	PUSH	DE			;	all
+	PUSH	HL			;	  registers
+	PUSH	BC
+;
+;  Check for active breakpoint
+;
+CKCNT:
+	LD	A,(BPFLG)
+RL68	EQU	$-2			;Relocatable label
+	OR	A			;Breakpoint flag set?
+	JR	Z,CKCNT1		;If not continue
+;
+	LD	A,(BRKPNT)		;Get breakpoint
+RL69	EQU	$-2			;Relocatable label
+	CP	C			;Same as function call?
+	JR	Z,PMTUSR		;If so break
+;
+	JP	DSPFUNC			;Display functions intil TC = 0
+RL71	EQU	$-2			;Relocatable label
+;
+;  Check trace count
+;
+CKCNT1:
+	LD	HL,(TRCCNT)		;Get trace count
+RL27	EQU	$-2			;Relocatable label
+	LD	A,L			;See if
+	OR	H			;	HL = 0
+	JR	Z,PMTUSR		;If so prompt
+;
+	DEC	HL			;Decrement trace count
+	LD	(TRCCNT),HL		;Store new trace count
+RL17	EQU	$-2			;Relocatable label
+	JP	DSPFUNC			;Display functions intil TC = 0
+RL62	EQU	$-2			;Relocatable label
+;
+;  Invalid command, print error
+;
+INVCMD:
+	LD	C,PRINTS		;Print string function
+	LD	DE,INVMSG		;File not found message
+RL76	EQU	$-2			;Relocatable label
+	CALL	ENTRY			;Execute function
+RL77	EQU	$-2			;Relocatable label
+;
+;  Prompt with '*'
+;
+PMTUSR:
+	XOR	A			;Clear
+	LD	(BPFLG),A		;	breakpoint flag
+RL70	EQU	$-2			;Relocatable label
+	LD	DE,PROMPT		;Prompt string
+RL18	EQU	$-2			;Relocatable label
+	LD	C,PRINTS		;Print string function
+	CALL	ENTRY			;Execute function
+RL19	EQU	$-2			;Relocatable label
+;
+	LD	DE,CONBUF		;Console buffer
+RL20	EQU	$-2			;Relocatable label
+	LD	C,RDCNBUF		;Read console buffer function
+	CALL	ENTRY			;Execute function
+RL21	EQU	$-2			;Relocatable label
+;
+;  Get command from string and interpret
+;
+	LD	HL,CONBUF+1		;Address of console buffer chr count
+RL22	EQU	$-2			;Relocatable label
+	LD	A,(HL)			;Get character count
+	INC	HL			;Increment pointer
+	OR	A			;Zero?
+	JP	Z,DSPFUNC		;If so single step
+RL63	EQU	$-2			;Relocatable label
+;
+	LD	B,A			;Character count in B
+	LD	A,(HL)			;Get character
+	INC	HL			;Point to next character
+	CP	'a'			;Lower case?
+	JR	C,ISCAP			;If not jump
+;
+	SUB	20H			;Convert to upper case
+;
+ISCAP:
+	CP	'H'			;Help command?
+	JR	NZ,CK4DMP		;If not check for the help command
+;
+	LD	C,PRINTS		;Print string function
+	LD	DE,HLPMSG		;Help message
+RL86	EQU	$-2			;Relocatable label
+	CALL	ENTRY			;Execute function
+RL87	EQU	$-2			;Relocatable label
+	JR	PMTUSR
+;
+CK4DMP:
+	CP	'D'			;Dump command?
+	JR	NZ,CK4TRC		;If not check for other commands
+;
+;  Dump memory command
+;
+	DEC	B			;Decrement character count
+	JP	Z,DUMP			;If zero use last address
+RL60	EQU	$-2			;Relocatable label
+;
+	CALL	GETNUMB			;Go check for a number in the command
+RL45	EQU	$-2			;Relocatable label
+	CP	1			;Check status
+	JP	Z,DUMP			;If no number go dump last address
+RL66	EQU	$-2			;Relocatable label
+;
+	JR	NC,INVCMD		;If invalid go print invalid message
+;
+	LD	(DUMPADR),DE		;Store new address
+RL73	EQU	$-2			;Relocatable label
+	JP	DUMP			;Go dump
+RL67	EQU	$-2			;Relocatable label
+;
+;  Ckeck for other commands
+;
+CK4TRC:
+	CP	'T'			;Trace command?
+	JR	Z,TRACE			;If so go do it
+;
+	CP	'U'			;Untrace command?
+	JR	Z,UNTRACE		;If so go do it
+;
+	CP	'G'			;Go command?
+	JR	NZ,INVCMD		;Invalid command, reprompt
+;
+;  GO command
+;
+GO:
+	DEC	B			;Decrement character count
+	JR	Z,GO1			;If zero exit this program
+	CALL	GETNUMB			;Go check for a number in the command
+RL72	EQU	$-2			;Relocatable label
+	CP	1			;Check status
+	JR	Z,GO1			;If no number GO
+;
+	JR	NC,INVCMD		;If invalid go print invalid message
+;
+	LD	A,D			;Get MS byte of input number
+	OR	A			;Nonzero?
+	JR	NZ,INVCMD		;If so invalid command
+	LD	A,E			;Get LS byte of input number
+	LD	(BRKPNT),A		;Store breakpoint
+RL74	EQU	$-2			;Relocatable label
+	LD	A,-1			;Set breakpoint
+	LD	(BPFLG),A		;	flag
+RL75	EQU	$-2			;Relocatable label
+	JP	DSPFUNC			;Go dump
+RL78	EQU	$-2			;Relocatable label
+;
+GO1:
+	LD	HL,(ENTRY+1)		;Get original entry address
+RL29	EQU	$-2			;Relocatable label
+	LD	(BDOS+1),HL		;Restore BDOS jump address
+	POP	BC			;Restore
+	POP	HL			;	all
+	POP	DE			;	  registers
+	POP	AF
+	JP	BDOS			;Go execute present function
+;
+;  Trace command
+;
+TRACE:
+	XOR	A			;Set display flag true
+	JR	SETTC			;Go clear the display flag
+;
+;  Untrace command
+;
+UNTRACE:
+	LD	A,-1			;Set display flag false
+;
+SETTC:
+	LD	(DSPFLG),A		;Set display flag
+RL23	EQU	$-2			;Relocatable label
+;
+	DEC	B			;Decrement character count
+	JP	Z,PMTUSR		;If no more chars, give prompt
+RL26	EQU	$-2			;Relocatable label
+;
+	CALL	GETNUMB			;Go check for a number in the command
+RL46	EQU	$-2			;Relocatable label
+	CP	1			;Check status
+	JP	Z,PMTUSR		;If no number go to prompt
+RL79	EQU	$-2			;Relocatable label
+;
+	JP	NC,INVCMD		;If invalid go print invalid message
+RL80	EQU	$-2			;Relocatable label
+;
+	LD	(TRCCNT),DE		;Store trace count
+RL24	EQU	$-2			;Relocatable label
+	JP	CKCNT			;Go dump
+RL44	EQU	$-2			;Relocatable label
+;
+;------------------------------------------------------------------------------
+;	**** Get numeric input ****
+;		CALL WITH:	HL = start of numeric string
+;				B = character count
+;		RETURNS WITH:	DE = number
+;				A = 0 if number is valid
+;				A = 1 if no number present
+;				A = 2 if invalid entry
+GETNUMB:
+	LD	DE,0			;Initialize number
+	LD	A,(HL)			;Get first character
+	INC	HL			;Increment pointer
+	CP	'a'			;Lower case?
+	JR	C,ISCAP1		;If not jump
+	SUB	20H			;Convert to upper case
+;
+ISCAP1:
+;
+;  Check for radix specifier
+;
+	LD	C,16			;Base 16
+	CP	'H'			;Hex radix?
+	JR	Z,SETRADX		;If so set redix
+;
+	LD	C,8			;Base 8
+	CP	'O'			;Octal radix?
+	JR	Z,SETRADX		;If so set redix
+;
+	LD	C,2			;Base 2
+	CP	'B'			;Hex radix?
+	JR	Z,SETRADX		;If so set redix
+;
+	LD	C,10			;Base 10
+	CP	'D'			;Decimal radix?
+	JR	Z,SETRADX		;If so set redix
+;
+	DEC	HL			;Point at previous character
+	JR	READNUM
+;
+SETRADX:
+	LD	A,C			;Store new
+	LD	(RADIX),A		;	radix value
+RL65	EQU	$-2			;Relocatable label
+;
+	DEC	B			;Decrement character count
+	JR	NZ,READNUM		;If more characters go get them
+;
+	LD	A,1			;No number status
+	RET
+;
+;  Get number from command
+;
+NUMLUP:
+	DJNZ	READNUM			;If more chars continue to calculate
+	XOR	A			;Number valid status
+	RET
+;
+INVN1:
+	POP	HL			;Clear stack
+;
+INVNUM:
+	LD	A,2			;Invalid number status
+	RET
+;
+READNUM:
+	LD	A,(RADIX)		;Get radix
+RL64	EQU	$-2			;Relocatable label
+	LD	C,A			;Radix in C
+	LD	A,(HL)			;Get character
+	INC	HL			;Increment pointer
+	CP	'a'			;Lower case?
+	JR	C,ISCAP2		;If not continue
+;
+	SUB	20H			;Convert to upper case
+;
+ISCAP2:
+	SUB	'0'			;Convert to binary
+	JR	C,INVNUM		;Invalid command, reprompt
+;
+	CP	10			;HEX data A thru F?
+	JR	C,LT10			;If not jump
+;
+	CP	17			;':' thru '@' ?
+	JR	C,INVNUM		;If so invalid number
+;
+	SUB	7			;Else convert to binary
+;
+LT10:
+	CP	C			;Check for valid range
+	JR	NC,INVNUM		;Invalid command, reprompt
+;
+;  Multiply current number by radix
+;
+	DEC	C			;Setup radix as loop count for mult
+	PUSH	HL			;Save string pointer
+	LD	L,E			;Copy HL
+	LD	H,D			;	to DE
+;
+MULTLUP:
+	ADD	HL,DE			;Add number to itself
+	JR	C,INVN1			;Invalid command, reprompt
+;
+	DEC	C			;Decrement radix count
+	JR	NZ,MULTLUP		;Loop until HL X RADIX --> HL
+;
+;  Add new number from command
+;
+	LD	E,A			;Put binary input
+	LD	D,0			;	in DE
+	ADD	HL,DE			;Add with accumulated value
+	JR	C,INVN1			;Invalid command, reprompt
+;
+	EX	DE,HL			;Put calculation in DE
+	POP	HL			;Restore string pointer
+	JR	NUMLUP			;Loop
+;------------------------------------------------------------------------------
+;	**** Dump 128 bytes of Memory ****
+;
+DUMP:
+	LD	A,8			;Print 8
+	LD	(LINECNT),A		;	lines
+RL48	EQU	$-2			;Relocatable label
+;
+;  Put address in output buffer and display
+;
+NXTLINE:
+	LD	DE,(DUMPADR)		;Memory address in DE
+RL49	EQU	$-2			;Relocatable label
+	LD	HL,OUTBUF+2		;Output buffer pointer in HL
+RL50	EQU	$-2			;Relocatable label
+	CALL	HEXASCH			;Put MS byte into output buffer
+RL51	EQU	$-2			;Relocatable label
+	PUSH	DE			;Preserve dump address
+	LD	DE,OUTBUF		;Point at start of output buffer
+RL10	EQU	$-2			;Relocatable label
+	LD	C,PRINTS		;Print string function
+	CALL	ENTRY			;Execute function
+RL28	EQU	$-2			;Relocatable label
+	POP	DE			;Restore dump address
+;
+;  Put HEX data in output buffer and display
+;
+	LD	B,10H			;Display 16 bytes per line
+;
+NXTBYTE:
+	LD	HL,OUTBUF1		;Output buffer pointer in HL
+RL52	EQU	$-2			;Relocatable label
+	LD	A,(DE)			;Read byte from memory
+	INC	DE			;Increment dump address
+	CALL	HEXOUT			;Put ASCII data in string
+RL53	EQU	$-2			;Relocatable label
+	PUSH	BC			;Preserve loop count
+	PUSH	DE			;Preserve dump address
+	LD	DE,OUTBUF1		;Point to start of output buffer
+RL54	EQU	$-2			;Relocatable label
+	LD	C,PRINTS		;Print string function
+	CALL	ENTRY			;Execute function
+RL55	EQU	$-2			;Relocatable label
+	POP	DE			;Restore dump address
+	POP	BC			;Restore loop count
+	DJNZ	NXTBYTE			;Loop
+;
+;  Display ASCII data
+;
+	LD	HL,(DUMPADR)		;Get dump address
+RL56	EQU	$-2			;Relocatable label
+	LD	B,10H			;Loop count
+;
+NXTASCI:
+	LD	A,(HL)			;Get data
+	INC	HL			;Increment pointer
+	AND	7FH			;Mask off bit 7
+	CP	' '			;Comtrol character?
+	JR	C,CTRL			;If so jump, use '.' to display
+;
+	CP	7FH			;DEL character?
+	JR	NZ,NOTCTRL		;If so jump, don't use '.' to display
+;
+CTRL:
+	LD	A,'.'			;Decimal point
+;
+NOTCTRL:
+	LD	E,A			;Put character to display in E
+	LD	C,02H			;Console out function
+	PUSH	BC			;Preserve loop count
+	PUSH	HL			;Preserve memory pointer
+	CALL	ENTRY			;Execute function
+RL57	EQU	$-2			;Relocatable label
+	POP	HL			;Restore memory pointer
+	POP	BC			;Restore memory pointer
+	DJNZ	NXTASCI			;Go print next ASCII character
+;
+;  Prepare for next line to be printed
+;
+	LD	(DUMPADR),HL		;Store new address
+RL58	EQU	$-2			;Relocatable label
+	LD	HL,LINECNT		;Point to line clont
+RL59	EQU	$-2			;Relocatable label
+	DEC	(HL)			;Decrement line count
+	JR	NZ,NXTLINE		;Loop until all lines printed
+;
+	JP	PMTUSR			;All done, prompt user
+RL61	EQU	$-2			;Relocatable label
+;
+;------------------------------------------------------------------------------
+;	**** Display function information ****
+;
+DSPFUNC:
+	POP	BC			;Restore
+	POP	HL			;	all
+	POP	DE			;	  registers
+	PUSH	DE			;And preserve
+	PUSH	HL			;	them
+	PUSH	BC			;	  again
+;
+;  Check display flag
+;
+	LD	A,(DSPFLG)		;Get display flag
+RL25	EQU	$-2			;Relocatable label
+	OR	A			;Display function?
+	JR	NZ,DOFUNC		;If not go do the function
+;
+;  Clear function message
+;
+	LD	HL,MSGRST		;Source
+RL11	EQU	$-2			;Relocatable label
+	LD	DE,FNCNUM		;Destination
+RL12	EQU	$-2			;Relocatable label
+	LD	BC,3			;Byte count
+	LDIR				;Clear Func # message
+;
+;  Convert function number to ASCII decimal and put into message
+;
+	POP	BC			;Restore function in C
+	PUSH	BC			;Preserve function in C
+	LD	HL,FNCNUM		;Function # field
+RL13	EQU	$-2			;Relocatable label
+	LD	A,C			;Put funct # in A
+	SUB	100			;Less than 100?
+	JR	C,EXTNEX		;If so jump, bypass 100s calc
+;
+	LD	C,'0'			;ASCII '0'
+;
+EXTNLP:
+	INC	C			;Increment 100s number
+	SUB	100			;Calculate 100s
+	JR	NC,EXTNLP		;Loop until number is < 100
+;
+	LD	(HL),C			;Store calculated 100s number in msg
+	INC	HL			;Point ti next digit in message
+;
+EXTNEX:
+	ADD	100			;Compensate for last SUB
+	SUB	10			;Less than 10?
+	JR	C,EXTNEX2		;If so jump, bypass 10s calc
+;
+	LD	C,'0'			;ASCII '0'
+;
+EXTNLP2:
+	INC	C			;Increment 10s number
+	SUB	10			;Calculate 10s
+	JR	NC,EXTNLP2		;Loop until number is < 10
+;
+	LD	(HL),C			;Store calculated 10s number in msg
+	INC	HL			;Point ti next digit in message
+;
+EXTNEX2:
+	ADD	'0'+10			;Calculate 1s number
+	LD	(HL),A			;Store calculated 1s number in msg
+;
+;  Print function number
+;
+	LD	C,PRINTS		;Print string function
+	LD	DE,MESG			;Func # message
+RL14	EQU	$-2			;Relocatable label
+	CALL	ENTRY			;Execute function
+RL15	EQU	$-2			;Relocatable label
+;
+;  Display register DE
+;
+	POP	BC			;Restore
+	POP	HL			;	all
+	POP	DE			;	  registers
+	PUSH	DE			;And preserve
+	PUSH	HL			;	them
+	PUSH	BC			;	  again
+;
+	LD	HL,DESTR+3		;Number field in DE string
+RL30	EQU	$-2			;Relocatable label
+	CALL	HEXASCH			;Convert DE to ASCII hex
+RL31	EQU	$-2			;Relocatable label
+	LD	C,PRINTS		;Print string function
+	LD	DE,DESTR		;Register DE string
+RL32	EQU	$-2			;Relocatable label
+	CALL	ENTRY			;Execute function
+RL33	EQU	$-2			;Relocatable label
+;
+;------------------------------------------------------------------------------
+;	**** Execute function ****
+;
+DOFUNC:
+	POP	BC			;Restore
+	POP	HL			;	all
+	POP	DE			;	  registers
+	POP	AF
+;
+ENTRY1:
+	CALL	0			;Execute function from program
+;
+	PUSH	BC			;Preserve
+	PUSH	DE			;	all
+	PUSH	HL			;	  registers
+	PUSH	AF
+;
+;  Ckeck display flag
+;
+	LD	A,(DSPFLG)		;Get display flag
+RL43	EQU	$-2			;Relocatable label
+	OR	A			;Display function?
+	JR	NZ,EXFUNC		;If not go do the function
+;
+;  Display register HL
+;
+	EX	DE,HL			;Put HL data in DE for HEXASCH
+	LD	HL,HLSTR+5		;Reg HL string data field
+RL34	EQU	$-2			;Relocatable label
+	CALL	HEXASCH			;Put HL data into HL string
+RL35	EQU	$-2			;Relocatable label
+	LD	C,PRINTS		;Print string function
+	LD	DE,HLSTR		;Reg HL string
+RL36	EQU	$-2			;Relocatable label
+	CALL	ENTRY			;Execute function
+RL37	EQU	$-2			;Relocatable label
+;
+;  Display register A
+;
+	POP	AF			;Restore
+	PUSH	AF			;	reg A data
+	LD	HL,ASTR+2		;Reg A string data field
+RL38	EQU	$-2			;Relocatable label
+	CALL	HEXOUT			;Put reg A data in string
+RL39	EQU	$-2			;Relocatable label
+	LD	C,PRINTS		;Print string function
+	LD	DE,ASTR			;Register A string
+RL41	EQU	$-2			;Relocatable label
+	CALL	ENTRY			;Execute function
+RL42	EQU	$-2			;Relocatable label
+;
+;  Exit back to target program
+;
+EXFUNC:
+	POP	AF			;Restore
+	POP	HL			;	all
+	POP	DE			;	  registers
+	POP	BC
+	RET				;RETURN TO PROGRAM
+;
+ENTRY:
+	JP	0			;Execute function from showfunc
+;
+;
+;------------------------------------------------------------------------------
+;	**** 16 bit HEX to ASCII HEX ****
+;	CALL WITH:	HL = destination pointer to place 4 ASCII characters
+;			DE = 16 bit HEX data
+HEXASCH:
+	LD	A,D			;Put MS byte in A
+	CALL	HEXOUT			;Convert A to ASCII hex
+RL01	EQU	$-2			;Relocatable label
+	LD	A,E			;Put LS byte in A
+;
+;------------------------------------------------------------------------------
+;	**** 8 bit HEX to ASCII HEX ****
+;	CALL WITH:	HL = destination pointer to place 4 ASCII characters
+;			A = 8 bit HEX data
+HEXOUT:
+	PUSH	AF			;Preserve A
+	SRL	A			;Move MS
+	SRL	A			;	nibble
+	SRL	A			;	  to LS
+	SRL	A			;	    nibble
+	ADD	A,'0'			;Convert to ASCII
+	CP	'9'+1			;Greater than 9?
+	JR	C,HEX1			;If not continue
+;
+	ADD	A,07H			;Else convert to 'A' thru 'F'
+HEX1:
+	LD	(HL),A			;Store ASCII data
+	INC	HL			;Increment pointer
+	POP	AF			;Restore A
+	AND	0FH			;Mask off MS nubble
+	ADD	A,'0'			;Convert to ASCII
+	CP	'9'+1			;Greater than 9?
+	JR	C,HEX2			;If not continue
+;
+	ADD	A,07H			;Else convert to 'A' thru 'F'
+HEX2:
+	LD	(HL),A			;Store ASCII data
+	INC	HL			;Increment pointer
+	RET	
+;
+;------------------------------------------------------------------------------
+;	**** Data and messages area ****
+;
+HLPMSG:
+	DB	CR,LF,LF
+	DB	'Trnnnnn  Trace for nnnnn steps then break',CR,LF
+	DB	'Urnnnnn  Untrace for nnnnn steps then break',CR,LF
+	DB	'Grnnnnî  (Un)trace until specified BDOS function',CR,LF
+	DB	'Drnnnnn  Dump 128 bytes at address nnnnn',CR,LF
+	DB	'RETURN   Single step trace or untrace',CR,LF,LF
+	DB	'"r" is an optional radix D, H, O, or B',CR,LF
+	DB	'"nnnnn" is an optional number',CR,LF,'$'
+;
+INVMSG:
+	DB	CR,LF,'Invalid entry$'
+;
+OUTBUF:
+	DB	CR,LF
+	DB	'  '
+;
+OUTBUF1:
+	DB	'   $'
+;
+PROMPT:
+	DB	CR,LF,'*$'		;Prompt
+;
+MESG:
+	DB	CR,LF,'Func #'		;Function number string
+;
+FNCNUM:
+	DB	'0   $'			;Function number string location
+;
+MSGRST:
+	DB	'0  '			;String to reinitialize FNCNUM
+;
+DESTR:
+	DB	'DE=    $'		;Reg DE string
+;
+HLSTR:
+	DB	CR,LF,'HL=     $'	;Reg HL string
+;
+ASTR:
+	DB	'A=  $'			;Reg A string
+;
+LINECNT:
+	DB	0			;Line count for dump command
+;
+TRCCNT:
+	DW	0			;Trace count
+;
+DUMPADR:
+	DW	0			;Dump address
+;
+BRKPNT:
+	DB	0			;Break point
+;
+BPFLG:
+	DB	0			;Break point flag
+;
+DSPFLG:
+	DB	0			;Display trace flag 0 = yes
+;
+RADIX:
+	DB	10			;Number radix default decimal
+;
+CONBUF:
+	DB	20			;Max chars in console buffer
+	DB	0			;Character count
+	DS	20			;Buffer
+;
+	DS	64			;32 level stack
+;
+STACK:
+	DB	0,0,0,0			;For those crazy programs that do
+					;a RET to exit or have messy stacks
+;
+PGMEND:
+	END
+

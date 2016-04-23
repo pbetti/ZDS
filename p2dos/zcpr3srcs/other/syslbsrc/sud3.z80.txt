@@ -1,0 +1,51 @@
+;	TITLE	"SUD3 - Syslib 4.0"
+	NAME	('RETUD')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SUD3.Z80 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SUD3
+; Abstract: This module contains the routine RETUD which returns
+;	the currently logged drive and user area.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		RETUD
+
+; From SYSLIB Get..
+
+	EXT		@BDOS
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - RETUD
+; Entry: - None
+; Exit : BC - Contains currently logged Drive (B) & User (C)
+; Uses : BC
+; Special Requirements: None
+;===============================================================
+
+RETUD:	PUSH	AF		; Save all registers & flags except BC
+	PUSH	DE
+	PUSH	HL
+	LD	C,25		; Get Currently Logged disk
+	CALL	@BDOS
+	PUSH	AF		; ..and save temporarily
+	LD	E,0FFH		; Get Currently Logged User
+	LD	C,32
+	CALL	@BDOS
+	LD	C,A		; ..and put in exit register
+	POP	AF		; Retrieve Disk
+	LD	B,A		; ..and put in exit reg
+EXIT:	POP	HL		; Restore Registers and Flags
+	POP	DE
+	POP	AF
+	RET
+
+	END
+

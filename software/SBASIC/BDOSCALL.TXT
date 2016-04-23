@@ -1,0 +1,232 @@
+                          SBASIC Notes
+
+                       Calling on the BDOS
+
+
+     SBASIC has a CALL function that invokes a machine language
+routine located somewhere in the machine's memory space.  The CALL
+function takes one of two forms depending on whether there is a
+need to pass values in the CPU registers.
+
+	CALL (addr)
+	CALL (addr, var1, var2, var3, var4)
+
+"addr" is either an integer constant or integer variable that
+specifies the address of the machine language routine, while var1
+through var4 are integer variables that represent 16-bit values
+passed to and from the HL, DE, BC, and AF register pairs,
+respectively.  It is important to note that var1 through var4
+must be variables, not constants, since the CALL function expects
+to be able to assign the updated values of the registers to the
+arguments.  SBASIC passes control to the machine language routine
+with a CALL opcode, and the routine must terminate with a return
+(RET) opcode.  The SBASIC manual has a good (and for once
+reasonably clear) example of how a machine language routine can
+be written in assembly language and incorporated in the .COM file
+produced by the SBASIC compiler.
+
+     Many SBASIC programmers will never have the need or
+inclination to write their own assembly language routines.  There
+are, however, existing machine language routines provided by the
+CP/M operating system that are potentially very useful and that
+can easily be accessed with the CALL statement.  I'm speaking of
+the services provided by the CP/M module known as the Basic Disk
+Operating System, or BDOS.  The BDOS provides a means for
+application programs to perform common input-output and file-
+maintenance operations without having to know anything about the
+underlying machine hardware.  To be sure, most of the services
+provided by the BDOS are duplicated by SBASIC's built-in
+statements, functions, and procedures.  There are a few services,
+however, that are not.  For example, there are no SBASIC
+facilities to determine or change the currently-logged drive or
+user area.  It is simple, however, to write a function or
+procedure to accomplish those tasks by calling on the BDOS.
+
+     The actual address of the BDOS varies from machine to
+machine.  However, CP/M provides a simple means for an
+application program to find the BDOS.  At memory location 0005H
+CP/M plants a 3-byte jump (JMP) instruction to the beginning of
+the BDOS.  The BDOS provides 39 services under CP/M 2.2, numbered
+0 through 40 (numbers 38 and 39 are undefined).  CP/M 3.0, also
+called CP/M Plus, provides additional services.  A list of these,
+and the parameters they take, are in the CP/M manuals.  The BDOS
+assumes that the desired service number is in the C register and
+that the E register or DE register pair contains contains the
+8-bit or 16-bit parameter (if any) required by the service. 8-bit
+return values are placed in the A register while 16-bit return
+values are placed in the HL register pair.  (The get file size
+service returns its value at a spcified location in a data
+structure called the File Control Block, or FCB, rather than in a
+register).
+
+     So, as an example, let's consider an SBASIC function to
+determine the currently-logged disk.  We need to declare four
+integer variables to pass values to and from the CALLed routine:
+
+	var a_psw, bc, de, hl = integer
+
+The BDOS function to get the currently logged disk is number 25.
+This particular function takes no other parameters.  So we assign
+25 to the variable bc (we don't care what values are in the other
+registers) and then CALL the BDOS via the jump vector at 0005H:
+
+	bc = 25		rem get currently logged disk
+	call (5H, a_psw, bc, de, hl)
+
+Upon return, the most significant byte (MSB) of a_psw holds the
+number (0 to 15) of the currently-logged disk.  To isolate the
+value of the A register, you can simply divide a_psw by 256.
+Since disk drives under CP/M are normally referred to by letter
+rather than by number, you would then normally add the ASCII
+value of "A" (=65) to the drive number to get the drive letter.
+Putting all this together, the final code would look something
+like this:
+
+	rem --  Returns the current logged drive ('A' to 'P')
+	function GetDrive = char
+           var a_psw, bc, de, hl = integer
+           bc = 25
+           call (5H, hl, de, bc, a_psw)
+        end = (a_psw / 256) + 65
+
+(Note that SBASIC allows you to treat character variables as
+though they were small integers.  In this respect, SBASIC is
+somewhat like the C programming language.  This means you can
+usually avoid having to use the ASC and CHR functions to convert
+between integer and character representations of CHAR and BYTE
+variables.)
+
+     Once the GetDrive function is declared, displaying the
+current logged drive is a breeze:
+
+	print "The currently-logged drive is ", GetDrive
+
+     A function such as GetDrive, once debugged, should
+definitely be placed in a library source file so that it can be
+used in other programs without the necessity of retyping the code
+(and possibly introducing mistakes in the process).  SBASIC has a
+powerful $INCLUDE statement that allows portions of a file to be
+selectively extracted from a library file and incorporated in an
+SBASIC program.  Individual modules in a library file can be
+surrounded with the $MODULE and $ENDMODULE keywords and given any
+convenient identifying name.  Fortunately, module names do not
+conflict with other user-defined names such as variables,
+functions and procedures.  So, for example, you might create a
+library file called LIBRARY.BAS or ROUTINES.BAS containing the
+following modules (plus any others, of course, you might write):
+
+================================================================
+Figure 1
+================================================================
+
+$module getdrive
+rem  -- Returns the current logged drive ('A' to 'P')
+function getdrive = char
+   var hl, de, bc, a_psw = integer
+   hl = 0
+   de = 0
+   bc = 19H
+   a_psw = 0
+   call (5H,hl,de,bc,a_psw)
+   a_psw = (a_psw / 256) + 65
+end = a_psw
+$end.module
+
+$module setdrive
+rem --  Set the logged drive ('A' to 'P')
+procedure setdrive (drive = char)
+   var hl, de, bc, a_psw = integer
+   rem -- make sure drive letter is upper case!
+   if drive >= 'a' then drive = drive - 32
+   hl = 0
+   de = drive - 65
+   bc = 0EH
+   a_psw = 0
+   call (5H,hl,de,bc,a_psw)
+end
+$end.module
+
+$module getuser
+rem -- Return current user area
+function getuser = integer
+   var hl, de, bc, a_psw = integer
+   hl = 0
+   de = 0FFH
+   bc = 20H
+   a_psw = 0
+   call (5H,hl,de,bc,a_psw)
+end = a_psw / 256
+$end.module
+
+$module setuser
+rem  -- Set the CP/M user area (0 to 15)
+procedure setuser (user = integer)
+   var hl, bc, a_psw = integer
+   hl = 0
+   bc = 20H
+   de = user
+   a_psw = 0
+   call (5H,hl,de,bc,a_psw)
+end
+$end.module
+
+
+================================================================
+
+     Then, the next time you wrote a program and needed to query
+or change the user number, you would just place the following
+lines at the beginning of the source code:
+
+	$include routines getuser
+	$include routines setuser
+
+Once you have done that, you can call on getuser and setuser at
+any point in the program where you need them.
+
+    You might wonder, if you can call BDOS routines from SBASIC,
+whether you can also call the routines that are part of the BIOS,
+CP/M's Basic Input/Output System.  The answer is yes, although
+normally there are good reasons for not making direct calls on the
+BIOS.  The BIOS contains the routines that interact directly with
+the machine's hardware and is the interface between the BDOS and
+the hardware.  Sometimes the BDOS can get confused if you by-pass
+it in favor of direct BIOS calls.  On the other hand, the BIOS
+offers some functionality that is not available through the BDOS.
+Most notably, the BDOS only deals with files, not with tracks and
+sectors.  There are no BDOS functions, for example, to write to
+the disk directory or to the reserved tracks on the disk.  So if
+you want to read and write raw disk sectors, it's the BIOS or
+nothing.
+
+    Unlike the BDOS, which has only a single entry point, the
+BIOS has separate entry points for each function.  Under CP/M
+2.2, there are 17 such entry points, which are located 3 bytes
+apart at the beginning of the BIOS.  The address of one of them,
+the warm boot entry, is stored at address 0001H in low memory.
+(It's preceded by a machine language JMP instruction at address
+0000H.) The address of the BIOS warm boot entry can easily be
+obtained by declaring a base-located integer variable and
+positioning it at 0001H.
+
+         based warmboot_entry = integer
+         base warmboot_entry at 1H
+
+The address of the other BIOS functions can then be obtained by
+adding the appropriate offset.  For example, the BIOS function to
+set the the track number on the currently-selected disk is 9
+entries (= 27 bytes) above the warm boot entry. A complete
+procedure, then, to set the track number for a subsequent disk
+read or write operation could be written rather simply as follows:
+
+         procedure settrack(n = integer)
+             based warmboot = integer
+             var a_psw, bc, de, hl = integer
+             base warmboot at 1
+             bc = n
+             call (warmboot+1BH,hl,de,bc,a_psw)
+         end
+
+An example of direct BIOS calls can be found in XAMN.BAS, a disk
+editor which is provided as one of the example programs on the
+SBASIC disk.
+

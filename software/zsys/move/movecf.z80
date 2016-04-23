@@ -1,0 +1,228 @@
+; MOVECF.Z80
+;
+; ZCNFG configuration module for MOVE.COM.  The assembled version of
+; this file must be named MOVExx.CFG, where xx is the version number
+; of MOVE, to be automatically recognized by ZCNFG.
+;
+; Version 1.1 -- November 24, 1992 -- Gene Pizzetta
+;	For MOVE 2.4.  Added S configuration option.  Several minor
+;	changes in help screens.
+;
+; Version 1.0 -- October 23, 1992 -- Gene Pizzetta
+;	For MOVE 2.3.
+;
+; Patch locations . . .
+;
+OvrFlg	equ	015h		; overwrite flag
+SkpFlg	equ	016h		; skip flag
+QryFlg	equ	017h		; inspect mode
+SysFlg	equ	018h		; system files
+QtFlag	equ	019h		; quiet mode
+SumFlg	equ	01Ah		; summary flag
+AbtErr	equ	01Bh		; abort error flag
+;
+; ZCNFG function definitions . . .
+;
+Switch	equ	0	; toggle bit n in a byte (n is specified in BDATA)
+Text	equ	1	; edit text with UC conversion
+DUSpec	equ	2	; replace a ZCPR style DU specification (NOT DIR:!)
+HexRad	equ	3	; edit byte/word using HEX radix
+DecRad	equ	4	; edit byte/word using DECIMAL radix
+TextLC	equ	5	; edit text, both UC and LC
+FileSp	equ	6	; edit a Z3 filespec or filespec fragment
+Togl3	equ	7	; toggle to one of n options defined by mask in BDATA
+ToglTF	equ	8	; toggle a byte between 0FFh and 0
+ASCIIC	equ	9	; replace any ASCII byte with a keystroke
+;
+; ASCII characters . . .
+;
+HON	equ	1		; highlight on
+HOF	equ	2		; highlight off
+TAB	equ	9		; tab
+LF	equ	10		; linefeed
+CR	equ	13		; carriage return
+;
+; Macro definitions
+;	C	= character to identify menu item
+;	OFFSET	= offset in program's configuration block
+;	FUNC	= ZCNFG function
+;	SCRN	= screen location for data
+;	DATA	= function data address (if required)
+;
+CASE	macro	c,func,offset,bytes,scrn,data
+	db	'&C'
+	dw	func, offset
+	db	bytes
+	dw	scrn, data
+	endm
+;
+; Code . . .
+;
+	rst	0		; for safety, so .CFG file won't execute
+;
+	dw	MenuA		; for relocation of addresses, this
+				; ..points to the NEXT location.
+;
+; Menu list section . . .
+;
+MenuA:	dw	MenuA, MenuA, ScrnA, CaseA, HelpA	; single menu
+;
+; Case table section . . .
+;
+CaseA:	db	(CaseAX-CaseA1)/(CaseA2-CaseA1)	; number of cases
+	db	CaseA2-CaseA1	; length of each record
+;
+;	Macro name
+;	|	Single char menu selector
+;	|	|	Function (see above)
+;	|	|	|	Offset in config block
+;	|	|	|	|	Number of bytes
+;	|	|	|	|	|	Screen location
+;	|	|	|	|	|	|
+;Case1:	CASE	0,	ToglTF,	Loc1,	1,	ScrnA1,	NoYes
+;							|
+;			 Address of data used by function
+;
+; The first two entries in table are labeled for calculation at CaseA:.
+;
+CaseA1:	CASE	E,	ToglTF,	OvrFlg,	1,	ScrnA1,	YesNo
+CaseA2:	CASE	N,	ToglTF,	SkpFlg,	1,	ScrnA2,	YesNo
+	CASE	I,	ToglTF,	QryFlg,	1,	ScrnA3,	YesNo
+	CASE	S,	ToglTF,	SysFlg,	1,	ScrnA4,	YesNo
+	CASE	Q,	ToglTF,	QtFlag,	1,	ScrnA5,	YesNo
+	CASE	R,	ToglTF,	SumFlg,	1,	ScrnA6, YesNo
+	CASE	C,	ToglTF,	AbtErr,	1,	ScrnA7,	YesNo
+CaseAX:				; for calculation of list length
+;
+; Case table support . . .
+;
+YesNo:	db	'Yes',0		; displayed if value is FFh (ToglTF)
+	db	' No',0		; displayed if value is 00h (ToglTF)
+;
+; Screen image section . . .
+;
+ScrnA:	db	cr,lf,lf,tab,tab,tab,'   MOVE Configuration Menu'
+	db	cr,lf,lf
+;
+	db	tab,'   Defaults which can be toggled with command line options',cr,lf,lf
+;
+	db	tab,tab,'(E) ',1,'Erase destination without asking? . . ',2
+ScrnA1:	db	'   '		; current value
+	db	cr,lf
+;
+	db	tab,tab,'(N) ',1,'Skip move if destination exists?  . . ',2
+ScrnA2:	db	'   '		; current value
+	db	cr,lf
+;
+	db	tab,tab,'(I) ',1,'Inspect mode by default?  . . . . . . ',2
+ScrnA3:	db	'   '		; current value
+	db	cr,lf
+;
+	db	tab,tab,'(S) ',1,'Exclude system files by default?  . . ',2
+ScrnA4:	db	'   '		; current value
+	db	cr,lf
+;
+	db	tab,tab,'(Q) ',1,'Quiet mode by default?  . . . . . . . ',2
+ScrnA5:	db	'   '		; current value
+	db	cr,lf,lf
+;
+	db	tab,'    Following options cannot be toggled from command line',cr,lf,lf
+;
+	db	tab,tab,'(R) ',1,'Results summary in quiet mode?  . . . ',2
+ScrnA6:	db	'   '		; current value
+	db	cr,lf
+;
+	db	tab,tab,'(C) ',1,'User abort considered error?  . . . . ',2
+ScrnA7:	db	'   '		; current value
+	db	cr,lf
+;
+	db	cr,lf,lf	; fill rest of screen
+;
+	db	0		; terminator
+;
+; Help screen section . . .
+;
+; Sample help screen for Menu A.  The following, up to the terminating
+;  binary 00, appears as-is when the user types "?" or "/" for help while
+;  ZCNFG is displaying the initial patch menu.
+;
+HelpA:	db	CR,LF
+;
+	db	HON,'Option E -- Erase destination  without asking.',HOF
+	db	'  Ordinarily MOVE will prompt',CR,LF
+	db	'with "exists, Erase?", if a  file  with  the  same  name '
+	db	' is  found  in the',CR,LF
+	db	'destination directory.  If you would prefer that existing '
+	db	'destination files',CR,LF
+	db	'be erased  by  default,  select  "Yes".  The default '
+	db	'can be toggled via the',CR,LF
+	db	'command line "E" option.  The action of this option is '
+	db	'overridden by Option',CR,LF
+	db	'N below.'
+	db	CR,LF,LF
+;
+	db	HON,'Option N -- No move if destination file exists.',HOF
+	db	'  Selecting "Yes" means that',CR,LF
+	db	'by default MOVE will not attempt to  move a file when '
+	db	'another file with the',CR,LF
+	db	'same name  already  exists  in  the  destination  directory. '
+	db	' However, this',CR,LF
+	db	'option has priority over Option E  above.  If  this  '
+	db	'option  is  set "Yes",',CR,LF
+	db	'neither the  E  configuration  option  nor the "E" command '
+	db	'line option will',CR,LF
+	db	'have any effect unless the command line "N" option is '
+	db	'used.'
+	db	CR,LF,LF
+;
+	db	HON,'Option I -- Inspect  mode.',HOF,'  In  inspect  mode '
+	db	' MOVE prompts the user before',CR,LF
+	db	'each file is moved.  If, for some strange reason, you '
+	db	' prefer  inspect mode',CR,LF
+	db	'by default,  make  this  "Yes".  The default is toggled '
+	db	'by the command line',CR,LF
+	db	'"I" option.'
+	db	CR,LF
+;
+	db	':',CR,LF
+	db	HON,'Option S -- System files.',HOF,'  Set  this  option '
+	db	' to "Yes" and MOVE will ignore',CR,LF
+	db	'system (hidden) files by default.  Set it to "No" to '
+	db	'always  include system',CR,LF
+	db	'files.  The command line "S" option toggles the default '
+	db	'mode.'
+	db	CR,LF,LF
+;
+	db	HON,'Option Q -- Quiet mode.',HOF,'  If  this  configuration '
+	db	'option is "Yes", MOVE will',CR,LF
+	db	'be in quiet mode by default.  In quiet mode only required '
+	db	'prompts and error',CR,LF
+	db	'messages are displayed.  If the ZCPR3 quiet flag is  '
+	db	'on,  MOVE  defaults to',CR,LF
+	db	'quiet mode  regardless of the choice made here.  The '
+	db	'default setting can be',CR,LF
+	db	'toggled with the command line "Q" option.'
+	db	CR,LF,LF
+;
+	db	HON,'Option R -- Always  display  results.',HOF,'  In '
+	db	' quiet mode, as distributed, MOVE',CR,LF
+	db	'suppresses the final summary line giving the number of '
+	db	'files moved.  If you',CR,LF
+	db	'would prefer to always see this message, select "Yes".'
+	db	CR,LF,LF
+;
+	db	HON,'Option C -- Error  on  user  abort.',HOF,'  MOVE '
+	db	' sets  the program error flag and',CR,LF
+	db	'invokes the  error  handler,  if  one  is  running,  '
+	db	'whenever  an  error is',CR,LF
+	db	'detected.  As distributed, MOVE  considers  a  user  '
+	db	'abort  an error.  This',CR,LF
+	db	'method can be very handy if you want to also abort a '
+	db	'running alias or batch',CR,LF
+	db	'file.  If you find it irritating, however, select "No".'
+	db	CR,LF
+;
+	db	0		; Terminator
+;
+	end
+

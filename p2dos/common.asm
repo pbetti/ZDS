@@ -1,0 +1,59 @@
+;
+; Here just some common symbol...
+;
+
+VERS	EQU     22      	; VERSION 2.2 (CP/M related)
+;
+; MSIZE	EQU     63              ; CP/M VERSION MEMORY SIZE IN KILOBYTES
+MSIZE	EQU     60              ; CP/M VERSION MEMORY SIZE IN KILOBYTES
+; MSIZE	EQU     56              ; CP/M VERSION MEMORY SIZE IN KILOBYTES
+RESROOM	EQU	1024		; RESERVED ROOM SPACE BELOW MONITOR (FC00)
+BIOSTDS	EQU	1536		; BIOS STANDARD SIZE
+BIOREAS	EQU	BIOSTDS+RESROOM	; BIOS REAL SIZE
+ZSTDOVR	EQU	1024		; ZCPR STANDARD OVERHEAD SIZE
+ZIOPKG	EQU	0		; ZCPR IO PACKAGE SIZE
+ZRESPKG	EQU	2048		; ZCPR RESIDENT CMD PKG SIZE
+ZFLOPKG	EQU	512		; ZCPR FLOW CMD PACKAGE SIZE
+ZDSSTSZ	EQU	01C8H		; ZDS Stamper reserved space
+
+EXTRABIAS	EQU	RESROOM+ZSTDOVR+ZIOPKG+ZRESPKG+ZFLOPKG	; ...
+	;
+	;       "BIAS" IS ADDRESS OFFSET FROM 3400H FOR MEMORY SYSTEMS
+	;       THAN 16K (REFERRED TO AS"B" THROUGHOUT THE TEXT)
+	;
+BIAS	EQU     ((MSIZE-20)*1024)-EXTRABIAS
+CCP	EQU     3400H+BIAS      ; BASE OF CCP
+BDOS	EQU     CCP+0806H       ; BASE OF BDOS
+BDOSB	EQU	CCP+0800H	; BDOS base offset
+BIOS	EQU     CCP+1600H       ; BASE OF BIOS
+ZBUFBAS	EQU	BIOS+BIOREAS	; BASE OF ZCPR3 BUFFERS
+	;
+	; 	some other equs...
+	;
+CR	EQU     0DH		; CARRIAGE RETURN
+LF	EQU     0AH		; LINE FEED;
+FF	EQU	0CH		; FORM FEED (clear screen)
+TRUE	EQU	-1
+FALSE	EQU	0
+
+INTRON	EQU	FALSE		; Interrupts disabled
+	;
+	; define which kind of date stamper must be embedded in
+	; RCP
+	;
+STMPP2	EQU	TRUE		; P2DOS date stamper
+STMPZS	EQU	FALSE		; ZSDOS date stamper
+HASEDS	EQU	(STMPP2+STMPZS)	; set a flag for embedded date stamper
+	;
+	; path for ZCPR3 used on cold boot
+	;
+IDISK1	EQU	'$'		; 1st: current disk, current user
+IUSER1	EQU	'$'
+IDISK2	EQU	'$'		; 2nd: current disk, user 15
+IUSER2	EQU	15
+IDISK3	EQU	'A'-'@'		; 3rd: disk A, current user
+IUSER3	EQU	'$'
+IDISK4	EQU	'A'-'@'		; 4th: disk A, user 15
+IUSER4	EQU	15
+
+; COMMON.ASM [EOF]

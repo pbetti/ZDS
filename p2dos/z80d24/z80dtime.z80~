@@ -1,0 +1,237 @@
+;
+; Z80DOS - Z80 Disk Operating System
+;
+; Version 2.4	Maskable disk reset's using variable fixdrv
+;		Now can assemble with Z80MR if Z80MR equate
+;		set to -1.
+;		Gene Nolan 4/9/89
+;
+;
+;------------------------------------------------------
+;
+; Version 2.3	Fast file lookup
+; Date:		4 Nov 88
+; Update:	Eugene Nolan
+;
+;--------------------------------------------------------------
+;
+; Version 2.0a - BETA TEST VERSION - 6 Nov 87 by Carson Wilson
+;
+; Support file:	Z80DTIME.Z80
+; Version:	2.0
+; Date:		6 Nov 87
+; Author:	Carson Wilson
+; Changes:	Added internal time routine for systems without a
+;		real time clock.  This routine assembles if RTC is false.
+;		Cleaned up and clarified code.
+;
+; Description:	Time Functions, Exit Routine, RAM Area
+;
+
+; ---------------------------------------------------------------------
+
+; Time Routines
+
+; -------------------------
+
+;
+; STime - Set file's time and date at DMA buffer.
+;
+;	Entry:	E = 2 - set creation date or get time stamp
+;		E = 4 - Set last update time/date
+;		E = 8 - Set last access time/date
+;
+;	Exit:	Z  if time stamps present
+;		NZ if no time stamps
+
+STime:	ld	hl,(dirbuf)		; get directory entry
+; 	ld	bc,060h			; offset entry point time/date stamp
+; 	add	hl,bc			; add offset to time stamp
+; 	ld	a,(hl)			; get time stamp byte
+; 	sub	021h			; time stamp present?
+; 	ret	NZ			; no, return
+; 	ld	d,a			; yes, clear d
+; 	add	hl,de			; add entry (update/create/access)
+; 	ld	a,e			; set access time if E ge 8 <crw>
+; 	and	8			;
+; 	jr	Z,STim1			; E lt 8
+; 	srl	e			; E ge 8, set to 4
+; STim1:	ld	b,e			; save # bytes to write
+; 	ld	a,(secpnt)		; get sector pointer
+; 	rrca				; shift 2 times
+; 	rrca
+; 	ld	e,a			; save it
+; 	rrca				; shift 2 times
+; 	rrca
+; 	add	a,e			; add it (a=0,10,20)
+; 	ld	e,a			; save in e
+; 	add	hl,de			; add offset
+; 	ld	a,(funct)
+; 	cp	54			; if set DOS time
+; 	ret	Z			; ..just point to date stamp
+; 	push	hl			; save result
+; 	ld	c,0			; time return date/time pointer in hl
+; 	push	bc			; save 2 or 4 byte count <crw>
+; 	call	time			; return pointer in hl
+; 	pop	bc
+; 	pop	de			; get pointer
+; 	ld	c,b			; set write 2 or 4 bytes <crw>
+; 	ld	b,0
+; 	ldir				; copy 2 or 4 bytes to directory buff.
+; 	xor	a			; set zero flag - time stamps present
+	ret				; and return to caller
+
+;
+; GetStp - Store time stamp following file find, open, or make.
+;
+;	Exit:	HL points to file's 10-byte time stamp stored in DOS.
+;		This buffer is used by subsequent disk commands if
+;		DOS-time (dtime) has been activated by command 55.
+;
+GetStp:
+	ld	e,2			; Point to file's stamp
+	call	STime			; Point to beginning of
+					; ..last file's stamp
+	ld	de,cdate		; Point to DOS stamp buffer
+	ld	(pexit),de		; Save for return in HL
+	ld	bc,10
+	jr	NZ,GtStp1		; STime said no stamp found
+	ldir				; Save full stamp
+	ret				; Back to calling program
+GtStp1:
+	ld	b,c			; No stamp found
+GtStp2:
+	ld	a,0			; ..so zero out DOS buffer
+	ld	(de),a
+	inc	de
+	djnz	GtStp2
+	ret				; Return to calling program
+
+; ------------------------------------------------------------------
+
+; Time - get time for stamping from DOS storage or get real time
+
+;
+; Entry:	DTime = 0	Get real time
+;		DTime <> 0	Get time from DOS buffer and reset DTime.
+;
+; Format of time returned to pointer in HL:
+;
+;	HL + 0 = low  byte of date since Dec. 31, 1977
+;	HL + 1 = high byte of date since Dec. 31, 1977
+;	HL + 2 = hours	 (BCD)
+;	HL + 3 = minutes (BCD)
+;	HL + 4 = seconds (BCD) (not used in time stamp)
+;
+
+time:
+	ld	a,(dtime)		; Get time from buffer?
+	or	a
+	jr	Z,btime			; No, get real time
+
+	ld	a,(funct)		; Yes, check function
+	cp	22			; Creating file?
+	ld	hl,cdate		; If so, point to
+	jr	Z,time2			; ..stored create date
+	ld	hl,udate		; No, point to update date/time
+time2:
+	xor	a
+	ld	(dtime),a		; Use buffer for this call only
+	ret
+
+; -------------------------------------------------------------------
+
+; GetTim and SetTim - Get or Set Time using memory or Real Time Clock
+
+; -------------------------------------------------------------------
+
+;
+; Get time to address DE
+;
+gettim:
+	push	de			; Save address to put time
+	ld	c,0			; Get time address
+	call	btime			; Execute p2bios call
+	pop	de			; Restore address to put time
+	ld	bc,5			; 5 bytes to move
+	ldir				; Store the time
+	ret				; Return to caller (or DOS)
+;
+; Set time from address DE
+;
+settim:	ex	de,hl			; get address time in hl
+	ld	c,0ffh			; set time from address
+
+;	fall	thru
+
+;
+; Real Time Clock (RTC) or memory "clock" interface:
+;
+;	Entry:	C =  0: Load 5-byte buffer at HL with time
+;		C <> 0: 5-byte entry pointed to by HL sets system time
+
+	if	RTC			; Real time clock available
+btime:
+	push	hl			; Save value in HL
+	ld	hl,(timead)		; Get address time routine
+	ex	(sp),hl			; Put address on stack and restore hl
+	ret				; Execute BIOS time routine
+
+	 else				; Use memory "clock"
+btime:
+	ld	a,c			; Test flag
+	or	a
+	jr	NZ,tset			; C <> 0, set time
+	ld	hl,timebuf		; Point HL to buffer
+	ret
+tset:
+	ld	de,timebuf		; Point to storage
+	ld	bc,5			; Copy five bytes
+	ldir
+	ret
+	 endif	; RTC
+
+; ---------------------------------------------------------
+;
+; UseStp - Use stored time stamp for very next DOS call.
+; 	   All other DOS calls cancel DOS time thru p2exit.
+;
+UseStp:
+	or	0ffh
+	ld	(dtime),a		; Use DOS time
+	pop	hl			; clean up stack
+	jr	p2ext0
+
+; -------------------------------------------------------------------------
+
+; DOS exit routines
+
+; -------------------
+
+
+p2exit:	xor	a
+	ld	(dtime),a		; Turn off DOS time <crw>
+	ld	(retflg),a		; Turn off retries
+	ld	a,(fldrv)		; Test drive select used flag
+	or	a
+	jr	Z,p2ext0		; No then exit
+	ld	a,(FCB0)		; Get FCB byte 0
+	ld	(ix+0),a		; Save it
+	ld	a,(drive)		; Get old drive number
+	call	seldk			; Select disk
+p2ext0:	push	ix			; Save IX
+	pop	de			; Restore DE
+	pop	ix			; Restore IX
+	ld	sp,(spsave)		; Get old sp
+	ld	hl,(pexit)		; Get exit code
+	ld	a,(funct)		; Get function code
+	ld	c,a			; Restore C
+	ld	a,l			; Copy function code
+	ld	b,h
+	ret				; And return to caller
+	if	($-dos) gt 3584
+	* BDOS over 3584 bytes - too large!! *
+	endif
+
+; END Z80DTIME.Z80
+

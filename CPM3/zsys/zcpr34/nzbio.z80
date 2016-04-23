@@ -1,0 +1,189 @@
+
+; Program: NZBIO
+; Author:  Joe Wright
+; Version: 1.1
+; Date:    11 August 1987
+
+; NZ-COM and all its associated files are Copyright (C) 1987, 1988
+; by Joe Wright and by Alpha Systems Corporation.  This file is released
+; for information and use by registered owners of NZ-COM for personal
+; non-commercial purposes.  Any commercial use (resale) of any part of
+; NZ-COM requires specific license by:
+;
+; Alpha Systems Corporation
+; 711 Chatsworth Place
+; San Jose, CA 95128
+; 408/297-5594
+
+; NZBIO Revision List, Latest First.
+
+; Version 1.5  19 Aug 88
+; Certain system utilities (DUnn for example) treat the disk system
+; through the bios rather than the bdos and select disks the bdos
+; doesn't know about.  This may cause the system to hang becuase
+; the bdos does not know the disk select has been changed by DU.
+; NZBIO now calls bdos Disk Reset prior to warm boot so that bios
+; and bdos agree on the selected disk.	Thanks Rick Swenton.
+
+; Version 1.4  24 May 88
+; Now permits DOS on record (not just page) boundaries.
+
+; Version 1.3  24 Jan 88
+; Saves six bytes.  Thanks Howard Goldstein.
+
+; Version 1.2 Uses NAME and COMMON ops
+
+; Version 1.1 adds the aux jump table and removes error message
+
+; This is the basis of the NZ-COM bios.  Its purpose is to
+; provide the 'Extended' auxjmp structure for IOPs and to load
+; and execute NZCOM.CCP on warm boots.
+
+; NZBIO may be of any length.  The Z-System developer may find
+; it convenient to add bios function here rather than in the CBIOS.
+; If you, a licensed NZ-COM owner, wish to modify or add to this
+; code and offer it to other NZ-COM users, please do so but please
+; use a different name.  Alpha Systems will release new versions
+; as NZxxxxxx.Z80.  Please reserve the NZ prefix to me.  Thanks.
+; This will help differentiate between user's contributions and
+; Alpha Systems' releases.
+
+
+	name	('BIO15')	; NZCOM needs 'BIO' as 1st 3 chars.
+
+	common	/_ENV_/
+z3env:
+ccp	equ	z3env+3fh
+dos	equ	z3env+42h
+
+	common	/_CBIO_/
+cbios:
+	cseg
+;
+; General Equates for NZBIO
+;
+base	equ	0
+wbootv	equ	base+1		; Warm Boot Vector
+cdisk	equ	base+4		; Default Usr/Drv
+bdos	equ	base+5		; BDOS entry
+bdosv	equ	base+6		; BDOS vector
+
+stack	equ	base+100h	; Safe place for NZBIO stack
+
+; BDOS functions
+
+reset	equ	13		; Reset Disk System
+openf	equ	15		; Open File
+readf	equ	20		; Read Sequential
+setdmf	equ	26		; Set DMA address
+gsusr	equ	32		; Get/Set User Code
+
+; Beginning of NZBIO.  The header structure is absolutely crucial
+; to the correct operation of NZ-COM.  DON'T CHANGE IT.
+
+; Beginning of Header........
+
+start:	jp	boot		; Cold boot
+wboote:	jp	wboot
+	jp	const
+	jp	conin
+	jp	conout
+	jp	list
+	jp	punch
+	jp	reader
+	jp	cbios+24	; Home
+	jp	cbios+27	; Seldsk
+	jp	cbios+30	; Settrk
+	jp	cbios+33	; Setsec
+	jp	cbios+36	; Setdma
+	jp	cbios+39	; Read
+	jp	cbios+42	; Write
+	jp	listst
+	jp	cbios+48	; Sectran
+
+	ds	(30-17)*3	; Room for 30 jumps
+
+sign:	db	'NZ-COM'
+
+user:	db	0
+zcfcb:	db	1,'NZCOM   CCP',0,0,0,0
+	ds	17
+;
+; Auxillary jumps to accommodate the extended IOP.  It is a function
+; of the IOP loader in NZCOM.COM to modify the main jump table (above)
+; to point to the IOP rather than to this auxjmp table.
+;
+auxjmp:
+const:	jp	cbios+6
+conin:	jp	cbios+9
+conout:	jp	cbios+12
+list:	jp	cbios+15
+punch:	jp	cbios+18
+reader:	jp	cbios+21
+listst:	jp	cbios+45
+;
+; End of Header....  The following code is free-form and may be moved
+; around if necessary.
+;
+boot:	ld	hl,auxjmp	; Point the cold boot jump
+	ld	(start+1),hl	; Target to auxjmp
+;
+; Initialize page 0 and go to zcpr3
+;
+goz3:	ld	a,0c3h		; Jump instruction
+	ld	(base),a	; Ensure a JP here
+	ld	hl,wboote	; Jump table entry
+	ld	(wbootv),hl	; To the base page
+	ld	(bdos),a	; Put a JP here
+	ld	hl,(dos)	; Record boundary
+	ld	de,6		; Offset to bdos entry
+	add	hl,de		; Add it in
+	ld	(bdosv),hl	; To base page
+	ld	a,(cdisk)	; Current drv/usr
+	ld	c,a		; For CCP
+	ld	hl,(ccp)	; Point to CCP
+	jp	(hl)		; Go...
+;
+; Warm Boot Entry
+;
+wboot:	ld	sp,stack	; Set stack pointer
+	ld	c,reset
+	call	nzdos		; Reset disk system
+	ld	de,(user)	; Get user no. in E
+	ld	c,gsusr
+	call	nzdos		; Log into NZCOM.CCP user area
+	xor	a
+	ld	(zcfcb+32),a	; Clear current record
+	ld	c,openf
+	call	nzfil		; Open NZCOM.CCP
+	ld	hl,(ccp)	; Load it at CCP
+;
+; Read NZCOM.CCP to (CCP) until end of file
+;
+read:	push	hl		; Save 'dmaadr'
+	ex	de,hl		; To DE
+	ld	c,setdmf
+	call	nzdos		; Set DMA address
+	ld	c,readf
+	call	nzfil		; Read a record into place
+	pop	hl		; Get 'dmaadr' in HL
+	or	a		; Check for read error
+	jr	nz,goz3		; Error = End of file
+	ld	de,128		; Add 128
+	add	hl,de		; To the DMA address
+	jr	read		; And loop
+;
+; Bdos Service
+;
+nzfil:	ld	de,zcfcb	; Point to FCB
+
+nzdos:	ld	hl,(dos)	; Record boundary
+	ld	a,6
+	add	a,l		; Add 6 to low order
+	ld	l,a		; Put it back
+	jp	(hl)		; Go
+;
+	end
+;
+; End of NZBIO
+

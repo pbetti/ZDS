@@ -1,0 +1,894 @@
+; CHKDIR.Z80
+;
+Vers	equ	11		; version
+SubVers	equ	' '		; revision level
+;
+; USAGE:
+;
+;	CHKDIR dir:
+;
+; Checks for the following conditions:
+;	Duplicate directory entries
+;	User # > 31
+;	Extent # > 31
+;	Illegal characters in the filename
+;	Record count > 80h
+;	Allocation group assigned to multiple files, or to same file twice
+;	Reports 0-length files
+;
+;	Requirements:
+;		  Hardware: Z80-compatible processor
+;		  Software: CP/M 2.2 compatible operating system
+;
+; System addresses . . .
+;
+WBoot	equ	0
+Bdos	equ	5
+CpmFcb	equ	5Ch		; default file control block
+AltFcb	equ	6Ch		; alternate file control block
+CpmBuf	equ	80h		; CP/M default buffer
+;
+; BDOS functions . . .
+;
+GetVer	equ	12		; get CP/M version
+SelDrv	equ	14		; select drive
+;
+; BIOS offsets ...
+;
+SelDsk	equ	9
+SetTrk	equ	10
+BStSec	equ	11
+Read	equ	13
+SecTrn	equ	16
+;
+; ASCII characters . . .
+;
+BEL	equ	7
+CR	equ	0Dh
+LF	equ	0Ah
+;
+;	SYSLIB, Z3LIB, and zslib modules
+;
+	.request zslib,z3lib,syslib
+	ext	eprint,epstr,cout,pfn3,padc,pa2hc,phlfdc,phl4hc,$memry
+	ext	bios,getmtop
+	ext	z3init,puter2,whrenv,gzmtop,inverror
+	ext	gcomnam,comnam
+;
+	jp	Start
+;
+	db	'Z3ENV'		; ZCPR3 header
+	db	1
+Z3EAdr:	dw	0FE00h		; environment address
+;
+; Configuration area . . .
+;
+	db	0,0		; filler
+	db	'CHKDIR'
+	db	Vers/10+'0',Vers mod 10+'0'
+WBFlg:	db	0		; non-zero=exit with warm boot, 0=return
+NulFlg:	db	0		; non-zero=include null files, 0=exclude
+TagChr:	db	0		; tag character for disk labels, 0=none
+;
+; Start of program . . .
+;
+Start:	ld	(Stack),sp	; save old stack pointer
+	ld	sp,Stack	; set up new stack
+	ld	hl,(Z3EAdr)	; point to ZCPR3 environment
+	call	whrenv		; find Z envronment if any
+	ld	(Z3EAdr),hl
+	call	z3init		; initialize the ZCPR3 environment
+	ld	c,GetVer	; check for CP/M 2.2
+	call	Bdos
+	ld	a,l		; HL = 0022h if CP/M 2.2
+	cp	22h+1		; check for MP/M or CP/M 3.0
+	jp	nc,CPM3		; exit if CP/M 3.0, we can't use it
+	ld	hl,DefNam
+	call	gcomnam		; get invocation name
+;
+; CODEND has been replaced with a direct load of the first-free-address
+; value.  CODEND returns the address of the first free PAGE of memory;
+; this results in anywhere from 0 to 255 bytes of memory being wasted.
+;
+	ld	hl,($memry)	; get start of free memory
+	ld	(DirBuf),hl	; address of directory buffer
+	ld	(RDest),hl	; destination pointer for directory copy also
+	ld	hl,Errors	; initialize required values
+	xor	a
+	ld	b,7		; 7 bytes to initialize
+FlInit:	ld	(hl),a
+	inc	hl
+	djnz	FlInit
+	ld	a,(CpmFcb+1)	; check for help request
+	cp	' '		; any option means help
+	jp	nz,Help
+	ld	a,(CpmFcb)	; check for drive
+	or	a
+	jp	z,Help		; (none)
+;
+; Select drive and load disk parameter block
+;
+	ld	e,a
+	dec	e		; get drive in range
+	ld	c,SelDrv
+	push	de
+	call	Bdos		; log into disk
+	pop 	bc		; prepare for disk parameter block
+	call	eprint
+	db	'Checking Drive ',0
+	ld	a,c		; get drive
+	add	a,'A'		; make printable
+	call	cout
+	ld	a,':'
+	call	cout
+	ld	e,0		; set new mount flag
+				; (insures that we get correct disk parameters)
+	ld	a,SelDsk
+	call	bios
+; get CP/M Disk Parameter Block data
+	ld	e,(hl)		; the BIOS SelDsk returns DPH
+	inc	hl		; address in HL
+	ld	d,(hl)		; extract to translation table
+	ld	(SecTbl),de	; save table address
+	ld	de,9		; offset to DPB in DPH
+	add	hl,de
+	ld	a,(hl)		; get DPB address into HL
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,Dpb		; copy to local DPB
+	ld	bc,DpbLen
+	ldir
+	ld	hl,(DRM)	; get maximum directory entries on disk
+	inc	hl		; convert to 1-relative
+	call	RotRHL		; divide by 4 for number of 128-byte
+	call	RotRHL		; ..logical sectors in directory
+	ld	(DirSec),hl	; save number of sectors
+	ld	(SecCnt),hl	; initialize sector counter for read
+	ld	hl,(Bdos+1)	; get top of TPA
+	ld	a,(WBFlg)	; save CPR?
+	or	a
+	call	z,FTop
+	ld	de,(DirBuf)	; subtract start of directory buffer
+	or	a
+	sbc	hl,de		; available space (bytes)
+	ld	a,l		; mask to multiple of 32 bytes
+	and	not 31
+	ld	c,a
+	ld	b,h		; byte count to BC
+	push	bc		; save
+	dec	bc		; count byte we're about to do
+	push	de
+	pop	hl		; address of directory buffer to HL
+	ld	(hl),0E5h	; put E5 byte in directory
+	inc	de		; DE still points to DirBuf, bump it
+	ldir			; fill directory buffer with E5's
+	pop	hl		; size of buffer back to HL
+	ld	b,5		; set up counter
+GetDMx:	call	RotRHL		; divide by 32 to get number of
+	djnz	GetDMx		; ..entries that will fit
+	ld	(MaxDir),hl	; maximum active entries
+;
+; RdDir -- Read the directory of the current disk into the directory
+; buffer, deleting erased entries as we go.  The directory is read
+; from the disk one 128-byte sector at a time.  This is done in two
+; passes.  On the first pass, the fourth 32 byte entry in each sector
+; is checked for a user number of 33, the signaturefor P2D date stamps. 
+; If any fourth entry does not have a P2D signature, this pass is
+; immediately aborted and a non-P2D disk is assumed.  Otherwise, only
+; the first three entries in each record are examined on the second
+; pass.  On the second pass, after each sector is read into buffer at
+; CpmBuf, it is copied to directory buffer at DirBuf, skipping over any
+; erased entries, and zero-length entries.  Thus, the directory is
+; built up incrementally, a sector at a time. This allows the program
+; to handle any disk, regardless of the maximum number of directory
+; entries the disk may have.  The counter of active directory entries
+; is incremented as valid entries are copied into buffer.  If counter
+; exceeds number of entries that fit in memory, an error message is
+; printed and CHKDIR aborts.  That should be rare because even a 48K
+; TPA has room for 1,458 active entries.
+;
+RdDir:	call	eprint
+	db	'  --> Reading .. ',0
+	ld	hl,(SysTrk)	; select first directory track
+	ld	(CurTrk),hl
+	ld	hl,(SecCnt)	; get sector count
+RdLp0:	push	hl		; save sector count
+	call	ReadDD		; read a directory sector
+	pop	hl		; get sector count back
+	ld	a,(CpmBuf+60h)	; get user byte of fourth entry
+	cp	33		; check for P2D signature
+	ld	a,4		; assume 4 entries to check
+	jr	nz,RdDir1	; and break out of loop if not P2D
+	dec	hl		; decrement sector count
+	ld	a,h
+	or	l
+	jr	nz,RdLp0	; loop till don
+	ld	a,3		; if here, disk is P2D stamped
+RdDir1:	ld	(EntSec),a	; store entries to examine
+	ld	hl,(SysTrk)	; select first directory track
+	ld	(CurTrk),hl
+	ld	hl,0
+	ld	(curSec),hl
+ReadLp:	call	ReadDD		; read next sector into buffer
+	ld	hl,CpmBuf	; point to buffer
+	ld	a,(entsec)
+	ld	b,a		; get number of enties per sector in B
+PackLp:	ld	a,(hl)		; look at user # of next entry
+	cp	0E5h		; see if erased
+	jr	z,SkipHL	; if so, bump HL past this entry
+; look for a zero-length file, defined as EX=0, S2=0, and RC=0
+	push	hl		; save file pointer
+	ld	de,12
+	add	hl,de
+	ld	d,(hl)		; extent to D
+	inc	hl
+	inc	hl
+	ld	a,(hl)		; S2 byte to A
+	and	0Fh
+	inc	hl		; point to RC byte
+	or	d		; OR them all together
+	or	(hl)
+	jr	nz,NoSkip	; (ok, if not all = 0)
+	call	eprint		; tell user we found one
+	db	CR,LF,' Zero Length File:  ',0
+	pop	hl		; restore file pointer
+	push	hl
+	call	PFNam1
+	ld	hl,ZCnt		; count it
+	inc	(hl)
+	pop	hl		; get back file pointer
+	ld	a,(NulFlg)	; do we include null files?
+	or	a
+	jr	z,SkipHL	; (no)
+	push	hl
+	inc	hl		; point to first character of filename
+	ld	a,(TagChr)	; get tag character
+	or	a
+	jr	z,NoSkip
+	cp	(hl)
+	jr	nz,NoSkip	; (no, include this one too)
+	pop	hl
+SkipHL:	ld	de,32		; bump HL over the current entry
+	add	hl,de
+	jr	PakEnd
+;
+NoSkip:	ld	hl,(DirAct)	; count this one as active
+	inc	hl
+	ld	(DirAct),hl
+	ld	(ii),hl		; directory count is starting sort count
+ChkFul:	ex	de,hl
+	ld	hl,(MaxDir)	; compare current entry count to max
+	or	a
+	sbc	hl,de
+	pop	hl
+	jp	c,NoRoom	; error if carry
+	push	bc		; copy into directory buffer
+	ld	bc,32		; copy 32 bytes
+	ld	de,(RDest)	; get destination for move into DE
+	ldir
+	ld	(RDest),de	; update destination pointer
+	pop	bc
+PakEnd:	djnz	PackLp		; loop for next entry
+	ld	hl,(SecCnt)
+	dec	hl		; decrement sector counter
+	ld	(SecCnt),hl
+	ld	a,h
+	or	l
+	jp	nz,ReadLp	; loop until all sectors done
+	ld	a,(ZCnt)	; Get count of zero-length files
+	or	a
+	jr	z,SizDir	; skip if none
+	call	eprint
+	db	CR,LF,'  ',0
+	call	padc
+	call	eprint
+	db	' null file(s)',CR,LF,0
+;
+SizDir:	ld	hl,(DirAct)	; number of active directory entries
+	ld	a,h		; do we have any?
+	or	l
+	jp	z,Finish	; (no, exit)
+;
+; Sort directory
+;
+	call	Swap		; swap EX & S2 to make it pretty
+	call	eprint
+	db	'Sorting .. ',0
+; Shell-Metzner sort
+	ld	hl,(ii)
+	ld	(SRecNm),hl
+	ld	hl,(DirBuf)
+	ld	(SrtAdr),hl
+	push	hl		; and save it
+	ld	hl,32
+	ld	(SRecLn),hl
+	push	hl		; and save it
+; Now divide number of fields by 2
+Divide:	ld	hl,(SRecNm)	; get value
+	call	RotRHL
+	ld	(SRecNm),hl	; save result
+	ld	a,l		; if SRecNm<>0
+	or	h		; then
+	jr	nz,NotDon	; ..not done
+; All fields sorted
+	pop	bc		; clean up stack
+	pop	de
+	jp	SwapBk		; swap back & continue
+;
+NotDon:	ex	de,hl
+	ld	hl,(ii)
+	or	a
+	sbc	hl,de
+	ld	(SRecLn),hl
+	ld	hl,1
+	ld	(SortV1),hl
+	ld	(SrtAdr),hl
+	dec	l
+	pop	bc
+	push	bc
+NDone1:	add	hl,de
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,NDone1
+	ld	(SortV2),hl
+	ex	de,hl
+	pop	bc
+	pop	hl
+	push	hl
+	push	bc
+NDone2:	ld	(SortV4),hl
+	ld	(SortV3),hl
+	ex	de,hl
+	add	hl,de
+	ex	de,hl
+Compar:	pop	bc
+	push	bc
+	push	de		; fix from SAP 4.4
+	push	hl
+Compr1:	ld	A,(DE)
+	and	7Fh
+	push	bc
+	ld	c,a
+	ld	a,(hl)
+	and	7Fh
+	ld	b,a
+	ld	a,c
+	sub	b
+	pop	bc
+	jr	nz,NotEqu
+	inc	hl
+	inc	de
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,Compr1
+	jr	NoSwit
+;
+; Condition at NotEqu has to be changed for a descending sort -- if
+; reverse=0, JNC to NoSwit, else JC to NoSwit
+;
+NotEqu:	jr	nc,NoSwit
+	pop	hl		; fix from SAP 4.4
+	pop	de
+	pop	bc
+	push	bc
+Switch:	push	bc
+	ld	b,(hl)
+	ld	a,(de)
+	ld	(hl),a
+	ld	a,b
+	ld	(de),a
+	inc	hl
+	inc	de
+	pop	bc
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,Switch
+	ld	hl,(SRecNm)
+	ld	a,h
+	cpl
+	ld	d,a
+	ld	a,l
+	cpl
+	ld	e,a
+	ld	hl,(SortV1)
+	add	hl,de
+	jr	nc,NoSw1	; fix from SAP 4.4
+	inc	hl
+	ld	(SortV1),hl
+	ld	hl,(SortV3)
+	ex	de,hl
+	ld	hl,(SortV2)
+	ld	a,e
+	sub	l
+	ld	l,a
+	ld	a,d
+	sbc	a,h
+	ld	h,a
+	ld	(SortV3),hl
+	jr	Compar
+;
+NoSwit:	pop	hl		; clean up stack -- from SAP 4.4
+	pop	hl
+NoSw1:	ld	hl,(SrtAdr)
+	inc	hl
+	ld	(SrtAdr),hl
+	ld	(SortV1),hl
+	ex	de,hl
+	ld	hl,(SRecLn)
+	ld	a,l
+	sub	e
+	ld	a,h
+	sbc	a,d
+	jp	c,Divide
+	ld	hl,(SortV4)
+	pop	de
+	push	de
+	add	hl,de
+	ld	de,(SortV2)
+	jr	NDone2
+;
+SwapBk:	call	Swap		; swap S2 & EX back to correct positions
+;
+; Check for duplicate directory entries
+	call	eprint
+	db	'Checking .. ',0
+	ld	hl,0		; i = 0
+	ld	(ii),hl
+DupCk1:	ld	hl,(ii)
+	call	Index		; HL = DirBuf + 32 * i
+	ld	(ThisDr),hl
+	ld	de,(ThisDr)	; check for duplicate entries
+	ld	hl,32		; compare with next entry
+	add	hl,de
+	ld	b,15		; duplicate if 1st 15 chars the same
+CmpDir:	ld	a,(de)
+	sub	(hl)
+	and	7Fh		; in the last 7 bits
+	jr	nz,DupCk3
+	inc	de
+	inc	hl
+	djnz	CmpDir
+	call	eprint
+	db	CR,LF,' Duplicate directory entry --> ',0
+	call	PFName
+	ld	a,0FAh		; set error code
+	ld	(Errors),a
+DupCk3:	ld	hl,(ii)		; i = i + 1
+	inc	hl
+	ld	(ii),hl
+	ld	de,(DirAct)
+	or	a
+	sbc	hl,de
+	jr	nz,DupCk1	; loop until i = DirAct
+;
+; Check directory
+	ld	hl,0		; i = 0
+Chek1:	ld	(ii),hl
+	call	Index		; HL = DirBuf + 32 * i
+	ld	(ThisDr),hl
+	ld	a,(hl)
+	cp	32		; check for bad user #
+	jr	nc,BadUsr
+	ld	b,11		; check for bad chars in name
+	inc	hl
+ChekLp:	ld	a,(hl)
+	and	7Fh		; mask out attribute bit
+	cp	32		; bad if less than a space
+	jr	c,BadNam
+	cp	060h		; bad if lower case or {}|~
+	jr	nc,BadNam
+	cp	'*'
+	jr	z,BadNam
+	cp	','
+	jr	z,BadNam
+	inc	hl
+	djnz	ChekLp
+; Name is OK
+	ld	a,(hl)
+	cp	20h		; bad if extent # > 31
+	jr	nc,BadExt
+	inc	hl		; skip over S1, S2
+	inc	hl
+	inc	hl
+	ld	a,(hl)
+	cp	81h		; bad if record # > 80h
+	jr	nc,BadRec
+ChekDN:	ld	hl,(ii)		; i = i + 1
+	inc	hl
+	ld	de,(DirAct)
+	push	hl
+	or	a
+	sbc	hl,de
+	pop	hl		; loop until i = DirAct
+	jr	nz,Chek1
+	jp	AChek
+;
+BadUsr:	call	eprint
+	db	CR,LF,' User over 31      --> ',0
+	ld	a,0FBh		; set error code
+BadChk:	ld	(Errors),a	; store error code
+	call	PFName
+	jr	ChekDN
+;
+BadNam:	call	eprint
+	db	CR,LF,' Illegal filename  --> ',0
+	ld	a,0FCh		; set error code
+	jr	BadChk
+;
+BadExt:	call	eprint
+	db	CR,LF,' Extent over 31    --> ',0
+	ld	a,0FDh		; set error code
+	jr	BadChk
+;
+BadRec:	call	eprint
+	db	CR,LF,' Record over 128   --> ',0
+	ld	a,0FEh		; set error code
+	jr	BadChk
+;
+; Allocation checking
+;
+AChek:	ld	hl,0
+	ld	b,8		; compute # entries in each data map
+	ld	a,(DSM+1)	; = 8 or 16
+	or	a
+	jr	nz,AChek0
+	rl	b
+AChek0:	ld	(NMap),bc
+AChek1:	ld	(ii),hl
+	ld	(jj),hl
+	call	Index		; HL = DirBuf + 32 * i
+	ld	(ThisDr),hl
+	ld	(ThatDr),hl
+	ld	de,16
+	ld	ix,(ThisDr)
+	add	ix,de		; IX -> first allocation map entry
+	ld	bc,(NMap)
+AChek5:	push	bc
+	ld	hl,(ThisDr)	; get the next allocation map entry
+	ld	(ThatDr),hl	; ..from the first file
+	ld	h,0
+	ld	l,(ix+0)
+	ld	a,(DSM+1)	; (test for 1 or 2-byte allocation block#)
+	or	a
+	jr	z,AChek9
+	ld	h,(ix+1)	; allocation block # is now in HL
+AChek9:	ld	a,h		; if it is zero,
+	or	l		; ..skip it
+	jr	z,AChk3a
+	push	ix
+	pop	iy
+	jr	AChek6
+;
+AChek4:	ld	d,0		; get allocation map entry to compare with
+	ld	e,(iy+0)
+	ld	a,(DSM+1)
+	or	a
+	jr	z,AChek8
+	ld	d,(iy+1)	; it is now in DE
+AChek8:	ld	a,d		; if it is zero,
+	or	e		; ..skip it
+	jr	z,AChek6
+	push	hl
+	sbc	hl,de
+	pop	hl
+	call	z,BdAloc
+AChek6:	inc	iy
+	ld	a,(DSM+1)	; (test for 1 or 2-byte allocation block#)
+	or	a
+	jr	z,AChek7
+	inc	iy		; increment two bytes if needed
+AChek7:	djnz	AChek4
+;
+; Now checked against everything in that directory -- get next
+	push	hl		; (allocation block # being checked)
+	ld	hl,(jj)
+	inc	hl
+	ld	(jj),hl		; HL = # of next directory entry
+	ex	de,hl
+	ld	hl,(DirAct)
+	or	a
+	sbc	hl,de		; if beyond end of directory
+	ex	de,hl
+	jr	z,AChek3	; jump here
+	call	Index		; if ok, get start of next entry
+	ld	(ThatDr),hl
+	ld	de,16
+	add	hl,de
+	push	hl
+	pop	iy		; point IY to next allocation map
+	ld	bc,(NMap)
+	pop	hl		; restore allocation block #
+	jr	AChek4
+;
+AChek3:	pop	hl
+AChk3a:	pop	bc
+	inc	ix		; get next "1st" allocation block #
+	ld	a,(DSM+1)	; (test for 1 or 2-byte allocation block#)
+	or	a
+	jr	z,AChekA
+	inc	ix		; increment Index twice if needed
+AChekA:	ld	hl,(ii)		; reset 'that' file pointer
+	ld	(jj),hl		; ..to the current entry
+	dec	b
+	jr	nz,AChek5
+	inc	hl		; done with this directory - get next
+	ld	de,(DirAct)	; see if all entries checked
+	push	hl
+	or	a
+	sbc	hl,de
+	pop	hl
+	jp	nz,AChek1	; loop back for next one if not
+;
+; Exit
+;
+Finish:	ld	a,(Errors)	; see if we have errors
+	or	a
+	jr	nz,Exit
+	call	eprint
+	db	'No Problems.',0
+Exit:	ld	b,a		; put error code in B
+	ld	hl,(Z3EAdr)
+	ld	a,h
+	or	l		; see if we have a Z environment
+	jr	z,Exit1		; skip Z-specific stuff if not
+	ld	a,b		; get error code back
+	call	puter2		; write to error flag
+	or	a
+	call	nz,inverror	; call error handler
+Exit1:	ld	a,(WBFlg)	; do we warm boot?
+	or	a
+	jp	nz,WBoot	; (yes)
+	ld	sp,(Stack)	; restore stack
+	ret			; return to the CPR
+;
+; Not enough memory to read in all active directory entries
+NoRoom:	call	eprint
+	db	CR,LF,BEL,'Insufficient memory.',0
+	ld	a,12		; set error code
+	jr	Finish
+;
+; CP/M 3.0 not allowed by this program
+;
+CPM3:	call	eprint
+	db	BEL,'Not for Z3Plus.',0
+	jr	Exit1
+;
+; Directory read error
+;
+RError:	call	eprint
+	db	CR,LF,BEL,'Read error.',0
+	ld	a,4		; set error code
+	ld	(Errors),a
+	jr	Finish
+;
+; Subroutines . . .
+;
+; FTop -- find top of TPA
+;
+FTop:	ld	hl,(Z3EAdr)
+	ld	a,h
+	or	l
+	jp	z,getmtop	; find TPA top the normal way
+	jp	gzmtop		; do it the Z way
+;
+; PFName -- print filename
+;
+PFName:	ld	hl,(ThisDr)	; HL -> User #
+PFNam1:	push	hl		; save entry pointer
+	ld	a,(hl)
+	call	padc		; print user #
+	call	eprint
+	db	':',0		; print colon
+	pop	de		; get pointer back
+	inc	de		; filename
+	call	pfn3
+	call	eprint		; add 4 spaces
+	db	'    ',0
+	ret
+;
+; BdAloc -- report duplicate allocation blocks
+;
+BdAloc:	push	hl
+	call	eprint
+	db	CR,LF,' Two files use allocation block ',0
+	pop	hl
+	push	hl
+	ld	a,(DSM+1)
+	or	a
+	jr	z,Prt2
+	call	phl4hc
+	jr	ANames
+Prt2:	ld	a,l
+	call	pa2hc
+ANames:	call	PFName
+	ld	hl,(ThatDr)
+	call	PFNam1
+	ld	a,0FFh		; set error code
+	ld	(Errors),a
+	pop	hl
+	ret
+;
+; ReadDD - Read selected sector into CpmBuf, (80h).  On entry, the
+; desired sector has been selected by setting the proper track and
+; sector values into CurTrk and CurSec.  The track and sector address
+; values are incremented by this routine.
+;
+ReadDD:	ld	bc,(CurTrk)	; set track
+	ld	a,SetTrk
+	call	bios
+	ld	bc,(CurSec)	; set sector (with translation)
+	call	SetSec
+	ld	a,Read		; read the sector
+	call	bios
+	or	a		; set flag on status return from BIOS
+	jp	nz,RError	; exit if read error
+	ld	de,(CurSec)	; increment current sector
+	inc	de
+	ld	hl,(SPT)	; check to see if beyond end of track
+	dec	hl		; convert to 0-relative
+	or	a
+	sbc	hl,de
+	jr	nc,NextOk
+	ld	hl,(CurTrk)	; if so, bump track counter
+	inc	hl
+	ld	(CurTrk),hl	; set new current track
+	ld	de,0		; set sector 0
+NextOk:	ld	(CurSec),de	; set new current sector
+	ret
+;
+; Swap -- Developed by Joe Wright, this routine swaps the S2 and extent
+; bytes of each directory entry before sorting, and swaps them back after
+; sorting.  This gets the extents in the proper sequence, because the S2
+; byte, which is really the "high order" byte of the extent counter,
+; comes after the extent byte in the FCB.  The extent counter is really
+; in two parts.  The "low order" part is the extent field of the FCB, and
+; has values from 0 to 31.  The "high order" part is the S2 byte, which
+; ranges from 0 to 15.  (This is where standard CP/M's limit of 8 Megabytes
+; per file comes from: 16 "superextents" x 32 extents x 16K per extent =
+; 8192K).  Normally the sort routine would sort the extents of a large
+; file into the sequence "1, 33, 34, 35, 2, 3, ... 32" (using the S2 byte
+; as a counter of groups of 32 extents).  Actually, CP/M doesn't really
+; care if the extents are in any particular order, but this way is much
+; more aesthetically satisfying.  If you want a sorted directory, might
+; as well have it sorted properly
+
+;
+Swap:	ld	hl,(DirBuf)	; beginning of dir buffer
+	ld	de,12		; offset to EX byte
+	add	hl,de		; point to EX in 1st sort buffer entry
+	ld	de,32		; bytes per entry
+	ld	bc,(DirAct)	; get count of active directory entries
+Swap1:	push	bc		; remaining count
+	push	hl		; pointer to EX
+	ld	c,(hl)		; get the extent byte into C
+	inc	hl
+	inc	hl		; point to S2
+	ld	a,(hl)		; swap them
+	ld	(hl),c
+	pop	hl
+	ld	(hl),a
+	add	hl,de		; point to next entry
+	pop	bc		; get count
+	dec	bc		; down
+	ld	a,b
+	or	c
+	jr	nz,Swap1	; again
+	ret			; finished
+;
+; Divide HL by 2
+;
+RotRHL:	srl	h
+	rr	l
+	ret
+;
+; Index
+;
+Index:	add	hl,hl		; given entry number in HL (0,1,...), index
+	add	hl,hl		; sets HL to point to the start of that
+	add	hl,hl		; ..entry in the directory buffer
+	add	hl,hl		; multiply HL by 32, the size of each entry
+	add	hl,hl
+	ld	de,(DirBuf)	; offset from the start of the buffer
+	add	hl,de
+	ret
+;
+; Print Help message
+;
+Help:	call	eprint
+DefNam:	db	'CHKDIR    Version '
+	db	Vers/10+'0','.',Vers mod 10+'0',SubVers,CR,LF
+	db	'Usage:',CR,LF,'   ',0
+	ld	hl,comnam
+	call	epstr
+	ld	hl,(Z3EAdr)
+	ld	a,h
+	or	l
+	jr	nz,Help1
+	call	eprint
+	db	' d:',0
+	jr	Help2
+Help1:	call	eprint
+	db	' dir:',CR,LF
+	db	'Only drive is significant.',0
+Help2:	call	eprint
+	db	CR,LF
+	db	'Reports:  zero-length files, duplicate directory entries,',CR,LF
+	db	'  user numbers greater than 31, extent numbers greater than',CR,LF
+	db	'  31, record counts greater than 128, filenames with illegal',CR,LF
+	db	'  characters, allocation groups assigned to multiple files,',CR,LF
+	db	'  and allocation groups assigned twice to the same file.'
+	db	0
+	xor	a
+	jp	Exit
+;
+; Select the (0-relative) sector number in BC
+;
+SetSec:	ld	de,(SecTbl)	; point to translation table
+	ld	a,SecTrn	; let the BIOS translate the sector
+	call	bios
+	ld	a,(SPT+1)	; if less than 256 sectors per track
+	or	a
+	jr	nz,GStSec
+	ld	h,a		; zero the high-order byte of the sector #
+GStSec:	ld	b,h		; put the translated sector # into BC
+	ld	c,l
+	ld	a,BStSec	; execute BIOS call
+	jp	bios
+;
+	DSEG
+;
+; Uninitialized data . . .
+;
+DirBuf:	ds	2		; address of directory buffer
+MaxDir:	ds	2		; max # of entries readable from disk
+RDest:	ds	2		; destination pointer for directory copy
+DirSec:	ds	2		; # of sectors in directory
+SecCnt:	ds	2		; sector counter for directory read
+CurTrk:	ds	2		; current track for read
+SecTbl:	ds	2		; address of sector translation table
+; Loop counters for the various routines
+EntSec:	ds	1		; entries in each sector (3 or 4)
+ii:	ds	2		; At entry to sort, = # directory entries; 
+				; general loop counter for other routines
+jj:	ds	2		; inner loop for AChek
+; The following values are initialized as a block to save space, so don't
+; move them around without looking at the initialization code at FlInit.
+Errors:	ds	1		; non-zero if error encountered
+DirAct:	ds	2		; # of active directory entries
+CurSec:	ds	2		; current sector for read
+ZCnt:	ds	1		; count of zero-length files
+; Directory entry pointers
+ThisDr:	ds	2
+ThatDr:	ds	2
+NMap:	ds	2		; # entries in allocation map - 8 or 16
+; Sort variables
+SRecLn:	ds	2
+SrtAdr:	ds	2
+SortV1:	ds	2
+SortV2:	ds	2
+SortV3:	ds	2
+SortV4:	ds	2
+SRecNm:	ds	2
+; Disk parameter block is copied here from CP/M
+Dpb	equ	$
+SPT:	ds	2		; not used
+BSH:	ds	1		; not used
+BLM:	ds	1		; not used
+EXM:	ds	1		; not used
+DSM:	ds	2		; not used
+DRM:	ds	2		; not used
+AL0:	ds	1		; not used
+AL1:	ds	1		; not used
+CKS:	ds	2		; not used
+SysTrk:	ds	2
+DpbLen	equ	$-Dpb
+; Stack
+	ds	50
+Stack:	ds	2
+;
+	END
+

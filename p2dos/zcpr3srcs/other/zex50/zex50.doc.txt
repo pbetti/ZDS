@@ -1,0 +1,335 @@
+    ZEX 5.0 LANGUAGE DOC -- revised from tcj38bmm -- 10/8/89
+
+	   by Bridger Mitchell, Plu*Perfect Systems
+
+
+Requirements.
+
+Z-System (NZ-COM, Z3PLUS, or ZCPR3.x) with extended external
+environment.  NZ-COM and Z3PLUS automatically have extended environments;
+earlier ZCPR systems can be upgraded to have one by using JetLDR to load
+the environment descriptor.
+
+ZEX (and most other RSXs) may be incompatible with a few RSXs that
+do not use the standard Plu*Perfect Systems RSX header and conform to
+the standards for interfacing an RSX to the host system.
+
+GOTO version 1.4 is required to recognize labels in ZEX 5.0.
+
+
+Hints.
+
+If you have difficulty terminating ZEX, run REMOVE.
+
+Remember to quote a literal '$' -- use "$$".
+It's a good idea to quote a literal '<' -- use "$<".
+
+
+.h1 The ZEX Language
+
+The ZEX script consists of lines of ascii text, each terminated by a
+<CR><LF> pair.  You can create the script with a text editor in ascii
+(non-document) mode.  For short, one-off uses, just type the lines
+into ZEX when prompted.
+
+A number of reserved words, called _directives_, control the various
+features.  Each directive begins and ends with the verticule character
+'|'.  The directives may be entered in upper, lower, or mixed case; I
+use uppercase here to make them stand out.  All script input that is
+to be sent to a program begins with a '<' character in the first
+column; all other lines are sent to the command processor or, when
+specifically directed, are messages sent directly to the console
+output.
+
+.h2 Command-processor input:
+
+ - is any line of the script that doesn't begin with '<'
+ - is case-independent.
+ - spaces and tabs at the beginning of a line are ignored
+ - The end of a script line is the end of one command line.
+   Use the |JOIN| directive at the end of a script line to omit
+   the CR and continue the same command line on a second script line.
+   (The <LF> is always discarded).
+ - all whitespace immediately preceding a |JOIN|, and all characters on
+   the same line that follow the word |JOIN|, including <CR>, are discarded.
+ - use |SPACE| to precede a command with a space, or
+   to insert a space after a command and before a comment.
+ - begin each command on a new script line, optionally preceeded or followed
+   by whitespace.  Although multiple commands may appear on the same line,
+   each separated by a semicolon, this increases the chance that the Z-System
+   multiple command line buffer will overflow.
+
+.h2 Program input:
+
+ - is normally obtained from the console.
+ - begin each script line of program input with a '<' in the first column.
+ - input is case-sensitive.
+ - data from the script includes the <CR> (but not the <LF>) at the end of
+   a script line.  To omit the <CR>, use the |JOIN| directive.
+ - use |LF| for linefeed, |CRLF| for carriage-return-linefeed,
+   |TAB| for tab.
+ - if the program requests more input than is supplied in the script,
+   the remaining input is obtained from the console
+ - use |WATCHFOR string| to take further input from the console, until
+   the program sends "string" to the console output, then resume
+   input from the script
+
+
+.h2 Both:
+
+ - use |SAY| to begin text to be printed on the console, and |END SAY| to
+   terminate that text
+ - alternately, use |"|..msg..|"| to delimit a SAY message
+ - use |UNTIL X| to take further input from the console,
+   until a keyboard 'X' is entered.  The 'X' character may be any
+   character; pick one that won't be needed in entering console input.
+ - use |UNTIL| to take further input from the console,
+   until a keyboard <CR> is entered.
+
+.h2 Script Comments
+
+A double semicolon ";;" designates the beginning of a comment.  The
+two semicolons, any immediately-preceding whitespace, and all text up to
+the <CR> of that line of script are ignored.
+
+A left brace '{ in the first column designates the beginning of a
+comment field.  All text, on any number of lines, is ignored until
+the first right brace '}' is encountered.  That line is ignored, too,
+and regular input begins at the line following the '}'.
+
+
+.h2 Other Directives
+
+Within a directive, a SPACE character is optional.  Thus, |IF TRUE|
+and |IFTRUE| have the identical effect.
+
+Conditional script
+
+|IF TRUE|	do following script if command flow state is true
+|IF FALSE|	do following script if flow state is false
+|END IF|	end conditional portion of script
+|'|..msg..|'|	does: IF TRUE||SAY|..msg..|END SAY||ENDIF| 
+|IF TRUE| <a> |ELSE| <b> |END IF|     do <a> if true, do <b> if false
+
+|RING|		ring console bell
+|RING WAIT|	ring bell and wait until a <CR> is pressed
+|WAIT|		wait until a <CR> is pressed
+|PAUSE nn|	wait up to nn seconds for a keypress
+|RING PAUSE nn| wait up to nn seconds for a keypress, ring each second
+|AGAIN|		repeat the entire ZEX script
+|ABORT|		terminate the script
+
+Console output is controlled by this set of directives:
+
+|CCPCMD|   / |CCPCMD OFF|    Show/ Don't show: CCP command output
+|ZEXMSG|   / |ZEXMSG OFF|    Show/ Don't show: ZEX command prompt
+|FALSECMD| / |FALSECMD OFF|  Show/ Don't show: commands in false flow state
+|SILENCE|  / |SILENCE OFF|   Suppress/ resume: console output
+
+For each of these console-output directive words (...) the following
+synonyms are recognized: |...| or |... ON| or |... YES|, and |... NO|
+or |... OFF| or |END ...|.
+
+Special character directives:
+
+|CR|		carriage return
+|LF|		linefeed
+|CR LF|		carriage return, line feed
+|TAB|		horizontal tab
+|NUL|		binary null
+|SPACE|		space character
+|DEL|		delete (7Fh) character
+|ESC|		escape (1Bh) character
+
+.h2 Parameters
+
+ZEX (like SUBMIT) provides for formal parameters designated $0 $1 ...
+$9.  When ZEX is started with a command line such as:
+
+	A> ZEX SCRIPT1 ARG1 ARG2 ARG3
+
+then ZEX reads and compiles the SCRIPT1.ZEX file.  In the script,
+any "$0" will be replaced by "SCRIPT1", any "$1" is replaced by
+the "first" argument "ARG1", etc.
+
+The script may define "default parameters" for the values $1 ...
+$9. To do so, enter the three characters "^$n" followed (with no
+space) by the nth default parameter.  Put each default parameter
+on a separate line.  When ZEX encounters a formal parameter in
+the script, it substitutes the command-line parameter, if there
+was one on the command line, and otherwise the corresponding
+default parameter, if it was defined.
+
+.h2 Control characters
+
+You enter a control character into the script by entering a caret '^'
+followed by the control-character letter/symbol.  For example, "^A"
+will enter a Control-A (01 hex).  Control-characters may be entered in
+upper or lower case.
+
+.h2 Quotation
+
+ZEX uses a number of characters in special ways: 
+
+	$  ^  |  {  }  <  ;  <space>  <cr>
+
+Sometimes we might want to include these characters as ordinary input,
+or as output in a screen message.  For this, ZEX uses '$' as the
+_quotation character_.  (This is also called the _escape_ character,
+because it allows one to escape from the meaning reserved for a special
+character.)  "Quotation" means that the next character is to be taken
+literally; I use this term to avoid confusion with the control code 1B
+hex generated by the _escape key_.
+
+If '$' is followed by any character other than the digits from '0' to
+'9', that character is taken literally.  Thus, if we want a caret in
+the text and not a control character, we use '$^'.  If we want a '<'
+in the first column of a line that is for the command processor and
+not for program input, then we use '$<' there instead.  And don't
+forget that if we want a '$' in our script, we must use '$$'.  There
+are some cases, like '$a', where the '$' is not necessary, but it can
+always be used.
+ 
+To pass a ZEX directive to a program, or the command processor, use
+the quotation character with the verticule.  For example, to echo the
+string "|RING|", the zex script should be:
+
+		echo $|RING$|
+
+.h2 Cancelling ZEX
+
+If ZEX is configured with the "flow control" option to YES then
+ZEX will monitor the real keyboard while an application program
+is sending console output.  You can type a Control-S to halt
+output.  If you then type Control-C, ZEX will ask whether you
+wish to cancel the current application, or the entire script.
+
+If you type anything other than Control-C following a Control-S, the
+application will resume its output.
+
+.h2 Labels
+
+A line that begins with ";=" defines a label.  The GOTO (vers. 1.4)
+tool can be used to jump to that point in the script.
+
+;=LABEL1
+
+
+.h2 Some examples
+
+Figure 2 provides several examples of how the new script language
+should work.  You will note a number of differences from the current
+dialect used, for example, in Rick Charnes' article in this issue.
+And, no doubt, further improvements will emerge from your suggestions
+and the actual implementation of the new batch processor.
+
+
+		     Figure 1.  ZEX Script Examples
+
+
+ZEX SCRIPT		INPUT SOURCE/EXECUTION SEQUENCE
+
+cmd1	;;comment	The CCP receives "cmd1<cr>".  The spaces before
+		        the comment are stripped, and the <cr> at the
+			end of the line is passed to the CCP.
+			The cmd1 program gets its input from the console.
+
+cmd2 |UNTIL|		The CCP receives "cmd2 " and then gets additional
+			input from the console, including a <cr>.
+			The cmd2 program gets its input from the console.
+|SAY|ccp msg|ENDSAY|cmd3
+			When the CCP prompts for the next command,
+			"ccp msg" is printed on the console.  The CCP
+			then receives "cmd3<cr>"
+<text|JOIN|		The cmd3 program gets "textmore text<cr>new
+<more text		line of text"
+<new line of text	If the program requests more input, it comes from
+			the console.
+
+cmd4 cmd4tail		The CCP receives "cmd4 cmd4tail<cr>"
+<|UNTIL ~|text		The cmd4 program receives console input until
+			the user types a '~'.  Then the program receives
+			"text"
+			If the program requests more input, it comes
+			from the console.  If the program doesn't use all
+			of the input, it is discarded.
+
+cmd5 |UNTIL ~| tail	The CCP receives "cmd5 " and then gets additional
+			input from the console, until the user types '~'.
+			The CCP then receives " tail<cr>".
+			The program receives input from the console.
+
+|UNTIL|			The CCP receives a command line of input from the
+			console.
+			The program receives input from the console.
+
+|UNTIL|			The CCP receives a command line of input from the
+			console.
+<|SAY|message|ENDSAY|	When the program first calls for console input,
+<text			"message" is printed on the console.  Then the
+			program receives "<cr>text".
+			Additional program input is received from the console.
+
+
+cmd6			The CCP gets "cmd6<cr>"
+<|WATCHFOR string|	The cmd6 program gets input from the console, until
+<|"|message|JOIN||"|	the characters "string" appear at the console output.
+<text			Then "message" appears on the console output, and
+			the program gets "text".  Further input comes
+			from the console.
+			If "string" never appears, all of this is
+			discarded.
+
+alias1			The CCP gets "alias1<cr>".  That program, a Z-System
+			alias, puts "cmd1;cmd2" into the multiple
+			command line buffer.  The CCP then obtains "cmd1"
+			from mcl
+<|UNTIL ~|		The cmd1 program gets any input from the
+<cmd2text		console.  If a '~' is typed, it gets "cmd2text<cr>".
+
+cmd3			The CCP gets "cmd3<cr>".
+<text|JOIN|		The cmd3 program gets "text".  Further input
+			comes from the console.
+
+.h2 Summary -- ZEX Help Screen
+
+The command "ZEX //" will display this terse summary.  The current
+default values for CCPCMD, ZEXMSG, and SILENCE are shown in upper case,
+and their opposites in lower case:
+
+**  ZEX v.X.X    Syntax:  ZEX [[dir:]subfile[.typ][ parameters]  **
+$N            N-th command-line param.    '{' (col. 1) thru '}'  Comment lines  
+$$, $| ...    Becomes '$','|'...          ;;    Remainder of line is a comment
+'<' (1st char.)  Input line to program    ^X    Control-char 'X' (any char.)
+|ABORT|  Quit script if true flow state   |AGAIN|     Repeat script  
+|WAIT|   Wait until a <CR> is typed       |RING WAIT| Ring bell, wait for <CR>
+|PAUSE nn| or |RING PAUSE nn|        Wait up to nn secs. for keypress   
+
+|RING| or |BELL|     Ring console bell    
+|UNTIL X|  	     Use console input until 'X' (any char.) is typed
+|WATCHFOR string|    Use console input until "string" is output, then use script
+|JOIN|		     Omit <CR> and continue on next line
+|CR|, |LF|, |CR LF|, |NUL|, |SPACE|, |TAB|  The character(s) 
+
+|CCPCMD|   / |ccpcmd off|    Show/ Don't show: CCP command output
+|ZEXMSG|   / |zexmsg off|    Show/ Don't show: ZEX command prompt
+|FALSECMD| / |FALSECMD OFF|  Show/ Don't show: commands in false flow state
+|SILENCE|  / |silence off|   Suppress/ resume: console output
+|SAY|      / |END SAY|	     Begin/ end:       direct message to console output
+|"| = toggle |SAY|                  |'| = toggle |IF TRUE||SAY|
+|IF TRUE| or |IF FALSE| / |END IF|  Do script if true(false) flow state
+|IF TRUE| .. |ELSE| .. |END IF|     Do script per command flow state
+synonyms: |... ON| or |... YES|  /  |... NO| or |... OFF| or |END ...|
+
+
+
+				Bridger Mitchell
+				Plu*Perfect Systems
+				410 23rd St.
+				Santa Monica CA 90402
+				c/o Ladera Z-Node (213)-670-9465
+
+				October 8, 1989
+
+ntil 'X' (any char.) is typed
+|WATCHFOR string|    Use console input until "string" is o

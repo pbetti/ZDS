@@ -1,0 +1,396 @@
+	title	Init Module for	the Memory Management Unit (MMU) of yaze-ag
+	subttl	Copyright (C) 2000,2002	Andreas	Gerlich
+	page 65,132
+;
+; This file is part of yaze-ag - yet another Z80 emulator by ag.
+;
+; Copyright (C) 2002 Andreas Gerlich (Andreas.Gerlich@mathematik.uni-ulm.de)
+;
+; Yaze-ag is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free
+; Software Foundation; either version 2 of the License, or (at your
+; option) any later version.
+;
+; This program is distributed in the hope that it will be useful, but
+; WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program (see the file COPYING);
+; if not, write to the Free Software Foundation, Inc.,
+; 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+;
+
+	.z80
+
+	maclib	sysdef
+	maclib	yazebios
+
+;
+	public MMUinit
+
+	dseg	; banked
+;
+;---------------------------------------
+;
+MMUinit:
+	ld	hl,mmutabs	; Pointer to MMU-Tables
+;
+loop:	ld	a,0FFH
+	cp	a,(hl)		; ist (mmutabs) = 0FFH
+	jr	z,fin		; a=0ffh --> finish
+
+				; call yaze-bios
+	ybios	y_loadmmutab	; func: load MMUtab
+	;
+	cp	a,0ffh
+	jr	nz,loop		; a # 0ffh --> loop
+;
+fin:
+
+IF PRINT_MMU
+	ybios	y_printmmu	;print MMU-table
+ENDIF
+
+	ret
+
+;---------------------------------------
+;
+; MMU load-table
+;
+mmutabs:
+tab0:	db	0	; MMUtabelle Nummer 0
+	;
+	db	10h	; 0x10000	0 (<-- see next table why i do this)
+	db	01h	; 0x01000	1
+	db	02h	; 0x02000	2
+	db	03h	; 0x03000	3 (3000H)
+	db	04h	; ...		4
+	db	05h	;		5
+	db	06h	;		6
+	db	07h	;		7
+	db	08h	;		8
+	db	09h	;		9
+	db	0ah	;		10
+	db	0bh	;		11
+	db	0ch	;		12 (C000H)
+	db	0dh	;		13
+	db	0eh	;		14
+	db	0fh	;		15 (F000H)
+	;
+tab1:	db	1	; MMUtabelle Nummer 1
+	;
+	db	00h	; 0x00000	0 It is very important that in bank 1
+			;		  the first part begins on 00000. It's
+			;		  necessary for the SYS.COM which
+			;		  transferes the parameters absolute
+			;		  at the begin of the ram.
+	db	11h	; 0x11000	1
+	db	12h	; 0x12000	2
+	db	13h	; 0x13000	3 (3000H)
+	db	14h	; ...		4
+	db	15h	;		5
+	db	16h	;		6
+	db	17h	;		7
+	db	18h	;		8
+	db	19h	;		9
+	db	1ah	;		10
+	db	1bh	;		11
+if NOT MMUDEBUG
+	db	1ch	;		12
+	db	1dh	;		13
+	db	1eh	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+else
+	db	0ch	;		12 (C000H) <- COMMON
+	db	0dh	;		13
+	db	0eh	;		14
+	db	0fh	;		15
+endif
+	;
+tab2:	db	2	; MMUtabelle Nummer 2
+	;
+	db	20h	; 0x20000	0
+	db	21h	; 0x21000	1
+	db	22h	; 0x22000	2
+	db	23h	; 0x23000	3 (3000H)
+	db	24h	; ...		4
+	db	25h	;		5
+	db	26h	;		6
+	db	27h	;		7
+	db	28h	;		8
+	db	29h	;		9
+	db	2ah	;		10
+	db	2bh	;		11
+if NOT MMUDEBUG
+	db	2ch	;		12
+	db	2dh	;		13
+	db	2eh	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+else
+	db	0ch	;		12 (C000H) <- COMMON
+	db	0dh	;		13
+	db	0eh	;		14
+	db	0fh	;		15
+endif
+	;
+tab3:	db	3	; MMUtabelle Nummer 3
+	;
+	db	30h	; 0x30000	0
+	db	31h	; 0x31000	1
+	db	32h	; 0x32000	2
+	db	33h	; 0x33000	3 (3000H)
+	db	34h	; ...		4
+	db	35h	;		5
+	db	36h	;		6
+	db	37h	;		7
+	db	38h	;		8
+	db	39h	;		9
+	db	3ah	;		10
+	db	3bh	;		11
+if NOT MMUDEBUG
+	db	3ch	;		12
+	db	3dh	;		13
+	db	3eh	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+else
+	db	0ch	;		12 (C000H) <- COMMON
+	db	0dh	;		13
+	db	0eh	;		14
+	db	0fh	;		15
+endif
+	;
+tab4:	db	4	; MMUtabelle Nummer 4
+	;
+	db	40h	; 0x40000	0
+	db	41h	; 0x41000	1
+	db	42h	; 0x42000	2
+	db	43h	; 0x43000	3 (3000H)
+	db	44h	; ...		4
+	db	45h	;		5
+	db	46h	;		6
+	db	47h	;		7
+	db	48h	;		8
+	db	49h	;		9
+	db	4ah	;		10
+	db	4bh	;		11
+	db	4ch	;		12
+	db	4dh	;		13
+	db	4eh	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tab5:	db	5	; MMUtabelle Nummer 5
+	;
+	db	50h	; 0x50000	0
+	db	51h	; 0x51000	1
+	db	52h	; 0x52000	2
+	db	53h	; 0x53000	3 (3000H)
+	db	54h	; ...		4
+	db	55h	;		5
+	db	56h	;		6
+	db	57h	;		7
+	db	58h	;		8
+	db	59h	;		9
+	db	5ah	;		10
+	db	5bh	;		11
+	db	5ch	;		12
+	db	5dh	;		13
+	db	5eh	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tab6:	db	6	; MMUtabelle Nummer 6
+	;
+	db	6eh	; 0x6E000	0
+	db	6dh	; 0x6D000	1
+	db	6ch	; 0x6C000	2
+	db	6bh	; 0x6B000	3 (3000H)
+	db	6ah	; ...		4
+	db	69h	;		5
+	db	68h	;		6
+	db	67h	;		7
+	db	66h	;		8
+	db	65h	;		9
+	db	64h	;		10
+	db	63h	;		11
+	db	62h	;		12
+	db	61h	;		13
+	db	60h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tab7:	db	7	; MMUtabelle Nummer 7
+	;
+	db	1fh	; 0x1F000	0
+	db	2fh	; 0x2F000	1
+	db	3fh	; 0x3F000	2
+	db	4fh	; 0x4F000	3 (3000H)
+	db	5fh	; ...		4
+	db	6fh	;		5
+	db	7fh	;		6
+	db	77h	;		7
+	db	76h	;		8
+	db	75h	;		9
+	db	74h	;		10
+	db	73h	;		11
+	db	72h	;		12
+	db	71h	;		13
+	db	70h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tab8:	db	8	; MMUtabelle Nummer 8
+	;
+	db	8eh	; 0x8E000	0
+	db	8dh	; 0x8D000	1
+	db	8ch	; 0x8C000	2
+	db	8bh	; 0x8B000	3 (3000H)
+	db	8ah	; ...		4
+	db	89h	;		5
+	db	88h	;		6
+	db	87h	;		7
+	db	86h	;		8
+	db	85h	;		9
+	db	84h	;		10
+	db	83h	;		11
+	db	82h	;		12
+	db	81h	;		13
+	db	80h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tab9:	db	9	; MMUtabelle Nummer 9
+	;
+	db	9eh	; 0x9E000	0
+	db	9dh	; 0x9D000	1
+	db	9ch	; 0x9C000	2
+	db	9bh	; 0x9B000	3 (3000H)
+	db	9ah	; ...		4
+	db	99h	;		5
+	db	98h	;		6
+	db	97h	;		7
+	db	96h	;		8
+	db	95h	;		9
+	db	94h	;		10
+	db	93h	;		11
+	db	92h	;		12
+	db	91h	;		13
+	db	90h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tab10:	db	10	; MMUtabelle Nummer 10
+	;
+	db	0aeh	; 0xAE000	0
+	db	0adh	; 0xAD000	1
+	db	0ach	; 0xAC000	2
+	db	0abh	; 0xAB000	3 (3000H)
+	db	0aah	; ...		4
+	db	0a9h	;		5
+	db	0a8h	;		6
+	db	0a7h	;		7
+	db	0a6h	;		8
+	db	0a5h	;		9
+	db	0a4h	;		10
+	db	0a3h	;		11
+	db	0a2h	;		12
+	db	0a1h	;		13
+	db	0a0h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tabB:	db	11	; MMUtabelle Nummer 11
+	;
+	db	0beh	; 0xBE000	0
+	db	0bdh	; 0xBD000	1
+	db	0bch	; 0xBC000	2
+	db	0bbh	; 0xBB000	3 (3000H)
+	db	0bah	; ...		4
+	db	0b9h	;		5
+	db	0b8h	;		6
+	db	0b7h	;		7
+	db	0b6h	;		8
+	db	0b5h	;		9
+	db	0b4h	;		10
+	db	0b3h	;		11
+	db	0b2h	;		12
+	db	0b1h	;		13
+	db	0b0h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tabC:	db	12	; MMUtabelle Nummer 12
+	;
+	db	0ceh	; 0xCE000	0
+	db	0cdh	; 0xCD000	1
+	db	0cch	; 0xCC000	2
+	db	0cbh	; 0xCB000	3 (3000H)
+	db	0cah	; ...		4
+	db	0c9h	;		5
+	db	0c8h	;		6
+	db	0c7h	;		7
+	db	0c6h	;		8
+	db	0c5h	;		9
+	db	0c4h	;		10
+	db	0c3h	;		11
+	db	0c2h	;		12
+	db	0c1h	;		13
+	db	0c0h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tabD:	db	13	; MMUtabelle Nummer 13
+	;
+	db	0deh	; 0xDE000	0
+	db	0ddh	; 0xDD000	1
+	db	0dch	; 0xDC000	2
+	db	0dbh	; 0xDB000	3 (3000H)
+	db	0dah	; ...		4
+	db	0d9h	;		5
+	db	0d8h	;		6
+	db	0d7h	;		7
+	db	0d6h	;		8
+	db	0d5h	;		9
+	db	0d4h	;		10
+	db	0d3h	;		11
+	db	0d2h	;		12
+	db	0d1h	;		13
+	db	0d0h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tabE:	db	14	; MMUtabelle Nummer 14
+	;
+	db	0eeh	; 0xEE000	0
+	db	0edh	; 0xED000	1
+	db	0ech	; 0xEC000	2
+	db	0ebh	; 0xEB000	3 (3000H)
+	db	0eah	; ...		4
+	db	0e9h	;		5
+	db	0e8h	;		6
+	db	0e7h	;		7
+	db	0e6h	;		8
+	db	0e5h	;		9
+	db	0e4h	;		10
+	db	0e3h	;		11
+	db	0e2h	;		12
+	db	0e1h	;		13
+	db	0e0h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+tabF:	db	15	; MMUtabelle Nummer 15
+	;
+	db	0feh	; 0xFE000	0
+	db	0fdh	; 0xFD000	1
+	db	0fch	; 0xFC000	2
+	db	0fbh	; 0xFB000	3 (3000H)
+	db	0fah	; ...		4
+	db	0f9h	;		5
+	db	0f8h	;		6
+	db	0f7h	;		7
+	db	0f6h	;		8
+	db	0f5h	;		9
+	db	0f4h	;		10
+	db	0f3h	;		11
+	db	0f2h	;		12
+	db	0f1h	;		13
+	db	0f0h	;		14
+	db	0fh	;		15 (F000H) <- COMMON
+	;
+
+	db	0ffh	; the end
+
+	end
+

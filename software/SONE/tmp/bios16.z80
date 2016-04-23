@@ -1,0 +1,826 @@
+;
+;  MDZ80 V0.9.0 Z80 Disassembly of bios16.bin
+;  2015/04/25 13:04
+;
+; Select which BIOS you want to mimic
+	MIMV16	equ	0		; bios 16 hdd BASF 6182
+	MIMV18	equ	1		; bios 16 hdd BASF 6188
+;
+	;
+	;************************************************************
+	;*               UNIVERSAL BASIC I/O SYSTEM (BIOS)          *
+	;*                           Vers 1.6                       *
+	;*                                                          *
+	;*                                                          *
+	;*   A,B = 5 inc. 32,10 sec/trk  256 byte/sec               *
+	;*   C,D = 5 inc. 32,10 sec/trk  256 byte/sec               *
+	;*   E,F = 5 inc.    17 sec/trk  128 byte/sec               *
+	;*                                                          *
+	;*                                                          *
+	;*   nota: aggiungere diagnoststica errori in fdd i/o       *
+	;*                                                          *
+	;*                                                          *
+	;************************************************************
+	;
+	if MIMV16
+	title   Bios 1.6 for NE CP/M 2.2 with Hard Disk BASF 6182
+	else
+	title   Bios 1.8 for NE CP/M 2.2 with Hard Disk BASF 6188
+	endif
+; 	subttl  Copyright Studio Lg, Genova - Last rev 15/08/1984 09:06
+	;
+	; Programmers Martino Stefano & Gallerani Paolo
+	;
+	; Disassembly/retype Piergiorgio Betti & Pino Giaquinto 2015/04/25
+	;
+	msize	equ	60	; memory size in kb
+	;
+	vers	equ	('H'*256)+'S'	; Single side version
+	if MIMV16
+	rev	equ	16		; CBIOS revision number
+	else
+	rev	equ	18		; CBIOS revision number
+	endif
+	;
+	;
+	;	Boolean scalar constants
+	false	equ	0
+	true	equ	not false
+	;
+	;
+	;***    I/O devices     ****
+	TTY	equ	01b	; CON:
+	RDR	equ	false	; undef
+	PUN	equ	false	; undef
+	LST	equ	10b	; LST:
+	;
+	; Default value for i/o byte
+	DftI.O	equ	(LST shl 6) or (RDR shl 4) or (PUN shl 2) or TTY
+	;
+	;************************************************************
+	;*                                                          *
+	;*                   ASCII EQUIVALENTS                      *
+	;*                                                          *
+	;************************************************************
+	;
+	bell	equ	'G' - '@'	; bell
+	backsp	equ	'H' - '@'	; backspace char.
+	tab	equ	'I' - '@'	; tab char.
+	lf	equ	'J' - '@'	; line feed
+	ffeed	equ	'L' - '@'	; form feed
+	cr	equ	'M' - '@'	; carriage return
+	pfx	equ	'S' - '@'	; attribute prefix
+	rever	equ	'H'      	; reverse on
+	flash	equ	'C'      	; flash on
+	norm	equ	'@'      	; normal
+	spc	equ	' '      	; space
+	endmsg	equ	'$'      	; end of print message
+	;
+	;************************************************************
+	;*                                                          *
+	;*                 Rom routines adrdress                    *
+	;*                                                          *
+	;************************************************************
+	;
+	rom	equ	0F000H		; rom starting address
+	cin     equ	rom+3		; console input
+	cout    equ	rom+6		; console output
+	csts    equ	rom+9		; console status
+	lout    equ	rom+12		; printer output
+	lsts	equ	rom+15		; printer status
+	fdios	equ	rom+18		; fdd i/o 128 byte
+	fdiod	equ	rom+21		; fdd i/o 256 byte
+	wdini	equ	rom+24		; wdd initialization
+	wdio	equ	rom+27		; wdd i/o 256 byte
+	strout	equ	rom+30		; print string DE until $
+	print	equ	strout		; sinonime
+	bootrom	equ	rom+33		; load BIOS and go to wboote
+	printat	equ	rom+36		; print string -> DE at -> HL cursor
+	movcurs	equ	rom+39		; move cursor at -> HL
+	vidinit	equ	rom+42		; initialize video
+	CompFlg	equ	rom+45		; Version number
+	;
+	;************************************************************
+	;*                                                          *
+	;*                    System Constants                      *
+	;*                                                          *
+	;************************************************************
+	;
+	cmsize	equ	msize-1		; cp/m size in kb
+	;
+	; is msize-1 to leave room for disk buffers as drived from a comment
+	; in original bios asm list
+	;
+	;       "bias" is address offset from 3400h for memory systems
+	;       than 16k (referred to as"b" throughout the text)
+	;
+	bias	equ     (cmsize-20)*1024
+	ccp	equ     3400h+bias      ; base of ccp
+	bdos	equ     ccp+0806h       ; base of bdos
+	bios	equ     ccp+1600h       ; base of bios
+	;
+	;
+	secsiz	equ	256		; sector size
+	cpml	equ	bios-ccp	; lenght of cp/m system (ccp+bdos)
+	biosl	equ	0600H		; lenght of bios
+	cpmsiz	equ	cpml/secsiz	; lenght (in sectors) of cp/m system
+	biossiz	equ	biosl/secsiz	; lenght (in sectors) of bios
+	iobyte	equ	0003H		; Intel i/o byte
+	CurDsk	equ	0004H		; cp/m logical disk number
+	stack	equ	0080H		; stack
+	defdma	equ	0080H		; dp/m default dma address
+	stack1	equ	1000H		; ipl stack
+	;
+	;************************************************************
+	;*                                                          *
+	;*                      Disk Constants                      *
+	;*                                                          *
+	;************************************************************
+	;
+	fddsiz	equ	2		; fdd num on system (10 sec/trk 256 bytes)
+	wddsiz	equ	2		; wdd num on system (32 sec/trk 256 bytes)
+	extfds	equ	2		; fds num on system (17 sec/trk 128 bytes)
+	maxdsk	equ	fddsiz+wddsiz+extfds ; max disk on system
+	;
+	fddsec	equ	10		; fdd sec/trk
+	wddsec	equ	32		; wdd sec/trk
+	;
+	cpmblk	equ	secsiz/128	; r/w buffer size
+	secmsk	equ	cpmblk-1	; sector mask
+	fddspt	equ	fddsec*cpmblk	; cp/m fdd sec/trk
+	wddspt	equ	wddsec*cpmblk	; cp/m wdd sec/trk
+	;
+	;************************************************************
+	;*                                                          *
+	;*                BDOS constants on write                   *
+	;*                                                          *
+	;************************************************************
+	;
+	wrall	equ	0		; write to allocated
+	wrdir	equ	1		; write to directory
+	wrual	equ	2		; write to unallocated
+	;
+	;
+	; *********** IPL section skipped for now ************
+	;
+	;
+
+; 	ORG	$E600
+	phase	bios
+;
+	JP	BOOT		; E600  C3 17 E7	C.g
+wboote:	JP	WBOOT		; E603  C3 1D E7	C.g
+	JP	CONST		; E606  C3 DC E7	C\g
+	JP	CONIN		; E609  C3 E8 E7	Chg
+	JP	CONOUT		; E60C  C3 F9 E7	Cyg
+	JP	LISTD		; E60F  C3 0E E8	C.h
+	JP	PUNCH		; E612  C3 2A E8	C*h
+	JP	READER		; E615  C3 2B E8	C+h
+	JP	HOME		; E618  C3 5D E8	C]h
+	JP	SELDSK		; E61B  C3 3C E8	C<h
+	JP	SETTRK		; E61E  C3 60 E8	C`h
+	JP	SETSEC		; E621  C3 71 E8	Cqh
+	JP	SETDMA		; E624  C3 76 E8	Cvh
+	JP	READ		; E627  C3 7B E8	C{h
+	JP	WRITE		; E62A  C3 80 E8	C.h
+	JP	LISTST		; E62D  C3 1C E8	C.h
+	JP	SECTRAN		; E630  C3 65 E8	Ceh
+;
+	;
+	;************************************************************
+	;* D P B T A B L E                                          *
+	;*                                                          *
+	;*       W/F  Size  B/S  S/T Trk  Hds  R/T   Capacity       *
+	;*  -    --- ------ ---  --  ---  ---  ---  ----------      *
+	;*  A: = wdd   5"   256  32  153   2    2   2432 Kbyte      *
+	;*  B: = wdd   5"   256  32  153   2    0   2448 Kbyte      *
+	;*  C: = fdd   5"   256  10   40   1    3     92 Kbyte      *
+	;*  D: = fdd   5"   256  10   40   1    3     92 Kbyte      *
+	;*  E: = fdd   5"   128  17   40   1    3     78 Kbyte      *
+	;*  F: = fdd   5"   128  17   40   1    3     78 Kbyte      *
+	;*                                                          *
+	;************************************************************
+	;
+	dpbase	equ	$	; base of DPH
+	;
+dpe0:
+	defw	xlt0, 0000h	; no translate table
+	defw	0000h, 0000h	; scratch area
+	defw	dirbuf, dpb0	; dir buff, parm block
+	defw	csv0, alv0	; check, alloc vector
+dpe1:
+	defw	xlt0, 0000h	; no translate table
+	defw	0000h, 0000h	; scratch area
+	defw	dirbuf, dpb01	; dir buff, parm block
+	defw	csv1, alv1	; check, alloc vector
+	;
+	; dpe2,dpe3 = disk parameter header for floppy disk (256 byte/sec)
+dpe2:	; 256 byte/sec - Single Side
+	defw	xlt1, 0000h	; translate table
+	defw	0000h, 0000h	; scratch area
+	defw	dirbuf,dpb1	; dir buff,parm block
+	defw	csv2,alv2	; check,alloc vector
+	;
+	;
+dpe3:	; 256 byte/sec - Single Side
+	defw	xlt1,0000h	; translate table
+	defw	0000h,0000h	; scratch area
+	defw	dirbuf,dpb12	; dir buff,parm block
+	defw	csv3,alv3	; check,alloc vector
+;
+	; dpe4,dpe5 = disk parameter header for floppy disk (128 byte/sec)
+dpe4:	; 128 byte/sec - Single Side
+	defw	xlt2,0000h	; translate table
+	defw	0000h,0000h	; scratch area
+	defw	dirbuf,dpb2	; dir buff,parm block
+	defw	csv4,alv4	; check,alloc vector
+	;
+dpe5:	; 128 byte/sec - Single Side
+	defw	xlt2,0000h	; translate table
+	defw	0000h,0000h	; scratch area
+	defw	dirbuf,dpb2	; dir buff,parm block
+	defw	csv5,alv5	; check,alloc vector
+	;
+	xlt0	equ	0
+	;
+	xlt1:
+		; sector translate table for floppy disk (256 byte/sec)
+	defb	1,2,13,14,5,6,17,18,9,10,3,4,15,16,7,8,19,20,11,12
+	defb	21,22,33,34,25,26,37,38,29,30,23,24,35,36,27,28,39,40,31,32
+	;
+	xlt2:
+		; sector translate table for floppy disk (128 byte/sec)
+	defb	1,7,13,2,8,14,3,9,15
+	defb	4,10,16,5,11,17,6,12
+
+	;
+	;
+	dpb0:
+	if MIMV18
+	; ********** 6188 *********** bios 1.8
+	; disk parameter block for hard disk 0 (256 byte/sector 1 res. trk)
+	defw	128		; SPT (sec/trk) (32 sect * (256/128) * 2 side)
+	defb	5		; BSH
+	defb	31		; BLM
+	defb	1		; EXM (extent mask)
+	defw	1435		; DSM (disk size in BLS units - 1) (5740 kbyte)
+	defw	1023		; DRM (directory elements - 1)
+	defb	11111111b	; AL0
+	defb	00000000b	; AL1
+	defw	0		; CKS disk fixed, no dir. check vector
+	defw	1		; OFF (track offset)
+	alv0siz	equ	1435
+	;
+	else
+	; ********** 6182 *********** bios 1.6
+	defw	128		; SPT (sec/trk) (32 sect * (256/128) * 2 side)
+	defb	5		; BSH
+	defb	31		; BLM
+	defb	1		; EXM (extent mask)
+	defw	607		; DSM (disk size in BLS units - 1) (2432 kbyte)
+	defw	1023		; DRM (directory elements - 1)
+	defb	11111111b	; AL0
+	defb	00000000b	; AL1
+	defw	0		; CKS disk fixed, no dir. check vector
+	defw	1		; OFF (track offset)
+	alv0siz	equ	607
+	;
+	endif
+	;
+	dpb01:
+	if MIMV18
+	; ********** 6188 *********** bios 1.8
+	; disk parameter block for hard disk 1 (256 byte/sector no res. trk)
+	defw	128		; SPT (sec/trk) (32 sect * (256/128) * 2 side)
+	defb	5		; BSH
+	defb	31		; BLM
+	defb	1		; EXM (extent mask)
+	defw	1439		; DSM (disk size in BLS units - 1) (5756 kbyte)
+	defw	1023		; DRM (directory elements - 1)
+	defb	11111111b	; AL0
+	defb	00000000b	; AL1
+	defw	0		; CKS disk fixed, no dir. check vector
+	defw	0		; OFF (track offset)
+	alv1siz	equ	1439
+	;
+	else
+	; ********** 6182 *********** bios 1.6
+	defw	128		; SPT (sec/trk) (32 sect * (256/128) * 2 side)
+	defb	5		; BSH
+	defb	31		; BLM
+	defb	1		; EXM (extent mask)
+	defw	611		; DSM (disk size in BLS units - 1) (2448 kbyte)
+	defw	1023		; DRM (directory elements - 1)
+	defb	11111111b	; AL0
+	defb	00000000b	; AL1
+	defw	0		; CKS disk fixed, no dir. check vector
+	defw	0		; OFF (track offset)
+	alv1siz	equ	611
+	;
+	endif
+	;
+	dpb1:
+		; disk parameter block for floppy disk
+		; 256 byte/sector - Single Side
+	defw	20		; SPT (sec/trk) (10 sect * (256/128) * 1 side)
+	defb	4		; BSH
+	defb	15		; BLM
+	defb	1		; EXM (extent mask)
+	defw	45		; DSM (disk size in BLS unit) (90 kbyte)
+	defw	63		; DRM (directory elements - 1)
+	defb	10000000b	; AL0
+	defb	00000000b	; AL1
+	defw	16		; CKS = (DRM + 1)/4 (size dir. check vect.)
+	defw	3		; OFF (track offset)
+	;
+	dpb12:
+	; **********  bios 1.8
+		; disk parameter block for floppy disk
+		; 256 byte/sector - Single Side
+; 	defw	40		; SPT (sec/trk) (10 sect * (256/128))
+; 	defb	4		; BSH
+; 	defb	15		; BLM
+; 	defb	1		; EXM (extent mask)
+; 	defw	94		; DSM (disk size in BLS unit) (90 kbyte)
+; 	defw	63		; DRM (directory elements - 1)
+; 	defb	10000000b	; AL0
+; 	defb	00000000b	; AL1
+; 	defw	16		; CKS = (DRM + 1)/4 (size dir. check vect.)
+; 	defw	2		; OFF (track offset)
+	;
+	; **********  bios 1.6
+		; disk parameter block for floppy disk
+		; 256 byte/sector - Single Side
+	defw	20		; SPT (sec/trk) (10 sect * (256/128) * 1 side)
+	defb	4		; BSH
+	defb	15		; BLM
+	defb	1		; EXM (extent mask)
+	defw	45		; DSM (disk size in BLS unit) (90 kbyte)
+	defw	63		; DRM (directory elements - 1)
+	defb	10000000b	; AL0
+	defb	00000000b	; AL1
+	defw	16		; CKS = (DRM + 1)/4 (size dir. check vect.)
+	defw	3		; OFF (track offset)
+	;
+	dpb2:
+		; disk parameter block for floppy disk (128 byte/sector)
+	defw	17		; SPT (SEC/trk)
+	defb	3		; BSH
+	defb	7		; BLM
+	defb	0		; EXM (extent mask)
+	defw	77		; DSM (disk size in BLS unit) (77 kbyte)
+	defw	31		; DRM (directory elements - 1)
+	defb	10000000b	; AL0
+	defb	00000000b	; AL1
+	defw	8		; CKS = (DRM + 1)/4 (size dir. check vect.)
+	defw	3		; OFF (track offset)
+	;
+	;
+BOOT:	LD	A,(sysflag)
+	JP	BOOTROM
+;
+WBOOT:	LD	SP,stack
+	CALL	WrtPng
+	LD	HL,CurDsk
+	LD	A,(HL)
+	AND	$0F
+	CP	maxdsk
+	JR	C,wb_1
+wb_0:
+	LD	(HL),$00
+wb_1:	LD	HL,0
+	LD	(PrePhy),HL
+	LD	H,$02
+	LD	(PreTrk+1),HL
+	LD	H,cpmsiz
+	LD	(PreR.W),HL
+	LD	HL,ccp
+	LD	(PreDma),HL
+	LD	A,(sysflag)
+	OR	A
+	JR	NZ,fd_wb
+wd_wb:
+	LD	HL,PrePhy
+	CALL	WDIO
+	OR	A
+	JR	NZ,exboot
+	JR	syschk
+;
+fd_wb:	LD	B,cpmsiz
+	LD	DE,wbxlt+1
+fd_wb.3:
+	PUSH	BC
+	PUSH	DE
+	LD	A,(DE)
+	LD	(PreSec),A
+	LD	HL,PrePhy
+	CALL	FDIOD
+	POP	DE
+	POP	BC
+	OR	A
+	JR	NZ,exboot
+	LD	HL,PreDma+1
+	INC	(HL)
+	DEC	B
+	JR	Z,syschk
+	INC	DE
+	LD	A,E
+	CP	low (wbxlt+fddsec)
+	JR	NZ,fd_wb.3
+	LD	HL,PreTrk
+	INC	(HL)
+	LD	DE,wbxlt
+	JR	fd_wb.3
+;
+syschk:	LD	A,(ccp+2)
+	CP	high (ccp+35CH)
+	JR	NZ,exboot
+	LD	A,$C3
+	LD	($0000),A
+	LD	HL,wboote
+	LD	($0001),HL
+	LD	($0005),A
+	LD	HL,bdos
+	LD	($0006),HL
+	LD	A,$FF
+	LD	(PreDsk),A
+	LD	HL,defbuf
+	LD	(PreDma),HL
+	LD	BC,defdma
+	CALL	SETDMA
+	LD	A,(CurDsk)
+	LD	C,A
+	JP	ccp
+;
+	DEFS	20
+wbxlt:	DEFB	1,7,3,9,5,2,8,4,10,6
+;
+exboot:
+exbot1:
+	LD	DE,nosysmsg
+	CALL	msgcr
+	JP	wb_1
+;
+CONST:	LD	A,(IOBYTE)
+	AND	$03
+	CP	$02
+	JP	C,CSTS
+	JR	notdev
+;
+CONIN:	LD	A,(IOBYTE)
+	AND	$03
+	CP	$02
+	JR	NC,notdev
+	PUSH	IX
+	CALL	CIN
+	POP	IX
+	RET
+;
+CONOUT:	LD	A,(IOBYTE)
+	AND	$03
+	CP	$02
+	JR	NC,notdev
+	PUSH	IX
+	PUSH	IY
+	CALL	COUT
+	POP	IY
+	POP	IX
+	RET
+;
+LISTD:	LD	A,(IOBYTE)
+	AND	$C0
+	CP	$80
+	JP	C,COUT
+	JP	Z,LOUT
+	RET
+;
+LISTST:	LD	A,(IOBYTE)
+	AND	$C0
+	CP	$80
+	JP	C,CSTS
+	JP	Z,LSTS
+	RET
+;
+PUNCH:	RET
+;
+READER:	LD	A,$1A
+	RET
+;
+notdev:	LD	A,DftI.O
+	LD	(IOBYTE),A
+	LD	DE,ndevmsg
+	CALL	PRINT
+	JP	WBOOT
+;
+SELDSK:	LD	HL,0
+	LD	A,C
+	CP	maxdsk
+	RET	NC
+	LD	A,(sysflag)
+	OR	A
+	LD	A,C
+	JR	Z,SDsk.1
+	CP	wddsiz+fddsiz
+	JR	NC,SDsk.1
+	XOR	$02
+SDsk.1:	LD	(LogDsk),A
+	LD	L,A
+	ADD	HL,HL
+	ADD	HL,HL
+	ADD	HL,HL
+	ADD	HL,HL
+	LD	DE,dpbase
+	ADD	HL,DE
+	RET
+;
+HOME:	LD	BC,0
+SETTRK:	LD	(LogTrk),BC
+	RET
+;
+SECTRAN:
+	EX	DE,HL
+	LD	A,L
+	OR	H
+	ADD	HL,BC
+	JR	Z,STrn_5
+	LD	L,(HL)
+	LD	H,$00
+	RET
+;
+STrn_5:	INC	L
+	RET
+;
+SETSEC:	LD	A,C
+	LD	(LogSec),A
+	RET
+;
+SETDMA:	LD	(LogDMA),BC
+	RET
+;
+READ:	XOR	A
+	LD	C,wrual
+	JR	rw00
+;
+WRITE:	LD	A,$01
+rw00:	LD	(LogR.W),A
+	LD	DE,LogDsk
+	LD	A,(DE)
+	CP	wddsiz+fddsiz
+	JR	C,RW256
+RW128:
+	AND	$01
+	LD	(PhyDsk),A
+	CALL	WrtPng
+	LD	A,(LogSec)
+	LD	(PhySec),A
+RW128.1:
+	LD	HL,PhyDsk
+	CALL	FDIOS
+	LD	HL,PreDsk
+	LD	(HL),$FF
+	OR	A
+	RET	Z
+	LD	DE,ioerrmsg
+	CALL	PRINT
+	CALL	CIN
+	CP	cr
+	JR	Z,RW128.1
+	CP	'C' - '@'
+	JP	Z,WBOOT
+	LD	A,$01
+	OR	A
+	RET
+;
+RW256:	LD	H,wddspt
+	CP	wddsiz
+	JR	C,R256.1
+	LD	H,fddspt
+R256.1:	LD	A,C
+	LD	(WrType),A
+	DEC	DE
+	LD	A,(DE)
+	DEC	A
+	LD	L,$00
+R256.2:	CP	H
+	JR	C,R256.3
+	INC	L
+	SUB	H
+	JR	R256.2
+;
+R256.3:	OR	A
+	RRA
+	INC	A
+	LD	(PhySec),A
+	SLA	L
+	SLA	L
+	SLA	L
+	SLA	L
+	INC	DE
+	LD	A,(DE)
+	AND	$01
+	OR	L
+	LD	(PhyDsk),A
+	;
+	LD	B,$05
+	LD	HL,PreDsk
+rw01:	LD	A,(DE)
+	CP	(HL)
+	JR	NZ,wtchk
+	INC	HL
+	INC	DE
+	DJNZ	rw01
+	JR	match
+;
+wtchk:	CALL	WrtPng
+	RET	NZ
+	LD	BC,5
+	LD	HL,LogDsk
+	LD	DE,PreDsk
+	LDIR
+	CALL	diskrd
+	OR	A
+	RET	NZ
+match:	LD	A,(LogSec)
+	DEC	A
+	AND	secmsk
+	LD	H,A
+	LD	L,$00
+	SRL	H
+	RR	L
+	LD	DE,defbuf
+	ADD	HL,DE
+	LD	DE,(LogDMA)
+	LD	BC,stack
+	LD	A,(LogR.W)
+	OR	A
+	JR	Z,rwbuf
+	LD	(WrtFlg),A
+	EX	DE,HL
+rwbuf:	LDIR
+	LD	A,(WrType)
+	CP	wrdir
+	LD	A,$00
+	CALL	Z,WrtPng
+	OR	A
+	RET
+;
+WrtPng:	LD	HL,WrtFlg
+	LD	A,(HL)
+	LD	(HL),$00
+	OR	A
+	RET	Z
+	CALL	diskwt
+	RET
+;
+diskrd:	XOR	A
+	JR	rdwt
+;
+diskwt:	LD	A,$01
+rdwt:	LD	(PreR.W),A
+rdwt0:	LD	HL,PrePhy
+	LD	A,(PreDsk)
+	CP	wddsiz
+	JR	NC,fdrdwt
+	LD	A,$01
+	LD	(PreBlk),A
+	CALL	WDIO
+	OR	A
+	RET	Z
+	CALL	SendErr
+NoBuff:
+rdwterr:
+	LD	A,$FF
+	LD	(PreDsk),A
+	AND	$01
+	RET
+;
+fdrw1:
+fdrdwt:
+	CALL	FDIOD
+	OR	A
+	RET	Z
+	LD	DE,ioerrmsg
+	CALL	PRINT
+	CALL	CIN
+	CP	cr
+	JR	Z,rdwt0
+	CP	'C' - '@'
+	JR	NZ,NoBuff
+	JP	wboote
+;
+SendErr:
+	PUSH	AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	CALL	HxChar
+	LD	(ErrHig),A
+	POP	AF
+	CALL	HxChar
+	LD	(ErrLow),A
+	LD	DE,ErrMsg
+	CALL	PRINT
+	RET
+;
+HxChar:	AND	$0F
+	ADD	A,$90
+	DAA
+	ADC	A,'@'
+	DAA
+	RET
+;
+msgcr:	CALL	PRINT
+waitcr:	CALL	CIN
+	CP	cr
+	JR	NZ,waitcr
+	RET
+;
+nosysmsg:
+	DEFB	$0D,$0A,$07
+	DEFB	'Set system diskette in disk A,'
+	DEFB	$0D,$0A
+	DEFB	'ok push return. $'
+ErrMsg:	DEFB	$0D,$0A,$07
+	DEFB	'Error #'
+ErrHig:	DEFB	$30
+ErrLow:	DEFB	$30
+	DEFB	' - $'
+ioerrmsg:
+	DEFB	$0D,$0A,$07
+	DEFB	'DISK I/O ERROR'
+	DEFB	$0D,$0A
+	DEFB	'<RETURN> retry, ^C abort, any ke'
+	DEFB	'y to continue$'
+ndevmsg:
+	DEFB	$0D,$0A,$07
+	DEFB	'.NO Device.'
+	DEFB	$0D,$0A
+	DEFB	'$'
+sysflag:
+	DEFB	$00
+vidareas:
+	DEFS	16
+LogSec:	DEFB	$01
+LogDsk:	DEFB	$00
+PhyDsk:	DEFB	$00
+LogTrk:	DEFB	$00,$00
+PhySec:	DEFB	$01
+LogDMA:	DEFB	$80,$00
+LogR.W:	DEFB	$00
+PreDsk:	DEFB	$FF
+PrePhy:	DEFB	$00
+PreTrk:	DEFB	$00
+	DEFB	$00
+PreSec:	DEFB	$01
+PreDma:	DEFW	defbuf
+
+PreR.W:	DEFB	$00
+PreBlk:	DEFB	$01
+WrtFlg:	DEFB	$00
+WrType:	DEFB	$01
+;
+	freeram	equ	$
+	if	freeram lt bios+600h
+	freebyt	equ	bios+600h-freeram
+	defs	freebyt
+	else
+	*** WARNING: BIOS overflow reserved space ***
+	endif
+;
+
+defbuf:	defs	secsiz
+dirbuf:	defs	128
+
+	; wdd alloc & check vectors
+	;
+alv0:	defs	((alv0siz)/8)+1		; (DSM/8)+1
+csv0:	defs	0
+	;
+alv1:	defs	((alv1siz)/8)+1		; (DSM/8)+1
+csv1:	defs	0
+	;
+	; fdd alloc & check vectors
+	;
+alv2:	defs	12
+csv2:	defs	16
+	;
+alv3:	defs	12
+csv3:	defs	16
+	;
+	; extfdd alloc & check vectors
+	;
+alv4:	defs	10
+csv4:	defs	8
+	;
+alv5:	defs	10
+csv5:	defs	8
+	;
+	fre1byt	equ	bios+600h+400h-$
+	defs	fre1byt
+	;
+	dephase
+	;
+	END
+;
+

@@ -1,0 +1,110 @@
+	TITLE	"Z3GIOX - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3GIOX.Z80 Ver 1.1 by Richard Conn
+; Date    : 29 Mar 89
+; Version : 1.2
+; Module  : Z3GIOX
+; Abstract: This module contains the routine PUTIOD which
+;	selects the specified logical and physical devices,
+;	GETION which returns a pointer to the string describing
+;	the specified device, and GETIOS which returns a pointer
+;	to the IO Package status table
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		PUTIOD, GETION, GETIOS
+
+;  External References
+
+	EXT		ENVPTR, GETIOP
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PUTIOD
+; Entry: BC = Device Map.  B = Logical Dev #, C = Physical Dev #
+; Exit :  A <> 0 and Zero Flag Reset (NZ) if OK
+;	       A = 0 and Zero Flag Set (Z) if No IOP/Error
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+PUTIOD:	PUSH	DE		; save regs
+	PUSH	BC
+	PUSH	HL
+	CALL	GETIOC		; get IOP address and check
+	JR	Z,IODRET
+	LD	DE,IODRET	; set return address
+	PUSH	DE		; ... on stack
+	INC	HL		; pt to routine
+	INC	HL
+	INC	HL
+	JP	(HL)		; "call" SELECT routine
+
+IODRET:	POP	HL		; restore regs
+IONRET:	POP	BC
+	POP	DE
+	RET			; error flags set by NAMER in IOP
+
+;===============================================================
+; NAME - GETION
+; Entry: BC = Device Map.  B = Logical Dev #, C = Physical Dev #
+; Exit : HL - Points to null-terminated string if OK
+;	  A <> 0 and Zero Flag Reset (NZ) if OK
+;	       A = 0 and Zero Flag Set (Z) if Error
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+GETION:	CALL	GETIOC		; get IOP address and check
+	RET	Z
+	PUSH	DE		; save regs
+	PUSH	BC
+	LD	DE,IONRET	; set return address
+	PUSH	DE		; ... on stack
+	LD	DE,6		; pt to routine
+	ADD	HL,DE
+	JP	(HL)		; "call" NAMER routine
+
+;===============================================================
+; NAME - GETIOS
+; Entry: - None
+; Exit : HL - Points to IO Package Status Table if found
+;	  A <> 0 and Zero Flag Reset (NZ) if Ok
+;	       A = 0 and Zero Flag Set (Z) if Error
+; Uses AF,HL
+; Special Requirements: None
+;===============================================================
+;  The Status Table structure is:
+;
+;				Number of	Current
+;		Bytes	Device	Devices		Assignment
+;		-----	------	---------	----------
+;		 0-1	 CON:	 Byte 0		  Byte 1
+;		 2-3	 RDR:	 Byte 2		  Byte 3
+;		 4-5	 PUN:	 Byte 4		  Byte 5
+;		 6-7	 LST:	 Byte 6		  Byte 7
+
+GETIOS:	CALL	GETIOC		; check for I/O
+	RET	Z
+	JP	(HL)		; run routine
+
+;.....
+;  Return the address of the IOP in HL if exists and is loaded; return
+;  A=0 and Z if error, A<>0 and NZ if OK
+
+GETIOC:	CALL	GETIOP		; get I/O Package address
+	RET	Z		; ..return if No IOP
+	LD	A,(HL)		; check for loaded I/O Package
+	OR	A
+	RET	Z		; ..return if Not Loaded
+	OR	0FFH		; Set OK status
+	RET
+
+	END
+

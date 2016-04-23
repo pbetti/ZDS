@@ -1,0 +1,1055 @@
+;
+; ZDBCFG.Z80 - JTH 12/26/90
+; (from ZCNFGCFG.SRC)
+; Revised 02/12/94 JTH
+;
+;---------------------------------------------------------
+
+vers	equ	23		;zdb version number
+suffix	equ	' '		;zdb suffix character or ' ' if none
+
+; ZDB Patch offsets from 100h
+
+ptrchk	equ	00bh		;bios printer ready check flag
+termf	equ	00ch		;data field termination character
+cfgnm	equ	00dh		;configuration file name offset
+fname	equ	016h		;datafile name offset
+
+bar	equ	027h		;bar character - bitmapped
+dot	equ	028h		;dot character - bitmapped
+
+rst1	equ	029h		;printer reset string, byte 1
+rst2	equ	rst1+1		;printer reset string, byte 2
+rst3	equ	rst1+2		;printer reset string, byte 3
+rst4	equ	rst1+3		;printer reset string, byte 4
+rst5	equ	rst1+4		;printer reset string, byte 5
+
+rin1	equ	02eh		;set printer for return address, byte 1
+rin2	equ	rin1+1		;set printer for return address, byte 2
+rin3	equ	rin1+2		;set printer for return address, byte 3
+rin4	equ	rin1+3		;set printer for return address, byte 4
+rin5	equ	rin1+4		;set printer for return address, byte 5
+rin6	equ	rin1+5		;set printer for return address, byte 6
+rin7	equ	rin1+6		;set printer for return address, byte 7
+rin8	equ	rin1+7		;set printer for return address, byte 8
+rin9	equ	rin1+8		;set printer for return address, byte 9
+rin10	equ	rin1+9		;set printer for return address, byte 10
+rin11	equ	rin1+10		;set printer for return address, byte 11
+rin12	equ	rin1+11		;set printer for return address, byte 12
+rin13	equ	rin1+12		;set printer for return address, byte 13
+
+ain1	equ	03bh		;set printer for main address, byte 1
+ain2	equ	ain1+1		;set printer for main address, byte 2
+ain3	equ	ain1+2		;set printer for main address, byte 3
+ain4	equ	ain1+3		;set printer for main address, byte 4
+ain5	equ	ain1+4		;set printer for main address, byte 5
+ain6	equ	ain1+5		;set printer for main address, byte 6
+ain7	equ	ain1+6		;set printer for main address, byte 7
+ain8	equ	ain1+7		;set printer for main address, byte 8
+ain9	equ	ain1+8		;set printer for main address, byte 9
+ain10	equ	ain1+9		;set printer for main address, byte 10
+ain11	equ	ain1+10		;set printer for main address, byte 11
+ain12	equ	ain1+11		;set printer for main address, byte 12
+ain13	equ	ain1+12		;set printer for main address, byte 13
+
+elm	equ	048h		;column to start envelope address
+llm	equ	049h		;column to start label address
+lra	equ	04ah		;use return address in label
+
+lpl1	equ	04bh		;number of lines per label, byte 1
+lpl2	equ	lpl1+1		;number of lines per label, byte 2
+lpl3	equ	lpl1+2		;number of lines per label, byte 3
+lpl4	equ	lpl1+3		;number of lines per label, byte 4
+lpl5	equ	lpl1+4		;number of lines per label, byte 5
+lpl6	equ	lpl1+5		;number of lines per label, byte 6
+lpl7	equ	lpl1+6		;number of lines per label, byte 7
+lpl8	equ	lpl1+7		;number of lines per label, byte 8
+lpl9	equ	lpl1+8		;number of lines per label, byte 9
+
+era	equ	054h		;envelope return address flag
+raflag	equ	055h		;return address flag character
+asp	equ	056h		;number of lines from return addr to addr
+
+stg1	equ	057h		;set set barcode graphics, byte 1
+stg2	equ	stg1+1		;set set barcode graphics, byte 2
+stg3	equ	stg1+2		;set set barcode graphics, byte 3
+stg4	equ	stg1+3		;set set barcode graphics, byte 4
+stg5	equ	stg1+4		;set set barcode graphics, byte 5
+stg6	equ	stg1+5		;set set barcode graphics, byte 6
+stg7	equ	stg1+6		;set set barcode graphics, byte 7
+stg8	equ	stg1+7		;set set barcode graphics, byte 8
+stg9	equ	stg1+8		;set set barcode graphics, byte 9
+
+slf1	equ	060h		;set short line spacing, byte 1
+slf2	equ	slf1+1		;set short line spacing, byte 2
+slf3	equ	slf1+2		;set short line spacing, byte 3
+slf4	equ	slf1+3		;set short line spacing, byte 4
+slf5	equ	slf1+4		;set short line spacing, byte 5
+slf6	equ	slf1+5		;set short line spacing, byte 6
+slf7	equ	slf1+6		;set short line spacing, byte 7
+slf8	equ	slf1+7		;set short line spacing, byte 8
+slf9	equ	slf1+8		;set short line spacing, byte 9
+
+dlf1	equ	069h		;set default line spacing, byte 1
+dlf2	equ	dlf1+1		;set default line spacing, byte 2
+dlf3	equ	dlf1+2		;set default line spacing, byte 3
+dlf4	equ	dlf1+3		;set default line spacing, byte 4
+dlf5	equ	dlf1+4		;set default line spacing, byte 5
+dlf6	equ	dlf1+5		;set default line spacing, byte 6
+dlf7	equ	dlf1+6		;set default line spacing, byte 7
+dlf8	equ	dlf1+7		;set default line spacing, byte 8
+dlf9	equ	dlf1+8		;set default line spacing, byte 9
+
+strikes	equ	072h		;number of strikes/pass for barcodes
+adrcaps	equ	073h		;1 to capitialize address
+clr	equ	074h		;on to clear screen on exit
+time	equ	075h		;off for 12hr, on for 24hr
+
+;---------------------------------------------------------
+
+;DATA FOR CNFG PROGRAM LINKAGE
+;function definitions - **needed for CASE Table entries**
+
+switch	equ	0	;toggle bit n in a byte (n is specified)
+text	equ	1	;replace a text string of specified length
+duspec	equ	2	;replace a ZCPR style DU specification (NOT DIR:!)
+hexrad	equ	3	;edit byte/word using HEX radix
+decrad	equ	4	;edit byte/word using decimal radix
+togl3	equ	7	;toggle to one of three options: 001B, 010B, 100B
+togltf	equ	8	;toggle a byte between 0ffh and 0
+asciic	equ	9	;replace byte with single byte keystroke
+
+;ASCII definitions
+;these are convenient, but only required if you wish
+;to use them in text or data fields (including HELP)
+ctlc	equ	3
+bs	equ	8		;backspace
+tab	equ	9		;tab
+lf	equ	10		;line feed
+ff	equ	12		;form feed
+cr	equ	13		;carriage return
+spc	equ	32		;space char
+
+;=========================================================
+;	MACRO DEFINITIONS
+;You don't HAVE to use the macros. But it does make it
+;easier to fill in the tables!
+
+;this macro is used for creating a CASE table
+;entry which specifies toggling or setting a
+;single bit (0..7) in a configuration data byte.
+;It is useful when the 'switch' function is named.
+
+bitmap	 macro	a,sub,off,bit,scr,dat
+	db	'&A'
+	dw	sub,off
+	db	1 shl bit	;;make a mask byte
+	dw	scr,dat
+	 endm
+
+;=========================================================
+
+;macro parameter definitions
+;	A   = the character used in the screen for a menu item
+;	off = byte offset in config block
+;	sub = subroutine for translation to screen
+;	scr = screen location
+;	dat = extra data word if required. Normally 0
+;produces a record which is 8 bytes long
+
+;=========================================================
+;this macro is used to create a case table entry
+;which contains a byte of data required by the function
+;to be performed. (see table of function definitions above)
+
+vector	 macro	a,sub,off,byte,scr,dat
+	db	'&A'
+	dw	sub,off
+	db	byte		;;a byte of data
+	dw	scr,dat
+	 endm
+
+;************************************************************
+;	START OF OVERLAY CODE
+;************************************************************
+;The next 13 bytes must remain in this location.
+	rst	0	;for safety - file won't execute
+	dw	amenu	;for relocation of addresses, this
+			;points to the NEXT location.
+;first MENU list must be here. All names are local.
+amenu:	dw	emenu,bmenu,ascr,acase,ahelp	;MENU A
+
+;=========================================================
+;Case table used for ZDB, first menu & screen:
+;=========================================================
+
+acase:	db	(acasex-acase1)/(acase2-acase1)	;number of cases
+	db	acase2-acase1			;length of each record
+
+;	 macro	.single char menu selector
+;	|	|	.function (see above)
+;	|	|	|	.offset in cnfg block
+;	|	|	|	|	.function dependent data
+;	|	|	|	|	|	.screen location
+;	|	|	|	|	|	|
+;acse1: bitmap	0,	switch, obyte0, crtflg, ascrl0, yndata
+;							|
+;	    address of data structure used by function._|
+;
+;The first two entries in the case table must be labeled to
+;provide data for the calculation at ACASE:. Subsequent
+;entries (one for each menu selection) need not be labeled.
+acase1:	vector	0,	text,	cfgnm,	8,  ascr0,	0
+acase2:	vector	1,	text,	fname,	16, ascr1,	0
+	vector	2,	text,	termf,	1,  ascr2,	0
+	vector	3,	togltf,	time,	1,  ascr3,	timdat
+	vector	4,	togltf,	clr,	1,  ascr4,	yndata
+	vector	5,	asciic,	raflag,	1,  ascr5,	0
+	vector	a,	togltf,	era,	1,  ascra,	yndata
+	vector	b,	decrad,	asp,	1,  ascrb,	decrang
+	vector	c,	decrad,	elm,	1,  ascrc,	decrang
+	vector	d,	togltf,	lra,	1,  ascrd,	yndata
+	vector	e,	decrad,	llm,	1,  ascre,	decrang
+
+;the next entry is a label which terminates the list.
+;It is required for use in the calculation at ACASE:
+acasex:		;label used to calc number of entries
+
+;=========================================================
+ascr:
+;screen image for first screen
+	db	cr,lf
+	db	tab,tab
+	db	1,' ZDB VERS ',vers/10+'0','.',vers mod	10+'0'
+	db	suffix
+	db	' DEFAULTS (Screen 1 of 5) ',2
+	db	cr,lf,lf
+
+	db	'Default CFG file name (FILENAME).......... '
+	db	'0) '
+ascr0:	db	'        ',cr,lf
+
+	db	'Default datafile name (DUU:FILENAME.TYP).. '
+	db	'1) '
+ascr1:	db	'                ',cr,lf
+
+	db	'Character used to terminate data fields... '
+	db	'2)   '
+ascr2:	db	' ',cr,lf
+
+	db	'Header time display format is............. '
+	db	'3) '
+ascr3:	db	'               ',cr,lf
+
+	db	'Clear screen on exit...................... '
+	db	'4) '
+ascr4:	db	'   ',cr,lf
+
+	db	'Return address record flag character...... '
+	db	'5) '
+ascr5:	db	'   ',cr,lf,lf
+
+	db	'Envelope printing configuration:',cr,lf
+	db	'   Use return address on envelope......... '
+	db	'A) '
+ascra:	db	'   ',cr,lf
+
+	db	'   Lines from return address to address... '
+	db	'B) '
+ascrb:	db	'   ',cr,lf
+
+	db	'   Left margin for address................ '
+	db	'C) '
+ascrc:	db	'   ',cr,lf
+
+	db	'Label printing configuration:',cr,lf
+	db	'   Use return address in label............ '
+	db	'D) '
+ascrd:	db	'   ',cr,lf
+
+	db	'   Left margin for address................ '
+	db	'E) '
+ascre:	db	'   '
+	db	0		;termination
+
+;=========================================================
+
+bmenu:	dw	amenu,cmenu,bscr,bcase,bhelp	;MENU B
+
+;=========================================================
+;Case table used for ZDB, second menu & screen:
+;=========================================================
+
+bcase:	db	(bcasex-bcase1)/(bcase2-bcase1)	;number of cases
+	db	bcase2-bcase1			;length of each record
+
+;	 macro	.single char menu selector
+;	|	|	.function (see above)
+;	|	|	|	.offset in cnfg block
+;	|	|	|	|	.function dependent data
+;	|	|	|	|	|	.screen location
+;	|	|	|	|	|	|
+;bcse1: bitmap	0,	switch, obyte0, crtflg, bscrl0, yndata
+;							|
+;	    address of data structure used by function._|
+;
+;The first two entries in the case table must be labeled to
+;provide data for the calculation at BCASE:. Subsequent
+;entries (one for each menu selection) need not be labeled.
+bcase1:	vector	0,	togltf,	ptrchk,	1,  bscr0,	yndata
+bcase2:	vector	a,	decrad,	rst1,	1,  bscra,	decrang
+	vector	b,	asciic,	rst2,	1,  bscrb,	0
+	vector	c,	asciic,	rst3,	1,  bscrc,	0
+	vector	d,	asciic,	rst4,	1,  bscrd,	0
+	vector	e,	asciic,	rst5,	1,  bscre,	0
+
+	vector	1,	decrad,	lpl1,	1,  bscr1,	decrang
+	vector	2,	asciic,	lpl2,	1,  bscr2,	0
+	vector	3,	asciic,	lpl3,	1,  bscr3,	0
+	vector	4,	asciic,	lpl4,	1,  bscr4,	0
+	vector	5,	asciic,	lpl5,	1,  bscr5,	0
+	vector	6,	asciic,	lpl6,	1,  bscr6,	0
+	vector	7,	asciic,	lpl7,	1,  bscr7,	0
+	vector	8,	asciic,	lpl8,	1,  bscr8,	0
+	vector	9,	asciic,	lpl9,	1,  bscr9,	0
+
+;the next entry is a label which terminates the list.
+;It is required for use in the calculation at BCASE:
+bcasex:		;label used to calc number of entries
+
+;=========================================================
+bscr:
+;screen image for second screen
+	db	cr,lf
+	db	tab,'  '
+	db	1,' ZDB VERS ',vers/10+'0','.',vers mod	10+'0'
+	db	suffix
+	db	' Printer Initialization (Screen 2 of 5) ',2
+	db	cr,lf,lf
+
+	db	'       Decimal:   0  1  2  3  4  5  6  7  8  9 10 11 12 '
+	db	'13 14 15 16',cr,lf
+	db	'       Keypress: ^@ ^A ^B ^C ^D ^E ^F ^G ^H ^I ^J ^K ^L '
+	db	'^M ^N ^O ^P',cr,lf,lf
+
+	db	'Use BIOS LISTST printer check... '
+	db	'0) '
+bscr0:	db	'   ',cr,lf,lf
+
+	db	'Reset printer:',cr,lf
+	db	'   String length................ '
+	db	'A)'
+bscra:	db	'   ',cr,lf
+	db	'   Reset string................ '
+	db	'(B) (C) (D) (E)',cr,lf
+	db	'                               '
+bscrb:	db	'    '
+bscrc:	db	'    '
+bscrd:	db	'    '
+bscre:	db	'    ',cr,lf,lf
+
+	db	'Set label form length:',cr,lf
+	db	'   String length................ '
+	db	'1)'
+bscr1:	db	'   ',cr,lf
+	db	'   Form length string.......... '
+	db	'(2) (3) (4) (5) (6) (7) (8) (9)',cr,lf
+	db	'                               '
+bscr2:	db	'    '
+bscr3:	db	'    '
+bscr4:	db	'    '
+bscr5:	db	'    '
+bscr6:	db	'    '
+bscr7:	db	'    '
+bscr8:	db	'    '
+bscr9:	db	'    '
+	db	0		; termination
+
+;=========================================================
+
+cmenu:	dw	bmenu,dmenu,cscr,ccase,chelp	;MENU C
+
+;=========================================================
+;Case table used for ZDB, third menu & screen:
+;=========================================================
+
+ccase:	db	(ccasex-ccase1)/(ccase2-ccase1)	;number of cases
+	db	ccase2-ccase1			;length of each record
+
+;	 macro	.single char menu selector
+;	|	|	.function (see above)
+;	|	|	|	.offset in cnfg block
+;	|	|	|	|	.function dependent data
+;	|	|	|	|	|	.screen location
+;	|	|	|	|	|	|
+;bcse1: bitmap	0,	switch, obyte0, crtflg, bscrl0, yndata
+;							|
+;	    address of data structure used by function._|
+;
+;The first two entries in the case table must be labeled to
+;provide data for the calculation at BCASE:. Subsequent
+;entries (one for each menu selection) need not be labeled.
+ccase1:	vector	0,	decrad,	rin1,	1,  cscr0,	decrang
+ccase2:	vector	a,	asciic,	rin2,	1,  cscra,	0
+	vector	b,	asciic,	rin3,	1,  cscrb,	0
+	vector	c,	asciic,	rin4,	1,  cscrc,	0
+	vector	d,	asciic,	rin5,	1,  cscrd,	0
+	vector	e,	asciic,	rin6,	1,  cscre,	0
+	vector	f,	asciic,	rin7,	1,  cscrf,	0
+	vector	g,	asciic,	rin8,	1,  cscrg,	0
+	vector	h,	asciic,	rin9,	1,  cscrh,	0
+	vector	i,	asciic,	rin10,	1,  cscri,	0
+	vector	j,	asciic,	rin11,	1,  cscrj,	0
+	vector	k,	asciic,	rin12,	1,  cscrk,	0
+	vector	l,	asciic,	rin13,	1,  cscrl,	0
+
+	vector	1,	decrad,	ain1,	1,  cscr1,	decrang
+	vector	m,	asciic,	ain2,	1,  cscrm,	0
+	vector	n,	asciic,	ain3,	1,  cscrn,	0
+	vector	o,	asciic,	ain4,	1,  cscro,	0
+	vector	p,	asciic,	ain5,	1,  cscrp,	0
+	vector	r,	asciic,	ain6,	1,  cscrr,	0
+	vector	s,	asciic,	ain7,	1,  cscrs,	0
+	vector	t,	asciic,	ain8,	1,  cscrt,	0
+	vector	u,	asciic,	ain9,	1,  cscru,	0
+	vector	v,	asciic,	ain10,	1,  cscrv,	0
+	vector	w,	asciic,	ain11,	1,  cscrw,	0
+	vector	y,	asciic,	ain12,	1,  cscry,	0
+	vector	z,	asciic,	ain13,	1,  cscrz,	0
+
+	vector	2,	togltf,	adrcaps,1,  cscr2,	capdat
+
+;the next entry is a label which terminates the list.
+;It is required for use in the calculation at BCASE:
+ccasex:		;label used to calc number of entries
+
+;=========================================================
+cscr:
+;screen image for third screen
+	db	cr,lf
+	db	tab,'  '
+	db	1,' ZDB VERS ',vers/10+'0','.',vers mod	10+'0'
+	db	suffix
+	db	' Printer Initialization (Screen 3 of 5) ',2
+	db	cr,lf,lf
+
+	db	'       Decimal:   0  1  2  3  4  5  6  7  8  9 10 11 12 '
+	db	'13 14 15 16',cr,lf
+	db	'       Keypress: ^@ ^A ^B ^C ^D ^E ^F ^G ^H ^I ^J ^K ^L '
+	db	'^M ^N ^O ^P',cr,lf,lf
+
+	db	'Set printer for return address:',cr,lf
+	db	'   String length................ '
+	db	'0)'
+cscr0:	db	'   ',cr,lf
+	db	'   Return address setup string. '
+	db	'(A) (B) (C) (D) (E) (F) (G) (H) (I) (J) (K) (L)',cr,lf
+	db	'                               '
+cscra:	db	'    '
+cscrb:	db	'    '
+cscrc:	db	'    '
+cscrd:	db	'    '
+cscre:	db	'    '
+cscrf:	db	'    '
+cscrg:	db	'    '
+cscrh:	db	'    '
+cscri:	db	'    '
+cscrj:	db	'    '
+cscrk:	db	'    '
+cscrl:	db	'    ',cr,lf,lf
+
+	db	'Modify printer return address to set printer '
+	db	'for main address:',cr,lf
+	db	'   String length................ '
+	db	'1)'
+cscr1:	db	'   ',cr,lf
+	db	'   Main address setup string... '
+	db	'(M) (N) (O) (P) (R) (S) (T) (U) (V) (W) (Y) (Z)',cr,lf
+	db	'                               '
+cscrm:	db	'    '
+cscrn:	db	'    '
+cscro:	db	'    '
+cscrp:	db	'    '
+cscrr:	db	'    '
+cscrs:	db	'    '
+cscrt:	db	'    '
+cscru:	db	'    '
+cscrv:	db	'    '
+cscrw:	db	'    '
+cscry:	db	'    '
+cscrz:	db	'    '
+	db	cr,lf,lf
+
+	db	'Print address in ............... '
+	db	'2) '
+cscr2:	db	'               '
+
+	db	0		;termination
+
+;=========================================================
+
+dmenu:	dw	cmenu,emenu,dscr,dcase,dhelp	;MENU D
+
+;=========================================================
+;Case table used for ZDB, fourth menu & screen:
+;=========================================================
+
+dcase:	db	(dcasex-dcase1)/(dcase2-dcase1)	;number of cases
+	db	dcase2-dcase1			;length of each record
+
+;	 macro	.single char menu selector
+;	|	|	.function (see above)
+;	|	|	|	.offset in cnfg block
+;	|	|	|	|	.function dependent data
+;	|	|	|	|	|	.screen location
+;	|	|	|	|	|	|
+;bcse1: bitmap	0,	switch, obyte0, crtflg, bscrl0, yndata
+;							|
+;	    address of data structure used by function._|
+;
+;The first two entries in the case table must be labeled to
+;provide data for the calculation at BCASE:. Subsequent
+;entries (one for each menu selection) need not be labeled.
+dcase1:	bitmap	a,	switch,	bar,	7,  dscra,	bindat
+dcase2:	bitmap	b,	switch,	bar,	6,  dscrb,	bindat
+	bitmap	c,	switch,	bar,	5,  dscrc,	bindat
+	bitmap	d,	switch,	bar,	4,  dscrd,	bindat
+	bitmap	e,	switch,	bar,	3,  dscre,	bindat
+	bitmap	f,	switch,	bar,	2,  dscrf,	bindat
+	bitmap	g,	switch,	bar,	1,  dscrg,	bindat
+	bitmap	h,	switch,	bar,	0,  dscrh,	bindat
+
+	bitmap	i,	switch,	dot,	7,  dscri,	bindat
+	bitmap	j,	switch,	dot,	6,  dscrj,	bindat
+	bitmap	k,	switch,	dot,	5,  dscrk,	bindat
+	bitmap	l,	switch,	dot,	4,  dscrl,	bindat
+	bitmap	m,	switch,	dot,	3,  dscrm,	bindat
+	bitmap	n,	switch,	dot,	2,  dscrn,	bindat
+	bitmap	o,	switch,	dot,	1,  dscro,	bindat
+	bitmap	p,	switch,	dot,	0,  dscrp,	bindat
+
+	vector	0,	decrad,	stg1,	1,  dscr0,	decrang
+	vector	1,	asciic,	stg2,	1,  dscr1,	0
+	vector	2,	asciic,	stg3,	1,  dscr2,	0
+	vector	3,	asciic,	stg4,	1,  dscr3,	0
+	vector	4,	asciic,	stg5,	1,  dscr4,	0
+	vector	5,	asciic,	stg6,	1,  dscr5,	0
+	vector	6,	asciic,	stg7,	1,  dscr6,	0
+	vector	7,	asciic,	stg8,	1,  dscr7,	0
+	vector	8,	asciic,	stg9,	1,  dscr8,	0
+
+;the next entry is a label which terminates the list.
+;It is required for use in the calculation at BCASE:
+dcasex:		;label used to calc number of entries
+
+;=========================================================
+dscr:
+;screen image for fourth screen
+	db	cr,lf
+	db	tab,'  '
+	db	1,' ZDB VERS ',vers/10+'0','.',vers mod	10+'0'
+	db	suffix
+	db	' Printer Initialization (Screen 4 of 5) ',2
+	db	cr,lf,lf
+
+	db	'       Decimal:   0  1  2  3  4  5  6  7  8  9 10 11 12 '
+	db	'13 14 15 16',cr,lf
+	db	'       Keypress: ^@ ^A ^B ^C ^D ^E ^F ^G ^H ^I ^J ^K ^L '
+	db	'^M ^N ^O ^P',cr,lf,lf
+
+	db	'Bitmapped full bar character... '
+	db	'(A) (B) (C) (D) (E) (F) (G) (H)',cr,lf
+	db	'                                 '
+dscra:	db	'    '
+dscrb:	db	'    '
+dscrc:	db	'    '
+dscrd:	db	'    '
+dscre:	db	'    '
+dscrf:	db	'    '
+dscrg:	db	'    '
+dscrh:	db	'    '
+	db	cr,lf,lf
+
+	db	'Bitmapped half bar character... '
+	db	'(I) (J) (K) (L) (M) (N) (O) (P)',cr,lf
+	db	'                                 '
+dscri:	db	'    '
+dscrj:	db	'    '
+dscrk:	db	'    '
+dscrl:	db	'    '
+dscrm:	db	'    '
+dscrn:	db	'    '
+dscro:	db	'    '
+dscrp:	db	'    '
+	db	cr,lf,lf
+
+	db	'Set printer for 372 dots of 120 dots/inch '
+	db	'(960 dots/line) graphics:',cr,lf
+	db	'   String length................ '
+	db	'0)'
+dscr0:	db	'   ',cr,lf
+	db	'   Graphics setup string....... '
+	db	'(1) (2) (3) (4) (5) (6) (7) (8)',cr,lf
+	db	'                               '
+dscr1:	db	'    '
+dscr2:	db	'    '
+dscr3:	db	'    '
+dscr4:	db	'    '
+dscr5:	db	'    '
+dscr6:	db	'    '
+dscr7:	db	'    '
+dscr8:	db	'    '
+	db	0		;termination
+
+;=========================================================
+
+emenu:	dw	dmenu,amenu,escr,ecase,ehelp	;MENU E
+
+;=========================================================
+;Case table used for ZDB, fifth menu & screen:
+;=========================================================
+
+ecase:	db	(ecasex-ecase1)/(ecase2-ecase1)	;number of cases
+	db	ecase2-ecase1			;length of each record
+
+;	 macro	.single char menu selector
+;	|	|	.function (see above)
+;	|	|	|	.offset in cnfg block
+;	|	|	|	|	.function dependent data
+;	|	|	|	|	|	.screen location
+;	|	|	|	|	|	|
+;bcse1: bitmap	0,	switch, obyte0, crtflg, bscrl0, yndata
+;							|
+;	    address of data structure used by function._|
+;
+;The first two entries in the case table must be labeled to
+;provide data for the calculation at BCASE:. Subsequent
+;entries (one for each menu selection) need not be labeled.
+ecase1:	vector	0,	decrad,	slf1,	1,  escr0,	decrang
+ecase2:	vector	1,	asciic,	slf2,	1,  escr1,	0
+	vector	2,	asciic,	slf3,	1,  escr2,	0
+	vector	3,	asciic,	slf4,	1,  escr3,	0
+	vector	4,	asciic,	slf5,	1,  escr4,	0
+	vector	5,	asciic,	slf6,	1,  escr5,	0
+	vector	6,	asciic,	slf7,	1,  escr6,	0
+	vector	7,	asciic,	slf8,	1,  escr7,	0
+	vector	8,	asciic,	slf9,	1,  escr8,	0
+
+	vector	9,	decrad,	strikes,1,  escr9,	strang
+
+	vector	a,	decrad,	dlf1,	1,  escra,	decrang
+	vector	b,	asciic,	dlf2,	1,  escrb,	0
+	vector	c,	asciic,	dlf3,	1,  escrc,	0
+	vector	d,	asciic,	dlf4,	1,  escrd,	0
+	vector	e,	asciic,	dlf5,	1,  escre,	0
+	vector	f,	asciic,	dlf6,	1,  escrf,	0
+	vector	g,	asciic,	dlf7,	1,  escrg,	0
+	vector	h,	asciic,	dlf8,	1,  escrh,	0
+	vector	i,	asciic,	dlf9,	1,  escri,	0
+
+;the next entry is a label which terminates the list.
+;It is required for use in the calculation at BCASE:
+ecasex:		;label used to calc number of entries
+
+;=========================================================
+escr:
+;screen image for fifth screen
+	db	cr,lf
+	db	tab,'  '
+	db	1,' ZDB VERS ',vers/10+'0','.',vers mod	10+'0'
+	db	suffix
+	db	' Printer Initialization (Screen 5 of 5) ',2
+	db	cr,lf,lf
+
+	db	'       Decimal:   0  1  2  3  4  5  6  7  8  9 10 11 12 '
+	db	'13 14 15 16',cr,lf
+	db	'       Keypress: ^@ ^A ^B ^C ^D ^E ^F ^G ^H ^I ^J ^K ^L '
+	db	'^M ^N ^O ^P',cr,lf,lf
+
+	db	'Set printer for 2-dot line spacing for barcode '
+	db	'second pass:',cr,lf
+	db	'   String length................ '
+	db	'0)'
+escr0:	db	'   ',cr,lf
+	db	'   Line spacing setup string... '
+	db	'(1) (2) (3) (4) (5) (6) (7) (8)',cr,lf
+	db	'                               '
+escr1:	db	'    '
+escr2:	db	'    '
+escr3:	db	'    '
+escr4:	db	'    '
+escr5:	db	'    '
+escr6:	db	'    '
+escr7:	db	'    '
+escr8:	db	'    ',cr,lf,lf
+
+	db	'Number of barcode overstrikes... '
+	db	'9)'
+escr9:	db	'    ',cr,lf,lf
+
+	db	'Restore default printer line spacing (6 lines/inch):',cr,lf
+	db	'   String length................ '
+	db	'A)'
+escra:	db	'   ',cr,lf
+	db	'   Line spacing setup string... '
+	db	'(B) (C) (D) (E) (F) (G) (H) (I)',cr,lf
+	db	'                               '
+escrb:	db	'    '
+escrc:	db	'    '
+escrd:	db	'    '
+escre:	db	'    '
+escrf:	db	'    '
+escrg:	db	'    '
+escrh:	db	'    '
+escri:	db	'    '
+
+	db	0		;termination
+
+;=========================================================
+;
+;	FUNCTION DATA LIST
+
+;data pairs for representing bit values in screen image
+;Can also be used for function 8 display (True/False)
+;these are null terminated strings. Note the 'defz'.
+
+yndata:	defz	'YES'		;for 1=yes
+	defz	' no'
+;
+decrang:dw	0,99		; Range of decimal numbers accepted
+;
+strang:	dw	1,3		; Range of strikes accepted
+;
+bindat:	defz	'1'		; Binary switch data
+	defz	'0'
+;
+capdat:	defz	'UPPER CASE'
+	defz	'Mixed Case'
+;
+timdat:	defz	'Military (24hr)'
+	defz	'Civilian (12hr)'
+
+;=========================================================
+ahelp:		;help screen for menu A
+
+	db	cr,lf
+	db	tab,tab
+	db	1,' ZDB VERS '
+	db	vers/10+'0','.',vers mod 10+'0'
+	db	suffix
+	db	' DEFAULTS '2
+	db	cr,lf,lf
+
+	db	1,'NAME OF DEFAULT CFG FILE:',2,cr,lf
+	db	'ZCNFG will look for this configuration filename '
+	db	'if no configuration',cr,lf
+	db	'filename is specified on the command line.  Enter '
+	db	'the name as ''FILENAME.''',cr,lf,lf
+
+	db	1,'NAME OF DEFAULT DATAFILE:',2,cr,lf
+	db	'ZDB will look for this datafile if no datafile name '
+	db	'is specified on the',cr,lf
+	db	'command line.  Enter the name as ''DUU:FILENAME.TYP '
+	db	'where the drive and user',cr,lf
+	db	'designations are optional.'
+	db	cr,lf,ff,lf
+
+	db	1,'CHARACTER USED TO TERMINATE DATA FIELDS:',2,cr,lf
+	db	'This character is used to terminate each data field. '
+	db	' If the standout in',cr,lf
+	db	'your system doesn''t highlight spaces, this character '
+	db	'will indicate the',cr,lf
+	db	'end of each datafield.',cr,lf,lf
+
+	db	1,'TIME DISPLAY FORMAT:',2,cr,lf
+	db	'ZDB may be configured to display the time in the '
+	db	'header in either Civilian',cr,lf
+	db	'(12hr) or Military (24hr) format.',cr,lf,lf
+
+	db	1,'CLEAR SCREEN ON EXIT:',2,cr,lf
+	db	'Set to YES to clear the screen on exit.',cr,lf,lf
+	db	1,'RETURN ADDRESS RECORD FLAG CHARACTER:',2,cr,lf
+	db	'This character, when present as the first byte in '
+	db	'the Comments 2 field,',cr,lf
+	db	'flags a record as the default return address record. '
+	db	' Any character not',cr,lf
+	db	'normally found as the first character in your comment '
+	db	'fields would be a',cr,lf
+	db	'good choice.  Examples are ! @ # $ % ^ & * + ~. '
+	db	' The default is ''*''.'
+	db	cr,lf,ff,lf
+
+	db	1,'ENVELOPE PRINTING CONFIGURATION:',2,cr,lf
+	db	'  USE RETURN ADDRESS ON ENVELOPE:',cr,lf
+	db	'     Set this flag to YES to include a return address '
+	db	'on each envelope.',cr,lf,lf
+
+	db	'  LINES BETWEEN RETURN ADDRESS AND MAIN ADDRESS:',cr,lf
+	db	'     Enter the number of lines from the end of the '
+	db	'return address to the',cr,lf
+	db	'     start of the main address.  For a standard '
+	db	'business envelope, there',cr,lf
+	db	'     will be a total of 14 lines from the start '
+	db	'of the envelope to the',cr,lf
+	db	'     start of the main address.  Since a standard '
+	db	'return address contains 3',cr,lf
+	db	'     lines plus a one line space to the label address, '
+	db	'this value will',cr,lf
+	db	'     normally be 10 lines.',cr,lf,lf
+
+	db	'  LEFT MARGIN FOR MAIN ENVELOPE ADDRESS:',cr,lf
+	db	'     Enter the column number in which you wish to '
+	db	'start your main envelope',cr,lf
+	db	'     address.',cr,lf,ff,lf
+
+	db	1,'LABEL PRINTING CONFIGURATION:',2,cr,lf
+	db	'  USE RETURN ADDRESS ON LABEL:',cr,lf
+	db	'     Set this flag to YES to include a return address '
+	db	'on each label.  Your',cr,lf
+	db	'     labels must be large enough to accommodate '
+	db	'the number of lines',cr,lf
+	db	'     required.  Labels that are 4" x 1 7/16" work '
+	db	'well.',cr,lf,lf
+
+	db	'  LEFT MARGIN FOR MAIN LABEL ADDRESS:',cr,lf
+	db	'     Enter the column number in which you wish to '
+	db	'start your main label',cr,lf
+	db	'     address.  When no return address is used, this '
+	db	'can be 0.  When',cr,lf
+	db	'     including a return address and 4" x 1 7/16" '
+	db	'labels, set this to 7 so',cr,lf
+	db	'     that the right end of the barcode is at least '
+	db	'1/8" away from the right',cr,lf
+	db	'     end of the label.',cr,lf
+	db	0
+
+;=========================================================
+bhelp:		;help screen for menu B
+
+	db	cr,lf
+	db	tab,tab
+	db	1,' ZDB VERS '
+	db	vers/10+'0','.',vers mod 10+'0'
+	db	suffix
+	db	' PRINTER INITIALIZATION ',2
+	db	cr,lf,lf
+
+	db	'     Each printer initialization string is displayed '
+	db	'as a list of ',cr,lf
+	db	'     characters.  Each string character may be changed '
+	db	'by entering its menu ',cr,lf
+	db	'     character and directly pressing the desired '
+	db	'character key.  Non-',cr,lf
+	db	'     printing characters are entered by pressing '
+	db	'the control key and the ',cr,lf
+	db	'     character (00h=^@, 01h=^A, etc.)  The first '
+	db	'byte in each list is the ',cr,lf
+	db	'     length of the list. ',cr,lf,lf
+
+	db	1,'USE BIOS LISTST PRINTER STATUS CHECK:',2,cr,lf
+	db	'Some systems hang if the BIOS LISTST is called. '
+	db	' If your system has this ',cr,lf
+	db	'problem, set this flag to NO and ZDB will skip the '
+	db	'BIOS printer status test ',cr,lf
+	db	'and will assume your printer is always ready.',cr,lf,lf
+
+	db	1,'RESET PRINTER:',2,cr,lf
+	db	'Enter the reset string for your printer.  This string '
+	db	'is sent at the ',cr,lf
+	db	'beginning and end of each envelope or label printing '
+	db	'session.',cr,lf,lf
+
+	db	1,'SET FORM LENGTH FOR LABELS:',2,cr,lf
+	db	'Sets the form length on your printer to the number '
+	db	'of lines from one label ',cr,lf
+	db	'to the next for the size label you are using.'
+	db	0
+
+;=========================================================
+chelp:
+	db	cr,lf
+	db	tab,tab
+	db	1,' ZDB VERS '
+	db	vers/10+'0','.',vers mod 10+'0'
+	db	suffix
+	db	' PRINTER INITIALIZATION ',2
+	db	cr,lf,lf
+
+	db	'     Each printer initialization string is displayed '
+	db	'as a list of ',cr,lf
+	db	'     characters.  Each string character may be changed '
+	db	'by entering its menu ',cr,lf
+	db	'     character and directly pressing the desired '
+	db	'character key.  Non-',cr,lf
+	db	'     printing characters are entered by pressing '
+	db	'the control key and the ',cr,lf
+	db	'     character (00h=^@, 01h=^A, etc.)  The first '
+	db	'byte in each list is the ',cr,lf
+	db	'     length of the list. ',cr,lf,lf
+
+	db	1,'SET PRINTER FOR RETURN ADDRESS:',2,cr,lf
+	db	'Set up your printer to the desired modes for printing '
+	db	'the return address.',cr,lf,lf
+
+	db	1,'SET PRINTER FOR MAIN ADDRESS:',2,cr,lf
+	db	'Modify your printer return address settings to those '
+	db	'desired for printing ',cr,lf
+	db	'the main address.',cr,lf,lf
+
+	db	'     NOTE:  Do not use your printer reset string '
+	db	'to clear the settings used ',cr,lf
+	db	'     for the return address, as this will cause '
+	db	'the label length setting to ',cr,lf
+	db	'     be lost!'
+
+	db	cr,lf,ff,lf
+	db	1,'PRINT ADDRESS IN UPPER CASE LETTERS:',2,cr,lf
+	db	'The USPS recommends that addresses be printed in '
+	db	'upper case.  Set to YES',cr,lf
+	db	'to print label and envelope addresses in upper case. '
+	db	' Set to NO to print',cr,lf
+	db	'addresses in mixed case, exactly as entered into '
+	db	'the database.  Return',cr,lf
+	db	'addresses will always be printed in mixed case.'
+	db	0
+
+;=========================================================
+dhelp:
+	db	cr,lf
+	db	tab,tab
+	db	1,' ZDB VERS '
+	db	vers/10+'0','.',vers mod 10+'0'
+	db	suffix
+	db	' PRINTER INITIALIZATION ',2
+	db	cr,lf,lf
+
+	db	'     Each printer initialization string is displayed '
+	db	'as a list of',cr,lf
+	db	'     characters.  Each string character may be changed '
+	db	'by entering its menu',cr,lf
+	db	'     character and directly pressing the desired '
+	db	'character key.  Non-',cr,lf
+	db	'     printing characters are entered by pressing '
+	db	'the control key and the',cr,lf
+	db	'     character (00h=^@, 01h=^A, etc.)  The first '
+	db	'byte in each list is the',cr,lf
+	db	'     length of the list.',cr,lf,lf
+
+	db	1,'SET BITMAPPED FULL BAR AND HALF BAR CHARACTERS:',2
+	db	cr,lf
+	db	'Barcodes are printed in one or two graphics passes. '
+	db	' Each half or full bar',cr,lf
+	db	'bit that is set represents one vertical graphics '
+	db	'dot for the pass, leftmost',cr,lf
+	db	'bit highest.',cr,lf,lf
+
+	db	'If ZDB is configured for a second pass, the paper '
+	db	'is moved down by two',cr,lf
+	db	'dots, as specified in the next configuration screen. '
+	db	' During the second',cr,lf
+	db	'pass, the bottom of the barcode characters are filled '
+	db	'out by printing a',cr,lf
+	db	'half bar character in each half or full bar position.'
+;
+	db	cr,lf,ff,lf
+	db	'The Postal Service specifies the following bar heights:'
+	db	cr,lf,lf
+
+	db	'  Full bars must be 0.115"-0.135" (0.125"+/-0.010"), '
+	db	'about 1/8", high',cr,lf
+	db	'  Half bars must be 0.040"-0.060" (0.050"+/-0.010"), '
+	db	'about 3/64", high',cr,lf,lf
+
+	db	'See ZDBxx.C for more information on barcode specifications.'
+	db	cr,lf,lf
+
+	db	'The distribution half and full bar characters produce '
+	db	'conforming barcode',cr,lf
+	db	'heights using two graphics passes on an Epson MX80/Graftrax '
+	db	'9-pin printer.',cr,lf
+	db	'Most 9-pin printers probably won''t produce a 1/8" '
+	db	'full bar on one pass.',cr,lf,lf
+	db	'Epson LQ-850-compatible 24-pin printers such as '
+	db	'the Panasonic KX-P1123 and',cr,lf
+	db	'KX-P1124 will probably print conforming bar heights '
+	db	'in one graphics pass if',cr,lf
+	db	'you configure the half bar character to print the '
+	db	'lower 3 dots instead of',cr,lf
+	db	'the default 2 dots.'
+
+	db	cr,lf,ff,lf
+	db	1,'SET PRINTER FOR 372 DOTS OF 120 DOTS/INCH GRAPHICS:',2
+	db	cr,lf
+	db	'The envelope and label barcodes are printed using '
+	db	'one or two passes of 120',cr,lf
+	db	'DPI graphics.  Set your printer as required to print '
+	db	'the next 372 bytes as',cr,lf
+	db	'120 dots/inch (960 dots/line) graphics.',cr,lf,lf
+
+	db	'If you don''t wish to print barcodes on your envelopes '
+	db	'or labels, set',cr,lf
+	db	'the string length to 0.'
+	db	0
+
+;=========================================================
+ehelp:
+	db	cr,lf
+	db	tab,tab
+	db	1,' ZDB VERS '
+	db	vers/10+'0','.',vers mod 10+'0'
+	db	suffix
+	db	' PRINTER INITIALIZATION ',2
+	db	cr,lf,lf
+
+	db	'     Each printer initialization string is displayed '
+	db	'as a list of',cr,lf
+	db	'     characters.  Each string character may be changed '
+	db	'by entering its menu',cr,lf
+	db	'     character and directly pressing the desired '
+	db	'character key.  Non-',cr,lf
+	db	'     printing characters are entered by pressing '
+	db	'the control key and the',cr,lf
+	db	'     character (00h=^@, 01h=^A, etc.)  The first '
+	db	'byte in each list is the',cr,lf
+	db	'     length of the list.',cr,lf,lf
+
+	db	1,'SET PRINTER FOR 2-DOT LINE SPACING FOR SECOND '
+	db	'BARCODE GRAPHICS PASS:',2,cr,lf
+	db	'The envelope and label barcodes are printed in one '
+	db	'or two graphics passes.',cr,lf
+	db	'On two-pass barcodes, the paper must be advanced '
+	db	'2 dots for the second pass',cr,lf
+	db	'to fill in the bottom of the bars.  Set printer '
+	db	'line spacing to 2 dots.',cr,lf
+	db	'This is usually 6/72", where 3/72" = 1 dot, but '
+	db	'some printers don''t move',cr,lf
+	db	'paper that exactly, so you might need to tune up '
+	db	'this setting to avoid',cr,lf
+	db	'vertical gaps or overlaps in the bottom of the barcode.'
+	db	cr,lf,lf
+
+	db	'If you wish to turn off the second barcode printing '
+	db	'pass, set the string',cr,lf
+	db	'length to 0.'
+
+	db	cr,lf,ff,lf
+	db	1,'NUMBER OF BARCODE OVERSTRIKES',2,cr,lf
+	db	'If you want your barcodes to print darker, increase '
+	db	'the number of times the',cr,lf
+	db	'barcode is overprinted, up to three times.  Normally '
+	db	'set to one.'
+	db	cr,lf,lf
+
+	db	1,'RESTORE DEFAULT PRINTER LINE SPACING:',2,cr,lf
+	db	'After the barcode is printed, the printer line spacing '
+	db	'must be restored to',cr,lf
+	db	'its default value, usually 6 lines/inch.  There '
+	db	'is probably a specific',cr,lf
+	db	'printer command for this function.  If you have '
+	db	'turned off the second',cr,lf
+	db	'graphics pass, this string will be ignored.'
+
+	db	0
+
+;=========================================================
+

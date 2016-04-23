@@ -1,0 +1,996 @@
+; GETVAR.MAC
+;
+; ZCPR3-Specific Utility.
+; Prints a user-specified prompt, accepts a response, and assigns the response
+; to a user-specified shell variable.
+; Syntax is:
+;
+;		GETVAR <varname> <prompt text>
+;
+; The only option is help, which is exclusive (it must appear first on the
+; command line, and the rest of the command line will not be processed).
+; Note that this program does NOT check to see that the user is a Wheel, but
+; does prevent the user from aborting with a Control-C.
+;
+; Author: Dreas Nielsen
+;
+; History --
+;	Version		Date		Comments
+;	-------		----		--------
+;	1.0		3/8/86		Off the ground - RDN
+;	1.1		1/17/87		Changed to use Z3VARLIB routines
+;					and turned ZEX off if necessary.
+;	1.2		9/6/87		Incorporated scrolling line editor
+;					instead of SYSLIB's INLINE.
+;					Control-C aborts with no change to
+;					shell variable.
+;
+;
+VERS	EQU	12
+;
+;
+PARMFL	EQU	'/'		; flag indicating parameter follows
+CTRLZ	EQU	1AH		;^Z for EOF
+EOF	EQU	1AH
+BELL	EQU	07H
+FCB	EQU	5CH
+TBUFF	EQU	80H
+BDOS	EQU	5
+BS	EQU	8
+CR	EQU	0DH
+LF	EQU	0AH
+;
+CMDLIN	EQU	80H	; CP/M's command line buffer
+;
+;
+; ====  Input Control Keys  ====
+;
+; Line editor:
+;	^S or left-arrow key defined in TCAP : move left 1 char
+;	^D or right-arrow key defined in TCAP : move right 1 char
+;	^E : erase to [E]nd of line
+;	^U : delete char [U]nder cursor
+;	^W : delete [W]ord forward
+;	^X : kill entire line
+;	DEL : delete char before cursor
+;	TAB : move to end of line, or if at end, to beginning
+;	^A : move to beginning of previous word
+;	^F : move to beginning of next word
+;	^H : delete char before cursor
+;	^Q : [Q]uote next char--insert char literal
+;	^C : abort if at beginning of line.
+;
+; Cursor keys are evaluated first, and may override others if they
+; generate a corresponding code.  For instance, on '83 Kaypros the backspace
+; key will move left rather than deleting left.  Use of CP/M standard line
+; editing keys (^E, ^U, ^R, & ^X) will, it is hoped, reduce other such 
+; conflicts.
+;
+; Note that the ^P printer toggle does not work inside this input editor;
+; the keystroke now defaults to another function.
+;
+;
+TOGKEY	EQU	'I'-'@'		;Toggles between beginning & end of line.
+DELBAK	EQU	127		;Deletes previous character.
+DELUND	EQU	'U'-'@'		;Deletes current character.
+CLREND	EQU	'E'-'@'		;Erases to the end of the line.
+FORWRD	EQU	'F'-'@'		;Move to next word forward.
+BAKWRD	EQU	'A'-'@'		;Move to next word backward.
+QUOTE	EQU	'Q'-'@'		;Quote next character.
+KILWRD	EQU	'W'-'@'		;Delete word forward.
+CTRLC	EQU	'C'-'@'		;Aborts if at beginning of line.
+CTRLX	EQU	'X'-'@'		;Erases entire line.
+;
+;
+; SYSLIB and Z3LIB routines
+;
+	EXT	Z3INIT,PUTER2,ROOT,INLINE,GETFN1,QPRINT,PSTR
+	EXT	SKSP,PUTUD,LOGUD,INITFCB,FILLB,F$DELETE,F$RENAME,F$MAKE
+	EXT	F$OPEN,F$CLOSE,GETUD,CAPS,PRINT,CRLF,COUT,CODEND
+	EXT	PUTZEX
+	EXT	GETCRT,GETVID,CIN
+;
+; Z3VARS routines
+;
+	EXT	VARDEF,VARLOAD,DELVAR,ADDVAR,WRTVARS
+;
+;
+; Locate environment pointer and version # at absolute address
+;
+;
+	DB	'Z3ENV'
+	DB	1
+Z3ENV:	DW	00
+	DB	VERS		;embed version number
+;
+;
+	CSEG
+;
+; Program beginning
+;
+;
+; Initialize environment for Z3 routines
+START:	LD	HL,(Z3ENV)
+	CALL	Z3INIT
+;
+; Reset error flag
+	XOR	A
+	CALL	PUTER2
+;
+; Save stack and set a new one
+	LD	(SAVESP),SP
+	LD	HL,STK
+	LD	SP,HL
+;
+; Print signon message
+	CALL	QPRINT
+;	DB	'GETVAR v. ',(VERS/10)+'0','.',(VERS MOD 10)+'0',CR,LF,0
+	DB	'GETVAR v. ',[VERS/10]+'0','.',[VERS MOD 10]+'0',CR,LF,0
+;
+; Allocate storage
+	CALL	CODEND
+	LD	(LINEBUF),HL	;variable definition
+	LD	DE,255
+	ADD	HL,DE
+	LD	(VARLIST),HL	;list of variables
+;
+; Save currently logged DU
+	CALL	PUTUD
+;
+; Patch RAWOUT routine to use BIOS console output
+;
+	LD	HL,(1)
+	LD	DE,9
+	ADD	HL,DE
+	LD	(CONOUT),HL
+; Load index register IX with base address of data structure for recording
+; editing position.
+;
+	LD	IX,EDIDAT
+;
+; Patch SYSLIB 'cout' routine so that chars printed can be recorded
+;
+	LD	HL,COUT
+	LD	A,0C3H		;1st byte of JP instruction
+	LD	(HL),A
+	INC	HL
+	LD	DE,ADVANCE	;patch routine
+	LD	A,E
+	LD	(HL),A
+	INC	HL
+	LD	A,D
+	LD	(HL),A
+;
+; Get screen line length and cursor keys
+;
+	CALL	GETCRT
+	LD	A,(HL)
+	LD	(SCRWID),A
+	CALL	GETVID
+	JR	Z,OPTCHK	;If no TCAP, use default cursor keys
+	LD	DE,16		;Point to arrow keys.
+	ADD	HL,DE
+	LD	A,(HL)
+	OR	A		;Is key defined?
+	JR	Z,OPTCHK
+	INC	HL
+	INC	HL
+	LD	A,(HL)
+	LD	(RT),A
+	INC	HL
+	LD	A,(HL)
+	LD	(LFT),A
+;
+; Check for option designator or no command line
+OPTCHK:	LD	HL,FCB+1
+	LD	A,(HL)
+	CP	PARMFL
+	JP	Z,HELP
+	CP	'?'
+	JP	Z,HELP
+	CP	' '
+	JP	Z,HELP
+;
+; Load variable name into SHVAR buffer
+	LD	HL,CMDLIN	;store null at end of command line
+	LD	A,(HL)		;get length
+	INC	A
+	LD	E,A
+	XOR	A
+	LD	D,A
+	ADD	HL,DE
+	LD	(HL),A
+;
+	LD	HL,CMDLIN+1
+	CALL	SKSP
+	PUSH	HL
+	LD	HL,SHVAR	;pt to shell variable buffer
+	LD	B,8		;8 chars max
+	LD	A,' '		;space fill
+	CALL	FILLB
+	EX	DE,HL		;DE pts to shell variable buffer
+	POP	HL		;pt to shell variable
+	LD	B,8		;8 chars max
+;
+; Place Shell Variable into Buffer
+;
+EXPV1:
+	LD	A,(HL)		;get char
+	CALL	DELCK		;check for delimiter
+	JR	Z,PTPMT		;done if delimiter
+	LD	(DE),A		;save char
+	INC	HL		;pt to next
+	INC	DE
+	DJNZ	EXPV1
+;
+; Flush Overflow of Shell Variable
+;
+EXPV2:
+	LD	A,(HL)		;get char
+	INC	HL		;pt to next
+	CALL	DELCK		;check for delimiter
+	JR	NZ,EXPV2
+	DEC	HL		;pt to delimiter
+;
+; Shell Variable in buffer SHVAR
+;	HL pts to delimiter after variable in user line
+;
+; Point to prompt and save position
+PTPMT:	CALL	SKSP
+	LD	(PMTPTR),HL
+;
+; Find shell variable file and load variables
+	LD	HL,(VARLIST)
+	CALL	VARLOAD
+	JR	Z,OFFZEX	;if variables loaded OK
+	CALL	PRINT		;else print error msg and exit
+	DB	CR,LF,BELL,'Can''t load shell variable file ',0
+	JP	EXIT
+;
+; Turn off ZEX if it's running
+OFFZEX:	LD	A,2
+	CALL	PUTZEX
+;
+; Print prompt to user
+PRPRMPT:
+	CALL	CRLF
+	LD	(IX),0		;Chars out = 0
+	LD	HL,(PMTPTR)
+	CALL	PSTR
+	LD	A,' '
+	CALL	COUT
+;
+; Get user's response
+	LD	HL,(LINEBUF)
+	XOR	A
+	LD	(HL),A
+	LD	HL,SCRWID	;Compute chars remaining on screen line.
+	LD	A,(IX)		;First see if prompt wrapped.
+CLINE1:	CP	(HL)		;If chars printed > screen width, subtract
+	JR	C,CLINE2	; screen width and repeat test.
+	SUB	(HL)
+	JR	CLINE1
+CLINE2:	LD	B,A
+	LD	A,(HL)		;Now find chars remaining (scroll space).
+	SUB	B		; Subtract chars printed for prompt...
+	DEC	A		; ...and an extra position for the cursor.
+	LD	(IX+1),A
+	CALL	SCROLLIN
+;
+; Quit if no line entered
+QLINE:	LD	A,(HL)
+	OR	A
+	JP	Z,EXIT
+;
+; Put variable name and text onto end of list in memory
+	LD	HL,SHVAR
+	LD	DE,(LINEBUF)
+	CALL	ADDVAR
+;
+; Write out shell variable file
+WRTV:	CALL	WRTVARS
+	JP	Z,EXIT
+;
+; File write error.  Set error message byte,
+;  print error message, and exit.
+WRERR:
+	CALL	SETERR
+	CALL	PRINT
+	DB	CR,LF,BELL,'Write error on shell variable file.',0
+	JR	EXIT
+;
+; Print help message and fall through to exit
+HELP:
+	CALL	PRINT
+	DB	'GETVAR -- Prompts for and gets a shell variable.',CR,LF
+	DB	'Syntax is:',CR,LF
+	DB	'       GETVAR <varname> <prompt text>',CR,LF
+	DB	0
+;
+; Return to ZCPR3
+;
+EXIT:
+	CALL	GETUD
+	LD	HL,(SAVESP)
+	LD	SP,HL
+	RET
+;
+;================[ Subroutines ]================
+;
+;--- DELCK
+;
+; Check to see if char in A is a delimiter
+;	Return with Z if so
+;
+DELCK:
+	PUSH	HL		;pt to table
+	PUSH	BC		;save BC
+	CALL	CAPS		;capitalize char
+	LD	B,A		;char in B
+	LD	HL,DTABLE	;pt to delimiter table
+DELCK1:
+	LD	A,(HL)		;get delimiter
+	OR	A		;done?
+	JR	Z,NOTDEL
+	CP	B		;compare
+	JR	Z,YESDEL
+	INC	HL		;pt to next
+	JR	DELCK1
+NOTDEL:
+	LD	A,B		;get char
+	OR	A		;set Z if null, else NZ
+YESDEL:
+	LD	A,B		;restore char
+	POP	BC		;restore regs
+	POP	HL
+	RET	
+;
+; Delimiter Table
+;
+DTABLE:
+	DB	'<>;:,.=-_ ',0
+;
+;----------------
+;
+; --- SETERR
+;
+; Set program error code
+SETERR:
+	PUSH	AF
+	XOR	A
+	DEC	A
+	CALL	PUTER2
+	POP	AF
+	RET
+;
+;
+;----------------------------------------------------------------
+;	---  SCROLLIN  ---
+;
+;	Scrolling Line Editor
+;
+;
+; Table of line-editor execution vectors.
+;
+	DB	'EDCMDS'
+EDCMDS:
+RT:	DB	'D'-'@'
+LFT:	DB	'S'-'@'
+	DB	DELUND
+	DB	DELBAK
+	DB	BS
+	DB	TOGKEY
+	DB	CTRLX
+	DB	CLREND
+	DB	FORWRD
+	DB	BAKWRD
+	DB	KILWRD
+	DB	QUOTE
+	DB	CTRLC
+NUMEDS	EQU	$-EDCMDS
+;
+;  Table of line-editor functions
+;
+EDFUNCS:
+	DW	FORWARD		;Move ahead 1 char.
+	DW	BACKUP		;Move back 1 char.
+	DW	DELETE		;Delete char under cursor.
+	DW	BEHIND		;Delete char behind cursor.
+	DW	BEHIND		;Delete char behind cursor.
+	DW	TOGGLE		;Move to end or beginning of line.
+	DW	ERASE		;Erase line.
+	DW	EREOL		;Erase to end of line.
+	DW	NXTWRD		;Move forward 1 word.
+	DW	PRVWRD		;Move backward 1 word.
+	DW	ERAWRD		;Erase word forward.
+	DW	LITCHAR		;Next char literal.
+	DW	QABORT		;Abort if at beginning.
+;
+;
+;----------------
+;
+SCROLLIN:
+	LD	HL,(LINEBUF)
+	LD	(CURRPOS),HL
+	LD	(BEGLINE),HL
+	XOR	A
+	LD	(HL),A		;Empty line to start.
+	LD	(IX),A		;Cursor position at beginning.
+	LD	(IX+2),A	;0 characters entered.
+;
+SCRIN1:
+	CALL	CIN
+	CP	CR
+	JR	Z,SCREND
+;
+; Scan table of editing commands for a match.
+;
+	LD	HL,EDCMDS
+	LD	BC,NUMEDS
+	CPIR
+	JR	Z,SCRIN3
+	CALL	INSERT		;Not a command character, so insert it.
+	JR	SCRIN1
+;
+SCRIN3:				;Char is a command.
+	DEC	HL		;Point to pointer to command address.
+	LD	DE,EDCMDS
+	OR	A
+	SBC	HL,DE
+	SLA	L
+	LD	DE,EDFUNCS
+	ADD	HL,DE
+	LD	E,(HL)		;Get command address.
+	INC	HL
+	LD	D,(HL)
+	LD	HL,SCRIN1	;Put return address on stack.
+	EX	DE,HL
+	PUSH	DE
+	JP	(HL)		;Execute routine.
+;
+SCREND:
+	CALL	CURSBAK
+	LD	HL,(LINEBUF)
+	CALL	PSTR
+	RET			;Done editing.
+;
+;
+;----------------
+;
+RETREAT:
+	PUSH	AF
+	LD	A,8
+	CALL	RAWOUT
+	DEC	(IX)
+	POP	AF
+	RET
+;
+;----------------
+;
+SCRPUT:			;prints 1 char, or 2 if control-char
+	CP	32
+	JR	C,PUT2
+	CALL	ADVANCE
+	RET
+PUT2:	LD	B,A
+	LD	A,'^'
+	CALL	ADVANCE
+	LD	A,B
+	SET	6,A
+	CALL	ADVANCE
+	RET
+;
+;----------------
+; Send cursor to beginning of line
+;
+CURSBAK:
+	LD	A,(IX)
+	OR	A
+	RET	Z
+	LD	B,A
+	LD	A,8
+CB1:	CALL	RETREAT
+	DJNZ	CB1
+	RET
+;
+;----------------
+; Send pointer to beginning of line, at beginning of window.
+;
+TOBEG:
+	CALL	CURSBAK
+	LD	HL,(LINEBUF)	;Reset 'begline' & 'currpos' to 'linebuf'.
+	LD	(BEGLINE),HL
+	LD	(CURRPOS),HL
+	CALL	UPDATE		;Redraw line.
+	RET
+;
+;----------------
+; Send cursor to end of line, at end of window if line is longer than window.
+;
+TOEND:				;Send cursor to end of line.
+	LD	HL,(CURRPOS)
+	LD	A,(IX+1)	;(printable chars allowed)
+	CP	(IX+2)		;(chars actually entered)
+	JR	NC,TOEND6	;Skip calculation of new beginning position
+TOEND1:	LD	A,(HL)		;Use HL for 'currpos'.
+	INC	HL
+	OR	A
+	JR	NZ,TOEND1
+	DEC	HL		;Now HL points to terminating null.
+TOEND2:	LD	B,(IX+1)	;Move 'currpos' back by 'printable' chars.
+TOEND3:	DEC	HL
+	LD	A,(HL)
+	CP	32		;Is it control char?
+	JR	NC,TOEND4
+	DEC	B		;If so, subtract an extra position.
+	JR	Z,TOEND5
+TOEND4:	DJNZ	TOEND3
+;
+TOEND5:	LD	(BEGLINE),HL	;Now save 'begline'.
+	CALL	CURSBAK		;Back up cursor.
+TOEND6:				;Write chars up to end of line.
+	LD	A,(HL)
+	OR	A
+	JR	Z,TOEND7
+	PUSH	HL
+	CALL	WRTCHAR
+	POP	HL
+	INC	HL
+	JR	TOEND6
+TOEND7:	LD	(CURRPOS),HL	;Now save modified 'currpos'
+	RET
+;
+;----------------
+; Toggle between beginning and end of line.  Go to end, or go to beginning
+; if already at end.
+;
+TOGGLE:	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+	JR	Z,TOG1
+	CALL	TOEND
+	RET
+TOG1:	CALL	TOBEG
+	RET
+;
+;----------------
+; Write the character in A, scrolling left if necessary.
+;
+WRTCHAR:
+	PUSH	AF		;Save character.
+	CP	32		;Is it a control character?
+	JR	NC,WRTC2	;If not, just check for cursor at end of window.
+	LD	A,(IX+1)	;Compute 'printable' - 'curspos'.
+	SUB	(IX)
+	CP	2		;Within 2 places of end?
+	JR	NC,WRTC3	;If not, just go print character.
+	OR	A		;Just one position?
+	JR	NZ,WRTC4
+	CALL	SCROLL
+WRTC4:	CALL	SCROLL
+	JR	WRTC3		;Done scrolling for control char.
+WRTC2:	LD	A,(IX)		;For non-ctrl-char: is cursor at end of window?
+	CP	(IX+1)
+	JR	NZ,WRTC3	;If not, don't scroll.
+	CALL	SCROLL
+WRTC3:	POP	AF		;Get character back.
+	CALL	SCRPUT
+	RET
+;
+;----------------
+; Scroll the window left by one character.
+;
+SCROLL:
+	PUSH	HL		;For when FORWRD calls WRTCHAR calls SCROLL.
+	CALL	CURSBAK
+	LD	DE,(CURRPOS)
+	LD	HL,(BEGLINE)	;Get & increment 'begline'.
+	INC	HL
+	LD	(BEGLINE),HL
+	DEC	DE		;Decrement 'currpos' for comparison
+SCROLL1:
+	PUSH	HL
+	OR	A
+	SBC	HL,DE		;is HL up to DE yet?
+	LD	A,H
+	OR	L
+	POP	HL
+	JR	Z,SCROLL2	;If so, quit.
+	LD	A,(HL)
+	CALL	SCRPUT		;Else print the char.
+	INC	HL
+	JR	SCROLL1
+SCROLL2:
+	CALL	UPDATE
+	POP	HL
+	RET
+;
+;----------------
+; Updates the line from the current position to the end of the window.
+; This will print characters until either the end of the line or the end
+; of the window is reached.  Up to 2 blanks will be printed following the
+; line, if there is room in the window, to obliterate previously printed
+; characters in case a control character has just been deleted.
+;
+UPDATE:
+	LD	HL,(CURRPOS)	;HL = next char to print.
+	LD	D,0		;B = # of chars printed.
+UPD1:
+	LD	A,(IX)		;Is 'curspos' = 'printable'?
+	CP	(IX+1)
+	JR	Z,UPDEND	;If Z, we've reached end of window.
+	LD	A,(HL)
+	OR	A		;Is character 0?
+	JR	Z,UPDFILL	;If Z, we've reached end of line.
+	CP	32		;Is it a control char?
+	JR	NC,UPD2		;If not, go on and print it.
+	LD	C,A		;Save char temporarily.
+	LD	A,(IX+1)	;Is there only one space left in window?
+	SUB	(IX)
+	CP	1
+	JR	NZ,UPD3		;If not, go print char(s)
+	LD	A,' '		;If so, print just a space...
+	CALL	ADVANCE
+	INC	D
+	JR	UPDEND		;...and go back up cursor.
+UPD3:	LD	A,C		;Get control char back.
+	INC	D		;Increment D for extra char to be printed.
+UPD2:	CALL	SCRPUT
+	INC	D
+	INC	HL		;Point to next char in buffer.
+	JR	UPD1
+UPDFILL:			;Pad with 1 or 2 spaces if possible.
+	LD	A,(IX)
+	CP	(IX+1)
+	JR	NC,UPDEND
+	LD	A,' '
+	CALL	ADVANCE
+	INC	D
+	LD	A,(IX)
+	CP	(IX+1)
+	JR	NC,UPDEND
+	LD	A,' '
+	CALL	ADVANCE
+	INC	D
+UPDEND:	LD	A,D
+	OR	A		;Any chars printed?
+	RET	Z
+	LD	B,D
+UPD4:	CALL	RETREAT		;Back up cursor to initial position.
+	DJNZ	UPD4
+	RET
+;
+;----------------
+; Move the cursor and current position pointer forward in sync.
+; Return the character at the next position.
+;
+FORWARD:
+	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+	RET	Z
+	INC	HL
+	LD	(CURRPOS),HL
+	CALL	WRTCHAR
+	LD	A,(HL)
+	OR	A
+	RET
+;
+;----------------
+; Back up the cursor and buffer pointer in sync, ensuring that the screen
+; is scrolled if necessary.
+;
+BACKUP:
+	LD	A,(IX)		;Is cursor at beginning of line?
+	OR	A
+	JR	NZ,BACK1	;If not, go on.
+	CALL	POSCHK		;Are we at beginning of buffer?
+	RET	Z		;Do nothing if so.
+	LD	DE,(CURRPOS)
+	DEC	DE
+	LD	(BEGLINE),DE
+	LD	(CURRPOS),DE
+	CALL	UPDATE		;Cursor doesn't move.
+	RET
+BACK1:
+	LD	DE,(CURRPOS)
+	DEC	DE		;Dec 'currpos'
+	LD	(CURRPOS),DE
+	LD	A,(DE)
+	CP	32		;Is it a control-char?
+	JR	NC,BACK2	;If not, back up just once.
+	CALL	RETREAT
+BACK2:	CALL	RETREAT
+	RET
+;
+;----------------
+; Erase word forward.  If at beginning of word, erase trailing blank also.
+;
+ERAWRD:
+	LD	HL,(CURRPOS)
+	LD	A,(IX)
+	OR	A
+	JR	Z,ERAWD1
+	DEC	HL
+	LD	A,(HL)
+	CP	' '
+	JR	Z,ERAWD1
+	CP	';'
+	JR	NZ,ERAWD2
+ERAWD1:	XOR	A
+ERAWD2:	LD	(SPDEL),A
+ERAWD3:	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+	RET	Z
+	CP	';'
+	RET	Z
+	CP	' '
+	JR	Z,ERAWD4
+	CALL	DELETE
+	JR	ERAWD3
+SPDEL	EQU	$+1
+ERAWD4:	LD	A,0
+	OR	A
+	RET	NZ
+	CALL	DELETE
+	RET
+;
+;----------------
+; Abort if at the beginning of the line, else insert a ^C.
+;
+QABORT:	CALL	POSCHK
+	JP	NZ,QAB2
+	CALL	ERASE
+	CALL	PRINT
+	DB	'<aborted>',0
+	JP	EXIT
+QAB2:	LD	A,CTRLC
+	CALL	INSERT
+	RET
+;
+;----------------
+; Insert the character in A at the current position
+;
+INSERT:
+	OR	A
+	RET	Z		;Don't insert a null.
+	LD	C,A
+	LD	A,(IX+2)	;Max chars already?
+	CP	(IX+3)
+	RET	Z
+	LD	HL,(CURRPOS)
+INS1:	LD	A,(HL)		;Move all chars up.
+	LD	B,A		;Ring-around-the-rosy in the registers.
+	LD	A,C		;Using 'LDDR' is an alternative, but requires
+	LD	C,B		; that a pointer be kept to the end of the
+	LD	(HL),A		; line, and code is no smaller.
+	INC	HL
+	OR	A		;Have we just stored the null?
+	JR	NZ,INS1
+	CALL	FORWARD
+	INC	(IX+2)
+	CALL	UPDATE
+	RET
+;
+;----------------
+; Delete the character at the cursor
+;
+DELETE:
+	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+	RET	Z
+	LD	E,L
+	LD	D,H
+	INC	DE
+DEL1:	LD	A,(DE)
+	LD	(HL),A
+	INC	DE
+	INC	HL
+	OR	A
+	JR	NZ,DEL1
+	DEC	(IX+2)
+	CALL	UPDATE
+	RET
+;
+;----------------
+; Delete the character behind the cursor.
+;
+BEHIND:
+	CALL	POSCHK
+	RET	Z
+	CALL	BACKUP
+	CALL	DELETE
+	RET
+;
+;----------------
+; Skip forward to next word.
+;
+NXTWRD:
+	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	OR	A
+NXTW1:	RET	Z
+	CP	' '		;If in whitespace, go skip to its end
+	JR	Z,NXTW2
+	CP	';'
+	JR	Z,NXTW2
+	CALL	FORWARD
+	JR	NXTW1
+NXTW2:	CALL	FORWARD
+	RET	Z
+	CP	' '
+	JR	Z,NXTW2
+	CP	';'
+	JR	Z,NXTW2
+	CALL	FORWARD
+	CALL	BACKUP
+	RET
+;
+;----------------
+; Skip backward to beginning of previous word.
+;
+PRVWRD:
+	CALL	BACKUP
+	CALL	POSCK2
+	RET	Z
+	CP	' '
+	JR	Z,PRVWRD
+	CP	';'
+	JR	Z,PRVWRD
+PRVW1:	CALL	BACKUP
+	CALL	POSCK2
+	RET	Z
+	CP	' '
+	JR	Z,PRVW2
+	CP	';'
+	JR	NZ,PRVW1
+PRVW2:	CALL	FORWARD
+	RET
+;
+;----------------
+; Check to see if current position is at the beginning of the buffer.
+; Return Z if so, NZ otherwise.
+;
+POSCHK:
+	LD	HL,(CURRPOS)
+	LD	DE,(LINEBUF)
+	OR	A
+	SBC	HL,DE
+	LD	A,L
+	OR	H
+	RET
+;
+;----------------
+; Do POSCHK but always return character at current position.
+;
+POSCK2:
+	CALL	POSCHK
+	PUSH	AF
+	LD	HL,(CURRPOS)
+	LD	A,(HL)
+	LD	B,A
+	POP	AF
+	LD	A,B
+	RET
+;
+;----------------
+; Quote next char (insert next char literally, even if it is a command
+; character).
+;
+LITCHAR:
+	CALL	CIN
+	CALL	INSERT
+	RET
+;
+;----------------
+; Erase entire line
+;
+ERASE:
+	CALL	CURSBAK
+	LD	A,(IX+1)
+	CALL	WIPE
+	XOR	A
+	LD	(IX),A
+	LD	(IX+2),A
+	LD	HL,(LINEBUF)
+	LD	(HL),A
+	LD	(CURRPOS),HL
+	LD	(BEGLINE),HL
+	RET
+;
+;----------------
+; Erase to end of line.
+;
+EREOL:
+	LD	HL,(CURRPOS)
+	XOR	A
+	LD	(HL),A
+	LD	DE,(LINEBUF)
+	SBC	HL,DE
+	LD	(IX+2),L
+	LD	A,(IX+1)
+	SUB	(IX)
+	OR	A
+	CALL	NZ,WIPE
+	RET
+;
+;----------------
+;
+WIPE:				;Blanks the number of chars in A
+	LD	C,A
+	LD	B,A
+	LD	A,' '
+WIPE1:	CALL	RAWOUT
+	DJNZ	WIPE1
+	LD	B,C
+	LD	A,8
+WIPE2:	CALL	RAWOUT
+	DJNZ	WIPE2
+	RET
+;
+;
+;----------------------  END OF EDITOR  --------------------------
+;
+;
+;----------------  UTILITY FUNCTIONS  ----------------
+;
+RAWOUT:	
+	PUSH	AF
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	LD	C,A
+CONOUT	EQU	$+1
+	CALL	00
+	POP	HL
+	POP	DE
+	POP	BC
+	POP	AF
+	RET
+;
+;----------------
+;
+ADVANCE:			;Outputs the char in A and increments 'curspos'.
+	CALL	RAWOUT
+	INC	(IX)
+	RET
+;
+;----------------
+;
+;
+;================[ Buffers ]================
+;
+SAVESP:
+	DS	2
+SHVAR:
+	DB	'        '	;shell variable
+VARLIST:
+	DS	2		;ptr to named variable list
+PMTPTR:
+	DS	2		;ptr to prompt line
+STKBOT:
+	DS	36
+STK:	DS	2
+;
+; Storage for scrolling line editor variables.  The following block of storage
+; is indexed by IX.
+;
+EDIDAT:
+	DB	0	;(IX) curspos - cursor offset from left marg.
+	DB	0	;(IX+1) printable - maximum printable chars on line
+	DB	0	;(IX+2) numchars - # of chars actually entered
+	DB	127	;(IX+3) maxchars - maximum # of chars allowed
+
+SCRWID:
+	DS	1
+LINEBUF:
+	DW	00	;(IX+4,5) linebuf - ptr to internal editing line
+BEGLINE:
+	DW	00	;(IX+6,7) begline - ptr to beginning char of screen window
+CURRPOS:
+	DW	00	;(IX+8,9) currpos - current char position
+;
+	END	START
+

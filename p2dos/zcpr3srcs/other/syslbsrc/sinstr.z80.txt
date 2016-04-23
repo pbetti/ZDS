@@ -1,0 +1,83 @@
+;	TITLE	"SINSTR - Syslib 4.0"
+	NAME	('INSTR')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SINSTR.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SINSTR
+; Abstract: This module contains the sole routine INSTR which
+;	scans through one Null-terminated character string for
+;	a match with a second Null-terminated character sub-
+;	string.  If a match is found, The Zero flag is set, and
+;	HL points to the first byte of the substring within the
+;	scanned string.  If a match is not found, the Zero flag
+;	is reset (NZ) and HL is unaffected.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+
+	PUBLIC		INSTR
+
+	.Z80
+	CSEG
+;=========================================================================
+; NAME - INSTR
+; Entry: HL - Addresses the Null-terminated string to scan
+;	 DE - Addresses a Null-terminated substring to match
+; Exit :  A = 0, Zero Flag Set (Z) if match found
+;	      A = 0FFH, Zero Flag Reset (NZ) if NO match
+;	 HL - Set to first char in string matching substring if found
+;	       - Unchanged if No match
+; Uses : AF,HL
+; Special Requirements:  None
+;=========================================================================
+
+INSTR:	PUSH	BC		; Save registers
+	PUSH	HL		; Save original HL
+
+SCAN:	PUSH	HL		; Save ptr to strings
+	PUSH	DE
+
+SCANL:	LD	A,(DE)		; Get byte from string to scan for
+	OR	A		; End of string?
+	JR	Z,FOUND		; Found if so
+	LD	B,A		; Save in B
+	LD	A,(HL)		; Get byte of string being scanned
+	OR	A		; End of string?
+	JR	Z,NOT$FOUND
+	CP	B		; Compare string elements
+	JR	NZ,NEXT
+	INC	HL		; Pt to next byte
+	INC	DE
+	JR	SCANL		; Continue scan
+
+;  No Match -- Point to next byte in string being scanned
+
+NEXT:	POP	DE		; Get ptrs
+	POP	HL
+	INC	HL		; Pt to next
+	JR	SCAN		; Scan again
+
+;  Match -- Zero Flag is set -- Get pointers
+
+FOUND:	POP	DE		; Get ptrs
+	POP	HL
+	POP	BC		; Clear HL from stack
+	POP	BC		; Get BC
+	RET
+
+;  No Match -- Set Not Zero and restore Original Pointers
+
+NOT$FOUND:
+	POP	DE		; Get ptrs
+	POP	HL
+	POP	HL		; Restore original HL
+	POP	BC		; Get BC
+	OR	0FFH		; Set Not Found
+	RET
+
+	END
+

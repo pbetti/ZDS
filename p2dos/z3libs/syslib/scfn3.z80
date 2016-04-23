@@ -1,0 +1,73 @@
+;	TITLE	"SCFN3 - Syslib 4.0"
+	NAME	('PFN3')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SPFN3.Z80 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SCFN3
+; Abstract: This module contains the routine PFN3 which prints an
+;	FCB-type fixed-field filename and type in compressed mode
+;	in a 12-character field, left justified, to the CON: de-
+;	vice.  If the name is less than eight characters, and/or
+;	the type is less than 3 characters, spaces are added to
+;	the end of the printed field to fill the field.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		PFN3
+
+; From SYSLIB Get..
+
+	EXT		COUT
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PFN3
+; Entry: DE - Points to an FCB filename
+; Exit : - No value returned.  file name printed to CON:
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+PFN3:	PUSH	BC		; Save the BC register
+	PUSH	DE		; save regs
+	PUSH	AF
+	LD	C,11		; 11 chars total
+	LD	B,8		; 8 chars first
+	CALL	PRFNX
+	LD	A,'.'		; dot
+	CALL	COUT		; Print to CON:
+	LD	B,3		; 3 more chars
+	CALL	PRFNX
+	LD	A,C		; get count of spaces
+	OR	A		; 0=none
+	CALL	NZ,SPACER
+	POP	AF		; restore regs
+	POP	DE
+	POP	BC
+	RET
+
+PRFNX:	LD	A,(DE)		; get char
+	AND	7FH		; mask out msb
+	CP	' '		; skip space
+	CALL	NZ,PROUT	; print it
+	INC	DE		; pt to next
+	DJNZ	PRFNX		; count down
+	RET
+
+PROUT:	DEC	C		; Count down char
+	JP	COUT		; ..Print on CON: dev if not
+
+SPACER:	LD	A,' '		; space over
+	CALL	COUT		; Print to CON: device
+	DEC	C
+	JR	NZ,SPACER
+	RET
+
+	END
+

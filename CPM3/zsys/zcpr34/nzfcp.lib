@@ -1,0 +1,167 @@
+
+; NZFCP.LIB
+
+; This module is a set of configuration options for the flow control package
+; code in NZFCP.Z80.  The options are not fully commented here; see
+; "ZCPR3, The Manual" for a detailed discussion of most of them.
+
+
+;             * * * * * *     N O T I C E     * * * * * *
+;
+; The main code in Z33FCP.Z80 has been written with relative jump instructions
+; for minimum code size.  If the options below are changed, then some of the
+; jumps may become out-of-range.  You will then have to change the code based
+; on the error messages you get from your assembler.  I cannot think of any
+; way to handle the jumps automatically (macros fail because the jump distances
+; cannot be resolved fully even in two passes of the assembler).  If you want
+; to play things really safe, you can do a global search and replace to change
+; all occurrences of the JR instruction to JP (but note that this change is
+; irreversible).  I prefer to live with this nuisance so that I can get the
+; most out of the code.
+;
+; Another possible way to clear up a problem with a relative jump that is out
+; of range is to take the block of code with the labels IFCTRUE and IFCFALSE
+; and move it up or down in the code.  It is placed somewhere in the middle of
+; the resident options, so that the options can reach those entry points with
+; a relative jump.  You should try to place that code near the middle of the
+; options which you have enabled.
+;
+;			Jay Sage (May 17, 1987)
+
+;-----------------------------------------------------------------------------
+
+; Command inclusion options
+
+zifopt		equ	yes		; Include ZIF command to
+					; ..unconditionally clear IF states
+
+ifqopt		equ	no		; Include IFQ command to show current
+					; ..if status
+
+oropt		equ	no		; Include OR command
+
+andopt		equ	no		; Include AND command
+
+
+; Command names
+
+; The CTABLE macro, which constructs the command dispatch table, includes a
+; line for each command, the first parameter of which is the name of the
+; command.  These names may be changed if you wish.  But make sure that you
+; do not use a name that is longer than the maximum allowed length.  If you
+; do, the name will be truncated and a nonfatal error will occur during
+; assembly.  DO NOT CHANGE ANY PARAMETER OTHER THAN THE COMMAND NAME.  Lower
+; case letters will be converted to upper case.  The macro COMMAND is defined
+; in Z34MAC.LIB.
+
+cmdsize	equ	4		; Maximum length of command names
+
+; Command table		name,	enable,	wheel,	jump_addr
+			;	[ DO NOT CHANGE THESE PARAMETERS ]
+ctable	macro
+ifcmd:	command		if,	yes,	no,	ifstart
+	command		and,	andopt,	no,	andstart
+	command		or,	oropt,	no,	orstart
+	command		else,	yes,	no,	ifelse
+	command		fi,	yes,	no,	ifend
+	command		ifq,	ifqopt,	no,	ifstat0
+	command		xif,	yes,	no,	ifexit
+	command		zif,	zifopt,	no,	ifzero
+	endm
+
+;-----------------------------------------------------------------------------
+
+; General configuration options
+
+noise		equ	no		; Display if-state messages
+
+comif		equ	yes		; Enable transient IF processing if
+					; ..option not found in resident code
+pathroot	equ	yes		; Find transient IF in root of path
+
+ifdrv		equ	'A'		; Drive to use if PATHROOT is off or
+					; ..if the path is empty
+ifusr		equ	0		; User to use if PATHROOT is off or
+					; ..if the path is empty
+
+;-----------------------------------------------------------------------------
+
+; If Condition Options
+
+;   IF NEGATION
+
+ifoneg		equ	no		; Allow negation of conditions
+negchar		equ	'~'		; Character to use if negation allowed
+
+
+;   IF:  T (TRUE) or F (FALSE)
+
+ifotrue		equ	no		; Allow "IF T" and "IF F" forms
+
+
+;   IF:  AM (AMBIGUOUS)
+
+ifambig		equ	no		; Test for '?' in file spec
+
+
+;   IF:  CO (COMPRESSED)
+
+ifcompr		equ	no		; Test for 'Z' or 'Q' in 2nd char of
+					; ..file type
+
+
+;   IF:  EM (EMPTY)
+
+ifoempty	equ	no		; Allow testing file for contents
+
+
+;   IF:  ER (ERROR)
+
+ifoerror	equ	no		; Allow testing program error flag
+
+
+;   IF:  EX (EXIST)
+
+ifoexist	equ	no		; Allow testing file for existence
+
+
+;   IF:  IN (INPUT)
+
+ifoinput	equ	no		; Allow getting user input
+
+
+;   IF:  NU (NULL)
+
+ifonull		equ	no		; Allow testing for no file name
+
+
+;   IF:  n (Register Value)
+
+iforeg		equ	no		; Allow testing register values
+
+
+;   IF:  WH (WHEEL)
+
+ifowheel	equ	no		; Allow testing if wheel byte set
+
+
+;  IF:	TC (TCAP)
+
+ifotcap		equ	no		; Allow testing whether TCAP is loaded
+
+
+;  IF:	fcb1=fcb2
+
+ifoeq		equ	no		; Allow testing for equality of two
+					; ..file names
+xeqopt		equ	no		; Yes to test only first token for
+					; ..equal sign
+
+; Miscellaneous configuration information
+
+curusr		equ	z3msg+2eh	; Current logged user address
+curdr		equ	z3msg+2fh	; Current logged drive address
+curint		equ	'$'		; Path symbol for current drive/user
+
+;  END of NZFCP.LIB
+

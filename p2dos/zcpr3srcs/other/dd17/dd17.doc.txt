@@ -1,0 +1,238 @@
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+*								*
+*			      D D				*
+*								*
+*		A ZCPR3 Disk Directory Program			*
+*								*
+*			       by				*
+*			  Terry Hazen				*
+*		     21460 Bear Creek Road			*
+*		      Los Gatos, CA 95030			*
+*			(408) 354-7188				*
+*								*
+*								*
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+Latest Revision
+---------------
+
+Version 1.7 - 05/23/88.  See DD17.HIS for revision details.
+
+===============================================================
+
+
+Overview
+--------
+
+DD is a ZCPR3 Disk Directory utility designed to be as easy as
+possible to use for routine, everyday purposes.  It uses a
+(patchable) 'lower case' option flag character ('/') for easiest
+typing and ZCPR compatibility.	For mimumum size, it has only
+those options that I've found most useful for everyday use on my
+own floppy and RAM disk system, as there are other directory
+utilities that will display more specialized information whenever
+that information is required.  It also operates correctly using
+the GO command.
+
+For use with large directories, as are often found on hard disk
+partitions, the summary line appears at the end of the display.
+The display is paged, and may be aborted at the end of any page
+with a ^C.
+
+An important (for me) and unique feature of DD is its ability to
+display files selected by file attribute as well as by filename
+mask.  After having used the attribute file copy utility ACOPY
+for quite awhile as my everyday copy program, I felt I needed
+something more specific than the ZRDOS utility DFA (Display File
+Attributes) to check which files had specific attributes set when
+I was writing a copying alias using ACOPY, the file copying
+utility that can copy by both file attribute mask and filename
+mask.
+
+DFA displays all the attributes of the files selected by a
+specified filename mask, which is very complete and useful for
+seeing patterns of attributes.	DFA is less useful, however, when
+you are trying to see which files have a specific combination of
+attributes.  DD was developed to display the files selected by
+the specified filename mask that also have a selected combination
+of the file attributes F1-F7 set.
+
+Since ZRDOS and ACOPY allow the use of the archive attribute as
+an aid in selecting files to be backed up, DD can also select
+only non-archived files for display (that is, files that have
+been modified after having been originally archived by SFA).
+This helps you check to see which files have been modified after
+you run a program or series of programs.
+
+Sometimes an archive bit will be reset even when a file hasn't
+been changed.  When running dBASEII, for example, a database file
+archive bit gets reset whenever the file is opened and read, even
+if it hasn't been modified.  Knowing that you aren't doing
+anything to modify a file and that DD shows it as changed will
+help you set up a backup utility that won't copy long files
+needlessly.
+
+
+Program Name
+------------
+
+The easiest mnemonic name to type, 'D', is already used (by the
+public domain 'WHATSNEW' program), so I chose DD as being the
+next easiest to type quickly.  My own version is renamed to
+'D.COM', however, as I don't normally use the public domain
+'WHATSNEW' D.COM and prefer the shorter name.  A version with a
+horizontal display default might be named 'DH.COM', etc.  The
+current program name will be automatically displayed in the HELP
+message without any patching when running under ZCPR3.
+
+
+Installation
+------------
+
+The distribution version of DD is supplied with an AMPRO standard
+Z3ENV address of FE00H.  ZCPR3.0 users with other Z3ENV locations
+should install DD using Z3INS.COM and SYS.ENV in the normal
+manner.  ZCPR3.3 users don't need to perform any installation.
+DD uses the ZCPR3 environmental descriptor only to obtain the
+number of displayed lines per screen.
+
+
+Syntax
+------
+
+	  DD [dir:][afn] [/option(s)]
+
+
+Options
+-------
+
+DD is designed so that you don't have to type the filename mask
+'*.*' when you wish to display all the files in a directory and
+also to select options.  For example:
+
+	  A0>DD /AT  is the same as  A0>DD *.* /AT
+
+HOWEVER - if you select more than FIVE options without using a
+filename mask such as '*.*', DD will think that you are
+specifying a filename.
+
+This limitation is imposed so that you can still use a filename
+mask to select filenames beginning with '/' as long as the
+command line tail (the filename mask and option request) is at
+least SEVEN characters long.  The wildcards '*' and '?' and any
+spaces count as filemask characters, but the filename/filetype
+separator '.' does not.  DD will accept extra spaces after the
+program name, the filename mask, and in and after the option
+request, so the easiest way to make sure you have at least seven
+characters in your requests for short filename masks beginning
+with '/', is to just add lots of extra spaces before pressing
+<RET>.
+
+For example:
+
+	  DD /* /A<RET>       will display ALL files, not just
+	  -->12345	      those beginning with '/', as it
+			      has only five characters in the
+			      command line tail.
+
+While:
+
+	  DD /* /A  <RET>     is ok, because of the extra spaces
+	  -->1234567	      AFTER the option request.
+
+	  DD /*   /A<RET>     is also ok, because of the extra
+	  -->1234567	      spaces BEFORE the option request.
+
+
+Options may appear in any order except that if both members of
+the 'H' and 'V' or the 'A' and 'S' option pairs are selected,
+whichever option that appears last will be invoked.
+
+
+The default options are:
+
+     A - Display all (both directory and system) files.  The
+	  default display is directory files only.
+
+     S - Display only system files.
+
+     N - Display only non-archived (changed) files.  Files must
+	  have been archived first.  Useful for file backup
+	  purposes in conjunction with the file copy utilities AC
+	  or ACOPY.
+
+   1 - 7  Display only the files selected by the filename mask
+	  that also have ANY of the selected combination of the
+	  file attributes F1 through F7 set.  Very useful in
+	  conjunction with the attribute file copy utility ACOPY.
+
+     U - Display all files from all user areas OTHER than the
+	  logged user area.  This is useful as a means of quickly
+	  checking whether there are files in any other user
+	  areas on the disk.  Any specified filename mask will be
+	  ignored, but all other options, such as 'S', '1' - '7'
+	  and 'N' will still further specify the files to be
+	  displayed.  Displayed files will not have their user
+	  areas identified as this is primarily a 'check'
+	  function.  It is also a quick way to display the space
+	  remaining on a disk with a large directory in only one
+	  user area without displaying the directory.
+
+     T - Display the selected files alphabetized by file type
+	  and then by file name.  The default display is
+	  alphabetized by file name, then by file type.
+
+     H - List files horizontally, mostly for use with multi-page
+	  displays.  The default is vertical listing, and may be
+	  changed to horizontal listing by patching (see below).
+	  The help message will always reflect the default
+	  listing by showing both the default setting and the
+	  appropriate non-default option.  Although only one of
+	  the 'H' or 'V' options is displayed in the help
+	  message, both are, in fact, always available.
+
+     P - Send the directory listing to your printer in addition
+	  to displaying it on the console.  MAKE SURE THAT YOUR
+	  PRINTER IS READY BEFORE YOU SPECIFY THE 'P' OPTION OR
+	  YOUR SYSTEM MAY HANG UP!
+
+     R - Reset the disk system (for checking the directories and
+	  free space on a number of disks in the same drive, one
+	  after the other).  This can be set to be the default
+	  condition by patching (see below).  When the disk reset
+	  option is selected, DD prints a reset message at sign-
+	  on:
+	       (Resetting the disk system...)
+
+	  The display of this message may be eliminated by
+	  patching (see below).
+
+
+Patching the default settings
+-----------------------------
+
+The following locations may be patched with PATCH, DDT, ZPATCH,
+DDT, etc, to change the program defaults as explained below.  The
+HELP message will automatically reflect the current defaults.
+
+
+Location    Default	 Purpose
+================================================================
+  010BH     '/' 	 Option flag character
+
+  010CH     ':' 	 File separator character
+
+  010DH     00H 	 File listing direction.  Default is
+			 vertical.  0FFH defaults to horizontal
+			 file listings.
+
+  010EH     00H 	 Default is to not reset the disk system.
+			 0FFH defaults to always resetting the
+			 disk system.
+
+  010FH     0DH 	 00H will eliminate the display of the
+			 disk system reset message.
+
+---------------------------------------------------------------
+

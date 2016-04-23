@@ -1,0 +1,402 @@
+; Program:	TYP4LDR.Z80
+; Authors:	Joe Wright, Bridger Mitchell, Jay Sage
+; Date:		June 18, 1988
+; Version:	1.0
+
+vers	equ	10		; 20 Jun 88  jww
+
+; Checks file size against memory allocation earlier
+; and therefore eliminates two calls to ADJADDR.
+; Shorten ADJADDR routine.
+; Place record count in DE before LOAD:
+
+no	equ	0
+yes	equ	not no
+
+prl	equ	yes		; If not PRL, DRI SPR is assumed
+align	equ	no		; If yes, force page alignment for load
+test	equ	no		; If yes, no .phase/.dephase
+
+tbuff	equ	80h		; Always executes from the default buffer
+
+
+; This file contains the overlay loader code that is placed into the page-0
+; header of a PRL or SPR program file to make a type-4 Z-System program that
+; will be loaded automatically by the ZCPR34 or Z3PLUS command processor to
+; the highest possible address in the TPA.  SPR and PRL files are much the
+; same except that the code segment in PRL files is relative to 0100h while
+; in SPR files it is relative to 0000h.  Assuming that the program has been
+; assembled and then linked to PRL by either DRI's LINK or SLR's SLRNK+, the
+; type-4 program would be created using Ron Fowler's MLOAD (version 2.1 or
+; later) with the command:
+;
+;	MLOAD <file>[.COM]=<file>.PRL,TYP4LDR[.HEX]
+;
+; where <file> is the name of the program and the items in square brackets
+; are optional.
+
+; The header in a PRL or SPR file occupies one page or two records.  TYP4LDR
+; comprises two pieces of code, one in the first record of the file and one
+; in the second record.  These two pieces of code are executed by the
+; command processor from the default buffer at 80h.
+
+; The command processor first calls the routine in record 0.  This code
+; calculates where the actual program code beginning with record 2 should be
+; loaded and reports the result back to the command processor.  The command
+; processor then loads the second routine in record 1 into the default
+; buffer at 80h and the actual program code beginning with record 2
+; (including the bitmap) to the calculated load address.  The command
+; processor then returns to the second TYP4LDR routine, which performs the
+; relocation of the program code and then returns to the CCP.
+
+;--------------------------------------------------
+
+; PRTVAL macro(s) to print text and value during assembly
+
+prtval2	macro m1,v1,m2			; \
+	.printx	m1 v1 m2		;  +- this is the print value macro
+	endm				; /
+
+prtval	macro r,msg1,val,msg2		; \
+	.radix r			;   passing the radix value
+	prtval2 <msg1>,%val,<msg2>	;   requires the uses of 2 macros
+	endm				; /
+
+;=============================================================================
+
+; Record 0 Routine  --  Load Address Calculator
+
+; Record 0 of the loader code begins with a Z-System header that identifies
+; the program to the command processor as a type-4 program.  The first byte
+; contains a RST 0 instruction that will cause a warmboot if an attempt is
+; made to execute the program with a command processor that is not
+; compatible with ZCPR34 or later.  The next two bytes would normally
+; contain the entry address to the program code.  In the PRL and SPR file
+; format, they contain the length of the program.  This value is used to
+; locate the bitmap and to compute the size of the program.
+
+; ZCPR34 calls the code in this record at location TBUFF+9.  It is called
+; from a point inside the command processor's MLOAD3 routine where the load
+; address is being computed.  On entry, the registers contain the following
+; information:
+
+; 	HL  =	Z3ENV, environment descriptor address
+; 	DE  =	ENTRY, address of beginning of CCP
+; 	BC  =	PROGSIZE, program size from program header in record 2
+; 	 A  =	FULLGET flag
+
+; The value in HL is not used here but could be used, for example, by a
+; different loader designed to load a routine into the RCP module.  The
+; Z3ENV address would be needed to determine the address and size of the RCP
+; buffer.
+
+; The value in DE is used to determine the address of the top of the TPA.
+
+; The value reported in BC is extracted by the CCP from the load-address
+; word of the type-3 header in the actual program code.  This will normally
+; be 0100h for a PRL file or 0000h for an SPR file.  However, if the program
+; uses dynamically allocated buffer space after the end of its own code,
+; then the type-4 program must be loaded to a correspondingly lower address. 
+; In that case, the value at offset 11 (0Bh) in record 2 should be patched
+; to contain the address of the end of the required buffer space relative to
+; the nominal load address (100h for PRL, 000h for SPR).  The value thus
+; includes the code segment, data segment, and the dynamic buffer space, and
+; the nominal load address.
+
+; The value in A is the FULLGET flag that tells whether or not the command
+; processor supports the fullget option.  If it does not, the CCP always
+; performs a test to make sure that code is never loaded to an address above
+; the beginning of the CCP.  Because it does not know in advance how big a
+; file is, it actually has to protect one extra page below the CCP.  If the
+; CCP supports the fullget option, this checking is disabled.  Since during
+; type-4 loading we know the size of the code, we can load it one page
+; higher in memory.
+
+; When the loader routine here is called, the top of the stack contains the
+; return address to the point in MLOAD3 from which the loader was called.
+
+	org	100h		; ORG HEX file at 100h
+
+	 if	not test
+	.phase	tbuff		; Program actually runs at 80h
+	 endif
+
+
+rec0:	rst	0		; Only a ZCPR34-compatible CCP
+				; ..can execute this file
+length:	ds	2		; Length of the code module (SPR or PRL)
+
+	db	'Z3ENV'
+	db	4		; A Type 4 program
+
+start:	ex	(sp),hl		; Get return address from stack
+				; ..and put Z3ENV on the stack
+	ld	(load+1),hl	; Set in-line jump to the return address
+	ld	hl,(length)	; Length of this PRL/SPR code
+	push	hl		; Save on stack for sector 1 routine ;(+2)
+	push	de		; Save CCP address ;(+4)
+	or	a		; Test FULLGET
+	push	af		; Save result ;(+6)
+
+	 if	prl		; If PRL file, we have to adjust PROGSIZE
+	dec	b		; ..for the 100h address offset
+	 endif
+
+; We now calculate the size of the file to be loaded by the CCP.  It will be
+; the length of the program plus the length of the bitmap (1/8 the code size)
+; adjusted to an integer number of records.
+
+	push	hl		; Save PRL length (+8)
+	ld	de,7		; Make sure we count any fractional byte
+	add	hl,de
+	pop	de		; PRL length into DE (+6)
+	ld	a,3		; Divisor (2^3=8)
+
+div:	srl	h		; 0 to H7, H0 to carry
+	rr	l		; Carry to L7
+	dec	a
+	jr	nz,div		; Divide by 8
+
+	add	hl,de		; PRL/8 + PRL to HL
+	ld	de,127
+	add	hl,de
+	ld	a,128
+	and	l
+	ld	l,a
+
+; If fullget is false, the CCP file loader will perform tests to prevent the
+; load from overwriting either the CCP or an RSX.  Because the CCP cannot
+; detect the end of a file until an attempt to read the next record fails,
+; no attempted read is allowed in the top page of memory.  To account for this,
+; the effective file size is taken to be 101h bytes longer than the actual
+; size.
+
+	pop	af		; Get fullget status back ;(+4)
+	pop	de		; CCP address (+2)
+	push	hl		; Save file size (+4)
+	push	de		; Save CCP address (+6)
+	push	af		; Save fullget again ;(+8)
+	jr	nz,noadj1	; If fullget is true, no adjustment needed
+
+	ld	de,101h
+	add	hl,de
+noadj1:	ex	de,hl		; Load size to DE
+
+; Place the larger of Load size and Memory size in DE
+
+	ld	a,e
+	sub	c
+	ld	a,d
+	sbc	b
+	jr	nc,noadj2	; DE is larger
+	ld	d,b
+	ld	e,c
+
+; Calculate possible load address assuming RSX defines top of TPA and DE
+; defines memory required.  If fullget is false, a further adjustment
+; is required because the CCP file load checking code uses the RSX lower
+; page boundary as the upper address.
+
+noadj2:	ld	hl,(6)		; DOS/RSX pointer to HL
+	pop	af		; We need fullget test again ;(+6)
+	jr	nz,noadj3
+	ld	l,0		; If fullget false, use beginning of page
+
+noadj3:	push	de		; Save memory size ;(+8)
+	call	adjaddr		; Calculate address with DOS/RSX
+
+; Now calculate possible load address assuming CCP defines top of TPA
+
+	pop	de		; Memory size into DE ;(+6)
+	pop	hl		; CCP address ;(+4)
+	call	adjaddr		; Calculate address and keep lowest
+
+; Get ready to return to CCP
+
+loadaddr equ	$+1
+
+	ld	de,-1		; Get final value of load address
+
+	 if	align
+	ld	e,a		; Force page alignment (A=0)
+	 endif
+
+	pop	hl		; Get file size ;(+2)
+	push	de		; Pass load address to record-1 routine ;(+4)
+	push	de		; Hold a copy on the stack for now ;(+6)
+
+	add	hl,hl
+	ld	e,h
+	ld	d,a		; A remains zero from last call to ADJADDR:
+
+	ld	hl,tbuff	; Set for for CCP to call second record
+	ex	(sp),hl		; Load address to HL, tbuff to top of stack
+
+	 if	test
+	rst	38h		; DDT breakpoint
+	 endif
+
+load:	jp	0		; Return to CCP (hot-patched above)
+				; Command processor loads record 1 to tbuff
+				; ..and records 2+ to load address, then
+				; ..'returns' to tbuff
+
+;--------------------------------------------------
+
+; This subroutine takes the address of the top of TPA in HL and the amount of
+; memory required in DE and computes the proper load address.  It then compares
+; it to the value stored at LOADADDR and replaces the value there if the new
+; value is lower.
+
+adjaddr:
+	xor	a		; Clear carry flag
+	sbc	hl,de		; Computer lower memory address
+	ex	de,hl		; ..and put it in DE
+	ld	hl,(loadaddr)	; Get previously computed load address
+	sbc	hl,de		; Compare HL and DE
+	ret	c		; HL is lower, nothing to do
+	ld	(loadaddr),de	; New lower address 
+	ret
+
+space	defl	80h - ($-rec0)	; Space remaining in this record
+
+	.printx				; Skip line on screen
+
+	 if	space < 80h
+
+	prtval	10,<Space remaining in 1st routine:>,space,bytes
+	rept	space
+	db	0		; Zero fill
+	 endm
+
+	 else			; Code too long
+
+space	defl	-space
+	prtval	10,<1st routine too long by>,space,bytes
+
+	 endif
+
+	 if	not test
+	.dephase
+	 endif
+
+;=============================================================================
+
+; Record 1 Routine  --  Code Relocator
+
+; This code is loaded to tbuff by the command processor. It is executed
+; after the command processor has loaded the program code/data to the load
+; address and relogged the current DU.  On entry, the stack contains the
+; following data:
+;
+;	(sp)	load address
+;	(sp+2)	PRL/SPR code size
+;	(sp+4)	Z3ENV address
+;	(sp+6)	return address of command processor routine
+;		that called MLOAD3
+
+	 if	not test
+	.phase	tbuff
+	 endif
+
+rec1:	pop	hl		; Load address to HL
+	pop	bc		; PRL/SPR code size to BC
+	pop	de		; Toss out Z3ENV (not needed here)
+
+; The loaded module may have been assembled as a Type 3.
+; We change it here to Type 4.
+
+	push	hl		; Save load address
+	ld	de,8		; Offset to type byte
+	add	hl,de		; Add the offset
+	ld	(hl),4		; Make it type 4
+	pop	hl		; Restore load address
+
+; Bridger Mitchell's  Word-wide relocator starts here..
+
+	push	hl		; Save load address on stack
+	exx			; Select alternate registers
+	pop	de		; Load address to DE'
+	 if	prl
+	dec	d		; -100h if PRL assembly
+	 endif
+	exx			; Select main registers
+
+	ld	ix,0		; Clear IX
+	add	ix,sp		; Save SP in IX
+
+; The relocator uses SP as a memory pointer and so we must disable
+; the interrupt system until we get it right again.
+
+	di			; Disable interrupt system
+	ld	sp,hl		; Sp -> start of code, lag 1 byte
+	dec	sp		; ..because prl marks the high byte
+	add	hl,bc		; Add code length, hl ->prl bitmap
+	ld	e,1		; Init the rotation byte
+				; It will set CY every 8 bytes
+; Main relocation loop..
+
+rloop:	ld	a,b		; Check byte count
+	or	c
+	jr	z,rdone		; Return to MLOAD caller
+
+	dec	bc		; Reduce byte count
+	rrc	e		; Every 8 bits the CY is set
+	jr	nc,same		; ..not set
+
+	ld	d,(hl)		; Set d = next byte from bitmap
+	inc	hl		; And advance bitmap pointer
+
+same:	rlc	d		; Shift bitmap byte left into CY
+	jr	nc,noof		; No relocation needed
+
+	exx			; Alternate registers
+	pop	hl		; Get word to relocate from 'stack'
+	add	hl,de		; Add the load address in DE'
+	push	hl		; Put it back
+	exx			; Main registers
+
+noof:	inc	sp		; -> next byte of code
+	jr	rloop
+
+rdone:	ld	sp,ix		; Restore the stack pointer
+	ei			; And permit interrupts again
+
+	 if	test
+	rst	38h		; DDT breakpoint
+	 else
+	ret			; Return to MLOAD3's caller in ZCPR34
+	 endif
+
+space	defl	80h - ($-rec1)	; Space remaining in this record
+
+	 if	space < 80h
+
+	prtval	10,<Space remaining in 2nd routine:>,space,bytes
+
+	 if	space > 16	; Include ID if there is room
+	db	' TYP4LDR Ver ',vers/10+'0','.',vers mod 10+'0'
+space	defl	space - 16
+	 endif
+
+	rept	space
+	db	0		; Zero fill
+	 endm
+
+	 else			; Code too long
+
+space	defl	-space
+	prtval	10,<2nd routine too long by>,space,bytes
+
+	 endif
+
+	.printx				; Skip line on screen
+
+	 if	not test
+	.dephase		; Good Housekeeping
+	 endif
+
+	end
+
+; End of TYP4LDR.Z80 Relocator
+

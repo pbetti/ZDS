@@ -1,0 +1,1016 @@
+   1:			;	TITLE	"TD - Display & Set ZSDOS Time/Date"
+   2:			;***************************************************************
+   3:			; TD.Z80
+   4:			; GET/SET TIME/DATE FOR ZSDOS/ZDDOS
+   5:			; Derived by Cameron W. Cotrill from DATE.MAC by HAJ TEN BRUGGE
+   6:			;   Copyright (C) 1988 by Cameron W. Cotrill and Harold F. Bower
+   7:			;
+   8:			; Revisions:
+   9:			;   1.0 - Initial Release			16 Sep 88
+  10:			;   1.1 - Modified for Z80 DS - P. Betti	11 Feb 08
+  11:			;***************************************************************
+  12:			
+  13:	000A          	VER	EQU	10
+  14:			
+  15:			; Equates
+  16:			
+  17:	000D          	CR	EQU	0DH
+  18:	000A          	LF	EQU	0AH
+  19:	0009          	TAB	EQU	09H
+  20:	0080          	TBUF	EQU	80H
+  21:	0007          	BELL	EQU	7
+  22:	0005          	BDOS	EQU	5
+  23:			
+  24:	0062          	GETTD	EQU	98		; ZSDOS Get Time & Date function
+  25:	0063          	SETTD	EQU	99		; ZSDOS Set Time & Date function
+  26:			
+  27:			; Opening Message
+  28:			
+  29:	0000  C31000  	ENTER:	JP	START		; Bypass US/EUR flag
+  30:			
+  31:	0003  5A33454E		DEFB	'Z3ENV'
+	      56
+  32:	0008  01      		DEFB	1
+  33:	0009  0000    	ENVADR:	DEFW	0
+  34:			
+  35:			; User Patch area to configure Date Display parameters
+  36:			
+  37:	000B  4555523E		DEFB	'EUR>'		; Tag for easy location with debugger
+  38:	000F  FF      	FORM:	DEFB	$FF		; 0=US date format, FF=European date format
+  39:			
+  40:			; Program execution begins here
+  41:			
+  42:	0010  ED73DD07	START:	LD	(STACK),SP
+  43:	0014  31DD07  		LD	SP,STACK	; Switch to local stack
+  44:	0017  AF      		XOR	A
+  45:	0018  329507  		LD	(TDFLAG),A	; Clear data for go
+  46:	001B  0E0C    		LD	C,12
+  47:	001D  CD0500  		CALL	BDOS		; Get CP/M compatible Dos version
+  48:	0020  FE22    		CP	22H
+  49:	0022  203B    		JR	NZ,BADDOS	; Can't be ZSDOS
+  50:	0024  0E30    		LD	C,48
+  51:	0026  CD0500  		CALL	BDOS		; Get enhanced Dos type
+  52:	0029  A7      		AND	A
+  53:	002A  2833    		JR	Z,BADDOS	; Can't be version 0
+  54:	002C  7C      		LD	A,H
+  55:	002D  A7      		AND	A
+  56:	002E  282F    		JR	Z,BADDOS	; Screen out ZRDOS
+  57:	0030  3A8000  		LD	A,(TBUF)	; Get length of command tail
+  58:	0033  C681    		ADD	A,TBUF+1	; Add to start of buffer
+  59:	0035  2600    		LD	H,0
+  60:	0037  6F      		LD	L,A		; Make as word in HL
+  61:	0038  3600    		LD	(HL),0		; Zero terminate command line
+  62:	003A  218100  		LD	HL,TBUF+1	; Point to start of command
+  63:	003D  CDA506  		CALL	BLANK		; HL points to first non-space
+  64:	0040  FE2F    		CP	'/'		; Test for help
+  65:	0042  C20203  		JP	NZ,START0	; Skip if no help
+  66:	0045  119E00  		LD	DE,EXPLA
+  67:	0048  CD7007  	PERR:	CALL	WRTLIN		; Output Help to Console
+  68:	004B  11BD01  		LD	DE,EXPLA0	; Set default second part of message
+  69:	004E  3A0F00  		LD	A,(FORM)	; Is it US Format?
+  70:	0051  B7      		OR	A
+  71:	0052  2803    		JR	Z,PERR0		; ..jump if so
+  72:	0054  113302  		LD	DE,EXPLA1	; Else set European form
+  73:	0057  CD7007  	PERR0:	CALL	WRTLIN
+  74:	005A  ED7BDD07	EXIT:	LD	SP,(STACK)
+  75:	005E  C9      		RET
+  76:			
+  77:	005F  116400  	BADDOS:	LD	DE,BADDM
+  78:	0062  18F3    		JR	PERR0
+  79:			
+  80:	0064  07534F52	BADDM:	DEFB	BELL,'SORRY! ZSDOS or ZDDOS is required to run this program!'
+	      52592120
+	      5A53444F
+	      53206F72
+	      205A4444
+	      4F532069
+	      73207265
+	      71756972
+	      65642074
+	      6F207275
+	      6E207468
+	      69732070
+	      726F6772
+	      616D21
+  81:	009B  0D0A24  	CRLMSG:	DEFB	CR,LF,'$'
+  82:			
+  83:			; Help Message
+  84:			
+  85:	009E  0A54442C	EXPLA:	DEFB	LF,'TD, Version ',VER/10+'0','.',VER MOD 10 +'0'
+	      20566572
+	      73696F6E
+	      20312E30
+  86:	00AE  202D2054		DEFB	' - Time/Date utility for ZSDOS'
+	      696D652F
+	      44617465
+	      20757469
+	      6C697479
+	      20666F72
+	      205A5344
+	      4F53
+  87:	00CC  0D0A    		DEFB	CR,LF
+  88:	00CE  20205379		DEFB	'  Syntax:'
+	      6E746178
+	      3A
+  89:	00D7  0D0A09  		DEFB	CR,LF,TAB
+  90:	00DA  54442020		DEFB	'TD                     - gives current date and time'
+	      20202020
+	      20202020
+	      20202020
+	      20202020
+	      2020202D
+	      20676976
+	      65732063
+	      75727265
+	      6E742064
+	      61746520
+	      616E6420
+	      74696D65
+  91:	010E  0D0A09  		DEFB	CR,LF,TAB
+  92:	0111  5444202F		DEFB	'TD //                  - display this help info'
+	      2F202020
+	      20202020
+	      20202020
+	      20202020
+	      2020202D
+	      20646973
+	      706C6179
+	      20746869
+	      73206865
+	      6C702069
+	      6E666F
+  93:	0140  0D0A09  		DEFB	CR,LF,TAB
+  94:	0143  54442073		DEFB	'TD s[et]               - set date and time in dialog mode'
+	      5B65745D
+	      20202020
+	      20202020
+	      20202020
+	      2020202D
+	      20736574
+	      20646174
+	      6520616E
+	      64207469
+	      6D652069
+	      6E206469
+	      616C6F67
+	      206D6F64
+	      65
+  95:	017C  0D0A09  		DEFB	CR,LF,TAB
+  96:	017F  54442063		DEFB	'TD c[ontinuous]        - display date and time continuously'
+	      5B6F6E74
+	      696E756F
+	      75735D20
+	      20202020
+	      2020202D
+	      20646973
+	      706C6179
+	      20646174
+	      6520616E
+	      64207469
+	      6D652063
+	      6F6E7469
+	      6E756F75
+	      736C79
+  97:	01BA  0D0A24  		DEFB	CR,LF,'$'
+  98:			
+  99:	01BD  09544420	EXPLA0:	DEFB	TAB,'TD mm/dd/yy [hh:mm:ss] - set date and time for RTC'
+	      6D6D2F64
+	      642F7979
+	      205B6868
+	      3A6D6D3A
+	      73735D20
+	      2D207365
+	      74206461
+	      74652061
+	      6E642074
+	      696D6520
+	      666F7220
+	      525443
+ 100:	01F0  0D0A09  		DEFB	CR,LF,TAB
+ 101:	01F3  5444206D		DEFB	'TD mm/dd/yy [+XXXX]    - set date and time for relative clock'
+	      6D2F6464
+	      2F797920
+	      5B2B5858
+	      58585D20
+	      2020202D
+	      20736574
+	      20646174
+	      6520616E
+	      64207469
+	      6D652066
+	      6F722072
+	      656C6174
+	      69766520
+	      636C6F63
+	      6B
+ 102:	0230  0D0A24  		DEFB	CR,LF,'$'
+ 103:			
+ 104:	0233  09544420	EXPLA1:	DEFB	TAB,'TD dd.mm.yy [hh:mm:ss] - set date and time for RTC'
+	      64642E6D
+	      6D2E7979
+	      205B6868
+	      3A6D6D3A
+	      73735D20
+	      2D207365
+	      74206461
+	      74652061
+	      6E642074
+	      696D6520
+	      666F7220
+	      525443
+ 105:	0266  0D0A09  		DEFB	CR,LF,TAB
+ 106:	0269  54442064		DEFB	'TD dd.mm.yy [+XXXX]    - set date and time for relative clock'
+	      642E6D6D
+	      2E797920
+	      5B2B5858
+	      58585D20
+	      2020202D
+	      20736574
+	      20646174
+	      6520616E
+	      64207469
+	      6D652066
+	      6F722072
+	      656C6174
+	      69766520
+	      636C6F63
+	      6B
+ 107:	02A6  0D0A24  		DEFB	CR,LF,'$'
+ 108:			
+ 109:			; No Clock Error
+ 110:			
+ 111:	02A9  11AF02  	NOCLK:	LD	DE,CLKERM
+ 112:	02AC  C35700  		JP	PERR0		; Print error message and exit
+ 113:			
+ 114:	02AF  070D0A2A	CLKERM:	DEFB	BELL,CR,LF,'*** NO Clock Driver Installed!!!',CR,LF,'$'
+	      2A2A204E
+	      4F20436C
+	      6F636B20
+	      44726976
+	      65722049
+	      6E737461
+	      6C6C6564
+	      2121210D
+	      0A24
+ 115:			
+ 116:	02D5  11DB02  	NOSET:	LD	DE,NSETM
+ 117:	02D8  C35700  		JP	PERR0
+ 118:			
+ 119:	02DB  070D0A2A	NSETM:	DEFB	BELL,CR,LF,'*** Clock does NOT Support SET!!!',CR,LF,'$'
+	      2A2A2043
+	      6C6F636B
+	      20646F65
+	      73204E4F
+	      54205375
+	      70706F72
+	      74205345
+	      54212121
+	      0D0A24
+ 120:			
+ 121:			; Parse Command Line
+ 122:			
+ 123:	0302  A7      	START0:	AND	A		; Get time if no args
+ 124:	0303  284B    		JR	Z,GET
+ 125:	0305  FE43    		CP	'C'		; Test if continuous
+ 126:	0307  2850    		JR	Z,CONT		; Do if so
+ 127:	0309  CD2B07  		CALL	CHKWHL		; Abort Now if User isn't Wheel
+ 128:	030C  FE53    		CP	'S'		; Else test for interactive set
+ 129:	030E  287A    		JR	Z,DOSET		; Do set if so
+ 130:	0310  CDB706  		CALL	RDCLK		; Get time from clock
+ 131:	0313  CDD404  		CALL	GETDAT		; Clock exists, get the date
+ 132:	0316  DA1104  		JP	C,ERROR		; C = day, B = month, E = year
+ 133:	0319  CD6B05  		CALL	CHKDAT		; Test if ok
+ 134:	031C  D21104  		JP	NC,ERROR	; Gag if wrong
+ 135:	031F  CDDB06  		CALL	STOMDY		; Else store
+ 136:	0322  CDA506  		CALL	BLANK		; Scan for first
+ 137:	0325  A7      		AND	A
+ 138:	0326  2816    		JR	Z,START1	; Skip to set if date only
+ 139:	0328  CD0E05  		CALL	GETTIM		; Else get
+ 140:	032B  DA1104  		JP	C,ERROR
+ 141:	032E  CDA506  		CALL	BLANK
+ 142:	0331  A7      		AND	A
+ 143:	0332  C21104  		JP	NZ,ERROR	; Gag if left over input
+ 144:	0335  CD8505  		CALL	CHKTIM		; Validate time
+ 145:	0338  D21104  		JP	NC,ERROR
+ 146:	033B  CDE606  		CALL	STOHMS
+ 147:	033E  11B904  	START1:	LD	DE,PRESS	; Press any key message
+ 148:	0341  CD7007  		CALL	WRTLIN		; Output it
+ 149:	0344  CD9107  		CALL	GETCHR		; Wait for user to enter a char
+ 150:	0347  CDCE06  		CALL	WRCLK		; Ok,set it
+ 151:	034A  119B00  		LD	DE,CRLMSG	; Roll console up to new line
+ 152:	034D  CD7007  		CALL	WRTLIN
+ 153:			
+ 154:	0350  CDB706  	GET:	CALL	RDCLK		; Read the clock
+ 155:	0353  CDB105  		CALL	PRDMJ		; Print t/d
+ 156:	0356  C35A00  		JP	EXIT		; Exit now
+ 157:			
+ 158:			;.....
+ 159:			; Display Time/Date until user keypress
+ 160:			
+ 161:	0359  CDB706  	CONT:	CALL	RDCLK
+ 162:	035C  CDB105  	CONT2:	CALL	PRDMJ		; Else print time/date
+ 163:	035F  3A9607  		LD	A,(RELCLK)
+ 164:	0362  A7      		AND	A
+ 165:	0363  C25A00  		JP	NZ,EXIT		; Don't loop if rel clock
+ 166:	0366  0E0B    	CONT0:	LD	C,11
+ 167:	0368  CD0500  		CALL	BDOS		; See if user has had enough
+ 168:	036B  B7      		OR	A		; By testing console status
+ 169:	036C  2016    		JR	NZ,CONT1	; Exit if any key pressed
+ 170:	036E  3A9C07  		LD	A,(SECOND)	; Get current seconds count
+ 171:	0371  F5      		PUSH	AF
+ 172:	0372  CDB706  		CALL	RDCLK
+ 173:	0375  F1      		POP	AF
+ 174:	0376  47      		LD	B,A
+ 175:	0377  3A9C07  		LD	A,(SECOND)	; Get new seconds count
+ 176:	037A  B8      		CP	B		; See if same
+ 177:	037B  28E9    		JR	Z,CONT0		; Loop if same
+ 178:	037D  3E0D    		LD	A,CR
+ 179:	037F  CD8207  		CALL	OUTCH		; Print a CR
+ 180:	0382  18D8    		JR	CONT2		; And output the time
+ 181:			
+ 182:	0384  CD9107  	CONT1:	CALL	GETCHR		; Eat character user typed
+ 183:	0387  C35A00  		JP	EXIT
+ 184:			
+ 185:			; Prompted Setting of Clock
+ 186:			
+ 187:	038A  CDB706  	DOSET:	CALL	RDCLK		; be sure we have one
+ 188:	038D  CDCE06  		CALL	WRCLK		; ..that sets
+ 189:	0390  3A0F00  		LD	A,(FORM)	; Are we using European format?
+ 190:	0393  B7      		OR	A
+ 191:	0394  115B04  		LD	DE,EURDAT	; (Set European prompt)
+ 192:	0397  2003    		JR	NZ,EUR4		; ..jump if so
+ 193:	0399  113B04  		LD	DE,DATMSG	; Prompt for date
+ 194:	039C  CD7007  	EUR4:	CALL	WRTLIN
+ 195:	039F  CD7507  		CALL	GETLIN		; ..and get user input line
+ 196:	03A2  119707  		LD	DE,TIMEDT
+ 197:	03A5  CDB706  		CALL	RDCLK		; Get current t/d from DOS
+ 198:	03A8  3A8100  		LD	A,(TBUF+1)	; Get length
+ 199:	03AB  C682    		ADD	A,82H
+ 200:	03AD  2600    		LD	H,0
+ 201:	03AF  6F      		LD	L,A		; Point to end of user input
+ 202:	03B0  3600    		LD	(HL),0		; Null terminate it
+ 203:	03B2  218200  		LD	HL,TBUF+2
+ 204:	03B5  CDA506  		CALL	BLANK		; Scan for first non-space char
+ 205:	03B8  A7      		AND	A
+ 206:	03B9  2813    		JR	Z,SET0		; Skip if no input
+ 207:	03BB  CDD404  		CALL	GETDAT		; Else parse date from user input
+ 208:	03BE  3851    		JR	C,ERROR		; Exit if error
+ 209:	03C0  CDA506  		CALL	BLANK
+ 210:	03C3  A7      		AND	A
+ 211:	03C4  204B    		JR	NZ,ERROR	; Or if params still remain
+ 212:	03C6  CD6B05  		CALL	CHKDAT		; Insure it's ok
+ 213:	03C9  3046    		JR	NC,ERROR
+ 214:	03CB  CDDB06  		CALL	STOMDY		; Store if ok
+ 215:	03CE  3EFF    	SET0:	LD	A,0FFH
+ 216:	03D0  329507  		LD	(TDFLAG),A	; Flag entering time now
+ 217:	03D3  3A9607  		LD	A,(RELCLK)
+ 218:	03D6  A7      		AND	A		; Test for relative clock
+ 219:	03D7  117B04  		LD	DE,TIMMSG	; Assume real clock
+ 220:	03DA  2803    		JR	Z,SET2		; Jump if we assumed correctly
+ 221:	03DC  119704  		LD	DE,RTIMSG	; Else load the correct message
+ 222:	03DF  CD7007  	SET2:	CALL	WRTLIN		; Tell user to enter time now
+ 223:	03E2  CD7507  		CALL	GETLIN		; ..and get input string
+ 224:	03E5  3A8100  		LD	A,(TBUF+1)
+ 225:	03E8  C682    		ADD	A,82H
+ 226:	03EA  2600    		LD	H,0
+ 227:	03EC  6F      		LD	L,A
+ 228:	03ED  3600    		LD	(HL),0		; Zero terminate user input
+ 229:	03EF  218200  		LD	HL,TBUF+2
+ 230:	03F2  CDA506  		CALL	BLANK		; Find first non-blank char
+ 231:	03F5  A7      		AND	A
+ 232:	03F6  2813    		JR	Z,SET1		; Skip to set if no input
+ 233:	03F8  CD0E05  		CALL	GETTIM		; Else parse time from the buffer
+ 234:	03FB  3814    		JR	C,ERROR
+ 235:	03FD  CDA506  		CALL	BLANK
+ 236:	0400  A7      		AND	A		; Insure no input left over
+ 237:	0401  200E    		JR	NZ,ERROR	; Gag if there is
+ 238:	0403  CD8505  		CALL	CHKTIM		; Validate user time
+ 239:	0406  3009    		JR	NC,ERROR
+ 240:	0408  CDE606  		CALL	STOHMS		; Save if ok
+ 241:	040B  CDCE06  	SET1:	CALL	WRCLK
+ 242:	040E  C35003  		JP	GET
+ 243:			
+ 244:	0411  112004  	ERROR:	LD	DE,ERRMSG	; Let user know he messed up
+ 245:	0414  CD7007  		CALL	WRTLIN		; Output to CON:
+ 246:	0417  3A9507  		LD	A,(TDFLAG)
+ 247:	041A  B7      		OR	A
+ 248:	041B  CA8A03  		JP	Z,DOSET
+ 249:	041E  18AE    		JR	SET0
+ 250:			
+ 251:			
+ 252:	0420  072A2A2A	ERRMSG:	DEFB	BELL,'*** Error in Data Input',CR,LF,'$'
+	      20457272
+	      6F722069
+	      6E204461
+	      74612049
+	      6E707574
+	      0D0A24
+ 253:			
+ 254:	043B  456E7465	DATMSG:	DEFB	'Enter today''s date (MM/DD/YY): $'
+	      7220746F
+	      64617927
+	      73206461
+	      74652028
+	      4D4D2F44
+	      442F5959
+	      293A2024
+ 255:	045B  456E7465	EURDAT:	DEFB	'Enter today''s date (DD.MM.YY): $'
+	      7220746F
+	      64617927
+	      73206461
+	      74652028
+	      44442E4D
+	      4D2E5959
+	      293A2024
+ 256:			
+ 257:	047B  456E7465	TIMMSG:	DEFB	'Enter the time (HH:MM:SS): $'
+	      72207468
+	      65207469
+	      6D652028
+	      48483A4D
+	      4D3A5353
+	      293A2024
+ 258:			
+ 259:	0497  456E7465	RTIMSG:	DEFB	'Enter the relative time (+XXXX): $'
+	      72207468
+	      65207265
+	      6C617469
+	      76652074
+	      696D6520
+	      282B5858
+	      5858293A
+	      2024
+ 260:			
+ 261:	04B9  50726573	PRESS:	DEFB	'Press any key to set time $'
+	      7320616E
+	      79206B65
+	      7920746F
+	      20736574
+	      2074696D
+	      652024
+ 262:			
+ 263:			;.....
+ 264:			; Get Date -  C = Day, B = Month, E = Year
+ 265:			
+ 266:	04D4  7E      	GETDAT:	LD	A,(HL)		; Get next char
+ 267:	04D5  23      		INC	HL		; Bump pointer
+ 268:	04D6  B7      		OR	A		; Test for end of string
+ 269:	04D7  37      		SCF
+ 270:	04D8  C8      		RET	Z		; Exit if end
+ 271:	04D9  CDB006  		CALL	DIGIT		; Test if 2nd char is digit
+ 272:	04DC  38F6    		JR	C,GETDAT	; Get next if not digit
+ 273:	04DE  2B      		DEC	HL		; Else back pointer up
+ 274:	04DF  CD8106  		CALL	NUMBER		; Process as a number
+ 275:	04E2  D8      		RET	C		; Exit if error
+ 276:	04E3  43      		LD	B,E		; Month
+ 277:	04E4  7E      	GETDT0:	LD	A,(HL)
+ 278:	04E5  23      		INC	HL
+ 279:	04E6  B7      		OR	A
+ 280:	04E7  37      		SCF
+ 281:	04E8  C8      		RET	Z		; Return if out of data
+ 282:	04E9  CDB006  		CALL	DIGIT
+ 283:	04EC  38F6    		JR	C,GETDT0
+ 284:	04EE  2B      		DEC	HL
+ 285:	04EF  CD8106  		CALL	NUMBER
+ 286:	04F2  D8      		RET	C
+ 287:	04F3  4B      		LD	C,E		; Day
+ 288:	04F4  7E      	GETDT1:	LD	A,(HL)
+ 289:	04F5  23      		INC	HL
+ 290:	04F6  B7      		OR	A
+ 291:	04F7  37      		SCF
+ 292:	04F8  C8      		RET	Z		; Return if out of data
+ 293:	04F9  CDB006  		CALL	DIGIT
+ 294:	04FC  38F6    		JR	C,GETDT1
+ 295:	04FE  2B      		DEC	HL
+ 296:	04FF  CD8106  		CALL	NUMBER		; Year
+ 297:	0502  F5      		PUSH	AF		; Save flags for format check
+ 298:	0503  3A0F00  		LD	A,(FORM)	; Are we using European format?
+ 299:	0506  B7      		OR	A
+ 300:	0507  2803    		JR	Z,EUR5		; ..jump if not
+ 301:	0509  79      		LD	A,C		; Else reverse Day and Month
+ 302:	050A  48      		LD	C,B
+ 303:	050B  47      		LD	B,A
+ 304:	050C  F1      	EUR5:	POP	AF		; Restore flags
+ 305:	050D  C9      		RET
+ 306:			
+ 307:			;.....
+ 308:			; Get Time B=Hour, C=Minute, E=Seconds
+ 309:			
+ 310:	050E  3A9607  	GETTIM:	LD	A,(RELCLK)	; Test for relative clock
+ 311:	0511  A7      		AND	A
+ 312:	0512  2030    		JR	NZ,GETREL	; Do differently for rel clock
+ 313:	0514  7E      		LD	A,(HL)
+ 314:	0515  23      		INC	HL
+ 315:	0516  B7      		OR	A
+ 316:	0517  37      		SCF
+ 317:	0518  C8      		RET	Z		; Exit if no user time entry
+ 318:	0519  CDB006  		CALL	DIGIT		; Insure digit
+ 319:	051C  38F0    		JR	C,GETTIM	; Loop if error
+ 320:	051E  2B      		DEC	HL		; Back up
+ 321:	051F  CD8106  		CALL	NUMBER		; Get hours
+ 322:	0522  D8      		RET	C		; Exit if error
+ 323:	0523  43      		LD	B,E		; Hour
+ 324:	0524  7E      	GETT0:	LD	A,(HL)
+ 325:	0525  23      		INC	HL
+ 326:	0526  B7      		OR	A
+ 327:	0527  37      		SCF			; Exit if no minutes
+ 328:	0528  C8      		RET	Z
+ 329:	0529  CDB006  		CALL	DIGIT		; Else insure it's a digit
+ 330:	052C  38F6    		JR	C,GETT0		; Loop if not
+ 331:	052E  2B      		DEC	HL		; Back pointer up to digit
+ 332:	052F  CD8106  		CALL	NUMBER
+ 333:	0532  D8      		RET	C		; Exit if error
+ 334:	0533  4B      		LD	C,E		; Minute
+ 335:	0534  1E00    		LD	E,0
+ 336:	0536  7E      	GETT1:	LD	A,(HL)
+ 337:	0537  B7      		OR	A
+ 338:	0538  C8      		RET	Z		; Exit w/o error if no seconds
+ 339:	0539  23      		INC	HL
+ 340:	053A  CDB006  		CALL	DIGIT		; Else test for digit
+ 341:	053D  38F7    		JR	C,GETT1		; Loop if not digit
+ 342:	053F  2B      		DEC	HL
+ 343:	0540  CD8106  		CALL	NUMBER		; Second
+ 344:	0543  C9      		RET
+ 345:			
+ 346:	0544  AF      	GETREL:	XOR	A		; Init result
+ 347:	0545  0680    		LD	B,80H
+ 348:	0547  4F      		LD	C,A
+ 349:	0548  5F      		LD	E,A
+ 350:	0549  7E      		LD	A,(HL)		; Check first char
+ 351:	054A  FE2B    		CP	'+'		; For relative clock prefix
+ 352:	054C  37      		SCF			; Prep for error exit
+ 353:	054D  C0      		RET	NZ		; Get out if was error
+ 354:	054E  23      	GETRE1:	INC	HL		; Else bump to first digit
+ 355:	054F  7E      		LD	A,(HL)
+ 356:	0550  CDB006  		CALL	DIGIT		; Carry clear if digit
+ 357:	0553  3F      		CCF
+ 358:	0554  D0      		RET	NC		; No errors generated here
+ 359:	0555  E60F    		AND	0FH		; Convert to binary
+ 360:	0557  E5      		PUSH	HL		; Save pointer
+ 361:	0558  60      		LD	H,B
+ 362:	0559  69      		LD	L,C		; Xfer running sum to HL
+ 363:	055A  29      		ADD	HL,HL		; *2
+ 364:	055B  E5      		PUSH	HL		; Save *2 result
+ 365:	055C  29      		ADD	HL,HL		; *4
+ 366:	055D  29      		ADD	HL,HL		; *8
+ 367:	055E  C1      		POP	BC		; Restore *2 result
+ 368:	055F  09      		ADD	HL,BC		; Now *10
+ 369:	0560  4F      		LD	C,A
+ 370:	0561  0600    		LD	B,0
+ 371:	0563  09      		ADD	HL,BC		; Add in new digit
+ 372:	0564  44      		LD	B,H
+ 373:	0565  4D      		LD	C,L		; Move back to BC
+ 374:	0566  CBF8    		SET	7,B		; Insure rel flag set
+ 375:	0568  E1      		POP	HL		; Restore pointer
+ 376:	0569  18E3    		JR	GETRE1		; And back for more
+ 377:			
+ 378:			; Check Date - C = Day, B = Month, E = Year
+ 379:			;  Carry Set if OK
+ 380:			
+ 381:	056B  78      	CHKDAT:	LD	A,B
+ 382:	056C  FE10    		CP	10H
+ 383:	056E  3802    		JR	C,CHKDA1	; Get rid of BCD Bias
+ 384:	0570  D606    		SUB	6
+ 385:	0572  3D      	CHKDA1:	DEC	A		; Insure month >0
+ 386:	0573  FE0C    		CP	12		; Insure month <= 12
+ 387:	0575  D0      		RET	NC		; Quit if not
+ 388:	0576  E5      		PUSH	HL
+ 389:	0577  21A505  		LD	HL,DM		; Point to days of the month data
+ 390:	057A  85      		ADD	A,L
+ 391:	057B  6F      		LD	L,A
+ 392:	057C  3E00    		LD	A,0
+ 393:	057E  8C      		ADC	A,H
+ 394:	057F  67      		LD	H,A		; Index to days of the month
+ 395:	0580  79      		LD	A,C		; Get day
+ 396:	0581  3D      		DEC	A		; 0 base
+ 397:	0582  BE      		CP	(HL)		; Test if in bounds
+ 398:	0583  E1      		POP	HL
+ 399:	0584  C9      		RET
+ 400:			
+ 401:			; Check time B=Hour, C=Minute, E=Second
+ 402:			;  Carry Set if OK
+ 403:			
+ 404:	0585  3A9607  	CHKTIM:	LD	A,(RELCLK)
+ 405:	0588  A7      		AND	A
+ 406:	0589  200C    		JR	NZ,CHKTI1	; Do differently if rel
+ 407:	058B  78      		LD	A,B
+ 408:	058C  FE24    		CP	24H		; Test hours
+ 409:	058E  D0      		RET	NC
+ 410:	058F  79      		LD	A,C
+ 411:	0590  FE60    		CP	60H		; Test minutes
+ 412:	0592  D0      		RET	NC
+ 413:	0593  7B      		LD	A,E
+ 414:	0594  FE60    		CP	60H		; Test seconds
+ 415:	0596  C9      		RET
+ 416:			
+ 417:	0597  E5      	CHKTI1:	PUSH	HL
+ 418:	0598  CBB8    		RES	7,B		; Clear flag for compare
+ 419:	059A  210F27  		LD	HL,9999		; Max rel clock count
+ 420:	059D  A7      		AND	A
+ 421:	059E  ED42    		SBC	HL,BC
+ 422:	05A0  3F      		CCF			; Comp for wrong way compare
+ 423:	05A1  E1      		POP	HL
+ 424:	05A2  CBF8    		SET	7,B		; Set rel flag again
+ 425:	05A4  C9      		RET
+ 426:			
+ 427:			; Days/Month
+ 428:			
+ 429:	05A5  31293130	DM:	DEFB	31H,29H,31H,30H,31H,30H,31H,31H,30H,31H,30H,31H
+	      31303131
+	      30313031
+ 430:			
+ 431:			;.....
+ 432:			; Print: Days,Month,Year
+ 433:			
+ 434:	05B1  3E20    	PRDMJ:	LD	A,' '
+ 435:	05B3  CD8207  		CALL	OUTCH		; Space off one
+ 436:	05B6  E5      		PUSH	HL
+ 437:	05B7  D5      		PUSH	DE
+ 438:	05B8  3A0F00  		LD	A,(FORM)	; Is it European format?
+ 439:	05BB  B7      		OR	A
+ 440:	05BC  202D    		JR	NZ,EUR0		; ..jump if so
+ 441:			
+ 442:	05BE  3A9807  	EUR2:	LD	A,(MONTH)
+ 443:	05C1  FE10    		CP	10H		; See if >SEPT
+ 444:	05C3  3802    		JR	C,PRDMJ0
+ 445:	05C5  D606    		SUB	6		; If so, Get rid of BCD bias
+ 446:	05C7  5F      	PRDMJ0:	LD	E,A
+ 447:	05C8  1600    		LD	D,0		; Put month in DE
+ 448:	05CA  214706  		LD	HL,MONTHS-3
+ 449:	05CD  19      		ADD	HL,DE
+ 450:	05CE  19      		ADD	HL,DE
+ 451:	05CF  19      		ADD	HL,DE		; Index into month table
+ 452:	05D0  7E      		LD	A,(HL)
+ 453:	05D1  23      		INC	HL
+ 454:	05D2  CD8207  		CALL	OUTCH
+ 455:	05D5  7E      		LD	A,(HL)
+ 456:	05D6  23      		INC	HL
+ 457:	05D7  CD8207  		CALL	OUTCH
+ 458:	05DA  7E      		LD	A,(HL)
+ 459:	05DB  CD8207  		CALL	OUTCH		; Print month abbreviation
+ 460:	05DE  D1      		POP	DE
+ 461:	05DF  E1      		POP	HL
+ 462:	05E0  3E20    		LD	A,' '
+ 463:	05E2  CD8207  		CALL	OUTCH		; Space off one
+ 464:	05E5  3A0F00  		LD	A,(FORM)	; Is it European format?
+ 465:	05E8  B7      		OR	A
+ 466:	05E9  201C    		JR	NZ,EUR3		; ..jump if so
+ 467:			
+ 468:	05EB  3A9907  	EUR0:	LD	A,(DAY)
+ 469:	05EE  CD6E06  		CALL	OUTBCD		; Print day
+ 470:	05F1  3A0F00  		LD	A,(FORM)	; Is it European format?
+ 471:	05F4  B7      		OR	A
+ 472:	05F5  2005    		JR	NZ,EUR1		; ..jump if European
+ 473:	05F7  3E2C    		LD	A,','
+ 474:	05F9  CD8207  		CALL	OUTCH
+ 475:	05FC  3E20    	EUR1:	LD	A,' '
+ 476:	05FE  CD8207  		CALL	OUTCH		; Space off one
+ 477:	0601  3A0F00  		LD	A,(FORM)	; Is it European format?
+ 478:	0604  B7      		OR	A
+ 479:	0605  20B7    		JR	NZ,EUR2		; ..jump if so
+ 480:			
+ 481:	0607  3A9707  	EUR3:	LD	A,(YEAR)
+ 482:	060A  F5      		PUSH	AF
+ 483:	060B  FE78    		CP	78H		; See which century
+ 484:	060D  3E20    		LD	A,20H
+ 485:	060F  3802    		JR	C,PRDMJ1	; If 21st
+ 486:	0611  3E19    		LD	A,19H
+ 487:	0613  CD6E06  	PRDMJ1:	CALL	OUTBCD		; Print prefix
+ 488:	0616  F1      		POP	AF
+ 489:	0617  CD6E06  		CALL	OUTBCD		; Now last two digits
+ 490:	061A  3E20    		LD	A,' '
+ 491:	061C  CD8207  		CALL	OUTCH
+ 492:	061F  CD8207  		CALL	OUTCH		; Separate time from date
+ 493:	0622  3A9607  		LD	A,(RELCLK)
+ 494:	0625  A7      		AND	A
+ 495:	0626  C2F106  		JP	NZ,PRREL	; Use different print routine for rel time
+ 496:	0629  3A9A07  		LD	A,(HOUR)
+ 497:	062C  CD6E06  		CALL	OUTBCD		; Output hour
+ 498:	062F  3E3A    		LD	A,':'
+ 499:	0631  CD8207  		CALL	OUTCH		; Separate with a colin
+ 500:	0634  3A9B07  		LD	A,(MINUTE)
+ 501:	0637  CD6E06  		CALL	OUTBCD		; Output minute
+ 502:	063A  3E3A    		LD	A,':'
+ 503:	063C  CD8207  		CALL	OUTCH		; Separate with a colin
+ 504:	063F  3A9C07  		LD	A,(SECOND)
+ 505:	0642  CD6E06  		CALL	OUTBCD		; Now output seconds
+ 506:	0645  3E20    		LD	A,' '
+ 507:	0647  C38207  		JP	OUTCH		; Print space and return
+ 508:			
+ 509:			
+ 510:			;.....
+ 511:			; Days in Week
+ 512:			
+ 513:	064A  4A616E46	MONTHS:	DEFB	'JanFebMarAprMayJunJulAugSepOctNovDec'
+	      65624D61
+	      72417072
+	      4D61794A
+	      756E4A75
+	      6C417567
+	      5365704F
+	      63744E6F
+	      76446563
+ 514:			
+ 515:			;.....
+ 516:			; Output BCD char
+ 517:			
+ 518:	066E  F5      	OUTBCD:	PUSH	AF		; Save packed BCD on stack
+ 519:	066F  0F      		RRCA
+ 520:	0670  0F      		RRCA
+ 521:	0671  0F      		RRCA
+ 522:	0672  0F      		RRCA			; Swap nibbles
+ 523:	0673  CD7706  		CALL	OUTBC1		; Mask, convert Hi-nib to ascii & send
+ 524:	0676  F1      		POP	AF
+ 525:	0677  F5      	OUTBC1:	PUSH	AF		; Restore BCD
+ 526:	0678  E60F    		AND	0FH		; Mask so low digit remains
+ 527:	067A  C630    		ADD	A,'0'		; Convert to ascii
+ 528:	067C  CD8207  		CALL	OUTCH		; Send to console
+ 529:	067F  F1      		POP	AF
+ 530:	0680  C9      		RET			; And return to caller
+ 531:			
+ 532:			;.....
+ 533:			; Input Number - Returns result in E
+ 534:			
+ 535:	0681  CDA506  	NUMBER:	CALL	BLANK		; Skip to first non-blank
+ 536:	0684  7E      		LD	A,(HL)		; Get first non-blank
+ 537:	0685  CDB006  		CALL	DIGIT		; Test if digit
+ 538:	0688  D8      		RET	C		; Quit if not
+ 539:	0689  E60F    		AND	0FH		; Convert ascii to bcd
+ 540:	068B  5F      		LD	E,A
+ 541:	068C  1600    		LD	D,0		; Make as word in hl
+ 542:	068E  23      	NUMB0:	INC	HL		; Point to next char in buffer
+ 543:	068F  7E      		LD	A,(HL)
+ 544:	0690  CDB006  		CALL	DIGIT		; Test if digit
+ 545:	0693  3F      		CCF			; Set carry if digit
+ 546:	0694  D0      		RET	NC		; Quit if not
+ 547:	0695  EB      		EX	DE,HL		; Put result so far in hl
+ 548:	0696  29      		ADD	HL,HL
+ 549:	0697  29      		ADD	HL,HL
+ 550:	0698  29      		ADD	HL,HL
+ 551:	0699  29      		ADD	HL,HL		; Shift result 1 packed bcd digit left
+ 552:	069A  E60F    		AND	0FH		; Convert what we got to bcd
+ 553:	069C  85      		ADD	A,L
+ 554:	069D  6F      		LD	L,A		; Add new digit in
+ 555:	069E  EB      		EX	DE,HL		; Result back to de
+ 556:	069F  7A      		LD	A,D
+ 557:	06A0  B7      		OR	A		; Test MSB for 0
+ 558:	06A1  37      		SCF			; Indicate error
+ 559:	06A2  C0      		RET	NZ		; Exit if >2 non-zero digits
+ 560:	06A3  18E9    		JR	NUMB0		; Else get next char
+ 561:			
+ 562:			;.....
+ 563:			; Blank Input
+ 564:			
+ 565:	06A5  7E      	BLANK:	LD	A,(HL)
+ 566:	06A6  FE20    		CP	' '		; Test for space
+ 567:	06A8  2803    		JR	Z,BLANK0	; It is, skip it
+ 568:	06AA  FE09    		CP	TAB		; Else test for tab
+ 569:	06AC  C0      		RET	NZ		; Exit if not tab or space
+ 570:	06AD  23      	BLANK0:	INC	HL
+ 571:	06AE  18F5    		JR	BLANK
+ 572:			
+ 573:			;.....
+ 574:			; Test digit - Carry Clear if Digit
+ 575:			
+ 576:	06B0  FE30    	DIGIT:	CP	'0'
+ 577:	06B2  D8      		RET	C
+ 578:	06B3  FE3A    		CP	'9'+1
+ 579:	06B5  3F      		CCF
+ 580:	06B6  C9      		RET
+ 581:			
+ 582:			;.....
+ 583:			; Routine to Read the Clock
+ 584:			
+ 585:	06B7  E5      	RDCLK:	PUSH	HL
+ 586:	06B8  119707  		LD	DE,TIMEDT	; Point to time/date buffer
+ 587:	06BB  0E62    		LD	C,GETTD
+ 588:	06BD  CD0500  		CALL	BDOS		; Read the clock
+ 589:	06C0  3D      		DEC	A		; Was it a good read?
+ 590:	06C1  C2A902  		JP	NZ,NOCLK	; ..Exit if no Clock
+ 591:	06C4  3A9A07  		LD	A,(HOUR)
+ 592:	06C7  E680    		AND	80H		; Test for relative clock
+ 593:	06C9  329607  		LD	(RELCLK),A	; Save Rel clock flag
+ 594:	06CC  E1      		POP	HL
+ 595:	06CD  C9      		RET
+ 596:			
+ 597:			;.....
+ 598:			; Routine to set the Clock
+ 599:			
+ 600:	06CE  119707  	WRCLK:	LD	DE,TIMEDT
+ 601:	06D1  0E63    		LD	C,SETTD		; Set this sucker
+ 602:	06D3  CD0500  		CALL	BDOS
+ 603:	06D6  3D      		DEC	A		; Test if error
+ 604:	06D7  C8      		RET	Z		; ..return if Ok
+ 605:	06D8  C3D502  		JP	NOSET		; Else it's a set error
+ 606:			
+ 607:			;.....
+ 608:			; Store Month, Day and Year in Buffer
+ 609:			
+ 610:	06DB  E5      	STOMDY:	PUSH	HL
+ 611:	06DC  219907  		LD	HL,DAY
+ 612:	06DF  71      		LD	(HL),C		; Store day
+ 613:	06E0  2B      		DEC	HL
+ 614:	06E1  70      		LD	(HL),B		; Month
+ 615:	06E2  2B      		DEC	HL
+ 616:	06E3  73      		LD	(HL),E		; And year
+ 617:	06E4  E1      		POP	HL
+ 618:	06E5  C9      		RET
+ 619:			
+ 620:			;.....
+ 621:			; Store Hours, Minutes, and seconds in Buffer
+ 622:			
+ 623:	06E6  E5      	STOHMS:	PUSH	HL
+ 624:	06E7  219A07  		LD	HL,HOUR
+ 625:	06EA  70      		LD	(HL),B		; Store hour
+ 626:	06EB  23      		INC	HL
+ 627:	06EC  71      		LD	(HL),C		; Minute
+ 628:	06ED  23      		INC	HL
+ 629:	06EE  73      		LD	(HL),E		; And seconds
+ 630:	06EF  E1      		POP	HL
+ 631:	06F0  C9      		RET
+ 632:			
+ 633:			;.....
+ 634:			; Print Relative Stamp
+ 635:			
+ 636:	06F1  F5      	PRREL:	PUSH	AF
+ 637:	06F2  C5      		PUSH	BC
+ 638:	06F3  D5      		PUSH	DE
+ 639:	06F4  E5      		PUSH	HL
+ 640:			
+ 641:	06F5  3E2B    		LD	A,'+'
+ 642:	06F7  CD8207  		CALL	OUTCH		; Prefix with a +
+ 643:	06FA  219A07  		LD	HL,HOUR
+ 644:	06FD  7E      		LD	A,(HL)
+ 645:	06FE  CBBF    		RES	7,A		; Clear Rel count flag for dsp
+ 646:	0700  23      		INC	HL
+ 647:	0701  6E      		LD	L,(HL)		; Get Rel count
+ 648:	0702  67      		LD	H,A		; Into HL
+ 649:	0703  1118FC  		LD	DE,-1000
+ 650:	0706  CD2007  		CALL	SUBTR
+ 651:	0709  119CFF  		LD	DE,-100
+ 652:	070C  CD2007  		CALL	SUBTR
+ 653:	070F  11F6FF  		LD	DE,-10
+ 654:	0712  CD2007  		CALL	SUBTR
+ 655:	0715  7D      		LD	A,L		; Remainder
+ 656:	0716  C630    		ADD	A,'0'		; Ascii bias
+ 657:	0718  CD8207  		CALL	OUTCH		; Display
+ 658:			
+ 659:	071B  E1      		POP	HL
+ 660:	071C  D1      		POP	DE
+ 661:	071D  C1      		POP	BC
+ 662:	071E  F1      		POP	AF
+ 663:	071F  C9      		RET
+ 664:			
+ 665:	0720  0E2F    	SUBTR:	LD	C,'0'-1		; Ascii count
+ 666:	0722  0C      	SUBT2:	INC	C
+ 667:	0723  19      		ADD	HL,DE		; Really subtract
+ 668:	0724  38FC    		JR	C,SUBT2		; Keep going
+ 669:	0726  ED52    		SBC	HL,DE		; One too many,add back
+ 670:	0728  79      		LD	A,C		; Ascii count
+ 671:	0729  1857    		JR	OUTCH		; Else display and return
+ 672:			
+ 673:			;.....
+ 674:			; Check whether or not we have Wheel privileges
+ 675:			
+ 676:	072B  C5      	CHKWHL:	PUSH	BC
+ 677:	072C  E5      		PUSH	HL
+ 678:	072D  2A0900  		LD	HL,(ENVADR)	; Get ENV Address
+ 679:	0730  47      		LD	B,A		; Save A Reg
+ 680:	0731  7C      		LD	A,H
+ 681:	0732  B5      		OR	L		; Test if ENV valid
+ 682:	0733  78      		LD	A,B		; Restore A Reg
+ 683:	0734  280E    		JR	Z,WHLOK		; No ENV, Assume Wheel Set
+ 684:	0736  012900  		LD	BC,29H
+ 685:	0739  09      		ADD	HL,BC		; Else point to Wheel Pointer
+ 686:	073A  47      		LD	B,A		; Save A Reg
+ 687:	073B  7E      		LD	A,(HL)
+ 688:	073C  23      		INC	HL
+ 689:	073D  66      		LD	H,(HL)
+ 690:	073E  6F      		LD	L,A
+ 691:	073F  7E      		LD	A,(HL)		; Classic indirect fetch
+ 692:	0740  B7      		OR	A		; Test if Set
+ 693:	0741  78      		LD	A,B		; Restore A Reg
+ 694:	0742  2803    		JR	Z,NOWHL		; ..jump if Not
+ 695:	0744  E1      	WHLOK:	POP	HL
+ 696:	0745  C1      		POP	BC
+ 697:	0746  C9      		RET
+ 698:			
+ 699:	0747  114D07  	NOWHL:	LD	DE,NOWHLM	; Point to Error Message
+ 700:	074A  C35700  		JP	PERR0		; Print Wheel Error and Exit
+ 701:			
+ 702:	074D  072A2A2A	NOWHLM:	DEFB	BELL,'*** Must be wheel to set clock!',CR,LF,'$'
+	      204D7573
+	      74206265
+	      20776865
+	      656C2074
+	      6F207365
+	      7420636C
+	      6F636B21
+	      0D0A24
+ 703:			
+ 704:			;.....
+ 705:			; Write the text line addressed by DE to the console
+ 706:			
+ 707:	0770  0E09    	WRTLIN:	LD	C,9		; Write Buffer Command
+ 708:	0772  C30500  	BDOSV:	JP	BDOS
+ 709:			
+ 710:			;.....
+ 711:			; Get a line of text to the default buffer echoing a LF after user's CR
+ 712:			
+ 713:	0775  118000  	GETLIN:	LD	DE,TBUF		; Gather string in default buffer
+ 714:	0778  3E7E    		LD	A,126		; Set buffer length
+ 715:	077A  12      		LD	(DE),A
+ 716:	077B  0E0A    		LD	C,10
+ 717:	077D  CD0500  		CALL	BDOS		; Get user's response
+ 718:	0780  3E0A    		LD	A,LF
+ 719:						;..fall thru to turn up a new line and return
+ 720:			;.....
+ 721:			; Output a char via Dos Call
+ 722:			
+ 723:	0782  F5      	OUTCH:	PUSH	AF
+ 724:	0783  C5      		PUSH	BC
+ 725:	0784  D5      		PUSH	DE
+ 726:	0785  E5      		PUSH	HL
+ 727:	0786  5F      		LD	E,A
+ 728:	0787  0E02    		LD	C,2
+ 729:	0789  CD0500  		CALL	BDOS
+ 730:	078C  E1      		POP	HL
+ 731:	078D  D1      		POP	DE
+ 732:	078E  C1      		POP	BC
+ 733:	078F  F1      		POP	AF
+ 734:	0790  C9      		RET
+ 735:			
+ 736:			;.....
+ 737:			; Get a character from the User's Console
+ 738:			
+ 739:	0791  0E01    	GETCHR:	LD	C,1		; Dos Get Char command
+ 740:	0793  18DD    		JR	BDOSV		; Do it, then return
+ 741:			
+ 742:			;.....
+ 743:			; RAM Areas
+ 744:			
+ 745:				DSEG
+ 746:			
+ 747:	0795 .. 0795 00	TDFLAG:	DEFS	1
+ 748:	0796 .. 0796 00	RELCLK:	DEFS	1
+ 749:			
+ 750:	0797          	TIMEDT:
+ 751:	0797 .. 0797 00	YEAR:	DEFS	1		; Buffer for Time/Date reads
+ 752:	0798 .. 0798 00	MONTH:	DEFS	1
+ 753:	0799 .. 0799 00	DAY:	DEFS	1
+ 754:	079A .. 079A 00	HOUR:	DEFS	1
+ 755:	079B .. 079B 00	MINUTE:	DEFS	1
+ 756:	079C .. 079C 00	SECOND:	DEFS	1
+ 757:			
+ 758:	079D .. 07DC 00		DEFS	64		; Room for local stack
+ 759:	07DD .. 07DE 00	STACK:	DEFS	2		; Storage for entry stack
+ 760:			
+ 761:	07DF          		END
+
+
+
+Statistics:
+
+     5	passes
+     0	jr promotions
+   100	symbols
+     0	bytes
+
+
+
+Symbol Table:
+
+baddm             64     eurdat           45b     perr0             57     
+baddos            5f     exit              5a     prdmj            5b1     
+bdos           =   5+    expla             9e     prdmj0           5c7     
+bdosv            772     expla0           1bd     prdmj1           613     
+bell           =   7+    expla1           233     press            4b9     
+blank            6a5     form               f     prrel            6f1     
+blank0           6ad     get              350     rdclk            6b7     
+chkda1           572     getchr           791     relclk           796     
+chkdat           56b     getdat           4d4     rtimsg           497     
+chkti1           597     getdt0           4e4     second           79c     
+chktim           585     getdt1           4f4     set0             3ce     
+chkwhl           72b     getlin           775     set1             40b     
+clkerm           2af     getre1           54e     set2             3df     
+cont             359     getrel           544     settd          =  63+    
+cont0            366     gett0            524     stack            7dd     
+cont1            384     gett1            536     start             10     
+cont2            35c     gettd          =  62+    start0           302     
+cr             =   d+    gettim           50e     start1           33e     
+crlmsg            9b     hour             79a     stohms           6e6     
+datmsg           43b     lf             =   a+    stomdy           6db     
+day              799     minute           79b     subt2            722     
+digit            6b0     month            798     subtr            720     
+dm               5a5     months           64a     tab            =   9+    
+doset            38a     noclk            2a9     tbuf           =  80+    
+enter              0+    noset            2d5     tdflag           795     
+envadr             9     nowhl            747     timedt           797     
+errmsg           420     nowhlm           74d     timmsg           47b     
+error            411     nsetm            2db     ver            =   a+    
+eur0             5eb     numb0            68e     whlok            744     
+eur1             5fc     number           681     wrclk            6ce     
+eur2             5be     outbc1           677     wrtlin           770     
+eur3             607     outbcd           66e     year             797     
+eur4             39c     outch            782     
+eur5             50c     perr              48+    

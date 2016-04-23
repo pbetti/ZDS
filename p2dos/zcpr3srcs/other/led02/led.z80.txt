@@ -1,0 +1,723 @@
+; MODULE:	ZCPR3 Line Editor
+; AUTHOR:	Paul Pomerleau
+; DATE:		August 2, 1987
+; VERSION:	02
+
+;=============================================================================
+;
+;		D E F I N I T I O N S    S E C T I O N
+;
+;=============================================================================
+
+version	equ	02
+
+cr	equ	0dh
+lf	equ	0ah
+bell	equ	07h
+tab	equ	09h
+
+bdos	equ	0005h
+bios	equ	0000h
+
+; Stuff from SYSLIB
+
+	public	cout,capin,cin,crlf,LED
+	extrn	KILL, KILSIZ, CMDLST, CMDLEN
+;	extrn	cout,ccout,crlf			; TOO LONG!!!!  Grr!!!
+	extrn	cst
+
+;=============================================================================
+;
+;		C O N F I G U R A T I O N    A R E A
+;
+;=============================================================================
+
+VECTOR:	dw	SHIFTED		; Meta Key
+	dw	FCHR		; Right Char
+	dw	BCHR		; Left Char
+	dw	UP		; Up line
+	dw	DOWN		; Down line
+	dw	MBWORD		; Left word
+	dw	MFWORD		; Right word
+	dw	GOBOLN		; Start of line
+	dw	GOEOLN		; End of line
+	dw	FDEL		; Del char right
+	dw	DELCHR		; Del char left
+	dw	DELCHR		; Del char left
+	dw	FDWORD		; Del word right
+	dw	BDWORD		; Del word left
+	dw	CMDKILL		; Kill to semi-colon
+	dw	DELTOEND	; Delete to end of line
+	dw	DELLIN		; Delete line
+	dw	UNDO		; Reinsert deleted text
+	dw	TOGLIN		; Toggle insert
+	dw	ITAB		; Insert Tab char
+	dw	QINSERT		; Insert any char
+	dw	REPLOT		; Redraw line
+	dw	DONE		; End edit
+	dw	Warm		; Warm Boot
+LASTCASE:
+
+PUNC:	db	',.:!#%^&<>[]{}()_+-=`~/\|; ',tab
+PUNCLEN	equ	$ - PUNC
+;=============================================================================
+;
+;		M A I N    C O D E    S E C T I O N
+;
+;=============================================================================
+LED:
+	push	de
+	push	hl
+;--------------------------
+
+EDIT:	bit	0,a
+	jr	z,ED1
+	push	af
+	xor	a		; On entry: DE = BUFFER, BC = LENGTH
+	ld	(de),a
+	inc	de
+	ld	(BUF_PTR),de	; Save the buffer position
+	inc	de
+	ex	de,hl
+	add	hl,bc
+	ld	(BUF_TOP_PTR),hl	; And the top of it
+	pop	af
+
+ED1:	ld	hl,INSFLG
+	bit	1,a
+	jr	z,ED2
+	ld	(hl),00h
+	bit	2,a
+	jr	z,ED2
+	ld	(hl),0ffh
+
+ED2:	bit	3,a
+	jr	z,ED4
+	ld	b,5
+ED3:	inc	hl
+	ld	(hl),0
+	djnz	ED3
+
+ED4:	bit	4,a
+	call	nz,OUTPUT2
+
+ELOOP:	xor	a
+	ld	(NOOUT+1),a		; Turn printing on
+	call	GETKEY
+	ld	b,a
+	ld	a,(SHIFT)
+	or	b
+	push	af			; Mask in the highbit for META key
+	xor	a
+	ld	(SHIFT),a
+	pop	af
+	cp	' '
+	jr	c,CONTROL		; It's a command
+	cp	127
+	jr	nc,CONTROL
+	call	INSERT
+	jr	ELOOP
+
+CONTROL:
+	call	UCASE
+	ld	hl,ELOOP		; Return to...
+	push	hl
+	ld	hl,CMDLST
+	ld	bc,CMDLEN
+	cpir			; Compare to CMDSTR
+	jp	nz,BEEP		; No match, check for insertion
+	ld	a,c
+	ld	a,CMDLEN - 1
+	sub	c		; Get difference (how far in the command is)
+	cp	18h
+	jp	nc,ADDON
+	add	a,a		; Double it (compensation for DWs)
+	ld	c,a		; Put that offset in BC
+	ld	hl,VECTOR
+	add	hl,bc		; Add it to CMDLST
+	ld	e,(hl)		; Get low byte
+	inc	hl
+	ld	d,(hl)		; Get high byte
+	ex	de,hl		; Put location in HL
+	jp	(hl)		; And go to that location
+
+SHIFTED:
+	ld	a,10000000b		; prepare for next command
+	ld	(SHIFT),a
+	ret
+
+DELCHR:	call	DPOS			; Delete a char
+	ret	z
+	call	DELETE
+	jp	SHOWTOEND
+
+FCHR:	call	FWRAP			; Forward a char
+	jp	IPOS
+
+FWRAP:	ld	hl,(POS)		; Check for wrap
+	ld	a,(hl)
+	or	a
+	ret	nz
+	pop	hl
+	jp	GOBOLN
+
+BCHR:	call	BWRAP			; Backward a char
+	jp	DPOS
+
+BWRAP:	ld	hl,(POS)		; Check for wrap
+	dec	hl
+	ld	a,(hl)
+	or	a
+	ret	nz
+	pop	hl
+	jp	GOEOLN
+
+MBWORD:	call	BWRAP			; Go back a word
+BWORD:	call	DPOS			; Back a word without possible wrap
+	ret	z
+	inc	de
+	call	PUNCCP
+	jr	z,BWORD
+BWORD2:	call	DPOS
+	ret	z
+	inc	de
+	call	PUNCCP
+	jr	nz,BWORD2
+	dec	de
+	jp	IPOS
+
+PUNCCP:	ld	hl,PUNC			; Check for punctuation
+	ld	bc,PUNCLEN
+	cpir
+	ret
+
+FDWORD:	ld	de,0			; Delete forward a word
+	call	FWORD
+	push	de
+FDWBACK:
+	ld	a,d
+	or	e
+	jr	z,FDWENDBACK
+	dec	de
+	call	DPOS			; Back up to where we were
+	jr	FDWBACK
+FDWENDBACK
+	pop	de
+FDWDLOOP:
+	ld	a,e
+	or	d
+	jp	z,SHOWTOEND
+	dec	de
+	push	de
+	call	DELETE			; Delete same number of chars
+	pop	de
+	jr	FDWDLOOP
+
+BDWORD:	ld	de,0			; Delete a word backwards
+	call	BWORD
+BDWRD1:	ld	a,d
+	or	e
+	jp	z,SHOWTOEND
+	dec	de
+	push	de
+	call	DELETE
+	pop	de
+	jr	BDWRD1
+
+MFWORD:	call	FWRAP			; Go forward a word
+FWORD:	call	IPOS			; Forward a word without wrap
+	ret	z
+	inc	de
+	call	PUNCCP
+	jr	nz,FWORD
+FWORD2:	call	IPOS
+	ret	z
+	inc	de
+	call	PUNCCP
+	jr	z,FWORD2
+	dec	de
+	jp	DPOS
+
+FDEL:	call	DELETE			; Delete forward a char
+	ret	z
+	jp	SHOWTOEND
+
+QINSERT:				; Quoted insert (get a key and put it in)
+	call	GETKEY
+	or	a
+	ret	z
+	jr	IJP
+
+ITAB:	ld	a,tab			; Insert a tab
+IJP:	jp	INSERT
+
+TOGLIN:	ld	hl,INSFLG		; Change insert (toggle)
+	ld	a,(hl)
+	cpl
+	ld	(hl),a
+	ret
+
+CMDKILL:				; Delete to a semi colon or end of line
+	ld	hl,(POS)
+	ld	de,KILL
+	push	de
+	ld	bc,kilsiz		; Stop before NULL in KILL
+	ldir
+	xor	a
+	ld	(de),a
+	pop	hl
+CKL:	push	hl
+	call	DELETE
+	pop	hl
+	inc	hl
+	cp	';'
+	jr	z,CKDONE
+	or	a
+	jr	nz,CKL
+CKDONE:	ld	(hl),0
+	jp	SHOWTOEND
+
+DELLIN:	ld	hl,(BUF_PTR)		; Delete whole line
+	ld	de,KILL
+	ld	bc,kilsiz		; Stop at NULL in KILL
+	ldir
+	xor	a
+	ld	(de),a
+DELLN1:	call	GOBOLN
+DELTOEND:
+	call	CLRTOEND
+	ld	hl,(POS)
+	ld	(hl),0
+	ret
+
+GOEOLN:	call	IPOS			; Go to end of line
+	jr	nz,GOEOLN
+	ret
+
+GOBOLN:	call	DPOS			; Go to begining of line
+	jr	nz,GOBOLN
+	ret
+
+REPLOT:	ld	hl,(POS)		; Redraw the line
+	push	hl
+	call	GOEOLN
+REPLT1:	call	crlf
+	call	OUTPUT
+	pop	de
+GOTOPOS:
+	or	a
+	call	IPOS
+	sbc	hl,de
+	ret	z
+	jr	c,GOTOPOS
+GP2:	call	DPOS
+	ret	z
+	sbc	hl,de
+	ret	z
+	jr	GP2
+
+CAPIN:	call	cin			; Get a key and upcase it
+					; Fall through to UPCASE
+
+UCASE:	push	bc			; Upcase a char.  Preserve high bit.
+	push	af
+	and	80h
+	ld	b,a
+	pop	af
+	and	7fh
+	call	UCASE2
+	or	b
+	pop	bc
+	ret
+
+UCASE2:					; Actual upcase function
+	cp	' '
+	jr	nc,NOTCTL
+	add	'@'
+NOTCTL:	cp	'a'
+	ret	c
+	cp	'z'+1
+	ret	nc
+	sub	' '
+	ret
+
+UP:	ld	hl,80			; Go up a line
+BACKUP:	ld	a,h
+	or	l
+	ret	z
+	dec	hl
+	push	hl
+	call	DPOS
+	pop	hl
+	ret	z
+	cp	' '			; Control = two backups
+	jr	nc,BACKUP
+	ld	a,h
+	or	l
+	ret	z
+	dec	hl
+	jr	BACKUP
+
+DOWN:	ld	hl,80			; Go down a line
+DOWNLOOP:
+	ld	a,h
+	or	l
+	ret	z
+	dec	hl
+	push	hl
+	call	IPOS
+	pop	hl
+	ret	z
+	cp	' '			; Control = 2 skips
+	jr	nc,DOWNLOOP
+	ld	a,h
+	or	l
+	ret	z
+	dec	hl
+	jr	DOWNLOOP
+
+DONE:	pop	hl			; Go back home...
+	call	GOEOLN
+	ld	a,13
+	call	cout
+
+DOUT:	push	af
+	ld	hl,(BUF_PTR)
+	ld	bc,-1
+COUNT_LOOP:
+	ld	a,(hl)
+	inc	hl
+	inc	bc
+	or	a
+	jr	nz,COUNT_LOOP		; 16 bit length in BC
+	pop	af			; Return Code in A
+	pop	hl
+	pop	de
+	ret
+
+BEEP:	ld	a,bell			; Ring Bell (error)
+	jp	cout
+
+WARM:	call	GOEOLN
+	ld	a,13
+	call	cout
+	jp	0
+
+ADDON:	pop	hl
+	sub	23
+	jr	DOUT
+
+; ---------------------------------------
+; Support routines for the commands above
+;
+INSERT:	ld	e,a			; Put a char in the line
+	ld	a,(INSFLG)
+	or	a
+	jr	nz,YAINS		; Should we just overwrite?
+	ld	hl,(POS)
+	ld	a,(hl)
+	or	a
+	ld	a,e
+	jr	nz,OVERWRITE
+YAINS:	xor	a
+	ld	b,a
+	push	de
+	call	MOVEUP
+	pop	de
+	jr	z,BEEP
+	ld	a,e
+OVERWRITE:
+	ld	hl,(POS)
+	ld	(hl),a
+	call	IPOS
+	jr	SHOWTOEND
+
+DELETE:	ld	de,(POS)		; Delete current char
+	ld	a,(de)
+	or	a
+	ret	z
+	push	af
+	ld	hl,DELETED
+	inc	(hl)
+	cp	' '
+	jr	nc,NOINC2
+	inc	(hl)
+NOINC2:	call	MOVEDOWN
+	pop	af
+	or	a
+	ret
+
+OUTPUT:	call	crlf			; Put line on screen
+OUTPUT2:
+	ld	hl,(BUF_PTR)
+	ld	(POS),hl
+	jr	SHOWTOEND
+
+CLRTOEND:				; Draw spaces for each char
+	ld	hl,(POS)		; Control char = 2 spaces
+	ld	de,0
+CLRLOOP:
+	ld	a,(hl)
+	or	a
+	jr	z,NOWBACK
+	cp	' '
+	jr	nc,CLR2
+	inc	de
+	call	SPACE
+CLR2:	call	SPACE
+	inc	hl
+	inc	de
+	jr	CLRLOOP
+NOWBACK:
+	ld	a,d
+	or	e
+	ret	z
+	dec	de
+	call	BACK
+	jr	NOWBACK
+
+IPOS:	ld	hl,(POS)		; Forward a char by echoing it.
+	ld	a,(hl)
+	or	a
+	ret	z
+	push	af
+	inc	hl
+	ld	(POS),hl
+	push	bc
+	ld	b,a
+	ld	a,(NOOUT + 1)
+	or	a
+	ld	a,b
+	pop	bc
+	call	z,ccout
+	pop	af
+	ret
+
+DPOS:	ld	hl,(POS)		; Back a char by ^H
+	dec	hl			; (2 for Control char)
+	ld	a,(hl)
+	or	a
+	ret	z
+	push	af
+	ld	(POS),hl
+	cp	' '
+	call	c,BACK
+	call	BACK
+	pop	af
+	ret
+
+SHOWTOEND:				; Echo to the end of the line
+	call	PRINTHL			; 	and come back
+	jr	nz,SHOWLP
+	ld	hl,DELETED
+	ld	a,(hl)
+	or	a
+	jr	z,SHOWLP
+SHW1:	push	af
+	call	SPACE
+	pop	af
+	dec	a
+	jr	nz,SHW1
+SHW2:	call	BACK
+	dec	(hl)
+	jr	nz,SHW2
+SHOWLP:	ld	a,d
+	or	e
+	ret	z
+	dec	de
+	call	DPOS
+	jr	SHOWLP
+
+PRINTHL:				; Print the string at current position
+	ld	de,0
+PHLOOP:	call	IPOS
+	ret	z
+	inc	de
+KILLFLG:
+	ld	a,0
+	or	a
+	ret	nz
+	push	hl
+	push	de
+	push	bc
+	ld	c,11
+	call	BDOS
+	pop	bc
+	pop	de
+	pop	hl
+	or	a
+	jr	z,PHLOOP
+	call	cin
+	ld	(GETKEY+1),a
+	cp	' '
+	jr	c,PHLOOP
+	cp	127
+	ret	nz
+	jr	PHLOOP
+
+GETKEY:	ld	b,0			; Bring in a key
+	xor	a			; One keystroke buffer
+	ld	(GETKEY+1),a
+	ld	a,b
+	or	a
+	call	z,cin
+	ret
+
+MOVEUP:	ld	hl,(POS)		; Move the line up to insert char
+	ld	a,' '
+UPLOOP:	ld	b,(hl)
+	ld	(hl),a
+	inc	hl
+	ld	a,b
+	or	a
+	jr	nz,UPLOOP
+	ld	(hl),a
+	ld	de,(BUF_TOP_PTR)
+	sbc	hl,de
+	jr	z,MOVEDOWN
+	or	1
+	ret
+
+MOVEDOWN:				; Move it down to delete one
+	ld	hl,(POS)
+	ld	d,h
+	ld	e,l
+DNLOOP:	inc	hl
+	ld	a,(hl)
+	ld	(de),a
+	or	a
+	inc	de
+	jr	nz,DNLOOP
+	ret
+
+UNDO:	ld	hl,kill			; Insert the kill buffer
+	xor	a
+	cpl
+	ld	(KILLFLG+1),a
+	call	UNDO1
+	xor	a
+	ld	(KILLFLG+1),a
+	jp	SHOWTOEND
+
+UNDO1:	ld	a,(hl)
+	inc	hl
+	or	a
+	ret	z
+	push	hl
+	call	INSERT
+	pop	hl
+	xor	a
+	jr	UNDO1
+
+;
+; Bdos console in. With no echo.
+;
+CIN:	push	hl
+	push	de
+	push	bc
+	ld	hl,(1)
+	ld	de,9
+	add	hl,de
+	ld	(hl),0C9h		; Turn off BIOS for echo
+	push	hl
+	ld	c,1
+	call	BDOS
+	pop	hl
+	ld	(hl),0c3h		; Restore BIOS
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+CCOUT:	push	af			; Print control chars as ^c
+;	cp	8			; For valid CCOUT, these are needed...
+;	jr	z,OK			;   But we don't make it public.
+;	cp	13
+;	jr	z,OK
+;	cp	10
+;	jr	z,OK
+	cp	' '
+	jr	nc,OK
+	push	af
+	ld	a,'^'
+	call	COUT
+	pop	af
+	add	'@'
+OK:	call	COUT
+	pop	af
+	ret
+
+SPACE:	ld	a,' '			; Print a space
+	jr	COUT
+
+BACK:	ld	a,8			; Print a ^H
+
+COUT:	push	af			; Print a char
+	push	bc
+	push	de
+	push	hl
+	ld	e,a
+NOOUT:	ld	a,0			; Check for silent running
+	or	a
+	ld	c,6
+	call	z,pbdos
+	pop	hl
+	pop	de
+	pop	bc
+CPOP:	pop	af
+	ret
+
+PBDOS:	ld	a,e			; Real print routine
+	ld	hl,SPOS
+	cp	8
+	jr	z,BACKP
+	cp	13
+	jr	z,ZEROP
+	cp	7
+	jr	z,NOIP
+	cp	10
+	jr	z,NOIP
+	cp	9
+	jr	z,TABCHR
+	inc	(hl)
+NOIP:	jp	BDOS
+ZEROP:	ld	(hl),1
+BACKP:	dec	(hl)
+	jr	NOIP
+TABCHR:	ld	a,' '
+	call	COUT
+	ld	a,7
+	and	(hl)
+	ret	z
+	jr	TABCHR
+
+CRLF:	ld	a,cr			; Print a CR and a LF
+	call	cout
+	ld	a,lf
+	jr	cout
+
+;============================================================================= 
+;               B U F F E R S 
+;=============================================================================
+INSFLG:	db	0ffh
+POS:	dw	0
+SHIFT:	db	0
+SPOS:	db	0
+DELETED:
+	db	0
+BUF_PTR:
+	dw	0
+BUF_TOP_PTR:
+	dw	0
+
+	end
+=========
+INSFLG:	db	0ffh
+POS:	dw	0
+SHIFT:	db	0
+SPOS:	db	0
+DELETED:
+	db	0
+BUF_PTR:
+	dw	0
+BUF_TOP_PTR:

@@ -1,0 +1,319 @@
+;
+                   ZCPR3 LOOP CONTROL PROGRAMS
+
+
+
+                        I  Introduction
+
+
+          F  FOR           N  NEXT           P  PERFORM
+
+
+                        A  Applications
+
+                        E  Error Codes
+:I
+                               Introduction
+                               ------------
+
+     The three programs FOR.COM, NEXT.COM, and PERFORM.COM allow you to
+easily carry out certain kinds of repetitive tasks.  They are especially
+well-suited to conditions in which the same operation must be carried out
+repeatedly, each time using a different file name or other parameter.  The
+actions of the three programs are:
+
+     FOR <args>  -  Establishes the list of arguments to be used
+
+     NEXT <var>  -  Puts the next argument from the list into the specified
+          system (shell) variable
+
+     PERFORM <cmd_line>  -  Executes the specified command line once for
+          every argument in the list, substituting the current argument as
+          directed. 
+
+                                                               Introduction
+
+
+     Ordinarily only NEXT or PERFORM will be used in conjuction with a
+single invokation of FOR, although there may be times when you want to use
+both.  Nested FOR/NEXT/PERFORM invokations--within a single directory--are
+not currently supported. 
+
+     All three of these programs are command-line driven; all their
+arguments must be supplied when they are invoked.  Details of the syntax
+are presented in other sections, as appropriate.  In these syntax diagrams
+angle brackets (<>) indicate required arguments and square brackets ([])
+indicate optional arguments. 
+
+:F
+                                  FOR.COM
+                                  -------
+
+
+     FOR.COM is used to specify a list of arguments that will subsequently
+be used to control the number of loops to be performed.  Each argument may
+also be used as a parameter within each loop.  The types of argument lists
+that can be constructed using FOR.COM are:
+
+     o    Filenames -- wildcards can be expanded or not, as you choose.
+          Filenames matching several different ambiguous specifications can
+          be collected in one list.  If an explicit directory reference
+          precedes an ambiguous name, all expansions will also include the
+          directory specification. 
+
+     o    Arbitrary strings -- these may include spaces
+
+     o    All named directories
+
+     o    Numbers -- all integers up to a specified number will be written
+          into the list.  The limit may be specified directly or one of
+          ZCPR3's numeric registers may be used. 
+
+                                                                        FOR
+
+
+     All arguments to FOR.COM are specified on the command line.  The
+syntax of this command takes three basic forms, as shown on this and
+following screens. 
+
+1)   FOR <[du:|dir:]fn.ft> [<[du:|dir:]fn.ft>] [/X]
+
+where the 'X' option indicates that all ambiguous filenames are to be
+     expanded.  If an ambiguous filename is prefaced with a DU: or DIR:
+     specification, its expansions will all also contain the directory
+     specification.  If the "/X" flag is omitted, the arguments may be any
+     set of strings containing no blanks; i.e., the arguments need not be
+     filenames. 
+
+                                                                        FOR
+
+
+
+2)   FOR 'one string' "another string" \a third string\ /S
+
+where the 'S' option is REQUIRED to indicate that the list elements are
+     delimited strings.  Any non-blank character except the virgule (/) and
+     comma may be used as a delimiter. 
+
+                                                                        FOR
+
+
+
+3)   FOR /o
+
+where 'o' can be D, R, or N, with the following meanings:
+
+     D  --  list all named directories
+     Rn --  list all integers up to that contained in register 'n',
+          one per line.  The list is zero-based
+     Nn --  list all integers up to 'n', one per line (zero-based).
+
+                                                                        FOR
+
+
+     In all circumstances, only one option is appropriate.  You cannot
+construct a list, for example, that is made up of filenames and directory
+names. 
+
+     The list is written to a system file in the current directory.  The
+name of this file (as of the first release) is FORFILES.SYS.  This is an
+ordinary ASCII file, so that if you need a list of parameters that cannot
+be constructed with FOR.COM, you can create this file with any text editor
+that creates ordinary ASCII files. 
+
+:N
+                                 NEXT.COM
+                                 --------
+
+     NEXT.COM is used to copy the next item in the list of arguments
+(created with FOR.COM) into a shell variable.  The syntax is:
+
+                              NEXT <varname>
+
+You may use any variable name you like.  The input file ('FORFILES.SYS')
+must be in the current directory.  The shell variable file is looked for
+first in any directory named 'ROOT' and, if not found there, in the
+directory at the root of the path. 
+
+     The only option is help, which is exclusive. 
+
+     After this command is executed, the contents of the shell variable can
+be accessed with RESOLVE.COM or directly via the SH shell. 
+
+                                                                       NEXT
+
+
+     This program is designed principally for use within a looping command
+structure.  This may be a ZEX script, a recursive alias or SUBMIT script,
+or a custom shell installed with SHSET (ordinarily combined with an
+alias).  The skeleton of such a command structure should be:
+
+                    NEXT <var>
+                    <conditional test>
+                    ...
+                    <additional commands as necessary,
+                     to be executed if the condition is TRUE>
+                    ...
+                    <loop command>
+
+The additional commands will typically include one or more invokations of
+RESOLVE to expand references to the current "FOR" argument (as saved in a
+shell variable).  The loop command should be GOTO for ZEX scripts, an alias
+name for recursive aliases, a SUBMIT command for recursive SUBMIT scripts,
+and a SHCTRL POP instruction for a custom shell. 
+
+                                                                       NEXT
+
+
+     The conditional test should be performed immediately after NEXT is
+run.  Note that there is no way of recognizing the last argument in the
+list.  Only when NEXT is run again, and fails, can the end of the list be
+detected.  In this condition the shell variable will be set to null (that
+is, the name will exist, but will evaluate to nothing) and the ZCPR3
+Program Error Code will be set to a value corresponding to 'file not found'
+(see the section on error codes).  Thus, when used in a loop, as it is
+intended, the possible exit conditions for the loop are:
+
+     -  an empty shell variable (IF NUL <varname>).
+     -  absence of the file-list (IF  EXIST FORFILES.SYS),
+     -  a program error (IF ERROR),
+
+
+     The second of these is not recommended because in future releases the
+file name may be dynamically changeable, particularly if nested FOR/NEXT
+calls within a directory are supported.  The third is not recommended if
+your system cannot distinguish between different Program Error Codes. 
+:P
+                                PERFORM.COM
+                                -----------
+
+
+     PERFORM.COM provides an easier way to perform loops than by using
+scripts, custom shells, and aliases.  A single command line can be used
+instead.  The syntax is:
+
+                          PERFORM <command line>
+
+
+     The command line passed to PERFORM will be executed once for every
+line in FORFILES.SYS (which is created by FOR.COM).  Two special symbols
+within the command line are recognized by PERFORM; the symbols and their
+meanings are:
+
+     $X   -- the current line from FORFILES.SYS
+     $|   -- a substitute multiple-command separator (";").
+
+                                                                    PERFORM
+
+
+The leading "$" will be stripped off all unrecognized symbols. 
+
+     The "$|" symbol must be used if you want to carry out more than one
+command for each line in FORFILES.SYS.  Alternatively, you can group these
+commands into an alias and simply say "PERFORM <aliasname> [$X]". 
+
+     An additional convenience provided by PERFORM is that it always
+returns to the directory from which it was called.  This is necessary so
+that it can find FORFILES.SYS and its own temporary file.  When writing
+scripts for use with NEXT.COM you must attend to this detail yourself.
+Note, however, that PERFORM does not provide any new capability beyond that
+which can be achieved with NEXT.  Its advantage lies in simpler invokation
+and, in some cases, greater speed. 
+
+     PERFORM installs itself as a shell, and so the shell stack must not be
+full when it is invoked.  Any pending commands in the multiple-command
+buffer will be saved when PERFORM is run and restored when it is
+completed. 
+:A
+                               APPLICATIONS
+                               ------------
+
+
+     This section contains some (unrelated) hints and notes regarding the
+use of these three programs.  The few examples presented here are meant to
+be illustrative and not exhaustive.  These programs are meant to be tools
+with which you can develop custom applications to suit your own needs. 
+
+     If the "/Nn" or "/Rn" options are used with FOR.COM and a 1-based list
+is needed, the first element can be removed with 'NEXT' and not used. 
+
+     NEXT can also be used to skip one or more lines or retrieve the next
+line while still processing the "current" one.  For example, consider the
+line:
+
+      PERFORM ECHO CURRENT IS $X$|NEXT VAR$|RESOLVE ECHO NEXT IS %VAR
+
+                                                               Applications
+
+
+     Remember that a text editor can be used to create FORFILES.SYS.  If
+you have a list of arguments that you want to use repeatedly, and that
+cannot be generated by FOR.COM, enter that list into a text file and make a
+copy of that file named FORFILES.SYS every time you need to use it. 
+
+     Don't forget that PERFORM will strip a "$" off of every unrecognized
+symbol, so if you are using RESOLVE to access system file names or
+registers, be sure to include an extra "$". 
+
+     One of the simplest applications is to create a list of files to copy,
+back up, protect, or otherwise manipulate.  For example:
+
+               FOR *.DAT *.DOC /X
+               PERFORM CRYPT $X$|PPIP B:=$X$|ERA $X
+
+                                                               Applications
+
+
+     If you are initializing your RAM-disk and want to copy all of the
+ST.COM files from named directories to the corresponding user areas of the
+RAM-disk, you might use a pair of commands like:
+
+               FOR /D
+               PERFORM $X$|IF EX ST.COM$|PPIP E:=ST.COM$|FI
+
+where the E drive is your RAM-disk.  Note that you may want to load a
+special .NDR file or test the directory name before doing the copy. 
+
+     If you wanted to perform a similar task, but upon all user areas
+rather than just named directories, you might say:
+
+               FOR /N32
+               PERFORM IF EX $X:JUNK.FIL$|ERA $X:JUNK.FIL$|FI
+
+                                                               Applications
+
+
+     Numeric lists can be handy for automatically constructing filenames.
+For example, suppose you have a mathematical model and you want to run it
+repeately, using five different sets of input data and producing five sets
+of output, you might say:
+
+               FOR /N5
+               PERFORM FISHMORT FISHIN$X.DAT FISHMOD$X.OUT
+
+
+     You can nest FOR/NEXT tasks by performing them in different
+directories.  For example:
+
+               FOR <args1>
+               PERFORM ROOT:$|FOR <args2>$|PERFORM <task2>
+
+:E
+                                ERROR CODES
+                                -----------
+
+     These three programs use a consistent set of codes to indicate what
+type of error (if any) was encountered during execution.  Upon an error,
+the Program Error Code will be set to one of the following values:
+
+
+               1    Can't open input file
+               2    Can't open output file
+               3    Can't read input file
+               4    Can't write output file
+               5    Can't close output file
+
+
+     If your system (i.e., the IF ERROR command) can distinguish these, you
+can provide better error responses. 
+

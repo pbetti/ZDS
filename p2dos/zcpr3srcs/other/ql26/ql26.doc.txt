@@ -1,0 +1,489 @@
+QL26.DOC
+documentation and usage of QL.AZM
+revised April 6, 1988, v2.6
+
+Quick look typer for reasonably sized libraried or unlibraried,
+  crunched, squeezed & normal text and binary files,
+  for z80 cpu's only under CP/M 2.0 or later.
+
+  QL was written by:
+        Nick Dobrinich
+        4337 West 48
+        Cleveland, OH 44144
+
+Features:
+  fast random access paging of libraried or stand-alone, crunched, squeezed
+    or normal text files
+  ddt-like display of binary files, crunched, squeezed or normal
+  easy access to library members
+  page numbering
+  immediate jump to any page
+  core dumping
+  fast simple string searching for text and hex bytes within files and core
+  ZCPR3-specific version responds to "DU:/DIR:" notation and gets CRT data
+  from Z3's buffers to eliminate hardware dependencies if Z3 is running.
+  for reasonably sized files or as much as can be entirely ram resident
+
+where 'reasonably sized' means:
+  50k for normal text files
+  50k for squeezed files after unsqueezing
+  28k for crunched files after uncrunching
+in a 62k system (BDOS at 0e200h).
+
+
+< Release >
+This code is placed in the public domain.
+Don't sell it.  Don't send money.  Don't sue me.  Don't claim you wrote it.
+
+The code for unsqueezing and uncrunching is copyright 1986 by Steve Greenberg
+& C.B. Falconer for private non-commercial use.  They wrote it and I want to
+credit them for excellent work.  Implementation time was less than 2 hours to
+add a working uncruncher to QL v1.6 without benefit of a linker.
+
+Features marked '{}' are user configurable by setting equates in the
+assembler source.
+
+< Usage >	(same for Z3 version except DU:/DIR: prefixes accepted)
+        QL [d:]filename.ext     for stand-alone files, crunched, squeezed
+                                  or normal, text or binary
+        QL [d:]lib              for libraried files, crunched, squeezed
+                                  or normal, text or binary
+where:
+        QL                      gives the usage message and asks if you
+                                  want to do a core dump, which page displays
+                                  what's currently in memory in hex/ascii
+
+        QL filename.ext         types a normal (uncompressed) file
+        QL filename.eqt         types a squeezed file
+        QL filename.ezt         types a crunched file
+
+        QL lib                  lists active members in library lib
+                                and allows choosing members by number
+                                to display.  {If half-intensity is enabled,
+                                *.c?m files will be at half brightness.}
+
+If a specific file is called for, QL will read the entire file (or as much as
+will fit) and display page 1.  If the second letter of the file extension is
+'Q', QL will unsqueeze the file first, which can take 10 seconds or so. If
+the second letter of the extension is 'Z', QL will uncrunch it first. QL
+summarizes actual file size (and total line and word count for text files) on
+exit and on the help screen if it is able to get the whole file into memory.
+
+If the specified file is a library, QL will list all active members of that
+library on entry and exit and allow you to choose a member by number to
+display.  Members may be crunched, squeezed or normal, text or binary. A
+member number choice of C or X will exit QL.  The .LBR extension should not
+be added unless you want a hex/ascii display of the library file itself.
+
+If the specified file is a binary file, QL displays it in 256 byte pages in
+ddt-like hex/ascii format, origin assumed to be 100h.
+
+If QL is invoked without a file or library name, it will display its usage
+message and ask if you want a core dump.  If you choose 'Y', the first 256
+bytes of memory will be displayed in hex/ascii format.  You can then apply
+all the commands below (except A to toggle the display to text), including
+finding text strings or hex bytes in memory.
+
+
+< Commands >
+
+/ or ?  redisplays the sign-on help screen.  Shows actual number of bytes
+          in file (and total number of lines and words if a text file).
+
+B or -  backs up 1 page, where a page is {22} lines.
+          For binary files, a page is fixed at 16 lines (256 bytes).
+
+space   displays a single line forward.  There is no command to display the
+          last line backward.  Go back a page and space line by line forward.
+
+any number      jumps to that page or to end of file.  0 jumps immediately to
+                  top of file: to page 1 if text; to page 0 if core dumping.
+  {If delay > 0 (see below), type '1' and wait patiently for 1 second.}
+
+F       finds a text string (case sensitive) forward from:
+                {top of file            if findfrtop equ true
+                 start of current page  if findfrtop equ false}
+          and displays that entire page with all found strings marked
+          \string\.  (If reversevideo equ true, all found strings will
+          be marked in reverse video.}
+
+          If the find string is prefaced with '-', a search for hex byte(s)
+          will be done, in either text or hex/ascii display mode.
+          Format for Find: -cd0500
+                with no separators, 2 hex nibbles per byte.
+          Up to 19 hex bytes can be searched for.  Only the first byte of
+          any matching strings will be marked in hex/ascii display mode:
+          if a hex find string was given, on the hex side; if ascii, on the
+          ascii side.
+          In text mode, control characters (cr, lf, tab) can't be highlighted,
+          but all printable characters of the found string will be.
+          Don't search for -0d0a in text mode (you already know where they
+          are) or the display will scroll to eof.
+          In hex/ascii display mode, you can search for the end of file
+          marker with -1a.
+
+R or C  Repeats the find forward to the next page having an occurrence of the
+          find string.  Repeat is not circular, but you can go back to page 1
+          and repeat it.  A repeat find will never succeed on the current
+          page and thus can never succeed on page 1 (though Find can succeed
+          on page 1).
+
+A       alternates display between text and hex/ascii.  QL decides on its own
+          how to initially display a file, but could be mistaken.  Alternating
+          the display works fine for real text files, where you might want to
+          see if characters have bit 7 set or something, but will probably
+          fill the screen with garbage if you try to do a text display of
+          a binary file.  It can also crash the program, but no protection
+          is provided for this possibility.  This option is disabled when
+          core dumping because it would display nonsense.
+
+T       toggles truncation flag from the initial setting:
+          truncate lines > columns-2 with '+'
+            to/from:
+          wrap long lines onto the next line if necessary.
+          This goofs up the display a little by scrolling lines off the top
+          of the screen if they're > 80 characters, but can be useful with
+          assembler .PRN files since there is no command to scroll the screen
+          horizontally.  Going forward by single lines with the space bar is
+          a good way to use this option.
+
+X,^X,   exit QL with a summary, warm booting if the ccp was overwritten.
+^C,       If working from a library, the library directory is redisplayed
+^K,       with member numbers and you can choose another member to display.
+esc,      {*.c?m files are displayed at half-intensity.  You can still
+or  Q     choose to type them, but you will get a hex/ascii display.}
+          {If delay > 0, <ret> does not have to be typed after the member
+          number.}
+
+any other key displays the next page forward leaving {1} overlapping line.
+        'N' for next page is convenient since it's right next to the 'B'
+          key for back a page.  All the commands can be customized and
+          QL reassembled.  I too hate programs that make me work their way.
+
+-----------------------------------------------------------------------------
+
+< Customization >
+
+There are a large number of "user customization" equates at the beginning of
+the QL source code. They are all fully described there, so the description
+will not be duplicated here. Most can be left the way they are. If your
+terminal has either dim and/or reverse video capability, however, it is
+definitely recommended that you answer YES to those two questions and fill in
+the appropriate sequences for your terminal where indicated for the full
+benefit of QL.
+
+Equates are initially set for a Kaypro 84 series machine.  The supplied
+version of QL.COM was assembled without any of the jazzy stuff and only
+requires that the clear screen code be 1ah.
+
+< Assembly >
+
+Extract and uncrunch QL.AZZ and UNC.AZZ files from the library.  They will
+  have filetype .azm after uncrunching.
+Optionally, extract and uncrunch Z1.CZM assembler.
+Set user customization equates in QL assembler source to suit your terminal
+  and personal preferences. Then assemble as follows:
+
+
+With "Z1" (supplied) -
+Leave file name "QL24.AZM" and make sure the assembler equate "M80" is set
+to FALSE.  Type "Z1 QL24" to assemble.
+
+With "Z80ASM" (SLR) -
+Rename the file QL24.Z80 and set assembler equate "M80" to TRUE.
+Type "Z80ASM QL24" to assemble.
+
+With "M80" / "L80" or "LINK"
+Rename the file QL24.MAC and set assembler equate "M80" to TRUE, and delete
+the two semicolons near ".Z80" immediately below that.
+Type "M80 =QL24/N" to assemble. Then type "L80 QL24/P:100,QL24/N/E" to link,
+or just "LINK QL24" if you have the DRI's LINK.
+
+BIG v2.6 (ZCPR3) NOTE:
+If the ZCPR3 equate is set true, M80 or an SLR assembler is required and
+REL file output is used so that VLIB/Z3LIB/SYSLIB routines can be linked
+in after assembly - further information is in the QL source file.
+
+Z1 assembler notes:
+
+If you modify this code, the Z1 assembler requires all condition codes
+to be in UPPER case:
+
+        ret     z
+        jr      c,label         ; won't assemble
+        ret     Z
+        jr      C,label         ; will
+
+If you try to assemble with 'Z1 QL.AAZ', you will get an out of memory error.
+Just use 'Z1 QL' and everything will be oky-doke.  The QL.PRN file will be
+quite small (symbol table only), unless you've removed the 'nlist s'
+statement near the top of the source file.
+  Doctor, it hurts when I go like this.
+  Don't go like that.
+
+
+< QL Error messages >
+File Not Found          }
+Library Not Found       } obvious
+
+LBR read error
+something is wrong with the library file: a bonged library directory or end
+of file encountered when reading a member.
+
+WARNING: file could NOT be read completely into RAM
+This is a warning message, not an error.  We don't do any virtual memory
+stuff with this program, so if a file is too large to be read entirely into
+RAM, QL reads (and unsqueezes/uncrunches) as much as possible and displays
+what it can of the first part of the file.  There is no way for QL to go
+beyond this without paging text to disk, which is too slow. The way to handle
+this for minimum disk use is to break large files up into 25k or smaller
+chapters, crunch them and library the crunched chapters together.
+Unsuccessful finds in partially read files will also give this warning.
+
+Empty
+library member has zero length, probably just for dating library creation.
+
+Later version uncruncher needed
+The uncruncher checks the version number with which a file was crunched. Up
+to version 2.0 is supported in this release.  When later versions are used to
+crunch files, QL may fail to uncrunch them with this error.
+
+File is corrupt
+Bad crunched source file: try another copy.
+
+Not enough memory or stack overflow
+Uncruncher error.  Should never, ever happen.
+
+Unknown uncrunch error: #
+Default uncruncher error trap.  This happens if uncruncher work area gets
+overwritten (error #0) and for other major catastrophes.
+
+
+< Implementation notes >
+The file to display must fit mostly in ram (no virtual stuff), but this is
+useful for most reasonably sized files.  QL.COM is around 5k and requires a
+1k pointer table and 200 bytes or so for variables, leaving 50k or so in a
+62k cp/m system.  If a file doesn't fit, the page number display will have a
+trailing + sign (Page 1 of 78+).
+
+Squeezed files must fit mostly in memory when unsqueezed.  They are
+identified by a 'Q' as the second letter of the file extension.  Since
+unsqueezing a file is the only way to know how long it will be and that
+varies according to the compression ratio, which varies according to the kind
+of text that was squeezed, QL tries to do the right thing with big squeezed
+files (it shows as much of the first part of the unsqueezed file as possible
+when it detects the unsqueezed text smashing into the bdos). The only way to
+tell if a file can be completely unsqueezed by this utility is to try it.  No
+harm can result.
+
+Crunched files must also fit mostly in memory when uncrunched, but there is a
+further constraint:  the uncruncher efficiently occupies 24k in a work area
+just below the bdos.  This effectively reduces the size of crunched files QL
+can handle: in a 62k system, about 28k is the largest uncrunched file that
+will fit.  As in unsqueezing, QL will display as much of the first part of
+the file as possible.  Beyond that, you need another utility.
+
+If a compressed file (like QL.AZM, which is not crunched) fails in uncrunch
+or unsqueeze, it is tried as a normal uncompressed file.
+
+All additional memory up to and including ccp if necessary is used as a file
+buffer.  QL will not allow overwrite of bdos and warm boots only when ccp
+gets smashed.  The ccp is always overwritten when working with crunched
+files.
+
+Once the file is loaded, there is no further disk action until exit when, if
+you're working from a library, all members of that library are again listed.
+The load and unsqueeze/uncrunch time was put up front because I don't like
+the disk constantly starting and stopping while I'm reading. Reading and
+unsqueezing/uncrunching in the background would be nice, but...
+
+QL is self-initializing.  If you use a replacement version of ccp that has a
+'go' command, you can just type 'go fn.ext'  or 'go lib' to reuse QL without
+having to reload it.
+
+The only terminal capability required is erase screen and home cursor. Direct
+bios character output is used to speed display but may be disabled. Half-
+intensity can be used to display *.c?m library members at reduced intensity.
+Reverse video can be used to mark matches to finds.
+
+Mostly compatible with Wordstar document files:  QL will fail to find a
+string only if the first character to find is the last character of a word,
+which will have its hi bit set by WS.  Most normal finds work ok. If you want
+to type in the hex bytes, a first character with bit 7 set can also be found.
+
+If builders built buildings the way programmers wrote programs, the first
+woodpecker to come along would destroy civilization.  In particular, the find
+string code is held together with chewing gum and is easy to derail.
+
+In hex/ascii core dumping, finds start on the current page and, if below page
+25 or so, scan QL.COM and its data area, which will generate spurious
+matches.  Useful core data (not QL itself or its data area) will be found
+above page 25.  Reasoning: it was confusing to be able to see something in
+core and not be able to find it in a search so I left it this way, but these
+unexpected matches are dumb too.
+
+Beware of roaming into your roms when core dumping: if you have disk
+controller roms lurking in high memory, strange things, none of them good,
+may happen.  Finds in page 255 can't succeed.
+
+The word count for text files is approximate, based on the simple definition
+of a word being a string of ascii masked characters >= '0' (30h) and < 80h.
+Needs more thought.
+
+
+< History >
+
+Version 2.6	April 6, 1988	Bruce Morgen
+
+Introduced conditionals to create ZCPR3-compatible version which gets  
+all its terminal data from the Z3 environment and accepts DU:/DIR:     
+specs from the command line.  This option requires assembly to a REL   
+file and linkage with VLIB, Z3LIB and SYSLIB.
+
+
+ver 2.5 (sgg) 02-28-88
+- Corrected a bug which prevented all previous versions from being able to
+uncrunch a file if the system's BDOS started at an address other than a
+page boundary or a page boundary plus six. This would cause an "unknown
+uncrunch error", which wasn't even the "correct" error message due to
+another bug in the error message reporting code (also fixed).
+- Eliminated the use of alternate registers and the associated EQUate.
+Use of the alternate registers conflicted with some systems. Removed
+redundant register saves and eliminated a subroutine level in the same
+same area (memory i/o routines). Also:
+- Added Wordstar-like ability to display control characters not otherwise
+handled (eg "02" in a file will display as "^B").
+- Added ascii FF (formfeed) char to the "legitimate character" list, so
+documents with a leading formfeed won't come up in hex mode.
+- Changed most JP's to JR's in UNC.AZM, and removed the extra entrypoints
+and associated code not used by QL.
+
+==> Many thanks to Ken Reid and Mike Greenhill.
+
+
+ver 2.4 (sgg) 01-25-88
+ To make QL a viable "online" utility:
+   added BYE detect: adjusts memory limits and inhibits video attribute xmit
+   checks wheel byte:  inhibits system COM file and "core" dumps.
+   continuously checks for ^S, etc while running remote.
+ Stronger checking of user keyboard input some synonyms added.
+ Added M80 EQU to allow assembly under M80 / SLR Z80ASM.
+ Used macros so terminal attribute sequences could be relocated to the beg-
+ inning of the file (configuration section) where they logically should be.
+ Other misc. changes.
+
+ver 2.3 (njd) 12-27-87
+  fixed a nasty bug in ws doc file handling and other doc file goofs.
+  added tab expansion to spaces option.
+  added @ marker character for control characters we can't reliably send to
+    a terminal.
+  added truncation toggle command.  Removed truncation logic to putc: rtn
+    where it belonged, but not before torturing myself at length with the
+    old scheme.
+
+ver 2.2 (njd) 12-12-87  release halted due to a nasty bug in ws doc files.
+  added core dumping option if no file or library name is given.
+  added filename.ext to summary.
+  added summary word count for text files.
+  fixed line counting in ws document files with page breaks.
+  better eof handling for files just larger than available memory.
+
+ver 2.1 (sgg) 12-5-87
+ - Changed display of library member filenames. Now includes the reference #.
+ - Eliminated "File not found" message each time a library was opened. The
+   message will only appear if neither a plain nor .LBR file with the
+   specified name can be found.
+ - Added "Q", escape, and ^K as additional synonyms to existing eXit & ^C
+   for BISHOW, LIST61, and generic compatibility reasons.
+ - Changed code which outputs the uncrunched filename to prevent it from
+   outputting any chars in the header beyond the filename (CR23D compat.)
+ - Added UCHEX equate for those who prefer upper case letters in hex dump.
+ - Took the liberty of removing my own name (and cbf's) and copyright message
+   from the display (still embedded in the code, however). Made some changes
+   to the main help menu as well.
+                                                - Steven Greenberg
+
+ver 2.0 (njd) 12-1-87
+  included uncrunching capability, courtesy of Greenberg & Falconer.
+  changed unsqueezing method to read & unsqueeze simultaneously, like uncrunch.
+    Can handle much bigger squeezed files.  What was I thinking before?
+  added checksum verification of ccp overwrite instead of a lot of bookkeeping.
+  added hex/ascii display of non-text files and as an alternative for text files.
+  added partial display of files too big for available memory.
+  changed the whole find string philosophy.
+  added highlighted display of found strings in text and hex/ascii.
+  added find of hex byte strings when prefaced with '-'.
+  deleted all page tagging code, unnecessary with page number selection.
+  eliminated most self-modifying code.
+
+ver 1.6 (njd)
+  set fcb1 r2 field to 0 to avoid random read (bdos fn 33) error 6.
+  capitalized jump, call and return condition codes for Z1 assembler.
+  removed 'title' directive (unsupported by Z1 assembler).
+  added conditional for Z1 assembler to generate a .COM file directly.
+
+ver 1.5 (njd)
+  fixed dumb error in deleted member handling.
+
+ver 1.4 (njd)
+  removed Member Not Found and substituted numeric choice of members from
+    the library directory.
+  added half-intensity option for *.c?m members.
+  added option for DOS+ bdos call 211.
+
+ver 1.3 (njd)
+  added library searching and directory listing capabilities.
+  added unsqueezing and protection from squeezed files that get too big.
+  added option to not use bios console output routine to speed display.
+  added delay code for page number input without <ret>.
+  eliminated scroll on forward paging.
+  added total byte and line summary.
+  made line overlap user configurable.
+  use computed file size to see if file will fit below bdos and if it will
+    overlay ccp instead of reading until collision.
+  fixed single line forward so it adjusts current page as expected.
+  added long line truncation flagging with '>'.
+
+ver 1.2 (njd)
+  added page tagging.  If usealtregs is true, this feature uses the z80
+    alternate register set, which may be incompatible with your system,
+    particularly if it is interrupt driven.  Set the usealtregs equate
+    false to use fake memory register code (which is slightly longer)
+    and reassemble.  Page tagging can be eliminated by setting pagetags
+    equate false.
+  page pointer rtn now looks for lf instead of cr, which is the way it
+    should have been written in the first place.  Ah, middle age...
+  during page number jumps, watches for sufficient number of digits
+    for page to jump to.
+  better command parser and clearer program structure.
+  made reentrant for zcpr 'go' cmd by initializing storage.
+  added version numbering.
+
+ver 1.1
+  original for standard text files.
+
+
+< Credit where it's due >
+QL was inspired by bishow.asm by Phil Carey, W.F. McGee, H.M. Van Tassell and
+many others.  The unsqueeze code is adapted from lt18, copyrighted by Steven
+Greenberg and C.B. Falconer, which is a much more versatile program but
+doesn't permit random access.  The uncrunch code is uncrel.mac by Greenberg
+and Falconer.
+
+Kudos to Neil Koozer for his speedy Z1 assembler which halved the time of the
+basic edit > assemble > crash cycle.
+
+The user commands are as similar to sweep and nulu as I could make them so
+you don't have to learn yet another set of commands.
+
+My thanks to contributors to the public domain who have taught me much.
+
+If you're so inclined, hack away at this to improve and extend the code or to
+suit your own preferences.
+
+I only tend to abuse a program one way and this has only been tested on
+Kaypro equipment.  Also, I haven't tested all possible combinations of
+equates, although I've tried to remove any dependencies between them.
+
+Please report any significant bugs in writing or through a Cleveland BBS.
+

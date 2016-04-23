@@ -1,0 +1,1197 @@
+	title 'SETPATH VERSION 1.0 ---  03/08/87 '
+
+;  PROGRAM:  SETPATH - R.I.DEMROW 03/08/87 --	note that this program is
+;						limited to a max of 128 paths
+;
+;  DERIVED FROM PATH V3.1
+;  PROGRAM:  PATH
+;  VERSION:  3.0
+;  AUTHOR:  RICHARD CONN
+;  DATE:  12 Apr 84
+;  PREVIOUS VERSIONS:  NONE
+;  DERIVATION:	PATH, Version 1.0 (for ZCPR2) of 12 Jan 83
+
+z3env	defl	0dc00h		; Environment descriptor address
+
+vers	equ	10
+
+;	Change name to SETPATH and add modifications to add to head or tail
+;	of existing path and delete from path.  SETPATH clears the program
+;	error flag in the message buffer if the new path is set as specified.
+;	If there is an error, the error flag is set to a code to indicate the
+;	type of error as follows:
+;
+;		1.	there is no external path buffer
+;		2.	the wheel byte is not set
+;		3.	an illegal option was specified
+;		4.	the final path is empty
+;		5.	too many elements for the temporary path buffer
+;		6.	too many elements in final symbolic path
+;		7.	too many elements in the temporary prefix buffer
+;		8.	too many elements in the temporary append buffer
+;		9.	bad path expression (e.g., nonexistent directory name
+
+;VERS	EQU	31		; Now responds to the quiet flag.
+				; Now limits the declared path to the length
+				; Specified in the environment. 12 Mar 85 JWW
+
+;vers	equ	30		; Release version
+
+;
+;  SYSLIB Routines
+;
+	extrn	z3init,eprint,codend,$memry
+	extrn	dirtdu,dutdir,epstr,retud
+	extrn	getquiet,getpath,getmdisk,getmuser,getwhl
+	extrn	subhd,scanner,mafdc,puter2
+
+;  CP/M Constants
+;
+cpm	equ	0		; Base
+fcb	equ	cpm+5ch
+tbuff	equ	cpm+80h
+
+;
+; SPECIAL CHARACTER EQUATES
+;
+cr	equ	0dh		; Carriage return
+lf	equ	0ah		; Line feed
+colon	equ	':'		; Colon!
+space	equ	' '		; Space!
+optldin	equ	'/'		; Character to begin an option
+begpchr	equ	'p'		; Option character for beginning path additions
+endpchr	equ	'a'		; Option character for ending path additions
+delpchr	equ	'd'		; Option character for path deletions
+				; ..from beginning
+rmpchr	equ	'r'		; Option character for path deletions from end
+clrpchr	equ	'c'		; Option character to replace current path
+eom	equ	0		; End of message character
+utol	equ	20h		; Make upper case lower case
+defopt	equ	2		; No of chars. to define option ie., '/a'
+
+;
+; Environment Definition
+;
+	 if	z3env ne 0
+;
+; External ZCPR3 Environment Descriptor
+;
+	jp	start
+	defb	'Z3ENV'		; This is a ZCPR3 Utility
+	defb	1		; External Environment Descriptor
+z3eadr:
+	defw	z3env
+start:
+	ld	hl,(z3eadr)	; Pt to ZCPR3 environment
+;
+	 else
+;
+; Internal ZCPR3 Environment Descriptor
+;
+	maclib	z3base.lib
+	maclib	sysenv.lib
+z3eadr:
+	jp	start
+	sysenv
+start:
+	ld	hl,z3eadr	; Pt to ZCPR3 environment
+	 endif
+
+;
+; Start of Program -- Initialize ZCPR3 Environment
+;
+	call	z3init		; Initialize the ZCPR3 Env and the VLIB Env
+	ld	hl,0		; Save stack ptr
+	add	hl,sp
+	ld	(strtstack),hl	; Save ptr to original stack
+	ld	hl,tbuff+1	; Pt to command line input
+	ld	(cmdline),hl	; Save ptr to command line
+	call	retud		; Get current disk and user
+;
+;  Print Banner
+;
+	call	getquiet
+	jp	nz,q0
+	call	eprint
+	defb	cr,lf,'SETPATH  Version '
+	defb	vers/10+'0','.',(vers mod 10)+'0',cr,lf,eom
+q0:
+;
+;  Check for Help
+;
+	ld	a,(fcb+1)	; Get first char
+	cp	'/'		; Help?
+	jp	nz,start1
+	ld	a,(fcb+2)	; Get second char
+	cp	space
+	jp	z,help
+	cp	'/'		; Help?
+	jp	nz,start1
+
+help:
+	call	getquiet
+	ret	nz
+	call	eprint
+	defb	cr,lf
+	defb	'  SETPATH allows the user to display or '
+	defb	'modify the symbolic search path for'
+	defb	cr,lf
+	defb	'  transient programs.  Path elements may '
+	defb	'be expressed using drive-user (DU)'
+	defb	cr,lf
+	defb	'  or named-directory (DIR) form.  The '
+	defb	'character ''$'' may be used with the DU'
+	defb	cr,lf
+	defb	'  form to indicate the current drive or '
+	defb	'user (e.g., "B$" or "$2" or "$$").'
+	defb	cr,lf
+	defb	'  SETPATH sets or clears the program '
+	defb	'error flag.  Command syntax is:'
+	defb	cr,lf,cr,lf
+	defb	'    SETPATH                <-- Display Current Path'
+	defb	cr,lf
+	defb	'    SETPATH //             <-- Print This Help Screen'
+	defb	cr,lf
+	defb	'    SETPATH element-list   <-- Set New Path to element-list'
+	defb	cr,lf
+	defb	'    SETPATH [option element-list]....[option element-list]'
+	defb	cr,lf,cr,lf
+	defb	'  Where the option may be any of the following:'
+	defb	cr,lf
+	defb	cr,lf,'    ',optldin,clrpchr
+	defb	'          <-- Clear path and set to new element-list'
+	defb	cr,lf,'    ',optldin,begpchr
+	defb	'          <-- Prefix element-list to beginning of path'
+	defb	cr,lf,'    ',optldin,endpchr
+	defb	'          <-- Append element-list to end of path'
+	defb	cr,lf,'    ',optldin,delpchr
+	defb	'          <-- Delete element-list from path '
+	db	'starting at beginning'
+	defb	cr,lf,'    ',optldin,rmpchr
+	defb	'          <-- Remove element-list from path '
+	db	'starting from the end'
+	defb	cr,lf
+	defb	eom
+	ret
+
+;
+;  The following is the option string used for checking for valid options
+
+optnstr:
+	defb	optldin,begpchr	; Add to beginning of path option
+	defb	optldin,begpchr-20h ; Upper case of above
+	defb	optldin,endpchr	; Add to end of path option
+	defb	optldin,endpchr-20h ; Upper case of above
+	defb	optldin,delpchr	; Delete from path starting at begining
+	defb	optldin,delpchr-20h ; Upper case of above
+	defb	optldin,clrpchr	; Clear existing path & replace option
+	defb	optldin,clrpchr-20h ; Upper case of above
+	defb	optldin,rmpchr	; Remove from path starting at end option
+	defb	optldin,rmpchr-20h ; Upper case of above
+
+stroptln equ	$-optnstr	; Don't move this relative to above
+
+;
+;  Check for Path
+;
+start1:
+	call	getpath		; External path available?
+	ld	(mxpths),a	; Keep for use in dynamically
+				; ..allocating buffers
+	ld	(extpath),hl	; Now we have it for all time
+	ld	a,h		; HL=0 if none
+	or	l
+	jp	nz,start2
+	call	getquiet
+	jp	nz,setval1
+	call	eprint
+	defb	cr,lf,' - Abort: No Path',eom
+	xor	a
+setval1:
+	ld	a,1		; Use errorvalue of 1;
+seterror:
+	push	af		; Save error type
+	call	getquiet
+	jp	nz,puter
+	call	eprint		; Clean up on exit
+	defb	cr,lf,eom
+puter:
+	pop	af		; Restore error type
+	call	puter2
+	ld	hl,(strtstack)	; Get original stack
+	ld	sp,hl		; Set stack ptr
+	ret
+
+
+;  Check for Wheel
+;
+start2:
+	call	getwhl		; Check for wheel
+	jp	nz,initbufs
+	call	getquiet
+	jp	nz,setval2
+	call	eprint
+	defb	cr,lf,' - Abort: No Wheel',eom
+setval2:
+	ld	a,2
+	jp	seterror
+
+;
+;  Option character is not one of the specified options
+;
+
+illopt:	call	getquiet
+	jp	nz,setval3
+	call	eprint		; None, so error
+	defb	cr,lf,' - Abort: Illegal option - ',eom
+	ld	hl,tbuff+1
+	call	epstr
+setval3:
+	ld	a,3
+	jp	seterror
+
+;
+; Something is wrong - generated null path
+;
+
+nullpth:
+	call	getquiet
+	jp	nz,setval4
+	call	eprint
+	defb	cr,lf,cr,lf,'  Input resulted in null path',eom
+setval4:
+	ld	a,4
+	jp	seterror
+
+;
+;  Buffer overflow -- to many paths
+;
+
+bufovfl:
+	call	getquiet
+	jp	nz,setval5
+	call	eprint
+	defb	cr,lf,' - Abort: Too many paths for buffer',eom
+	ld	hl,tbuff+1	; Start at Beggining of command
+	call	epstr
+setval5:
+	ld	a,5
+	jp	seterror
+
+;
+; Number of paths exceed mxpths
+;
+
+tmnypths:
+	call	getquiet
+	jp	nz,setval6
+	call	eprint
+	defb	cr,lf,' - Abort: to many paths  - ',eom
+	ld	hl,tbuff+1	; Start at beggining of command
+	call	epstr
+setval6:
+	ld	a,6
+	jp	seterror
+
+;
+; Number of paths exceed head buffer capacity
+;
+
+tmnyheadpths:
+	call	getquiet
+	jp	nz,setval7
+	call	eprint
+	defb	cr,lf,' - Abort: to many head paths  - ',eom
+	ld	hl,tbuff+1	; Start at beggining of command
+	call	epstr
+setval7:
+	ld	a,7
+	jp	seterror
+
+;
+; Number of paths exceed tail buffer capacity
+;
+
+tmnytailpths:
+	call	getquiet
+	jp	nz,setval8
+	call	eprint
+	defb	cr,lf,' - Abort: to many tail paths  - ',eom
+	ld	hl,tbuff+1	; Start at beggining of command
+	call	epstr
+setval8:
+	ld	a,8
+	jp	seterror
+
+;
+;  Entry not found
+;
+rangerr:
+	call	getquiet
+	jp	nz,q1
+	call	eprint
+	defb	cr,lf,'Bad Expression at ',eom
+	ld	hl,(token)	; Print string starting at token
+	call	epstr
+q1:	ld	a,9
+	jp	seterror
+
+;
+; Initialize buffers for rentrant operation
+;
+
+refill:	ld	a,space		; Fill with spaces
+	ld	(de),a		; Fill it
+	inc	de		; And move on
+	dec	bc
+	ld	a,b		; Check for done (zero)
+	or	c
+	jp	nz,refill
+	ret
+;
+;  Dynamically allocate buffer space based on maxpath from environment
+;
+
+initbufs:
+	ld	a,(mxpths)	; From environment
+	ld	l,a		; Prepare to multiply mxpths by two
+	ld	h,0
+	add	hl,hl		; By two
+	ex	de,hl		; In reg de
+	ld	hl,($memry)	; Get beginning of available memory
+	ld	(hbuf),hl	; Start buffers here - head path buffer
+	add	hl,de		; Add in buffer length
+	ld	(cbuf),hl	; Current path buffer
+	add	hl,de
+	ld	(tbuf),hl	; Tail path buffer
+	add	hl,de
+	ld	(termpth),hl	; Location of null terminator
+	inc	hl		; One location for terminator
+	ld	(dbuf),hl	; Beginning of dbuf
+	add	hl,de
+	inc	hl		; Add additional buffer space for backward
+				; Search for one path
+	inc	hl
+	ld	(pbuf),hl	; Final path buffer and temporary path builder
+	add	hl,de
+	inc	hl		; Add one extra location for terminator
+	ld	(endofbuf),hl
+
+;
+;  Initialization of dynamic path pointers completed
+;
+
+	ld	hl,(hbuf)	; Point to the buffer head
+	push	hl
+	ex	de,hl		; Put into de
+	ld	hl,(endofbuf)	; Set up buffer end in reg hl
+	call	subhd		; Put difference in reg bc
+	push	hl
+	pop	bc
+	pop	de		; Put pointer in reg de
+	call	refill
+	xor	a		; Initialize terminator and counters
+	ld	hl,(termpth)	; Store terminator
+	ld	(hl),a
+	ld	(hctr),a
+	ld	(tctr),a
+	ld	(pctr),a
+	ld	(pathcnt),a
+	ld	(pthctr),a
+	ld	hl,(pbuf)	; Initialize pathptr
+	ld	(pathptr),hl
+	ld	hl,(tbuf)	; Initialize tail pointer
+	ld	(tbptr),hl
+	ld	hl,(cbuf)	; Initialize head pointer
+	ld	(heptr),hl	; Currently pointing after the last location
+				; ..in hbuf
+;
+;	 Move pointer to current path to temp and move path to dbuf
+;
+	ld	hl,(extpath)	; Location of current path
+	call	cntpths		; Get count of number of paths
+	ld	a,c		; Get the count in a
+	ld	(pathcnt),a	; Keep the count in pathcnt
+	add	a,c		; Double number of paths to get bytes
+	ld	(bytecnt),a
+	ld	hl,(dbuf)	; Point to dbuf
+	ex	de,hl
+	ld	hl,(extpath)	; Location of current path
+	call	m0vpth
+
+;
+;	 Check for any options
+;
+
+	ld	hl,(cmdline)	; Check command line for text
+	call	sblank		; Skip to non-blank
+	ld	(cmdline),hl	; Keep track of where you are
+	or	a		; If zero display path
+	jp	z,pdisp
+;
+;  Get option char.
+;
+fndopt:
+	ld	hl,(cmdline)	; Start at beginning
+	ex	de,hl
+	call	chkopt
+	jp	z,storopt
+	ld	a,'c'		; Must be clear option
+	ld	(optchr),a
+	jp	pbuild
+;
+;	Checks	for option - if match returns with zero flag set
+;
+chkopt:
+	ld	hl,optnstr
+	ld	bc,(stroptln shl 8) + defopt ; Currently  b=20 and c=2
+	call	scanner		; Scan for option
+	call	nz,chkillegal
+	ret
+
+chkillegal:
+	ld	hl,(cmdline)	; Get current char.
+	ld	a,(hl)
+	cp	optldin		; Is it the option lead in
+	jp	z,illopt	; Yes it's illegal
+	ret
+
+storopt:
+	inc	de		; Move to option char.
+	ld	a,(de)
+	ld	(optchr),a
+	inc	de		; Move beyond the option char.
+	ex	de,hl		; Recover the cmdline ptr
+	ld	(cmdline),hl
+	jp	pbuild
+
+watopt:
+	ld	a,(pthctr)	; Get current number of paths in pbuf
+	ld	(pctr),a	; Keep number of bytes in pctr
+	xor	a		; Reset pthctr
+	ld	(pthctr),a
+	ld	hl,(pathptr)	; Put terminator at end of path
+	ld	(hl),0
+	ld	hl,(pbuf)	; Reset pointer to beginning of buffer
+	ld	(pathptr),hl
+	ld	a,(optchr)	; Get the option char.
+	or	utol		; If not already lower case make lower
+	cp	clrpchr
+	jp	z,clr		; Clear opt
+	cp	begpchr
+	jp	z,head		; Head opt
+	cp	delpchr
+	jp	z,delt		; Deleted opt
+	cp	rmpchr
+	jp	z,rmp		; Replace opt.
+	cp	endpchr
+	jp	z,tail		; Tail opt
+	jp	illopt
+;
+;  Replace contents of current path with new input
+;
+
+clr:
+	jp	pbdone
+;
+;  Add new paths to beginning of path
+;
+head:
+	ld	a,(pctr)	; Get pbuf count
+	ld	e,a
+	ld	a,(hctr)	; Get head count
+	add	a,e
+	ld	(hctr),a	; Keep new count
+	ld	hl,mxpths	; More than buffer can hold?
+	cp	(hl)
+	jp	nc,tmnyheadpths
+	ld	hl,(heptr)	; Get pointer to current end of hbuf
+	add	a,a		; Byte count is double number of paths
+	ld	e,a		; Reg de contains byte length for path
+	ld	d,0
+	call	subhd		; Back the pointer up
+	ld	(heptr),hl	; And put it back
+	ex	de,hl
+	ld	hl,(pbuf)
+	call	m0vpth
+	ld	hl,(cmdline)	; Get next char.
+	ld	a,(hl)
+	or	a		; If zero then build final path
+	jp	z,bldpth
+	jp	fndopt		; Else get next option
+;
+;  Add new path to end of path
+;
+tail:
+	ld	a,(pctr)	; Get pbuf count
+	ld	e,a
+	ld	a,(tctr)	; Get tail count
+	add	a,e
+	ld	(tctr),a	; Keep new count
+	ld	hl,mxpths	; More than buffer can hold?
+	cp	(hl)
+	jp	nc,tmnytailpths
+	ld	hl,(tbptr)	; Get pointer to current begining of tbuf
+	ex	de,hl
+	ld	hl,(pbuf)
+	call	m0vpth
+	ex	de,hl
+	ld	(tbptr),hl	; And put it back
+	ld	hl,(cmdline)	; Get next char.
+	ld	a,(hl)
+	or	a		; If zero then build final path
+	jp	z,bldpth
+	jp	fndopt		; Else get next option
+;
+;  Mark the elements in each path for elimination
+;
+delt:
+	ld	hl,(pbuf)	; Get the pointer to the deleted path
+	ex	de,hl
+	ld	hl,(dbuf)	; Get the pointer to the current path elements
+	ld	c,2		; Two elements for search - in c
+	ld	a,(bytecnt)	; Get total bytes for current path in acc
+	ld	b,a		; B contains no. of elements in search path
+fndmtc:
+	call	scanner		; Find any matches
+	call	z,mtc		; Got a match now mark it for deletion
+	inc	de
+	inc	de		; Advance to the next element to match
+	ld	a,(de)
+	or	a		; Continue until done - zero
+	jp	nz,fndmtc
+	jp	mdelt
+mtc:
+	ld	a,(hl)		; Found a match
+	or	80h
+	ld	(hl),a
+	ld	hl,(dbuf)
+	ret
+
+mdelt:
+	ld	hl,(cmdline)	; Get next char.
+	ld	a,(hl)
+	or	a		; If zero then build final path
+	jp	z,bldpth
+	jp	fndopt		; Else get next option
+;
+;  Delete paths from current path beginning at the end of the path
+;
+rmp:
+	ld	hl,(pbuf)	; Get the pointer to the deleted path
+	call	cntpths
+	ld	a,c		; Check for null path
+	or	a
+	jp	z,np
+	dec	hl		; Back up one because of reverse search
+;
+;  Mark the elements in the path for elimination
+;
+np:
+	ex	de,hl
+	ld	hl,(dbuf)	; Get the pointer to the current path elements
+	ld	b,0
+	ld	a,(bytecnt)	; Get total no. of bytes in current path
+	dec	a		; One location in from end of path
+	ld	c,a		; Move to back end of dbuf for backward search
+	add	hl,bc		; Now pointing at last byte of path
+	ld	a,(bytecnt)	; Get number of elements in search path
+	ld	c,2		; Two elements for search - in c
+	ld	b,a		; B contains no. of elements in search path
+rfndmtc:
+	call	bscanner	; Find any matches
+	call	z,rmtc		; Got a match now mark it for deletion
+	dec	de		; Advance to the next element to match
+	dec	de
+	ld	a,(de)
+	cp	space		; Continue until done
+	jp	z,mrmp
+	jp	rfndmtc
+rmtc:
+	dec	hl		; Back up to mark the drive location
+				; ..not the user
+	ld	a,(hl)
+	or	80h
+	ld	(hl),a
+	ld	hl,(dbuf)
+	ret
+
+mrmp:
+	ld	hl,(cmdline)	; Get next char.
+	ld	a,(hl)
+	or	a		; If zero then build final path
+	jp	z,bldpth
+	jp	fndopt		; Else get next option
+
+
+
+;
+; determine the number of paths given the path pointer in hl, c contains the
+; number of paths, path terminated by null
+;
+
+cntpths:
+	xor	a		; Start with zero
+	ld	c,a
+	ld	a,(hl)		; Check if null path
+	or	a
+	ret	z
+folop:
+	inc	hl
+	inc	hl
+	inc	c		; Keep count in c
+	ld	a,(hl)		; Drive can not be zero hence end
+				; ..of path if zero
+	or	a
+	jp	nz,folop
+	ret
+
+bldpth:
+	ld	hl,(pbuf)	; Clear pbuf for final path
+	ex	de,hl
+	ld	a,(mxpths)	; Load reg bc with the buffer length
+	add	a,a		; Double it for bytes to fill
+	ld	c,a		; Use reg bc for counter
+	ld	b,0
+	call	refill
+	ld	a,(optchr)	; If it's clr option then don't
+				; ..move current path
+	or	utol
+	cp	clrpchr		; Ie., don't call fixpth
+	jp	z,skpfix
+	call	fixpth
+skpfix:
+	ld	hl,(pbuf)	; Put it in the path buffer
+	ex	de,hl
+	ld	hl,(hbuf)	; Start at beginning
+	ld	a,(mxpths)	; Make sure there are not more
+				; ..paths than mxpths
+	ld	c,a		; Stick it in c for comparison
+	ld	b,0ffh		; Initialize b to -1 ( no carry for zero )
+nxtpth:
+	ld	a,(hl)		; Drive
+	cp	space
+	jp	z,skppth	; If its a space then skip
+	or	a
+	jp	z,ndone
+	ld	(de),a
+	inc	hl
+	inc	de
+	inc	b		; Keep track of no. of paths
+	ld	a,b
+	cp	c
+	jp	nc,tmnypths
+	ld	a,(hl)		; User
+	ld	(de),a
+	inc	hl
+	inc	de
+	jp	nxtpth
+ndone:
+	ld	(de),a		; Put in terminator
+	jp	pbdone
+skppth:
+	inc	hl
+	inc	hl
+	jp	nxtpth
+
+
+fixpth:
+	ld	hl,(dbuf)	; Recover the pointer to the current path
+	ex	de,hl
+	ld	a,(bytecnt)	; Get the number of bytes in the current path
+	or	a		; Make sure ther is a path
+	ret	z		; Return if not
+	ld	b,0		; Put it in bc
+	ld	c,a
+	ld	hl,(cbuf)	; Move it to final path
+movmor:
+	ld	a,(de)		; Check for marked entries
+	and	80h
+	jp	nz,fskppth	; And skip them
+	ld	a,(de)
+	ld	(hl),a
+	inc	hl
+	inc	de
+ckzero:
+	dec	bc
+	ld	a,b
+	or	c
+	jp	nz,movmor
+	ret
+
+fskppth:
+	inc	de
+	inc	de
+	dec	bc
+	jp	ckzero
+
+;
+;	 **** Set New Path ****
+;	CMDLINE pts to next element
+;
+pbuild:
+	ld	hl,(cmdline)	; Pt to next element
+	call	sblank		; Skip to non-blank
+	ld	(cmdline),hl
+	ld	a,(hl)		; Get the next char
+	or	a		; EOL?
+	jp	z,watopt	; Move path to appropriate location
+	ex	de,hl		; Pointer in reg de
+	call	chkopt		; If the next token is an option then exit
+	jp	z,watopt	; Move path to appropriate location
+	ld	a,(pthctr)	; Make sure buffers don't overflow
+	ld	hl,mxpths
+	cp	(hl)		; Is mxpths equal to pthctr
+	ld	hl,(cmdline)	; Get the correct pointer back
+	jp	z,bufovfl	; There are too mny paths
+	inc	a
+	ld	(pthctr),a
+	ld	(token),hl	; Save ptr to first byte of new token
+	ld	a,(hl)		; Get first char
+	cp	'$'		; Is it current?
+	jp	z,pbdu		; DU: form
+	sub	'A'		; Convert to number
+	jp	c,pbdir		; DIR: form
+	ld	b,a		; Save number
+	call	getmdisk	; Get max disk number
+	ld	c,a
+	ld	a,b
+	cp	c		; In range?
+	jp	nc,pbdir	; DIR: form if not
+	inc	hl		; Pt to next char -- may be DU or DIR
+	ld	a,(hl)		; Get next part of element
+	cp	'$'		; Current?
+	jp	z,pbdu		; Is a DU: form
+digtst:
+	cp	':'		; Colon ends it
+	jp	z,pbdu		; Is a DU: form
+	cp	' '		; Space ends it
+	jp	z,pbdu
+	or	a		; EOL ends it
+	jp	z,pbdu
+	cp	'0'		; Must be a digit
+	jp	c,pbdir		; DIR: form if not in range
+	cp	'9'+1
+	jp	nc,pbdir
+	inc	hl		; Pt to next
+	ld	a,(hl)		; Get it
+	jp	digtst
+;
+;  It is a DU: form
+;
+pbdu:
+	ld	hl,(pathptr)	; Pt to path entry
+	ex	de,hl		; In DE
+	ld	hl,(token)	; Pt to token
+	ld	a,(hl)		; Current?
+	cp	'$'
+	jp	z,pbdu1
+	sub	'A'-1		; Convert to number from 1 to n
+pbdu1:
+	ld	(de),a		; Save disk element
+	inc	hl		; Pt to next
+	inc	de
+	ld	a,(hl)		; Current user?
+	inc	hl		; Pt to after user in case of match to current
+	cp	'$'		; Current?
+	jp	z,pbdu2
+	dec	hl		; Pt to first digit
+	push	de		; Save ptr to path
+	call	eval10		; Convert to number in C
+	jp	c,rangerr
+	call	getmuser	; Check for max user
+	inc	a
+	ld	b,a		; Place max in B
+	ld	a,c		; Value in A
+	cp	b
+	jp	nc,rangerr
+	pop	de		; Get ptr to path
+pbdu2:
+	ld	(de),a		; Store user number
+	inc	de
+	ld	a,(hl)		; Ending with colon?
+	cp	':'
+	jp	nz,pbdu3
+	inc	hl		; Skip over colon
+pbdu3:
+	ld	(cmdline),hl	; Save ptr to next command line entry
+	ex	de,hl
+	ld	(pathptr),hl	; Save ptr to next path entry
+	jp	pbuild		; Continue processing
+;
+;  Build DIR: form
+;
+pbdir:
+	ld	hl,(token)	; Pt to name
+	call	dirtdu		; Convert to DU in BC
+	jp	nz,gotud	; Process new DU
+	jp	rangerr		; Entry not found
+;
+;  Got User and Disk -- Store in Path
+;
+gotud:
+	ld	hl,(pathptr)	; Get ptr to path
+	inc	b		; Disk A = 1
+	ld	(hl),b		; Store disk
+	inc	hl
+	ld	(hl),c		; Store user
+	inc	hl		; Pt to next
+	ld	(pathptr),hl
+	ld	hl,(token)	; Skip over token
+gotud1:
+	ld	a,(hl)		; Skip to space or EOL
+	inc	hl		; Pt to next
+	or	a		; EOL?
+	jp	z,gotud2
+	cp	' '		; Space?
+	jp	nz,gotud1
+gotud2:
+	dec	hl		; Pt to EOL or space
+	ld	(cmdline),hl	; Set ptr to next element
+	jp	pbuild		; Continue building
+;
+;  Path Building is Done -- pbuf contains new path
+;
+pbdone:
+	ld	hl,(extpath)	; Pt to path
+	ex	de,hl		; In DE
+	ld	hl,(pbuf)	; Copy temp path into external path
+pcopy:
+	ld	a,(hl)		; Get disk
+	ld	(de),a		; Put disk
+	or	a		; End of path?
+	jp	z,pdisp		; Done if so and display
+	inc	hl		; Pt to user
+	inc	de
+	ld	a,(hl)		; Get user
+	ld	(de),a		; Put user
+	inc	hl		; Pt to next disk
+	inc	de
+	jp	pcopy
+
+;
+;  **** Display Path Function ****
+;
+pdisp:
+	call	getquiet
+	ret	nz
+	call	eprint
+	defb	cr,lf,'  Symbolic     DU        DIR',cr,lf,eom
+	ld	hl,(extpath)	; Pt to external path
+	ld	a,(hl)		; Get first character of path
+	or	a		; If zero then a null path exists
+	jp	z,nullpth
+	ld	(pathptr),hl
+pdisp0:
+	ld	de,msgbuf	; Clear the buffer before use
+	ld	bc,mgbufln
+	call	refill
+	ld	de,msg1		; Point to symbolic path buffer
+	ld	hl,(pathptr)
+	ld	a,(hl)		; Get disk
+	cp	'$'		; Current?
+	jp	z,pdisp2
+	add	a,'@'		; Convert to letter
+pdisp2:
+	ld	(de),a		; Put disk letter in memory
+	inc	de
+	inc	hl		; Pt to user
+	ld	a,(hl)		; Get user number
+	cp	'$'		; Current?
+	jp	nz,pdisp3
+	ld	(de),a		; Put current indicator in memory
+	inc	de
+	jp	pdisp4
+pdisp3:
+	call	mafdc		; Put user number in memory
+pdisp4:
+	ld	a,colon
+	ld	(de),a
+	inc	de
+;
+;  Print Absolute Path
+;
+adisp:
+	call	retud		; Get current user and disk in C and B
+	ld	de,msg2		; Point to absolute path buffer
+	ld	hl,(pathptr)
+	ld	a,(hl)		; Get disk
+	cp	'$'		; Current?
+	jp	nz,adisp2
+	ld	a,b		; Get current disk
+	inc	a		; Adjust to 1 to n
+adisp2:
+	add	a,'@'		; Convert to letter
+	ld	(de),a		; Put disk letter in memory
+	inc	de
+	inc	hl		; Pt to user
+	ld	a,(hl)		; Get user
+	cp	'$'		; Current?
+	jp	nz,adisp3
+	ld	a,c		; Get current user
+adisp3:
+	call	mafdc		; Put user in memory
+	ld	a,colon
+	ld	(de),a
+;
+;  Print Named Path
+;
+	ld	de,msg3		; Point to named path buffer
+	ld	hl,(pathptr)
+	call	retud		; Get current user and disk in C and B
+	ld	a,(hl)		; Get disk
+	cp	'$'		; Current?
+	jp	z,ndisp
+	ld	b,a		; Disk in B
+	dec	b		; Adjust to 0 to n-1
+ndisp:
+	inc	hl		; Pt to user
+	ld	a,(hl)		; Get it
+	cp	'$'		; Current?
+	jp	z,ndisp1
+	ld	c,a		; User in C
+ndisp1:
+	inc	hl		; Pt to next
+	ld	(pathptr),hl
+	push	hl		; Save ptr
+	call	udscan		; Scan dirs for user/disk and print its name
+	pop	hl		; Get ptr
+	ld	a,colon
+	ld	(de),a
+	call	eprint
+	defb	cr,lf
+msgbuf:	defs	5
+msg1:	defs	10
+msg2:	defs	10
+msg3:	defs	10
+mgbufln	equ	$-msgbuf
+	defb	0
+	ld	a,(hl)		; Done?
+	or	a
+	jp	nz,pdisp0
+	call	getquiet
+	ret	nz
+	call	eprint		; End it clean
+	defb	cr,lf,eom
+	ret
+;
+;  **** Utilities ****
+;
+
+;
+;  Convert Chars pted to by HL to Number in C
+;    Return with Carry Set if Overflow
+;    If OK, Value in C and HL pts to character after last digit
+;
+eval10:
+	ld	c,0		; Set value
+eval1:
+	ld	a,(hl)		; Get first digit
+	sub	'0'		; Convert to binary
+	jp	c,evalx		; Done with value in C
+	cp	10		; Range?
+	jp	nc,evalx	; Done with value in C
+	ld	b,a		; Digit in B
+	ld	a,c		; Multiply by 10
+	add	a,a		; *2
+	ret	c		; Error abort
+	add	a,a		; *4
+	ret	c
+	add	a,c		; *5
+	ret	c
+	add	a,a		; *10
+	ret	c
+	add	a,b		; Add value
+	ret	c
+	ld	c,a		; Value in C
+	inc	hl		; Pt to next
+	jp	eval1
+evalx:
+	or	a		; Clear carry flag
+	ret
+
+;
+;  Skip to non-blank
+;
+sblank:
+	ld	a,(hl)		; Get char
+	inc	hl		; Pt to next
+	cp	' '		; Space?
+	jp	z,sblank
+	dec	hl		; Pt to non-blank
+	ret
+
+;  Scan directories for user and disk in C and B
+;	Print name if found or "Noname" if not
+;
+udscan:
+	call	dutdir		; Convert to name
+	jp	nz,udsprn0	; Branch if found
+	ld	hl,msgnoname	; Otherwise use 'Noname'
+udsprn0:
+	ld	b,8		; 8 chars max
+udsprn:
+	ld	a,(hl)		; Get name char
+	cp	' '		; Done?
+	ret	z
+	ld	(de),a		; Put char. in memory
+	inc	de
+	inc	hl		; Pt to next
+	dec	b		; Count down
+	jp	nz,udsprn
+	ret
+
+msgnoname:
+	defb	'Noname '	; For unnamed directories
+
+;
+;   Relocate the path - terminated by drive value of zero
+;
+
+m0vpth:
+	ld	a,(hl)		; Drive
+	or	a
+	ret	z
+	ld	(de),a
+	inc	hl
+	inc	de
+	ld	a,(hl)		; User
+	ld	(de),a
+	inc	hl
+	inc	de
+	jp	m0vpth
+
+;
+;  Byte move - terminated by null
+;
+
+movbytes:
+
+	ld	a,(hl)
+	or	a
+	ret	z
+	ld	(de),a
+	inc	hl
+	inc	de
+	jp	movbytes
+
+
+;      ***************************************************************
+;***** this is a modification of the following SCAN procedure to permit *******
+;************** a backwards BSCAN for the reverse deletion option *************
+;		**********************************************
+
+;
+; SYSLIB Module Name:  SCANN
+; Author:  Richard Conn
+; SYSLIB Version Number:  2.0
+; Module Version Number:  1.0
+; Module Entry Points:
+;	SCANNER
+; Module External References:
+;	None
+;
+
+;
+;  SSCANNER --
+;	SCANNER scans the vector of bytes pointed to by HL for
+; the vector of bytes pointed to by DE.  The HL-byte vector is B bytes
+; long, and the DE-byte vector is C bytes long.
+;	On return, if found, HL points to the beginning location within
+; the original HL vector of the located vector and Zero Flag is set.
+; If not found, Zero Flag is not set and HL is unaffected.  DE and BC
+; are not affected by this routine.
+;
+
+bscanner:
+	push	bc		; SAVE REGISTERS
+	push	hl
+
+; MAIN LOOP
+bscan:
+
+; CHECK FOR DONE
+	ld	a,b		; DONE IF B<C
+	cp	c		; DONE?
+	jp	c,bnot$found
+
+; SCAN HL FOR DE FOR C BYTES
+	push	bc		; SAVE BC
+	push	hl		; SAVE PTRS
+	push	de
+bscanl:
+	ld	a,(de)		; GET DE BYTE
+	cp	(hl)		; MATCH?
+	jp	nz,bnext
+	dec	de		; PT TO NEXT
+	dec	hl
+	dec	c		; COUNT DOWN
+	jp	nz,bscanl
+
+;  MATCH!
+	pop	de		; RESTORE PTRS
+	pop	hl
+	pop	bc		; OLD BC
+	pop	bc		; ORIGINAL HL -- DISCARD
+	pop	bc		; ORIGINAL BC
+	ret			; ZERO FLAG IS SET
+
+;  NOT FOUND YET
+bnext:
+	pop	de		; RESTORE PTRS
+	pop	hl
+	pop	bc		; GET COUNT
+	dec	hl		; PT TO NEXT IN SCANNED VECTOR
+	dec	b		; COUNT DOWN
+	jp	nz,bscan	; CONTINUE SCANNING
+
+;  NO MATCH!
+bnot$found:
+	pop	hl		; ORIGINAL HL
+	pop	bc		; ORIGINAL BC
+	ld	a,0ffh		; NOT FOUND
+	or	a		; SET NOT ZERO
+	ret
+
+	dseg
+;
+; Buffers
+;
+
+
+optchr:	defs	1		; Store current option character
+mxpths:	defs	1		; Maximum no. of paths from environment desc.
+pathcnt:
+	defs	1		; Contains number of paths in
+				; ..external path buffer
+bytecnt:
+	defs	1		; Byte length of current path buffer
+pctr:	defs	1		; Number of paths in pbuf
+hctr:	defs	1		; Number of paths in hbuf
+tctr:	defs	1		; Number of paths in tbuf
+pthctr:	defs	1		; Maxpths for no buffer overflow is mxpths
+heptr:	defs	2		; End pointer in head buffer
+tbptr:	defs	2		; Pointer to begining of tail buffer
+hbuf:	defs	2		; Head buffer
+cbuf:	defs	2		; Current path buffer
+tbuf:	defs	2		; End buffer
+dbuf:	defs	2		; Temporary current path buffer
+pbuf:	defs	2		; Path building buffer
+termpth:
+	defs	2		; Terminator location
+endofbuf:
+	defs	2		; End of buuffer area
+extpath:
+	defs	2		; Ptr to external path
+cmdline:
+	defs	2		; Ptr to next char in command line
+token:
+	defs	2		; Ptr to current token
+pathptr:
+	defs	2		; Ptr to next path entry
+strtstack:
+	defs	2		; Ptr to original stack
+
+
+	end
+                                                                      

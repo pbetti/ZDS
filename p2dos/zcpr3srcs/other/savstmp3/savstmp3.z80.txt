@@ -1,0 +1,425 @@
+;title	 savstamp.asm for DateStamper systems
+;
+; Name: 	SAVSTAMP
+; Author:	bridger mitchell (Plu*Perfect Systems)
+; Date: 	1/16/88
+; Version:	0.2
+; Requirements: ZCPR3 external environment
+;
+; This utility saves the DateStamper(tm) create datestamp of
+; the specified file and (later) replaces the create datestamp
+; of a specified file with the saved stamp.  It can be used
+; to maintain the original create date for a file that is
+; repeatedly modified.
+;
+; SAVSTAMP uses the last 5 bytes of the user area of the
+; ZCPR3 message buffer.
+;
+; Linkage order: SAVSTAMP.COM <- SAVSTAMP,Z3LIB,DSLIB,SYSLIB
+;	A high-memory type-3 environment version can be
+;	created by linking to an origin of, e.g., 8000h.
+;
+; DateStamper is Copyright (c) 1985-1987 by Plu*Perfect Systems.
+;
+; Patterned after Carson Wilson's similar utility for
+; z80dos v. 1 style timestamps.
+;
+;
+version	equ	03
+; Pre-release tweaks: "/S" option now required to save create
+; date, otherwise the patchable default command at DEFCMD is
+; used as the target application program, make "modified" &
+; "accessed" dates agree when setting create date.
+; 	Bruce Morgen		January 27, 1988
+; Version 0.3 modifications by Bruce Morgen:
+; SAVSTAMP now does command line buffer handling, that is,
+; "SAVSTAMP LZED filename.type" will save the create date
+; to safe memory, execute the "LZED filename.typ" part of
+; the command tail, and restore the original create date
+; on exit from LZED, automagically.  Slash now required to
+; delimit option, use "/S" option (a single filespec with no
+; option invokes the default application now) as well as "/X".
+;
+z3env	equ	0fe00h
+useroff	equ	40h		; Offset in z3msg to user bytes
+;
+cr	equ	0dh
+lf	equ	0ah
+space	equ	20h
+
+fcb1	equ	5ch
+fcb2	equ	6ch
+tbuf	equ	80h
+;
+	public	cout
+	extrn	putud,getud,whrenv,z3init,z3log,getmsg,getefcb,putcl,getcl2
+	extrn	moveb,hmovb,cline,sknsp,sksp,issp,epstr,eprint,crlf,bout,phl4hc
+	extrn	findck,cktdf,fstnxt,gettd,settd	; DSLIB routines
+
+	cseg
+
+; TYPE 3 HEADER
+
+; Code modified as suggested by Charles Irvine to function correctly with
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+
+entry:
+	jr	start0		; Must use relative jump
+	nop			; Filler
+	db	'Z3ENV',3	; Type-3 environment
+z3eadr:
+	dw	z3env		; Filled in by Z33
+	dw	entry		; Intended load address
+
+defcmd:	db	'WS'		; Default command of the form:
+	db	0,0,0,0,0,0,0,0	; VERB,null(s) (patchable)
+start0:
+	ld	hl,0		; Point to warmboot entry
+	ld	a,(hl)		; Save the byte there
+	di			; Protect against interrupts
+	ld	(hl),0c9h	; Replace warmboot with a return opcode
+	rst	0		; Call address 0, pushing RETADDR
+				; Onto stack
+retaddr:
+	ld	(hl),a		; Restore byte at 0
+	dec	sp		; Get stack pointer to point
+	dec	sp		; To the value of RETADDR
+	pop	hl		; Get it into HL and restore stack
+	ei			; We can allow interrupts again
+	ld	de,retaddr	; This is where we should be
+	xor	a		; Clear carry flag
+	push	hl		; Save address again
+	sbc	hl,de		; Subtract -- we should have 0 now
+	pop	hl		; Restore value of RETADDR
+	jr	z,start		; If addresses matched, begin real code
+
+	ld	de,notz33msg-retaddr ; Offset to message
+	add	hl,de
+	ex	de,hl		; Switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; Return via BDOS print string function
+notz33msg:
+	db	'Not Z33+$'	; Abort message if not Z33-compatible
+
+start:	ld	(savesp),sp
+	ld	sp,stack
+	call	putud		; Save current du
+;
+start1:	ld	hl,(z3eadr)	; Is this a z system?
+	call	whrenv
+	jp	z,noenv		; No
+	call	z3init
+	call	getefcb		; We require a Z3 EFCB
+	jp	z,efcber
+	ld	(efcb),hl
+	call	findck		; Is DateStamper running?
+	jp	z,nods		; No
+	ld	a,(fcb1+1)
+	cp	SPACE
+	jp	z,help
+	cp	'/'
+	jr	nz,start2
+	ld	a,(fcb1+2)
+	cp	'/'
+	jp	z,help
+start2:	ld	(jsflag),a	; Just a handy non-zero
+	ld	hl,tbuf		; Move command tail to safe area
+	call	cline
+	inc	hl		; Bump pointer
+	ld	(bufbuf),hl	; Stow
+	ld	de,fcb1
+	ld	a,(fcb2+1)	; Set-stamp requested?
+	cp	SPACE
+	jr	z,doget1
+	cp	'/'
+	jr	nz,doget	; No
+	ld	a,(fcb2+2)
+	cp	'X'
+	jr	z,doset
+	sub	'S'
+jsave:	ld	(jsflag),a
+	jr	z,doget1
+;
+; Get file's Datestamp.
+;
+doget:
+	ld	de,fcb2
+doget1:	call	skip		; Make sure all is well
+	jr	nc,doget3	; If carry flag set, it isn't
+	ld	a,(fcb2+3)	; 3 or more chars in 2nd token?
+	cp	SPACE
+	jr	nz,doget2	; If so, not option
+	ld	hl,(fcb2+1)	; Get possible option in HL
+	ld	de,'S/'
+	or	a
+	sbc	hl,de		; Compare to stand-alone save
+	jp	z,nofile	; If so, just message and quit
+doget2:	ld	de,scratch	; Point to working buffer
+	call	docl5		; Handle command line
+	jr	xit		; All done now
+;
+doget3:	ld	a,b		; No, get file's datestamp
+	ld	hl,tdbuf
+	call	gettd
+	jp	z,tderr
+	call	getbuf		; Get ptr to hi ram buffer to hold
+	ex	de,hl		; The create datestamp
+	ld	hl,tdbuf	; Move it to secure storage
+	ld	b,5
+	call	moveb
+	ld	a,(jsflag)
+	or	a
+	call	nz,docl
+	jr	xit
+;
+;
+; Set File's Datestamp from saved stamp
+;
+doset:	call	skip
+	jp	c,nofile
+	ld	hl,tdbuf
+	push	bc		; Save index
+	push	de		; Save record number
+	ld	a,b
+	call	gettd		; Get this file's stamp to local tdbuf
+	pop	de
+	pop	bc
+	jp	z,tderr
+	push	bc		; Save index
+	push	de		; Save record number
+	call	getbuf		; Set hl-> hi-ram buffer
+	ld	de,tdbuf	; Retrieve original create date
+	push	de
+	ld	b,5		; Into buffer
+	call	hmovb
+	ld	hl,tdbuf+10
+	call	hmovb
+	pop	hl		; -> 15-byte buffer
+	pop	de
+	pop	bc
+	ld	a,b
+	call	settd		; Set datestamp with orig. create date
+	jp	z,settderr
+;
+xit:	call	getud		; Restore DU:
+	ld	sp,(savesp)
+	ret
+;
+; return hl = addr of 5-byte buffer in protected memory
+;
+getbuf:
+	call	getmsg
+	jp	z,nobuf
+	ld	de,useroff+10h-5 ; Use last 5 bytes of user area
+	add	hl,de
+	ret
+
+;
+; Log into drive/user as per CCP parse, test for file existence,
+; return with record number (DE) & index (BC) of target file in
+; !!!TIME&.DAT if possible, otherwise abort via error message.
+;
+skip:	call	z3log
+	push	de
+	call	cktdf		; Is datestamp file on drive?
+	pop	de
+	jp	z,nodsfile	; No
+;
+	ld	c,17		; Is file on disk?
+	jp	fstnxt		; JMP = CALL!RET
+;
+; Command line handler
+;
+docl:	ld	hl,(efcb)
+	ld	b,9
+	ld	de,scratch-1
+clloop:	inc	hl
+	inc	de
+	ld	a,(hl)
+	and	7fh
+	cp	SPACE
+	jr	z,docl2a
+	ld	(de),a
+	djnz	clloop
+docl2:	ld	a,SPACE
+docl2a:	ld	(de),a
+	inc	de
+	ld	hl,(bufbuf)
+	call	sksp		; Find 2nd token
+	ld	a,(fcb2+1)
+	cp	SPACE
+	jr	z,fcloop
+	call	sknsp
+	call	sksp
+fcloop:	ld	a,(hl)
+	ld	(de),a
+	inc	de
+	inc	hl
+	call	issp
+	jr	nz,fcloop
+docl4:
+	dec	de
+	ld	hl,suffix
+	ld	b,suflen
+	call	moveb
+	ld	hl,scratch
+	call	putcl
+	jr	z,cler
+	ex	de,hl
+docl5:
+	ld	hl,(bufbuf)
+	ld	b,127
+	call	moveb
+	ex	de,hl
+	call	putcl
+	jr	z,cler
+	ld	a,(fcb2+1)
+	cp	SPACE
+	ret	nz
+	ex	de,hl
+	ld	hl,defcmd
+	ld	b,start0-defcmd
+	call	moveb
+	ex	de,hl
+	call	putcl
+	jr	z,cler
+	call	getcl2
+	jr	z,cler
+	ld	bc,10
+	ld	a,';'
+	cpir
+	jr	nz,cler
+	dec	hl
+	ld	(hl),SPACE
+	ret
+
+comnam: ld	hl,(efcb)
+	ld	b,8
+cnmlp:	inc	hl
+	ld	a,(hl)
+	and	7fh
+	cp	SPACE
+	call	nz,bout
+	djnz	cnmlp
+	ret
+
+noenv:	ld	hl,msg0
+	jr	errxit
+;
+nods:	ld	hl,msg1
+	jr	errxit
+;
+nofile:	ld	hl,msg2
+	jr	errxit
+;
+nodsfile:
+	ld	hl,msg3
+	jr	errxit
+
+tderr:	ld	hl,msg4
+	jr	errxit
+settderr:
+	ld	hl,msg5
+	jr	errxit
+;
+nobuf:	ld	hl,msg6
+	jr	errxit
+;
+efcber:	ld	hl,msg7
+	jr	errxit
+
+cler:	ld	hl,msg8
+;
+errxit:	call	crlf
+	call	epstr
+	jp	xit
+;
+msg0:	db	'Not ZCPR3',0
+msg1:	db	'No DateStamper',0
+msg2:	db	'File not found',0
+msg3:	db	'Not a DateStamper disk',0
+msg4:	db	'Error accessing time/date file',0
+msg5:	db	'Error updating time/date file',0
+msg6:	db	'No Z3MSG buffer',0
+msg7:	db	'No Z3 ext. FCB',0
+msg8:	db	'Command line error',0
+;
+help:	call	eprint
+	db	CR,LF
+	db	'SAVSTAMP Version '
+	db	(VERSION/10)+'0','.',(VERSION MOD 10)+'0'
+	db	' (DateStamper/ZCPR3 tool, loaded at ',0
+	ld	hl,entry
+	call	phl4hc
+	call	eprint
+	db	'h)'
+	db	CR,LF
+	db	'Syntax:'
+	db	CR,LF
+	db	' ',0
+	call	comnam
+	call	eprint
+	db	' aprog',0
+	call	dft
+	call	eprint
+	db	' -- save/restore create stamp'
+	db	CR,LF
+	db	' ("aprog" is the actual program to'
+	db	CR,LF
+	db	'  be run on "',0
+	ld	hl,dftstr
+	call	epstr
+	call	eprint
+	db	'".)'
+	db	CR,LF
+	db	' ',0
+	call	comnam
+	call	dft
+	call	eprint
+	db	' -- same as',CR,LF,' "',0
+	ld	hl,defcmd
+	call	epstr
+	call	dft
+	call	eprint
+	db	'" with create stamp saved & restored.'
+	db	CR,LF
+	db	' ',0
+	call	comnam
+	call	dft
+	call	eprint
+	db	' -- save create stamp'
+	db	CR,LF
+	db	' ',0
+	call	comnam
+	call	dft
+	call	eprint
+	db	' -- set create date from saved stamp',0
+	jp	xit
+
+dft:	call	eprint
+	db	SPACE
+dftstr:
+	db	'[dir:]filename.typ',0
+	ret
+
+cout:	jp	bout
+
+suffix:	db	' /X',0
+suflen	equ	$-suffix
+
+	dseg
+
+tdbuf:	ds	15
+;
+savesp:	ds	2
+	ds	36
+stack:	ds	0
+bufbuf:	ds	2
+efcb:	ds	2
+jsflag:	ds	1
+scratch:
+	ds	256
+
+	end
+

@@ -1,0 +1,318 @@
+	TITLE	"Otrona Attache Clock (Z80) - (OTRANA-ATCH)"
+	SUBTTL	"Description of Clock Module"
+;==========================================================
+; Terminal clocks read via CONIN must not read the clock if
+; there is pending CONIN input.  If CONSTAT is TRUE, this
+; routine returns the previously-read clock value.
+;==========================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from ver of 3-27-85
+; Ver 0.5 valid as of 16 Oct 88
+;==========================================================
+
+VERS	EQU	05
+	.Z80
+	NAME ATTACH
+
+	MACLIB	CLOCK.LIB
+
+; System-specific BIOS addresses are set at run-time.
+;	These are for reference only.
+
+; Internal BIOS CONSTAT, CONIN & CONOUT addresses:
+
+ICONST	EQU	0E136H		; 59k cbios
+ICONIN	EQU	0E157H
+ICONOUT	EQU	0E003H
+
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; Ptr to statyr
+
+CLKNAM:	DEFB	'Attache                 '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'  Otrona Attache',CR,LF
+	DEFB	'  ()',0
+
+	  IF  [$-DESCST]
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	00		; No parameters
+	DEFW	00
+
+
+	PAGE
+	SUBTTL	"Clock Code - Otrana Attache"
+
+; Attache returns 7-character ascii DATE string:
+;	day-of-week Sun=1,...7
+;	day	units
+;	day	tens
+;	mon	units
+;	mon	tens
+;	year	units
+;	year	tens
+
+; Attache returns 6-character ascii TIME string:
+;	seconds units
+;	seconds tens
+;	minutes units
+;	minutes tens
+;	hours	units
+;	hours	tens
+
+RDDAT	EQU	':'		; Read-date command
+RDTIM	EQU	'>'		; Read-time command
+NOCLK	EQU	'?'		; Char returned if clock not avail$
+
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Read Attache video driver clock & convert to DateStamper format
+; Enter: HL points at 6-char buffer
+; Exit : Date and Time in DateStamper BCD format: yr mo da hr mi sec
+;		at (HL)....(HL+5)
+;	 HL = entry HL + 5
+;	  E = entry value of (HL+5)
+
+GETTIM:	JR	AROUND
+
+CLKBUF:
+	DEFB	00H		; Yr
+	DEFB	00H		; Mo
+BCDDAY:	DEFB	00H		; Da
+	DEFB	00H		; Hr
+	DEFB	00H		; Mi
+BCDSEC:	DEFB	00H		; Sec
+
+AROUND:	PUSH	HL		; Save buffer ptr
+	LD	DE,5		; Save entering buffer 'seconds' value
+	ADD	HL,DE
+	LD	A,(HL)
+	PUSH	AF
+YSTAT1	EQU	$+1
+	CALL	ICONST		; If input char waiting$$
+	OR	A		; $$return previous time string
+	LD	HL,CLKBUF	; Set source pointer
+	JR	NZ,COPY		; So conin input isn't corrupted
+	LD	C,RDDAT		; Read date
+	CALL	RDCLK
+	INC	HL		; Point at 'hr' byte in clkbuf
+	LD	C,RDTIM		; Read time to clkbuf+3
+	CALL	RDCLK
+
+; swap string into DateStamper standard order -> yr mo da hr mi se
+
+	LD	B,(HL)		; Get hours
+	DEC	HL
+	DEC	HL
+	LD	A,(HL)		; Get seconds
+	LD	(BCDSEC),A	; Swap seconds
+	LD	(HL),B		; $$and hour
+	DEC	HL		; Point at bcdday slot
+	LD	B,(HL)		; Get year
+	DEC	HL
+	DEC	HL
+	LD	A,(HL)		; Get day
+	LD	(BCDDAY),A	; Swap day
+	LD	(HL),B		; $$and year
+				; Hl equ clkbuf
+
+; return date&time to caller at (de) from hl EQU clkbuf
+
+COPY:	POP	AF		; Preserved 'seconds' byte
+	POP	DE		; (+0)caller's destination ptr
+	LD	BC,6		; Move data from buffer to caller
+	LDIR
+	DEC	DE		; Point at seconds
+	EX	DE,HL		; Hl equ entryhl +5
+	LD	E,A		; E equ 'seconds' byte
+	RET
+
+; Read the Attache's video driver clock/calendar
+
+TIMMSK	EQU	00000000B
+DATMSK	EQU	00000001B	; Skip 1st returned char (day-of-week)
+
+; Enter:  C = RDTIM for time, RDDAT for date
+;	 HL points at 3-char buffer
+;		no char pending (CONSTAT false)
+
+; Exit : BCD string in 'clkbuf'
+;	 HL points at 3rd char in buffer
+
+RDCLK:	PUSH	HL		; Save buf ptr
+	PUSH	BC
+	LD	C,ESC
+YOUT1	EQU	$+1
+	CALL	ICONOUT		; Send esc
+	POP	BC
+	PUSH	BC		; Save type of read
+YOUT2	EQU	$+1
+	CALL	ICONOUT		; Send type of read
+	POP	BC
+	LD	A,C
+	CP	RDTIM
+	LD	C,TIMMSK
+	JR	Z,RDCLK1
+	INC	C		; So c equ datmsk equ 1
+RDCLK1:	POP	HL		; Buf ptr
+	LD	B,6		; Count equ 6 chars (+day-of-wk)
+
+RDLP:	PUSH	HL		; Save ptr
+	PUSH	BC		; Save cnt and mask
+YIN1	EQU	$+1
+	CALL	ICONIN		; Get a char
+	POP	BC
+	POP	HL
+	RR 	C		; Check for day-of-week
+	JR	C,RDLP		; $$and skip it
+	RRD			; Put nybble into buf, units first
+	DEC	B
+	RET	Z		; All done, hl -> last byte
+	BIT	0,B			; Test odd/even
+	JR	NZ,RDLP		; Get 2nd digit of pair
+	INC	HL		; Bump buf ptr
+	JR	RDLP
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	LD	HL,(1)
+	INC	HL
+	INC	HL
+	INC	HL
+	INC	HL		; Point at internal constat addr
+	GETBC	,
+	INC	HL
+	INC	HL
+	PUSH	HL		; Save point at int$conin
+	PUTBC	YSTAT1		; Install constat addr
+	LD	(YSTAT2),BC	; Also in test routine
+	POP	HL		; Get internal conin
+	GETBC	,
+	INC	HL
+	INC	HL
+	PUSH	HL		; Save point at internal conout
+
+	PUTBC	YIN1		; Install conin
+	LD	(YIN2),BC	; Also in test routine
+	LD	(YIN3),BC
+	LD	(YIN4),BC
+
+	POP	HL		; Get internal conout
+	GETBC	,
+	PUTBC	YOUT1		; Install 2 conout's in code
+	PUTBC	YOUT2
+	LD	(YOUT3),BC	; ..and two more in test routine
+	LD	(YOUT4),BC
+	RET
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Check"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+
+	COMMON	/_PRE_/
+
+CKTIC:	JR	TEST		; Jump around address word
+
+	DEFW	CKTIC		; ORG addr for this module
+
+YSTAT2	EQU	$+1
+TEST:	CALL	ICONST		; If input char waiting
+	OR	A
+	JR	Z,TEST1
+YIN2	EQU	$+1
+	CALL	ICONIN		; ...flush char
+	JR	TEST
+
+TEST1:	LD	C,ESC
+YOUT3	EQU	$+1
+	CALL	ICONOUT		; Send esc
+	LD	C,RDTIM
+YOUT4	EQU	$+1
+	CALL	ICONOUT		; Send type of read
+YIN3	EQU	$+1
+	CALL	ICONIN		; Get 1st char
+	SUB	NOCLK		; See if terminal is returning 'error'
+	RET	Z		; Clock not set - ret cy clear
+
+	LD	B,5		; Flush the rest of the string
+FLUSH:	PUSH	BC
+YIN4	EQU	$+1
+	CALL	ICONIN		; Flush rest of string
+	POP	BC
+	DEC	B
+	JR	NZ,FLUSH
+	LD	HL,TIMBU1	; Use ds routine to read time
+	LD	C,RDTIM
+	CALL	RDCLK
+	DEC	HL		; Seconds are first
+	DEC	HL
+	LD	A,(HL)		; Get seconds
+	PUSH	AF
+	CALL	DELAY		; Wait
+	LD	HL,TIMBU1	; Read to buffer
+	LD	C,RDTIM
+	CALL	RDCLK
+	DEC	HL
+	DEC	HL
+	POP	AF		; Get first seconds reading
+	CP	(HL)
+	SCF
+	RET	NZ
+	CCF
+	RET
+
+TIMBU1:	DEFB	0,0,0		; Seconds are first for this clock
+
+; delay 1.25 Sec at 6 MHz CPU speed   (~1.9 sec at 4 MHz)
+
+DELAY:	LD	B,6		;== Assume 6 Mhz worst case (probably 4)
+$$0:	LD	HL,40000+10000	; Constant plus slop
+$$1:	DEC	HL		; 6
+	LD	A,H		; 4
+	OR	L		; 4
+	JR	NZ,$$1		; 10 equ 24 cycles/loop
+	DJNZ	$$0
+	RET
+
+	END
+

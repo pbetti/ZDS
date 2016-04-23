@@ -1,0 +1,330 @@
+
+; NZRCP.LIB
+
+;=============================================================================
+;
+;	R C P    I D E N T I F I C A T I O N
+;
+;=============================================================================
+
+rcpid	equ	'b'		; Identifies option set selected
+
+idstring macro
+	db	'RCP'		; Name of Z34RCP module
+;	db	' '
+;	db	version + '0'	; Main version number
+;	db	'.'
+;	db	subver + '0'	; Subversion number
+;	db	rcpid		; User's ID character from Z34RCP.LIB
+	db	0		; End of name string
+	 endm
+
+
+;=============================================================================
+;
+;	C O M M A N D S    I N C L U D E D
+;
+;=============================================================================
+
+CLSON	EQU	yes		; CLS	clear screen
+CPON	EQU	no		; CP	copy file
+DIRON	EQU	yes		; DIR	disk directory
+ECHOON	EQU	yes		; ECHO	send text to screen or printer
+ERAON	EQU	no		; ERA	erase files
+LTON	EQU	yes		; TYPE	display file on console
+LISTON	DEFL	yes		; LIST	send file to printer (if LTON also)
+NOTEON	EQU	yes		; NOTE	command-line comment
+PEEKON	EQU	yes		; PEEK	view memory
+POKEON	EQU	yes		; POKE	set memory
+PORTON	EQU	no		; PORT	view and set I/O ports
+PROTON	EQU	no		; PROT	set file attributes
+REGON	EQU	yes		; REG	set and display user registers
+RENON	EQU	no		; REN	rename files
+RESON	EQU	yes		; R	reset disk system
+SPACEON	EQU	no		; SP	show space remaining on disk
+TSTON	EQU	no		; TST	test for program error
+WHLON	EQU	yes		; WHL	check, set or clear wheel status
+WHLQON	EQU	no		; WHLQ  check wheel status
+SPOPON	EQU	yes		; SPOP  pop the shell stack
+
+liston	defl	liston and lton	; LIST allowed only if TYPE is enabled
+
+
+;=============================================================================
+;
+;	W H E E L    R E S T R I C T I O N S
+;
+;=============================================================================
+
+wcp	equ	yes		; CP
+wdir	equ	no		; DIR
+wera	equ	yes		; ERA
+wlist	equ	no		; LIST
+wpeek	equ	yes		; PEEK
+wpoke	equ	yes		; POKE
+wport	equ	yes		; PORT
+wprot	equ	yes		; PROT
+wreg	equ	no		; REG
+wren	equ	yes		; REN
+wtype	equ	no		; TYPE
+whrc	equ	no		; H
+wspop	equ	no		; SPOP
+
+wheel	defl	wcp or wdir or wera or wlist or wpeek or wpoke or wport
+wheel	defl	wheel or wprot or wreg or wren or wtype or whrc or wspop
+
+
+;=============================================================================
+;
+;	C O M M A N D     O P T I O N S
+;
+;=============================================================================
+
+
+; 'H' command
+
+; This command displays a list of the resident commands implemented in the
+; system.  FCP, CPR, and RCP commands can be displayed.  The basic command is
+; not optional; it is always included.
+
+listcpr		equ	yes	; Include list of CPR-resident commands in
+				; display (highly recommended)
+
+listfcp		equ	yes	; Include list of FCP-resident commands in
+				; display (recommended if there is room)
+
+listrcp		equ	yes	; Include list of RCP-resident commands in
+				; display (recommended if there is room)
+
+noshow		equ	yes	; Suppress listing commands that are wheel-
+				; restricted unless wheel byte is set (i.e.,
+				; don't show commands that won't run)
+
+cmdsline 	equ	5	; Number of commands on each line of display
+
+cmdspace 	equ	8	; Space in display for each command name
+
+
+;-----------------------------------------------------------------------------
+
+; 'CLR' command
+
+; This command clears the console screen.  It can either use a fixed string
+; (for shorter code if the same terminal is always used) or use the TCAP
+; entry for automatic adaptation to any terminal.
+
+CLSTCAP		EQU	TRUE	; Use TCAP for clear-screen string
+
+; If CLSTCAP is not enabled, then the string below must be provided and
+; it must end with a character with the high bit set
+
+	 if	not clstcap
+clsstr	 macro
+	db	'Z'-'@'+80h	 ; Control-Z to clear screen
+	 endm
+	 endif	;not clstcap
+
+
+;-----------------------------------------------------------------------------
+
+; 'CP' command
+
+; This command copies a single file.  The destination file can have a different
+; name from the source file.  Set the size of the memory buffer in K below (do
+; not change the second definition).  The copy buffer is placed at the top of
+; the TPA, where it will generally not interfere with subsequent use of the GO
+; command to rerun a program loaded in the TPA.
+
+cpblocks	defl	16		; Size of copy buffer in K
+
+cpblocks	defl	cpblocks * 8	; Convert to number of records
+
+
+;-----------------------------------------------------------------------------
+
+; 'DIR' command
+
+; This command displays a sorted listing of the files in a directory.  The
+; file name buffer is allocated at the top of the TPA so as not to modify
+; any program loaded in low memory.  Consequently, the size of the buffer
+; must be set in advance.
+
+maxdirs		equ	256	; Maximum number of names in directory buffer
+
+nosys		equ	yes	; suppress 'A' and 'S' options if wheel off
+
+slashchk	equ	yes	; allow "DIR /S" or "DIR /A" formats (costs
+				; about 12 bytes)
+
+allflag		equ	'A'	; Option character for showing
+				; all file (both SYS and DIR)
+sysflag		equ	'S'	; Option character for showing
+				; SYS files only
+sortnt		equ	yes	; Sort file by name then type
+sorton		equ	yes	; No sort
+width		equ	5	; Files per line
+wide		equ	no	; Make display for 80-column screen
+fence		equ	'|'	; Character to use as fence between columns
+
+
+;-----------------------------------------------------------------------------
+
+; 'ECHO' command
+
+; This command sends characters to the console or list device.  If ECHOLST is
+; enabled, then code is included for sending characters to the LST device.
+; Characters normally go the the console device and are normally upper or lower
+; case depending on the setting of UPCASE.  The command line can have special
+; command sequences to toggle the case of the output and to change the
+; destination between the console and printer.  Any other character following
+; the command character will be sent as is.  For the normal setting of the
+; equates below (upcase/yes, cmdchar/%, prtchar/P, crtchar/C, lcasech/>,
+; and ucasech/<) an example command line would be:
+;	A0:ROOT>ECHO T%>HIS IS A TEST^M^J^IDONE%PONE, TWO, %<THREE
+; The following text would be echoed to the console (inlcuding carriage return,
+; linefeed, and tab characters, '|' indicates the left margin):
+;	|This is a test
+;	|	done 
+; The string "one, two, THREE" would be sent to the printer.
+
+echolst		equ	yes	; Allow sending characters to LST device
+
+upcase		equ	yes	; Initial case of output
+
+cmdchar		equ	'%'	; Character to flag case change
+
+prtchar		equ	'P'	; Character to start sending output to
+				; the printer (must be upper case)
+crtchar		equ	'C'	; Character to start sending output to
+				; the CRT (must be upper case)
+ucasechar	equ	'<'	; Character after CASECHAR that toggles
+				; subsequent output to upper case
+lcasechar	equ	'>'	; Character after CASECHAR that toggles
+				; subsequent output to lower case
+
+
+;-----------------------------------------------------------------------------
+
+; 'LIST' and 'TYPE' commands
+
+pgdflt		equ	yes	; Default to paging of console output
+
+pgdflg		equ	'P'	; Character to toggle paging status
+
+;++++++++++ following value should be obtained from ENV
+
+nlines		equ	24	; Number of lines on console screen
+
+
+;----------------------------------------
+
+; PEEK COMMAND
+
+peekhdr	equ	yes		; If yes, label the columns in the display with
+				; the low hex digit of the address
+
+peekbdr	equ	yes		; If yes, include a line of hyphens under the
+				; column headers
+
+peekchk	equ	yes		; If yes, the ending address will be tested to
+				; prevent overflow past FFFF (costs 5 bytes)
+
+
+;----------------------------------------
+
+; POKE COMMAND
+
+POKEQ	EQU	TRUE		;SET TRUE TO SUPPRESS CONSOLE MESSAGE TO SAVE
+				;CODE AND/OR IMPROVE SECURITY
+
+
+;----------------------------------------
+
+; Register command
+
+SETERR		EQU	TRUE	;copy new reg value to pgm error flag
+
+
+;----------------------------------------
+
+; DISK RESET COMMAND
+
+RESMSG		EQU	TRUE	;print disk reset message
+
+
+;----------------------------------------
+
+; DISK SPACE COMMAND
+
+DIRSP		EQU	TRUE	;show space after dir
+erasp		equ	true	;show space after era
+CPSP		EQU	TRUE	;show space after cp
+
+
+;----------------------------------------
+
+; ERROR TESTING COMMAND
+
+TESTM80		EQU	TRUE
+TESTF80		EQU	FALSE
+
+; Equates for addresses where error counts are kept by the programs to be
+; tested for M80/F80, version 3.44
+
+	 if	testm80
+m80f	equ	03cedh		; Addr of word with fatal error count (m80)
+m80w	equ	03cefh		; Addr of word with warning error count (m80)
+	 endif	;testm80
+
+	 if	testf80
+f80f	equ	001c1h		; Addr of word with fatal error count (f80)
+f80w	equ	002adh		; Addr of word with warning error count (f80)
+	 endif	;testf80
+
+
+;----------------------------------------
+
+; Wheel commands
+
+WHLQUIET	EQU	FALSE	; report wheel state with WHL cmd
+
+WPASS		MACRO
+		DB	'SYSTEM  '
+		ENDM
+
+;-----------------------------------------------------------------------------
+
+; Command dispatch table
+
+cmdsize	equ	4		; Length of each command name
+
+;++++++++++ delete next line after changing Z34 and Z34MAC.LIB
+
+nchars	equ	cmdsize
+
+cmdtbl	macro
+	command	CLS,	clson,	false,	cls
+	command	CP,	cpon,	wcp,	copy
+	command	DIR,	diron,	wdir,	dir
+	command	ECHO,	echoon,	false,	echo
+	command	ERA,	eraon,	wera,	era
+	command	H,	true,	whrc,	clist
+	command	LIST,	liston,	wlist,	list
+	command	NOTE,	noteon,	false,	note
+	command	P,	peekon,	wpeek,	peek
+	command	POKE,	pokeon,	wpoke,	poke
+	command	PORT,	porton,	wport,	port
+	command	PROT,	proton,	wprot,	att
+	command	R,	reson,	false,	reset
+	command	REG,	regon,	wreg,	register
+	command	REN,	renon,	wren,	ren
+	command	SP,	spaceon,false,	space
+	command SPOP,	spopon, wspop,  spop
+	command	TST,	tston,	false,	testerr
+	command	TYPE,	lton,	wtype,	type
+	command	WHL,	whlon,	false,	whl
+	command WHLQ,	whlqon, false,  whlq
+	 endm
+;
+; End of NZRCP.LIB
+

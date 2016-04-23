@@ -1,0 +1,72 @@
+
+
+
+include	darkstar.equ
+
+
+TMPPAGE	EQU	$D000
+MONPAGE	EQU	$F000
+MONSIZE	EQU	4096
+BUF	EQU	$1500
+
+
+	ORG	$1000
+	
+reloc:
+	LD	BC,MONSIZE	; move mon to d000
+	LD	DE,TMPPAGE
+	LD	HL,MONPAGE
+	LDIR
+	
+	LD	B,$F0		; set ram @ f000
+	LD	D,$0F
+	LD	C,MMUPORT
+	OUT	(C),D
+
+	LD	BC,MONSIZE	; move mon back to f000
+	LD	DE,MONPAGE
+	LD	HL,TMPPAGE
+	LDIR
+	
+	LD	HL,BUF
+	LD	E,17			; ram page counter (15 + 1 for loop)
+	LD	C,MMUPORT		; MMU I/O address
+	XOR	A
+	LD	B,A
+	LD	D,A
+MMURD:
+	DEC	E
+	JR	Z, MMUDONE  
+	IN	D,(C)
+	LD	(HL),D
+	INC	HL
+	ADD	A,$10
+	LD	B,A			; logical page 00h, 10h, etc.
+	JR	MMURD
+
+MMUDONE:
+	LD	HL,MSG1
+	CALL	CONSTR
+	
+	LD	B,16
+	LD	HL,BUF
+PAGES:
+	LD	A,(HL)
+	CALL	H2AJ1
+	CALL	SPACER
+	INC	HL
+	DJNZ	PAGES
+
+	CALL	OUTCRLF
+	LD	HL,MSG1
+	CALL	CONSTR
+	CALL	BCONIN
+
+	JP	BOOTM
+	
+MSG1:	DB	'MMUMAP:',CR,LF+$80
+MSG2:	DB	'Any key to continue...'
+	DB	$80
+	
+	END
+	

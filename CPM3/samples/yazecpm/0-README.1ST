@@ -1,0 +1,148 @@
+My english is not so good, I hope you understand what I write here.
+---
+
+Files of the Z80 CP/M 3.1 BIOS (interface to yaze-bios) on the drive P: (if
+yaze-ag is running).  Drive P: is connected to the disk file BIOS3 (see
+.yazerc) :
+
+GLOSSARY:
+=========
+
+bios	Is the part of the bios which is witten in Z80 assembler. It acts as
+	an interface to the yaze-bios. Here are central definitions (drive
+	tables, yaze control table (YCT), ...) which are essential for the
+	whole system.
+
+yaze-bios  Is the part of the bios which is written in C.
+
+
+SUBMIT Files:
+=============
+
+y.sub   Firstly it compiles the bios and generates a CPM3.SYS.
+        Secondly a:cpm3.com is generat with PIP a:CPM3.COM=bootsys.com,cpm3.sys
+
+	You start CP/M 3.1 by running cpm3.com. You can run cpm3.com also
+	under CP/M 3.1. The BOOTSYS loader transferes all firstly from bank 1
+	to bank 0 with an interbank move before it relocates and starts
+	CP/M 3.1. So you can restart CP/M 3.1 under CP/M 3.1 itselve (for
+	example with a new BIOS version).
+	You can also start CP/M 3.1 with cpm3.com if CP/M 2.2 runs.
+
+	The file 'yaze-cpm3.boot' is identical with a:cpm3.com.
+	(yaze-ag loads yaze-cpm3.boot if -DBOOTSYS is given in the Makefile)
+
+g.sub   make an interactive GENCPM and secondly the same as y.sub
+
+p.sub   generate only a:cpm3.com
+
+clean.sub make a cleanup of all temporary files
+
+b.sub   was my submit file to develop BOOTSYS.Z80
+
+cpmldr.sub generate cpml.com the cpmldr
+	(see the definitions in sysdef.lib. For booting CP/M 3.1 I use BOOTSYS)
+
+
+BOOTSYS Files:
+==============
+
+BOOTSYS.Z80	Source of the the BOOTSYS (Sorry the comments are in german ;-)
+
+		BOOTSYS is a new CP/M 3.1 loader. It relocates and places the
+		banked and resident parts in CPM3.SYS to their right places
+		into memory and starts CP/M 3.1
+
+		It was necessary to develop an new loader because CPMLDR of
+		DRI/Caldera or the ZPM3LDR of Simeon Cran does not handle a
+		such big file. CPM3.SYS with alle drive tables for all
+		drives A: - P: is 44 KB. When CPM3.SYS grows over 32 KB 
+		CPMLDR/ZPM3LDR does not work.
+
+BOOTSYS.COM	Compiled version (with Z80ASM bootsys/a )
+
+	(For Information about BOOTSYS look to yaze-ag.doc (section "Some
+	 words to BOOTSYS"), README_BOOTSYS and INSTALL-2.00)
+
+
+
+BIOS Source Files:
+==================
+
+SYSDEF.LIB	global system definions
+
+BIOSKRNL.Z80	BIOS Kernl with the bios jump table
+
+MMU.Z80		Routines and tables for initialicing the MMU (in yaze-ag)
+
+YCT.Z80		Yaze Control Table: This file contents some important
+		addresses which are used by the yaze-bios.
+		The YCT itselve have the same entries as the @dtbl.
+		The yaze-bios uses the entries in YCT to setup the
+		entries in @dtbl if a drive is present (mounted) or not.
+		The address of @dtbl and scb are also under the YCT so
+		the yaze-bios knows about it.
+
+		The yaze-bios also set up the @MEDIA flag in the SCB and
+		the MF flag in the DPH's to indicate a disk change.
+
+YDRVTBL.Z80	In this file are the @dtbl, the DPHs for 16 drives (A: .. P:),
+		and the DPBs also for the 16 drives. I make all tables (ALV,
+		CSV) over macros (I use the SLR Z80ASM).
+		The Check Sum Vektors (CSV) and Allocation Vektors (ALV) are
+		setup in dependence of MAXDRM and MAXDSM defined in sysdef.lib.
+		Also the DSM, DRM and CKS fields in the DPB's.
+
+		NOTICE:
+		All drives uses sector size 2048 bytes as default. If you
+		mount a disk file from yaze-1.10, yaze-ag-2.00 uses sector
+		size 128.
+		You can set all drive to use 128 byte sektors with the new
+		monitor command '128'. This is necessary if you use a disk
+		editor.
+
+SCB.Z80		The CP/M 3.1 System Control Block. There are only equals.
+
+YAZEBIOS.LIB	Here are some definitions to use the yaze-bios.
+		Used in MMU.Z80 and BIOSKRNL.Z80.
+
+
+
+Misc Files:
+===========
+
+GENCPM.DAT	Here are the definitions for System Generating by GENCPM.COM
+
+GENCPM.COM	The Utility which generate CPM3.SYS from the files
+		BNKBDOS3.SPR, RESBDOS3.SPR and BNKBIOS3.SPR.
+
+IFNEW.COM	check files if they are new (F4 flag):
+		 F4 not set (new file)  --> set errorlevel TRUE
+				 -> all commands after a ":" in a submit file
+				    will be executed
+		 F4 is set (old file) --> set errorlevel FALSE
+
+		Comment: IFNEW test and set the flag F4 (see SET command) of
+			 all files which are given in the command line. If
+			 only one file are new (F4 not set) errorlevel is TRUE.
+
+CRC.COM		For check of the files.
+
+LINKDR.COM	The Link-80 of Digital Research (V 1.31).
+		I rename it to LINKDR.
+
+SYS.Z80		A modified Version of the SYS-Utility.
+SYS.COM
+
+----
+
+If you find an error let me know and feel free and send an email to me.
+
+Usefull informations are also in INSTALL-2.00, yaze-ag.doc, yaze.doc,
+yaze.1, cdm.1 and README_BOOTSYS !
+
+15. January 2002
+Andreas Gerlich  (email: Andreas.Gerlich@mathematik.uni-ulm.de)
+(Germany)
+
+

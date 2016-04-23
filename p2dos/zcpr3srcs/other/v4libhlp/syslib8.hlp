@@ -1,0 +1,123 @@
+ Disk/User Manipulation Routines
+ Get / Set Current User area       - GUA, SUA
+ Return the current Disk/User      - RETUD
+ Log into a specified Disk/User    - LOGUD
+ Save/Restore Current Disk/User    - PUTUD, GETUD
+ Set DMA Transfer Address          - SETDMA
+:           Disk/User Manipulation Routines 
+
+This is a set of six routines which allow the user to readily
+move around between Disks and User Areas.  These routines are:
+
+       GUA   - Return the Current User
+       SUA   - Log into a specified User Area
+       RETUD - Return the Current Disk/User
+       LOGUD - Log into a specified Disk/User
+       PUTUD - Save away the Current Disk/User
+       GETUD - Restore the Disk/User saved by PUTUD
+
+
+GUA and SUA are to be used to find out what User Area the
+program is in (GUA) and to enter a specific User Area (SUA).
+
+For example:
+
+	CALL	GUA		; Find out current user
+	PUSH	AF		; Save it
+	 < move around on other user areas>
+	POP	AF		; Get current user
+	CALL	SUA		; Log into User
+
+GUA and SUA are useful in conjunction with the automatic disk
+logging feature of CP/M, where the first byte of the FCB
+indicates a Disk to autolog (1=A, 2=B, etc., 0=default).
+
+
+RETUD and LOGUD are to be used to find out where the program
+is (RETUD) and to enter a specific Disk/User Area (LOGUD).
+
+For example:
+
+	CALL	RETUD		; Find out where we are
+	PUSH	BC		; Save Disk/User
+	 < move around on disks/users >
+	POP	BC		; Get Disk/User
+	CALL	LOGUD		; Log into Disk/User
+
+
+PUTUD and GETUD are designed to be used as a place marker and
+return combination.  They are intended to be used in such code
+sequences as the following:
+
+	CALL	PUTUD		; Mark current location
+	 < move around on disks/users >
+	CALL	GETUD		; Return to marked location
+
+Since PUTUD stores the values in a single level buffer, multiple
+calls to PUTUD should be avoided since GETUD will restore the
+last Disk/User saved by PUTUD.
+
+:GUA - Return Current User Area
+
+  ENTER: None
+  EXIT :  A = User Area (0-31)
+  USES : AF
+
+ Usage:  This routine is simply used to return the currently
+  logged User Area.  No error codes exist with this function.
+
+ SUA - Set Current User Area
+
+  ENTER:  A = User Area (0-31)
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is used to log into the user area
+  represented  by the low-order 5 bits of the supplied value
+  (value 0-31).  No error codes exist with this function.
+
+:RETUD - Return the Current Disk/User
+
+  ENTER: None
+  EXIT : BC = Disk/User.  B=Disk (Drive A=0), C=User (0..31)
+  USES : BC
+
+ Usage:  This routine is commonly used to return the currently
+  logged User Number and currently logged Drive in a single
+  operation.
+
+:LOGUD - Log Into a Disk/User
+
+  ENTER: BC = Disk/User.  B=Disk (Drive A=0), C=User (0..31)
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is used to log in a specified Drive and
+  set the specified User Area to Current in a single operation.
+
+:PUTUD - Save Away Disk/User
+ GETUD - Restore Disk/User Saved by PUTUD
+
+  ENTER: None
+  EXIT : None
+  USES : None
+
+ Usage:  These routines are commonly used near the beginning
+  of a program or routine to save the Current User and Disk
+  numbers for restoration upon program/routine exit.  PUTUD
+  saves the Current Disk and User in a local buffer, while
+  GETUD restores these saved settings to the Currently
+  logged BDOS values.  The buffer used by PUTUD and GETUD is
+  internal and not available for general use.
+
+:SETDMA - Set the BDOS DMA Transfer Address
+
+  ENTER: HL = Start of DMA Buffer to set
+  EXIT : None
+  USES : None
+
+ Usage:  This routine simply sets the DMA Transfer Address
+  within the BDOS and BIOS to the specified address.  Since no
+  registers are destroyed by this routine, it is suitable for
+  use within loops in programs.
+

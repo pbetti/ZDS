@@ -1,0 +1,159 @@
+
+; Program:	Z33RCP
+; Version:	1.0
+; Description:	Resident Command Package (RCP) for ZCPR33
+; Author:	Jay Sage
+; Date:		March 1, 1987
+; Derivation:	SYSRCP (Richard Conn) and many other contributions
+
+version	equ	2
+subver	equ	1		; Version 2.1
+
+; Version 2.1 - 20080212 - P. Betti <pbetti@lpconsul.net>
+; little changes to include datestamper code in RCP space (if space is available)
+
+;=============================================================================
+;
+;		D E F I N I T I O N S    S E C T I O N
+;
+;=============================================================================
+
+	maclib	common.asm
+	maclib	sysdef.lib	; Common logic, sys, ascii defines
+	maclib	z3base.lib	; Defines ZCPR system addresses
+	maclib	z33defn.lib	; Defines offsets in Z33 command processor
+	maclib	z33rcp.lib	; Defines command options
+	maclib	z33mac.lib	; Macros
+
+; Macro to define include directives for either ZAS or SLR assemblers.  For
+; other assemblers that do support file inclusion, modify the macro to specify
+; the correct directive.  For assemblers that do not support file inclusion,
+; a text editor will have to be used to read in the actual contents of each
+; file in place of the include statement.
+
+include	macro	filename
+
+	 if	zas
+	.in		filename
+	 else	;slr assembler
+	$include	filename&.lib
+	 endif	;zas
+
+	 endm
+
+;=============================================================================
+;
+;	E N T R Y    C O D E    S E C T I O N
+;
+;=============================================================================
+
+	org	rcp		; From Z3BASE.LIB
+
+	db	'Z3RCP'		; Package ID
+
+
+;----------------------------------------
+
+; Command table
+
+	db	cmdsize		; Length of each command name
+	cmdtbl			; Dispatch table from Z33RCP.LIB
+	db	0		; Marks end of command jump table
+
+
+;----------------------------------------
+
+; Name of RCP
+
+; This block allows the 'H' command and/or the SHOW utility to display a name
+; and version number for this RCP as well as the commands that are supported.
+
+rcpname:
+	idstring		; From macro in Z33RCP.LIB
+
+; Include only those code sections that are required.
+
+	include rcph		; 'H'	help (command list) command
+
+	 if	clson
+	include rcpcls		; 'CLS'	clear screen command
+	 endif	;clson
+
+	 if	reson
+	include rcpr		; 'R'	disk reset command
+	 endif	;reson
+
+	 if	tston
+	include rcptst		; 'TST'	error test command
+	 endif	;tston
+
+	 if	spaceon
+	include rcpsp		; 'SP'	space on disk command
+	 endif	;spaceon
+
+	 if	diron
+	include	rcpdir		; 'DIR'	directory command
+	 endif	;diron
+
+	 if	eraon
+	include	rcpera		; 'ERA'	erase command
+	 endif	;eraon
+
+	 if	lton
+	include	rcplt		; 'LIST' and 'TYPE' commands
+	 endif	;lton
+
+	 if	renon
+	include rcpren		; 'REN'	rename command
+	 endif	;renon
+
+	 if	proton
+	include rcpprot		; 'PROT' file attribute setting command
+	 endif	;proton
+
+	 if	cpon
+	include rcpcp		; 'CP'	file copying command
+	 endif	;cpon
+
+	 if	peekon or pokeon or porton
+	include rcpiom		; 'PEEK', 'POKE', 'PORT' commands
+	 endif	;peekon or pokeon or porton
+
+	 if	regon
+	include rcpreg		; 'REG'	register operation commands
+	 endif	;regon
+
+	 if	whlon
+	include rcpwhl		; 'WHL' and 'WHLQ' commands
+	 endif	;whlon
+
+	 if	echoon
+	include rcpecho		; 'ECHO' command
+	 endif	;echoon
+
+	include	rcpsubs		; File of subroutines
+
+;
+; Date Buffers
+;
+	 if	eraon or lton or proton
+
+nxtfile:
+	ds	2		; Ptr to next file in list
+
+	 endif			; Eraon or lton or proton
+
+	if	p2dson		; p2dos datestamper
+	 include p2d
+	endif	; p2dson
+
+; SIZE ERROR TEST
+
+	 if	[ $ gt [ rcp + rcps*128 ] ]
+	***  RCP is too large  ***
+	 endif
+
+
+; End of Z33RCP.Z80
+
+	end

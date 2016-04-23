@@ -1,0 +1,337 @@
+	title	'Boot loader module for the Modular CP/M 3 BIOS'
+
+;	CP/M-80 Version 3	-- Modular BIOS
+;	Boot Module for P112
+;	Initial version 1.0
+;	Compile with M80
+
+	public	?init,?signon,?ldccp,?rlccp
+
+	extrn	?pdec,?pmsg,?conin,?cono
+	extrn	?mmu$init,?int$init,?gide$init
+
+	extrn	@dtbl,@memsiz,@rdsize,@cbnk
+	extrn	@civec,@covec,@aivec,@aovec,@lovec
+	extrn	@date,@hour,@min,@sec
+
+	.z80
+Z80182	equ	1
+	include Z180.INC
+	include	P112EQU.INC
+
+cdisk	equ	4
+bdos	equ	5
+cr	equ	0Dh
+lf	equ	0Ah
+
+	dseg	; init done from banked memory
+
+?init:
+	ld	hl,1000000000000000b	; assign console to COM1:
+	ld	(@civec),hl
+	ld	(@covec),hl
+	ld	hl,0100000000000000b	; assign auxiliary to COM2:
+	ld	(@aivec),hl
+	ld	(@aovec),hl
+	ld	hl,0010000000000000b	; assign printer to LPT:
+	ld	(@lovec),hl
+
+	ld	hl,first$time
+	ld	a,(hl)
+	or	a
+	jr	z,init$1
+	ld	(hl),0
+	ld	a,(cdisk)
+	inc	a
+	ld	(boot$drive),a		; remember boot drive
+
+init$1:
+	call	?mmu$init
+	call	?int$init
+
+	xor	a
+	ld	(@cbnk),a		; right now in bank 0
+
+; TODO: load floppy drive timings from cmos ram, etc...
+
+	call	?gide$init
+
+	ret
+
+?signon:
+	ld	hl,bios$msg
+	call	?pmsg			; display BIOS banner with build date
+	ld	hl,(@memsiz)
+	call	?pdec			; display total amount of memory
+	ld	hl,mem$msg
+	call	?pmsg
+
+	ld	hl,@dtbl+4		; check for hard disk partitions
+	ld	b,4
+	ld	c,'C'
+do$hd:	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	a,d
+	or	e
+	jr	z,no$hd
+	push	bc
+	push	hl
+	push	de
+	ld	a,b
+	cp	4
+	ld	hl,hd$msg
+	jr	z,hd1
+	ld	hl,sep
+hd1:	call	?pmsg
+	call	?cono			; display drive letter
+	ld	hl,hd$msg1
+	call	?pmsg
+	pop	de
+	ld	hl,12			; offset to DPB
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,5			; offset to DSM-1
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl
+	inc	hl			; obtain DSM in blocks
+	add	hl,hl			; convert to Kbytes
+	add	hl,hl			;   (assumes 4K blocks)
+	call	?pdec
+	ld	hl,hd$msg2
+	call	?pmsg
+	pop	hl
+	pop	bc
+	inc	c
+	djnz	do$hd
+no$hd:
+	ld	hl,(@rdsize)		; RAM-disk was created?
+	ld	a,h
+	or	l
+	jr	z,no$M			; no, skip display of the size
+	push	hl
+	ld	hl,ramdsk$msg
+	call	?pmsg
+	pop	hl
+	call	?pdec			; display RAM-disk size
+	ld	hl,hd$msg2
+	call	?pmsg
+no$M:
+	ld	hl,signon$msg
+	call	?pmsg			; print CP/M 3.0 banner
+	ret
+
+bios$msg:
+	db	cr,lf,'D-X Designs P112 BIOS built '
+	date
+	db	cr,lf,0
+mem$msg:
+	db	'K total memory',0
+sep:
+	db	', ',0
+ramdsk$msg:
+	db	cr,lf,'RAMdisk M: ',0
+hd$msg:
+	db	cr,lf,'GIDE ',0
+hd$msg1:
+	db	': ',0
+hd$msg2:
+	db	'K',0
+signon$msg:
+	db	cr,lf,lf,'CP/M Version 3.0',cr,lf,lf,0
+
+
+	cseg	; boot loading must be done from resident memory
+
+	; This version of the boot loader loads the CCP always
+	; from a file called CCP.COM on the system drive (A:).
+
+?ldccp:
+?rlccp:
+	; Load the A:CCP.COM file into TPA
+    if 0
+	xor	a
+	ld	(ccp$fcb+12),a		; zero extent
+	ld	(ccp$fcb+15),a		; zero rc
+	ld	hl,0
+	ld	(fcb$nr),hl		; start at beginning of file
+	ld	(fcb$nr+2),hl
+	ld	hl,(@dtbl+('M'-'A')*2)
+	ld	a,h
+	or	l
+	jr	z,noM
+	ld	a,'M'-'@'		; try drive M: first
+	ld	(ccp$fcb),a
+	ld	de,ccp$fcb
+	call	open
+	inc	a
+	jr	nz,ccp$ok
+noM:	ld	hl,(@dtbl+('C'-'A')*2)
+	ld	a,h
+	or	l
+	jr	z,noC
+	ld	a,'C'-'@'		; otherwise try drive C:
+	ld	(ccp$fcb),a
+	ld	de,ccp$fcb
+	call	open
+	inc	a
+	jr	nz,ccp$ok
+noC:	ld	a,'A'-'@'		; try A: as last resort
+	ld	(ccp$fcb),a
+	ld	de,ccp$fcb
+	call	open			; open file containing CCP
+	inc	a
+	jr	z,no$CCP		; error if file not found
+ccp$ok:	ld	de,0100h
+	call	setdma			; start of TPA
+	ld	de,128
+	call	setmulti		; allow up to 16k bytes
+	ld	de,ccp$fcb
+	call	read			; load the thing
+					;   warning: this does not detect
+					;            bad sector errors
+	ret
+
+no$CCP:		; here if we couldn't find the file
+	ld	hl,err$hdr
+	call	?pmsg
+	ld	hl,ccp$msg
+	call	?pmsg			; report this...
+	call	?conin			; get a response
+	jp	?ldccp			; and try again
+
+	; CP/M BDOS Function Interfaces
+
+open:
+	ld	c,15
+	jp	bdos		; open file control block
+
+setdma:
+	ld	c,26
+	jp	bdos		; set dma transfer address
+
+setmulti:
+	ld	c,44
+	jp	bdos		; Set record count
+
+read:
+	ld	c,20
+	jp	bdos		; read records
+
+    else
+
+	ld	hl,005Ch
+	ld	b,36
+	xor	a
+clear:	ld	(hl),a
+	inc	hl
+	djnz	clear
+	ld	hl,005Ch
+	ld	(hl),1
+	inc	hl
+	ld	de,ccp$fcb+1
+	ex	de,hl
+	ld	bc,11
+	ldir
+
+; note that we do not have to save the current user number
+; and then select user 0 if CCP.COM is set to SYS
+
+	ld	hl,(@dtbl+('M'-'A')*2)
+	ld	a,h
+	or	l
+	jr	z,noM
+	ld	a,'M'-'@'	; try drive M: first
+	ld	(005Ch),a
+	ld	de,005Ch
+	ld	c,15
+	call	bdos		; open file
+	inc	a
+	jr	nz,ccp$ok
+noM:	ld	a,(boot$drive)	; otherwise try boot drive
+	ld	(005Ch),a
+	dec	a
+	add	a,a
+	ld	e,a
+	ld	d,0
+	ld	hl,@dtbl
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	a,d
+	or	e
+	jr	z,noBt
+	ld	de,005Ch
+	ld	c,15
+	call	bdos		; open file
+	inc	a
+	jr	nz,ccp$ok
+noBt:	ld	a,'A'-'@'	; try A: as last resort
+	ld	(005Ch),a
+	ld	de,005Ch
+	ld	c,15
+	call	bdos		; open file
+	inc	a
+	jr	z,operr		; error if file not found
+ccp$ok:	ld	de,1
+	ld	c,44
+	call	bdos		; set record count to one 128-byte sector
+	ld	de,100h		; CCP load address
+ldloop:	push	de
+	ld	c,26
+	call	bdos		; set DMA transfer address
+	ld	de,005Ch
+	ld	c,20
+	call	bdos		; read record
+	pop	de
+	or	a
+	jr	nz,gocpm
+	ld	hl,128
+	add	hl,de
+	ex	de,hl
+	jr	ldloop
+gocpm:	cp	1
+	jr	nz,rderr
+	ret
+
+operr:	ld	hl,ccp$msg
+	jr	errs
+rderr:	ld	hl,errmsg
+errs:	push	hl
+	ld	hl,err$hdr
+	call	?pmsg
+	pop	hl
+	call	?pmsg
+	call	?conin
+	jp	0
+
+errmsg:	db	cr,lf,'Bad sector in CCP.COM',0
+
+    endif
+
+first$time:
+	db	1
+
+boot$drive:
+	db	0
+
+err$hdr:
+	db	cr,lf,'BIOS Error: ',0
+
+ccp$msg:
+	db	cr,lf,'No CCP.COM file',0
+
+ccp$fcb:
+	db	1,'CCP     ','COM',0,0,0,0
+	ds	16
+fcb$nr:	db	0,0,0,0
+
+	end
+

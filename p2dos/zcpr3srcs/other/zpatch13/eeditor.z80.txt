@@ -1,0 +1,378 @@
+; EEDITOR.Z80
+;
+ 	EXT	STNDEND,Z3EADR,DISPLAY,ednib,HEXDMP
+	EXT	AT,EREOL,VPRINT,GOTOXY,GXYMSG,CLS
+	EXT	COUT,CIN,PA2HC,MA2HC,IALLOC,ALLOC
+
+	PUBLIC	EDITOR,SHOWBYTE,UNSHOWB
+	MACLIB	ZPATCH.LIB
+;
+; EDITOR:
+; a screen-oriented hex-ascii dump editor.
+; INPUT:
+; this subprogram expects to find the following global variables:
+;   LINE## = the row number on which the display is to start 
+; SECADR## = beginning actual address of sector to be edited 
+;   OFFS## = offset used to generate apparent from actual address 
+; OUTBUF## = address of the buffer in which the dump output is to be stored 
+; ABSADR## = a value corresponding to the absolute byte number within the file
+;            on which to begin editing.
+;
+; OUTPUT:
+; on exit the carry flag is a flag which can be used to decide whtether to 
+; do an immediate write-to-disk or not
+;
+;
+; SHOWBYTE:
+; not logically a part of this module, but it uses all the cursor positioning
+; code here and is therefore here.  SHOWBYTE highlights the current byte
+; given in ABSADR## on the screen in both the HEX and ASCII displays.
+; For non-highlighting terminals the HEX display byte is surrounded by
+; curly brackets as well e.g. {9F} 
+; INPUTS: same as above.
+; OUTPUTS: none.
+;
+EDITOR:	
+	LD	HL,(OUTBUF##)
+	LD	(OUTBUF),HL
+	LD	HL,(SECADR##)	; actual address of the dump
+	call	hexdmp		; dump sector given by secadr## into memory
+	CALL	CLS		; clear previous display
+	call 	DISPLAY		; display the hex dump
+	CALL	MENU		; display the editor menu
+	CALL	GETPOSN
+HEXLOOP:
+	CALL	GXYMSG		; update the menu toggle
+	DB	16,35
+	DB	HV,'<ESC> ',LV,'switch to ASCII mode',2,0
+	CALL	HPOSIT		; we know where to position the cursor
+	LD	A,(POSN)	
+	AND	1		;set up EDNIB for high or low nibble
+	CALL	EDNIB
+	JR	C,EDITED	; carry flag means a hex char successfully read
+	LD	C,1		; hex/ascii indicator for cursors routine
+	CALL	CURSORS		; was it a cursor key or a function key?
+	JR	C,HEXLOOP	; no get more input
+	CALL	TESTQUIT	; was a ^Q or ^W hit?
+	RET	Z		; return if quit holding write/nowrite in carry
+				; flag
+	CP	ESC		; was ESC hit
+	JP	Z,ASCLOOP	; yes, switch over to ASCII mode
+	JR	HEXLOOP		; no, get more input
+
+EDITED: 			; update screen 
+	CALL	APOSIT		; position cursor for ASCII update
+	LD	A,(HL)		; is "new" byte
+	CP	' '		; < 20H?
+	JR	C,DOT		; yes, show a dot
+	CP	80H		; it it >= 80H? 
+	JR	C,CHAR		; no, show the char, else ...
+DOT:	LD	A,'.'		; show the dot
+CHAR:	CALL	COUT		; 
+	LD	A,(POSN)	; update the postion counter
+	INC	A
+	LD	(POSN),A
+	JR	NZ,EDTD1	; have we gone beyond sector boundary?
+	LD	HL,(SECADR##)	; yes, retrieve beginning address
+	JR	EDTD3		; of sector
+EDTD1:	LD	B,A		; no, save byte and check if
+	AND	1		; we have crossed a byte boundary
+	JR	NZ,EDTD2	; no, edit next nibble
+	INC	HL		; yes, get next byte
+EDTD2:	LD	A,B		; restore byte
+EDTD3:	PUSH	HL		; save current address
+	LD	DE,(OUTBUF##)	; update the output buffer
+	LD	HL,(SECADR##)
+	CALL	HEXDMP
+	POP	HL
+	JP	HEXLOOP		; and get next edit
+	
+ASCLOOP:			; loop for editing under ASCII mode
+	CALL	AT		; menu toggle 
+	DB	16,35
+	CALL	EREOL
+	CALL	VPRINT
+	DB	HV,'<ESC> ',LV,'switch to HEX mode',2,0 	
+	LD	A,(POSN)
+	AND	11111110B	; mask off last bit
+	LD	(POSN),A
+	CALL	APOSIT		; posiTion cursor for an ASCII input
+	CALL	CIN		; get a character
+	LD	B,A		; preserve the character in B
+	LD	c,2		; hex/ascii indicator for cursors routine
+	CALL	CURSORS
+	JR	C,ASCLOOP	; if cursor, go back and get next
+	CALL	TESTQUIT	; was it ^Q, or ^W
+	RET	Z		; return if quit holding write/nowrite in carry
+				; flag
+	CP	ESC		; was it ESC?
+	JP	Z,HEXLOOP	; yes switch back to hex mode
+	CP	' '		
+	JR	C,ASCLOOP	; other control chars ignored
+	CP	80H		; anything over 80H is a dot
+	JR	C,POUT
+NONP:	LD	A,'.'
+POUT:	CALL	COUT
+	LD	(HL),B		; update memory in sector being dumped
+	CALL	HPOSIT		; update the hex side
+	LD	A,B
+	CALL	PA2HC		
+	LD	A,(POSN)	; update the position counter
+	INC	A		; by two nibbles
+	INC	A
+	LD	(POSN),A
+	OR	A		; crossed sector boundary?		
+	JR	NZ,AL1		; no, get next
+	LD	HL,(SECADR##)	; yes, go back to beginning of sector
+	JR	AL2
+AL1:	INC	HL		; get next byte
+AL2:	LD	A,B
+	JR	ASCLOOP		; and back for more
+;
+; Test to see if either of the two commands for quitting
+; i.e. ^Q without writing sector
+; or   ^W writing sector
+; have been given.
+; On output z-flag indicates one of the two quit commands has been given
+;           carry=write, no carry = no write
+;
+TESTQUIT:
+	CP	CTRLW
+	JR	Z,WRITE
+	CP	CTRLQ		;control-Q?
+	RET			;NZ=no quit.  Z and NC = quit no write
+WRITE:	SCF			;Z and C = quit and write	
+	RET
+
+; THIS MODULE CONTAINS THE ROUTINES FOR POSITIONING THE CURSOR
+; DURING HEXADECIMAL EDITING AND FOR ASCII EDITING
+
+HPOSIT:	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	DE,(POSN)
+	LD	A,E		;position counter
+	AND	31		;lowest five bits determine column-pair
+	LD	B,A		;save it
+	AND	1		;last bit determines high-low nibble
+	LD	C,A		; save it
+	LD	A,B		;reload column-pair number 
+	SRA	A		;divide by two
+	LD	B,A		;store in B
+	ADD	A,A		;A+A=2A
+	ADD	A,B		;2A+A=3A
+	ADD	A,C		;now add back for low nibble
+	ADD	A,11		;to this number add eleven for actual column
+	LD	L,A		;and put column number in L
+	LD	A,E		;now do row
+	CALL	ROW
+	LD	H,A		;and store it in H for ...
+	CALL	GOTOXY		;this call 
+	POP	DE
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+APOSIT: PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	DE,(POSN)
+	LD	A,E		; E HAS POSITION VARIABLE
+	AND	00011111B	; mask off high bits
+	SRL	A		; shift right (divide by two) as nibbles	
+				; do not concern us, only bytes
+	ADD	62		; offset for actual column
+	LD	L,A		; put in L for gotoxy call
+	LD	A,E		; posn again
+	CALL	ROW
+	LD	H,A		; 
+	CALL	GOTOXY
+	POP	DE
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+ROW:				; row calculation routine used by ASCLOOP
+				; and hexloop
+	SRL	A		;shift right five times as high three bits
+	SRL	A		;determine the row
+	SRL	A	
+	SRL	A	
+	SRL	A
+	ADD	D		; D HAS OFFSET FOR BEGINNING LINE OF DISPLAY
+	RET	
+;
+						
+CURSORS:			; test char in A to see whether cursor 
+				; key pressed and adjust posn if so.  
+				; on input hl points to byte being
+				; edited, on output to new byte pointed to
+				; on input c=1 for hex editing
+				; and 2 for ascii editing
+				; carry flag set if A had cursor key
+				; reset if not
+	PUSH	DE
+	PUSH	BC
+	PUSH	HL		
+	LD	HL,(z3eadr)
+	LD	de,90h		; cursors begin at z3ENV+90h
+	add	HL,DE
+	LD	E,A		; input char into E
+	CP	(HL)		; HL Points to TCAP Uparrow
+	JR	Z,UP 
+	CP	CTRLE		; Wordstar UP
+	JR	Z,UP
+	INC	HL		; HL Points to TCAP Downarrow
+	CP	(HL)
+	JR	Z,DOWN
+	CP	CTRLX		; Wordstar Down
+	JR	Z,DOWN
+	INC	HL		; HL Points to TCAP Rt. Arrow
+	CP	(HL)
+	JR	Z,RIGHT
+	CP	CTRLD		; Wordstar right
+	JR	Z,RIGHT
+	INC	HL		; HL points to TCAP Left Arrow
+	CP	(HL)
+	JR	Z,LEFT
+	CP	CTRLS		; Wordstar left
+	JR	Z,LEFT
+	XOR	A		; no cursor so reset carry
+	JR	CUREND
+UP:	LD	B,32		; subtract 32 from posn for up
+	JR	POS1		; jump to subtract
+DOWN:	LD	B,32		; add 32 to posn for down
+	JR	POS2		; jump to add
+RIGHT:	LD	b,c		; c has hex/ascii flag (1 or 2)
+	JR	POS2		; jump to add
+LEFT:	LD	b,c		; c has hex/ascii flag (1 or 2)
+POS1:	LD	A,(POSN)	; subtract routine
+	SUB	B
+	JR	POS3
+POS2:	LD	A,(POSN)	; add routine
+	ADD	B
+POS3:	LD	(POSN),A	; save new posn
+	SRL	A		; right shift to adjust nibble addr to byte 
+				; addr
+	LD	C,A		; save in C
+	LD	B,0		; no b
+	POP	HL			;HL contains address of byte being
+					;edited
+	LD	A,L
+	AND	10000000B		;mask off all but high bit in L
+	LD	L,A
+
+	ADD	HL,BC			;add displacement (from posn)
+	PUSH	HL			;to get new address for edits
+	SCF	
+CUREND:
+	LD	A,E
+	POP	HL
+	POP	BC
+	POP	DE
+	RET
+
+MENU:
+	CALL 	GXYMSG
+	DB	14,9
+	DB	"-- Movement --",0
+	CALL	GXYMSG
+	DB	14,40
+	DB	"-- Functions --",0
+	CALL	GXYMSG
+	DB	16,15
+	DB	'^E',0
+	CALL	GXYMSG
+	DB	17,16
+	DB	'^',0
+	CALL	GXYMSG
+	DB	18,11
+	DB	'^S <-+-> ^D',0
+	CALL	GXYMSG
+	DB	19,16
+	DB	'v',0
+	CALL	GXYMSG
+	DB	20,15
+	DB	'^X',0
+	CALL	GXYMSG
+	DB	18,35
+	DB	HV,' ^Q',LV,'uit to command mode without saving to disk',2,0
+	CALL	GXYMSG
+	DB	19,35
+	DB	HV,' ^W',LV,'rite sector to disk and ret to command mode',2,0
+	RET
+	
+;
+; derive a value to be stored in POSN that is obtained by
+; ORing the low order byte of the in-file address at which editing is 
+; to begin with the low order byte of the actual address of the dump
+; and doubling it.  This is the "nibble address" within the sector.
+;
+GETPOSN:
+	LD	A,(LINE##)
+	LD	(LIN),A
+	LD	BC,(ABSADR##)	; get the in-file editing address in BC
+	LD	HL,(SECADR##)
+	LD	A,C
+	OR	L
+	LD	L,A
+	SLA	A		; double it
+	LD	(POSN),A
+	RET
+;
+; routine to highlight the current byte in ABSADR.
+;
+SHOWBYTE:
+;	PUSH	DE	
+	CALL	GETPOSN		; initialize the POSN and LIN variables
+	CALL	HPOSIT		; go to proper place in HEX display
+	LD	DE,DSPBYT	; fill memory below
+	LD	A,(HL)		; with the value of the current byte
+	PUSH	AF
+	CALL	MA2HC		; as 2 hex digits
+	CALL	VPRINT		; print it on the screen
+	DB	1,8,'{'		; highlight,backspace,fence
+DSPBYT:	DS	2		; our 2 hex digits
+	DB	'}',0		; close fence
+	CALL	APOSIT		; get ascii position
+	POP	AF
+	CP	80H		; if not printable
+	JR	NC,PPER		; print a period
+	CP	20H		; ditto
+	JR	NC,POUT2
+PPER:	LD	A,'.'	
+POUT2:  CALL	COUT		; print char or period
+	CALL	STNDEND		; turn off highlight
+	RET		
+
+UNSHOWB:
+;	PUSH	DE	
+	CALL	GETPOSN		; initialize the POSN and LIN variables
+	CALL	HPOSIT		; go to proper place in HEX display
+	LD	DE,UDSPBYT	; fill memory below
+	LD	A,(HL)		; with the value of the current byte
+	PUSH	AF
+	CALL	MA2HC		; as 2 hex digits
+	CALL	STNDEND
+	CALL	VPRINT		; print it on the screen
+	DB	8,' '		; highlight,backspace,fence
+UDSPBYT:
+	DS	2		; our 2 hex digits
+	DB	' ',0		; close fence
+	CALL	APOSIT		; get ascii position
+	POP	AF
+	CP	80H		; if not printable
+	JR	NC,PPERU	; print a period
+	CP	20H		; ditto
+	JR	NC,POUT2U
+PPERU:	LD	A,'.'	
+POUT2U: CALL	COUT		; print char or period
+	RET		
+
+POSN:   DB	0		;POSITION COUNTER WITHIN EDIT BLOCK
+LIN:	DB	0
+	END
+                                                                                       

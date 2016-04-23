@@ -1,0 +1,243 @@
+                       Mix Editor Patches                    1.1.0
+                       ==================
+
+Changing the default setup file:
+--------------------------------
+
+   The default setup file for the editor is named: SETUP.EDT .  If no
+setup file is specified on the command line, the editor will search
+for this file on the default disk drive.  If it is not found there,
+the editor will look for it on drive A.  If you wish to use a
+different drive or a different name for the file, this name may be
+patched.  The name of the setup file begins at 115D in the file
+EDIT.OVY and has four leading blanks.  The new name must be exactly
+13 characters long but may be padded on the left with blanks if it is
+shorter.  The following sample patch changes the file name so that
+the editor will look for the setup file on drive C.
+
+   Use DDT to apply the patch as shown below:
+
+   A>DDT EDIT.OVY
+
+   DDT VERS 2.2
+   NEXT  PC
+   6C00 0100
+   -D115D,116B
+   115D 20 20 20
+   1160 20 53 45 54 55 50 2E 45 44 54 20 20 SETUP.EDT
+   -S115F
+   115F 20 43
+   1160 20 3A
+   1161 53 .
+   -D115D,116B
+   115D 20 20 43    C
+   1160 3A 53 45 54 55 50 2E 45 44 54 20 20 :SETUP.EDT
+   -^C
+   A>SAVE 107 EDIT.OVY
+   A>
+
+
+Changing the work file:
+-----------------------
+
+   The editor uses one or two work files to hold text that is not in
+memory.   You may wish to change the names of these files if more than one
+person is using the editor on a network with shared disk storage.  Each
+user can have a copy of the editor with a different work file name so
+that the files will not conflict.  The name of the work file must have
+exactly 8 characters and the 3rd and 4th characters must remain as "0".
+Any other characters in the file name can be changed.  The example below
+changes the name of the work file to use T1 as a prefix instead of T0.
+
+
+   A>DDT EDIT.OVY
+
+   DDT VERS 2.2
+   NEXT  PC
+   6C00 0100
+   -D11AA,11B1
+   11AA 54 30 30 30 2E 54 T000.T
+   11B0 4D 50 MP
+   -S11AA
+   11AA 54
+   11AB 30 31
+   11AC 30 .
+   -D11AA,11B1
+   11AA 54 31 30 30 2E 54 T100.T
+   11B0 4D 50 MP
+   -^C
+   A>SAVE 107 EDIT.OVY
+   A>
+
+Changing the block file:
+-----------------------
+
+   The editor uses a temporary file to hold the contents of a block
+being moved with input block or output block.  This file is always
+placed on the default disk and is named "T030.TMP" .  The following
+sample patch changes the name of this file so that it will always be
+created on drive A.
+
+
+   A>DDT EDIT.OVY
+
+   DDT VERS 2.2
+   NEXT  PC
+   6C00 0100
+   -D118B,1194
+   118B 20 20 54 30 33   T03
+   1190 30 2E 54 4D 50 0.TMP
+   -S118B
+   118B 20 41
+   118C 20 3A
+   118D 54 .
+   -D118B,1194
+   118B 41 3A 54 30 33 A:T03
+   1190 30 2E 54 4D 50 0.TMP
+   -^C
+   A>SAVE 107 EDIT.OVY
+   A>
+
+
+Changing the editor overlay file:
+---------------------------------
+
+   The overlays for the editor are contained in a file named "EDIT.OVY" .
+When the editor is loaded, it searches for this file on the default drive.
+If the overlay file is not found on the default drive, the editor looks
+for it on drive A.  The name of the overlay file is contained in a CP/M
+file control block that begins at address 516A.  The name of this file
+may be changed by patching.  The first byte indicates the disk drive.  If
+this byte is zero, the overlays can be on the default drive or drive A, if
+this byte is not zero, then it specifies the disk drive for the overlay file.
+The editor will not search drive A if the first byte of the control block is
+not zero.
+
+   The following sample patch changes the name of the overlay file to
+"D:EDITOR.OVY" .
+
+   DDT B:EDIT.COM
+   DDT VERS 2.2
+   NEXT  PC
+   5680 0100
+   -D516A,5175
+   516A 00 45 44 49 54 20 .EDIT
+   5170 20 20 20 4F 56 59    OVY
+   -S516A
+   516A 00 04
+   516B 45
+   516C 44
+   516D 49
+   516E 54
+   516F 20 4F
+   5170 20 52
+   5171 20 .
+   -D516A,5175
+   516A 00 45 44 49 54 4F .EDITO
+   5170 52 20 20 4F 56 59 R  OVY
+   -^C
+   A>SAVE 87 EDIT.COM
+   A>
+
+
+
+                       Special Cursor Addressing
+                       =========================
+
+   If cursor addressing cannot be accomplished by sending characters to
+the terminal, you can add an assembly language routine to perform this
+function.  The custom cursor addressing option provided in setedit can
+handle cursor addressing for almost any terminal.  For custom cursor
+addressing to work, the terminal must move the cursor in response to a
+sequence of characters sent to it.  This is normally some form of escape
+sequence.
+
+   If your terminal (or memory mapped video) does not allow cursor
+addressing with a sequence of characters, then you must use the special
+cursor addressing option.  To use this option you must execute setedit
+and specify special cursor addressing.  In addition, you need to write
+an assembly language routine to position the cursor.
+
+   When the cursor is to be moved, the editor will transfer control to
+address 48EE in memory.  The row number will be in register H and the
+column number will be in register L.  Your assembly language should
+use this information to move the cursor and then return to the editor
+with a RET instruction.  All of the registers are available and your
+subroutine may occupy up to 64 bytes of memory.  The code should be
+assembled with an origin of (hex) 48EE and a .HEX file generated.
+
+   To merge the assembly language driver into the editor, perform the
+following steps.
+
+   1. Load the editor with DDT by:   DDT EDIT.COM
+   2. Use the I command in DDT to specify the .HEX file
+      containing your subroutine.
+   3. Use the R command to read the subroutine into memory.
+   4. Type control/c to exit to CP/M.
+   5. Save the new image with:  SAVE 87 EDIT.COM
+
+
+Example:
+
+;
+;   This is a sample assembly language subroutine to position
+;   the cursor.  This example assumes that a 16 line by 64 character
+;   memory mapped video board is installed in the system at an
+;   address of hex FC00.  The cursor address is stored in location
+;   hex 40 in memory, and that the most significant bit of the
+;   byte under the cursor is set to make the cursor character appear
+;   in reverse video.
+;
+MEMORY   EQU  0FC00H
+CURSOR   EQU  040H
+CSRBIT   EQU  080H
+;
+         ORG  048EEH
+;
+;  On entry, the row is in H and the column is in L
+;
+         PUSH H
+         LHLD CURSOR          ; deselect old cursor
+         MOV  A,M
+         XRI  CSRBIT
+         MOV  M,A
+         POP  D               ; get new cursor address
+         MOV  A,D
+         RAR                  ; shift row into position
+         RAR
+         MOV  D,A             ; save shifted row
+         ANI  3               ; mask upper two bits
+         MOV  H,A
+         MOV  A,D             ; get low 2 bits of row
+         ANI  0C0H            ; isolate them
+         ADD  E               ; add column number
+         MOV  L,A
+         LXI  D,MEMORY        ; Add origin of memory board
+         DAD  D
+         SHLD CURSOR          ; Set new cursor
+         MOV  A,M             ; Invert cursor character
+         XRI  CSRBIT
+         MOV  M,A
+         RET
+         END
+
+   A>ASM CURSOR
+   CP/M ASSEMBLER - VER 2.0
+   490F
+   000H USE FACTOR
+   END OF ASSEMBLY
+
+   A>DDT EDIT.COM
+   DDT VERS 2.2
+   NEXT  PC
+   5680 0100
+   -ICURSOR.HEX
+   -R
+   NEXT  PC
+   5680 0100
+   -^C
+   A>SAVE 87 EDIT.COM
+   A>
+
+  L,A
+         LXI  D,MEMORY   

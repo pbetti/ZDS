@@ -1,0 +1,376 @@
+
+; Program: SHOW
+; Author: Richard Conn
+; Version: 1.2
+; Date: 17 Jun 87
+
+;	The purpose of SHOW is to display various details about the ZCPR3
+; System to the ZCPR3 user.  Details on the ZCPR3 Environment Descriptor,
+; what facilities are available, and what the status of these facilities
+; is are included.
+
+;-----------------------------------------------------------------------------
+;
+;		R E V I S I O N    H I S T O R Y
+;
+;-----------------------------------------------------------------------------
+
+version	equ	14
+testv	equ	' '		; Letter if test version, space if release
+
+; Version 1.4	Jay Sage		February 21, 1989
+;
+; Nelson Buck reported to me that SHOW was not properly showing the formfeed
+; capability status of the LST device.  This has been fixed.  There was a
+; fundamental error in the way yes/no results were being displayed.  Also
+; updated reference to Z33DEFN.LIB to Z34DEFN.LIB
+
+
+; Version 1.3	Jay Sage		May 1, 1988
+;
+; Updated for use with ZCPR34 and the extended Z3ENV module which contains a
+; vector of supported drives and information about the operating system modules
+; (address and size for CCP and DOS, address only for BIOS).  There is now only
+; a single CRT and LST device described.  Safety code was added to make sure
+; SHOW is being run under Z-System and that there is adequate TCAP support.
+;
+; Updated for use with Z3PLUS.  Under CP/M-3, ZEX is not available, and SUBMIT
+; works differently.
+
+
+; Version 1.2	Howard Goldstein	June 17, 1987
+;
+; Shortened code.  When installed as an error handler, SHOW places the DU where
+; it was found into the error command line.  Shell stack display now dumps
+; all elements, even if they are considered "empty."
+
+
+; Version 1.1	Jay Sage		May 27, 1987
+;
+; Improved general layout of the display and upgraded to ZCPR33 compatibility.
+; SHOW now indicates the options and commands that are available in the
+; command processor.  Wheel restrictions on CPR, RCP, and FCP commands are
+; indicated.  FCP options are shown as well.  A main menu selection can now
+; be included on the command line and can be installed as part of the error
+; handling command line.  Elementary memory editing can be performed (simple
+; poke command).
+
+
+;-----------------------------------------------------------------------------
+;
+;		D E F I N I T I O N S    S E C T I O N
+;
+;-----------------------------------------------------------------------------
+
+false	equ	0
+no	equ	false
+true	equ	not false
+yes	equ	true
+
+z3env	equ	0fe00h		; Needed only for debugging
+bdosadr	equ	00005h		; BDOS entry point address
+
+usedseg	equ	true
+
+;----------
+
+fcb	equ	5ch
+fcb2	equ	6ch
+cr	equ	0dh
+lf	equ	0ah
+tab	equ	9
+bell	equ	7
+ctrlc	equ	'C'-'@'
+ctrlr	equ	'R'-'@'
+
+highon	equ	1		; Highlight control characters
+highoff	equ	2
+
+;-----------------------------------------------------------------------------
+
+	maclib	z34defn.lib
+
+; References to relocatable libraries
+
+; JAYLIB References
+
+	ext	zsyschk
+
+; Z33LIB References
+
+	ext	z33chk,gcmddu,getccp,getsfcb,getecp,resepb,stopxsub
+
+; VLIB References
+
+	ext	tinit,dinit,ereol			;from VLIB
+	ext	z3vinit,cls,gotoxy,gxymsg,vprint,at	;from VLIB
+
+; Z3LIB References
+
+	ext	envptr
+	ext	getiop,getpath,dutdir
+	ext	shempty,shfull,getsh
+	ext	geter1,geterc,puter1,puterc
+	ext	getfcp,getrcp,getefcb,erradr
+	ext	getndr,getmsg
+	ext	stopzex
+
+; SYSLIB References
+
+	ext	retud,pfn1,sksp
+	ext	bbline,eval16,acase1
+	ext	capine,cout,crlf,print,pstr
+	ext	padc,pa3dc,pafdc,phl4hc,pa2hc,mafdc
+
+
+;-----------------------------------------------------------------------------
+;
+;		M A I N    C O D E    S E C T I O N
+;
+;-----------------------------------------------------------------------------
+
+entry:
+	jp	start
+	defb	'Z3ENV'		; ZCPR ID
+	defb	3		; Type-3 environment
+z3eadr:
+	defw	z3env
+	defw	entry
+	defb	version
+
+; Start of Program -- Initialize ZCPR3 Environment
+
+start:
+	call	zsyschk		; Make sure HL has valid ENV pointer
+	ret	nz
+	ld	hl,(z3eadr)	; Point to ZCPR3 environment
+	call	z3vinit		; Initialize ZCPR3 and VLIB environment
+	ld	(dumpstrt),hl	; Set beginning address of memory dump to ENV
+
+; Make sure we have an extended ENV
+
+	ld	de,8		; Offset to ENV type byte
+	add	hl,de
+	ld	a,(hl)
+	rla			; High bit into carry flag
+	jr	c,start1
+	call	print
+	defb	'  Extended ENV required.',0
+	ret
+
+start1:
+	call	cls		; Make sure TCAP is defined
+	jr	z,badtcap
+	call	ereol
+	jr	nz,start2
+badtcap:
+	call	print
+	defb	' TCAP inadequate.',0
+	ret
+
+start2:
+	ld	hl,fcb2+1	; See if second token is present
+	ld	a,(hl)
+	cp	' '		; If not
+	jr	z,chk1		; ..check token 1
+	cp	'/'		; Only '/E' is allowed here
+	jr	nz,help		; If not that, display help screen
+	inc	hl
+	ld	a,(hl)
+	cp	'E'
+	jp	z,errins	; If '/E', install as error handler
+	jr	help		; Otherwise, show help screen
+
+chk1:
+	ld	hl,fcb+1	; Check first token
+	ld	a,(hl)
+	cp	'/'		; Check for option specifier
+	jp	nz,show		; If not, proceed with program
+	inc	hl		; Check second character
+	ld	a,(hl)
+	cp	'E'		; If it is 'E'
+	jp	z,errins	; ..then install SHOW as error handler
+				; Else fall through to HELP
+help:
+	call	print
+	defb	cr,lf
+	defb	'SHOW, Version '
+	defb	[version/10]+'0','.',[version mod 10]+'0'
+
+	 if	testv <> ' '
+	defb	' [ beta ',testv,' ]'
+	 endif
+
+	defb	cr,lf
+	defb	' Syntax:'
+	defb	cr,lf,tab,'SHOW      <-- Invoke Normally with Main Menu'
+	defb	cr,lf,tab,'SHOW C    <-- Invoke with Menu Choice C'
+	defb	cr,lf,tab,'SHOW /E   <-- Install "SHOW" as Error Handler'
+	defb	cr,lf,tab,'SHOW C /E <-- Install "SHOW C" as Error Handler'
+	defb	cr,lf,0
+	ret
+
+; Install SHOW as an error handler
+
+errins:
+	call	gcmddu		; Make sure not invoked using GO or JUMP
+	inc	b		; If drive now zero, invoked by resident command
+	jr	nz,errins1	; If not, branch
+
+	call	print
+	defb	bell,'  Cannot install SHOW as error handler using GO or JUMP',0
+	ret
+
+errins1:
+	call	geterc		; Set HL to address of error command line
+	ex	de,hl		; Put into destination (DE) register
+	call	z33chk		; ZCPR33 running?
+	jr	nz,errins1a	; Don't put du in command line if not
+	ld	a,b		; Get drive number in A
+	add	a,'@'		; ..in range A..P
+	ld	(de),a		; Store drive letter in error command line
+	inc	de
+	ld	a,c		; Get user number
+	call	mafdc		; Store as decimal number
+	ld	a,':'
+	ld	(de),a
+	inc	de
+
+errins1a:
+	call	getefcb		; Set HL to name used to invoke SHOW
+	ld	b,8		; Copy up to 8 characters
+errins2:
+	inc	hl		; Point to next source character
+	ld	a,(hl)		; Get it
+	cp	' '		; Check for end of command name
+	jr	z,errins3	; If so, break out of loop
+	ld	(de),a		; Store the character in error command line
+	inc	de		; Bump the pointers
+	djnz	errins2		; Continue looping
+
+errins3:
+	xor	a		; Store ending null
+	ld	(de),a
+	ld	hl,fcb+1	; Point to first token (possible option)
+	ex	de,hl		; Exchange pointers
+
+	ld	a,(de)		; Check for user option
+	cp	' '		; If nothing
+	jr	z,errins4	; ..we are done
+	cp	'/'		; If option character
+	jr	z,errins4	; ..we are done
+
+	ld	(hl),' '	; Replace null with space
+	inc	hl
+	ld	(hl),a		; Insert user option letter
+	inc	hl
+	ld	(hl),0		; Terminate string
+
+errins4:
+	call	print
+	defb	'  Error handling command line set to: ',0
+	call	geterc
+	call	pstr
+	ret
+
+; Display Main Menu and Accept Command
+
+	include	showmain.z80
+
+;-----------------------------------------------------------------------------
+;
+;			S U B    T A S K S
+;
+;-----------------------------------------------------------------------------
+
+; Deinitialize Terminal and Exit to ZCPR3
+
+exit:
+	call	resepb		; Turn off external program bit (in case
+				; ..program invoked as error handler
+	jp	dinit		; Deinit terminal
+
+;-----------------------------------------------------------------------------
+
+; Memory Dumper 
+
+	include	showmem.z80
+
+; Message Buffer Information
+
+	include	showmsg.z80
+
+; System File Names
+
+	include	showfile.z80
+
+; CRT and Printer Data
+
+	include	showcrt.z80
+
+; Print Environment Descriptor Data
+
+	include	showenv.z80
+
+; Display Input/Output Package Data
+
+	include	showiop.z80
+
+; Display Path Function
+
+	include showpath.z80
+
+; Print Named Directory Information
+
+	include	showndr.z80
+
+; Print Command Status
+
+	include	showcmds.z80
+
+; Print Error Handler Data
+
+	include	showerr.z80
+
+; Print Shell Stack Data
+
+	include showshl.z80
+
+; Show CCP configuration options
+
+	include showopt.z80
+
+;-----------------------------------------------------------------------------
+;
+;		S U B R O U T I N E    S E C T I O N
+;
+;-----------------------------------------------------------------------------
+
+	include	showsubs.z80
+
+;-----------------------------------------------------------------------------
+;
+;		M E S S A G E S,    D A T A,    A N D    B U F F E R S
+;
+;-----------------------------------------------------------------------------
+
+; Buffers and data
+
+showcmd:
+	defb	'SHOW    ',0
+
+	 if	usedseg
+	dseg
+	 endif	;usedseg
+
+infoxy:
+	ds	2	;address on screen of next line to print
+cstat:
+	ds	2	;command status ptr
+dumpstrt:
+	ds	2	;address of next byte to start memory dump
+cline:
+	ds	2	;address of current line
+
+	end
+                                                                                                      

@@ -1,0 +1,172 @@
+
+            Enhancements to the ZCPR 3.4 Resident Command Package
+                        June 17, 1988 by Carson Wilson
+
+The following is a description of the functional enhancements I and others 
+have made since Z33RCP02.LBR by Jay Sage.  Almost all commands have been 
+either functionally enhanced or improved in performance.
+
+Enhancements Pertaining to Several Commands:
+-------------------------------------------
+All RCP commands which reference directories automatically adjust to whatever 
+directory security is enabled in the CPR.  So, for example, a SYSOP can use 
+the same 'D' command in both private and public applications.  References to 
+directories or drive/user combinations which are wheel-protected will generate 
+an error under the 'D' command when the wheel byte is off.  The same is true 
+of 'REN', 'CP', 'LIST', 'R', 'S', 'PROT', and 'ERA'. 
+
+Most RCP errors now invoke the error handler, if installed, sending it the 
+appropriate error value.  For example, 'P', 'POKE', 'PORT', and 'REG' will 
+chain to the error handler with error 9 (bad numerical value) if a character 
+is entered instead of a number by mistake.  See below for other command 
+errors.  If no error handler is installed, the command is simply echoed back 
+to the screen by the CPR, followed by a question mark, a la CP/M.
+
+The ERA and D commands will not chain to the error handler if files are not 
+found.  Rather, they continue to display a short "No files" message as in 
+previous RCPs.  My reason for this is so that commands like "ERA *.BAK" or "D 
+*.DOC" can still be used efficiently.
+
+Commands such as 'D', 'PROT', and 'REN' which produce sorted lists of files 
+now operate somewhat faster on lists of files due to increased sorting speed.
+
+Code for many commands and routines has been reduced, allowing either more 
+commands or more sophisticated versions of commands to be used within the same 
+memory space.
+
+
+Enhancements Pertaining to Specific Commands:
+--------------------------------------------
+(Selectable = may be deselected at assembly time)
+
+Cmnd Selectable	Enhancement(s):
+---- ----------	--------------------------------------------------------------
+CLS		- Echoes a carriage return and line feed instead of "No TCAP"
+		  message if Terminal Capability is not installed.  This 
+		  reduces code and allows TYPE to chain to CLS without 
+		  confusion.
+
+CP	*	- Copies files from left to right, e.g., "cp source dest," and
+		  allows "cp source" form.
+	*	- "cp dest=source" also allowed for backward compatibility.
+	*	- Copies datestamp (create and last modify) with file under
+		  ZSDOS/ZDDOS and DosDisk.
+		- Uses "Set DMA" call to eliminate buffer swapping.
+		- Error handler invoked if:
+			- file not found
+			- filespec ambiguous
+			- bad directory specification
+			- disk or directory full (or write error)
+			- duplicate file specifications (error #16)
+
+D	       - If WIDE is true, files are displayed 5 across without
+		 fences.
+	       - Error handler invoked if:
+			- bad directory specification
+			- TPA overflow
+
+ECHO		- %P and %C parameters toggle printer on/off correctly.
+
+ERA		- Any character given after the file specification invokes 
+		  inspection mode.
+		- Error handler invoked if:
+			- bad directory specification
+			- TPA overflow
+
+H		- Gets addresses of FCP and CCP from the environment
+		  descriptor, allowing their addresses to be changed 
+		  dynamically.
+
+LIST            - "LIST<cr>" sends form feed to printer.
+		- Error handler invoked if:
+			- file(s) not found
+			- bad directory specification
+			- TPA overflow
+
+NOTE		- No changes.
+
+P		- If peekhdr is true, an address header is also given for the 
+		  ASCII portion of the display.
+	*	- One record is displayed at a time instead of one page.  This 
+		  makes comparing two regions of memory easier.
+		- Error handler invoked if numeric error.
+
+POKE		- Error handler invoked if numeric error or no arguments.
+
+PORT		- Error handler invoked if numeric error.
+		- Compatible with 16-bit I/O addressing.
+
+PROT            - Added 'A' parameter to alter file Archive attribute.
+		- Error handler invoked if:
+			- file(s) not found
+			- TPA overflow
+			- bad directory specification
+
+Q		- New command.  Sets, resets, or displays Quiet flag (see help 
+		  file for usage).
+
+R		- Resets only one disk at a time under ZSDOS.
+	*	- Gives space message after resetting.
+		- Error handler invoked if bad directory specification
+		- Automatically resets all "fast relog" disks under ZSDOS.
+
+REG		- Error handler invoked if numeric error.
+		- Now treats the program error byte as register "E".
+		- Numbers now range from 0 to 31, although only the first
+		    ten are displayed with "REG D".
+		  Forms:
+			REG D or REG	- Display 1st 10 register values
+			REG Mreg	- Decrement register value
+			REG Preg	- Increment register value
+			REG Sreg value	- Set register value
+			REG reg 	- Display a single register value
+
+REN	*	- Renames files from left to right, e.g., "REN oldname newname"
+	*	- "REN newname=oldname" is also allowed for backward 
+		  compatability.
+		- The directory specification may be given with either the old 
+		  or the new filename.  If two directory specifications are 
+		  given by mistake, the one associated with the old file name 
+		  is used.
+		    Examples:
+				REN a0:oldname b1:newname
+				  renames to a0:oldname to newname
+				REN oldname b1:newname
+				  renames b1:oldname to newname
+				REN root:newname=work:oldname
+				  renames work:oldname to newname
+		- Error handler invoked if:
+			- file not found
+			- file specification ambiguous
+			- bad directory specification
+
+S		- Error handler invoked if illegal directory specification.
+		- Works with CP/M Plus.
+
+TYPE	*	- Screen clears between pages of output if CLS command is
+		  active.
+		- ^C aborts at end of line/record only to speed output.
+		- The "Typing " prompt appears only after the screen has filled, 
+		  instead of for every new file.
+		- While typing files, control-Z switches paging to 
+                  non-default mode.
+		- Screen size for paging is taken from the current
+		  environment descriptor, rather than being hard-coded, to
+		  support different terminals.
+		- Error handler invoked if:
+			- file(s) not found
+			- bad directory specification
+			- TPA overflow
+
+TST		- Command removed.  M80/L80 error checking may be performed
+                  via ARUNZ's $M parameter.
+
+WHL		- Error handler invoked if bad password.
+		- Replaces WHLQ command.
+		  Usage:
+			WHL		- Report wheel status.
+			WHL password	- Turn wheel ON if password correct,
+					  turn wheel OFF if not.
+
+WHLQ		- The WHLQ command no longer implemented.
+

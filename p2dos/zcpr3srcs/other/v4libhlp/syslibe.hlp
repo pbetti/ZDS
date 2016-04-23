@@ -1,0 +1,126 @@
+ Compare Vectors    - COMPB, COMPBC
+ Compare Filenames  - @FNCMP, @AFNCMP
+ Compare HL to DE   - COMPHD
+ Substring Search   - INSTR
+ Vector Search      - SCANNER
+:COMPB  - Compare Vectors of 1 to 256 bytes in length
+ COMPBC - Compare Vectors of 1 to 65536 bytes in length
+
+  ENTER: HL, DE - Pointers to Vectors to compare
+	 BC (for COMPBC), B (for COMPB) = # of bytes to Compare
+  EXIT :  F - Zero and Carry Set/Reset as:
+		Zero Flag Set (Z)		 ==> HL = DE
+		Carry Flag Set (C)		 ==> HL < DE
+		Zero and Carry Reset (NZ and NC) ==> HL > DE
+  USES : AF
+
+ Usage:  These routines are most commonly used to do String
+  Comparison.  Since all eight bits are used in the compare
+  logic, they are also suitable for raw binary elements as
+  well.  COMPB uses only an 8-bit counter (B Register) and can
+  compare one to 256 bytes, while COMPBC uses a 16-bit counter
+  (BC pair) and can compare one to 65,536 bytes.  The maximum
+  counts of 256 and 65536 are achieved by setting the counter
+  register(s) to Zero.
+
+:@FNCMP - Perform Unambiguous 7-bit Comparison
+
+  ENTER: HL = Pointer to first string to match
+         DE = Pointer to second string to match
+          B = Number of chars to check (0 checks 256)
+  EXIT :  F - Zero Flag Set (Z) if Strings Match
+		Zero Flag Reset (NZ) if No Match
+              Carry flag set (C) if (DE) is less than (HL)
+  USES : AF,BC,DE,HL
+
+ Usage:  This routine is most often used in comparing file
+  names and types.  It performs 7-bit comparisons, ignoring any
+  attribute bits (bit 7).  In general use, it compares two
+  strings of one to 256 characters in length.  In addition to
+  equality, the inequalities of Greater Than and Less Than are
+  also supported by also sensing the Carry flag.
+
+@AFNCMP - Perform Ambiguous 7-bit Comparison
+
+  ENTER: HL = Pointer to possibly Ambiguous String
+         DE = Pointer to second string to match
+          B = Number of chars to check (0 checks 256)
+  EXIT :  F - Zero Flag Set (Z) if Match Ok
+		Zero Flag Reset (NZ) if No Match
+  USES : AF,BC,DE,HL
+
+ Usage:  This routine is most often used to compare Filenames
+  and types, where one name may be ambiguous (question marks,
+  "?", match any character).  Most Significant Bits (Bit 7) of
+  both strings are masked with only the least significant bits
+  being compared.  It may also be used as a general 7-bit
+  utility compare strings of one to 256 characters in length.
+
+ Examples:
+
+	EXT	@AFNCMP,@FNCMP	; Declare the routines
+	...			; ..preceeding code
+	LD	HL,AMBIG	; Set ptr to ambiguous name
+	LD	DE,FNAME	; Set to name to check
+	LD	B,11		; Match filename and type only
+	CALL	@AFNCMP		; ..call the routine
+	JR	Z,OK		; Jump if match
+	...			; Else here if mismatch
+	...
+	LD	HL,ENTRY1	; Set ptr to first name
+	LD	DE,ENTRY2	; ..and name to check
+	LD	B,11		; Match filename and type only
+	CALL	@FNCMP		; ..call the routine
+	JR	Z,EQUAL		; Jump if same
+	JR	C,ONEMORE	; ..jump here if ENTRY1>ENTRY2
+	...			; Else here if ENTRY1 < ENTRY2
+
+:COMPHD - 16-bit Value Comparision
+
+  ENTER: HL, DE = Values to Compare
+  EXIT :  F = Status set by Zero and Carry Flags as:
+		Zero Flag Set (Z)		 ==> HL = DE
+		Carry Flag Set (C)		 ==> HL < DE
+		Carry and Zero Reset (NZ and NC) ==> HL > DE
+  USES : AF
+
+ Usage:  This routine is commonly used to compare two 16-bit
+  values such as addresses or integer values.
+
+:INSTR - Substring Search (Null-terminated Char Strings)
+
+  ENTER: HL = Pointer to Null-terminated String to be Scanned
+	 DE = Pointer to Null-terminated Substring to locate
+  EXIT : HL = Ptr to beginning of Substring in String if Found
+		(unaffected if Not Found)
+	  A = 0, Zero Flag Set (Z) if Found
+	      A <> 0, Zero Flag Clear if NOT found
+  USES : AF,HL
+  Special Error Condition: Automatic success if Substring is
+	of Zero-length (Null String)
+
+ Usage:  This routine is most often used to locate a character
+  string within a larger body of text, such as within a simple
+  text editor.
+
+:SCANNER - Vector Search
+
+  ENTER: HL = Pointer to Vector to be Scanned
+	 DE = Pointer to Vector to locate
+	 BC = Vector lengths as:
+		B = Number of bytes in HL-vector
+		C = Number of bytes in DE-vector
+  EXIT : HL = Pointer to located Vector (unchanged if Not Found)
+	  F = Zero Flag Set (Z) if Found (A indeterminate)
+		A <> 0, Zero Flag Reset (NZ) if NOT Found
+  USES : AF,HL
+  Special Error Condition:  Automatic failure if Scanned Vector
+		is shorter than Vector to locate (B < C)
+
+ Usage:  This routine is used to locate a string of bytes in a
+  block of up to 255 bytes.  Since only 8-bits are available
+  for length values for both the Search and Target Vectors,
+  neither length can exceed 256.  Because of the logic used,
+  the block to be scanned must be of Non-zero length to avoid
+  an error for search lengths less than 256 (0 length byte).
+

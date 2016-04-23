@@ -1,0 +1,452 @@
+; PPIP-2.Z80
+
+; <<2>> 		  File name module
+
+; This module validates file names, extracts disk/user numbers, expands
+; wild card characters, and installs names into file control blocks.
+
+;-----------------------------------------------------------------------
+
+; Expand a possibly ambiguous file name and fill buffer with all matches
+; from the specified drive and user area.
+
+; Entry:  HL = pointer to UPPER CASE file name
+;	  DE = pointer to FCB that will receive file name (FCB[0-1] = user)
+
+; Return:  NARGC = number of matches found
+;	   NARGBUF contains names in fixed length fields
+;	   DE preserved, other registers destroyed
+;	   CARRY SET if file name error or no match found
+
+DOWILD:
+	CALL	EXPAND		; Expand the name into the FCB
+	RET	C		; Quit if name error
+	CALL	DIRSRCH		; Search directory for matches
+	RET	NC		; Return now if match found
+	CALL	ERRET		; Else error
+	DB	'no file ',0
+
+;-----------------------------------------------------------------------
+
+; Expand a possibly ambiguous file name into an FCB.
+;
+; Entry:  HL = pointer to UPPER CASE file name
+;	  DE = pointer to FCB (FCB[0-1] = user)
+
+; Return:  if successful, carry clear and HL = file name without du:
+;	   if error, carry set and HL = complete file name
+;	   BC and PSW destroyed
+;	   CARRY SET if error
+
+EXPAND:
+	CALL	STRIPDU		; Strip off the disk/user spec
+	JP	NC,EXPND1	; Continue if du: is ok
+	CALL	ERRET		; ERROR - print message and return
+	DB	'bad drive/user spec in ',0
+EXPND1:
+	CALL	MAKEFCB		; Make an FCB for the file name
+	JP	NC,EXPND2	; Continue if file name is ok
+	CALL	ERRET		; ERROR - print msg. and ret
+	DB	'invalid characters in ',0
+EXPND2:
+	RET
+
+;-----------------------------------------------------------------------
+
+; "Strip" the disk/user spec off a file name and put it in FCB.
+
+; Entry:  HL = pointer to UPPER CASE file name
+;	  DE = pointer to FCB (FCB[0-1] = user)
+;	  DRIVE = current drive
+;	  USER	= current user
+
+; Return: HL = pointer to next byte after DU: spec or unaffected
+;	       if no DU: spec found
+;	  DE unaffected
+;	  BC and PSW destroyed
+;	  CARRY SET if error
+
+STRIPDU:
+	PUSH	DE		; Save FCB address
+	LD	A,(DRIVE)	; Put current du: in BC
+	LD	B,A
+	LD	A,(USER)
+	LD	C,A
+;
+COLON:
+	LD	A,':'		; Load a colon
+	CALL	POS		; Find position of it (if any) in name
+	JP	Z,STRPDUN	; If no colon appears use default du:
+	PUSH	HL		; Put original pointer to name on stack
+	DEC	A		; Test to see if ':' is first character
+	JP	Z,BADDU		; Bad du: if so
+
+	 IF	ZCPR3
+	PUSH	BC		; Save current DU: in case needed
+	CALL	DIRTDU		; See if we have an NDR entry
+	JP	NZ,STRUSRZ	; Branch direct, we're at colon
+	POP	BC		; Otherwise get back current du
+	POP	HL		; Recover pointer
+	PUSH	HL		; Save it again
+	LD	A,(DUOKFL)	; Are DU:/D:/U: allowed?
+	DEC	A		; Decrement Accum.
+	JP	NZ,BADDU	; To test for 1 (= DU: is OK)
+	 ENDIF			; ZCPR3
+
+	LD	A,(MAXDRV)	; Get MAXDRV in Acc.
+	CP	(HL)		; If drive > MAXDRV
+	JP	C,BADDU		; Then error
+	LD	A,(HL)		; Get the drive character in Acc.
+	SUB	'A'		; Is it less than 'A' ?
+	JP	C,STRUSR	; Then it's not a drive - try user
+	LD	B,A		; Else get drive in B
+	INC	HL		; Point to next character
+STRUSR:
+	CALL	GETASCD		; Get a digit and convert to binary
+	JP	C,STRUSR1	; We're done here if not a good digit
+	LD	C,A		; Else save a copy of the first number
+	INC	HL		; Point to second (possible) digit
+	CALL	GETASCD		; And try to get another digit
+	JP	C,STRUSR1	; Move on if no second digit
+	LD	D,A		; Else save it
+	INC	HL		; Point to whatever is next
+	LD	A,C		; Get the 10's digit back
+	RLCA			; Multiply times 2
+	LD	C,A		; Save this
+	RLCA			; Times 4
+	RLCA			; Times 8
+	ADD	A,C		; C * 10 =  C * 2 + C * 8
+	ADD	A,D		; Plus units
+	LD	C,A		; Put new user code into C
+
+	 IF	ZCPR3
+	JP	STRUSR1		; Jump over Z3NDR drive check
+STRUSRZ:
+	POP	DE		; Discard current DU: harmlessly
+	LD	A,(MAXDRV)	; Get high drive letter
+	SUB	'@'		; De-ASCII it
+	CP	B		; Compare to DIRTDU's value
+	JP	C,BADDU		; Not kosher if A is smaller
+	 ENDIF			; ZCPR3
+STRUSR1:
+	LD	A,(HL)		; Get a character
+	CP	':'		; If it is not a colon then
+	JP	NZ,BADDU	; We have a bad user spec
+	INC	HL		; Else point to rest of file name
+	LD	A,(MAXUSR)	; Get MAXUSR
+	CP	C		; Compare with our user spec
+	JP	C,BADDU		; Error if user > MAXUSR
+	POP	DE		; Discard original pointer to name
+STRPDUN:
+	POP	DE		; Restore FCB pointer
+	DEC	DE		; Set to FCB[0-1]
+	LD	A,C		; Get user number in Acc.
+	LD	(DE),A		; And store it
+	INC	DE		; Point to FCB[0]
+	LD	A,B		; Get drive code in Acc.
+	INC	A		; Increment since in FCB, A=1, B=2, etc.
+	LD	(DE),A		; Store it
+	XOR	A		; Clear Acc./carry
+	RET			; Done
+
+BADDU:
+	POP	HL		; Restore original name pointer
+	POP	DE		; And FCB address
+	SCF			; Set carry = ERROR
+	RET			; And return
+
+;-----------------------------------------------------------------------
+
+; Make an FCB from a file name
+;
+; Entry:  HL = pointer to file name WITHOUT DRIVE/USER SPEC
+;	  DE = pointer to FCB
+
+; Return: HL and DE unaffected
+;	  BC and PSW destroyed
+;	  CARRY SET if BAD file name.
+
+MAKEFCB:
+	CALL	CLRFCB		; Clear the FCB
+	PUSH	HL		; Keep a copy of the file name pointer
+	PUSH	DE		; And a copy of the FCB pointer
+	INC	DE		; Set pointer to the name field
+	LD	B,FNAMSZ-3	; Character count for name, less type
+MKNAME:
+	LD	A,(HL)		; Get character from file name
+	CALL	CHKCHR		; Check it for validity
+	JP	NZ,BADNAME	; Break if bad character
+	LD	A,(HL)		; Get it back again
+	INC	HL		; Point to next
+	CP	'.'		; If '.'
+	JP	Z,MKTYPE	; Then go do file type field
+	CP	'*'		; If '*'
+	JP	Z,MKWILD	; Then make wild
+	CP	' '+1		; If delimiter
+	JP	C,MKDUN		; Then all done
+	LD	(DE),A		; Else put the character into the FCB
+	INC	DE		; Point to next FCB character
+	DEC	B		; Decrement count
+	JP	NZ,MKNAME	; Do more until end of file name field
+MKNAM1:
+	LD	A,(HL)		; We did all allowable name characters
+	INC	HL		; Are there any more ?
+	CP	'.'		; Must have type now
+	JP	Z,MKTYP1	; So keep looking until we find '.'
+	CP	' '+1		; Or if we find a delimiter
+	JP	C,MKDUN		; Then done
+	JP	MKNAM1		; Extra name chars are ignored
+
+MKWILD:
+	LD	A,'?'		; Fill rest of name field with '?'
+MKWLD1:
+	LD	(DE),A
+	INC	DE
+	DEC	B
+	JP	NZ,MKWLD1
+	JP	MKNAM1		; And find type field
+
+MKTYPE:
+	INC	DE		; Increment DE to file type field
+	DEC	B
+	JP	NZ,MKTYPE
+MKTYP1:
+	LD	B,3		; Get type field size in counter
+MKTYP2:
+	LD	A,(HL)		; Get character from file type
+	CALL	CHKCHR		; Check it for validity
+	JP	NZ,BADNAME	; Break if bad character
+	LD	A,(HL)		; Get character again
+	INC	HL		; Point to next
+	CP	'.'		; If '.'
+	JP	Z,BADNAME	; Then break - '.' can't occur in type
+	CP	'*'		; If '*'
+	JP	Z,MKWLD2	; Then make wild
+	CP	' '+1		; If delimiter
+	JP	C,MKDUN		; Done
+	LD	(DE),A		; Else put the character into the FCB
+	INC	DE		; Point to next FCB character
+	DEC	B		; Decrement count
+	JP	NZ,MKTYP2	; Do more until end of file name field
+MKDUN:
+	POP	DE		; Get original FCB address back
+	POP	HL		; Restore original file name pointer
+	XOR	A		; Make sure flags reflect GOOD NAME
+	RET			; And return
+
+MKWLD2:
+	LD	A,'?'		; Make file type wild
+	LD	(DE),A
+	INC	DE
+	DEC	B
+	JP	NZ,MKWLD2
+	JP	MKDUN		; And we're done
+
+BADNAME:
+	POP	DE		; Restore original FCB address
+	POP	HL		; Restore pointer to file name
+	SCF			; Set error flag
+	RET			; Quit
+
+;-----------------------------------------------------------------------
+
+; Clear an FCB (exclusive of the user and drive bytes).
+
+; Entry:  DE = FCB address
+;
+; Return:  FCB name and type filled with spaces.  Rest of FCB set to zero.
+;	   all but PSW are unaffected.
+
+CLRFCB:
+	PUSH	BC		; Save caller's reg.
+	PUSH	DE		; Save FCB address
+	INC	DE		; And point to name field
+	LD	B,FNAMSZ	; Get size of file name
+	LD	A,' '		; Get a space character in Acc.
+	CALL	PAD		; And pad file name with spaces
+	POP	DE		; Restore old FCB
+	CALL	ZEROFCB		; Initialize rest of FCB
+	POP	BC		; Restore old B reg.
+	RET
+
+;-----------------------------------------------------------------------
+
+; "Zero" an FCB for access by setting all bytes after file name/type to
+; zero.
+
+; Entry DE = FCB address
+;
+; Return:  The business-end of the FCB is set to all zeros.
+;	   all but PSW are unaffected
+
+ZEROFCB:
+	PUSH	BC		; Save all
+	PUSH	DE
+	PUSH	HL
+	LD	HL,EXTOFF	; Get offset to extent byte
+	ADD	HL,DE		; Added to address of FCB
+	EX	DE,HL		; In DE reg.
+	XOR	A		; Clear Acc.
+	LD	B,FCBSZ-EXTOFF	; Get size FCB less name & drive
+	CALL	PAD		; And pad with zeros
+	POP	HL		; Restore all
+	POP	DE
+	POP	BC
+	RET			; And done
+
+;-----------------------------------------------------------------------
+
+; Check to see if a character is a legal file name component
+;
+; Entry:  Acc. = character to check
+
+; Return:  ZERO SET if character is OK
+;	   or Acc. contains relative position of invalid character
+
+CHKCHR:
+	PUSH	HL		; Save caller's HL
+	LD	HL,ILLTBL	; And use it to reference "illegal table"
+	CALL	POS		; See if there is a match in table
+	POP	HL		; Restore old
+	RET			; And done
+
+ILLTBL:	DB	',;:=''"',0
+
+;-----------------------------------------------------------------------
+
+; "Match" wild cards in a "wild" FCB with characters from an unambiguous
+; FCB to create a result FCB.
+
+; Entry:  HL = first FCB.  Must have unambiguous file name.
+;	  BC = second "wild" FCB.
+;	  DE = result FCB.
+
+; Result: Wild cards in the second FCB are filled from the first FCB
+;	  and put into result FCB.
+;	  All registers affected.
+
+;	  Examples:   first: COPY    .ASM     first: DC      .COM
+;		     second: ?????NEW.???    second: DZ??????.???
+;		     result: COPYNEW .ASM    result: DZ      .COM
+
+MTCHWLD:
+	CALL	CLRFCB		; Clear the result FCB
+	DEC	DE		; Copy user byte from wild to result
+	DEC	BC
+	LD	A,(BC)
+	LD	(DE),A
+	INC	DE		; Copy drive byte
+	INC	BC
+	LD	A,(BC)
+	LD	(DE),A
+	INC	BC		; Increment first FCB and temp FCB
+	INC	HL		; To the name field
+	PUSH	DE		; Save pointer to result FCB
+	LD	DE,FNBUF	; Gonna assemble name in a buffer first
+	LD	A,FNAMSZ-FTYPSZ	; Get length of name field
+	CALL	MTCHW1		; Do name field
+	LD	A,'.'		; Add in the period
+	LD	(DE),A
+	INC	DE
+	LD	A,FTYPSZ	; Then do the type field
+	CALL	MTCHW1
+	XOR	A		; Get a zero
+	LD	(DE),A		; And terminate the name
+	LD	HL,FNBUF	; Put the file name address in HL
+	POP	DE		; Get the FCB address in DE
+	CALL	MAKEFCB		; And complete the destination FCB
+	RET
+
+MTCHW1:
+	PUSH	AF		; Save counter
+	LD	A,(BC)		; Get a character from second (wild) FCB
+	CP	'?'		; Wild card ?
+	JP	NZ,MTCHW2	; NO - save it
+	LD	A,(HL)		; Else use a character from first FCB
+	AND	07FH		; But mask the attribute
+MTCHW2:
+	CP	' '		; Don't save blanks
+	JP	Z,MTCHW3
+	LD	(DE),A		; Move character to name buffer
+	INC	DE		; Increment pointer to name buffer
+MTCHW3:
+	INC	BC		; Bump second FCB
+	INC	HL		; Bump first FCB
+	POP	AF		; Get counter
+	DEC	A		; One more done
+	JP	NZ,MTCHW1	; Loop if not zero
+	RET
+
+;-----------------------------------------------------------------------
+
+; Print a file name on the console
+
+; Entry:  HL = pointer to FCB (FCB[0-1] = user).
+
+; Result:  DE preserved. Other registers affected.
+
+PRNFNAM:
+	LD	B,(HL)		; Get drive
+	DEC	B		; Decrement since in FCB A=1
+	DEC	HL
+	LD	C,(HL)		; Get user
+	CALL	PRNDU		; Print du:
+	INC	HL		; And point to file name
+	INC	HL
+	LD	B,FNAMSZ-3	; Get number of characters in name field
+	CALL	PRNF1		; Print name
+	LD	A,'.'		; Print a period
+	CALL	TYPE
+	LD	B,3		; Get number of character in type field
+PRNF1:	LD	A,(HL)		; Get a character
+	AND	7Fh		; Strip attribute bits
+	INC	HL		; Point to next
+	CALL	TYPE		; Type the character
+	DEC	B		; Decrement counter
+	JP	NZ,PRNF1	; Loop 'till all done
+	RET			; And return
+
+;-----------------------------------------------------------------------
+
+; Print drive/user
+
+; Entry:  B = drive number (0 .. 15)
+;	  C = user number  (0 .. 31, 32-user environments supported)
+;
+; Result:  all registers except PSW are preserved.
+
+PRNDU:
+	LD	A,B		; Get drive in Acc.
+	ADD	A,'A'		; Add character offset so 0 = 'A'
+	CALL	TYPE		; Type it
+	LD	A,C		; Get user in Acc.
+
+; Version 1.3 mods start here
+
+	LD	B,'0'-1		; Preset for two-digit calculation later
+	CP	10		; See if single digit
+	JP	NC,TWODIG	; If not, print two digits
+	ADD	A,'0'		; Else convert to ASCII
+	CALL	TYPE		; Print to CON:
+	JP	PUTCLN		; Then do colon
+TWODIG:
+	INC	B		; Count tens digit in B
+	SUB	10		; Keep subtracting 10 until carry is set
+	JP	NC,TWODIG
+	ADD	A,10		; Get remainder (units digit) back
+	LD	C,A		; Save it in C
+	LD	A,B
+	CALL	TYPE
+	LD	A,C
+	ADD	A,'0'
+	CALL	TYPE
+
+; Version 1.3 mods end here
+
+PUTCLN:
+	LD	A,':'		; Get a colon
+	CALL	TYPE		; Type that
+	RET			; All done
+
+;		      end of file name module
+;-----------------------------------------------------------------------

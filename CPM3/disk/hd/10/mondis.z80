@@ -1,0 +1,328 @@
+	title	Z80 Disassembler Module
+	name	('MONDIS')
+;
+;	Last Edited	84-06-24	Wagner
+;
+;	Copyright (c) 1984 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, October 1990
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+	maclib	monopt.lib
+;
+	entry	disasm
+;
+	ext	wrchar,wrhex,wrword,space,space2,wraddr
+if	extended
+	ext	peek,peekbuf
+endif;EXTENDED
+;
+	ext	analop
+	ext	mnemtab,r16nam,reg8nam,ccnam
+	ext	opdesc,jumpaddr
+;
+if	symbolic
+	ext	wrsymbol
+endif;SYMBOLIC
+;
+	cseg
+;
+;	disasm:		disassemble one opcode
+;
+;		entry:	A/HL = address
+;			B  = opcode display on if <> 0
+;
+;		exit:	HL = next opcode address
+;
+;		uses:	all registers
+;
+;	On return, Jumpmark contains
+;
+;		00	No jump
+;		10	Immediate 16-bit jump
+;		20	To stack (return)
+;		3x	To register x, x=2: HL, x=5: IX, x=6: IY
+;	code OR 80	conditional jump
+;
+;
+disasm:
+	push	hl
+	push	af
+	ld	a,b
+	ld	(opdis),a
+	pop	af
+	push	af
+	call	analop
+	pop	af
+	ex	(sp),hl		; save new pc, get old address
+	call	wraddr
+	call	space2
+	push	bc		; save mnemo
+	push	hl
+	ld	a,(opdis)
+	or	a
+	jr	z,disasnoop
+	ld	c,5		; total length
+if	extended
+	ld	hl,peekbuf	; analop already did the peeking
+endif;EXTENDED
+disas10:
+	ld	a,(hl)
+	inc	hl
+	call	wrhex		; display opcode in hex
+	call	space
+	dec	c
+	djnz	disas10
+disas20:
+	call	space
+	call	space2		; fill with spaces
+	dec	c
+	jr	nz,disas20
+	jr	disas21
+disasnoop:
+if	not symbolic
+	call	space2
+endif;NOT SYMBOLIC
+disas21:
+	pop	hl
+if	symbolic
+	ld	a,':'
+	call	wrsymbol
+	call	space2
+endif;SYMBOLIC
+	pop	bc		; restore mnemo
+	ld	hl,mnemtab
+	ld	b,0
+	add	hl,bc
+	add	hl,bc
+	add	hl,bc
+	add	hl,bc		; pointer * 4
+	ld	b,4
+disas26:
+	ld	a,(hl)
+	call	wrchar		; write mnemonic
+	inc	hl
+	djnz	disas26
+	call	space2
+if	symbolic
+	xor	a
+	ld	(dissym),a
+endif;SYMBOLIC
+	ld	ix,opdesc
+	ld	b,11		; character down counter
+disas30:
+	ld	a,(ix+0)
+	or	a
+	jr	z,disasend
+	rrca
+	rrca
+	rrca
+	rrca
+	and	LoMASK
+	dec	a
+	add	a,a
+	ld	e,a
+	ld	d,0
+	ld	hl,disastab
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl
+	ld	a,(ix+0)
+	call	ipchl
+	inc	ix
+	ld	a,(ix+0)
+	or	a
+	jr	z,disasend
+	ld	a,','
+	call	wrc
+	jr	disas30
+disasend:
+	pop	hl
+if	not symbolic
+	ld	a,(opdis)
+	or	a
+	jr	z,disasready
+endif;NOT SYMBOLIC
+disasfill:
+	call	space
+	djnz	disasfill
+disasready:
+if	symbolic
+	ld	a,(dissym)
+	push	hl
+	ld	hl,(symadr)
+	call	wrsymbol
+	pop	hl
+endif;SYMBOLIC
+	ret
+ipchl:	jp	(hl)
+;
+disastab:
+	dw	dis8reg		; 1x
+	dw	dis16reg	; 2x
+	dw	dismemreg	; 3x
+	dw	dis8imm		; 40
+	dw	dis16imm	; 50
+	dw	disbitnum	; 6x
+	dw	dis16jp		; 70
+	dw	disccode	; 8x
+	dw	discreg		; 90
+	dw	disaddr		; a0
+	dw	disaf		; b0
+	dw	dis8addr	; c0
+	dw	dis8imm		; d0
+;
+dis8reg:
+	ld	hl,reg8nam
+	and	LoMASK
+	ld	e,a
+	ld	d,0
+	add	hl,de
+	ld	a,(hl)
+wrc:
+	dec	b
+	jp	wrchar
+;
+dis16reg:
+	ld	hl,r16nam
+dis2idx:
+	and	NibMASK
+	add	a,a
+	ld	e,a
+	ld	d,0
+	add	hl,de
+dis2chr:
+	ld	a,(hl)
+	call	wrc
+	inc	hl
+	ld	a,(hl)
+	cp	' '
+	ret	z
+	jr	wrc
+;
+disccode:
+	ld	hl,ccnam
+	jr	dis2idx
+;
+disaf:
+	ld	hl,r16nam+8
+	call	dis2chr
+	ld	a,''''
+	jr	wrc
+;
+discreg:
+	call	open
+	ld	a,'C'
+	call	wrc
+close:
+	ld	a,')'
+	jr	wrc
+;
+open:
+	ld	a,'('
+	jr	wrc
+;
+dismemreg:
+	call	open
+	ld	a,(ix+0)
+	call	dis16reg
+	ld	a,(ix+0)
+	and	8
+	jr	z,close
+;
+;	display signed offset
+;
+	inc	ix
+	ld	a,(ix+0)
+	or	a
+	ld	c,'+'
+	jp	p,dismem10
+	ld	c,'-'
+	neg
+dismem10:
+	push	af
+	ld	a,c
+	call	wrc
+	pop	af
+	call	wrh
+	jr	close
+;
+dis8addr:
+	call	open
+	ld	a,(ix+0)
+	call	dis8imm
+	jr	close
+;
+dis8imm:
+	inc	ix
+	ld	a,(ix+0)
+wrh:
+	dec	b
+	dec	b
+	jp	wrhex
+;
+disaddr:
+	call	open
+	call	dis16imm
+	jr	close
+;
+dis16imm:
+	inc	ix
+	ld	h,(ix+1)
+	ld	l,(ix+0)
+	inc	ix
+dis16:
+if	symbolic
+	ld	a,'.'
+	ld	(dissym),a
+	ld	(symadr),hl
+endif;SYMBOLIC
+	ld	a,h
+	call	wrh
+	ld	a,l
+	call	wrh
+	ret
+;
+dis16jp:
+	inc	ix
+	ld	hl,(jumpaddr)
+	jr	dis16
+;
+disbitnum:
+	and	NibMASK
+	add	a,'0'
+	jp	wrc
+;
+	dseg
+;
+opdis:	ds	1
+;
+if	symbolic
+dissym:	ds	1
+symadr:	ds	2
+endif;SYMBOLIC
+;
+	end
+d	NibMASK
+	add	a,'0'
+	jp	wrc
+;
+	dseg
+;
+opdis:	ds	1
+;
+if	symbolic
+dissym:	ds	1
+symadr:	ds	2
+endif;

@@ -1,0 +1,493 @@
+; PPIP-8.Z80
+
+; <<8>> 	      Various utility subroutines
+
+;-----------------------------------------------------------------------
+
+; Print an error message and return
+
+; Entry:  Stack:   <a return address>
+;		   <message address>  (similar to ILPRT)
+;	  HL = pointer to another optional message OR 0000h
+
+; Return:  CARRY always SET, FERROR = non-zero
+;	   PSW and HL destroyed, other regs. preserved.
+
+ERRET:
+	PUSH	HL		; Save HL (second optional message)
+	CALL	ILPRT		; Identify this as an error message
+	DB	CR,LF,'ERROR:  ',BELL,0
+	POP	HL		; Get 2nd error message off stack
+	EX	(SP),HL		; Swap it with primary one
+	CALL	PRINT		; Print primary one
+	POP	HL		; Get 2nd again
+	LD	A,H		; See if it is a good address
+	OR	L
+	CALL	NZ,PRINT	; Print if HL > 0000
+	CALL	NEWLINE		; Print carriage return/line feed
+	LD	A,ON		; Set FERROR flag
+	LD	(FERROR),A
+	SCF			; Also set carry as error indicator
+	RET			; And go give 'em the bad news
+
+;-----------------------------------------------------------------------
+
+; Retrieve an ascii decimal digit
+
+; Entry:  HL = pointer to digit
+
+; Return:  Acc. = legal decimal digit or CARRY SET if illegal
+
+GETASCD:
+	LD	A,'9'		; Is character > '9'
+	CP	(HL)
+	RET	C		; Return if so
+	LD	A,(HL)		; Get the character
+	SUB	'0'		; And subtract ascii offset
+	RET			; And done
+
+;-----------------------------------------------------------------------
+
+; Convert character in accumulator to upper case
+
+; Entry:  Acc. = character to convert
+
+; Return: Acc. = converted character IF character was lower case
+;	  other regs. unaffected
+
+TOUPPER:
+	CP	'a'		; Skip if not 'a' <= CHAR <= 'z'
+	RET	C
+	CP	'z'+1
+	RET	NC
+	AND	05FH		; Else change to upper case
+	RET
+
+;-----------------------------------------------------------------------
+
+; Move memory
+;
+; Entry:  HL = source
+;	  DE = destination
+;	  B  = count of bytes to move
+
+; Return:  HL += B, DE += B, B = 0, PSW destroyed.
+
+MOVE:
+	LD	A,(HL)		; Get source
+	LD	(DE),A		; Put at destination
+	INC	HL		; Bump pointers
+	INC	DE
+	DEC	B		; Decrement counter
+	JP	NZ,MOVE		; Until zero
+	RET			; And finis
+
+;-----------------------------------------------------------------------
+
+; Pad (fill) memory
+
+; Entry: Acc. = byte to use for pad
+;	 DE = starting location
+;	 B  = count of bytes to fill
+
+; Return:  DE += B, B = 0, character still in Acc., zero flag set
+
+PAD:
+	LD	(DE),A		; Put byte at [DE]
+	INC	DE		; Point to next
+	DEC	B		; Decrement count
+	JP	NZ,PAD		; Continue until all bytes done
+	RET			; And return
+
+;-----------------------------------------------------------------------
+
+; Return POSition of byte in accumulator as it occurs in a string
+
+; Entry:  Acc. = byte to look for
+;	  HL = pointer to ZERO-TERMINATED character string
+
+; Return:  Acc. = position indexed 1 .. n if found or
+;	   ZERO flag SET if NOT FOUND
+;	   all other registers preserved
+
+POS:
+	PUSH	BC		; Get a register to use
+	PUSH	HL		; Save pointer to string
+	LD	B,0		; Initialize position counter
+	LD	C,A		; Byte to look for is in C
+POS1:
+	INC	B		; Bump counter
+	LD	A,(HL)		; Get byte from string
+	INC	HL		; Point to next
+	OR	A		; Test for terminator
+	JP	Z,POSDUN	; Quit if end of string
+	CP	C		; Compare the two bytes
+	JP	NZ,POS1		; Do another if not equal
+	LD	A,B		; We found it - put position in Acc.
+	OR	A		; Set flags (non-zero)
+POSDUN:
+	POP	HL		; Restore old regs.
+	POP	BC
+	RET			; And back we go
+
+;-----------------------------------------------------------------------
+
+; 16-bit subtract
+
+; Entry:  DE = minuend
+;	  HL = subtrahend
+
+; Return: DE = DE - HL
+;	  BC preserved, PSW destroyed
+
+SUB16:
+	LD	A,E		; Subtract low nybble
+	SUB	L
+	LD	E,A		; Result in E
+	LD	A,D		; Subtract high nybble, with borrow
+	SBC	A,H
+	LD	D,A		; Result in D
+	RET
+
+;-----------------------------------------------------------------------
+
+; Compare two strings
+
+; Entry:  HL = string #1
+;	  DE = string #2
+;	  B  = characters to compare
+
+; Return:  ---> if carry set  then HL > DE
+;	   else if zero clear then HL < DE
+;	   else if zero set   then HL = DE
+;	   HL and DE are incremented to end or first unequal byte
+;	   B and Acc. destroyed
+
+STRNCMP:
+	LD	A,(HL)		; Get a byte from [HL]
+	AND	07FH		; Mask parity
+	LD	C,A		; Hold it
+	LD	A,(DE)		; Get a byte from [DE]
+	AND	07FH		; Mask parity
+	CP	C		; Compare two bytes
+	RET	NZ		; Return if not the same
+	INC	DE		; Increment pointers
+	INC	HL
+	DEC	B		; And count
+	JP	NZ,STRNCMP	; Continue until B bytes are done
+	RET
+
+;-----------------------------------------------------------------------
+
+; TPA - subroutine - finds start of ccp - 100H for safe TPA size
+
+; Entry:  none
+
+; Return:  HL and PSW destroyed
+;	   MEMTOP contains the result
+
+TPASET:
+	LD	HL,(WBOOT+1)	; Get bios warmboot address
+	LD	DE,-1603H	; Offset to CCP entry point
+	ADD	HL,DE
+	EX	DE,HL		; Put this limit address in DE
+	LD	HL,(BDOS+1)	; Get bdos address
+;;	LD	A,H		; High part in accumulator
+;;	SUB	9		; Subtract CCP size + "safe area"
+;;	LD	H,A		; Put result back in H
+;;	LD	L,0		; Make it an even page address
+	PUSH	DE		; Save value while we test
+	CALL	SUB16		; DE-HL
+	POP	DE		; Get address of ccp back
+	JP	NC,TPASET1	; If no carry, HL is smaller address
+	EX	DE,HL		; Else, use DE (smaller)
+TPASET1:
+	LD	(MEMTOP),HL	; And save top of memory
+	RET			; Done
+
+;-----------------------------------------------------------------------
+
+; NOTE: DIRTDU and GETNDR adapted from Z3LIB by Richard L. Conn
+
+; DIRTDU searches for the DIR named pted to by HL.  If found,
+; BC = DU (disk A = 0) and NZ.	If not found, A=0 and Zero Flag Set.
+; HL pts to delimiter at end of name.
+;
+	 IF	ZCPR3
+DIRTDU:
+	PUSH	DE		; Save DE
+
+; Save DIR Name in Buffer
+
+	LD	DE,DIRBUF	; Pt to buffer
+	LD	B,8		; 8 chars max
+DD1:
+	LD	A,(HL)		; Get char
+	CALL	DELCHK		; Check for delimiter
+	JP	Z,DD3
+	LD	(DE),A		; Store char
+	INC	HL		; Pt to next
+	INC	DE
+	DEC	B		; Count down
+	JP	NZ,DD1
+
+; Name longer than 8 chars - skip to delimiter
+
+DD2:
+	LD	A,(HL)		; Skip to delimiter
+	INC	HL		; Point to next
+	CALL	DELCHK		; Check for delimiter
+	JP	NZ,DD2
+	DEC	HL		; Point to delimiter
+	JP	DD4
+
+; Name shorter than 8 chars - space fill
+
+DD3:
+	LD	A,' '		; Space fill
+	LD	(DE),A		; Store space
+	INC	DE		; Pt to next
+	DEC	B		; Count down
+	JP	NZ,DD3
+
+; HL pts to delimiter, buffer contains name
+
+DD4:
+	PUSH	HL		; Save ptr to delimiter
+	LD	DE,DIRBUF	; Pt to directory name buffer
+	CALL	GETNDR		; Pt to named dir
+	JP	NZ,DD5
+
+; Directory Not Found
+
+DIRNF:
+	POP	HL		; Restore ptr to delimiter
+	POP	DE		; Restore DE
+	XOR	A		; Return with flag set
+	RET
+
+; Scan for Directory Name
+
+DD5:
+	LD	A,(HL)		; End of dir?
+	OR	A
+	JP	Z,DIRNF		; Not found if so
+	PUSH	HL		; Save ptr to current entry
+	PUSH	DE		; Save ptr to target name
+	INC	HL		; Pt to name
+	INC	HL
+	LD	B,8		; 8 chars
+DD6:
+	LD	A,(DE)		; Get target name
+	CP	(HL)		; Compare
+	JP	NZ,DD7
+	INC	HL		; Pt to next
+	INC	DE
+	DEC	B		; Count down
+	JP	NZ,DD6
+
+; DIR Names Match
+
+	POP	DE		; Restore ptrs
+	POP	HL
+	LD	B,(HL)		; Get disk number
+	DEC	B		; Disk A = 0
+	INC	HL		; Get user number
+	LD	C,(HL)		; In C
+	POP	HL		; Restore ptr to delimiter
+	POP	DE		; Restore DE
+	XOR	A		; Return NZ for OK
+	DEC	A
+	RET
+
+; Advance to Next DIR Entry
+
+DD7:
+	POP	DE		; Restore ptrs
+	POP	HL
+	LD	BC,18		; Pt to next entry
+	ADD	HL,BC
+	JP	DD5		; Resume search
+
+; Check for Delimiter in A
+
+DELCHK:
+	AND	7FH		; Capitalization
+	CP	'a'
+	JP	C,CAPPED
+	CP	'{'
+	JP	NC,CAPPED
+	AND	5FH
+CAPPED:
+	CP	'0'		; Numeric?
+	JP	C,DEL1
+	CP	'9'+1
+	JP	C,DEL2
+	CP	'A'		; Alphabetic?
+	JP	C,DEL1
+	CP	'Z'+1
+	JP	C,DEL2
+
+; Is a delimiter
+
+DEL1:
+	PUSH	BC
+	LD	B,A		; Save character
+	XOR	A		; Set Zero
+	LD	A,B
+	POP	BC
+	RET
+
+; Is not a delimiter
+
+DEL2:
+	PUSH	BC
+	LD	B,A		; Save char
+	XOR	A		; Set NZ
+	DEC	A
+	LD	A,B
+	POP	BC
+	RET
+
+; GETNDR returns the address of the named directory buffer in HL and
+; the maximum number of entries in A.  If there is no NDR buffer, A=0
+; and Zero Flag Set (Z).  No other registers are affected.
+
+GETNDR:
+	PUSH	DE		; Save DE
+	LD	HL,(Z3EADR)	; Point to environment
+	LD	DE,15H		; Point to entry
+	ADD	HL,DE
+	LD	E,(HL)		; Get address in DE
+	INC	HL
+	LD	D,(HL)
+	INC	HL
+	LD	A,(HL)		; Get size in A
+	EX	DE,HL		; HL contains address
+	POP	DE		; Restore DE
+	OR	A		; Set flag
+	RET
+	 ENDIF
+
+;-----------------------------------------------------------------------
+
+; Print the HELP message and quit.
+;
+HELP:	CALL	ILPRT
+
+	 IF	ZCPR3 AND NOT Z80DOS
+	DB	LF,TAB,TAB,TAB	; Extra line space and centering
+	 ENDIF
+	 IF	ZCPR3 AND Z80DOS
+	DB	LF,TAB,TAB	; Extra line space and centering
+	 ENDIF
+	 IF	Z80DOS AND NOT ZCPR3
+	DB	LF,TAB,TAB,TAB	; Extra line space and centering
+	 ENDIF
+
+	DB	'PPIP'
+	 IF	ZCPR3
+	DB	' for ZCPR3'
+	 ENDIF			; ZCPR3
+	 IF	Z80DOS
+	DB	' Z80DOS'
+	 ENDIF			; Z80DOS
+	 IF	CPM3
+	DB	' CP/M 3'
+	 ENDIF			; CPM3
+	DB	', Version ',VTENS,'.',VUNITS,CR,LF
+
+	DB	CR,LF,'USAGE:  PPIP '
+	DB	'[DU:'
+	 IF	ZCPR3
+
+	DB	' or dir:'
+	 ENDIF			; ZCPR3
+
+	DB	']<SOURCE.TYP>[ [DU:'
+
+	 IF	ZCPR3
+	DB	' or DIR:'
+	 ENDIF			; ZCPR3
+
+	DB	'][<DEST.TYP>]',0
+	CALL	HLPALL
+	CALL	ILPRT
+	DB	TAB,TAB,TAB,TAB,'<or>'
+	DB	CR,LF,LF,'        PPIP '
+	DB	'[[DU:'
+
+	 IF	ZCPR3
+	DB	' or DIR:'
+	 ENDIF			; ZCPR3
+
+	DB	']<DEST.TYP>=][DU:'
+
+	 IF	ZCPR3
+	DB	' or DIR:'
+	 ENDIF			; ZCPR3
+
+	DB	']<SOURCE.TYP>',0
+	CALL	HLPALL
+	JP	HELP0
+
+HLPALL:
+	CALL	ILPRT		; Print available options
+	DB	'[ ',0
+	LD	A,(SWITCH)
+	CALL	TYPE
+	CALL	ILPRT
+	DB	'options]',CR,LF,LF,0
+	RET
+
+HELP0:
+	LD	DE,OPTIONS	; Point to options status
+	LD	HL,OPMSG	; And to options messages
+HELP1:
+	CALL	ILPRT		; Tab over
+	DB	'Options (default):',0
+OPSTAT:
+	CALL	ILPRT
+	DB	CR,LF,TAB,0
+	LD	A,(DE)		; Get an option character
+	INC	DE		; Point to status byte
+	OR	A		; Is character NULL ?
+	JP	Z,DONEX		; YES - quit now
+	PUSH	AF		; Save the character
+	LD	A,(SWITCH)	; Print the switch
+	CALL	TYPE
+	POP	AF		; Retrieve the character
+	CALL	TYPE		; Then print that
+	LD	A,(DE)		; Get the status byte
+	INC	DE		; Point to next option
+	CP	OFF		; Print "OFF" or "ON"
+	JP	Z,HELP2
+	CALL	ILPRT
+	DB	' (ON)  - ',0
+	JP	HELP3
+HELP2:
+	CALL	ILPRT
+	DB	' (OFF) - ',0
+HELP3:
+	CALL	PRINT		; Then print the option message
+	JP	OPSTAT		; And repeat
+
+; Options messages in same order as OPTIONS: table
+
+OPMSG:	DB	'do CRC Verification',0
+	DB	'print the CRC value',0
+	DB	'copy only unarchived files',0
+	DB	'delete (Erase) R/W files without asking',0
+	DB	'delete (Wipe) R/W and R/O files without asking',0
+	DB	'move files - deletes source after copy',0
+;-----------------------------------------------------------------------
+
+	 IF	ZCPR3
+NOTZ3:
+	CALL	ILPRT
+	DB	'Not a ZCPR3 system or not installed: ABORTING!'
+	DB	BELL,0
+	JP	DONEX
+	 ENDIF
+;			  end of routine
+;-----------------------------------------------------------------------

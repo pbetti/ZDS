@@ -1,0 +1,770 @@
+; DATSTP.Z80
+;
+Vers	equ	19		; version number
+SubVers	equ	' '		; modification level
+;
+; Edits or displays file date stamps under ZSDOS, Z3PLUS, and DateStamper.
+;
+; *****************************************************************
+; *  DATSTP is very powerful and can destroy your date stamps!    *
+; *  Read the documentation carefully.  Make sure you understand  *
+; *  how it works before you use it.                              *
+; *****************************************************************
+;
+; USAGE:
+;
+;	DATSTP {dir:}fn.ft {date} {time} {{/}options}
+;
+; Everything is optional but the filename.  If no DU or DIR is given,
+; current drive and user is assumed.  If no date, time, or option is
+; given, current date stamps will be displayed.  If an option, date,
+; and/or time are given, the file's date stamp will be updated.  The
+; default is to edit and update the create stamp.
+;
+; OPTIONS:  A leading slash is always optional.
+;
+;	C	Edit current system date instead of date stamp.
+;
+;	M	Edit and write modify date stamp.
+;
+;	B	Write both create and modify date stamps.
+;
+;	Q	Toggle current setting of quiet mode.
+;
+; For important details, read the documentation!
+;
+; RE-ASSEMBLY:  See the accompanying documentation file.
+;
+; HISTORY:
+;
+; Version 1.9 -- December 16, 1991 -- Bruce Morgen
+;	Replaced all VLIB references with much shorter ZSLIB34
+;	routines.  This results in even the largest DATSTP
+;	executable (DATSTPU.4OM) coming in at a modest 6K.
+;
+; Version 1.8 -- October 9, 1991 -- Gene Pizzetta
+;	Some parsing bugs fixed.  An error in the GetOpt routine kept
+;	"/option" from working as the second parameter.  Meanwhile,
+;	Howard Goldstein found some bugs in the ZSLIB parsers which
+;	necessitated a new linkage anyway.  Lastly a few minor code
+;	tweeks.
+;
+; Version 1.7 -- August 29, 1991 -- Gene Pizzetta
+;	New parser allows very flexible date and time entry.  Added 
+;	C option to use current system time as stamp editing source.
+;	Changed most messages to in-line.  DateStamper date stamp
+;	reading and writing can be done as long as a !!!TIME&.DAT
+;	file exists on the disk; DateStamper need not be running.
+;	Uses several new ZSLIB 3.1 routines.  Version 1.6 was never
+;	released, but Bruce Morgen's excellent mods have been
+;	preserved here.
+;
+; Version 1.6 -- June 1, 1991 -- Bruce Morgen
+;	Restored vanilla DateStamper support through use of lower
+;	level DSLIB routines in the universal version.  Reduced
+;	Type 4 COM file size of that version to 48 records through
+;	use of ZML linker and a small change -- the CPM3 scratch
+;	buffer is no longer a defined space in DSEG.  At runtime,
+;	the UseCp3 routine selects Entry-1024 if DATSTP.COM is a
+;	Type 4, or ($memry) if it's a Type 3.  Some trival code
+;	pruning here and there, saved maybe a half-dozen bytes to
+;	help make room for the new stuff.
+;
+; Version 1.5 -- May 27, 1991 -- Gene Pizzetta
+;	Compensated (hopefully) for idiosyncracy of ZSDOS's P2DOS
+;	datestamper which does not always return zeros if no date
+;	stamp is found.  Thanks to Curtis Anderson and Howard Goldstein
+;	for pointing me toward this problem.  Replaced separate ZSLIB
+;	date modules with combined module that outputs both American
+;	and European date formats.  Replaced ZSLIB civilian time
+;	module with a new module that outputs "am" and "pm", instead
+;	of "p" or nothing.  Converted to Zilog mnemonics and
+;	shortened some code.
+;
+; Version 1.4 -- October 10, 1990 -- Gene Pizzetta
+;	Added date stamp writing under Z3PLUS.  Dropped support of
+;	DateStamper under ZRDOS, because of conflict between ZSLIB
+;	and DSLIB.  Added Type-4 version.  Not released.
+;
+; Version 1.3 -- October 8, 1990 -- Gene Pizzetta
+;	Incorporated Howard Goldstein's excellent optimizations that
+;	cut the code size considerably.  Added equates to create a
+;	universal version using DSLIB date stamp routines for operation
+;	under non-ZSDOS DateStamper, and under Z3PLUS (display only).
+;	ZSDOS version is considerably smaller, however.  Corrected
+;	lingering bug in the PARSDS module that gave an error when a
+;	colon was given that was not followed by a minute specification
+;	but was followed by another command line token.
+;
+; Version 1.2A -- September 12, 1990 -- Howard Goldstein
+;	Optimized code.  No functional changes (I hope).
+;
+; Version 1.2 -- September 8, 1990 -- Gene Pizzetta
+;	Failed to initialize option B flag.
+;
+; Version 1.1 -- September 7, 1990 -- Gene Pizzetta
+;	Improved display, especially for reverse video highlighting.
+;	Also corrected small bug in usage message, and made a few other
+;	minor code changes.
+;
+; Version 1.0 -- September 3, 1990 -- Gene Pizzetta
+;	Initial release.
+;
+;	Gene Pizzetta
+;	481 Revere St.
+;	Revere, MA 02151
+;
+;	Voice:  (617) 284-0891
+;	Newton Centre Z-Node:  (617) 965-7259
+;	Ladera Z-Node Central:  (213) 670-9465
+;
+FALSE	equ	0
+TRUE	equ	NOT FALSE
+N	equ	FALSE
+Y	equ	TRUE
+;
+; DOS selection -- Setting the ZSDOS equate below to TRUE creates a
+; version that works only under ZSDOS and ZDDOS.  Setting the Z3PLUS
+; equate below to TRUE creates a version that works only under Z3PLUS.
+; Setting both equates to TRUE creates a universal version that works
+; with ZSDOS, ZDDOS, Z3PLUS, and DateStamper.  The universal version
+; is larger, but it's worth it if use more than one system on the same
+; machine.
+;
+; Both equates cannot be set to FALSE.
+;  
+;ZSDOS	equ	TRUE		; TRUE for ZSDOS/ZDDOS version
+;Z3PLUS	equ	TRUE		; TRUE for Z3PLUS version
+;
+	.printx Answer "Y" to ZSDOS and Z3Plus for Universal version:
+	.accept	' For ZSDOS (y/n) ? ',ZSDOS
+	.accept ' For Z3Plus (y/n) ? ',Z3PLUS
+;
+ IF NOT ZSDOS AND NOT Z3PLUS
+	+++ ZSDOS and Z3PLUS cannot both be FALSE +++
+ ENDIF	; NOT ZSDOS AND NOT Z3PLUS
+;
+ IF NOT ZSDOS
+TypVers	equ	'P'		; CP/M-Plus version
+ ENDIF	; NOT ZSDOS
+ IF NOT Z3PLUS
+TypVers equ	'Z'		; ZSDOS version
+ ENDIF	; NOT Z3PLUS
+ IF ZSDOS AND Z3PLUS
+TypVers equ	'U'		; universal version
+ ENDIF	; ZSDOS AND Z3PLUS
+;
+; System addresses . . .
+;
+Bdos	equ	05h		; BDOS entry
+CpmFcb	equ	5Ch		; default file control block
+CpmDma	equ	80h		; default DMA buffer
+;
+; ASCII characters . . .
+;
+HON	equ	01h		; standout on
+HOF	equ	02h		; standout off
+BEL	equ	07h		; bell
+TAB	equ	09h		; tab
+LF	equ	0Ah		; linefeed
+CR	equ	0Dh		; carriage return
+;
+; Library requests -- note changing order for versions
+;
+ IF ZSDOS AND Z3PLUS
+	.request	zslib,dslib,z3lib,syslib
+ ELSE
+	.request	zslib,z3lib,syslib
+ ENDIF
+;
+; All versions use ZSLIB, Z3LIB, and SYSLIB.  Universal version
+; also uses DSLIB.
+;
+ IF ZSDOS
+	ext	getstp,setstp,gettim				; ZSLIB
+ ENDIF	; ZSDOS
+ IF Z3PLUS
+	ext	gstpcp,sstpcp,gtimep				; ZSLIB
+ ENDIF	; Z3PLUS
+	ext	isbcdd,bdostyp,bdosver,cpmver,sparsds,eatspc	; ZSLIB
+	ext	eatnspc,pdats1,ptimx2,gcomnam,comnam		; ZSLIB
+ IF ZSDOS AND Z3PLUS
+	ext	cktdf,fstnxt,gettd,settd,findck,rdclk		; DSLIB
+ ELSE
+	ext	f$exist						; SYSLIB
+ ENDIF
+	ext	retud,pfn3,cout,pafdc,phl4hc,isalpha		; SYSLIB
+;
+	ext	hvtinit,hvdinit,hvprint,hvpstr,hvon,hvoff	; VLIB
+;
+	ext	z3init,zsyschk,getquiet				; Z3LIB	
+	ext	puter2,inverror,z3log				; Z3LIB
+;
+; TYP3HDR.Z80, Version 1.1
+; This code has been modified as suggested by Charles Irvine so that
+; it will function correctly with interrupts enabled.
+;
+Entry:	jr	Start0		; must use relative jump
+	db	0		; filler
+	db	'Z3ENV',3	; type-3 environment
+Z3EAdr:	dw	0		; filled in by Z33
+	dw	Entry		; intended load address
+;
+; Configuration area . . .
+;
+	db	'DATSTP'	; filename for ZCNFG CFG file
+	db	Vers/10+'0',Vers mod 10+'0'
+QtFlag:	db	0		; FFh=defaults to quiet mode
+TimFmt:	db	0		; FFh=uses military time
+DatFmt:	db	0		; FFh=dd/mm/yy; 0=mm/dd/yy
+;
+$memry:	dw	00
+;
+Start0:	ld	hl,0		; point to warmboot entry
+	ld	a,(hl)		; save the byte there
+	di			; protect against interrupts
+	ld	(hl),0C9h	; replace warmboot with a return opcode
+	rst	0		; call address 0, pushing RetAddr onto stack
+RetAddr:
+	ld	(hl),a		; restore byte at 0
+	dec	sp		; get stack pointer to point
+	dec	sp		; ..to the value of RetAddr
+	pop	hl		; get it into HL and restore stack
+	ei			; we can allow interrupts again
+	ld	de,RetAddr	; this is where we should be
+	xor	a		; clear carry flag
+	sbc	hl,de		; subtract -- we should have 0 now
+	jr	z,Start		; if addresses matched, begin real code
+	add	hl,de		; restore value of RetAddr
+;
+	ld	de,NotZ33Msg-RetAddr ; offset to message
+	add	hl,de
+	ex	de,hl		; switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; return via BDOS print string function
+;
+NotZ33Msg:
+	db	'Not Z33+$'	; abort message if not Z33-compatible
+;
+; Program begins . . .
+;
+Start:	ld	hl,(Z3EAdr)	; set up environment
+	call	zsyschk		; is this a Z-system?
+	ret	nz		; (nope)
+	ld	(Stack),sp	; save old stack pointer
+	ld	sp,Stack	; ..and set up new stack
+	call	z3init
+	call	hvtinit
+ IF NOT Z3PLUS
+	call	bdostyp
+	cp	'S'		; ZSDOS?
+	jr	z,Start1	; (yes)
+	cp	'D'		; ZDDOS?
+	jp	nz,BadDos	; (no)
+ ENDIF	; NOT Z3PLUS
+ IF NOT ZSDOS
+	call	bdostyp
+	jp	nz,BadDos	; (no)
+	ld	a,(cpmver)	; CP/M-Plus?
+	cp	30h
+	jp	c,BadDos	; (no)
+ ENDIF	; NOT ZSDOS
+ IF ZSDOS AND Z3PLUS
+	call	bdostyp
+ ENDIF	; ZSDOS AND Z3PLUS
+;
+Start1:	ld	hl,DftNam	; point to default program name
+	call	gcomnam		; ..and get real one
+	call	getquiet	; is ZCPR quiet flag set?
+	rra
+	sbc	a,a
+	jr	nz,Start2	; (yes)
+	ld	a,(QtFlag)	; no, get quiet config byte
+Start2:	ld	(OpQFlg),a	; ..and store in Q option flag
+	ld	de,CLBuf	; move command line out of way
+	ld	hl,CpmDma	; CpmDma = 128 = length of move
+CLMvLp:	ld	a,(hl)		; clear source as we go
+	ld	(de),a
+	ld	(hl),h
+	inc	de
+	inc	l
+	jr	nz,CLMvLp
+	ld	a,(CpmFcb+1)	; is there a tail?
+	cp	' '
+	jp	z,Usage		; (no)
+	cp	'/'		; help request?
+	jp	z,Usage		; (yep)
+;
+GtTail:	call	GetOpt		; get options
+	ld	hl,CpmFcb+1	; check for ambiguous filename
+	ld	bc,11		; B = 0 from above
+	ld	a,'?'
+	cpir
+	jr	nz,GtTl1	; (still okay)
+	ld	a,8		; set error code
+	call	hvprint
+	db	' No ambiguous filenames.',0
+	jp	ErExit
+;
+GtTl1:	ld	a,(CpmFcb+15)	; check for valid directory
+	or	a
+	jp	nz,InvDir	; (nope)
+	ld	de,CpmFcb
+	call	z3log		; log into correct directory
+	ld	a,(OpQFlg)	; check quiet flag
+	or	a
+	call	z,PrtFn		; print filename unless quiet
+ IF ZSDOS AND Z3PLUS
+	ld	a,(bdosver)
+	or	a		; Assure than carry is clear
+	inc	a		; 0FFh (non-stamping DOS)?
+	call	z,cktdf		; If so, look for !!!TIME&.DAT
+	jp	c,GetErr	; Error exit if not found
+	ld	de,CpmFcb	; If here, we have a stamping DOS
+	ld	c,17		; DOS search first
+	call	fstnxt		; does file exist (via DSLIB)?
+	ld	(tdrec),de	; DSLIB returns !!!TIME&.DAT rec.
+	ld	a,b		; & index for GETTD/SETTD
+	ld	(tdindx),a
+	jr	nc,GtTl2	; (yes)
+ ELSE
+	call	f$exist
+	jr	nz,GtTl2	; (yes)
+ ENDIF
+	ld	a,10		; set error code
+	call	hvprint
+	db	'  File not found.',0
+	jp	ErExit
+;
+; here we get the current file date stamp and store it
+GtTl2:	call	GetDS		; get current and edit date stamps
+	ld	a,(OpDFlg)	; display only?
+	or	a
+	jr	nz,NoDat	; (yes)
+	ld	hl,(DatPtr)	; get pointer to command line datespec
+	ld	de,CpmDma	; assume create date
+	ld	a,(OpMFlg)	; check for M option
+	or	a
+	jr	z,PrsDat	; (our assumption was right)
+	ld	de,CpmDma+10	; no, we're doing modify date
+PrsDat:	ld	a,h		; HL = pointer to command line datespec
+	or	a		; H should be zero, if datespec exists
+	ld	a,(DatFmt)	; get date format flag
+	jr	nz,IsSpec
+	ex	de,hl		; HL = target date string
+	call	isbcdd		; check for valid date (could be from clock)
+	ex	de,hl		; DE = target date string
+	jr	NoSpec
+IsSpec:	call	sparsds		; parse CL date string
+NoSpec:	or	a
+	jr	z,GotDat	; (okay, so far)
+	ld	a,9		; set error flag
+	call	hvprint
+	db	'  Invalid date/time.',0
+	jr	ErExit
+;
+GotDat:	ld	a,(OpBFlg)	; both date stamps?
+	or	a
+	jr	z,GotDt2	; (yes)
+	ex	de,hl		; point to source field in hl
+	ld	de,CpmDma+10	; assume copying create date
+	ld	a,(OpMFlg)	; check option M flag
+	or	a
+	jr	z,GotDt1	; (assumption correct)
+	ld	e,CpmDma	; nope, doing modify (D = 0)
+GotDt1:	ld	bc,5
+	ldir
+;
+GotDt2:
+;	call	ShwDS		; /for debugging parser
+;	jr	Finish		; /no disk output
+;
+	call	WrtDS		; write date stamp to disk
+	ld	a,(OpQFlg)	; quiet mode?
+	or	a
+	jr	nz,Finish	; (yes)
+;
+NoDat:	call	ShwDS
+	jr	Finish
+;
+; Various errors bring us here . . .
+;
+BadDos:	ld	a,4		; set error code
+	call	hvprint
+ IF NOT Z3PLUS
+	db	' Requires ZSDOS or ZDDOS.',0
+ ENDIF	; NOT Z3PLUS
+ IF NOT ZSDOS
+	db	' Requires Z3PLUS.',0
+ ENDIF	; NOT ZSDOS
+ IF ZSDOS AND Z3PLUS		; universal
+	db	' Requires ZSDOS, Z3PLUS, or DateStamper.',0
+ ENDIF	; ZSDOS AND Z3PLUS
+	jr	ErExit
+;
+InvDir:	ld	a,2		; invalid directory
+	call	hvprint
+	db	' Invalid directory.',0
+	jr	ErExit
+;
+Finish:	xor	a		; no error
+ErExit:	call	puter2		; pass error code to error flag
+	ld	b,a		; error code in B for INVERROR
+	or	a		; any error?
+	call	nz,inverror	; (yes, call error handler)
+	call	hvdinit
+	ld	sp,(Stack)	; restore old stack pointer
+	ret			; ..and exit
+;
+; Subroutines . . .
+;
+; ShwDS -- prints all three date stamps
+;
+ShwDS:	call	hvprint
+	db	HON,'  Created:  ',HOF,' ',0
+	ld	hl,CpmDma	; print create date
+	call	PrtDS
+	call	hvprint
+	db	CR,LF,HON,'                   Modified: ',HOF,' ',0
+	ld	hl,CpmDma+10	; print modify date
+	call	PrtDS
+	call	hvprint
+	db	CR,LF,HON,'                   Accessed: ',HOF,' ',0
+	ld	hl,CpmDma+5	; print access date
+;
+; PrtDS -- prints a single date stamp (or "None").  Address in HL.
+;	
+PrtDS:	call	isbcdd		; is there a valid date?
+	jr	nz,PrtNon	; (no)
+	ld	a,(TimFmt)	; military or civilian time?
+	call	ptimx2		; print time
+	or	a		; check time format flag
+	ld	a,' '		; insert some spaces if not military
+	call	z,cout
+	call	z,cout
+	ld	a,(DatFmt)	; American or European date?
+	jp	pdats1		; print date and return to caller
+;
+; PrtNon -- prints "None"
+;
+PrtNon:	call	hvprint
+	db	'None',0
+	ret
+;
+; PrtFn -- Prints drive/user and filename on console
+;
+PrtFn:	call	hvon
+	ld	a,' '
+	call	cout
+	call	retud
+	ld	a,b		; get drive
+	add	a,'A'		; make it printable
+	call	cout		; ..and print it
+	ld	a,c		; get user
+	call	pafdc		; ..and print it
+	ld	a,':'
+	call	cout
+	push	de
+	ld	de,CpmFcb+1
+	call	pfn3		; print filename
+	pop	de
+	ld	a,c		; check user number size
+	cp	10		; is it two digits?
+	ld	a,' '
+	call	c,cout		; (no, print space)
+	jp	hvoff
+;
+; GetOpt -- checks command tail for user supplied options and sets
+; appropriate option flags.  Sets OpDFlg if only a filename is given.
+; DatPtr is null if no datespec is found.
+;
+GetOpt:	ld	hl,OpBFlg	; point to option flags
+	xor	a		; ..and initialize them to zero
+	ld	b,6		; options B, C, D, and M, plus DatPtr
+OptIni:	ld	(hl),a
+	inc	hl
+	djnz	OptIni
+	ld	hl,CLBuf+1	; point to command tail
+	call	eatspc		; move past filename and following spaces
+	call	eatnspc
+	call	eatspc
+	jr	z,OptD		; (filename only)
+	call	isalpha		; option?
+	jr	z,GotOp1	; (must be)
+	cp	'/'		; slash could be datespec or options
+	jr	nz,GetOp1	; (must be datespec)
+	inc	hl
+	ld	a,(hl)		; get next character
+	or	a
+	ret	z		; (end of command line, no datespec)
+	call	isalpha		; option?
+	jr	z,GotOp1	; (yes, must be)
+	dec	hl		; restore pointer
+GetOp1:	ld	(DatPtr),hl	; save pointer to datespec
+	call	eatnspc		; get past date string
+	call	eatspc
+	ret	z		; (end of tail)
+	call	isalpha		; option?
+	jr	z,GotOp1	; (has to be)
+	cp	'/'		; a slash?
+	jr	z,GotOpt	; (we've got options)
+	call	eatnspc		; get past timespec
+	call	eatspc
+	ret	z
+	cp	'/'		; a slash?
+	jr	nz,GotOp1	; (no, get options)
+GotOpt:	inc	hl		; move past slash
+GotOp1:	call	eatspc		; get option
+	ret	z		; (end of tail)
+	cp	'/'		; usage request?
+	jr	z,Usage		; (a mistake, but we'll do it)
+	ld	de,GotOpt
+	push	de		; get return address on stack
+	cp	'Q'		; quiet flag?
+	jr	z,OptQ
+	cp	'C'		; current date?
+	jr	z,OptC
+	cp	'M'		; modify date?
+	jr	z,OptM
+	cp	'B'		; modify and create dates?
+	jr	z,OptB
+	pop	de		; adjust stack
+	ld	a,19		; set error code
+	call	hvprint
+	db	' Invalid option.',0
+	jp	ErExit
+;
+; Option setting routines
+;
+OptQ:	ld	a,(OpQFlg)	; get Q flag
+	cpl			; flip
+	ld	(OpQFlg),a	; set it
+	ret			; return to GotOpt
+;
+OptM:	ld	(OpMFlg),a	; ..and store it
+	ret			; return to GotOpt
+;
+OptB:	ld	(OpBFlg),a	; store flag
+	ret			; return to GotOpt
+;
+OptC:	ld	(OpCFlg),a
+	ret			; return to GotOpt
+;
+OptD:	ld	(OpQFlg),a	; turn off quiet flag
+	dec	a		; make A=FFh
+	ld	(OpDFlg),a
+	ret			; return from GetOpt
+;
+Usage:	call	hvprint
+	db	HON
+DftNam:	db	'DATSTP ',HOF,'  Version ',TypVers,'-'
+	db	Vers/10+'0','.',Vers mod 10+'0',SubVers
+	db	'  (Type ',0
+	ld	a,((z3eadr-1))
+	call	pafdc
+	call	hvprint
+	db	' at ',0
+	ld	hl,Entry
+	call	phl4hc
+	call	hvprint
+	db	'h)',CR,LF
+	db	'Edits and displays file date stamps under '
+ IF NOT Z3PLUS
+	db	'ZSDOS.',CR,LF
+ ENDIF	; NOT Z3PLUS
+ IF NOT ZSDOS
+	db	'Z3PLUS.',CR,LF
+ ENDIF	; NOT ZSDOS
+ IF ZSDOS AND Z3PLUS		; universal
+	db	'ZSDOS, Z3PLUS, & DateStamper.',CR,LF
+ ENDIF	; ZSDOS AND Z3PLUS
+	db	HON,'USAGE:',HOF,CR,LF,'   ',0
+	ld	hl,comnam
+	call	hvpstr
+	call	hvprint
+	db	' {dir:}filename {date} {time} {{/}options}',CR,LF
+	db	'If no date and time or option is given, date stamps',CR,LF
+	db	'are displayed only.  Edit and write default to the',CR,LF
+	db	'create stamp.',CR,LF
+	db	HON,'DATE/TIME FORMAT:',HOF,CR,LF,'   ',0
+	call	PrtAE		; print American or European format
+	call	hvprint
+	db	'{yy} {hh}:{mm}  clock time',CR,LF,'   ',0
+	call	PrtAE
+	call	hvprint
+	db	'{yy} +{nnnn}    relative time',CR,LF
+	db	HON,'OPTIONS:',HOF,CR,LF
+	db	'   C   edit the current date and time',CR,LF
+	db	'   M   edit and write the modify stamp',CR,LF
+	db	'   B   write both the create and modify stamps',CR,LF
+	db	'   Q   quiet mode ',0
+	ld	a,(OpQFlg)	; check quiet mode
+	or	a
+	ld	hl,MsgUof
+Usage2:	call	nz,hvpstr
+	call	hvprint
+MsgUs4:	db	CR,LF
+	db	'Option C overrides option M for edit.',0
+	jp	Finish
+;
+PrtAE:	ld	a,(DatFmt)	; check European flag
+	or	a
+	jr	nz,PrtEur	; it's European
+PrtAm:	call	hvprint
+	db	'{mm}/{dd}/',0
+	ret
+PrtEur:	call	hvprint
+	db	'{dd}.{mm}.',0
+	ret
+;
+MsgUof:	db	'off',0
+;
+; GetDS -- Get date stamp from file
+;
+GetDS:	ld	de,CpmFcb
+	ld	hl,CpmDma	; point to DMA buffer
+ IF NOT Z3PLUS
+	call	getstp		; get ZSDOS file stamp
+ ENDIF	; NOT Z3PLUS
+ IF NOT ZSDOS
+	call	gstpcp		; get CP/M-Plus file stamp
+ ENDIF	; NOT ZSDOS
+ IF ZSDOS AND Z3PLUS
+	ld	a,(cpmver)	; what are we dealing with?
+	cp	30h
+	jr	c,SkpGst
+	call	gstpcp		; (Z3PLUS)
+	jr	SkpGs1
+SkpGst:	call	getstp		; (ZSDOS)
+ ENDIF	; ZSDOS AND Z3PLUS
+SkpGs1:	jr	z,GetClk	; (okay, now check for option C)
+ IF ZSDOS AND Z3PLUS
+	ld	a,(tdindx)
+	ld	de,(tdrec)
+	call	gettd
+	jr	nz,GetClk
+ ENDIF
+GetErr:	ld	a,4		; set error code
+	call	hvprint
+	db	'  Date stamp read error.',0
+	jp	ErExit
+;
+GetClk:	ld	a,(OpCFlg)
+	or	a
+	ret	z
+	ld	hl,ClkBuf	; point to clock buffer
+ IF NOT Z3PLUS
+	call	gettim		; get ZSDOS time
+ 	jr	nz,ClkErr
+ ENDIF	; NOT Z3PLUS
+ IF NOT ZSDOS
+ 	call	gtimep		; get Z3Plus time
+ 	jr	nz,ClkErr
+ ENDIF	; NOT ZSDOS
+ IF ZSDOS AND Z3PLUS
+	ld	a,(cpmver)
+	cp	30h
+	jr	c,SkpGtp
+	call	gtimep
+	jr	SkpGt1
+SkpGtp:	call	gettim
+SkpGt1:	jr	z,GotClk
+	push	hl		; save buffer address
+	call	findck
+	pop	hl
+	jr	z,ClkErr
+	push	hl
+	call	rdclk
+	pop	hl
+	jr	z,ClkErr
+ ENDIF	; ZSDOS AND Z3PLUS
+GotClk:	ld	bc,5		; number of bytes to move
+	ld	de,CpmDma	; assume create date
+	ld	a,(OpMFlg)
+	or	a
+	jr	z,GotCk1	; (correct assumption)
+	ld	e,CpmDma+10	; no, use modify date
+GotCk1:	ldir
+	ret
+;
+ClkErr:	ld	a,4		; set error code
+	call	hvprint
+	db	'  Clock read error.',0
+	jp	ErExit
+;
+; WrtDS -- writes date stamp to file
+;
+WrtDS:	ld	de,CpmFcb	; setup for file stamping
+	ld	hl,CpmDma
+ IF NOT Z3PLUS
+	call	setstp		; set ZSDOS file stamp
+	ret	z		; (okay)
+ ENDIF	; NOT Z3PLUS
+ IF NOT ZSDOS
+	jr	UseCp3		; use Carson Wilson's routine
+ ENDIF	; NOT ZSDOS
+ IF ZSDOS AND Z3PLUS		; universal
+	ld	a,(cpmver)
+	cp	30h
+	jr	nc,UseCp3
+	call	setstp		; set ZSDOS file stamp
+	ret	z		; (okay)
+	ld	a,(tdindx)
+	ld	de,(tdrec)
+	call	settd
+	jr	z,WrtErr
+	xor	a
+	ret
+ ENDIF	; ZSDOS AND Z3PLUS
+WrtErr:	ld	a,4		; set error code
+	call	hvprint
+	db	'  Date stamp write error.',0
+	jp	ErExit
+;
+ IF Z3PLUS
+;
+; UseCp3 -- set-up for ZSLIB SSTPCP routine.
+;
+UseCp3:	push	hl		; save date address
+	push	de		; save fcb address
+	ld	de,CLBuf	; SSTPCP trashes date string for
+	ld	bc,15		; ..printing purposes, so
+	ldir			; ..we save it first
+	pop	de		; recover fcb address
+	pop	hl		; recover date address
+	push	hl		; ..and save it again
+	ld	bc,entry-1024	; address of DMA buffer in BC
+	ld	a,(Z3Eadr-1)
+	cp	4
+	jr	z,Cp3Ty4
+	ld	bc,($memry)	; address of DMA buffer in BC
+Cp3Ty4:	call	sstpcp		; call routine
+	pop	de		; put date address in DE
+	ld	hl,CLBuf	; restore date string
+	ld	bc,15
+	ldir
+	jr	nz,WrtErr	; (write error)
+	ret
+ ENDIF	; Z3PLUS
+;
+	DSEG
+;
+; Uninitialized storage . . .
+;
+OpQFlg:	ds	1		; current quiet mode flag
+OpBFlg:	ds	1		; option B flag
+OpCFlg:	ds	1		; option C flag
+OpDFlg:	ds	1		; display only (not really an option)
+OpMFlg:	ds	1		; option M flag
+DatPtr:	ds	2		; pointer to date token in cmd line
+ClkBuf:	ds	6		; clock read buffer
+CLBuf:	ds	128		; command line storage
+ IF ZSDOS AND Z3PLUS
+tdindx:	ds	1
+tdrec:	ds	2
+ ENDIF	; ZSDOS AND Z3PLUS
+	ds	60		; stack
+Stack:	ds	2		; old stack pointer
+
+	end
+

@@ -1,0 +1,82 @@
+; Functions for communicationbetween cp/m 3 an yazebios
+
+y_cpm3init	equ	0e0h	; CP/M 3 init and drivescans:
+				; INPUT: HL = YCT (Yaze-Control-Table)
+				; RETURN: NONE
+
+y_saveccp	equ	0e1h	; saves CCP from 0100H in bank 1:
+				; INPUT: NONE
+				; RETURN: NONE
+
+y_cpm3warmboot	equ	0e2h	; makes an warm boot for CP/M 3:
+				; Funtion: 1. select bank 1 explizit
+				;	   2. Put the CCP to 0100H in bank 1,
+				;	   2. set up the jumps in page 0
+				;		(get bdos von SCB+@MXTPA)
+				;	   3. jump to 0100H (in bank 1)
+				; INPUT: NONE
+				; RETURN: NONE
+
+y_callmonitor	equ	254	; calls the monitor in yaze
+				; IMPORTANT: directly after the call you can
+				;	place a string with a command.
+				;	This string must terminate with 0.
+				;	If only 0 is present the monitor is
+				;	called in command line modus.
+				;	A string or only 0 is requisite.
+
+y_exit		equ	0ffh	; Exit Yaze (go back to unix shell):
+				; INPUT: NONE
+				; RETURN: came never back from this ;-)
+
+; Function No. for the MMU in YAZE
+;
+y_mmutsel	equ	27 ;; 0f0h	; MMU-Table-select:
+;;y_mmutsel	equ	0f0h	; MMU-Table-select:
+				; INPUT:  A = number of the MMU-Tab to sel.
+				; RETURN: A=00 OK, MMU-table is now selected
+				;	  A=FFH number of MMU-tab is greater
+				;		than MMUTABLES
+
+y_loadmmutab	equ	0f1h	; Load a mmutable:
+				; INPUT:  HL = Pointer to table:
+				;		first byte = No. of MMU-Table
+				;		2-17: 16 byte for MMU-tabelle
+				; RETURN: A=00 OK, MMU-table is loaded
+				;	A=FFh something is wrong:
+				;	if HL points to the begin of the table,
+				;	  the mmutable to load is wrong.
+				;	else HL points to the pagepointer which
+				;	  is wrong.
+
+y_printmmu	equ	0f2h	; Print MMU
+
+y_selmmut	equ	0f3h	; give back the selected MMU-table in reg. A
+
+y_mmustat	equ	0f4h	; gibt back the status of the MMU:
+				;	A = selected MMU
+				;	B = number of MMU-tables (MMUTABLES)
+				;	C = number of pagepointers in one 
+				;	    MMU-table (MMUPAGEPOINTERS)
+				;	E = number of pages of the RAM
+				;	    (RAMPAGES)
+				;	HL = size of memory in KB (MEMSIZE)
+				;
+
+y_mmutselw	equ	0f5h	; MMU-Table-select + WBOOT:
+				; INPUT:  A = number of the MMU-Tab to l.
+				; RETURN: IF OK --> WBOOT,
+				;		MMU-table is now selected
+				;	  A=FFH number of MMU-tab is greater
+				;		than MMUTABLES
+
+
+	; macrodefiniton:
+
+ybios	macro funct
+	halt
+	db funct
+endm
+
+; end of yazebios.lib
+

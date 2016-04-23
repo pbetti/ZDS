@@ -1,0 +1,197 @@
+	title	'Bank & Move Module for the Modular CP/M 3 BIOS'
+
+;	CP/M-80 Version 3	-- Modular BIOS
+;	Bank and Move Module for P112
+;	Initial version 1.0
+;	Compile with M80
+
+	public	?move,?xmove,?bank
+
+	extrn	?get$bank$bbr,?abs$addr
+	extrn	@cbnk,@dbnk,@dma
+
+	.z80
+z80182	equ	1
+	include	Z180.INC
+	include	P112EQU.INC
+
+
+	cseg	; must be in common memory
+
+?xmove:
+    if banked
+	ld	(src$bnk),bc	; c -> src$bnk, b -> dst$bnk
+    endif
+	ret
+
+?move:
+	ex	de,hl		; we are passed source in DE and dest in HL
+    if banked
+	ld	a,(src$bnk)	; contains 0FFh if normal block move
+	inc	a
+	jr	nz,inter$bank$move
+    endif
+	ldir			; use Z80 block move instruction
+	ex	de,hl		; need next address in same regs
+	ret
+
+; select bank in A
+
+?bank:
+    if banked
+	call	?get$bank$bbr
+	out0	(bbr),a
+    endif
+	ret
+
+    if banked
+
+inter$bank$move:		; source in HL, dest in DE, count in BC
+      if 0			; *** DOES NOT WORK PROPERLY
+				;     (Crossing Bank boundary problems)
+	push	hl
+	ld	hl,(@dma)
+	ex	(sp),hl
+	ld	a,(@dbnk)
+	push	af
+
+	push	hl
+
+	ld	(@dma),hl
+	ld	a,(src$bnk)
+	ld	(@dbnk),a
+	call	?abs$addr
+	out0	(sar0l),l	; setup DMA src address
+	out0	(sar0h),h
+	out0	(sar0b),a
+
+	ld	(@dma),de
+	ld	a,(dst$bnk)
+	ld	(@dbnk),a
+	call	?abs$addr
+	out0	(dar0l),l	; setup DMA dst address
+	out0	(dar0h),h
+	out0	(dar0b),a
+
+	ld	a,2		; DMA burst mode
+	out0	(dmode),a
+	out0	(bcr0l),c	; setup DMA count
+	out0	(bcr0h),b
+	ld	a,40h		; enable DMA0
+	out0	(dstat),a	; move the block
+
+	pop	hl
+
+	pop	af
+	ld	(@dbnk),a
+	ex	(sp),hl
+	ld	(@dma),hl
+	pop	hl
+
+	add	hl,bc		; src must point past end block
+	ex	de,hl
+	add	hl,bc		; and so must dst
+	ld	bc,0
+
+	ld	a,0FFh
+	ld	(src$bnk),a
+
+	ret			; return with src in DE, dst in HL, count = 0
+
+      else
+
+      if 0			; *** NO GOOD EITHER
+
+move$blk:
+	ld	a,b
+	or	a
+	jr	z,lt$256
+	push	bc
+	push	de
+	ld	de,tmp$buf
+	ld	bc,256
+	ld	a,(src$bnk)
+	call	?bank
+	ldir
+	pop	de
+	push	hl
+	ld	hl,tmp$buf
+	ld	bc,256
+	ld	a,(dst$bnk)
+	call	?bank
+	ldir
+	pop	hl
+	pop	bc
+	dec	b		; count -= 256
+	jr	move$blk
+lt$256:
+	or	c
+	jr	z,end$move
+	push	de
+	push	bc
+	ld	de,tmp$buf
+	ld	a,(src$bnk)
+	call	?bank
+	ldir
+	pop	bc
+	pop	de
+	push	hl
+	ld	hl,tmp$buf
+	ld	a,(dst$bnk)
+	call	?bank
+	ldir
+	pop	hl
+end$move:
+	ex	de,hl
+	ld	a,0FFh
+	ld	(src$bnk),a
+	ld	a,(@cbnk)
+	call	?bank
+	ret
+
+tmp$buf: ds	256
+
+      else			; *** INNEFICIENT, BUT WORKS
+
+	ld	(tmp$sp),sp
+	ld	sp,tmp$stk
+mv$blk:
+	ld	a,(src$bnk)
+	call	?bank
+	ld	a,(hl)
+	ld	(tmp$byte),a
+	ld	a,(dst$bnk)
+	call	?bank
+	ld	a,(tmp$byte)
+	ld	(de),a
+	inc	hl
+	inc	de
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,mv$blk
+	ld	a,(@cbnk)
+	call	?bank
+	ld	a,0FFh
+	ld	(src$bnk),a
+	ex	de,hl
+	ld	sp,(tmp$sp)
+	ret
+
+	ds	16
+tmp$stk:
+tmp$sp:   ds	2
+
+tmp$byte: ds	1
+
+      endif
+      endif
+
+src$bnk: db	0FFh
+dst$bnk: db	0FFh
+
+
+    endif
+
+	end
+

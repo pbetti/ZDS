@@ -1,0 +1,324 @@
+ Introduction to the Sort Routines
+ Sort Sel. Block Initializer   - SSBINIT
+ Main Sort Routine             - SORT
+ Miscellaneous Routines -- Introduction
+ BDOS and BIOS Routines        - BDOS, BIOS
+ Character/Nybble Conversions  - CATH, @B2HH, @B2HL
+ Command Line Tail Extraction  - CLINE
+ End of Code                   - CODEND, $MEMRY
+ Exchange Nybbles              - EN
+ Memory Fill Routines          - FILLx, HFILx
+ Memory Move Routines          - MOVEx, HMOVx
+ Delay Routine                 - PAUSE
+ Version Number of SYSLIB      - VERSION
+:Introduction to the Sort Routines
+
+Two routines are provided which give you access to a very
+flexible sorting system.  The main routine is called SORT, and
+it provides a utility which does an in-memory sort of a set of
+fixed-length records.  The sorting technique used is a Shell
+Sort, adapted from the book "Software Tools" by Kernigan and
+Plaugher, published by Addison-Wesly, 1976, page 106.  This
+sort is much faster than the simple bubble sort.
+
+This Shell Sort can be done in two ways: with or without using
+pointers.  Sorting without using pointers is typically slower
+than sorting with pointers, and the only advantage to not using
+pointers is the space savings from not having pointers
+(2*number of entries bytes).  If pointers are used for the
+sort, then whenever an exchange is done, the pointers are
+simply exchanged, rather than the full records, thereby
+decreasing sort time in most casts.
+
+  The SORT routine is controlled by passing a pointer to a
+Sort Specification Block (SSB).  This Sort Specification Block
+is a series of 2-byte words organized as:
+	Bytes 0&1: Starting Address of 1st Record
+	Bytes 2&3: Number of Records to Sort
+	Bytes 4&5: Size of Each Record (in Bytes)
+	Bytes 6&7: Address of User-Supplied Compare Routine
+		This routine compares two records, one pointed
+		to by HL and the other pointed to by DE.  If
+		the record pointed to by DE is less in sorting
+		order than that pointed to by HL, this Compare
+		Routine is to return with Carry Set (C).  If
+		the records are equal in sorting order, this
+		Compare Routine is to return with Zero Set (Z).
+		Only the AF is to be affected by the Compare 
+		Routine.
+	Bytes 8&9: Address of Pointer Table
+	Byte 10:  Flag; 0FFH means to use pointers, 0 means not
+	Byte 11:  Unused
+
+  As mentioned previously, two routines are available in this
+sort module.  The first routine, SSBINIT, looks at the begin-
+ning of a scratch area and the initial contents of an SSB and
+allocates space for the pointer table.  It also checks to see
+if the buffer required overflows the Transient Program Area.
+
+  The second routine, SORT, performs the sort, and controlled
+by the SSB pointer passed to it in DE.
+
+:SSBINIT - SSB Initializer
+
+  ENTER: HL = Pointer to start of Scratch RAM area
+	 DE = Pointer to SSB
+  EXIT :  A <> 0, Zero Flag Reset (NZ) if Ok
+	      A = 0, Zero Flag Set (Z) if TPA Overflow
+  USES : AF
+
+ Usage:  This routine may be used as described above before any
+records are loaded into memory for the sort, or it may be used
+after the records have already been loaded.  In the latter case,
+you should save the start address of the first record and call
+SSBINIT with the address of the first byte after the last
+record.  Once SSBINIT has loaded the buffers in the SSB and
+checked for a TPA overflow (note that this is done for the
+pointers only), it will return to the caller, at which time you
+should restore the first two bytes of the SSB to their proper
+values, the actual start address of the first record.
+
+SSBINIT loads bytes 0&1 (address of first record) and 8&9
+(address of pointer table) of an SSB, checking for TPA
+overflow.  It sets the Pointer Table to start at the specified
+scratch RAM area, examines the record size and record count
+entries of an SSB, and adds the product of these two to the
+starting address of the pointer table.  The resulting address
+is returned as the address of the first record.
+
+:SORT - Sort set of fixed length records
+
+  ENTER: DE = Pointer to Sort Specification Block (SSB)
+  EXIT : None   (Records are Sorted)
+  USES : None
+
+  Special Error Conditions:  In the unlikely event of an error
+  within the SORT routine, the Error Message "SORT Pointer
+  Error" may be printed.  This indicates a flaw has developed
+  with the SORT routine and it could not SORT the set of
+  records as desired.  This is fatal and will abort to CP/M.
+
+ Usage:  This routine sorts the set of fixed length records
+  according to the control information in the Sort Specifica-
+  tion Block (SSB) addressed by DE.  No special action is
+  required, nor possible in its operation.
+
+:      Miscellaneous Routines -- Introduction 
+
+  The following Routines are described in this Section:
+	BDOS	    For Direct BDOS Interface
+	BIOS	    For Direct BIOS Interface
+	CAPS	    For Character Capitalization
+	CAPSTR	    For String Capitalization
+	CATH	    Convert ASCII Character to Hexadecimal
+	@B2HH,@B2HL Convert High and Low Nybbles of byte to Hex
+	CLINE	    Command Line Extraction
+	CODEND	    Provide End of Code/Data Area
+	EN	    Exchange Nybbles in A
+	FILLB	    Fill Memory (up to 255 bytes)
+	 FILLBC	    Fill Memory (up to 65,535 bytes)
+	 HFILB	    Fill Memory (up to 255 bytes)
+	 HFILBC	    Fill Memory (up to 65,535 bytes)
+	MOVEB	    Move Memory (up to 255 bytes)
+	 MOVEBC	    Move Memory (up to 65,535 bytes)
+	 HMOVB	    Move Memory (up to 255 bytes)
+	 HMOVBC	    Move Memory (up to 65,535 bytes)
+	PAUSE	    Delay N 10th of a Second
+	VERSION	    Return Version Number of SYSLIB
+:BDOS - Call a BDOS Function
+
+  ENTER: DE = Arguments (if needed for function)
+	  C = BDOS Function Number
+  EXIT :  A = Return Status/Parameter (if returned)
+	 HL = Return Parameter (if returned)
+  USES : AF,HL
+
+ Usage:  This routine provides a way of calling the BDOS while
+  preserving the BC and DE registers.  This is often of benefit
+  when dealing with FCB addresses in DE and/or loop counters in
+  the B register.
+
+BIOS - Call a BIOS Function directly
+
+  ENTER:  A = Offset to BIOS Function Entry in Jump Table
+	 BC = Function Parameters (if needed)
+  EXIT :  A,BC - Return Parameters (if returned)
+  USES : AF,BC,DE,HL
+
+ Usage:  This routine is most often used to provide very fast
+  response where BDOS overhead cannot be tolerated.  This
+  routine provides you with a direct interface into the CP/M
+  BIOS.  It is called with an index offset into the BIOS jump
+  tale.  No registers are preserved by this routine.
+
+  The following table summarizes the BIOS Jump Table Entries:
+
+ Offset      Function
+    0	  Cold Start
+    1	  Warm Boot
+    2	  Console Status; Returns A=0FFH if char ready, A=0 if not
+    3	  Console Input; Returns char in A
+    4	  Console Output; Char passed in C
+
+    5	  List Output; Char passed in C
+    6	  Punch Output; Char passed in C
+    7	  Reader Input; Returns char in A
+    8	  Home Disk Head
+    9	  Select Disk; Disk Number (A=0, etc) passed in C
+   10	  Set Track Number; Track Number passed in C
+   11	  Set Sector Number; Sector Number passed in C
+   12	  Set DMA Address; DMA Address passed in BC
+   13	  Read Block from Disk; Returns A=0 if OK, A=1 if Error
+   14	  Write Block to Disk; Returns A=0 if OK, A=1 if Error
+   15	  List Status; Returns A=0FFH if ready, A=0 if not
+   16	  Sector Translation, Logical-to-Physical; Logical Sector
+		Number passed in BC, Translate Table Address in
+		DE; Returns Physical Sector Number in HL
+
+:CATH - Convert ASCII to Hexadecimal
+
+  ENTER:  A = ASCII Hex Character ("0"-"9", "A"-"F")
+  EXIT :  A = Binary value represented by Char
+  USES : AF
+  Special Error Conditions: If invalid Hex character is passed,
+	a Space (20 Hex) is returned in A.
+
+ Uses:  This utility routine is often useful in numeric
+  conversion and entry routines.  It simply converts the ASCII
+  Hexadecimal character provided to its Binary representation.
+
+@B2HH - Convert High Nybble of byte to Hex digit
+ @B2HL - Convert Low Nybble of byte to Hex digit
+
+  ENTER:  A = Data byte to convert
+  EXIT :  A = Hex character (0..9,A..F) for specified nybble
+  USES : AF.  All other registers not affected
+
+ Usage:  These routines are used to perform conversions from
+  binary nybbles to Hexidecimal ASCII characters.
+
+Example:
+	EXT	@B2HH,@B2HL
+	...		; Enter with byte in A
+	PUSH	AF	; Save the byte
+	CALL	@B2HH	; Call the routine
+	...		; do something with high nybble
+	POP	AF	; restore original byte
+	CALL	@B2HL	; Now have Hex char of low nybble
+	...		; do something with it
+
+:CLINE - Command Line Tail Extraction
+
+  ENTER: HL = Address of Command Line Buffer (Char Count)
+  EXIT : HL = Address of Command Line String (1st Char)
+	  A <> 0, Zero Flag Clear (NZ) if Buffer OK
+	      A = 0, Zero Flag Set (Z) if Buffer Truncated
+  USES : AF,HL
+
+ Usage:  This routine is used to free the default buffer at 80H
+  by copying the contents to a local buffer.  The preserved
+  copy may then be parsed or evaluated at a later time.  The
+  line may be up to 255 characters long and will be truncated
+  if longer.  The string will be terminated by a <NULL> as per 
+  the SYSLIB concept of strings.
+
+:CODEND - End of Code
+
+  ENTER: None
+  EXIT : HL = Address of Page above last byte used in Program
+  USES : HL
+
+ Usage:  This routine is most often used to determine the base
+  address of free memory for use in Sorting, Directory Listing
+  and other programs.  Scratch memory extends from the value
+  returned by CODEND to the base of the CCP or BDOS.
+
+
+     Buffer Name:  $MEMRY
+
+$MEMRY contains the address of the next available byte of
+memory after the last module loaded and resolved by MicroSoft's 
+LINK-80 linker, SLR Systems' SLRNK or Mitek's ZLINK.  This
+reserved global variable should be accessed as:
+
+	...
+	EXT	$MEMRY
+	...
+	LD	HL,($MEMRY)	; get value
+	...
+
+    Contents:  Address of next available byte
+
+:EN - Exchange Nybbles
+
+  ENTER:  A = Byte to manipulate
+  EXIT :  A = Manipulated Byte
+  USES : AF
+
+ Usage:  This routine simply exchanges the Nybbles in the A
+  Register; High-order four bits are exchanged with Low-order
+  four bits.
+
+:FILLB, FILLBC, HFILB, HFILBC - Memory Fill Routines
+
+  ENTER: HL = Pointer to first byte of Memory area to fill
+	 BC (FILLBC and HFILBC) = Number of Bytes to fill
+	  B (FILLB and HFILB)   = Number of Bytes to fill
+	  A = Value to store in Buffer
+  EXIT : HL (HFILB and HFILBC only) = Pter to byte after last
+  USES : HL (HFILB and HFILBC only)
+
+ Usage:  These routines are used to fill an area of memory with
+  a constant byte value.  FILLB can fill up to a 256-byte
+  buffer, and FILLBC can fill up to a 65,536-byte (within
+  reason) buffer.
+
+  FILLB and FILLBC have no effects on any registers.  HFILB and
+  HFILBC both affect the HL register pair, and they return with
+  HL pointing to the byte after the last byte filled.  HFILB
+  and HFILBC are useful when further processing from the last
+  point filled is desired.
+
+:MOVEB, MOVEBC, HMOVB, HMOVBC - Memory Move Routines
+
+  ENTER: HL = Pointer to first byte of Source Buffer
+	 DE = Pointer to first byte of Destination Buffer
+	 BC (MOVEBC & HMOVBC) = Number of Bytes to move
+	  B (MOVEB & HMOVB)   = Number of Bytes to move
+  EXIT : HL (HMOVB & HMOVBC) = Ptr to byte after last Source
+	 DE (HMOVB & HMOVBC) = Ptr to byte after last Dest.
+  USES : HL,DE (HMOVB & HMOVBC only)
+
+ Usage:  These routines are used to move the block of memory
+  specified by the Source address to the specified destination
+  memory location.  MOVEB can move up to a 256-byte buffer, and
+  MOVEBC can move up to a 65,536-byte buffer.
+
+  MOVEB and MOVEBC have no effects on any registers.  HMOVB and
+  HMOVBC both affect the HL register pair, and they return with
+  HL and DE pointing to the byte after the last byte moved.
+  HMOVB and  HMOVBC are useful when further processing from the
+  last point filled is desired.
+
+:PAUSE - Delay Routine
+
+  ENTER: HL = Number of 10ths of a Second Delay desired
+	  B = Processor Speed in MHz (1,2,3,...)
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is simply used to delay from one to 65,536
+  tenths of a second.  Calculations are approximate and depend
+  on accuracy on clock specification and number of clock cycles
+  per opcode in the delay code. (i.e. the Z180/64180 execute in
+  fewer clock cycles than the Z80)
+
+:VERSION - Version Number of SYSLIB
+
+  ENTER: None
+  EXIT : HL = Version (H=Major, L=Minor.  H=4, L=0 for 4.0)
+  USES : HL
+
+ Usage:  This routine simply returns the library version, and
+  Identification text string.
+

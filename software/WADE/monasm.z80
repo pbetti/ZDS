@@ -1,0 +1,410 @@
+	title	Assembler Module for Monitor
+	name	('MONASM')
+;
+;	Last Edited	84-06-24	Wagner
+;
+;	Copyright (c) 1984 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, October 1990
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+	maclib	monopt.lib
+;
+	entry	assemble
+	entry	opnd1,opnd2
+;
+	ext	srchmnemo,translate
+;
+if	symbolic
+	ext	rdsymname,defsymbol
+endif;SYMBOLIC
+if	extended
+	ext	peek,poke,peekbuf
+endif;EXTENDED
+	ext	skipsp,skipsep,getch,testch,isletter
+	ext	rdregister,expression
+	ext	cmderr
+	ext	ccnam,caddress,string
+
+	cseg
+;
+;	assemble:	assemble one line
+;
+;		entry:	A/HL = address
+;
+assemble:
+	ld	(caddress),hl
+if	extended
+	push	af
+endif;EXTENDED
+if	symbolic
+	push	ix
+	call	rdsymname
+	jr	c,assemnosym
+	call	getch
+	cp	':'
+	jr	nz,assemnosym
+	pop	de		; discard old IX
+	ld	de,(caddress)
+	call	defsymbol
+	call	skipsep
+	jr	assemsymbol
+assemnosym:
+	pop	ix
+assemsymbol:
+endif;SYMBOLIC
+	ld	hl,'  '
+	ld	(opnd1),hl
+	ld	(opnd1+2),hl
+	ld	hl,opnd1
+	ld	b,4
+mnloop:
+	call	getch
+	call	isletter
+	jr	c,mnloop10
+	ld	(hl),a
+	inc	hl
+	djnz	mnloop
+	call	getch
+mnloop10:
+	or	a
+	jr	z,mnloop11
+	cp	' '
+	jp	nz,cmderr
+mnloop11:
+	ld	hl,opnd1
+	call	srchmnemo
+	jp	c,cmderr
+	ld	(mnemo),a
+;
+;	get operands
+;
+	ld	hl,opnd1
+	ld	de,opnd1+1
+	ld	bc,15		; clear operand 1 & 2
+	ld	(hl),0
+	ldir
+	call	skipsp
+	call	testch
+	jr	z,getopndend	; ready if no first operand
+	ld	iy,opnd1
+	ld	b,0
+	call	analopnd	; analyse first operand
+	call	skipsep
+	call	testch
+	jr	z,getopndend	; ready if no second operand
+	ld	iy,opnd2
+	ld	b,1
+	call	analopnd	; analyse second operand
+	call	testch
+	jp	nz,cmderr	; error if something else
+getopndend:
+	ld	ix,opnd1
+	ld	iy,opnd2
+	ld	a,(ix+0)
+	or	a		; prefix for operand 1 ?
+	jr	z,getopnden10
+	ld	a,(iy+0)
+	or	a
+	jr	z,getopnden10
+	cp	(ix+0)
+	jp	nz,cmderr	; error if prefix <> in both operands
+getopnden10:
+;
+;	translate the opcode
+;
+	ld	a,(mnemo)
+	call	translate
+	jp	c,cmderr
+;
+;	store
+;
+if	extended
+	ld	hl,(caddress)
+	pop	af
+	call	peek
+	ld	hl,string
+	ld	de,peekbuf
+else
+	ld	hl,string
+	ld	de,(caddress)
+endif;EXTENDED
+	ld	c,b
+	ld	b,0
+if	extended
+	push	bc
+endif;EXTENDED
+	ldir
+if	extended
+	call	poke
+	ld	hl,(caddress)
+	pop	bc
+	add	hl,bc
+else
+	ex	de,hl
+endif;EXTENDED
+	ret
+;
+;	analopnd:	analyse operand
+;
+;	For some inputs, three alternative interpretations are possible.
+;	For example, C could be either an 8-bit constant or the register C
+;	or the condition code.
+;	Each operand description thus provides three fields, where
+;	the first is used for a register description if possible, the
+;	second for a constant description, and the third for a condition code.
+;
+;	operand description:
+;
+;		0:	IX/IY-prefix (DD/FD) or 0
+;		1:	register number
+;			1x: 8-bit
+;			2x: 16-bit
+;			3x: (16-bit)
+;			90: (C)
+;			B0: AF'
+;		2:	Offset marker: offset present if <> 0
+;		3:	8-bit offset
+;		4:	value marker
+;			50: immediate 16-bit
+;			A0: (immediate 16-bit)
+;		5,6:	value
+;		7:	condition code (8x)
+;
+analopnd:
+	ld	c,0
+	call	testch
+	cp	'('
+	jr	nz,anal10	; ok if no (
+	ld	c,a		; else mark it
+	inc	ix		; and skip
+	jr	anal20		; cant be condition code
+;
+;	check for condition code
+;
+anal10:
+	ld	a,b
+	or	a
+	jr	nz,anal20	; cant be condition code if second operand
+	push	ix
+	call	getch
+	call	isletter
+	jr	c,anal19	; no cc if not a letter
+	ld	e,a
+	ld	d,' '
+	call	getch		; next
+	jr	z,anal15
+	cp	','		; ready if terminator
+	jr	z,anal15
+	call	isletter	; else must be a letter
+	jr	c,anal19
+	ld	d,a
+	call	terminal	; and a terminator
+	jr	nz,anal19	; no cc if not
+anal15:
+	ld	ix,ccnam	; condition code names
+	push	bc
+	ld	b,8		; 8 condition names
+	ld	c,0
+anal16:
+	ld	l,(ix+0)
+	ld	h,(ix+1)
+	or	a
+	sbc	hl,de		; compare
+	jr	z,anal17	; branch on match
+	inc	ix
+	inc	ix
+	inc	c
+	djnz	anal16
+	pop	bc		; no match, not a cc
+	jr	anal19
+anal17:
+	ld	a,80h		; condition code marker
+	or	c		; plus code
+	ld	(iy+7),a	; store
+	pop	bc
+anal19:
+	pop	ix		; back to the start
+anal20:
+	push	ix
+	push	bc
+	call	rdregister	; try to read register
+	pop	bc
+	jp	c,noregister	; branch if no register
+	cp	80h
+	jr	c,analreg10	; branch if not alternate reg
+	cp	0a4h		; must be alternate AF
+	jp	nz,noregister
+	ld	a,b
+	or	a		; second operand ?
+	jp	z,noregister	; not allowed as first
+	ld	a,c
+	or	a
+	jp	nz,noregister	; not allowed as ()
+	ld	(iy+1),0b0h	; mark AF
+	call	terminal
+	jp	nz,noregister
+	pop	hl		; discard old IX
+	ret
+analreg10:
+	cp	30h
+	jp	nc,noregister	; variables are no registers here
+	cp	20h
+	jp	c,reg8bit	; branch for 8-bit register
+	cp	27h
+	jp	nc,noregister	; PC not allowed
+	cp	24h		; AF ?
+	jr	nz,analreg15
+	ld	a,b
+	or	a
+	jp	nz,noregister	; AF cant be second operand
+	ld	a,24h		; restore reg-code
+analreg15:
+	ld	(iy+1),a	; store register code
+	cp	25h		; IX/IY ?
+	jr	c,analreg20
+	ld	(iy+1),22h	; change reg to HL
+	ld	a,0ddh		; IX-prefix
+	jr	z,analreg19	; ok if IX
+	ld	a,0fdh
+analreg19:
+	ld	(iy+0),a
+analreg20:
+	ld	a,c
+	or	a
+	jr	z,isregister	; ready if no (
+	set	4,(iy+1)	; change 2xh to 3xh
+	call	testch
+	cp	')'
+	jr	nz,regoffset
+	inc	ix		; skip ')'
+	jr	isregister
+regoffset:
+	ld	a,(ix+0)	; prefix
+	or	a		; IX/IY ?
+	jr	z,noregister	; cant be a register if not
+	call	expression	; get offset
+	jp	c,cmderr
+	ld	(iy+2),40h	; mark offset follows
+	ld	(iy+3),l	; store offset
+	pop	hl		; discard old IX
+	call	getch
+	cp	')'
+	jp	nz,cmderr
+	call	terminal
+	jp	nz,cmderr
+	ret			; can be nothing else but IX/IY +/- offset
+isregister:
+	call	terminal
+	jr	nz,noregister	; cant be register if something follows
+	ex	(sp),ix		; restore old IX, save new one
+	call	expression
+	jr	nc,exprtoo	; branch if it could also be an expression
+isreg20:
+	pop	ix		; restore our IX
+	or	a
+	ret
+exprtoo:
+	ld	a,c
+	or	a
+	jr	z,exprtoo10	; branch if no (
+	call	getch
+	cp	')'
+	jr	nz,isreg20	; not an expression if terminating ) missing
+	jr	exprtoo20
+exprtoo10:
+	ld	a,b
+	or	a		; first operand ?
+	jr	z,isreg20	; no non-bracketed constant as first operand
+exprtoo20:
+	call	terminal
+	jr	nz,isreg20	; no expression if something follows
+	pop	de		; discard IX
+	jr	isexpression
+noregister:
+	xor	a
+	ld	(iy+0),a	; clear prefix
+	ld	(iy+1),a	; and reg-opnd
+	ld	(iy+2),a
+	pop	ix		; back to old pointer
+	call	expression
+	jr	nc,noreg10
+	ld	a,(iy+7)	; condition code ?
+	or	a
+	jp	z,cmderr	; error if neither reg nor expression nor cc
+noreg05:
+	call	getch
+	ret	z
+	cp	','
+	ret	z
+	jr	noreg05		; skip to terminator for condition code
+noreg10:
+	ld	a,c
+	or	a
+	jr	z,noreg20
+	call	getch
+	cp	')'
+	jp	nz,cmderr
+noreg20:
+	call	terminal
+	jp	nz,cmderr	; error if not last
+isexpression:
+	ld	(iy+5),l
+	ld	(iy+6),h
+	ld	(iy+4),50h
+	ld	a,c
+	or	a
+	ret	z
+	ld	(iy+4),0a0h
+	ret
+;
+reg8bit:
+	cp	19h
+	jr	nc,noregister	; F/IFF not allowed here
+	ld	(iy+1),a	; store register number
+	ld	a,c
+	or	a
+	ld	a,(iy+1)	; register number again
+	jr	z,is8reg	; ok if no (
+	cp	11h		; C ?
+	jr	nz,noregister
+	call	getch
+	cp	')'
+	jr	nz,noregister
+	ld	(iy+1),90h	; replace (C)
+	jp	isregister
+is8reg:
+	cp	17h		; R ?
+	jp	nz,isregister
+	pop	hl		; cant be expression if R
+	call	terminal
+	jp	nz,cmderr
+	or	a
+	ret
+;
+terminal:
+	call	skipsp
+	call	testch
+	ret	z
+	cp	','
+	ret
+;
+;------------------------------------------------------------------------------
+;
+	dseg
+;
+mnemo:	ds	1
+opnd1:	ds	8
+opnd2:	ds	8
+
+	end
+-----------------------------------------------

@@ -1,0 +1,305 @@
+	title	'P112-Specific Functions for the Modular CP/M 3 BIOS'
+
+;	CP/M-80 Version 3	-- Modular BIOS
+;	Miscellaneous, P112-Specific Functions
+;	Initial version 1.0
+;	Compile with M80
+
+	public	?get$bank$bbr,?mmu$init,?int$init,?set$vec
+	public	?chktrap,?hlhex,?ahex,?crlf
+
+	public	@itbl,@dMbase,@memsiz
+
+	extrn	?pmsg,?pdec,?cono
+	extrn	?fd$chk
+
+	.z80
+z80182	equ	1
+	include	Z180.INC
+	include	P112EQU.INC
+
+
+cr	equ	0Dh
+lf	equ	0Ah
+
+
+	dseg	; can be banked
+
+;--------------------------------------------------------------------
+; Init the Z80182 MMU, generate bank to BBR translation table,
+; calculate total amount of memory.
+
+?mmu$init:
+	call	?bnktbl$init
+	ld	de,common$base
+	ld	a,d
+	and	0F0h
+	out0	(cbar),a
+	call	size$mem
+	ret
+
+; Generate the bank to BBR translation table
+
+?bnktbl$init:
+	ld	hl,bnktbl
+	in0	a,(bbr)
+	ld	(hl),a		; BBR value for bank 0
+	ld	b,num$banks
+	dec	b
+	ret	z		; return if only a single bank is used
+	inc	hl
+	add	a,10h
+	ld	(hl),a		; bank 1 is 64k above bank 0
+	dec	b
+	ret	z		; return if just two banks used
+	inc	hl
+	ld	de,common$base
+	ld	e,a		; save A
+	ld	a,d
+	rrca
+	rrca
+	rrca
+	rrca
+	and	0Fh
+	ld	d,a
+	ld	a,e		; restore A
+inib1:	add	a,d
+	ld	(hl),a
+	inc	hl
+	djnz	inib1
+	add	a,d
+	ld	(@dMbase),a	; set the BBR base value for ramdisk
+	ret
+
+
+;--------------------------------------------------------------------
+; Calculate the total amount of memory on the P112 board
+
+size$mem:
+	in0	a,(ramubr)	; upper RAM bound
+	add	a,1		; to 1st invalid page (set CY)
+	rra			; scale and keep CY
+	in0	l,(ramlbr)	; lower bound
+	srl	l		; scale similarly
+	sub	l		; available RAM / 8
+	ld	l,a
+	ld	h,8
+	mlt	hl		; HL = size * 1kB
+	ld	(@memsiz),hl
+	ret
+
+
+;--------------------------------------------------------------------
+; Init interrupt table and setup PRT
+
+?int$init:
+	di
+
+	call	?itbl$init
+
+	ld	de,timer
+	ld	a,2
+	call	?set$vec
+
+	xor	a
+	out0	(tcr),a		; disable ints and PRT downcounting
+	ld	hl,reload	; timer reload constant
+	out0	(rldr0l),l
+	out0	(rldr0h),h
+
+; initialize the internal Z180 int table address (ensure that it begins
+; on an even 32-byte boundary)
+
+	ld	hl,(@itbl)	; addr of int table in common memory
+	out0	(il),l		; set Z180 low address
+	ld	a,h		; get page
+	ld	i,a		; to interrupt register
+
+	ld	a,11h		; turn ints on and enable downcounting
+	out0	(tcr),a
+	ld	a,01h		; activate INT0
+	out0	(itc),a
+
+	ei			; enable interrupts
+	ret
+
+
+;--------------------------------------------------------------------
+; Initialize the interrupt table
+
+?itbl$init:
+	ld	hl,itbl
+	ld	bc,1Fh
+	add	hl,bc
+	ld	a,l
+	and	0E0h		; ensure it is 32-byte aligned
+	ld	l,a
+	ld	(@itbl),hl
+	ld	de,bad$int
+	ld	b,9
+fillt:	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	djnz	fillt
+	ret
+
+
+	cseg	; must be in common memory
+
+;--------------------------------------------------------------------
+; Return the BBR value for the given bank number 
+
+?get$bank$bbr:
+	push	hl
+	ld	hl,bnktbl
+	add	a,l
+	ld	l,a
+	ld	a,h
+	adc	a,0
+	ld	h,a
+	ld	a,(hl)
+	pop	hl
+	ret
+
+;--------------------------------------------------------------------
+; Check for a possible illegal instruction trap and print an appropiate
+; message. On entry, HL contains caller's PC
+
+?chktrap:
+	dec	hl		; PC-1
+	in0	a,(ITC)
+	bit	7,a		; TRAP bit set?
+	ret	z		; return if not
+	res	7,a
+	out0	(ITC),a		; clear the TRAP bit in ITC
+	bit	6,a		; UFO bit set?
+	jr	z,no$adj
+	dec	hl		; PC-2 if UFO was set
+no$adj:	push	hl
+	ld	hl,trap$msg
+	call	?pmsg
+	pop	hl
+	call	?hlhex
+	jp	?crlf
+
+trap$msg:
+	db	cr,lf,'Illegal instruction trap at PC=',0
+
+
+;--------------------------------------------------------------------
+; Dummy interrupt handler
+
+bad$int:
+	di
+	ld	hl,bad$msg
+	call	?pmsg
+	halt
+	jr	$-1
+
+bad$msg:
+	db	cr,lf,'Bad Int',0
+
+
+;--------------------------------------------------------------------
+; Timer interrupt handler.
+
+timer:
+	di
+	ld	(sp$temp),sp
+	ld	sp,istack	; setup new stack
+	push	af
+	push	bc
+	push	de
+	push	hl
+	push	ix
+	push	iy
+	in0	a,(tcr)
+	in0	a,(tmdr0l)
+	in0	a,(tmdr0h)	; clear the interrupt
+;	ld	a,(@cbnk)
+;	push	af
+;	ld	a,0
+;	call	?bank		; bring system bank into context
+	call	?fd$chk		; check floppy motors for timeout
+;	pop	af		; restore entry bank
+;	call	?bank
+	pop	iy
+	pop	ix
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	ld	sp,(sp$temp)
+	ei
+	ret
+
+
+;--------------------------------------------------------------------
+; Set interrupt vector in A to address in DE
+
+?set$vec:
+	ld	hl,(@itbl)
+	add	a,a
+	ld	c,a
+	ld	b,0
+	add	hl,bc
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	ret
+
+
+;--------------------------------------------------------------------
+; Display HL as 4-digit hexadecimal
+
+?hlhex:	ld	a,h
+	call	?ahex
+	ld	a,l
+?ahex:	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	call	ah1
+	pop	af
+ah1:	and	0Fh
+	add	a,90h
+	daa
+	adc	a,40h
+	daa
+	push	hl
+	push	bc
+	ld	c,a
+	call	?cono
+	pop	bc
+	pop	hl
+	ret
+
+
+;--------------------------------------------------------------------
+; Display newline on the console
+
+?crlf:	ld	c,cr
+	call	?cono
+	ld	c,lf
+	jp	?cono
+
+
+;--------------------------------------------------------------------
+
+	ds	50
+istack	equ	$
+sp$temp: ds	2
+
+@memsiz: dw	0
+@dMbase: db	0
+bnktbl:	ds	16
+
+@itbl:	ds	2		; interrupt table address
+itbl:	ds	32+9*2		; space for the interrupt table
+
+	db	0
+
+	end
+

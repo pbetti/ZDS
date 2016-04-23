@@ -1,0 +1,206 @@
+
+
+
+
+
+.PN 1
+.FO                                1-#
+1. The Concept of an IOP
+
+     Input/Outpuô  Packages“  (IOPs© arå segmentó oæ thå  Z-Systeí 
+(ZCPR³ with¬ optionally¬ thå ZRDOÓ replacemenô foò thå CP/Í BDOS© 
+whicè  contaiî  groupó  oæ Input/Outpuô devicå  driveró  foò  thå 
+Console¬ Reader¬ Punch¬ anä Lisô logicaì devices®  Á Z-Systeí caî 
+contaiî severaì Systeí Segments:
+
+.uj 0          
+     System Segment           Brief Description
+     Environment Descriptor   Provides information about the
+                                   Z-System
+     Terminal Capabilities    Provides information on how to
+          (TCAP or Z3T) Data       control the user's terminal
+     Named Directory Buffer   Contains data relating directory
+          (NDR)                    names to disks and user areas
+     Resident Command         Contains a group of commands
+          Package (RCP)            that stays resident in memory
+     Flow Command Package     Contains IF, ELSE, FI (End IF), and
+          (FCP)                    XIF (Exit all IFs) commands
+     Input/Output Package     Contains device drivers for the
+          (IOP)                    logical devices
+
+
+                    FIGURE: Z-System Segments
+.uj 1
+
+     Alì Systeí Segmentó associateä witè á Ú-Systeí arå optional¬ 
+buô  thå installatioî oæ thå Environmenô Descriptoò anä  Terminaì 
+Capabilitieó  segmentó  ió highlù  recommended¬  anä  alì  Systeí 
+Segmentó  shoulä  bå  installeä  iî ordeò  tï  realizå  thå  fulì 
+potentiaì oæ thå Ú-System.
+
+1.1. The BIOS
+
+     Thå BIOÓ ió thå system-dependenô parô oæ á CP/Í oò Ú-System®  
+Á  CP/Í BIOÓ ió functionallù identicaì tï á Ú-Systeí  BIOS®   Thå 
+BIOÓ ió divideä intï twï partsº  á jumğ tablå aô thå beginninç oæ 
+thå  BIOÓ  anä thå routineó whicè implemenô  thå  BIOÓ  functionó 
+withiî  thå  bodù  oæ  thå  BIOS®   Thå  jumğ  tablå  provideó  á 
+transportablå  methoä oæ accessinç thå routineó withiî thå  BIOS®  
+Thå baså addresó oæ thå BIOÓ jumğ tablå ió founä bù subtractinç ³ 
+byteó froí thå addresó aô memorù locationó ± anä 2®  Knowinç thaô 
+alì  jumpó  iî thå tablå arå threå byteó lonç anä iî  á  specifiã 
+order¬  accesó tï anù oæ thå routineó iî thå BIOÓ caî bå acquireä 
+bù  determininç  thå offseô oæ thå desireä BIOÓ routinå froí  thå 
+baså addresó oæ thå BIOÓ jumğ tablå anä addinç thió offseô tï thå 
+baså address®  Thå followinç figurå outlineó thå structurå oæ thå 
+BIOÓ jumğ table:
+
+.paŠ.uj 0
+
+     Class          Offset    Mnemonic  Comment
+                   Hex Dec
+     Bootstrap      00   0    BOOT      "Cold" (first-time) boot
+     Routines       03   3    WBOOT     "Warm" (^C) boot
+
+                    06   6    CONST     Console input status
+     Character      09   9    CONIN     Console input character
+     Input/Output   0C  12    CONOUT    Console output character
+     Routines       0F  15    LIST      List output character
+                    12  18    PUNCH     Punch output character
+                    15  21    READER    Reader input character
+
+                    18  24    HOME      Home disk heads
+     Disk           1B  27    SELDSK    Select logical disk
+     Access/Control 1E  30    SETTRK    Set track number
+     Routines       21  33    SETSEC    Set sector number
+                    24  36    SETDMA    Set DMA address
+                    27  39    READ      Read sector (128 bytes)
+                    2A  42    WRITE     Write sector (128 bytes)
+
+     List Status    2D  45    LISTST    List output status
+
+     Sector Xlate   30  48    SECTRAN   Sector translation
+
+                   FIGURE: The BIOS Jump Table
+.uj 1
+
+     Eacè  oæ  thå  BIOÓ  routineó  ió  preciselù  defined®   Thå 
+functionó oæ thå routines¬  thå registeró useä tï pasó inpuô datá 
+tï thå routines¬  thå registeró useä tï pasó outpuô datá froí thå 
+routines¬  anä  thå sidå effectó causeä bù thå executioî  oæ  thå 
+routineó arå knowî froí documentatioî availablå througè á varietù 
+oæ sourceó (seå thå references in Appendix A).
+     Froí  thå BIOÓ Jumğ Tablå figure¬  iô ió apparenô thaô therå 
+arå threå groupó oæ routines:
+.uj 0
+
+          1. the initialization routines (COLD and WARM)
+          2. the character input/output routines (including
+               LISTST)
+          3® thå disë access/controì routineó (includinç SECTRAN)
+.uj 1
+
+     Á  Z-Systeí  supportinç aî IOĞ placeó thå  seconä  grouğ  oæ 
+routines¬ thå characteò input/outpuô routineó (includinç LISTST)¬ 
+intï  thå bodù oæ thå IOĞ ratheò thaî thå bodù oæ thå BIOS®   Thå 
+BIOÓ  jumğ  tablå ió identicaì iî formaô tï thaô  oæ  á  standarä 
+BIOS¬  buô  thå addresseó oæ thå characteò input/outpuô  routineó 
+arå addresseó oæ entrù pointó iî thå IOĞ ratheò thaî addresseó oæ 
+routineó  iî  thå  bodù oæ thå BIOS®   Thå IOP¬  likå  thå  BIOS¬ 
+consistó  oæ  á jumğ tablå followeä bù thå routineó oæ  thå  IOP®  
+Thå jumğ tablå entrieó iî thå BIOÓ foò thå characteò input/outpuô 
+routineó addresó thå jumğ tablå entrieó iî thå IOP¬ whicè iî turî 
+addresó thå routineó iî thå IOP.
+
+.paŠ1.2. Devices and Device Drivers
+
+     Consideò thå followingº  DÏ NOÔ THINË OÆ Á DEVICÅ AÓ Á PIECÅ 
+OÆ HARDWARE¬  LIKÅ Á CRÔ OÒ PRINTER®   Instead¬ thinë iî termó oæ 
+devicå drivers¬  wherå thå device“ ió á logicaì entitù  consistinç 
+oæ  zerï oò morå pieceó oæ hardware®   Thå devicå ió defineä bù á 
+piecå oæ softwarå iî á BIOÓ oò IOP¬ anä thió piecå oæ softwarå ió 
+calleä á devicå driver®  Devicå driveró arå software¬ anä deviceó 
+are physical or logical hardware entities.
+     Thå  BIOÓ  supportó  thió  concepô  directly®    Thå  CONOUÔ 
+(consolå output© routinå outputó tï á devicå calleä á  "console"®  
+Thió "console¢ ió assumeä bù manù useró tï bå á CRT¬  buô iô doeó 
+noô havå tï be®  Iô coulä be:
+.uj 0
+
+          1. a CRT
+          2. a modem
+          3. a null routine (bit-bucket, or simple return)
+          4. a CRT and modem in parallel (output goes to both
+               a CRT and a modem before the CONOUT routine
+               returns to its caller)
+          5. a CRT and printer in parallel (output goes to both
+               a CRT and a printer)
+          6. a CRT, modem, and printer in parallel (output goes
+               to all three)
+.uj 1
+
+     Therå arå manù otheò possibilities¬ anä iî applicationó likå 
+á  Remotå  Accesó Systeí (RAS© wherå thå consolå ió á  modeí  anä 
+variouó  useró  accesó thå computeò oveò á  telephonå  line¬  thå 
+numbeò oæ possibilitieó growó quickly®   Somå RAÓ consolå deviceó 
+coulä be:
+.uj 0
+
+          1. a modem which also monitors a timer and reboots
+               the system when a time period elapses
+          2. a CRT/modem combination where input comes from
+               either the CRT or modem and output goes to
+               both in parallel
+          3. a CRT/modem combination where input comes from
+               the CRT and output goes to the CRT and modem
+               in parallel
+          4. a modem which does not allow certain characters
+               (like ^C) to be accepted as input
+          5. a modem which also monitors a carrier detect
+               line and reboots the microcomputer if this
+               carrier signal is lost (the user hangs up)
+.uj 1
+
+     Á typicaì microcomputeò runninç thå Ú-Systeí supportó á CRT¬ 
+á  modem¬  anä á printeò (aô least)¬  anä thå numbeò  oæ  consolå 
+deviceó  whicè  arå possiblå ió significantlù greateò thaî  four®  
+Thå  capacitù  oæ thå standarä I/Ï bytå (whicè supportó  aô  mosô 
+fouò consoles© haó beeî exceeded.
+
+.paŠ1.3. Advantages of an IOP
+
+     Thå  IOĞ  provideó flexibilitù noô founä undeò  conventionaì 
+implementationó  oæ devicå I/Ï iî thå BIOÓ (witè oò  withouô  thå 
+I/Ï Byte)®   Whilå designinç ZCPR3¬  É founä thå neeä foò thå IOĞ 
+tï  bå  pronounced®   Relyinç oî thå BIOÓ foò alì thå devicå  I/Ï 
+supporô waó toï restrictive:
+.uj 0
+
+          1. the BIOS had to fit on the system tracks, so it
+               was tight on space
+          2. the BIOS had no hooks (via the standard I/O Byte)
+               to provide for more than four console, four
+               reader, four punch, and four list devices
+.uj 1
+
+     Thå  implementatioî  oæ  thå IOĞ eliminateó  botè  oæ  theså 
+restrictions®   Alì  devicå driveró whicè werå previouslù iî  thå 
+BIOÓ  coulä  no÷  bå  placeä  withiî  thå  IOP®   Thå  burdeî  oæ 
+initializinç thå IOĞ oî colä booô waó addeä tï thå BIOS¬ buô thió 
+ne÷  overheaä waó faò lesó thaî thå overheaä oæ thå characteò I/Ï 
+codå whicè waó replaced.
+     Thå IOĞ Buffer¬  beinç externaì tï thå BIOS¬ caî bå sizeä tï 
+meeô thå user'ó needs®   Usuallù 1Ë oò 1.5Ë byteó ió adequatå foò 
+mosô needó (Echeloî haó standardizeä oî á lengtè oæ 1.5Ë  bytes)®  
+Á  largå  numbeò  oæ deviceó caî bå supporteä iî thió  amounô  oæ 
+space¬ anä thå LDÒ commanä allowó aî indefinitå numbeò oæ IOPó tï 
+bå loadeä aó needeä intï thå IOĞ buffer.
+     Finally¬  thå  IOĞ ió name-oriented®   Alì deviceó iî aî IOĞ 
+caî bå referreä tï bù namå througè thå DEÖ anä DEVICÅ commandó oæ 
+ZCPR3®   DEÖ  anä  DEVICÅ  simplifù  thå  user'ó  accesó  tï  anä 
+selectioî  oæ  deviceó  iî aî IOP¬  allowinç hií  tï  revie÷  alì 
+possiblå  devicå  selectionó anä selecô thå  desireä  deviceó  bù 
+specifyinç  á meaningfuì name®   Eacè IOĞ containó itó owî seô oæ 
+devicå  nameó  anä explanatorù  comments¬  sï  rememberinç  whicè 
+deviceó arå availablå iî á particulaò IOĞ ió unnecessary.
+

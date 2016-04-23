@@ -1,0 +1,714 @@
+
+; SHOWOPT.Z80
+
+; Display facilities information (ECP, SUBMIT, system addresses)
+
+facility:
+	call	banner
+	call	copyopts
+	jp	nz,notz33
+
+; Main screen header
+
+	call	gxymsg
+	defb	3,28
+	defb	highon
+	defb	' Facilities & Addresses ',0
+
+; Main topics
+
+	call	gxymsg
+	defb	6,5
+	defb	highon,' Command Processor          ',highoff,0
+
+	call	gxymsg
+	defb	8,5
+	defb	highon,' Executable Object Files    ',highoff,0
+
+	call	gxymsg
+	defb	13,5
+	defb	highon,' Extended Command Processor ',highoff,0
+
+	call	gxymsg
+	defb	16,5
+	defb	highon,' SUBMIT/ZEX Facility        ',highoff,0
+
+; Subtopics
+
+	ld	hl,6*100h+36
+	ld	(infoxy),hl
+
+	call	vprxy
+	defb	'version number:',0
+	call	dispxy
+
+	call	vprxy
+	defb	'file type:',0
+
+	call	vprxy
+	defb	'check attributes:',0
+
+	call	vprxy
+	defb	'accept DIR files:',0
+
+	call	vprxy
+	defb	'accept SYS files:',0
+
+	call	dispxy
+	call	vprxy
+	defb	'file name:',0
+
+	call	vprxy
+	defb	'rootonly:',0
+
+	call	dispxy
+	call	vprxy
+	defb	'SUBMIT available:',0
+
+	call	vprxy
+	defb	'command filename:',0
+
+	call	vprxy
+	defb	'LONGSUB option:',0
+
+	call	vprxy
+	defb	'echo commands:',0
+
+	call	vprxy
+	defb	'use DOS clue:',0
+
+	call	vprxy
+	defb	'ZEX prompt:',0
+
+; Supply data
+
+	ld	hl,6*100h+58
+	ld	(infoxy),hl
+
+	call	vprxy
+	defb	'3.',0		; We know the main version
+	ld	a,(versbyte)	; Get CPR version byte
+	and	0fh
+	add	a,'0'
+	ld	(cprversion),a	; Save for later
+	call	cout
+
+	call	dispxy
+	call	dispxy
+	call	getecp		; Set HL to ECP name
+	push	hl		; Save it for later
+	ld	de,8		; Offset to object file type
+	add	hl,de
+	ld	b,3		; Three characters
+	call	prtstr
+
+	ld	a,(opt4)
+	bit	4,a		; Attribute checking
+	call	prynxy
+
+	ld	a,(opt4)
+	bit	5,a		; DIR files OK
+	call	prynxy
+
+	ld	a,(opt4)
+	bit	6,a		; SYSfiles OK
+	call	prynxy
+
+	call	dispxy		; Display ECP name
+	call	dispxy
+	pop	hl		; Get back pointer to ECP name
+	ld	b,8		; Characters to display
+	call	prtstr
+
+	ld	a,(opt1)	; Display rootonly
+	bit	6,a
+	call	prynxy
+
+	ld	c,0ch		; CP/M version call
+	call	bdosadr		; ..CP/M-Plus handles things differently
+	ld	a,l
+	ld	(cpmversion),a	; Save -- we'll need it again
+
+	call	dispxy		; SUBMIT available
+	ld	a,(opt4)
+	bit	0,a
+	push	af		; Save test result
+	call	prynxy		; Display answer
+
+subname:
+	call	dispxy		; Name of $$$.SUB file
+	pop	af		; Submit supported?
+	jr	nz,subname1	; Branch if so
+
+				; SUBMIT not supported
+
+	call	notappl		; ..Put in dashes
+cpm3sub:
+	call	dispxy		; LONGSUB question
+	call	notappl		; ..Put in dashes
+	call	dispxy		; Commmand echo question
+	call	notappl		; ..Put in dashes
+	call	dispxy		; Use clue question
+	call	notappl		; ..Put in dashes
+	jr	zexnoise	; On to ZEX question
+
+subname1:
+	call	getsfcb		; Get pointer to SUBMIT FCB
+	ex	de,hl		; Move pointer to HL
+	ld	a,(hl)		; Get drive
+	add	a,'A'-1
+	cp	'@'		; See if current drive
+	jr	nz,showsub1
+	ld	a,'$'		; If so, display '$'
+showsub1:
+	call	cout
+	ld	a,(cpmversion)
+	cp	30h		; Set carry if 2.2
+	ld	a,'0'		; For 2.2, always user 0
+	push	af		; Save result of test
+	jr	c,showsub2
+	ld	a,'$'		; For 3, current user
+showsub2:
+	call	cout
+	ld	a,':'
+	call	cout
+	inc	hl		; Point to file name
+	ld	b,8		; Characters in name
+	call	prtstr
+	ld	a,'.'
+	call	cout
+	ld	b,3		; Characters in type
+	call	prtstr
+	pop	af		; Get back result of CP/M version test
+	jr	nc,cpm3sub	; If CP/M-3, dash out next answers
+
+longsub:
+	ld	a,(cprversion)
+	cp	'4'
+	jr	nc,longsub1
+	call	dispxy
+	call	notappl		; Put in dashes if Z33 or earlier
+	jr	subnoise
+longsub1:
+	ld	a,(opt7)
+	bit	7,a
+	call	prynxy
+
+subnoise:
+	call	dispxy		; Command echo
+	ld	a,(opt4)
+	ld	b,a		; Save option bits in B
+	call	noisestat	; Show command noise status
+
+subclue:
+	ld	a,(opt4)
+	bit	1,a
+	call	prynxy
+
+zexnoise:
+	call	dispxy
+	ld	a,(cprversion)	; If before Z34, skip this answer
+	cp	'4'
+	jr	c,zexnoise0
+	ld	a,(cpmversion)	; If CP/M-3, skip this answer
+	cp	30h
+	jr	c,zexnoise1
+zexnoise0:
+	call	notappl		; Put in dashes if Z33
+	jr	cprdone
+zexnoise1:
+	ld	a,(opt7)	; Get option with zexnoise
+	rra			; Align with subnoise bits
+	rra
+	rra
+	ld	b,a		; Save in B
+	call	noisestat
+
+cprdone:
+	jp	getcmd
+
+	 if	usedseg
+	dseg
+	 endif
+
+cprversion:
+	ds	1
+cpmversion:
+	ds	1
+
+	 if	usedseg
+	cseg
+	 endif
+
+;--------------------
+
+noisestat:
+	bit	2,b
+	jr	z,cmdecho	; Skip if not controlled by quiet flag
+	call	vprint
+	defb	'QUIET FLAG',0
+	ret
+cmdecho:
+	bit	3,b
+	jp	pryn
+
+;=============================================================================
+
+; Display environment controls and special options
+
+special:
+	call	banner
+	call	copyopts
+	jp	nz,notz33
+
+; Main screen header
+
+	call	gxymsg
+	defb	3,24
+	defb	highon
+	defb	' Environment & Special Options ',highoff,0
+
+; Main topics
+
+	call	gxymsg
+	defb	5,5
+	defb	highon,' Information from Environment ',highoff,0
+
+	call	gxymsg
+	defb	13,5
+	defb	highon,' Special Processing Features  ',highoff,0
+
+; Subtopics
+
+	ld	hl,6*100h+13
+	ld	(infoxy),hl
+
+	call	vprxy
+	defb	'Maximum DU values:',0
+
+	call	vprxy
+	defb	'Accept DU form:',0
+
+	call	vprxy
+	defb	'Show DU in prompt:',0
+
+	call	vprxy
+	defb	'Get RCP address:',0
+
+	call	vprxy
+	defb	'Get FCP address:',0
+
+	call	vprxy
+	defb	'Get NDR address:',0
+
+	ld	hl,14*100h+13
+	ld	(infoxy),hl
+
+	call	vprxy
+	defb	'Invoke ECP for bad DU/DIR change:',0
+
+	call	vprxy
+	defb	'Invoke ECP for bad command form:',0
+
+	call	vprxy
+	defb	'User areas 16..31 loggable:',0
+
+	call	vprxy
+	defb	'Direct access to ECP:',0
+
+	call	vprxy
+	defb	'Prefix for direct ECP access:',0
+
+	call	vprxy
+	defb	'Prefix for current directory:',0
+
+	call	vprxy
+	defb	'Skip path for explicit DU/DIR prefix:',0
+
+	call	vprxy
+	defb	'Allow IF processing in shell aliases:',0
+
+; Supply data
+
+	ld	hl,6*100h+55
+	ld	(infoxy),hl
+
+	ld	a,(opt1)	; Max du from env
+	bit	0,a	
+	call	prenv
+
+	ld	a,(opt1)	; Accept du from env
+	bit	1,a
+	call	prenv
+
+	ld	a,(opt1)	; Include du from env
+	bit	2,a
+	call	prenv
+
+	ld	a,(opt1)	; Get RCP from env
+	bit	3,a
+	call	prenv
+
+	ld	a,(opt1)	; Include FCP from ENV
+	bit	4,a
+	call	prenv
+
+	ld	a,(opt1)	; Include NDR from ENV
+	bit	5,a
+	call	prenv
+
+	call	dispxy		; BADDUECP
+	call	dispxy
+	ld	a,(opt1)
+	bit	7,a
+	call	prynxy
+
+	ld	a,(opt3)	; BADCMDECP
+	bit	7,a
+	call	prynxy
+
+	ld	a,(opt2)
+	bit	7,a
+	call	prynxy
+
+	ld	a,(opt3)
+	bit	1,a
+	push	af
+	call	prynxy
+
+	call	dispxy		; FASTECP prefixes
+	pop	af
+	jr	z,dircur	; If FASTECP off, skip (no output)
+
+	ld	a,'"'
+	call	cout
+
+	ld	a,(opt6)
+	ld	b,a
+	and	7fh		; Isolate alternate space character
+	jr	z,noalt
+	call	cout		; Print alternate character
+	bit	7,b		; See if alternate-only flag set
+	jr	nz,altonly
+	call	vprint
+	defb	'" or space',0
+	jr	dircur
+altonly:
+	call	vprint
+	defb	'" only',0
+	jr	dircur
+noalt:
+	call	vprint
+	defb	'space only',0
+
+dircur:
+	call	dispxy		; Current directory prefix
+	ld	a,'"'
+	call	cout
+	ld	a,(opt5)
+	and	7fh
+	jr	z,colonly
+	call	cout
+	call	vprint
+	defb	'" or ":"',0
+	jr	nopath
+colonly:
+	call	vprint
+	defb	':" only',0
+
+nopath:
+	ld	a,(opt3)	; Skippath
+	bit	0,a
+	call	prynxy
+
+	ld	a,(opt4)	; shellif
+	bit	7,a
+	call	prynxy
+
+	jp	getcmd
+
+;=============================================================================
+
+; Display access options (directories, paths, and security)
+
+access:
+	call	banner
+	call	copyopts	; Copy CCP options and check for ZCPR33
+	jp	nz,notz33	; If not ZCPR33, display message
+
+; Main screen header
+
+	call	gxymsg
+	defb	3,23
+	defb	highon
+	defb	' Directories, Paths, and Security '
+	defb	highoff,0
+
+; Main topics
+
+	call	gxymsg
+	defb	6,5
+	defb	highon,' Directory References  ',highoff,0
+
+	call	gxymsg
+	defb	10,5
+	defb	highon,' Command Prompt        ',highoff,0
+
+	call	gxymsg
+	defb	13,5
+	defb	highon,' Path Search           ',highoff,0
+
+	call	gxymsg
+	defb	16,5
+	defb	highon,' Security Features     ',highoff,0
+
+; Subtopics
+
+	ld	hl,6*100h+30
+	ld	(infoxy),hl
+
+	call	vprxy
+	defb	'accept DU:',0
+
+	call	dispxy
+	call	vprint
+	defb	'accept DIR:',0
+
+	call	dispxy
+	call	vprint
+	defb	'DU before DIR:',0
+
+	call	dispxy
+	call	vprxy
+	defb	'include DU:',0
+
+	call	vprxy
+	defb	'include DIR:',0
+
+	call	dispxy
+	call	vprxy
+	defb	'allow DU/DIR prefixes:',0
+
+	call	vprxy
+	defb	'include current directory:',0
+
+	call	dispxy
+	call	vprxy
+	defb	'password checking:',0
+
+	call	vprxy
+	defb	'password echoing:',0
+
+	call	vprxy
+	defb	'allow directory change:',0
+
+; Supply data
+
+	ld	hl,6*100h+58
+	ld	(infoxy),hl
+
+	ld	a,(opt2)	; Accept DU
+	bit	0,a
+	call	duokmsg
+
+	ld	a,(opt2)	; Accept DIR
+	bit	1,a
+	call	prynxy
+
+	ld	a,(opt2)	; DU first
+	bit	2,a
+	call	prynxy
+
+	call	dispxy
+	ld	a,(opt2)	; Include DU
+	bit	3,a
+	call	duokmsg
+
+	ld	a,(opt2)	; Include DIR
+	bit	4,a
+	call	prynxy
+
+	call	dispxy
+	ld	a,(opt2)	; DRVPREFIX
+	bit	6,a
+	call	drvprmsg	; Depends on WPREFIX
+
+	ld	a,(opt2)	; SCANCUR
+	bit	5,a
+	call	drvprmsg	; Depends on WPREFIX
+
+	call	dispxy
+	call	dispxy
+	ld	a,(opt3)
+	bit	6,a		; Password checking
+	call	pwchkmsg
+
+	ld	a,(opt3)
+	cpl			; Reverse sense of bit
+	bit	5,a		; Password echoing
+	call	prynxy
+
+	call	dispxy
+	ld	a,(opt3)
+	cpl			; Reverse sensing
+	bit	4,a		; Directory change allowed
+	call	wdumsg
+
+	jp	getcmd
+
+;-----------------------------------------------------------------------------
+
+; Print a string pointed to by HL, suppressing blank spaces
+
+prtstr:
+	ld	a,(hl)
+	cp	' '
+	call	nz,cout
+	inc	hl
+	djnz	prtstr
+	ret
+
+;-----------------------------------------------------------------------------
+
+; Routine to display 'YES' if NZ and DUOK message if Z
+
+duokmsg:
+	call	dispxy
+	call	z,pryn		; If not allowed at all, print 'NO'
+	ld	a,(opt1)	; See if under control of DUOK flag
+	cpl			; Reverse sense of bit
+	bit	2,a
+	jp	nz,pryn		; If not controlled by DUOK, print 'YES'
+	call	vprint
+	defb	'follow ENV DUOK flag',0
+	ret
+
+;-----------------------------------------------------------------------------
+
+drvprmsg:
+	call	dispxy
+	jp	z,pryn		; If not allowed at all, print 'NO'
+	ld	a,(opt3)	; See if under WPREFIX control
+	cpl			; Reverse sense of bit
+	bit	2,a
+	jp	nz,pryn		; If not WPREFIX, print 'YES'
+	call	vprint
+	defb	'ONLY IF WHEEL ON',0
+	ret
+
+;-----------------------------------------------------------------------------
+
+pwchkmsg:
+	jp	z,pryn		; If passwords never checked, print 'NO'
+	ld	a,(opt3)
+	cpl			; Reverse sense of bit
+	bit	3,a		; See if wheel suppresses password checking
+	jp	nz,pryn		; If not WPASS, print 'YES'
+	call	vprint
+	defb	'ONLY IF WHEEL OFF',0
+	ret
+
+;-----------------------------------------------------------------------------
+
+wdumsg:
+	jp	nz,pryn		; If WDU not set, print 'YES'
+	call	vprint
+	defb	'ONLY IF WHEEL ON',0
+	ret
+
+;-----------------------------------------------------------------------------
+
+prenv:
+	call	dispxy
+	jr	z,hardcode
+	call	vprint
+	defb	'FROM ENV',0
+	ret
+hardcode:
+	call	vprint
+	defb	'HARD CODED',0
+	ret
+
+;-----------------------------------------------------------------------------
+
+; Position cursor; then print yes or no
+
+prynxy:
+	call	dispxy
+	jp	pryn
+
+;-----------------------------------------------------------------------------
+
+; Display two dashes as not-applicable message.
+
+notappl:
+	call	vprint
+	defb	'--',0
+	ret
+
+;-----------------------------------------------------------------------------
+
+; Subroutine to give error message if ZCPR33 not running
+
+notz33:
+	call	gxymsg
+	defb	8,14
+	defb	'Command Processor is not ZCPR33 or is not in memory',0
+	jp	getcmd
+
+;-----------------------------------------------------------------------------
+
+; Subroutine to copy option bytes from CCP.  This routine returns NZ if the
+; ZCPR33 command processor is not in memory.
+
+copyopts:
+	call	z33chk		; Make sure ZCPR33 is running
+	ret	nz		; If not, return now
+	call	getccp		; Get pointer to beginning of CCP
+	ld	bc,offvers	; Offset to version number
+	add	hl,bc
+	ld	de,versbyte	; Destination of copy
+	ld	a,(hl)
+	ld	(de),a
+	inc	de
+	ld	bc,offopt-offvers ; Offset to first option byte
+	add	hl,bc
+	ld	bc,optend-optbytes
+	ldir
+	xor	a		; Return Z
+	ret
+
+;-----------------------------------------------------------------------------
+
+; Local copy of option bytes from CCP
+
+	 if	usedseg
+	dseg
+	 endif	;usedseg
+
+versbyte:
+	defs	1	; ZCPR version byte
+optbytes:
+opt1:	defs	1	; badduecp,rootonly,ndrenv,fcpenv,
+			; rcpenv,inclenv,aduenv,duenv
+opt2:	defs	1	; highuser,drvprefix,scancur,incldir,
+			; incldu,dufirst,accptdir,accptdu
+opt3:	defs	1	; no,pwcheck,pwnoecho,wdu,
+			; wpass,wprefix,fastecp,skippath
+opt4:	defs	1	; shellif,attsys,attdir,attchk,
+			; subecho,subquiet,subclue,subon
+opt5:	defs	1	; alternate colon byte
+opt6:	defs	1	; alternate space (and space-only) byte
+opt7:	defs	1	; longsub,zexprompt,zexquiet
+opt8:	defs	1	; UNDEFINED
+opt9:	defs	1	; UNDEFINED
+opt10:	defs	1	; UNDEFINED
+optend:
+
+	 if	usedseg
+	cseg
+	 endif	;usedseg
+
+; End SHOWOPT.Z80
+
+                              

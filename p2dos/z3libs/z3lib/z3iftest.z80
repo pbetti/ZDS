@@ -1,0 +1,54 @@
+	TITLE	"Z3IFTEST - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3IFTEST.Z80 Ver 1.1 by Richard Conn
+; Date    : 7 Mar 87
+; Version : 1.2
+; Module  : Z3IFTEST
+; Abstract: This module contains the routine IFTEST which
+;	returns the current IF level, or an error flag if none
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		IFTEST
+
+;  External References
+
+	EXT		GETMSG
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - IFTEST
+; Entry: - None
+; Exit : A = Current IF level, Zero Flag Reset (NZ) if Ok
+;	     A = 0, Zero Flag Set (Z) if NO Current IF
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+IFTEST:	PUSH	HL		;save regs
+	PUSH	BC
+	CALL	GETMSG		;pt to messages
+	INC	HL		;pt to IF byte
+	LD	A,(HL)		;get IF byte
+	OR	A		;any active IFs?
+	JR	Z,IFDONE
+	LD	B,0		;set no IF
+
+IFTL:	INC	B		;next IF level
+	RRCA			;rotate right 1 bit
+	JR	NC,IFTL		;loop until none
+	LD	A,B		;count in A
+
+IFDONE:	POP	BC		;restore registers
+	POP	HL
+	OR	A		;set Z flag if A=0
+	RET
+
+	END
+

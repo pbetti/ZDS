@@ -1,0 +1,62 @@
+To convert a C language if() statement into Z80 assembler is quite nasty in detail:
+
+    First, there is only a 8-bit compare op-code in the Z80. To compare larger numbers a subtraction has to be done.
+    Second, the conditional jump op-code is different for unsigned and signed numbers.
+    Third, the jump goes to the "else" part of the statement, therefore the jump op-code is the logical opposite of the compare operator
+    Fourth, at the end of the if-part an unconditional jump is needed to the end of the IF-ELSE block.
+
+All these nasty details fit into one table. Never write assembler programs without this table!
+
+C test
+	as subtraction
+	unsigned numbers "else jump"
+	signed numbers "else jump"
+if (a >= b)
+	if (a-b >= 0)
+	JP C or JR C
+	JP PO
+if (a < b)
+	if (a-b < 0)
+	JP NC or JR NC
+	JP PE
+if (a == b)
+	if (a-b == 0)
+	cascaded JP NZ or JR NZ
+	cascaded JP NZ or JR NZ
+
+Note: JP PO is jump on overflow. The overflow flag is the carry flag for signed numbers. In the Z80 the overflow and parity flag are the same.
+The official name of JP PO is jump on parity odd. As they say "just to confuse the russians".
+As example see the assembler listing for the following C code fragment.
+
+  short HL, DE;
+  char A;
+
+  HL = -2000;
+  DE = -1000;
+  if (HL >= DE) {
+    A = 1;
+  } else {
+    A = 0;
+  }
+
+Before you run the assembler code below, what is the value of A at the end of the C language listing?
+Even if you are sure, you may run a C program to confirm your believes. In the assembler code we use registers A,
+DE and HL instead of memory locations. The C source is given as comment.
+
+;==================================================
+; IF-ELSE CODE FRAGMENT
+;
+        LD      HL,-2000        ; HL = -2000;
+        LD      DE,-1000        ; DE = -1000;
+
+        AND     A               ; if (HL >= DE) {
+        SBC     HL,DE
+        JP      PO,ELSE
+        LD      A,1             ;   A = 1;
+        JR      ENDIF
+ELSE:                           ; } else {
+        LD      A,0             ;   A = 0;
+ENDIF:                          ; }
+        HALT
+
+        END

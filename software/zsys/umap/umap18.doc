@@ -1,0 +1,166 @@
+
+                              UMAP
+                           Version 1.8
+
+                          Gene Pizzetta
+                        October 10, 1991
+
+
+What is that file doing in user 30?  I never use that directory!  
+Where can I find a spare user area?  UMAP is a ZCPR3 utility that 
+can display a brief map of a disk directory, showing which user 
+areas have files and how many directory entries those files use.  
+Or it can display a list of vacant user areas, users with no 
+files.  In addition, it can display a brief summary of the total 
+number of directory entries used, the number of entries still 
+free, and the disk free space in kilobytes.
+
+USAGE:
+
+     UMAP {dir:} {{/}option}
+
+Although a DU or DIR specification may be given, only the drive 
+is significant.  If no drive is given, the current drive is 
+assumed.
+
+OPTIONS:  Only one command line option can be given.  It may be 
+given with or without a slash and with or without a drive 
+specification.  If more than one option is given, only the first 
+will be observed.  Invalid options are ignored.
+
+     U    Show complete directory statistics for each user area 
+          on the disk that has active files.  User areas with no 
+          files will be omitted from the display.  Although few 
+          people will have files in more than a screenful of user 
+          areas, if you have files in most of the 32 available 
+          users, the display will be automatically paused 
+          ("[more]") at the end of each screen.  The number of 
+          screen lines is obtained automatically from the 
+          environment.
+
+     V    Show a list of vacant user areas (those with no active 
+          files).  If all you're looking for is an empty 
+          directory, there's no need to watch a list of user area 
+          statistics scroll by, possibly taking up more than one 
+          screen, and then have to try to figure out which users 
+          are not listed.  With this option, only vacant user 
+          areas will be listed.  Only two screen lines will be 
+          used to display them, with users 0-15 on the first 
+          line, 16-32 on the second.  If you only use 16 user 
+          areas, you can ignore the second line.  For quick 
+          referece, users with active files are represented by a 
+          dot instead of a number.
+
+With no options only total directory usage and free disk space is 
+shown.
+
+UMAP sets the ZCPR3 program error flag on error, but the only 
+error currently recognized is an invalid (out of range) directory 
+specification.
+
+Large files require more than a single directory entry, so UMAP 
+will display both the number of files and the number of directory 
+entries they use.  It will also tell you how many free directory 
+entries are left on the disk and the amount of remaining disk 
+space in kilobytes.  The number of free directory entries will 
+not be accurate if P2DOS datestamping is used.
+
+CHECKING ALL DRIVES:  It has been suggested to me that UMAP have 
+the ability to give user area statistics for a group of drives, 
+one after the other, with screen paging.  While not a bad idea, 
+implementing that mode would add significantly to program size, 
+certainly making it larger than two kilobytes.  The limited 
+usefulness of such a mode, I think, makes it not worth it.
+
+However, a simple alias could accomplish the same thing:
+
+     UMAP A:U;IF IN MORE?;FI;UMAP B:U;IF IN MORE?;FI;UMAP C:U...
+
+This causes a simple page pause after each drive's usage is 
+displayed.  Or, if you want to be able to abort the alias after 
+any call to UMAP, put all the "FI"'s at the end:
+
+     UMAP A:U;IF IN MORE?;UMAP B:U;IF IN MORE?;UMAP C:U...;FI;FI;...
+
+If you have too many drives for a single alias, the last command 
+could be a call a second alias.  Of course, there are more 
+elaborate ways of doing this, but I'm not doing a tutorial on 
+writing aliases here.
+
+You might have noticed in the examples above that the option came 
+right after the drive spec without an intervening space.  That 
+works fine with UMAP.
+
+CONFIGURATION:  UMAP can be configured to make either of the 
+options the default mode of operation.  In that case either of 
+the command-line options will turn the default mode off.  Do not 
+configure UMAP to default to both options.  That won't work and 
+you will lose access to the "no option" mode.
+
+In addition, the vacant user area display can be configured as 
+compacted to the left or spaced across the screen.
+
+To configure UMAP use the accompanying UMAPnn.CFG file and ZCNFG. 
+Do not change the name of the CFG file so that ZCNFG can find it, 
+even if you use another name for UMAP.
+
+HISTORY:
+
+Version 1.8 -- October 10, 1991 -- Gene Pizzetta
+     Howard Goldstein reported a stack problem when UMAP was run 
+     under BYE.  The stack size has been increased to (hopefully) 
+     solve the problem.  Also, replaced Z3LIB's PRTNAME with 
+     GCOMNAM from ZSLIB, so disk name displays properly with GO 
+     command.  A couple of minor display changes.
+
+Version 1.7 -- April 20, 1991 -- Gene Pizzetta
+     With U option, now shows directory name, if any, for each 
+     user area, per a suggestion from Howard Schwartz.
+
+Version 1.6 -- April 14, 1991 -- Gene Pizzetta
+     Modified display of vacant users per a suggestion from Jay 
+     Sage, which also resulted in simpler code.  A few other 
+     display changes were made.  Added configuration byte for 
+     extra space between vacant users.
+
+Version 1.5 -- April 10, 1991 -- Howard Goldstein
+     Cleaned up code.  No functional changes.
+
+Version 1.4 -- March 27, 1991 -- Gene Pizzetta
+     With V option, now prints only users 0-15 on first line, 
+     users 16-31 on second line.
+
+Version 1.3 -- March 26, 1991 -- Gene Pizzetta
+     Minor changes in display for aesthetical considerations: 
+     free entries and free space are printed on separate line.  
+     At the suggestion of Rob Wood, added V option for vacant 
+     user area display.  Added type 3 and type 4 assemblies.
+
+Version 1.2 -- March 25, 1991 -- Gene Pizzetta
+     Now re-initializes the drive byte in the FCB with a question 
+     mark so UMAP will work with the GO command under ZRDOS.  It 
+     seems that ZRDOS resets the byte to zero, for no known 
+     reason.  Thanks to Rob Wood for discovering this 
+     idiosyncrasy.  Added ability to count entries beyond user 
+     31.  ZSDOS does not return them.  DRI's CP/M-Plus does.  
+     It's there if it works on your system.
+
+Version 1.1 -- February 23, 1991 -- Gene Pizzetta
+     Added disk space display.  Removed VLIB routines to save a 
+     lot of bytes.
+
+Version 1.0 -- February 18, 1991 -- Gene Pizzetta
+     Initial release.  The idea for this program came from 
+     USRMAP, author unknown, and was written at the urging of 
+     Howard Schwartz.
+
+For suggestions and bug reports:
+
+     Gene Pizzetta
+     481 Revere Street
+     Revere, MA 02151
+
+     Newton Centre Z-Node:  (617) 965-7259
+     Ladera Z-Node Central:  (213) 670-9465
+     Voice:  (617) 284-0891
+

@@ -1,0 +1,154 @@
+;Converted to Zilog mnemonics and put in a few JRs
+;March 16, 1988 by Bruce Morgen for LPUT15
+
+;UNDATE.ASM v 1.00         10/26/83
+; S. Kluger  El Paso RCPM
+;
+; This routine will take a standard ASCII date string
+; and change it into Digital Research date format.
+;
+; Input: none
+; 	(The program expects the external variable @dcfld
+;	to be a pointer to a properly set up date string.
+;	The string must conform to MM/DD/YY format.)
+; Output: HL holds the number of days since 1-1-78
+;	The carry flag indicates a possible date format error.
+;
+	EXTRN @DCFLD
+	PUBLIC @UDCVT
+;
+@UDCVT:	LD	HL,@DCFLD+7	; Point to units year
+	LD	A,(HL)		; Get it
+	CALL	CKNUM		; If not numeric...
+	RET	C		; ...then error
+	LD	B,A		; Save for now
+	DEC	HL		; Point to tens year
+	LD	A,(HL)		; Get it
+	CALL	CKNUM		; Check numeric
+	RET	C		; Abort if error
+	LD	C,A		; Tens into c
+	INC	C		; Plus one for our loop
+	LD	D,10
+	XOR	A
+MCY:	DEC	C
+	JR	Z,MCYD		; Zero = done
+	ADD	A,D
+	JR	MCY
+;
+MCYD:	ADD	A,B		; Add units
+	LD	B,78		; Set up years counter
+	CP	B
+	RET	C		; Error if year < 78
+	LD	C,A		; Year into c
+	AND	0FCH		; Is current leap?
+	CP	C
+	LD	A,28		; Expect not
+	JR	NZ,NOCL
+	INC	A
+NOCL:	LD	(FEB),A
+	LD	HL,0		; Set day counter
+YLP:	LD	A,C		; Get year
+	CP	B		; Is it 78 now?
+	JR	Z,YDONE		; Yes, exit this routine
+	LD	DE,365		; Set days for 1 year
+	DEC	C		; Decrement year
+	DEC	A		; Both times
+	AND	0FCH		; Check leap year
+	CP	C		; If not leap year...
+	JR	NZ,NOLP		; ...then leap
+	INC	DE		; Else make 366 days
+NOLP:	ADD	HL,DE		; Sum up days
+	JR	YLP
+;
+; years done, process months
+;
+YDONE:	LD	(DAYS),HL	; Save day count for now
+	LD	HL,@DCFLD+1	; Point to units month
+	LD	A,(HL)		; Get them
+	CALL	CKNUM		; Check numeric
+	RET	C		; Ret if error
+	LD	B,A		; Save units
+	DEC	HL		; Point to units
+	LD	A,(HL)		; Get 'em
+	CALL	CKNUM		; Check
+	RET	C		; Ret if error
+	CP	2		; If > 1
+	CCF
+	RET	C		; Then error
+	OR	A		; If not zero...
+	LD	A,10		; ...then it's gotta be 10
+	JR	NZ,ADU
+	XOR	A
+ADU:	ADD	A,B		; Easier than years!
+	LD	BC,MONTH	; Point to months
+	LD	H,0
+	LD	L,A
+	ADD	HL,BC		; Make months pointer
+	LD	B,H
+	LD	C,L
+	DEC	BC
+	LD	HL,(DAYS)
+	LD	D,0		; Prepare for add
+MLP:	DEC	A		; Decrement year
+	DEC	BC
+	JR	Z,MDONE		; Go to next routine
+	PUSH	AF
+	LD	A,(BC)		; Get days
+	LD	E,A
+	ADD	HL,DE		; Add to total
+	POP	AF
+	JR	MLP
+;
+; months done, now process the days
+;
+MDONE:	LD	(DAYS),HL	; Save days for now
+	LD	HL,@DCFLD+4	; Point to days units
+	LD	A,(HL)		; Get them
+	CALL	CKNUM		; If not numeric
+	RET	C		; Then return
+	LD	B,A		; Save units
+	DEC	HL		; Point to tens
+	LD	A,(HL)
+	CALL	CKNUM
+	RET	C
+	CP	4		; If over 30
+	CCF
+	RET	C		; Then error
+	LD	C,A		; Save count
+	INC	C		; 0=1, 1=2, etc
+	XOR	A
+	LD	D,10		; Ready for "multiply"
+MC:	DEC	C		; Dec counter
+	JR	Z,MULOK		; Finished multiplying
+	ADD	A,D
+	JR	MC
+;
+MULOK:	ADD	A,B		; Now make binary days
+	LD	E,A
+	LD	D,0
+	LD	HL,(DAYS)
+	ADD	HL,DE
+	OR	A		; Reset carry
+	RET
+;
+; check numeric digit, convert to binary if ok
+;
+CKNUM:	CP	'0'
+	RET	C
+	CP	'9'+1
+	CCF
+	RET	C
+	AND	0FH
+	RET
+;
+MONTH:	DB	31		; Jan
+FEB:	DB	28,31,30,31,30	; Feb-Jun
+	DB	31,31,30,31,30	; Jul-Nov
+
+; Data
+
+	DSEG
+DAYS:	DS	2
+
+	END
+

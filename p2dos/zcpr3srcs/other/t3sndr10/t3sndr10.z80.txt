@@ -1,0 +1,408 @@
+;Program: T3SENDER
+;Version: 1.0
+;Author/Adapter: Bruce Morgen
+;Date: April 4, 1988
+;Derivation: SENDOUT by Al Jewer, last version released 1/86
+;
+; T3SENDER is a prompt-triggered sendout facility for
+; the TERM III system.  Unlike T3SEND, which blindly
+; squirts characters without attempting to validate a
+; clear command line to transmit to, T3SENDER will
+; semi-intelligently attempt to confirm a system
+; prompt before doing its thing and will report a
+; failure if it cannot.  Very few changes were needed
+; to adapt Al Jewer's work to TERM III and Z-System.
+; One major feature (and another substantial advantage
+; over T3SEND) added is that the character "&" is tested
+; for and a ";" substituted in order to allow long Z3
+; command lines to be sent to the remote.  Al's original
+; SENDOUT notes follow and apply 100% to T3SENDER.
+;
+;
+;This routine written by Al Jewer and released in Public
+;Domain 4/8/81.
+;
+; This program and documentation copyright 1981, 1982, 1983
+; by Al Jewer. This software must not be sold.
+;
+;This CP/M transient command is invoked in this manner:
+;
+;A>SENDOUT XMODEM S FILENAME.TYP
+;
+;In this example, the string "XMODEM S FILENAME.TYP"
+;will be sent out the modem port to a remote system.
+;this is for use in:
+;
+;		1) Transferring multiple programs to & from
+;			remote using a submit file
+;
+;		2) Sending commands without having to
+;			enter & exit the "MODEM" program
+;
+;The string can be up to 127 characters long, and is
+;echoed to the local console as it is sent.
+;
+;	Default mode of operation
+;	~~~~~~~~~~~~~~~~~~~~~~~~~
+;The program will wait for a ">" character before it
+;sends the line, to allow the remote to be ready for
+;the command line. as the line is sent, the program
+;will check the characters echoed back to assure that
+;the command line has been transmitted properly.
+;if an error is detected, the program will send out
+;a ^U followed by a carriage return, then retry
+;sending the line, until a proper transmission is made.
+;
+;  Special mode of operation (for non-CP/M systems)
+;  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+; to allow use with other systems, provision has been
+; made to change the prompt character in the command
+; line, using an astrisk to indicate this mode.
+; the command then takes the form:
+;
+; SENDOUT *?COMMAND LINE
+;
+; This command line will cause the sendout program to
+; wait for a '?' character instead of the more usual '>'.
+; Also, in the case where a transmission error occurs,
+; the program will send ASCII 'delete' characters (07fh)
+; to cancel the input line. this is used instead of the
+; ^U usually used in CP/M.
+;
+; or,
+;
+; SENDOUT *^JCOMMAND LINE
+;
+; This mode works the same as above, except in this case,
+; the 'trigger' character will be a control-j (line feed).
+; Note that you must type the up-arrow character to
+; indicate that the ascii character following is actually
+; a control character. this allows using any ascii character
+; as the trigger character (except, of course, for '^').
+;
+;Updates: (in reverse order to minimize reading time)
+;
+;1/22/86   Added equates to allow use with Z80 SIO chip
+;	   e.g. kaypro, xerox, ferguson bigboard, etc.
+;		(v.8.1) 	Bruce Morgen
+;
+;19-jan-83 Modified by Al Jewer to allow use with non-CP/M
+;	   systems by allowing user-specified 'trigger'
+;	   character. changed apple mods to general
+;	   purpose memory-mapped I/O routines. eliminated
+;	   multiple names for ports and mask bits.
+;
+; 5-oct-82 added equates to allow use with an Intel
+;	   I8251 USART serial port.
+;				Dave Mabry
+;
+;15-jan-81 Modified by John Limpert to add memory
+;	   mapped I/O for the Apple ][ with a D.C.
+;	   Hayes Micromodem in slot #2. set APPLE
+;	   TRUE for this configuration.
+;
+;10-dec-81 Modified by Al Jewer to remove reference to
+;	   local console port (function now performed
+;	   by BIOS calls)
+;	   also added retry counter to give up if phone
+;	   line gets too horrible.
+;
+;23-nov-81 Modified by John Labovitz. added some
+;	   signon messages, and ability to abort
+;	   by a ^C.
+;
+;15-aug-81 Modified by Howard Booker to include
+;	   conditional equates for the DC Hayes
+;	   80-103A modem card.
+;
+;10-apr-81 Rewritten by Al Jewer to check echoed
+;	   string for valid transfer.
+;
+;08-apr-81 Modified by Tom Jorgenson for support
+;	   of other modem/port types (esp. H89)
+;
+;any questions or comments:
+;
+;	Al Jewer
+;	PO Box 123
+;	Whitewater, WI. 53190
+;
+;	(414) 563-9932 (F4 RCPM System)
+;
+;Base definition, change this to 4200h if alternate CP/M
+;(relocated) version such as Heath/Lifeboat or TRS-80
+;
+base	equ	0		; Base of memory segment
+;
+;these should be o.k. as is
+;
+buffer	equ	base+80h	; Input line buffer
+fcb	equ	base+5ch
+cr	equ	0dh		; Ascii characters
+lf	equ	0ah
+bel	equ	07h
+ctlu	equ	'U'-40h		; Control-u
+ctlc	equ	'C'-40h		; Control-c
+delete	equ	07fh		; Ascii delete character (rubout)
+;
+; If you require defaults for other than CP/M systems, change the
+; equates below to match your system requirements.
+;
+cancel	equ	ctlu		; This character cancels input line
+;
+default	equ	'>'		; Default trigger character (system prompt)
+;
+special	equ	'*'	; This character, when used as the 1st
+;			; character of the cp/m command line tail,
+;			; indicates a request for the non-cp/m mode.
+;			; 	(see documentation above)
+;
+subsep	equ	'&'		; Proxy for ";" Z3 separator
+;
+retrys	equ	32		; Retry this many times before giving up
+;
+; modem interface subroutine addresses
+;
+mi$base	equ	600h		; Base of M.I. jump table
+m1$init	equ	mi$base		; Init M.I.
+m1$istat equ	mi$base+3	; Character input status
+m1$ostat equ	mi$base+6	; Character output status
+m1$in	equ	mi$base+9	; Get a character
+m1$out	equ	mi$base+12	; Send a character
+m1$cst	equ	mi$base+18	; Check carrier status
+;
+	extrn	z3init,getspeed,getefcb,puter2
+	extrn	eprint,cout,cst,cin
+;
+start:	jp	start1		; Around copyright notice
+	db	'Z3ENV',1
+z3eadr:	dw	0fe00h
+	db	'Copyright 1981, 1982, 1983 Al Jewer'
+endlow:
+	ds	5feh-(endlow-start),0 ; Allow space for M.I.
+	xor	a		; Prevent uninstalled program from crashing
+	ret
+start1:
+	ld	(oldstk),sp	; Store for exit
+	ld	sp,stack	; Set safe stack
+	ld	hl,(z3eadr)
+	call	z3init
+	call	eprint		; Say hello to the folks
+	db	'T3SENDER, Version 1.0',0
+	ld	hl,(fcb+1)
+	ld	a,l
+	cp	'/'
+	jr	nz,nohelp
+	cp	h
+	jp	z,help
+nohelp:	call	eprint
+	db	' - Type ^C to ABORT',cr,lf,0
+	xor	a
+	call	puter2
+	ld	a,retrys	; Set retry counter
+	ld	(trynum),a	; To its initial value
+	ld	a,default
+	ld	(prompt),a
+	ld	hl,buffer	; Point to command line buffer
+	ld	a,(hl)		; Get the character count
+	or	a		; Zero length?
+	jp	z,error		; Return if so
+	dec	a		; Length of 1? (this would be space only)
+	jp	z,error		; Ignore this too
+	inc	a		; Restore value
+	inc	a		; Add 1 for final cr
+	inc	hl		; Skip the leading space
+	ld	(string),hl	; Store default string address
+	ld	(slen),a	; And default string length
+	ld	b,a		; String length in b
+	inc	hl		; Skip the space
+	ld	a,(hl)		; Get the 1st character on the line
+	cp	special		; Is it alternate prompt request?
+	jr	nz,nospcl	; Jump if everything is normal
+	dec	b		; Soak up trigger character & new prompt.
+	dec	b		;
+	inc	hl		; Point to new trigger character
+	ld	a,(hl)		; Get it
+	cp	'^'		; Control character request?
+	jr	nz,noctrl	; Jump if not
+	dec	b		; Soak up the control character
+	inc	hl		; Point to the ascii character to convert
+	ld	a,-40h		; Subtract 40h to make into control character
+	add	a,(hl)		; Trigger character to a
+noctrl:	ld	(prompt),a	; Store new trigger character
+	ld	a,b		; Get string length
+	ld	(slen),a	; Store for later
+	ld	(string),hl	; Point to string start -1
+nospcl:	call	m1$istat
+	jp	z,tryagn	; If no char, try for prompt
+	jp	pdata		; Jump to test current character
+;
+pin:	ld	bc,8000h	; Time counter to b
+	ld	hl,trynum	; Point to retry counter
+	dec	(hl)		; Bump it
+	jr	nz,ploop	; Continue if not exhausted
+	ld	a,0ffh
+	call	puter2
+	call	eprint		; Else print the bad news
+	db	cr,lf,'Can''t send string -- Aborting.....',cr,lf,0
+	jp	boot		; And kick out
+;
+ploop:	push	bc		; Save the timeout counter
+	call	cst		; This is status in BIOS
+	jr	nz,ploop1	; Continue if no keypress
+	call	cin		; This is console input in BIOS
+	cp	ctlc		; Exit request?
+	jr	nz,ploop1	; Continue if not
+	call	puter2
+	call	eprint		; Else exit
+	db	cr,lf,'T3SENDER aborted by ^C'
+	db	cr,lf,'Returning to system...',0
+	jp	boot
+;
+ploop1:	pop	bc		; Restore the timeout counter
+	dec	bc		; Count the loop
+	ld	a,c		; Check for done
+	or	b
+	jr	z,tryagn	; Jump if timed out
+;
+	call	getspeed
+speedl:	ex	(sp),hl		; Waste time on fast systems
+	ex	(sp),hl
+	dec	a
+	jr	nz,speedl
+;
+pl2:
+	call	m1$istat
+	jr	z,ploop		; Loop till timeout or data received
+;
+pdata:
+	call	m1$in
+;
+	and	7fh		; Drop parity bit just in case
+	call	cout
+	ld	c,a		; Get echoed character to C register
+	ld	a,(prompt)	; Get desired prompt character to A
+	cp	c		; System prompt?
+	jp	nz,pin		; Loop till proper character received
+;
+;we have now received a system prompt, so the remote system
+;is ready to receive the command line.
+;
+	ld	hl,(string)	; Get command line string address
+	ld	a,(slen)	; Get string length
+	ld	b,a		; To b register as counter
+;
+loop:	inc	hl		; Point to next character
+	djnz	notdun		; Jump if not finished
+	ld	a,lf		; Send line feed to local console
+	call	cout
+	jp	boot		; Done!
+;
+notdun:	ld	a,1		; Check for last character
+	cp	b
+	jr	nz,go		; Jump if not last one
+	ld	(hl),cr		; Make last character carriage return
+;
+go:	ld	a,(hl)		; Get character
+	cp	subsep
+	jr	nz,go0
+	ld	a,';'
+	ld	(hl),a
+go0:	call	m1$out		; Send out the modem
+go1:	ld	de,0		; Time counter to d
+;
+reclp:
+	call	m1$istat
+	jr	nz,gotone	; Jump if we got a character
+	dec	de		; Count the timer
+	ld	a,e
+	or	d
+	jr	z,tryagn	; Jump if timed out
+;
+	call	getspeed
+	add	a,a
+	add	a,a
+waste:	dec	a		; Count the loop
+	jr	nz,waste	; And loop till done
+;
+	jr	reclp		; Continue waiting
+;
+gotone:
+	call	m1$in
+	and	7fh		; Drop parity
+	jr	z,go1		; Ignore nulls
+	call	cout		; Display to local console
+	cp	(hl)		; Is it the same as what we sent?
+	jr	z,loop		; Jump if ok
+;
+tryagn:	ld	a,(prompt)	; Get our trigger character
+	cp	default		; Normal character?
+	jr	z,canline	; Cancel line if so
+	ld	a,(slen)	; Get string length
+	sub	b		; Get number that we sent
+	ld	b,a		; To b register as counter
+	ld	a,delete	; Delete characters cancel line
+delloop:call	m1$out		; Send the deletes
+	djnz	delloop		; Loop till all sent
+	jr	gnp		; And continue
+;
+canline:ld	a,cancel	; Cancel the line
+	call	m1$out
+gnp:	ld	a,cr		; Then get new prompt
+	call	m1$out
+	jp	pin
+;
+error:	inc	a
+	call	puter2
+	call	eprint
+	db	bel,cr,lf,'Command error.',0
+help:	call	eprint
+	db	cr,lf,'Syntax:'
+	db	cr,lf,' ',0
+	call	comnam
+	call	eprint
+	db	' String'
+	db	cr,lf,'"String" is any string to send via the port.'
+	db	cr,lf,'Default trigger character is "',0
+	ld	a,default
+	call	cout
+	call	eprint
+	db	'".',cr,lf,'Prefix the string with a "*" followed by an'
+	db	cr,lf,'alternate trigger to change it (use "^c"'
+	db	cr,lf,'sequences for control characters as triggers).',0
+				; Fall thru to reboot routine
+;
+boot:	ld	sp,(oldstk)	; Get system stack restored
+	ret			; Back to sys with no reboot required
+;
+comnam:	call	getefcb
+	jr	z,noefcb
+	ld	b,8
+cmnmlp:	inc	hl
+	ld	a,(hl)
+	and	7fh
+	cp	' '
+	call	nz,cout
+	djnz	cmnmlp
+	ret
+noefcb:	call	eprint
+	db	'T3SENDER',0
+	ret
+
+	dseg
+
+prompt:	ds	1		; System prompt character stored here
+;
+oldstk:	ds	2		; System stack storage
+;
+string:	ds	2		; Command line string start pointer
+;
+slen:	ds	1		; Command line string length
+;
+trynum:	ds	1		; Retry counter storage
+;
+	ds	60		; Stack area
+stack	equ	$
+;
+	end
+

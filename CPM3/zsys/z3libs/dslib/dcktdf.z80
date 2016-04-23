@@ -1,0 +1,106 @@
+	TITLE	DCKTDF - Dslib Ver 4.0"
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author   : Harold F. Bower
+;		Derived from DSLIB3 routines by Bridger Mitchell
+; Date     : 27 Jun 87
+; Version  : 1.0
+; Module   : DCKTDF
+; Abstract :  This module contains the routine CKTDF which checks for the
+;	presence of a !!!TIME&.DAT file in User 0 of the currently logged
+;	disk in the first directory position.  Any errors are detected.
+;	   Three utility routines for use by other DateStamper(tm) library
+;	routines are also included to: perform error return (@TDERR);
+;	Perform normal return resetting user # (@TDRET); and save the
+;	currently-logged user # (@TDUSR).  These three routines are Not
+;	intended for use by applications.  Users should not use these
+;	global labels if DateStamping is also linked.
+; Revision :
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points :
+
+	PUBLIC		CKTDF, @TDERR, @TDRET, @TDUSR
+
+;  External References :
+
+	EXT		@TDFCB, FSTNXT
+	EXT		GUA, SUA		; From SYSLIB
+
+;  Definitions :
+
+FSRCHF	EQU	17		; CP/M Search First Command
+
+	CSEG
+	.Z80
+;==========================================================
+; Routine - CKTDF.  Ckeck existence of !!!TIME&.DAT file
+; Enter: None.
+; Exit : F - Zero Flag Reset (NZ) if Ok
+;		Zero Flag Set (Z) if Error (No T&D file)
+; Requirements: Desired drive must be logged in before call
+;==========================================================
+
+CKTDF:	CALL	@TDUSR		; Set to User 0, saving current
+	LD	DE,@TDFCB	; Use library FDB for !!!TIME&.DAT
+	LD	C,FSRCHF	; ..and search for first occurance
+	CALL	FSTNXT		; Return locating info
+	JR	C,@TDERR	; ..unless error
+	LD	A,B		; Must be 0th dir entry
+	OR	A
+	JR	NZ,@TDERR	; ..Error if not 0th
+	LD	A,D
+	OR	E		; Must be in 0th relative sector
+	JR	NZ,@TDERR	; ..junp if Bad
+			;..fall thru to..
+;============================================================
+; Routine: @TDRET.  Reset user # and flags for Good operation
+; Enter: None
+; Exit : None
+;============================================================
+
+@TDRET:	PUSH	AF		; Preserve any results in A
+	CALL	TDRESU		; Reset entry user #
+	POP	AF
+	INC	A		; Clear Z flag for good operation
+	RET
+
+;==============================================================
+; Routine: TDERR.  Reset user # and set flags for Bad operation
+; Enter: None
+; Exit : None
+;==============================================================
+
+@TDERR:	CALL	TDRESU		; Reset entry user #
+	XOR	A		; Set Z flag for bad operation
+	RET
+
+;==============================================================
+; Routine: @TDUSR.  Save current User # and log on user #0
+; Enter: None
+; Exit : None
+;==============================================================
+
+@TDUSR:	CALL	GUA		; Use SYSLIB routine to get usr #
+	LD	(TMPUSR),A	; Save User locally
+	XOR	A		; Set to User 0
+STUSR:	JP	SUA		; Use another SYSLIB routine to set
+
+;==============================================================
+; Routine: TDRESU.  Restore entry User #
+; Enter: None
+; Exit : None
+;==============================================================
+
+TDRESU:	LD	A,(TMPUSR)	; Get entry User #
+	JR	STUSR		; ..and set above
+
+; Data Storage/Buffers
+
+	DSEG			; Put this in Data Segment
+
+TMPUSR:	DEFS	1		; Storage for entry User #
+
+	END
+

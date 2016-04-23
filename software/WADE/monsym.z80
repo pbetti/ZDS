@@ -1,0 +1,612 @@
+	title	Symbol Handler for Monitor
+	name	('MONSYM')
+;
+;	Last Edited	84-07-03	Wagner
+;
+;	Copyright (c) 1984 by
+;
+;		Thomas Wagner
+;		Patschkauer Weg 31
+;		1000 Berlin 33
+;		West Germany
+;
+;       Released to the public domain 1987
+;
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+; Slightly modified and changed to Z80 mnemonics by
+; Werner Cirsovius, October 1990
+; +++++++++++++++++++++++++++++++++++++++++++++++++
+;
+	maclib monopt.lib
+;
+	entry	rdsymbol,rdsymname,defsymbol,killsymbol,dissymbols,wrsymbol
+	entry	syminit,wsymbols,rsvsym
+	entry	symstart,symtop
+;
+	ext	cmderr,next
+	ext	wrchar,wrhex,space,space2,crlf,wrstr
+	ext	stestch,sgetch,isdigit,isletter
+	ext	regsp,maxval,topval
+	ext	puthexbyte,putfilch
+	ext	mul16,div16,wrdec
+;
+symlen	equ	8
+;
+; Symbol Storage:
+;
+;			|	debugger
+;			---------------------------   high mem
+;	symstart  -->	|  Symbols: Top down
+;			|  N  }
+;			|  A  }
+;			|  M  }} "symlen" bytes per name
+;			|  E  }
+;			|  addr hi
+;			|  addr lo
+;			|  ...
+;			|  ...
+;	symtop	 -->	|  last symbol
+;			|  ...
+;			|  free space
+;			-----------------------------  low mem
+;	currsx	 -->	|  RSX-header (page aligned)
+;			-----------------------------
+;			|  default stack
+;			|  ...
+;			-----------------------------
+;	maxval	 -->	|  top of program
+;
+;------------------------------------------------------------------------------
+;
+;	rdsymbol:	read symbol value
+;
+;		exit:	HL = symbol value
+;			Carry set if not a symbol or if symbol is undefined
+;
+rdsymbol:
+	cp	'.'
+	scf
+	ret	nz		; ret if no symbol lead-in
+	push	ix
+	call	sgetch
+	call	rdsymname
+	jr	c,rdsym10
+	jr	nz,rdsym20
+	scf
+rdsym10:
+	pop	ix
+	ret
+rdsym20:
+	pop	de
+	ld	d,(hl)
+	dec	hl
+	ld	e,(hl)
+	ex	de,hl
+	ret
+;
+;	rdsymname:	read symbol name
+;
+;		exit:	HL = symbol table pointer
+;			carry set if no symbol name found
+;			A = 0 if new (undefined) symbol
+;
+rdsymname:
+	call	stestch
+	call	isdigit
+	ccf
+	ret	c		; no symbol if first is digit
+	call	issymch
+	ret	c
+	ld	hl,(symtop)
+	dec	hl
+	dec	hl
+	ld	b,symlen
+rdsymn10:
+	call	sgetch
+	dec	b
+	inc	b
+	jr	z,rdsymn15
+	ld	(hl),a
+	dec	hl
+	dec	b
+rdsymn15:
+	call	stestch
+	call	issymch
+	jr	nc,rdsymn10
+	inc	b
+rdsymn20:
+	ld	(hl),' '
+	dec	hl
+	djnz	rdsymn20
+;
+;	symbol read, now search in table
+;
+	ld	de,(symstart)
+symsrch:
+	ld	hl,(symtop)
+	xor	a
+	sbc	hl,de
+	jr	z,symsrchfnd
+	dec	de
+	dec	de
+	ld	hl,(symtop)
+	ld	b,symlen
+	dec	hl
+	dec	hl
+symcmp:
+	ld	a,(de)
+	cp	(hl)
+	jr	nz,symnomatch
+	dec	hl
+	dec	de
+	djnz	symcmp
+	ld	a,-1		; signal exists
+	ld	hl,symlen+2
+	add	hl,de
+	or	a
+	ret
+symsrchfnd:
+	ex	de,hl
+	ret
+symnomatch:
+	dec	de
+	djnz	symnomatch
+	jr	symsrch
+;
+issymch:
+	or	a
+	scf
+	ret	z
+	call	isletter
+	ret	nc
+	call	isdigit
+	ret	nc
+	push	hl
+	push	bc
+	ld	hl,symchtab
+	ld	bc,lsymchtab
+	cpir
+	pop	bc
+	pop	hl
+	scf
+	ret	nz
+	or	a
+	ret
+;
+symchtab:
+	db	'?@$.'
+lsymchtab equ	$-symchtab
+;
+;------------------------------------------------------------------------------
+;
+;	defsymbol:	define symbol
+;
+;		entry:	HL = name pointer
+;			DE = address
+;
+defsymbol:
+	push	de		; save address value
+	ld	(hl),d
+	dec	hl
+	ld	(hl),e		; store value
+	inc	hl		; pointer again
+	push	hl
+	ld	bc,(symtop)
+	or	a
+	sbc	hl,bc		; already in the table ?
+	pop	hl
+	jr	z,defsym01	; ok if not
+	push	hl
+	ld	de,(symtop)
+	ld	bc,symlen+2
+	lddr			; move to symtop
+	ld	(symtop),de	; temporarily set new symtop
+	pop	hl
+	call	killsymbol	; delete at old place
+	ld	hl,(symtop)
+	ld	de,symlen+2
+	add	hl,de
+	ld	(symtop),hl	; reset symtop to previous value
+	ld	b,h
+	ld	c,l
+defsym01:
+	ld	de,3*(symlen+2)+26 ; safety margin
+	ld	hl,(currsx)	; bottom of symbol memory
+	add	hl,de		; + safety
+	or	a
+	sbc	hl,bc		; - symtop
+	call	nc,expand	; expand if (currsx + margin) >= symtop
+	pop	hl		; address value into HL
+	call	findaddr	; find the value
+	ex	de,hl
+	ld	hl,(symtop)
+	or	a
+	sbc	hl,de
+	jr	nz,defsym10	; branch if not at top
+	ld	hl,-(symlen+2)
+	add	hl,de
+	ld	(symtop),hl	; set new top
+	ret
+defsym10:
+	push	de		; save elem addr
+	ld	hl,(symtop)
+	ld	bc,-(symlen+2)
+	add	hl,bc		; new symtop
+	ld	(symtop),hl
+	ex	de,hl
+	or	a
+	sbc	hl,de		; element addr - new top = length to move
+	ld	b,h		; length into BC
+	ld	c,l
+	ld	hl,-(symlen+2)
+	add	hl,de		; move destination = new top - symlen+2
+	ex	de,hl
+	inc	bc		; one byte more
+	ldir			; make space for new elem
+	pop	de		; elem addr
+	ld	hl,(symtop)	; new symtop contains new elem
+	ld	bc,symlen+2
+	lddr			; move into place
+	ret
+;
+;	findaddr:	find symbol corresponding to "addr"
+;
+;		entry:	HL = address
+;
+;		exit:	HL = symbol pointer
+;			Carry set if not found
+;
+findaddr:
+	ld	b,h
+	ld	c,l
+	ld	hl,(symstart)
+findcmp:
+	ex	de,hl
+	ld	hl,(symtop)
+	or	a
+	sbc	hl,de
+	ex	de,hl
+	scf
+	ret	z		; ret if end of table
+	ld	d,(hl)
+	dec	hl
+	ld	e,(hl)
+	inc	hl
+	or	a
+	ex	de,hl
+	sbc	hl,bc		; elem-addr - addr
+	ex	de,hl
+	jr	c,findcmp10
+	ret	z
+	scf
+	ret			; ret on match or elem-addr > addr
+findcmp10:
+	ld	de,-(symlen+2)
+	add	hl,de
+	jr	findcmp
+;
+;	killsymbol:	delete symbol from the table
+;
+;		entry:	HL = symbol pointer
+;
+killsymbol:
+	push	hl
+	ld	de,(symtop)
+	or	a
+	sbc	hl,de		; symptr - top = remaining length
+	pop	de
+	ret	z		; ret if at top
+	ld	b,h
+	ld	c,l
+	ld	h,d
+	ld	l,e
+	push	de
+	ld	de,-(symlen+2)
+	add	hl,de
+	pop	de
+	lddr
+	ld	hl,(symtop)
+	ld	de,symlen+2
+	add	hl,de
+	ld	(symtop),hl
+	ret
+;
+;	wrsymbol:	write symbol corresponding to "addr"
+;
+;		entry:	HL = address
+;			A = display code:
+;				0   -> display spaces only
+;				'.' -> display '.name'
+;				'/' -> display '/name'
+;				':' -> display 'name:'
+;
+wrsymbol:
+	or	a
+	jr	z,wrspaces
+	push	af
+	call	findaddr
+	jr	c,wrspaces2
+	dec	hl
+	dec	hl
+	pop	af
+	cp	':'
+	call	nz,wrchar	; display dot or slash
+	jp	writesym
+wrspaces2:
+	pop	af
+wrspaces:
+	ld	b,symlen+1
+wrspa2:
+	call	space
+	djnz	wrspa2
+	ret
+;
+writesym:
+	ld	b,symlen
+	ld	c,a
+writesym2:
+	ld	a,(hl)
+	cp	' '
+	jr	z,writesym3
+	call	wrchar
+	dec	hl
+	djnz	writesym2
+	ld	a,c
+	cp	':'
+	ret	nz
+	jp	wrchar
+writesym3:
+	ld	a,c
+	cp	':'
+	call	z,wrchar
+writesym4:
+	call	space
+	dec	hl
+	djnz	writesym4
+	ret
+;
+;	dissymbols:	display symbol table
+;
+;
+dissymbols:
+	ld	hl,defstr
+	call	wrstr
+	ld	hl,(symstart)
+	ld	de,(symtop)
+	or	a
+	sbc	hl,de		; used space
+	ld	de,symlen+2
+	call	div16
+	ld	a,' '
+	call	wrdec
+	call	space2
+	ld	hl,freestr
+	call	wrstr
+	ld	hl,(symtop)
+	ld	de,(currsx)
+	or	a
+	sbc	hl,de
+	ld	de,-(3*(symlen+2)+26)
+	add	hl,de
+	ld	de,symlen+2
+	call	div16
+	ld	a,' '
+	call	wrdec
+	call	crlf
+	call	crlf
+	ld	hl,(symstart)
+dissymlin:
+	ld	b,80/(symlen+7)
+dissymloop:
+	ex	de,hl
+	ld	hl,(symtop)
+	or	a
+	sbc	hl,de
+	ex	de,hl
+	jp	z,crlf
+	push	bc
+	ld	a,(hl)
+	call	wrhex
+	dec	hl
+	ld	a,(hl)
+	call	wrhex
+	dec	hl
+	call	space
+	call	writesym
+	call	space2
+	pop	bc
+	djnz	dissymloop
+	call	crlf
+	jr	dissymlin
+;
+;
+defstr:	db	'Defined: ',0
+freestr:db	'Free: ',0
+;
+;	wsymbols:	write symbol table to file
+;
+;
+wsymbols:
+	ld	hl,(symstart)
+fwsymline:
+	ld	b,4
+fwsymloop:
+	ex	de,hl
+	ld	hl,(symtop)
+	or	a
+	sbc	hl,de
+	ex	de,hl
+	jr	z,fwsymend
+	push	bc
+	push	hl
+	ld	a,(hl)
+	call	puthexbyte
+	pop	hl
+	dec	hl
+	ld	a,(hl)
+	push	hl
+	call	puthexbyte
+	ld	a,' '
+	call	putfilch
+	pop	hl
+	dec	hl
+	ld	b,symlen
+fwsym10:
+	ld	a,(hl)
+	cp	' '
+	jr	z,fwsym20
+	push	bc
+	push	hl
+	call	putfilch
+	pop	hl
+	pop	bc
+	dec	hl
+	djnz	fwsym10
+	jr	fwsym30
+fwsym20:
+	dec	hl
+	djnz	fwsym20
+fwsym30:
+	pop	bc
+	dec	b
+	jr	z,fwsym40
+	push	bc
+	push	hl
+	ld	a,tab
+	call	putfilch
+	pop	hl
+	pop	bc
+	jr	fwsymloop
+fwsym40:
+	push	hl
+	ld	a,cr
+	call	putfilch
+	ld	a,lf
+	call	putfilch
+	pop	hl
+	jr fwsymline
+fwsymend:
+	ld	a,b
+	cp	4
+	ret	z
+	jr	fwsym40
+;
+;	expand:		expand symbol table by default size
+;
+;		entry:	-
+;
+;
+;	rsvsym:		reserve symbol table space
+;
+;		entry:	HL = number of symbols to reserve
+;
+rsvsym:
+	ld	de,symlen+2
+	call	mul16		; required symbol table space
+	ld	de,256-1
+	add	hl,de
+	ld	l,0		; round to next page boundary
+	jr	expand10
+expand:
+	ld	hl,512
+expand10:
+	push	hl
+	ld	de,512
+	add	hl,de
+	ld	de,(maxval)	; max addr read until now
+	add	hl,de		; max + sym-space + 512 bytes for safety
+	ex	de,hl
+	ld	hl,(currsx)
+	or	a
+	sbc	hl,de		; currsx - (max + n)
+	jp	c,cmderr	; error if max > curr
+	pop	de
+	ld	hl,0
+	sbc	hl,de		; complement symbol table space
+	push	hl
+	ld	de,(regsp)	; current stack ptr
+	ld	hl,(currsx)	; RSX base
+	or	a
+	sbc	hl,de		; stack length
+	jr	c,setstack	; no stack copying if SP > RSX
+	jr	z,setstack	; no copying if equal
+	ld	a,h
+	cp	2
+	jr	nc,copyrsx	; no stack copying if difference >= 512
+	ld	b,h
+	ld	c,l		; save length
+	pop	hl
+	push	hl
+	add	hl,de		; SP - space
+	ex	de,hl		; copy from SP to (SP-space)
+	ldir			; move down the stack
+setstack:
+	ld	hl,(regsp)
+	pop	de
+	push	de
+	add	hl,de		; SP - space
+	ld	(regsp),hl	; set new SP
+copyrsx:
+	ld	de,(currsx)	; current RSX header
+	pop	hl
+	add	hl,de		; - space
+	ld	(currsx),hl	; new RSX header
+	dec	hl
+	ld	(topval),hl
+	inc	hl
+	ex	de,hl		; move from old RSX to (RSX-space)
+	push	de
+	ld	bc,26
+	ldir			; move down the RSX header
+	pop	hl
+	ld	de,6
+	add	hl,de		; new BDOS entry in RSX header
+	ld	(BDOS+1),hl	; set jump location
+if	CPM3
+	ex	de,hl		; save new RSX entry address
+	ld	hl,4
+	add	hl,de		; next field
+	push	de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; addr of next RSX
+	ld	hl,6
+	add	hl,de		; point to prev-field in next RSX
+	pop	de
+	ld	(hl),e		; set prev-field
+	inc	hl
+	ld	(hl),d
+	ld	(mxtpa),de
+	ld	de,scbpb
+	ld	c,.SCB		; set scb
+	jp	next		; set new MXTPA field
+;
+scbpb:	db	.MXTPA		; MXTPA offset
+	db	.word		; set word value
+mxtpa:	dw	0
+else
+	ret
+endif;CPM3
+;
+;	syminit:	initialise symbol space
+;
+;		entry:	HL = RSX base
+;
+syminit:
+	ld	(currsx),hl
+	inc	hl
+	ld	(symtop),hl
+	ld	(symstart),hl
+	jp	expand
+;
+	dseg
+;
+currsx:	ds	2
+symtop:	ds	2
+symstart:
+	ds	2
+
+	end
+l
+	inc	hl
+	l

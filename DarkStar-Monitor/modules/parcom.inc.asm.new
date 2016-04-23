@@ -1,0 +1,340 @@
+;
+;=======================================================================
+;
+; Modular Z80 DarkStar (NE Z80) Monitor
+;
+;=======================================================================
+;
+; Parallel communication
+; ---------------------------------------------------------------------
+
+VDSKBUF:
+	DEFS	VDBUFSZ			; i/o command buffer
+SZBUF:	DEFS	2
+CKSUM:	DEFB	0
+S_VHDR:	DEFB	"@IO@"
+
+;;
+;; get a byte from remote
+;;
+;; use:
+;;	none
+;; return:
+;;	A  - received byte
+
+UPLCHR:
+	IN	A, (PPCNTRP)		; wait for remote ready to tx
+	BIT	PPAKSTB, A
+	RET	NZ
+	BIT	PPSTROB, A
+	JR	NZ, UPLCHR
+
+	PUSH	BC
+	LD	A, PPURDY		; signal ready to receive
+	OUT	(PPCNTRP), A
+UPWSTRB:
+	IN	A, (PPCNTRP)		; wait for data
+	BIT	PPSTROB, A
+	JR	Z, UPWSTRB
+
+	IN	A,(PPDATAP)
+	LD	C, A			; copy on C (return value)
+
+	LD	A, PPUOKG		; let's remote run...
+	OUT	(PPCNTRP), A
+	LD	B,$20			; <---- tunable
+UPWDLY:	NOP
+	DJNZ	UPWDLY
+	IN	A, (PPCNTRP)		; in remote answer
+	BIT	PPAKSTB, A		; check for stop requests
+	LD	A,C
+	POP	BC
+	RET
+
+
+;
+;; PRCVBLK - upload a block through parallel link
+;;
+;; use:
+;;	DE - offset of storage area
+;;	BC - block size
+;; unclean register usage: A, HL, IY
+;; return:
+;; C: Rx status 0 = ok >0 = error
+PRCVBLK:
+	PUSH	AF
+	EX	DE,HL			; offset in HL
+	LD	A, PPUINI		; init parallel port for rx
+	OUT	(PPCNTRP),A
+	LD	DE,CKSUM
+	XOR	A			; used to calc checksum
+	LD	(DE),A
+	CALL	UPLCHR			; get two bytes of block size
+	LD	(SZBUF),A
+	CALL	UPLCHR
+	LD	(SZBUF+1),A
+	LD	IY,(SZBUF)		; IY count from remote size
+PRBLOO:	CALL	UPLCHR			; begin real transfer
+	JR	NZ, PRNAK		; stopped here: error!
+	LD	(HL),A			; store data
+	LD	A,(DE)			; update csum
+	ADD	A,(HL)
+	LD	(DE),A
+	INC	HL
+	DEC	IY
+	DEC	BC			; check for upload end
+	LD	A,B
+	OR	C
+	JR	NZ,PRBLOO		; next
+	LD	(SZBUF),IY		; receive buffer full
+	LD	BC,(SZBUF)
+	LD	A,B			; received size match?
+	OR	C
+	JR	NZ, PRNAK		; no
+	CALL	UPLCHR			; flush sender waiting checksum byte
+	LD	B,A
+	LD	A,(DE)			; block end: calc. final csum
+	CPL
+	INC	A
+	CP	B			; match ?
+	JR	Z, PRBEND		; yes: exit
+PRNAK:	LD	A,PPUACK		; send negative aknowledge
+	OUT	(PPCNTRP),A
+	LD	C, 1			; rx error
+PRBEND:	LD	DE, 5			; 50 msec wait
+	CALL	DELAY
+	LD	A, PPUINI		; clean handshake
+	OUT	(PPCNTRP), A
+	POP	AF
+	RET
+
+;--------------------
+;; Routines to manage data send (download) over parallel port
+;;
+;; PSNDCH - send a byte over parallel
+;;
+;; use:
+;; HL - point to byte to transfer (updated after exec)
+;; unclean register usage: A, DE
+PSNDCH:
+	IN	A, (PPCNTRP)		; wait synchro strobe from remote
+	BIT	PPSTROB, A
+	JR	NZ, PSNDCH
+
+	LD	A, (HL)
+	OUT	(PPDATAP), A		; out data and then emit ready signal
+	INC	HL
+	LD	A, PPDRDY
+	OUT	(PPCNTRP), A
+					;; remote should reset strobe when PPDRDY is get...
+PWACKB:
+	IN	A, (PPCNTRP)		; wait ack from remote
+	BIT	PPAKSTB, A
+	JR	Z, PWACKB
+
+	LD	A, PPDOKG		; reset ready bit and let remote run waiting 1 msec.
+	OUT	(PPCNTRP), A
+					;; remote should reset ack when PPDOKG is get...
+	LD	DE, 1
+	CALL	DELAY
+	RET
+
+;;
+;; PSNDBLK - send a block over parallel link
+;;
+;; use:
+;; DE - point to the base of block to transfer
+;; BC - block size
+;; unclean register usage: A, A', HL'
+;; return:
+;; C: Tx status 0 = ok >0 = error
+;;
+PSNDBLK:
+	PUSH	AF
+	EX	DE,HL			; offset in HL
+	EX	AF, AF'
+	XOR	A			; a' will carry the checksum
+	EX	AF, AF'
+	LD	(SZBUF), BC		; store block size to send it
+	LD	A, PPDINI		; setup port for tx
+	OUT	(PPCNTRP), A
+	EXX				; use alt. bank and send block size
+	LD	HL, SZBUF
+	CALL	PSNDCH			; send len. lsb
+	CALL	PSNDCH			; send len. msb
+	EXX				; restore reg. bank
+PSNXTC:
+	EX	AF, AF'
+	ADD	A, (HL)			; block bytes summing
+	EX	AF, AF'
+	CALL	PSNDCH			; send byte
+	DEC	BC			; check for transfer end
+	LD	A, B
+	OR	C
+	JR	NZ, PSNXTC
+	EX	AF, AF'			; block end: calc. final csum
+	CPL
+	INC	A
+	LD	HL, SZBUF		; store in first byte of SZBUF
+	LD	(HL), A
+	EX	AF, AF'
+	CALL	PSNDCH			; send csum
+	LD	DE, 34			; 34 more msec. to get okgo
+	CALL	DELAY
+	LD	A, PPDSTP
+	OUT	(PPCNTRP), A
+	LD	DE, 35			; 35 msec. to stop remote
+	CALL	DELAY
+	LD	A, PPUINI
+	OUT	(PPCNTRP), A		; leave parallel clean
+	LD	C, 0			; ret ok (maybe)
+	IN	A, (PPCNTRP)		; in result code
+	AND	$FC			; mask
+	CP	$02			; init and strobe set ?
+	JR	NZ, PSBOK
+	LD	C, 1			; ret nok on reg. C
+PSBOK:
+	POP	AF
+	RET
+
+;----------------------------------------------------------
+; PC-LINKED VIRTUAL DISK HANDLE ROUTINES
+; ---------------------------------------------------------
+;;
+;; VDSKRD - read a sector form remote
+;;
+;; use:
+;;	none
+;; unclean register usage: A, IY
+
+VDSKRD:
+	PUSH	IY
+	PUSH	DE
+	PUSH	BC
+	PUSH	HL
+	LD	D, 2			; retries
+VDRTRY:	LD	IY, VDSKBUF
+	LD	HL, S_VHDR
+	LD	B, 4
+VDRSL1: LD	C, (HL)
+	LD	(IY + 0), C
+	INC	IY
+	INC	HL
+	DJNZ	VDRSL1
+
+	LD	C, VDRDSEC		; read command
+	LD	(IY + 0), C
+	LD	HL, FDRVBUF
+	LD	C, (HL)			; drive
+	LD	(IY + 1), C
+	LD	BC, (FSECBUF)		; sector
+	DEC	BC			; base sector # is zero...
+	LD	(IY + 2), C
+	LD	(IY + 3), B
+	LD	BC, (FTRKBUF)		; track
+	LD	(IY + 4), C
+	LD	(IY + 5), B
+
+	PUSH	DE
+	LD	DE, VDSKBUF		; command offset
+	LD	BC, VDBUFSZ		; block size
+	CALL	PSNDBLK			; send command block
+	POP	DE
+	LD	A, C
+	OR	A			; what happens ?
+	JR	Z, VDROK		; tx ok
+	DEC	D			; retry ?
+	JR	NZ, VDRTRY
+	LD	A, 1			; ret tx err
+	JR	VDRNOK
+					; receive sector now
+VDROK:	PUSH	DE
+	LD	DE, (FRDPBUF)		; set dma address
+	LD	BC,CSPTR+2
+; 	LD	C,(IX+2)		; vdisk sector length
+; 	LD	B,(IX+3)
+	CALL	PRCVBLK			; download sector
+	POP	DE
+	LD	A, C
+	OR	A			; what happens ?
+	JR	Z, VDREND		; rx ok
+	DEC	D			; retry ?
+	JR	NZ, VDRTRY
+	LD	A, 1			; ret rx err
+	JR	VDRNOK
+VDREND:	XOR	A
+VDRNOK:	POP 	HL
+	POP	BC
+	POP	DE
+	POP	IY
+	RET
+
+;;
+;; VDSKWR - write a sector to remote
+;;
+;; use:
+;;	none
+;; unclean register usage: A
+
+VDSKWR:
+	PUSH	IY
+	PUSH	DE
+	PUSH	BC
+	PUSH	HL
+	LD	IX,CSPTR
+	LD	D, 2			; retries
+VDWTRY:	LD	IY, VDSKBUF
+	LD	HL, S_VHDR
+	LD	B, 3
+VDWSL1: LD	C, (HL)
+	LD	(IY + 0), C
+	INC	IY
+	INC	HL
+	DJNZ	VDWSL1
+
+	LD	C, VDWRSEC		; read command
+	LD	(IY + 0), C
+	LD	HL, FDRVBUF
+	LD	C, (HL)			; drive
+	LD	(IY + 1), C
+	LD	BC, (FSECBUF)		; sector
+	DEC	BC			; base sector # is zero...
+	LD	(IY + 2), C
+	LD	(IY + 3), B
+	LD	BC, (FTRKBUF)		; track
+	LD	(IY + 4), C
+	LD	(IY + 5), B
+
+	PUSH	DE
+	LD	DE, VDSKBUF		; command offset
+	LD	BC, VDBUFSZ		; block size
+	CALL	PSNDBLK			; send command block
+	POP	DE
+	LD	A, C
+	OR	A			; what happens ?
+	JR	Z, VDWOK		; tx ok
+	DEC	D			; retry ?
+	JR	NZ, VDWTRY
+	LD	A, 1			; ret tx err
+	JR	VDWNOK
+					; receive sector now
+VDWOK:	PUSH	DE
+	LD	DE, (FRDPBUF)		; set dma address
+	LD	C,(IX+2)		; vdisk sector length
+	LD	B,(IX+3)
+	CALL	PSNDBLK			; upload sector
+	POP	DE
+	LD	A, C
+	OR	A			; what happens ?
+	JR	Z, VDWEND		; tx ok
+	DEC	D			; retry ?
+	JR	NZ, VDWTRY
+	LD	A, 1			; ret tx err
+	JR	VDWNOK
+VDWEND:	LD	A, 0
+VDWNOK:	POP 	HL
+	POP	BC
+	POP	DE
+	POP	IY
+	RET
+

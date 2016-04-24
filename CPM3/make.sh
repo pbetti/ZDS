@@ -95,7 +95,7 @@ gencpm() {
 makcpmldr() {
 
 	mzmac --rel -m hldrbios.asm
-# 	if [ -z "$FLAVR" ]; then
+# 	if [ "$FLAVR" = "DRI" ]; then
 		zxcc link.com cpmldr[l100]=cpmldr,hldrbios
 # 	else
 # 		zxcc link.com cpmldr[l100]=zpm3ldr,hldrbios
@@ -201,19 +201,20 @@ if [ -z "$LDR" ]; then
 fi
 
 if [ "$FLAVR" = "DRI" ]; then
+	sed --in-place 's/^ZPM3\tEQU\tTRUE/\ZPM3\tEQU\tFALSE/' common.inc
+
 	echo "CP/M 3 (Plus) BDOS..."
 	cp -f mycpm3/bnkbdos3.spr .
 	cp -f mycpm3/resbdos3.spr .
 	cp -f mycpm3/cpmldr.rel .
 
-	sed --in-place 's/^ZPM3\tEQU\tTRUE/\ZPM3\tEQU\tFALSE/' common.inc
 else
-	echo "CP/M 3 (Plus) BDOS..."
+	sed --in-place 's/^ZPM3\tEQU\tFALSE/\ZPM3\tEQU\tTRUE/' common.inc
+
+	echo "Z3Plus (zpm3) BDOS..."
 	cp -f zsys/zpm3/bnkbdos3.spr .
 	cp -f zsys/zpm3/resbdos3.spr .
 	cp -f mycpm3/cpmldr.rel .
-
-	sed --in-place 's/^ZPM3\tEQU\tFALSE/\ZPM3\tEQU\tTRUE/' common.inc
 fi
 
 

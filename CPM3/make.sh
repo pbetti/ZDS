@@ -2,6 +2,8 @@
 
 PATH=.:$PATH
 
+HWFLOPPYDRIVE="A"
+HWIDEDRIVE="C"
 HODISK=../diskimgs/hdcpm3.img
 FODISK=../diskimgs/fdcpm3.img
 HDFMT=ZDSHD8
@@ -45,49 +47,147 @@ makbios() {
 
 gencpm() {
 
+	zxcc link.com bnkbios3[b]=$OBJ
+	echo
+	zxcc link.com bios3[b,q]=$OBJ
+	echo
+	
+	# gencpm.dat manual edit requested ?
+	if [ -z "$BANKED" ]; then
+		if [ "$DOGENCPM" = "yes" ]; then
+			echo "*** Performing interactive GENCPM for a NON BANKED system ***"
+			zxcc gencpm.com
+			echo
+			mv gencpm.dat gencpm.dat.nobank
+			rm -f cpm3.sys
+
+		fi
+	else
+		if [ "$DOGENCPM" = "yes" ]; then
+			echo "*** Performing interactive GENCPM for a BANKED system ***"
+			zxcc gencpm.com
+			echo
+			mv gencpm.dat gencpm.dat.bank
+			rm -f cpm3.sys
+
+		fi
+	fi
+
 	# floppy run...
 	
-	echo "*** Performing GENCPM for floppy image ***"
+	echo "*** Creating CPM3.SYS for floppy images ***"
 	
 	if [ -z "$BANKED" ]; then
-		cp -f gencpm.dat.nobank.floppy gencpm.dat
-		zxcc link.com bios3[b,q]=$OBJ
+		echo "     Doing floppy disk NON banked BIOS"
 		echo
-		echo "Doing floppy disk NON banked BIOS"
-		zxcc gencpm.com
-		cp -f gencpm.dat gencpm.dat.nobank.floppy
-		cp -f cpm3.sys cpm3.sys.floppy
+
+		echo "* Virtual floppy O: *"
+		sed "s/BOOTDRV  = ./BOOTDRV  = O/g" gencpm.dat.nobank > gencpm.dat
+		echo
+		
+		zxcc gencpm.com auto
+		echo -e "\r"
+		echo "---------------------------------------"
+		
+		rm -f gencpm.dat
+		mv cpm3.sys cpm3.sys.floppy.o
+	
+		echo "* Virtual floppy $HWFLOPPYDRIVE: *"
+		sed "s/BOOTDRV  = ./BOOTDRV  = $HWFLOPPYDRIVE/g" gencpm.dat.nobank > gencpm.dat
+		echo
+		
+		zxcc gencpm.com auto
+		echo -e "\r"
+		echo "---------------------------------------"
+		
+		rm -f gencpm.dat
+		mv cpm3.sys cpm3.sys.floppy.o
+
 	else
-		cp -f gencpm.dat.bank.floppy gencpm.dat
-		zxcc link.com bnkbios3[b]=$OBJ
+		echo "       Doing floppy disk BANKED BIOS"
 		echo
-		echo "Doing floppy disk banked BIOS"
-		zxcc gencpm.com
-		cp -f gencpm.dat gencpm.dat.bank.floppy
-		cp -f cpm3.sys cpm3.sys.floppy
+
+		echo "* Virtual floppy O: *"
+		sed "s/BOOTDRV  = ./BOOTDRV  = O/g" gencpm.dat.bank > gencpm.dat
+		echo
+		
+		zxcc gencpm.com auto
+		echo -e "\r"
+		echo "---------------------------------------"
+		
+		rm -f gencpm.dat
+		mv cpm3.sys cpm3.sys.floppy.o
+	
+		echo "* Hardware floppy $HWFLOPPYDRIVE: *"
+		sed "s/BOOTDRV  = ./BOOTDRV  = $HWFLOPPYDRIVE/g" gencpm.dat.bank > gencpm.dat
+		echo
+		
+		zxcc gencpm.com auto
+		echo -e "\r"
+		echo "---------------------------------------"
+		
+		rm -f gencpm.dat
+		mv cpm3.sys cpm3.sys.floppy.a
+
 	fi
 
 	# hd run...
 	
 	echo
-	echo "*** Performing GENCPM for HD image ***"
+	echo "*** Performing GENCPM for Hard Disk image ***"
 	
 	if [ -z "$BANKED" ]; then
-		cp -f gencpm.dat.nobank.hd gencpm.dat
-		zxcc link.com bios3[b,q]=$OBJ
+		echo "       Doing hard disk NON banked BIOS"
 		echo
-		echo "Doing hard disk NON banked BIOS"
-		zxcc gencpm.com
-		cp -f gencpm.dat gencpm.dat.nobank.hd
-		cp -f cpm3.sys cpm3.sys.hd
+
+		echo "* Virtual HD P: *"
+		sed "s/BOOTDRV  = ./BOOTDRV  = P/g" gencpm.dat.nobank > gencpm.dat
+		echo
+		
+		zxcc gencpm.com auto
+		echo -e "\r"
+		echo "---------------------------------------"
+		
+		rm -f gencpm.dat
+		mv cpm3.sys cpm3.sys.hd.p
+	
+		echo "* IDE HD $HWIDEDRIVE: *"
+		sed "s/BOOTDRV  = ./BOOTDRV  = $HWIDEDRIVE/g" gencpm.dat.nobank > gencpm.dat
+		echo
+		
+		zxcc gencpm.com auto
+		echo -e "\r"
+		echo "---------------------------------------"
+		
+		rm -f gencpm.dat
+		mv cpm3.sys cpm3.sys.hd.c
+
 	else
-		cp -f gencpm.dat.bank.hd gencpm.dat
-		zxcc link.com bnkbios3[b]=$OBJ
+		echo "         Doing hard disk BANKED BIOS"
 		echo
-		echo "Doing hard disk banked BIOS"
-		zxcc gencpm.com
-		cp -f gencpm.dat gencpm.dat.bank.hd
-		cp -f cpm3.sys cpm3.sys.hd
+
+		echo "* Virtual HD P: *"
+		sed "s/BOOTDRV  = ./BOOTDRV  = P/g" gencpm.dat.bank > gencpm.dat
+		echo
+		
+		zxcc gencpm.com auto
+		echo -e "\r"
+		echo "---------------------------------------"
+		
+		rm -f gencpm.dat
+		mv cpm3.sys cpm3.sys.hd.p
+	
+		echo "* IDE HD $HWIDEDRIVE: *"
+		sed "s/BOOTDRV  = ./BOOTDRV  = $HWIDEDRIVE/g" gencpm.dat.bank > gencpm.dat
+		echo
+		
+		zxcc gencpm.com auto
+		echo -e "\r"
+		echo "---------------------------------------"
+		
+		rm -f gencpm.dat
+		mv cpm3.sys cpm3.sys.hd.c
+
 	fi
 
 }
@@ -120,13 +220,32 @@ makdisk() {
 	mkfs.cpm -f $1 -b bootload.bin -b cpmldr.com $2
 
 	if [ "$FLAVR" = "DRI" ]; then
+		subd="dri"
 		if [ "$1" = "ZDS" ]; then
-			cpmcp -f $1 -t $2 profile.sub_o 0:profile.sub
+			imgtype="floppy"
+			cpmcp -f $1 $2 cpm3.sys.floppy.o 0:cpm3.sys
+			cpmcp -f $1 $2 cpm3.sys.floppy.a 3:cpm3.sys
+			cpmcp -f $1 -t $2 profile.sub_o.dri 0:profile.sub
 		else
-			cpmcp -f $1 -t $2 profile.sub_p 0:profile.sub
+			imgtype="hd"
+			cpmcp -f $1 $2 cpm3.sys.hd.p 0:cpm3.sys
+			cpmcp -f $1 $2 cpm3.sys.hd.c 3:cpm3.sys
+			cpmcp -f $1 -t $2 profile.sub_p.dri 0:profile.sub
 		fi
 		cpmcp -f $1 $2 ccp.com 0:
 	else
+		subd="z3p"
+		if [ "$1" = "ZDS" ]; then
+			imgtype="floppy"
+			cpmcp -f $1 $2 cpm3.sys.floppy.o 0:cpm3.sys
+			cpmcp -f $1 $2 cpm3.sys.floppy.a 3:cpm3.sys
+			cpmcp -f $1 -t $2 profile.sub_o.z3p 0:profile.sub
+		else
+			imgtype="hd"
+			cpmcp -f $1 $2 cpm3.sys.hd.p 0:cpm3.sys
+			cpmcp -f $1 $2 cpm3.sys.hd.c 3:cpm3.sys
+			cpmcp -f $1 -t $2 profile.sub_p.z3p 0:profile.sub
+		fi
 # 		cpmcp -f $1 $2 zccp/zccp.com 0:ccp.com
 		cpmcp -f $1 $2 ccp.com 0:
 	fi
@@ -142,19 +261,12 @@ makdisk() {
 	cpmcp -f $1 $2 zds/fdisk.com 1:
 
 
-	if [ "$1" = "ZDS" ]; then
-		imgtype="floppy"
-		cpmcp -f $1 $2 cpm3.sys.floppy 0:cpm3.sys
-	else
-		imgtype="hd"
-		cpmcp -f $1 $2 cpm3.sys.hd 0:cpm3.sys
-	fi
 	for d in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
 	do
-		if [ ! -d "disk/$imgtype/$d" ]; then
+		if [ ! -d "disk/$subd/$imgtype/$d" ]; then
 			continue
 		fi
-		for f in disk/$imgtype/$d/*
+		for f in disk/$subd/$imgtype/$d/*
 		do
 # 			echo cpmcp -f $1 $2 $f $d:
 			cpmcp -f $1 $2 $f $d:
@@ -184,7 +296,7 @@ if [ "$1" = "disk" ]; then
 fi
 
 FLAVR="$1"
-LDR="$2"
+# LDR="$2"
 DOGENCPM="no"
 
 if [ "$FLAVR" = "-gencpm" ]; then
@@ -192,13 +304,14 @@ if [ "$FLAVR" = "-gencpm" ]; then
 	shift
 fi
 
-if [ -z "$FLAVR" ]; then
-	FLAVR="DRI"
-fi
+FLAVR="$1"
+# if [ -z "$FLAVR" ]; then
+# 	FLAVR="DRI"
+# fi
 
-if [ -z "$LDR" ]; then
+# if [ -z "$LDR" ]; then
 	LDR="cpm"
-fi
+# fi
 
 if [ "$FLAVR" = "DRI" ]; then
 	sed --in-place 's/^ZPM3\tEQU\tTRUE/\ZPM3\tEQU\tFALSE/' common.inc
@@ -224,10 +337,10 @@ makbios
 echo
 
 
-if [ "$DOGENCPM" = "yes" ]; then
+# if [ "$DOGENCPM" = "yes" ]; then
 	gencpm
-	echo
-fi
+# 	echo
+# fi
 
 echo "Generating CPMLDR..."
 

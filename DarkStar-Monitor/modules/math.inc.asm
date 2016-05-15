@@ -103,15 +103,10 @@ OFFZER: DEC	E		; correct index to zero base
 	LD	C,(IX+2)	; sector len in BC
 	LD	B,(IX+3)
 	CALL	MUL16		; calc relative offset (sec len x offset)
-; 	EX	DE,HL		; move result (rel.offset) in DE
 	PUSH	IY
 	POP	HL		; HL now base address
-
-; 	POP	HL		; restore base address
-; 	PUSH	HL		; re-save
 	ADD	HL,DE		; calc final address
 	LD	(FRDPBUF),HL	; apply dma
-; 	POP	HL		; re-restore base address
 	POP	DE		; restore secs counters
 	RET
 

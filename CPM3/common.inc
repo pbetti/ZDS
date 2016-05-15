@@ -22,7 +22,7 @@ FALSE	EQU	0
 
 	; determine if for bank select or not:
 BANKED	EQU	TRUE		;< ... BANKED VERSION
-ZPM3	EQU	TRUE		; ZPM3 build ?
+ZPM3	EQU	FALSE		; ZPM3 build ?
 
 	;
 	; some other equs...

@@ -11,9 +11,28 @@
 
 ;; 6545 initialization string
 CRTTAB1:
-	DB	$6F,$50,$57,$28,$1A,0,$19,$19,$48,$0B
-	DB	0,$0B,0,0,0,0,0,0,0,0
-
+	DB	111		; VR0 Tot h chars -1
+	DB	80		; VR1 Disp h chars	
+	DB	87		; VR2 HSync pos
+	DB	$28		; VR3 Sync width
+	DB	26		; VR4 Tot rows -1
+	DB	0		; VR5 VAdj
+	DB	25		; VR6 Disp rows -1
+	DB	25		; VR7 VSync pos
+	DB	01001000b	; VR8 00 Non interl,
+				;      0 binary addressing,
+				;      1 transparent mem,
+				;      0 display no delay,
+				;      0 cursor no delay
+				;      1 pin34 strobe
+				;      0 upd in blanking
+	DB	11		; VR9 Character scan lines
+	DB	0		; VR10 Curs start (and no blink)
+	DB	11		; VR11 Curs end
+	DB	0,0		; VR12/13 Display start
+	DB	0,0		; VR14/15 Cursor position
+	DB	0,0		; VR16/17 LPEN position
+	DB	0,0		; VR18/19 Update position
 ;;
 ;; CRTCINI - init buffers,6545,test vram,clear,leave cursor at home
 ;;
@@ -78,11 +97,11 @@ CRSLOC:
 ;; GET DISPLAY CURSOR POSITION and return in HL
 ;
 GCRSPOS:
-	LD	A,$0E
+	LD	A,VR14.CURPOSH
 	OUT	(CRT6545ADST),A
 	IN	A,(CRT6545DATA)
 	LD	H,A
-	LD	A,$0F
+	LD	A,VR15.CURPOSL
 	OUT	(CRT6545ADST),A
 	IN	A,(CRT6545DATA)
 	LD	L,A
@@ -93,11 +112,11 @@ GCRSPOS:
 ;; SET DISPLAY START ADDRESS
 ;
 SDPYSTA:
-	LD	A,$0C
+	LD	A,VR12.DSTARTH
 	OUT	(CRT6545ADST),A
 	LD	A,H
 	OUT	(CRT6545DATA),A
-	LD	A,$0D
+	LD	A,VR13.DSTARTL
 	OUT	(CRT6545ADST),A
 	LD	A,L
 	OUT	(CRT6545DATA),A
@@ -116,20 +135,20 @@ DISMVC:
 ;; SET DISPLAY CURSOR ADDRESS EXTENDED
 ;;
 SCRSPOS:
-	LD	A,$0E
+	LD	A,VR14.CURPOSH
 	OUT	(CRT6545ADST),A
 	LD	A,H
 	OUT	(CRT6545DATA),A
-	LD	A,$0F
+	LD	A,VR15.CURPOSL
 	OUT	(CRT6545ADST),A
 	LD	A,L
 	OUT	(CRT6545DATA),A
 SCRSPOS1:
-	LD	A,$12
+	LD	A,VR18.UPDADDRH
 	OUT	(CRT6545ADST),A
 	LD	A,H
 	OUT	(CRT6545DATA),A
-	LD	A,$13
+	LD	A,VR19.UPDADDRL
 	OUT	(CRT6545ADST),A
 	LD	A,L
 	OUT	(CRT6545DATA),A
@@ -302,11 +321,11 @@ CURADR:	LD	HL,TMPBYTE
 	LD	(APPBUF),A		; store column
 	SET	0,(HL)			; switch row/col flag
 	RET
-SETROW:	CP	$39			; greater than 24 ?
+SETROW:	RES	0,(HL)			; resets col/row flag
+	CP	$39			; greater than 24 ?
 	RET	NC			; yes: error
 	SUB	$1F			; no: ok
-	RES	0,(HL)			; resets flags
-	LD	HL,MIOBYTE
+	LD	HL,MIOBYTE		; resets ctrl char flag
 	RES	7,(HL)			; done reset
 	LD	B,A
 	LD	HL,$FFB0
@@ -429,7 +448,7 @@ CURSET:
 	LD	A,(CURSSHP)
 	LD	L,A
 CURSET1:
-	LD	A,$0A
+	LD	A,VR10.CRSTART
 	OUT	(CRT6545ADST),A
 	LD	A,L
 	OUT	(CRT6545DATA),A

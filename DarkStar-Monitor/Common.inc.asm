@@ -271,7 +271,43 @@ BLIFASTLINE	EQU	6AH		; Blink, fast, line
 CURSOROFF	EQU	20H		; Off
 FIXBLOCK	EQU	00H		; Fixed, block
 CURSORON	EQU	0AH		; On
-
+	; 6545 register index
+VR0.HRTOT	EQU	0		; Total horizontal chars
+VR1.HRDIS	EQU	1		; Total horizontal displayed ch.
+VR2.HRSYNCPOS	EQU	2		; Horizontal sync position
+VR3.HRVRSYNCW	EQU	3		; Hsync and vsync width
+					; (bit 0-3 hsync, bit 4-7 vsync)
+VR4.VRCHROW	EQU	4		; Total ch. rows in a frame
+VR5.VRADJ	EQU	5		; Vertical additional scan lines
+VR6.VRDISROWS	EQU	6		; Displayed char rows
+VR7.VRSYNCPOS	EQU	7		; Vertical sync position
+VR8.CRTMODE	EQU	8		; Operating mode
+					; 76543210
+					; ||||||++ Interlace
+					; |||||+-- Addressing bin/rowcol
+					; ||||+--- Memory shared/transp.
+					; |||+---- Display delay no/yes
+					; ||+----- Cursor delay no/yes
+					; |+------ Pin 34 addr/strobe
+					; |------- Access blank/interl.
+VR9.SCANLINES	EQU	9		; Scan lines per char row
+VR10.CRSTART	EQU	10		; Cursor start line bit 0-4
+					; bit 6-5
+					;     0 0 = No blink
+					;     0 1 = No cursor
+					;     1 0 = Blink 1/16 rate
+					;     1 1 = Blink 1/32 rate
+VR11.CREND	EQU	11		; Cursor end line bit 0-4
+VR12.DSTARTH	EQU	12		; Display start address high
+VR13.DSTARTL	EQU	13		; Display start address low
+VR14.CURPOSH	EQU	14		; Cursor position high
+VR15.CURPOSL	EQU	15		; Cursor position low
+VR16.LPENH	EQU	16		; LPEN position high
+VR17.LPENL	EQU	17		; LPEN position low
+VR18.UPDADDRH	EQU	18		; Update (next char) address H
+VR19.UPDADDRL	EQU	19		; Update (next char) address L
+VR31.DUMMY	EQU	31		; Dummy register for transparent
+					; addressing update checkin
 ; ---------------------------------------------------------------------
 ; LX390 FDC CONTROLLER:
 ; ---------------------------------------------------------------------

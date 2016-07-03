@@ -15,125 +15,125 @@
 ;;
 ;; FDRVSEL - select drive for r/w ops
 ;
-FDRVSEL:
-	PUSH	AF			;
-	PUSH	HL			;
-	LD	HL,HDRVV		; 10
-	LD	A,(FDRVBUF)		; 13
-	ADD	A,L			; 4
-	LD	L,A			; 4
-	LD	A,(HL)			; 7
-	LD	H,A			;
-	LD	A, (DSELBF)
-	AND	$F0
-	OR	H
-	LD	(DSELBF),A		; 13
-	OUT	(FDCDRVRCNT),A		; 11
-	POP	HL			;
-	POP	AF			;
-	RET				;
+fdrvsel:
+	push	af			;
+	push	hl			;
+	ld	hl,hdrvv		; 10
+	ld	a,(fdrvbuf)		; 13
+	add	a,l			; 4
+	ld	l,a			; 4
+	ld	a,(hl)			; 7
+	ld	h,a			;
+	ld	a, (dselbf)
+	and	$f0
+	or	h
+	ld	(dselbf),a		; 13
+	out	(fdcdrvrcnt),a		; 11
+	pop	hl			;
+	pop	af			;
+	ret				;
 	;
 	; This used to translate the drive number in a cmd byte suitable
 	; for drive selection on the floppy board
-HDRVV:	DEFB	$01			; drive 1
-	DEFB	$02			; drive 2
-	DEFB	$04			; drive 3
-	DEFB	$08 			; drive 4
+hdrvv:	defb	$01			; drive 1
+	defb	$02			; drive 2
+	defb	$04			; drive 3
+	defb	$08 			; drive 4
 
 ;;
 ;; CPMBOOT - boostrap cp/m
 ;
-CPMBOOT:
-	LD	DE,512
-	CALL	SETDPRM
-	LD	BC,$00
-	CALL	TRKSET
-	LD	A,(CDISK)		; get logged drive
-	LD	C,A
-	CALL	DSKSEL
-	CALL	FDRVSEL
-	CALL	FHOME
-	RET	NZ
-	LD	BC,BLDOFFS		; read in loader
-	CALL	DMASET
-	LD	BC,$01
-	CALL	SECSET
-	CALL	FREAD
-	RET	NZ
-	JP	BLDOFFS+2		; jump to the loader if all ok
+cpmboot:
+	ld	de,512
+	call	setdprm
+	ld	bc,$00
+	call	trkset
+	ld	a,(cdisk)		; get logged drive
+	ld	c,a
+	call	dsksel
+	call	fdrvsel
+	call	fhome
+	ret	nz
+	ld	bc,bldoffs		; read in loader
+	call	dmaset
+	ld	bc,$01
+	call	secset
+	call	fread
+	ret	nz
+	jp	bldoffs+2		; jump to the loader if all ok
 
 ;;
 ;; VCPMBT
 ;;
 ;; Boot CP/M from parallel link
 ;
-VCPMBT:
-	LD	BC, BLDOFFS          	; base transfer address
-	CALL	DMASET
-	LD	A,(CDISK)		; get logged drive
-	LD	C, A			; make active
-	CALL	DSKSEL
-	LD	BC, 0			; START TRACK
-	CALL	TRKSET
-	LD	BC, 1			; start sector
-	CALL	SECSET
-	LD	DE,128
-	CALL	SETDPRM
-	CALL	VDSKRD			; perform i/o 128
-	OR	A
-	RET	Z
-	LD	DE,256
-	CALL	SETDPRM
-	CALL	VDSKRD			; perform i/o 256
-	OR	A
-	RET	Z
-	LD	DE,512
-	CALL	SETDPRM
-	CALL	VDSKRD			; perform i/o 512
-	OR	A
-	RET
+vcpmbt:
+	ld	bc, bldoffs          	; base transfer address
+	call	dmaset
+	ld	a,(cdisk)		; get logged drive
+	ld	c, a			; make active
+	call	dsksel
+	ld	bc, 0			; START TRACK
+	call	trkset
+	ld	bc, 1			; start sector
+	call	secset
+	ld	de,128
+	call	setdprm
+	call	vdskrd			; perform i/o 128
+	or	a
+	ret	z
+	ld	de,256
+	call	setdprm
+	call	vdskrd			; perform i/o 256
+	or	a
+	ret	z
+	ld	de,512
+	call	setdprm
+	call	vdskrd			; perform i/o 512
+	or	a
+	ret
 
 ;;
 ;; HDCPM - boostrap cp/m from IDE
 ;
-HDCPM:
-	LD	A,(CDISK)		; get logged drive
-	LD	C,A
-	CALL	DSKSEL
-	LD	BC,BLDOFFS		; read in loader @ BLDOFFS
-	CALL	DMASET
-	LD	BC,$00
-	CALL	TRKSET
-	LD	BC,$00
-	CALL	SECSET
-	CALL	READSECTOR
-	LD	D,0			; error type (no volume)
-	RET	NZ
-	LD	DE,(HDBSIG)		; check for a valid bootloader
-	LD	HL,(BLDOFFS)
-	OR	A
-	SBC	HL,DE
-	LD	D,1			; error type (no bootloader)
-	RET	NZ			; no bootlader found
-	JP	BLDOFFS+2		; jump to the loader if all ok
-	RET
+hdcpm:
+	ld	a,(cdisk)		; get logged drive
+	ld	c,a
+	call	dsksel
+	ld	bc,bldoffs		; read in loader @ BLDOFFS
+	call	dmaset
+	ld	bc,$00
+	call	trkset
+	ld	bc,$00
+	call	secset
+	call	readsector
+	ld	d,0			; error type (no volume)
+	ret	nz
+	ld	de,(hdbsig)		; check for a valid bootloader
+	ld	hl,(bldoffs)
+	or	a
+	sbc	hl,de
+	ld	d,1			; error type (no bootloader)
+	ret	nz			; no bootlader found
+	jp	bldoffs+2		; jump to the loader if all ok
+	ret
 
-HDBSIG:	DEFB	$55,$AA
+hdbsig:	defb	$55,$aa
 
 
-TRKSET:
-	LD	(FTRKBUF),BC
-	RET
-SECSET:
-	LD	(FSECBUF),BC
-	RET
-DMASET:
-	LD	(FRDPBUF),BC
-	RET
-DSKSEL:
-	LD	A,C
-	LD	(FDRVBUF),A
-	RET
+trkset:
+	ld	(ftrkbuf),bc
+	ret
+secset:
+	ld	(fsecbuf),bc
+	ret
+dmaset:
+	ld	(frdpbuf),bc
+	ret
+dsksel:
+	ld	a,c
+	ld	(fdrvbuf),a
+	ret
 
 ; 	;
 ; 	;
@@ -173,4 +173,5 @@ DSKSEL:
 ; 	RET
 ; 	;
 ; TIMWRI:	LD	A,$FF			; unsupported here
+; 	RET
 ; 	RET

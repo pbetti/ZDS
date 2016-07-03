@@ -21,543 +21,543 @@
 ;  bit 0: ERR	1=error occured
 ;
 
-IDBUFR		EQU	TRNPAG << 12
-HRETRIES	EQU	5
-SIGNSIZE	EQU	8
-ENTRYSIZE	EQU	8
-PTBLSIZE	EQU	15
+idbufr		equ	trnpag << 12
+hretries	equ	5
+signsize	equ	8
+entrysize	equ	8
+ptblsize	equ	15
 
 	; TODO: All routines here are written for a single drive system,
 	;       had to be revised...
 
-PARRCRD	macro				; partition table record format
-	DEFB	0			; active
-	DEFB	0			; letter
-	DEFB	0			; type
-	DEFW	0			; start
-	DEFW	0			; end
-	DEFB	0			; reserved
+parrcrd	macro				; partition table record format
+	defb	0			; active
+	defb	0			; letter
+	defb	0			; type
+	defw	0			; start
+	defw	0			; end
+	defb	0			; reserved
 	endm
 
 	; Local storage for disks geometry
-DSK0CYLS:	DEFW	0		; For IDE disk 0 or master
-DSK0HEADS:	DEFW	0
-DSK0SECTORS:	DEFW	0
-PTSTART:	DEFW	0
-PTEND:		DEFW	0
-IDTSAV:		DEFB	0		; page # save
-INRETRY:	DEFB	0		; retry on r/w errors
+dsk0cyls:	defw	0		; For IDE disk 0 or master
+dsk0heads:	defw	0
+dsk0sectors:	defw	0
+ptstart:	defw	0
+ptend:		defw	0
+idtsav:		defb	0		; page # save
+inretry:	defb	0		; retry on r/w errors
 	; This are partition management
-HDLOG:		DEFB	$FF		; logged drive
-TBLOADED:	DEFB	0		; flag partition loaded
-PARTBL:					; local copy of the partition table
-		PARRCRD			; entry 0 ...
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD
-		PARRCRD			; ... entry 15
-SIGNSTRING:	DEFB	"AUAUUAUA"	; signature string
+hdlog:		defb	$ff		; logged drive
+tbloaded:	defb	0		; flag partition loaded
+partbl:					; local copy of the partition table
+		parrcrd			; entry 0 ...
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd			; ... entry 15
+signstring:	defb	"AUAUUAUA"	; signature string
 
 
 ;;
 ;; Initialize interface
 ;;
-HDINIT:
-	LD	A,READCFG8255		; 10010010b
-	OUT	(IDEPORTCTRL),A		; config 8255 chip, READ mode
+hdinit:
+	ld	a,readcfg8255		; 10010010b
+	out	(ideportctrl),a		; config 8255 chip, READ mode
 
-	LD	A,IDERSTLINE
-	OUT	(IDEPORTC),A		; hard reset the disk drive
+	ld	a,iderstline
+	out	(ideportc),a		; hard reset the disk drive
 
-	LD	B,$20			; tunable
-HDRESDLY:
-	DEC	B
-	JR	NZ,HDRESDLY		; delay (reset pulse width)
+	ld	b,$20			; tunable
+hdresdly:
+	dec	b
+	jr	nz,hdresdly		; delay (reset pulse width)
 
-	XOR	A
-	OUT	(IDEPORTC),A		; no IDE control lines asserted
-	LD	DE,32
-	CALL	DELAY			; pause 32 ms.
+	xor	a
+	out	(ideportc),a		; no IDE control lines asserted
+	ld	de,32
+	call	delay			; pause 32 ms.
 
-	LD	D,11100000B		; data for IDE SDH reg (512 bytes, LBA mode, single drive, head 0)
-	LD	E,REGSHD
-	CALL	IDEWR8D
+	ld	d,11100000b		; data for IDE SDH reg (512 bytes, LBA mode, single drive, head 0)
+	ld	e,regshd
+	call	idewr8d
 
-	LD	B,$FF			; tunable
-HDWAITINI:
-	LD	E,REGSTATUS		; get status after initilization
-	CALL	IDERD8D			; check status
-	BIT	7,D
-	JP	Z,DONEINIT		; return if ready bit is zero
+	ld	b,$ff			; tunable
+hdwaitini:
+	ld	e,regstatus		; get status after initilization
+	call	iderd8d			; check status
+	bit	7,d
+	jp	z,doneinit		; return if ready bit is zero
 
 	;Delay to allow drive to get up to speed
-	PUSH	BC			; (the 0FFH above)
-	LD	BC,$FFFF
-DELAY2:	LD	D,2			; may need to adjust delay time to allow cold drive to
-DELAY1:	DEC	D			; to speed
-	JP	NZ,DELAY1
-	DEC	BC
-	LD	A,C
-	OR	B
-	JP	NZ,DELAY2
-	POP	BC
-	DJNZ	HDWAITINI
-	XOR	A			; flag error on return
-	DEC	A
-	RET
-DONEINIT:
-	RET
+	push	bc			; (the 0FFH above)
+	ld	bc,$ffff
+delay2:	ld	d,2			; may need to adjust delay time to allow cold drive to
+delay1:	dec	d			; to speed
+	jp	nz,delay1
+	dec	bc
+	ld	a,c
+	or	b
+	jp	nz,delay2
+	pop	bc
+	djnz	hdwaitini
+	xor	a			; flag error on return
+	dec	a
+	ret
+doneinit:
+	ret
 
 
 ;;
 ;; Get drive identification block
 ;;
-DRIVEID:
+driveid:
 	; Mount transient page used for id buffer
-	LD	B, TRNPAG
-	CALL	MMGETP
-	LD	(IDTSAV), A		; save current
+	ld	b, trnpag
+	call	mmgetp
+	ld	(idtsav), a		; save current
 	;
-	LD	A,(HMEMPAG)		; bios scratch page (phy)
-	LD	B,TRNPAG		; transient page
-	CALL	MMPMAP			; mount it
+	ld	a,(hmempag)		; bios scratch page (phy)
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
 	;
-	CALL	IDEWAITNOTBUSY
-	JR	C,IDRNOK
+	call	idewaitnotbusy
+	jr	c,idrnok
 
-	LD	D,CMDID
-	LD	E,REGCOMMAND
-	CALL	IDEWR8D			; issue the command
+	ld	d,cmdid
+	ld	e,regcommand
+	call	idewr8d			; issue the command
 
-	CALL	IDEWAITDRQ		; wait for Busy=0, DRQ=1
-	JR	C,IDRNOK
+	call	idewaitdrq		; wait for Busy=0, DRQ=1
+	jr	c,idrnok
 
-	LD	B,0
-	LD	HL,IDBUFR		; store data here
-	CALL	MORERD16
+	ld	b,0
+	ld	hl,idbufr		; store data here
+	call	morerd16
 	;;
 	;; workaround for first word lossy drivers
 	;;
-	LD	A,(IDBUFR+18)
-	CP	' '
-	JR	NZ,IDRTRN
+	ld	a,(idbufr+18)
+	cp	' '
+	jr	nz,idrtrn
 	; first word loss...
-	LD	B,3			; # of retrys
-IDRETRY:
-	PUSH	BC
-	CALL	IDEWAITNOTBUSY
-	JR	C,IDRNOK
+	ld	b,3			; # of retrys
+idretry:
+	push	bc
+	call	idewaitnotbusy
+	jr	c,idrnok
 
-	LD	D,CMDID
-	LD	E,REGCOMMAND
-	CALL	IDEWR8D
+	ld	d,cmdid
+	ld	e,regcommand
+	call	idewr8d
 
-	CALL	IDEWAITDRQ		; Wait for Busy=0, DRQ=1
-	JR	C,IDRNOK
+	call	idewaitdrq		; Wait for Busy=0, DRQ=1
+	jr	c,idrnok
 
-	LD	B,0
-	LD	HL,IDBUFR		; store data here
-	CALL	MORERD16I		; get words, try to recover 1st word already
+	ld	b,0
+	ld	hl,idbufr		; store data here
+	call	morerd16i		; get words, try to recover 1st word already
 					; on ide bus
-	POP	BC
-	LD	A,(IDBUFR+18)
-	CP	' '
-	JR	NZ,IDRTRN
-	DJNZ	IDRETRY
-IDRNOK:
-	CALL	RSIDBUF
-	XOR	A
-	DEC	A
-	RET				; * sigh * :-(
-IDRTRN:
+	pop	bc
+	ld	a,(idbufr+18)
+	cp	' '
+	jr	nz,idrtrn
+	djnz	idretry
+idrnok:
+	call	rsidbuf
+	xor	a
+	dec	a
+	ret				; * sigh * :-(
+idrtrn:
 	; prior to return we save disk params locally
-	CALL	SAVEGEO
-	CALL	RSIDBUF
-	XOR	A			; reset z flag
-	RET
+	call	savegeo
+	call	rsidbuf
+	xor	a			; reset z flag
+	ret
 
 ;;
 ;; restore scratch
 ;;
-RSIDBUF:
-	LD	A,(IDTSAV)		; old
-	LD	B,TRNPAG		; transient page
-	CALL	MMPMAP			; mount it
-	RET
+rsidbuf:
+	ld	a,(idtsav)		; old
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
+	ret
 
 ;;
 ;; Save disk geometry
 ;;
-SAVEGEO:
+savegeo:
 	; TODO: should work also for slave
-	LD	HL,IDBUFR + 2		; cyls
-	LD	C,(HL)
-	INC	HL
-	LD	B,(HL)
-	LD	(DSK0CYLS), BC
-	LD	HL,IDBUFR + 6		; heads
-	LD	C,(HL)
-	INC	HL
-	LD	B,(HL)
-	LD	(DSK0HEADS), BC
-	LD	HL,IDBUFR + 12		; sectors
-	LD	C,(HL)
-	INC	HL
-	LD	B,(HL)
-	LD	(DSK0SECTORS), BC
-	RET
+	ld	hl,idbufr + 2		; cyls
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	ld	(dsk0cyls), bc
+	ld	hl,idbufr + 6		; heads
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	ld	(dsk0heads), bc
+	ld	hl,idbufr + 12		; sectors
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	ld	(dsk0sectors), bc
+	ret
 
 ;;
 ;; Return disk geometry
 ;;
 ;; IX < cylinders, IY < heads, HL < sectors
-GETHDGEO:
-	LD	IX,(DSK0CYLS)
-	LD	IY,(DSK0HEADS)
-	LD	HL,(DSK0SECTORS)
-	RET
+gethdgeo:
+	ld	ix,(dsk0cyls)
+	ld	iy,(dsk0heads)
+	ld	hl,(dsk0sectors)
+	ret
 
 ;;
 ;; Get partition table
 ;;
-GETPTABLE:
-	LD	HL,TMPBYTE		; enable unpartitioned addressing
-	SET	7,(HL)
-	LD	BC,(DSK0SECTORS)	; verify we know disk geometry
-	LD	A,C
-	OR	B
-	JR	NZ,GETOT00
-	CALL	DRIVEID			; no: load it
-	JR	NZ,GETPERR		; damn !
-GETOT00:
+getptable:
+	ld	hl,tmpbyte		; enable unpartitioned addressing
+	set	7,(hl)
+	ld	bc,(dsk0sectors)	; verify we know disk geometry
+	ld	a,c
+	or	b
+	jr	nz,getot00
+	call	driveid			; no: load it
+	jr	nz,getperr		; damn !
+getot00:
 	; mount transient page used for operations
-	LD	B, TRNPAG
-	CALL	MMGETP
-	LD	(IDTSAV), A		; save current
+	ld	b, trnpag
+	call	mmgetp
+	ld	(idtsav), a		; save current
 	;
-	LD	A,(HMEMPAG)		; bios scratch page (phy)
-	LD	B,TRNPAG		; transient page
-	CALL	MMPMAP			; mount it
+	ld	a,(hmempag)		; bios scratch page (phy)
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
 	; read table
-	LD	BC,0			; track 0
-	CALL	TRKSET
-	LD	BC,1			; sector 1
-	CALL	SECSET
-	LD	BC,IDBUFR		; DMA @ temp page
-	CALL	DMASET
-	CALL	READSECTOR
-	JR	NZ,GETPERR		; :-(
+	ld	bc,0			; track 0
+	call	trkset
+	ld	bc,1			; sector 1
+	call	secset
+	ld	bc,idbufr		; DMA @ temp page
+	call	dmaset
+	call	readsector
+	jr	nz,getperr		; :-(
 	; check signature for valid table
-	LD	DE,SIGNSTRING
-	LD	HL,IDBUFR
-	LD	BC,SIGNSIZE
-GETOT01:
-	LD	A,(DE)			; do compare
-	INC	DE
-	CPI
-	JR	NZ,GETPERR		; invalid table
-	JP	PO,GETOT02
-	JR	GETOT01
-GETOT02:
+	ld	de,signstring
+	ld	hl,idbufr
+	ld	bc,signsize
+getot01:
+	ld	a,(de)			; do compare
+	inc	de
+	cpi
+	jr	nz,getperr		; invalid table
+	jp	po,getot02
+	jr	getot01
+getot02:
 	; copy table in, only active entries are copied
-	EXX
-	LD	B,PTBLSIZE		; count on table entries
-	EXX
-	LD	HL,IDBUFR+SIGNSIZE-ENTRYSIZE
-	LD	DE,PARTBL
-GETOT04:
-	LD	B,ENTRYSIZE
-GETOT07:
-	INC	HL
-	DJNZ	GETOT07
-GETOT05:
-	LD	BC,ENTRYSIZE
-	LD	A,(HL)
-	CP	'Y'			; is active ?
-	JR	NZ,GETOT03
-	LDIR
-	EXX
-	DEC	B
-	EXX
-	JR	NZ,GETOT05
-	JR	GETOT06
-GETOT03:
-	EXX
-	DEC	B
-	EXX
-	JR	NZ,GETOT04
-GETOT06:
-	XOR	A
-	PUSH	AF
-	JR	GETPEXI
-GETPERR:				; failure
-	XOR	A
-	DEC	A
-	PUSH	AF
-GETPEXI:
+	exx
+	ld	b,ptblsize		; count on table entries
+	exx
+	ld	hl,idbufr+signsize-entrysize
+	ld	de,partbl
+getot04:
+	ld	b,entrysize
+getot07:
+	inc	hl
+	djnz	getot07
+getot05:
+	ld	bc,entrysize
+	ld	a,(hl)
+	cp	'Y'			; is active ?
+	jr	nz,getot03
+	ldir
+	exx
+	dec	b
+	exx
+	jr	nz,getot05
+	jr	getot06
+getot03:
+	exx
+	dec	b
+	exx
+	jr	nz,getot04
+getot06:
+	xor	a
+	push	af
+	jr	getpexi
+getperr:				; failure
+	xor	a
+	dec	a
+	push	af
+getpexi:
 	; prior to return restore temporary
-	CALL	RSIDBUF
-	LD	HL,TMPBYTE		; disable unpartitioned addressing
-	RES	7,(HL)
-	POP	AF
-	RET
+	call	rsidbuf
+	ld	hl,tmpbyte		; disable unpartitioned addressing
+	res	7,(hl)
+	pop	af
+	ret
 
 ;;
 ;; Read sector (512 bytes) from IDE
 ;;
-READSECTOR:
-	CALL	WRLBA			; tell which sector we want to read from.
-	RET	NZ			; LBA error
-	CALL	IDEWAITNOTBUSY
-	JP	C,RDSNOK		; status error
+readsector:
+	call	wrlba			; tell which sector we want to read from.
+	ret	nz			; LBA error
+	call	idewaitnotbusy
+	jp	c,rdsnok		; status error
 
-	LD	D,CMDREAD
-	LD	E,REGCOMMAND
-	CALL	IDEWR8D			; send sec read command to drive.
-	CALL	IDEWAITDRQ		; wait until it's got the data
-	JP	C,RDSNOK		; read/status error
+	ld	d,cmdread
+	ld	e,regcommand
+	call	idewr8d			; send sec read command to drive.
+	call	idewaitdrq		; wait until it's got the data
+	jp	c,rdsnok		; read/status error
 	;
-	LD	HL,(FRDPBUF)		; DMA address
-	LD	B,0			; read 512 bytes to [HL] (256X2 bytes)
-MORERD16:
-	LD	A,REGDATA		; REG register address
-	OUT	(IDEPORTC),A
+	ld	hl,(frdpbuf)		; DMA address
+	ld	b,0			; read 512 bytes to [HL] (256X2 bytes)
+morerd16:
+	ld	a,regdata		; REG register address
+	out	(ideportc),a
 
-	OR	IDERDLINE		; pulse RD line
-	OUT	(IDEPORTC),A
-MORERD16I:
-	IN	A,(IDEPORTA)		; read lower byte
-	LD	(HL),A
-	INC	HL
-	IN	A,(IDEPORTB)		; read upper byte
-	LD	(HL),A
-	INC	HL
+	or	iderdline		; pulse RD line
+	out	(ideportc),a
+morerd16i:
+	in	a,(ideporta)		; read lower byte
+	ld	(hl),a
+	inc	hl
+	in	a,(ideportb)		; read upper byte
+	ld	(hl),a
+	inc	hl
 
-	LD	A,REGDATA		; deassert RD line
-	OUT	(IDEPORTC),A
-	DJNZ	MORERD16
+	ld	a,regdata		; deassert RD line
+	out	(ideportc),a
+	djnz	morerd16
 
-	LD	E,REGSTATUS
-	CALL	IDERD8D
-	LD	A,D
-	AND	$01
-	JR	NZ,RDSNOK
-RDSOK:
-	XOR	A			; ok
-	LD	(INRETRY),A		; clean, in case...
-	RET
-RDSNOK:
-	LD	A,(INRETRY)		; in a retry loop ?
-	OR	A
-	LD	HL,READSECTOR		; where to come back
-	JR	NZ,IORETR		; handle retry
-	LD	A,HRETRIES+1		; no. start it
+	ld	e,regstatus
+	call	iderd8d
+	ld	a,d
+	and	$01
+	jr	nz,rdsnok
+rdsok:
+	xor	a			; ok
+	ld	(inretry),a		; clean, in case...
+	ret
+rdsnok:
+	ld	a,(inretry)		; in a retry loop ?
+	or	a
+	ld	hl,readsector		; where to come back
+	jr	nz,ioretr		; handle retry
+	ld	a,hretries+1		; no. start it
 ; 	JR	IORETR
 
 	; ... fall through
 
 	; retry handle, common for both read and write
-IORETR:	DEC	A
-	LD	(INRETRY),A		; update count
-	JR	Z,UNRECOV		; unrecoverable error!
-	CALL	HDINIT			; reset drive
-	JP	(HL)			; redo
-UNRECOV:
-	DEC	A
-	RET				; error
+ioretr:	dec	a
+	ld	(inretry),a		; update count
+	jr	z,unrecov		; unrecoverable error!
+	call	hdinit			; reset drive
+	jp	(hl)			; redo
+unrecov:
+	dec	a
+	ret				; error
 
 ;;
 ;; Write a sector, specified by the 3 bytes in LBA
 ;;
-WRITESECTOR:
-	CALL	WRLBA			; set LBA sector
-	RET	NZ			; LBA error
-	CALL	IDEWAITNOTBUSY		; make sure drive is ready
-	JP	C,WRSNOK
+writesector:
+	call	wrlba			; set LBA sector
+	ret	nz			; LBA error
+	call	idewaitnotbusy		; make sure drive is ready
+	jp	c,wrsnok
 
-	LD	D,CMDWRITE
-	LD	E,REGCOMMAND
-	CALL	IDEWR8D			; tell drive to write a sector
-	CALL	IDEWAITDRQ		; wait unit it wants the data
-	JP	C,WRSNOK
+	ld	d,cmdwrite
+	ld	e,regcommand
+	call	idewr8d			; tell drive to write a sector
+	call	idewaitdrq		; wait unit it wants the data
+	jp	c,wrsnok
 ;
-	LD	HL,(FRDPBUF)
-	LD	B,0			; 256X2 bytes
+	ld	hl,(frdpbuf)
+	ld	b,0			; 256X2 bytes
 
-	LD	A,WRITECFG8255
-	OUT	(IDEPORTCTRL),A
-WRSEC1:	LD	A,(HL)
-	INC	HL
-	OUT	(IDEPORTA),A		; write the lower byte
-	LD	A,(HL)
-	INC	HL
-	OUT	(IDEPORTB),A		; write upper byte
-	LD	A,REGDATA
-	PUSH	AF
-	OUT	(IDEPORTC),A		; send write command
-	OR	IDEWRLINE		; send WR pulse
-	OUT	(IDEPORTC),A
-	POP	AF
-	OUT	(IDEPORTC),A
-	DJNZ	WRSEC1
+	ld	a,writecfg8255
+	out	(ideportctrl),a
+wrsec1:	ld	a,(hl)
+	inc	hl
+	out	(ideporta),a		; write the lower byte
+	ld	a,(hl)
+	inc	hl
+	out	(ideportb),a		; write upper byte
+	ld	a,regdata
+	push	af
+	out	(ideportc),a		; send write command
+	or	idewrline		; send WR pulse
+	out	(ideportc),a
+	pop	af
+	out	(ideportc),a
+	djnz	wrsec1
 
-	LD	A,READCFG8255		; set 8255 back to read mode
-	OUT	(IDEPORTCTRL),A
+	ld	a,readcfg8255		; set 8255 back to read mode
+	out	(ideportctrl),a
 
-	LD	E,REGSTATUS
-	CALL	IDERD8D
-	LD	A,D
-	AND	$01
-	JR	NZ,WRSNOK
-WRSOK:
-	XOR	A			; ok
-	RET
-WRSNOK:
-	LD	A,(INRETRY)		; in a retry loop ?
-	OR	A
-	LD	HL,WRITESECTOR		; where to come back
-	JR	NZ,IORETR		; handle retry
-	LD	A,HRETRIES+1		; no. start it
-	JR	IORETR
+	ld	e,regstatus
+	call	iderd8d
+	ld	a,d
+	and	$01
+	jr	nz,wrsnok
+wrsok:
+	xor	a			; ok
+	ret
+wrsnok:
+	ld	a,(inretry)		; in a retry loop ?
+	or	a
+	ld	hl,writesector		; where to come back
+	jr	nz,ioretr		; handle retry
+	ld	a,hretries+1		; no. start it
+	jr	ioretr
 
 ;;
 ;; calculate partition offset and validate requested track
 ;;
-TRKOFF:
-	LD	A,(HDLOG)		; check for disk change
-	LD	B,A
-	LD	A,(FDRVBUF)
-	CP	B
-	JR	Z,NODCHG		; unchanged
+trkoff:
+	ld	a,(hdlog)		; check for disk change
+	ld	b,a
+	ld	a,(fdrvbuf)
+	cp	b
+	jr	z,nodchg		; unchanged
 	;
-	LD	B,PTBLSIZE		; changed, search in table
-	LD	E,ENTRYSIZE
-	LD	D,0
-	INC	B
-	ADD	A,'A'			; transform in letter
-	LD	C,A			; save on C
-	LD	IY,PARTBL-ENTRYSIZE	; point to table, back one slot
-TONEXT:	ADD	IY,DE			; point to next
-	DEC	B
-	JR	Z,TOFERR		; not found !
-	CP	(IY+1)			; compare
-	JR	NZ,TONEXT
-	LD	A,(COPSYS)		; verify type
-	OR	A
-	JR	Z,NOTPCK		; unspecified
-	CP	(IY+2)
-	JR	Z,NOTPCK		; ok, go on
-	LD	A,C			; restore drive letter
-	JR	TONEXT			; try again
-NOTPCK: ;
-	LD	L,(IY+3)		; found, save data
-	LD	H,(IY+4)		; start cyl
-	LD	(PTSTART),HL
-	LD	L,(IY+5)
-	LD	H,(IY+6)		; end cyl
-	LD	(PTEND),HL
-NODCHG:	; add offset, check partition boundaries
-	LD	HL,(FTRKBUF)
-	LD	DE,(PTSTART)
-	ADD	HL,DE			; in partition offset. simple!
-	LD	C,L
-	LD	B,H			; move on BC
-	LD	DE,(PTEND)		; address larger than partition ?
-	OR	A
-	SBC	HL,DE
-	JR	NC,TOFERR		; ouch!
-	XOR	A
-	RET
-TOFERR:	XOR	A
-	DEC	A
-	POP	HL			; do not reenter in WRLBA
-	RET
+	ld	b,ptblsize		; changed, search in table
+	ld	e,entrysize
+	ld	d,0
+	inc	b
+	add	a,'A'			; transform in letter
+	ld	c,a			; save on C
+	ld	iy,partbl-entrysize	; point to table, back one slot
+tonext:	add	iy,de			; point to next
+	dec	b
+	jr	z,toferr		; not found !
+	cp	(iy+1)			; compare
+	jr	nz,tonext
+	ld	a,(copsys)		; verify type
+	or	a
+	jr	z,notpck		; unspecified
+	cp	(iy+2)
+	jr	z,notpck		; ok, go on
+	ld	a,c			; restore drive letter
+	jr	tonext			; try again
+notpck: ;
+	ld	l,(iy+3)		; found, save data
+	ld	h,(iy+4)		; start cyl
+	ld	(ptstart),hl
+	ld	l,(iy+5)
+	ld	h,(iy+6)		; end cyl
+	ld	(ptend),hl
+nodchg:	; add offset, check partition boundaries
+	ld	hl,(ftrkbuf)
+	ld	de,(ptstart)
+	add	hl,de			; in partition offset. simple!
+	ld	c,l
+	ld	b,h			; move on BC
+	ld	de,(ptend)		; address larger than partition ?
+	or	a
+	sbc	hl,de
+	jr	nc,toferr		; ouch!
+	xor	a
+	ret
+toferr:	xor	a
+	dec	a
+	pop	hl			; do not reenter in WRLBA
+	ret
 
 
 ;;
 ;; Setup LBA sector on IDE drive
 ;;
-WRLBA:
-	LD	BC,(FTRKBUF)		; load requested track
-	LD	HL,TMPBYTE		; check for free/non free addressing
-	BIT	7,(HL)
-	CALL	Z,TRKOFF
+wrlba:
+	ld	bc,(ftrkbuf)		; load requested track
+	ld	hl,tmpbyte		; check for free/non free addressing
+	bit	7,(hl)
+	call	z,trkoff
 
-	LD	D,B			; send high TRK#
-	LD	E,REGCYLMSB
-	CALL	IDEWR8D
+	ld	d,b			; send high TRK#
+	ld	e,regcylmsb
+	call	idewr8d
 
-	LD	D,C			; send low TRK#
-	LD	E,REGCYLLSB
-	CALL	IDEWR8D
+	ld	d,c			; send low TRK#
+	ld	e,regcyllsb
+	call	idewr8d
 
-	LD	A,(FSECBUF)		; get requested sector
-	LD	D,A
-	LD	E,REGSECTOR
-	CALL	IDEWR8D
+	ld	a,(fsecbuf)		; get requested sector
+	ld	d,a
+	ld	e,regsector
+	call	idewr8d
 
-	LD	D,1			; one sector at a time (for now ?)
-	LD	E,REGSECCNT
-	CALL	IDEWR8D
+	ld	d,1			; one sector at a time (for now ?)
+	ld	e,regseccnt
+	call	idewr8d
 
-	XOR	A			; reset flags
-	RET
+	xor	a			; reset flags
+	ret
 
 
 ;;
 ;; wait for drive to clear busy flag
 ;;
-IDEWAITNOTBUSY:				; drive ready if 01000000
-	LD	B,$FF
-	LD	C,$FF			; delay, must be above 80H for 4MHz Z80
-MOREWAIT:
-	LD	E,REGSTATUS		; wait for RDY bit to be set
-	CALL	IDERD8D
-	LD	A,D
-	AND	11000000B
-	XOR	01000000B
-	JP	Z,DONENOTBUSY
-	DJNZ	MOREWAIT
-	DEC	C
-	JP	NZ,MOREWAIT
-	SCF				; set carry to indicate an error
-	RET
-DONENOTBUSY:
-	OR	A			; clear carry it indicate no error
-	RET
+idewaitnotbusy:				; drive ready if 01000000
+	ld	b,$ff
+	ld	c,$ff			; delay, must be above 80H for 4MHz Z80
+morewait:
+	ld	e,regstatus		; wait for RDY bit to be set
+	call	iderd8d
+	ld	a,d
+	and	11000000b
+	xor	01000000b
+	jp	z,donenotbusy
+	djnz	morewait
+	dec	c
+	jp	nz,morewait
+	scf				; set carry to indicate an error
+	ret
+donenotbusy:
+	or	a			; clear carry it indicate no error
+	ret
 
 ;;
 ;; wait for drive to set data ready flag
 ;;
-IDEWAITDRQ:
-	LD	B,$FF
-	LD	C,$FF
-MOREDRQ:
-	LD	E,REGSTATUS		; wait for DRQ bit to be set
-	CALL	IDERD8D
-	LD	A,D
-	AND	10001000B
-	CP	00001000B
-	JP	Z,DONEDRQ
-	DJNZ	MOREDRQ
-	DEC	C
-	JP	NZ,MOREDRQ
-	SCF				; set carry to indicate error
-	RET
-DONEDRQ:
-	OR	A			; clear carry
-	RET
+idewaitdrq:
+	ld	b,$ff
+	ld	c,$ff
+moredrq:
+	ld	e,regstatus		; wait for DRQ bit to be set
+	call	iderd8d
+	ld	a,d
+	and	10001000b
+	cp	00001000b
+	jp	z,donedrq
+	djnz	moredrq
+	dec	c
+	jp	nz,moredrq
+	scf				; set carry to indicate error
+	ret
+donedrq:
+	or	a			; clear carry
+	ret
 
 
 ;------------------------------------------------------------------
@@ -571,46 +571,47 @@ DONEDRQ:
 ;;
 ;; Read 8 bits from IDE register in [E], return info in [D]
 ;;
-IDERD8D:
-	LD	A,E
-	OUT	(IDEPORTC),A		; drive address onto control lines
+iderd8d:
+	ld	a,e
+	out	(ideportc),a		; drive address onto control lines
 
-	OR	IDERDLINE		; RD pulse pin (40H)
-	OUT	(IDEPORTC),A		; assert read pin
+	or	iderdline		; RD pulse pin (40H)
+	out	(ideportc),a		; assert read pin
 
-	IN	A,(IDEPORTA)
-	LD	D,A			; return with data in [D]
+	in	a,(ideporta)
+	ld	d,a			; return with data in [D]
 
-	LD	A,E			; clear WR line
-	OUT	(IDEPORTC),A
+	ld	a,e			; clear WR line
+	out	(ideportc),a
 
-	XOR	A
-	OUT	(IDEPORTC),A		; zero all port C lines
-	RET
+	xor	a
+	out	(ideportc),a		; zero all port C lines
+	ret
 
 ;;
 ;; Write Data in [D] to IDE register in [E]
 ;;
-IDEWR8D:
-	LD	A,WRITECFG8255		; set 8255 to write mode
-	OUT	(IDEPORTCTRL),A
+idewr8d:
+	ld	a,writecfg8255		; set 8255 to write mode
+	out	(ideportctrl),a
 
-	LD	A,D			; get data put it in 8255 A port
-	OUT	(IDEPORTA),A
+	ld	a,d			; get data put it in 8255 A port
+	out	(ideporta),a
 
-	LD	A,E			; select IDE register
-	OUT	(IDEPORTC),A
+	ld	a,e			; select IDE register
+	out	(ideportc),a
 
-	OR	IDEWRLINE		; lower WR line
-	OUT	(IDEPORTC),A
-	NOP
+	or	idewrline		; lower WR line
+	out	(ideportc),a
+	nop
 
-	LD	A,E			; clear WR line
-	OUT	(IDEPORTC),A
-	NOP
+	ld	a,e			; clear WR line
+	out	(ideportc),a
+	nop
 
-	LD	A,READCFG8255		; config 8255 chip, read mode on return
-	OUT	(IDEPORTCTRL),A
-	RET
+	ld	a,readcfg8255		; config 8255 chip, read mode on return
+	out	(ideportctrl),a
+	ret
 
 ;------------------------------------------------------------------------
+

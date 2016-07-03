@@ -75,35 +75,35 @@
 ; Define which assembler we are using
 ;
 
-; PASMO	EQU	1
-MZMAC	EQU	1
-; ZMAC	EQU	1			; ZMAC Z80 assembler, not Linux/Unix version
+; PASMO	equ	1
+mzmac	equ	1
+; ZMAC	equ	1			; ZMAC Z80 assembler, not Linux/Unix version
 
 ; ... only one at a time can be active (1) ...
 
 ;
 ; Monitor version numbers (major.minor)
 ;
-MONMAJ		EQU	'3'
-MONMIN		EQU	'4'
+monmaj		equ	'3'
+monmin		equ	'4'
 
 ;
 ; Buffers addresses labels
 ;
 
 ; -- Global --
-IOBYTE		EQU	0003H		; byte: Intel IOBYTE (CP/M 2.2 only)
-CDISK		EQU	0004H		; byte: Last logged drive
-BTPASIZ		EQU	0006H		; word: size of tpa + 1
+iobyte		equ	0003h		; byte: Intel IOBYTE (CP/M 2.2 only)
+cdisk		equ	0004h		; byte: Last logged drive
+btpasiz		equ	0006h		; word: size of tpa + 1
 ;
 ; -- Private --
-HMEMPAG		EQU	000BH		; byte: highest ram page
-BBCBANK		EQU	000CH		; byte: current bank
-BBCSTCK		EQU	000DH		; word: current stack
+hmempag		equ	000bh		; byte: highest ram page
+bbcbank		equ	000ch		; byte: current bank
+bbcstck		equ	000dh		; word: current stack
 		;
-PRVTOP		EQU	004FH		; top of private area storage
-COLBUF		EQU	PRVTOP		; byte:
-DSELBF		EQU	COLBUF-1	; byte: floppy drive select status
+prvtop		equ	004fh		; top of private area storage
+colbuf		equ	prvtop		; byte:
+dselbf		equ	colbuf-1	; byte: floppy drive select status
 					; - bits: 0 = drive 0
 					; - bits: 1 = drive 1
 					; - bits: 2 = drive 2
@@ -112,8 +112,8 @@ DSELBF		EQU	COLBUF-1	; byte: floppy drive select status
 					; - bits: 5 = head select
 					; - bits: 6 = motor on (disabled by jumper)
 					; - bits: 7 = unused
-KBDBYTE		EQU	DSELBF-1	; byte: store keyboard input
-MIOBYTE		EQU	KBDBYTE-1	; byte:
+kbdbyte		equ	dselbf-1	; byte: store keyboard input
+miobyte		equ	kbdbyte-1	; byte:
 					; - bits: 0: 0 = floppy write		1 = floppy read
 					;         1: 0 = no ctrl on keypress	1 = ctrl on keypress
 					;         2: 0 = scroll			1 = no scroll
@@ -122,7 +122,7 @@ MIOBYTE		EQU	KBDBYTE-1	; byte:
 					;         5: 0 = console out		1 = serial out
 					;         6: 0 = disp. all chars	1 = obscure non punct.
 					;         7: 0 = ctrl chr set 1		1 = ctrl chr set 2
-TMPBYTE		EQU	MIOBYTE-1	; byte: transients flags
+tmpbyte		equ	miobyte-1	; byte: transients flags
 					; - bits: 0: 0 = high in cursor addressing
 					;         1: 0 = ESC catched by ANSI driver
 					;         2: 0 = CSI catched by ANSI driver
@@ -131,29 +131,30 @@ TMPBYTE		EQU	MIOBYTE-1	; byte: transients flags
 					;         5: 0 = store interrupt status (on/off)
 					;         6: 0 = floppy home on err	1 = no home on err
 					;         7: 0 = unlock LBA free addressing (unpartitioned)
-CURSSHP		EQU	TMPBYTE-1	; cursor shape
-CURPBUF		EQU	CURSSHP-2	; word: cursor position
-FTRKBUF		EQU	CURPBUF-2	; word: track # for i/o (0 - 65535)
-FDRVBUF		EQU	FTRKBUF-1	; byte: drive number for i/0 (0 - 15)
-FSECBUF		EQU	FDRVBUF-2	; word: sector # for i/o (1 .. 65535)
-FRDPBUF		EQU	FSECBUF-2	; word: dma address for i/o
-FSEKBUF		EQU	FRDPBUF-2	; word: current track number for drive A/B
-RAM3BUF		EQU	FSEKBUF-1	; byte:
-RAM2BUF		EQU	RAM3BUF-1	; byte:
-RAM1BUF		EQU	RAM2BUF-1	; byte:
-RAM0BUF		EQU	RAM1BUF-1	; byte:
-RST7SP3		EQU	003AH		; keep clear area of RST38 (RST7)
-RST7SP2		EQU	0039H
-RST7SP1		EQU	0038H
-RSRVBUF		EQU	RST7SP1-9	; free 9 byte buffer
-APPBUF		EQU	RSRVBUF-2	; word: generic buffer
-COPSYS		EQU	APPBUF-1	; Op system type for partition selection
-UART0BR		EQU	COPSYS-1	; UART 0 baudrate
-UART1BR		EQU	UART0BR-1	; UART 1 baudrate
-CTC0TC		EQU	UART1BR-1	; CTC channel 0 time constant
-CTC1TC		EQU	CTC0TC-1	; CTC channel 1 time constant
-TIMRCON		EQU	CTC1TC-1	; timer buf
-CNFBYTE		EQU	TIMRCON-1	; config byte
+cursshp		equ	tmpbyte-1	; cursor shape
+curpbuf		equ	cursshp-2	; word: cursor position
+ftrkbuf		equ	curpbuf-2	; word: track # for i/o (0 - 65535)
+fdrvbuf		equ	ftrkbuf-1	; byte: drive number for i/0 (0 - 15)
+fsecbuf		equ	fdrvbuf-2	; word: sector # for i/o (1 .. 65535)
+frdpbuf		equ	fsecbuf-2	; word: dma address for i/o
+fsekbuf		equ	frdpbuf-2	; word: current track number for drive A/B
+ram3buf		equ	fsekbuf-1	; byte:
+ram2buf		equ	ram3buf-1	; byte:
+ram1buf		equ	ram2buf-1	; byte:
+ram0buf		equ	ram1buf-1	; byte:
+rst7sp3		equ	003ah		; keep clear area of RST38 (RST7)
+rst7sp2		equ	0039h
+rst7sp1		equ	0038h
+vstabuf		equ	rst7sp1-2	; word: Display start addr
+rsrvbuf		equ	vstabuf-7	; free 7 byte buffer
+appbuf		equ	rsrvbuf-2	; word: generic buffer
+copsys		equ	appbuf-1	; Op system type for partition selection
+uart0br		equ	copsys-1	; UART 0 baudrate
+uart1br		equ	uart0br-1	; UART 1 baudrate
+ctc0tc		equ	uart1br-1	; CTC channel 0 time constant
+ctc1tc		equ	ctc0tc-1	; CTC channel 1 time constant
+timrcon		equ	ctc1tc-1	; timer buf
+cnfbyte		equ	timrcon-1	; config byte
 					; - bits: 0: 0 = UART1 intr disabled	1 = RST8 redir UART1
 					;         1: 1 = XON/XOFF enabled on UART0
 					;         2: 1 = RTS/CTS enabled on UART0
@@ -162,36 +163,36 @@ CNFBYTE		EQU	TIMRCON-1	; config byte
 					;         5: 0 = unused/reserved
 					;         6: 0 = unused/reserved
 					;         7: 0 = unused/reserved
-FIFOSTO		EQU	000FH		; fifo queues storage start
-FIFSIZE		EQU	8		; fifo queue lenght
-FIFBLOK		EQU	11		; fifo queue size
-FIFOU0		EQU	FIFOSTO		; uart 0 queue (alternate console)
-FIFOKB		EQU	FIFOU0+FIFBLOK	; keyboard queue
-FIFOEND		EQU	FIFOKB+FIFBLOK	; fifo blocks end
+fifosto		equ	000fh		; fifo queues storage start
+fifsize		equ	8		; fifo queue lenght
+fifblok		equ	11		; fifo queue size
+fifou0		equ	fifosto		; uart 0 queue (alternate console)
+fifokb		equ	fifou0+fifblok	; keyboard queue
+fifoend		equ	fifokb+fifblok	; fifo blocks end
 ;
-BLDOFFS		EQU	3000H		; place for disk bootloader
+bldoffs		equ	3000h		; place for disk bootloader
 
 ;
 ; Some commodity equs
 ;
-CR		EQU	0DH		; ascii CR & LF
-LF		EQU	0AH
-FF		EQU	0CH		; FORM FEED (clear screen)
-ESC		EQU	1BH		; ESCape
-XONC		EQU	11H		; Xon
-XOFC		EQU	13H		; Xoff
-TRUE		EQU	-1
-FALSE		EQU	0
-TPA		EQU	0100H		; TPA base address (for CP/M)
+cr		equ	0dh		; ascii CR & LF
+lf		equ	0ah
+ff		equ	0ch		; FORM FEED (clear screen)
+esc		equ	1bh		; ESCape
+xonc		equ	11h		; Xon
+xofc		equ	13h		; Xoff
+true		equ	-1
+false		equ	0
+tpa		equ	0100h		; TPA base address (for CP/M)
 
 ;
 ; Modules equs
 ;
 	; delay
-MSCNT		EQU	246
+mscnt		equ	246
 	; mmu
-MMUTSTPAGE	EQU	0DH		; logical page used for sizing
-MMUTSTADDR	EQU	MMUTSTPAGE<<12	; logical page used for sizing
+mmutstpage	equ	0dh		; logical page used for sizing
+mmutstaddr	equ	mmutstpage<<12	; logical page used for sizing
 
 ; Conventionally all bios/monitor images start at $F000.
 ; Except for special cases all code is copied to ram @ $F000.
@@ -220,68 +221,68 @@ MMUTSTADDR	EQU	MMUTSTPAGE<<12	; logical page used for sizing
 ; ---------------------------------------------------------------------
 ; LX529 VIDEO BOARD:
 ; ---------------------------------------------------------------------
-CRTBASE		EQU	80H
+crtbase		equ	80h
 	; RAM0 for ascii chars & semi6. Combined with RAM1 and RAM2 for graphics
-CRTRAM0DAT	EQU	CRTBASE		; RAM0 access: PIO0 port A data register
-CRTRAM0CNT	EQU	CRTBASE+2	; RAM0 access: PIO0 port A control register
+crtram0dat	equ	crtbase		; RAM0 access: PIO0 port A data register
+crtram0cnt	equ	crtbase+2	; RAM0 access: PIO0 port A control register
 	; Printer port
-CRTPRNTDAT	EQU	CRTBASE+1	; PRINTER (output): PIO0 port B data register
-CRTPRNTCNT	EQU	CRTBASE+3	; PRINTER (output): PIO0 port B control register
+crtprntdat	equ	crtbase+1	; PRINTER (output): PIO0 port B data register
+crtprntcnt	equ	crtbase+3	; PRINTER (output): PIO0 port B control register
 					; STROBE is generated by hardware
 	; RAM1 for graphics. (pixel index by RAM0+RAM1+RAM2)
-CRTRAM1DAT	EQU	CRTBASE+4	; RAM1 access: PIO1 port A data register
-CRTRAM1CNT	EQU	CRTBASE+6	; RAM1 access: PIO1 port A control register
+crtram1dat	equ	crtbase+4	; RAM1 access: PIO1 port A data register
+crtram1cnt	equ	crtbase+6	; RAM1 access: PIO1 port A control register
 	; Keyboard port (negated). Bit 7 is for strobe
-CRTKEYBDAT	EQU	CRTBASE+5	; KEYBOARD (input): PIO1 port B data register
-CRTKEYBCNT	EQU	CRTBASE+7	; KEYBOARD (input): PIO1 port B control register
-KEYBSTRBBIT	EQU	7		; Strobe bit
+crtkeybdat	equ	crtbase+5	; KEYBOARD (input): PIO1 port B data register
+crtkeybcnt	equ	crtbase+7	; KEYBOARD (input): PIO1 port B control register
+keybstrbbit	equ	7		; Strobe bit
 	; RAM2 for graphics. (pixel index by RAM0+RAM1+RAM2)
-CRTRAM2DAT	EQU	CRTBASE+8	; RAM2 access: PIO2 port A data register
-CRTRAM2CNT	EQU	CRTBASE+10	; RAM2 access: PIO2 port A control register
+crtram2dat	equ	crtbase+8	; RAM2 access: PIO2 port A data register
+crtram2cnt	equ	crtbase+10	; RAM2 access: PIO2 port A control register
 	; Service/User port
-CRTSERVDAT	EQU	CRTBASE+9	; Service (i/o): PIO2 port B data register
-CRTSERVCNT	EQU	CRTBASE+11	; Service (i/o): PIO2 port B control register
-PRNTBUSYBIT	EQU	0		; Printer BUSY bit		(in)	1
-CRTWIDTHBIT	EQU	1		; Set 40/80 chars per line	(out)	0
-PIO2BIT2	EQU	2		; user 1 (input)		(in)	1
-PIO2BIT3	EQU	3		; user 2 (input)		(in)	1
-PIO2BIT4	EQU	4		; user 3 (input)		(in)	1
-CLKSCLK		EQU	5		; DS1320 clock line		(out)	0
-CLKIO		EQU	6		; DS1320 I/O line		(i/o)	1
-CLKRST		EQU	7		; DS1320 RST line		(out)	0
+crtservdat	equ	crtbase+9	; Service (i/o): PIO2 port B data register
+crtservcnt	equ	crtbase+11	; Service (i/o): PIO2 port B control register
+prntbusybit	equ	0		; Printer BUSY bit		(in)	1
+crtwidthbit	equ	1		; Set 40/80 chars per line	(out)	0
+pio2bit2	equ	2		; user 1 (input)		(in)	1
+pio2bit3	equ	3		; user 2 (input)		(in)	1
+pio2bit4	equ	4		; user 3 (input)		(in)	1
+clksclk		equ	5		; DS1320 clock line		(out)	0
+clkio		equ	6		; DS1320 I/O line		(i/o)	1
+clkrst		equ	7		; DS1320 RST line		(out)	0
 	; normal set for PIO2 (msb) 01011101 (lsb) that is hex $5D
 					; Other bits available to user
 	; RAM3 control chars/graphics attributes
-CRTRAM3PORT	EQU	CRTBASE+14	; RAM3 port
-CRTBLINKBIT	EQU	0		; Blink
-CRTREVRSBIT	EQU	1		; Reverse
-CRTUNDERBIT	EQU	2		; Underline
-CRTHILITBIT	EQU	3		; Highlight
-CRTMODEBIT	EQU	4		; ASCII/GRAPHIC mode
+crtram3port	equ	crtbase+14	; RAM3 port
+crtblinkbit	equ	0		; Blink
+crtrevrsbit	equ	1		; Reverse
+crtunderbit	equ	2		; Underline
+crthilitbit	equ	3		; Highlight
+crtmodebit	equ	4		; ASCII/GRAPHIC mode
 	; Beeper port
-CRTBEEPPORT	EQU	CRTBASE+15	; Beeper port
+crtbeepport	equ	crtbase+15	; Beeper port
 	; 6545 CRT controller ports
-CRT6545ADST	EQU	CRTBASE+12	; Address & Status register
-CRT6545DATA	EQU	CRTBASE+13	; Data register
+crt6545adst	equ	crtbase+12	; Address & Status register
+crt6545data	equ	crtbase+13	; Data register
 	; Cursor modes
-BLISLOWBLOK	EQU	40H		; Blink, slow, block
-BLISLOWLINE	EQU	4AH		; Blink, slow, line
-BLIFASTBLOK	EQU	60H		; Blink, fast, block
-BLIFASTLINE	EQU	6AH		; Blink, fast, line
-CURSOROFF	EQU	20H		; Off
-FIXBLOCK	EQU	00H		; Fixed, block
-CURSORON	EQU	0AH		; On
+blislowblok	equ	40h		; Blink, slow, block
+blislowline	equ	4ah		; Blink, slow, line
+blifastblok	equ	60h		; Blink, fast, block
+blifastline	equ	6ah		; Blink, fast, line
+cursoroff	equ	20h		; Off
+fixblock	equ	00h		; Fixed, block
+cursoron	equ	0ah		; On
 	; 6545 register index
-VR0.HRTOT	EQU	0		; Total horizontal chars
-VR1.HRDIS	EQU	1		; Total horizontal displayed ch.
-VR2.HRSYNCPOS	EQU	2		; Horizontal sync position
-VR3.HRVRSYNCW	EQU	3		; Hsync and vsync width
+vr0.hrtot	equ	0		; Total horizontal chars
+vr1.hrdis	equ	1		; Total horizontal displayed ch.
+vr2.hrsyncpos	equ	2		; Horizontal sync position
+vr3.hrvrsyncw	equ	3		; Hsync and vsync width
 					; (bit 0-3 hsync, bit 4-7 vsync)
-VR4.VRCHROW	EQU	4		; Total ch. rows in a frame
-VR5.VRADJ	EQU	5		; Vertical additional scan lines
-VR6.VRDISROWS	EQU	6		; Displayed char rows
-VR7.VRSYNCPOS	EQU	7		; Vertical sync position
-VR8.CRTMODE	EQU	8		; Operating mode
+vr4.vrchrow	equ	4		; Total ch. rows in a frame
+vr5.vradj	equ	5		; Vertical additional scan lines
+vr6.vrdisrows	equ	6		; Displayed char rows
+vr7.vrsyncpos	equ	7		; Vertical sync position
+vr8.crtmode	equ	8		; Operating mode
 					; 76543210
 					; ||||||++ Interlace
 					; |||||+-- Addressing bin/rowcol
@@ -290,173 +291,174 @@ VR8.CRTMODE	EQU	8		; Operating mode
 					; ||+----- Cursor delay no/yes
 					; |+------ Pin 34 addr/strobe
 					; |------- Access blank/interl.
-VR9.SCANLINES	EQU	9		; Scan lines per char row
-VR10.CRSTART	EQU	10		; Cursor start line bit 0-4
+vr9.scanlines	equ	9		; Scan lines per char row
+vr10.crstart	equ	10		; Cursor start line bit 0-4
 					; bit 6-5
 					;     0 0 = No blink
 					;     0 1 = No cursor
 					;     1 0 = Blink 1/16 rate
 					;     1 1 = Blink 1/32 rate
-VR11.CREND	EQU	11		; Cursor end line bit 0-4
-VR12.DSTARTH	EQU	12		; Display start address high
-VR13.DSTARTL	EQU	13		; Display start address low
-VR14.CURPOSH	EQU	14		; Cursor position high
-VR15.CURPOSL	EQU	15		; Cursor position low
-VR16.LPENH	EQU	16		; LPEN position high
-VR17.LPENL	EQU	17		; LPEN position low
-VR18.UPDADDRH	EQU	18		; Update (next char) address H
-VR19.UPDADDRL	EQU	19		; Update (next char) address L
-VR31.DUMMY	EQU	31		; Dummy register for transparent
+vr11.crend	equ	11		; Cursor end line bit 0-4
+vr12.dstarth	equ	12		; Display start address high
+vr13.dstartl	equ	13		; Display start address low
+vr14.curposh	equ	14		; Cursor position high
+vr15.curposl	equ	15		; Cursor position low
+vr16.lpenh	equ	16		; LPEN position high
+vr17.lpenl	equ	17		; LPEN position low
+vr18.updaddrh	equ	18		; Update (next char) address H
+vr19.updaddrl	equ	19		; Update (next char) address L
+vr31.dummy	equ	31		; Dummy register for transparent
 					; addressing update checkin
+endvid		equ	07cfh		; end video cursor (25*80)
 ; ---------------------------------------------------------------------
 ; LX390 FDC CONTROLLER:
 ; ---------------------------------------------------------------------
-FDCBASE		EQU	0D0H
-FDCCMDSTATR	EQU	FDCBASE		; Command and status register
-FDCTRAKREG	EQU	FDCBASE+1	; Track register
-FDCSECTREG	EQU	FDCBASE+2	; Sector register
-FDCDATAREG	EQU	FDCBASE+7	; Data register *** Verificare che sia $d7
-FDCDRVRCNT	EQU	FDCBASE+6	; Driver select/control register
+fdcbase		equ	0d0h
+fdccmdstatr	equ	fdcbase		; Command and status register
+fdctrakreg	equ	fdcbase+1	; Track register
+fdcsectreg	equ	fdcbase+2	; Sector register
+fdcdatareg	equ	fdcbase+7	; Data register *** Verificare che sia $d7
+fdcdrvrcnt	equ	fdcbase+6	; Driver select/control register
 ;
-FDCRESTC	EQU	00000111b	; 1771 restore (seek to trak 0) cmd
-FDCSEEKC	EQU	00010111b	; seek cmd
-FDCREADC	EQU	10001000b	; read cmd
-FDCWRITC	EQU	10101000b	; write cmd
-FDCRESET	EQU	11010000b	; fdc reset immediate cmd
+fdcrestc	equ	00000111b	; 1771 restore (seek to trak 0) cmd
+fdcseekc	equ	00010111b	; seek cmd
+fdcreadc	equ	10001000b	; read cmd
+fdcwritc	equ	10101000b	; write cmd
+fdcreset	equ	11010000b	; fdc reset immediate cmd
 ;
 ; ---------------------------------------------------------------------
 ; LX389: PARALLEL INTERFACE
 ; ---------------------------------------------------------------------
 ; alternate printer port
-ALTPRNPRT	EQU	03H
+altprnprt	equ	03h
 ;
 ; parallel port PC link
-PPDATAP		EQU	03H		; Data port
-PPCNTRP		EQU	02H		; Control port
-PPSTROB		EQU	0		; Strobe bit
-PPAKSTB		EQU	1		; Acknowledge/Stop bit
+ppdatap		equ	03h		; Data port
+ppcntrp		equ	02h		; Control port
+ppstrob		equ	0		; Strobe bit
+ppakstb		equ	1		; Acknowledge/Stop bit
 ;
-PPDINI		EQU	00H		; 00000000 Dnl Init byte
-PPDRDY		EQU	04H		; 00000100 Dnl Ready
-PPDSTP		EQU	06H		; 00000110 Dnl Stop
-PPDOKG		EQU	02H		; 00000010 Dnl Ok Go
-PPUINI		EQU	01H		; 00000001 Upl Init byte
-PPURDY		EQU	05H		; 00000101 Upl Ready
-PPUACK		EQU	07H		; 00000111 Upl Acknowledge
-PPUOKG		EQU	03H		; 00000011 Upl Ok Go
+ppdini		equ	00h		; 00000000 Dnl Init byte
+ppdrdy		equ	04h		; 00000100 Dnl Ready
+ppdstp		equ	06h		; 00000110 Dnl Stop
+ppdokg		equ	02h		; 00000010 Dnl Ok Go
+ppuini		equ	01h		; 00000001 Upl Init byte
+ppurdy		equ	05h		; 00000101 Upl Ready
+ppuack		equ	07h		; 00000111 Upl Acknowledge
+ppuokg		equ	03h		; 00000011 Upl Ok Go
 ;
 ; virtual disks (PC-linked over parallel port)
-VDRDSEC		EQU	0		; read sector command
-VDWRSEC		EQU	1		; write sector command
-VDBUFSZ		EQU	10		; 10 bytes block
+vdrdsec		equ	0		; read sector command
+vdwrsec		equ	1		; write sector command
+vdbufsz		equ	10		; 10 bytes block
 ; ---------------------------------------------------------------------
 ; MULTF-BOARD: MMU, IDE, SERIAL, CTC
 ; ---------------------------------------------------------------------
 ; -- I/O --
-MMUPORT		EQU	20H
-MENAPRT		EQU	21H
+mmuport		equ	20h
+menaprt		equ	21h
 ; -- Map --
-EEPAGE0		EQU	0C0H		; page 0 of eeprom
-EEPSTA		EQU	0F000H		; eeprom location after MMU reset
-MMTPAPAG	EQU	(EEPSTA>>8)-1	; TPA top page (256 bytes pages)
-IMTPAG		EQU	0FFH		; eeprom page with image table
-IMTSIZ		EQU	1024		; size
-RAMTBL		EQU	0E000H		; ram table location
-TBLBLK		EQU	48		; block size
-MAXBLK		EQU	20		; max images
-RTBSIZ		EQU	TBLBLK * MAXBLK	; real table size
+eepage0		equ	0c0h		; page 0 of eeprom
+eepsta		equ	0f000h		; eeprom location after MMU reset
+mmtpapag	equ	(eepsta>>8)-1	; TPA top page (256 bytes pages)
+imtpag		equ	0ffh		; eeprom page with image table
+imtsiz		equ	1024		; size
+ramtbl		equ	0e000h		; ram table location
+tblblk		equ	48		; block size
+maxblk		equ	20		; max images
+rtbsiz		equ	tblblk * maxblk	; real table size
 					; A table block is:
-TNAMELEN	EQU	8		;	name		: 8 bytes
-TPAGELEN	EQU	2		;	page offset	: 2 bytes
-TIADDRLEN	EQU	4		;	image address	: 4 bytes
-TSIZELEN	EQU	4		;	image size	: 4 bytes
-TDESCLEN	EQU	20		;	description	: 20 bytes
+tnamelen	equ	8		;	name		: 8 bytes
+tpagelen	equ	2		;	page offset	: 2 bytes
+tiaddrlen	equ	4		;	image address	: 4 bytes
+tsizelen	equ	4		;	image size	: 4 bytes
+tdesclen	equ	20		;	description	: 20 bytes
 ; -- IDE --
-IDEPORTA	EQU	0E0H		; lower 8 bits of IDE interface
-IDEPORTB	EQU	0E1H		; upper 8 bits of IDE interface
-IDEPORTC	EQU	0E2H		; control lines for IDE interface
-IDEPORTCTRL	EQU	0E3H		; 8255 configuration port
+ideporta	equ	0e0h		; lower 8 bits of IDE interface
+ideportb	equ	0e1h		; upper 8 bits of IDE interface
+ideportc	equ	0e2h		; control lines for IDE interface
+ideportctrl	equ	0e3h		; 8255 configuration port
 
-READCFG8255	EQU	10010010b	; Set 8255 IDEportC to output, IDEportA/B input
-WRITECFG8255	EQU	10000000b	; Set all three 8255 ports to output mode
+readcfg8255	equ	10010010b	; Set 8255 IDEportC to output, IDEportA/B input
+writecfg8255	equ	10000000b	; Set all three 8255 ports to output mode
 ;IDE control lines for use with IDEportC.
-IDEA0LINE	EQU	01H		; direct from 8255 to IDE interface
-IDEA1LINE	EQU	02H		; direct from 8255 to IDE interface
-IDEA2LINE	EQU	04H		; direct from 8255 to IDE interface
-IDECS0LINE	EQU	08H		; inverter between 8255 and IDE interface
-IDECS1LINE	EQU	10H		; inverter between 8255 and IDE interface
-IDEWRLINE	EQU	20H		; inverter between 8255 and IDE interface
-IDERDLINE	EQU	40H		; inverter between 8255 and IDE interface
-IDERSTLINE	EQU	80H		; inverter between 8255 and IDE interface
+idea0line	equ	01h		; direct from 8255 to IDE interface
+idea1line	equ	02h		; direct from 8255 to IDE interface
+idea2line	equ	04h		; direct from 8255 to IDE interface
+idecs0line	equ	08h		; inverter between 8255 and IDE interface
+idecs1line	equ	10h		; inverter between 8255 and IDE interface
+idewrline	equ	20h		; inverter between 8255 and IDE interface
+iderdline	equ	40h		; inverter between 8255 and IDE interface
+iderstline	equ	80h		; inverter between 8255 and IDE interface
 ;Symbolic constants for the IDE Drive registers
-REGDATA		EQU	IDECS0LINE
-REGERR		EQU	IDECS0LINE + IDEA0LINE
-REGSECCNT	EQU	IDECS0LINE + IDEA1LINE
-REGSECTOR	EQU	IDECS0LINE + IDEA1LINE + IDEA0LINE
-REGCYLLSB	EQU	IDECS0LINE + IDEA2LINE
-REGCYLMSB	EQU	IDECS0LINE + IDEA2LINE + IDEA0LINE
-REGSHD		EQU	IDECS0LINE + IDEA2LINE + IDEA1LINE		;(0EH)
-REGCOMMAND	EQU	IDECS0LINE + IDEA2LINE + IDEA1LINE + IDEA0LINE	;(0FH)
-REGSTATUS	EQU	IDECS0LINE + IDEA2LINE + IDEA1LINE + IDEA0LINE
-REGCONTROL	EQU	IDECS1LINE + IDEA2LINE + IDEA1LINE
-REGASTATUS	EQU	IDECS1LINE + IDEA2LINE + IDEA1LINE
+regdata		equ	idecs0line
+regerr		equ	idecs0line + idea0line
+regseccnt	equ	idecs0line + idea1line
+regsector	equ	idecs0line + idea1line + idea0line
+regcyllsb	equ	idecs0line + idea2line
+regcylmsb	equ	idecs0line + idea2line + idea0line
+regshd		equ	idecs0line + idea2line + idea1line		;(0EH)
+regcommand	equ	idecs0line + idea2line + idea1line + idea0line	;(0FH)
+regstatus	equ	idecs0line + idea2line + idea1line + idea0line
+regcontrol	equ	idecs1line + idea2line + idea1line
+regastatus	equ	idecs1line + idea2line + idea1line
 ;IDE Command Constants.
-CMDRECAL	EQU	010H
-CMDREAD		EQU	020H
-CMDWRITE	EQU	030H
-CMDINIT		EQU	091H
-CMDID		EQU	0ECH
-CMDSPINDOWN	EQU	0E0H
-CMDSPINUP	EQU	0E1H
+cmdrecal	equ	010h
+cmdread		equ	020h
+cmdwrite	equ	030h
+cmdinit		equ	091h
+cmdid		equ	0ech
+cmdspindown	equ	0e0h
+cmdspinup	equ	0e1h
 ; -- 16C550 UARTS --
-UART0BASE	EQU	0C0H		; Port base address for 0
-UART1BASE	EQU	0C8H		; Port base address for 1
-UART0		EQU	UART0BASE	; Select UART 0
-UART1		EQU	UART1BASE	; Select UART 1
-R0RXTX		EQU	0		; (r/w) RXD/TXD Transmit/Receive Buffer
-R0BRDL		EQU	0		; (r/w) DLL  if bit 7 of LCR is set: Baud Rate Divisor LSB
-R1IER		EQU	1		; (r/w) IER - Interrupt Enable Register
-R1BRDM		EQU	1		; (r/w) DLM if bit 7 of LCR is set: Baud Rate Divisor MSB
-R2IIR		EQU	2		; (r)   IIR - Interrupt Identification Register
-R2FCR		EQU	2		; (w)   FCR - FIFO Control Register
-R3LCR		EQU	3		; (r/w) LCR - Line Control Register
-R4MCR		EQU	4		; (r/w) MCR - Modem Control Register
-R5LSR		EQU	5		; (r)   LSR - Line Status Register
-R6MSR		EQU	6		; (r)   MSR - Modem Status Register
-R7SPR		EQU	7		; (r/w) SPR - Scratch Pad Register
+uart0base	equ	0c0h		; Port base address for 0
+uart1base	equ	0c8h		; Port base address for 1
+uart0		equ	uart0base	; Select UART 0
+uart1		equ	uart1base	; Select UART 1
+r0rxtx		equ	0		; (r/w) RXD/TXD Transmit/Receive Buffer
+r0brdl		equ	0		; (r/w) DLL  if bit 7 of LCR is set: Baud Rate Divisor LSB
+r1ier		equ	1		; (r/w) IER - Interrupt Enable Register
+r1brdm		equ	1		; (r/w) DLM if bit 7 of LCR is set: Baud Rate Divisor MSB
+r2iir		equ	2		; (r)   IIR - Interrupt Identification Register
+r2fcr		equ	2		; (w)   FCR - FIFO Control Register
+r3lcr		equ	3		; (r/w) LCR - Line Control Register
+r4mcr		equ	4		; (r/w) MCR - Modem Control Register
+r5lsr		equ	5		; (r)   LSR - Line Status Register
+r6msr		equ	6		; (r)   MSR - Modem Status Register
+r7spr		equ	7		; (r/w) SPR - Scratch Pad Register
 	; speeds:
-UART1200	EQU	96		; = 1,843,200 / ( 16 x 1200 )
-UART2400	EQU	48		; = 1,843,200 / ( 16 x 2400 )
-UART4800	EQU	24		; = 1,843,200 / ( 16 x 4800 )
-UART9600	EQU	12		; = 1,843,200 / ( 16 x 9600 )
-UART19K2	EQU	06		; = 1,843,200 / ( 16 x 19,200 )
-UART38K4	EQU	03		; = 1,843,200 / ( 16 x 38,400 )
-UART57K6	EQU	02		; = 1,843,200 / ( 16 x 57,600 )
-UART115K2	EQU	01		; = 1,843,200 / ( 16 x 115,200 )
+uart1200	equ	96		; = 1,843,200 / ( 16 x 1200 )
+uart2400	equ	48		; = 1,843,200 / ( 16 x 2400 )
+uart4800	equ	24		; = 1,843,200 / ( 16 x 4800 )
+uart9600	equ	12		; = 1,843,200 / ( 16 x 9600 )
+uart19k2	equ	06		; = 1,843,200 / ( 16 x 19,200 )
+uart38k4	equ	03		; = 1,843,200 / ( 16 x 38,400 )
+uart57k6	equ	02		; = 1,843,200 / ( 16 x 57,600 )
+uart115k2	equ	01		; = 1,843,200 / ( 16 x 115,200 )
 
-U0DEFSPEED	EQU	UART19K2	; UART 0 default speed
-U1DEFSPEED	EQU	UART9600	; UART 1 default speed
+u0defspeed	equ	uart19k2	; UART 0 default speed
+u1defspeed	equ	uart9600	; UART 1 default speed
 ; -- Z80CTC --
-CTCBASE		EQU	0E8H
-CTCCHAN0	EQU	CTCBASE+0	; Channel 1 - Free
-CTCCHAN1	EQU	CTCBASE+1	; Channel 2 - System Timer
-CTCCHAN2	EQU	CTCBASE+2	; Channel 3 - UART 1 Interrupt
-CTCCHAN3	EQU	CTCBASE+3	; Channel 4 - UART 0 Interrupt
-CTC0TCHI	EQU	32		; hi speed chan. 0 tc: 4Mhz / 256 / 32 = 488.28 Hz
-CTC1TC100HZ	EQU	5		; lo speed chan. 1 tc: 488.28 Hz / 5 = ~ 97.6 Hz
-CTC1TC50HZ	EQU	10		; lo speed chan. 1 tc: 488.28 Hz / 10 = ~ 48.8 Hz
-CTC1TC25HZ	EQU	19		; lo speed chan. 1 tc: 488.28 Hz / 19 = ~ 25 Hz
-CTC1TC10HZ	EQU	48		; lo speed chan. 1 tc: 488.28 Hz / 48 = ~ 10 Hz
-CTC1TC2HZ	EQU	244		; lo speed chan. 1 tc: 488.28 Hz / 244 = ~ 2 Hz
-SYSHERTZ	EQU	CTC1TC25HZ	; System timer hertz
+ctcbase		equ	0e8h
+ctcchan0	equ	ctcbase+0	; Channel 1 - Free
+ctcchan1	equ	ctcbase+1	; Channel 2 - System Timer
+ctcchan2	equ	ctcbase+2	; Channel 3 - UART 1 Interrupt
+ctcchan3	equ	ctcbase+3	; Channel 4 - UART 0 Interrupt
+ctc0tchi	equ	32		; hi speed chan. 0 tc: 4Mhz / 256 / 32 = 488.28 Hz
+ctc1tc100hz	equ	5		; lo speed chan. 1 tc: 488.28 Hz / 5 = ~ 97.6 Hz
+ctc1tc50hz	equ	10		; lo speed chan. 1 tc: 488.28 Hz / 10 = ~ 48.8 Hz
+ctc1tc25hz	equ	19		; lo speed chan. 1 tc: 488.28 Hz / 19 = ~ 25 Hz
+ctc1tc10hz	equ	48		; lo speed chan. 1 tc: 488.28 Hz / 48 = ~ 10 Hz
+ctc1tc2hz	equ	244		; lo speed chan. 1 tc: 488.28 Hz / 244 = ~ 2 Hz
+syshertz	equ	ctc1tc25hz	; System timer hertz
 ; -- EEPROM --
-EEP29EE		EQU	01H		; type 29EE020
-EEP29XE		EQU	02H		; type 29LE020 or 29VE020
-EEP29C		EQU	04H		; type 29C020
-EEPUNSUPP	EQU	08H		; unsupported
-EEPROGLOCK	EQU	10H		; programming locked
+eep29ee		equ	01h		; type 29EE020
+eep29xe		equ	02h		; type 29LE020 or 29VE020
+eep29c		equ	04h		; type 29C020
+eepunsupp	equ	08h		; unsupported
+eeproglock	equ	10h		; programming locked
 	;
-EERINEPROM	EQU	80H		; tried to program eeprom running inside it
+eerineprom	equ	80h		; tried to program eeprom running inside it
 
 ;
 ; MMU organization
@@ -496,35 +498,33 @@ EERINEPROM	EQU	80H		; tried to program eeprom running inside it
 ;	Slot 3	-> EEPROM -> 256k from c0000h to fffffh (mandatory)
 ;
 
-
-;-------------------------------------
+;*************************************
 ; Production / Testing
-
-BBDEBUG	EQU	TRUE
-
+bbdebug		equ	true
+;*************************************
 
 ;-------------------------------------
 ; Segments, pages locations
 
-IF	BBDEBUG
+if	bbdebug
 
-BBIMGP	EQU	04H		; Image location (DEBUG)
-BBAPPP	EQU	0EH
-BBPAG	EQU	0FH		; Base page location
+bbimgp		equ	04h		; Image location (DEBUG)
+bbappp		equ	0eh
+bbpag		equ	0fh		; Base page location
 
-ELSE
+else
 
-BBIMGP	EQU	EEPAGE0		; Image location
-BBAPPP	EQU	0EH
-BBPAG	EQU	0FH		; Base page location
+bbimgp		equ	eepage0		; Image location
+bbappp		equ	0eh
+bbpag		equ	0fh		; Base page location
 
-ENDIF
+endif
 
-TRNPAG	EQU	0DH		; Page used for transient MMU ops
-BBBASE	EQU	BBPAG << 12	; non resident base address
-BBCOMN	EQU	BBBASE + 0C00H	; resident portion address
+trnpag		equ	0dh		; Page used for transient MMU ops
+bbbase		equ	bbpag << 12	; non resident base address
+bbcomn		equ	bbbase + 0c00h	; resident portion address
 
-SYSBASE EQU	BBBASE		; use this to have 60K TPA
-; SYSBASE EQU	BBCOMN		; use this to have 63K TPA
+sysbase 	equ	bbbase		; use this to have 60K TPA
+; SYSBASE 	equ	BBCOMN		; use this to have 63K TPA
 
 ;-------------------------------------

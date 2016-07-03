@@ -11,26 +11,27 @@
 ;
 ;; return with interrupt enable checksum
 ;;
-CKIRET:	PUSH	AF
-	LD	A,(TMPBYTE)
-	BIT	5,A			; interrupt disabled if zero
-	JR	Z,CKINOI
-	EI				; enabled...
-CKINOI:	POP	AF
-	RET
+ckiret:	push	af
+	ld	a,(tmpbyte)
+	bit	5,a			; interrupt disabled if zero
+	jr	z,ckinoi
+	ei				; enabled...
+ckinoi:	pop	af
+	ret
 
 ;;
 ;; reset (disable) interrupts restore
 ;;
-GDISIN:
-	LD	HL,TMPBYTE
-	RES	5,(HL)
-	RET
+gdisin:
+	ld	hl,tmpbyte
+	res	5,(hl)
+	ret
 ;;
 ;; set (enable) interrupts restore
 ;;
-GENAIN:
-	LD	HL,TMPBYTE
-	SET	5,(HL)
-	RET
+genain:
+	ld	hl,tmpbyte
+	set	5,(hl)
+	ret
+
 

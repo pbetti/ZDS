@@ -36,187 +36,187 @@ include sysbios.equ
 ;-------------------------------------
 ; Some macro
 
-BBJTOBNK macro 	bnknum, raddr
-	CALL	BBEXEC
-	DEFW	raddr
-	DEFB	bnknum
-	ENDM
+bbjtobnk macro 	bnknum, raddr
+	call	bbexec
+	defw	raddr
+	defb	bnknum
+	endm
 
 	; select register form uart.
 	; similar to banked, exported macro but used in ISR
-CRDUREG	macro	uregister
-	LD	A,B		; B is uart id
-	ADD	A,uregister
-	LD	C,A
-	IN	A,(C)
+crdureg	macro	uregister
+	ld	a,b		; B is uart id
+	add	a,uregister
+	ld	c,a
+	in	a,(c)
 	endm
 
-	CSEG
+	cseg
 
-	NAME	'SYSCMN'
+	name	'SYSCMN'
 
-SYSCOMMON	EQU	$		; start of resident BIOS
-SYSCOM:
+syscommon	equ	$		; start of resident BIOS
+syscom:
 
 	; safe reload, something goes wrong if we are here
 
-	JP	RLDROM
+	jp	rldrom
 
 	;----------------
 	; Banked routines
 
 	; SYSBIOS1
-	PUBLIC	BBCRTCINI, BBCRTFILL, VCONOUT, VCONIN
-	PUBLIC	VCONST, BBCURSET
-	PUBLIC	BBU0INI, BBU1INI, SCONOUT, SCONIN
-	PUBLIC	SCONST, BBU1RX, BBU1TX, BBU1ST
+	public	bbcrtcini, bbcrtfill, vconout, vconin
+	public	vconst, bbcurset
+	public	bbu0ini, bbu1ini, sconout, sconin
+	public	sconst, bbu1rx, bbu1tx, bbu1st
 
 	; SYSBIOS2
-	PUBLIC	BBFWRITE, BBFLOPIO, BBFHOME, BBFREAD
-	PUBLIC	BBSIDSET, BBFDRVSEL, BBDPRMSET
+	public	bbfwrite, bbflopio, bbfhome, bbfread
+	public	bbsidset, bbfdrvsel, bbdprmset
 
-	PUBLIC	BBWRVDSK, BBUPLCHR, BBRDVDSK, BBPSNDBLK
-	PUBLIC	BBPRCVBLK, BBPRNCHR
+	public	bbwrvdsk, bbuplchr, bbrdvdsk, bbpsndblk
+	public	bbprcvblk, bbprnchr
 
-	PUBLIC	BBTRKSET, BBSECSET, BBDMASET, BBDSKSEL
-	PUBLIC	BBCPBOOT, BBVCPMBT
+	public	bbtrkset, bbsecset, bbdmaset, bbdsksel
+	public	bbcpboot, bbvcpmbt
 
-	PUBLIC	BBDIV16, BBMUL16, BBOFFCAL
-	PUBLIC	BBSTTIM, BBRDTIME
+	public	bbdiv16, bbmul16, bboffcal
+	public	bbsttim, bbrdtime
 
-	PUBLIC	BBHDINIT, BBDRIVEID, BBHDGEO
-	PUBLIC	BBHDRD, BBHDWR, BBHDBOOT, BBLDPART
+	public	bbhdinit, bbdriveid, bbhdgeo
+	public	bbhdrd, bbhdwr, bbhdboot, bbldpart
 
 	; SYSBIOS3
-	PUBLIC	BBEPMNGR, BBEIDCK
+	public	bbepmngr, bbeidck
 
 	; Resident routines
-	PUBLIC	DELAY, MMPMAP, MMGETP, BBCONST
-	PUBLIC	BBCONIN, BBCONOUT, RLDROM
+	public	delay, mmpmap, mmgetp, bbconst
+	public	bbconin, bbconout, rldrom
 
 	; Interrupts vector table & mngmt
-	PUBLIC	SINTVEC, INTREN, INTRDI, FSTAT
-	PUBLIC	FOUT, SRXSTP, SRXRSM
+	public	sintvec, intren, intrdi, fstat
+	public	fout, srxstp, srxrsm
 
 ;-------------------------------------
 ; Internal BIOS calls
 
-BBCRTCINI:	BBJTOBNK 1, CRTCINI
-BBCRTFILL:	BBJTOBNK 1, CRTFILL
-VCONOUT:	BBJTOBNK 1, BCONOUT
-VCONIN:		BBJTOBNK 1, BCONIN
-VCONST:		BBJTOBNK 1, BCONST
-BBCURSET:	BBJTOBNK 1, CURSET
-SCONOUT:	BBJTOBNK 1, TXCHAR0
-SCONIN:		BBJTOBNK 1, RXCHAR0
-SCONST:		BBJTOBNK 1, USTATUS0
-BBU0INI:	BBJTOBNK 1, INIUART0
-BBU1TX:		BBJTOBNK 1, TXCHAR1
-BBU1RX:		BBJTOBNK 1, RXCHAR1
-BBU1ST:		BBJTOBNK 1, USTATUS1
-BBU1INI:	BBJTOBNK 1, INIUART1
-BBINICTC:	BBJTOBNK 1, INICTC
-BBRESCTC:	BBJTOBNK 1, RESCTC
+bbcrtcini:	bbjtobnk 1, crtcini
+bbcrtfill:	bbjtobnk 1, crtfill
+vconout:	bbjtobnk 1, bconout
+vconin:		bbjtobnk 1, bconin
+vconst:		bbjtobnk 1, bconst
+bbcurset:	bbjtobnk 1, curset
+sconout:	bbjtobnk 1, txchar0
+sconin:		bbjtobnk 1, rxchar0
+sconst:		bbjtobnk 1, ustatus0
+bbu0ini:	bbjtobnk 1, iniuart0
+bbu1tx:		bbjtobnk 1, txchar1
+bbu1rx:		bbjtobnk 1, rxchar1
+bbu1st:		bbjtobnk 1, ustatus1
+bbu1ini:	bbjtobnk 1, iniuart1
+bbinictc:	bbjtobnk 1, inictc
+bbresctc:	bbjtobnk 1, resctc
 
-BBPSNDBLK:	BBJTOBNK 2, PSNDBLK
-BBUPLCHR:	BBJTOBNK 2, UPLCHR
-BBPRCVBLK:	BBJTOBNK 2, PRCVBLK
-BBRDVDSK:	BBJTOBNK 2, VDSKRD
-BBWRVDSK:	BBJTOBNK 2, VDSKWR
-BBFHOME:	BBJTOBNK 2, FHOME
-BBFREAD:	BBJTOBNK 2, FREAD
-BBFWRITE:	BBJTOBNK 2, FWRITE
-BBFLOPIO:	BBJTOBNK 2, FLOPIO
-BBPRNCHR:	BBJTOBNK 2, PRNCHR
-BBSTTIM:	BBJTOBNK 2, STTIM
-BBRDTIME:	BBJTOBNK 2, RDTIME
-BBTRKSET:	BBJTOBNK 2, TRKSET
-BBSECSET:	BBJTOBNK 2, SECSET
-BBDMASET:	BBJTOBNK 2, DMASET
-BBDSKSEL:	BBJTOBNK 2, DSKSEL
-BBCPBOOT:	BBJTOBNK 2, CPMBOOT
-BBVCPMBT:	BBJTOBNK 2, VCPMBT
-BBSIDSET:	BBJTOBNK 2, SIDSET
-BBFDRVSEL:	BBJTOBNK 2, FDRVSEL
-BBDIV16:	BBJTOBNK 2, DIV16
-BBMUL16:	BBJTOBNK 2, MUL16
-BBOFFCAL:	BBJTOBNK 2, OFFCAL
-BBHDINIT:	BBJTOBNK 2, HDINIT
-BBDRIVEID:	BBJTOBNK 2, DRIVEID
-BBHDWR:		BBJTOBNK 2, WRITESECTOR
-BBHDRD:		BBJTOBNK 2, READSECTOR
-BBHDGEO:	BBJTOBNK 2, GETHDGEO
-BBHDBOOT:	BBJTOBNK 2, HDCPM
-BBLDPART:	BBJTOBNK 2, GETPTABLE
-BBDPRMSET:	BBJTOBNK 2, SETDPRM
+bbpsndblk:	bbjtobnk 2, psndblk
+bbuplchr:	bbjtobnk 2, uplchr
+bbprcvblk:	bbjtobnk 2, prcvblk
+bbrdvdsk:	bbjtobnk 2, vdskrd
+bbwrvdsk:	bbjtobnk 2, vdskwr
+bbfhome:	bbjtobnk 2, fhome
+bbfread:	bbjtobnk 2, fread
+bbfwrite:	bbjtobnk 2, fwrite
+bbflopio:	bbjtobnk 2, flopio
+bbprnchr:	bbjtobnk 2, prnchr
+bbsttim:	bbjtobnk 2, sttim
+bbrdtime:	bbjtobnk 2, rdtime
+bbtrkset:	bbjtobnk 2, trkset
+bbsecset:	bbjtobnk 2, secset
+bbdmaset:	bbjtobnk 2, dmaset
+bbdsksel:	bbjtobnk 2, dsksel
+bbcpboot:	bbjtobnk 2, cpmboot
+bbvcpmbt:	bbjtobnk 2, vcpmbt
+bbsidset:	bbjtobnk 2, sidset
+bbfdrvsel:	bbjtobnk 2, fdrvsel
+bbdiv16:	bbjtobnk 2, div16
+bbmul16:	bbjtobnk 2, mul16
+bboffcal:	bbjtobnk 2, offcal
+bbhdinit:	bbjtobnk 2, hdinit
+bbdriveid:	bbjtobnk 2, driveid
+bbhdwr:		bbjtobnk 2, writesector
+bbhdrd:		bbjtobnk 2, readsector
+bbhdgeo:	bbjtobnk 2, gethdgeo
+bbhdboot:	bbjtobnk 2, hdcpm
+bbldpart:	bbjtobnk 2, getptable
+bbdprmset:	bbjtobnk 2, setdprm
 
-BBEPMNGR:	BBJTOBNK 3, EPMANAGER
-BBEIDCK:	BBJTOBNK 3, EIDCHECK
+bbepmngr:	bbjtobnk 3, epmanager
+bbeidck:	bbjtobnk 3, eidcheck
 
 ;;
 ;; Switch bank and jump
 ;;
 
-BBEXEC:
-	DI				; protect bank switch
-	EXX				; save registers
-	EX	AF,AF'
-	EX	(SP),HL
-	POP	DE			; remove call to us from stack
+bbexec:
+	di				; protect bank switch
+	exx				; save registers
+	ex	af,af'
+	ex	(sp),hl
+	pop	de			; remove call to us from stack
 
-	LD	B,BBPAG	<< 4		; where we are ?
-	LD	C,MMUPORT
-	IN	A,(C)
-	LD	(BBCBANK),A		; save current bank
+	ld	b,bbpag	<< 4		; where we are ?
+	ld	c,mmuport
+	in	a,(c)
+	ld	(bbcbank),a		; save current bank
 
-	LD	E,(HL)			; E low byte of called routine
-	INC	HL			; and
-	LD	D,(HL)			; hi byte. DE = routine address
-	INC	HL
-	LD	L,(HL)			; routine bank in L
-	LD	A,(HMEMPAG)		; calculate destination bank
-	SUB	A,L
-	OUT	(C),A			; and switch to it
+	ld	e,(hl)			; E low byte of called routine
+	inc	hl			; and
+	ld	d,(hl)			; hi byte. DE = routine address
+	inc	hl
+	ld	l,(hl)			; routine bank in L
+	ld	a,(hmempag)		; calculate destination bank
+	sub	a,l
+	out	(c),a			; and switch to it
 
-	LD	(BBCSTCK),SP
-	LD	HL,(BBCSTCK)		; save current stack pointer
-	LD	SP,BBSTACK		; and use local stack for i/o
-	PUSH	HL			; push old stack on new
-	LD	A,(BBCBANK)		; reload old bank
-	PUSH	AF			; and push on stack
+	ld	(bbcstck),sp
+	ld	hl,(bbcstck)		; save current stack pointer
+	ld	sp,bbstack		; and use local stack for i/o
+	push	hl			; push old stack on new
+	ld	a,(bbcbank)		; reload old bank
+	push	af			; and push on stack
 
-	EI				; ready to run
-	LD	HL,BBCALRET		; routine return forced to BBCALRET
-	PUSH	HL			; so put it on stack
-	PUSH	DE			; routine address also on stack
-	EXX				; restore registers as on entry
-	EX	AF,AF'
+	ei				; ready to run
+	ld	hl,bbcalret		; routine return forced to BBCALRET
+	push	hl			; so put it on stack
+	push	de			; routine address also on stack
+	exx				; restore registers as on entry
+	ex	af,af'
 
-	RET				; dispatch to banked part of routine
+	ret				; dispatch to banked part of routine
 
 ;;
 ;; arrive here after called routine finished
 ;;
-BBCALRET:
-	DI
-	EXX
-	EX	AF,AF'
-	LD	B,BBPAG << 4
-	LD	C,MMUPORT
-	POP	AF			; old bank
-	POP	HL			; old stack
-	OUT	(C),A			; restore bank
-	LD	SP,HL			; restore previous stack
-	EXX				; restore output register
-	EX	AF,AF'
-	EI				; reenable interrupts
-	RET				; and return...
+bbcalret:
+	di
+	exx
+	ex	af,af'
+	ld	b,bbpag << 4
+	ld	c,mmuport
+	pop	af			; old bank
+	pop	hl			; old stack
+	out	(c),a			; restore bank
+	ld	sp,hl			; restore previous stack
+	exx				; restore output register
+	ex	af,af'
+	ei				; reenable interrupts
+	ret				; and return...
 
 ;;
 ;; Unused / fake handle
 ;;
-BBVOID:
-	RET
+bbvoid:
+	ret
 
 ;-------------------------------------
 ; NON-banked common routines follow...
@@ -228,14 +228,14 @@ BBVOID:
 ;; B - logical page (0-f)
 ;; Use C
 ;;
-MMPMAP:
-	SLA	B
-	SLA	B
-	SLA	B
-	SLA	B
-	LD	C,MMUPORT
-	OUT	(C),A
-	RET
+mmpmap:
+	sla	b
+	sla	b
+	sla	b
+	sla	b
+	ld	c,mmuport
+	out	(c),a
+	ret
 
 ;;
 ;; Get physical page address
@@ -244,14 +244,14 @@ MMPMAP:
 ;; A - return page number
 ;; Use C
 ;;
-MMGETP:
-	SLA	B
-	SLA	B
-	SLA	B
-	SLA	B
-	LD	C,MMUPORT
-	IN	A,(C)
-	RET
+mmgetp:
+	sla	b
+	sla	b
+	sla	b
+	sla	b
+	ld	c,mmuport
+	in	a,(c)
+	ret
 
 ;;
 ;; DELAY
@@ -259,24 +259,24 @@ MMGETP:
 ;; This routine generate a delay from 1 to 65535 milliseconds.
 ;;
 
-MSCNT	EQU	246
+mscnt	equ	246
 
-DELAY:
-	PUSH	BC		; 11 c.
-	PUSH	AF		; 11 c.
-DLY2:
-	LD	C, MSCNT	; 7 c.	(assume de = 1 = 1msec.)
-DLY1:
-	DEC	C		; 4 c. * MSCNT
-	JR	NZ, DLY1	; 7/12 c. * MSCNT
-	DEC	DE		; 6 c.
-	LD	A, D		; 4 c.
-	OR	E		; 4 c.
-	JR	NZ, DLY2	; 7/12 c.
+delay:
+	push	bc		; 11 c.
+	push	af		; 11 c.
+dly2:
+	ld	c, mscnt	; 7 c.	(assume de = 1 = 1msec.)
+dly1:
+	dec	c		; 4 c. * MSCNT
+	jr	nz, dly1	; 7/12 c. * MSCNT
+	dec	de		; 6 c.
+	ld	a, d		; 4 c.
+	or	e		; 4 c.
+	jr	nz, dly2	; 7/12 c.
 
-	POP	AF		; 10 c.
-	POP	BC		; 10 c.
-	RET			; 10.c
+	pop	af		; 10 c.
+	pop	bc		; 10 c.
+	ret			; 10.c
 
 ;; MSEC evaluation (ret ignored):
 ;
@@ -294,23 +294,23 @@ DLY1:
 ; ---------------------------------------------------------------------
 ; Console redirection
 
-BBCONIN:
-	LD	A,(MIOBYTE)		; conf. location
-	BIT	5,A
-	JP	Z,VCONIN		; video
-	JP	SCONIN			; serial
+bbconin:
+	ld	a,(miobyte)		; conf. location
+	bit	5,a
+	jp	z,vconin		; video
+	jp	sconin			; serial
 
-BBCONOUT:
-	LD	A,(MIOBYTE)		; conf. location
-	BIT	5,A
-	JP	Z,VCONOUT		; video
-	JP	SCONOUT			; serial
+bbconout:
+	ld	a,(miobyte)		; conf. location
+	bit	5,a
+	jp	z,vconout		; video
+	jp	sconout			; serial
 
-BBCONST:
-	LD	A,(MIOBYTE)		; conf. location
-	BIT	5,A
-	JP	Z,VCONST		; video
-	JP	SCONST			; serial
+bbconst:
+	ld	a,(miobyte)		; conf. location
+	bit	5,a
+	jp	z,vconst		; video
+	jp	sconst			; serial
 
 
 
@@ -334,58 +334,58 @@ BBCONST:
 ;; return Z-flag set if buffer empty, C-flag set if buffer full.
 ;; note that buffer capacity is actually size-1.
 ;
-FSTAT:
-	LD	A, (IX + 0)		; get cnt
-	PUSH	DE
-	LD	E, (IX + 2)		; get mask
-	AND	E			; cnt = cnt mod size
-	DEC	E			; e = size - 2
-	CP	E			; test for full
-	POP	DE
-	INC	A			; clear z leaving cy
-	DEC	A
-	CCF
-	RET
+fstat:
+	ld	a, (ix + 0)		; get cnt
+	push	de
+	ld	e, (ix + 2)		; get mask
+	and	e			; cnt = cnt mod size
+	dec	e			; e = size - 2
+	cp	e			; test for full
+	pop	de
+	inc	a			; clear z leaving cy
+	dec	a
+	ccf
+	ret
 ;
 ;; FIN
 ;; routine to enter a character into a buffer.
 ;; enter with C=chr, IX=.cnt
-FIN:
-	LD	A, (IX + 0)		; compute: (cnt + nout) mod size
-	INC	(IX + 0)		; first update cnt
-	ADD	A, (IX + 1)
-	AND	(IX + 2)
-	PUSH	DE
-	LD	E, A			; compute base + nin
-	LD	D, 0
-	INC	IX
-	INC	IX
-	INC	IX
-	ADD	IX, DE
-	POP	DE
-	LD	(IX+0), C		; store character
-	RET
+fin:
+	ld	a, (ix + 0)		; compute: (cnt + nout) mod size
+	inc	(ix + 0)		; first update cnt
+	add	a, (ix + 1)
+	and	(ix + 2)
+	push	de
+	ld	e, a			; compute base + nin
+	ld	d, 0
+	inc	ix
+	inc	ix
+	inc	ix
+	add	ix, de
+	pop	de
+	ld	(ix+0), c		; store character
+	ret
 ;
 ;; FOUT
 ;; routine to retreve a character from a buffer.
 ;; enter with IC=.cnt
 ;; return with C=chr
 ;
-FOUT:
-	DEC	(IX + 0)		; update cnt
-	LD	A, (IX + 1)		; compute: base + nout
-	INC	(IX + 1)
-	AND	(IX + 2)
-	PUSH	DE
-	LD	E, A
-	LD	D, 0
-	INC	IX
-	INC	IX
-	INC	IX
-	ADD	IX, DE
-	POP	DE
-	LD	C, (IX + 0)		; get chr
-	RET
+fout:
+	dec	(ix + 0)		; update cnt
+	ld	a, (ix + 1)		; compute: base + nout
+	inc	(ix + 1)
+	and	(ix + 2)
+	push	de
+	ld	e, a
+	ld	d, 0
+	inc	ix
+	inc	ix
+	inc	ix
+	add	ix, de
+	pop	de
+	ld	c, (ix + 0)		; get chr
+	ret
 
 ;************************************************************************
 
@@ -396,108 +396,108 @@ FOUT:
 ;;
 ;; Interrupts enable / setup
 ;;
-INTREN:
-	DI
-	IM	2
-	LD	A,$FF
-	LD	I,A
-	CALL	BBINICTC
+intren:
+	di
+	im	2
+	ld	a,$ff
+	ld	i,a
+	call	bbinictc
 	; will call keyboard ini when available
-	LD	HL,TMPBYTE
-	SET	5,(HL)			; flag interrupts on
-	EI
-	RET
+	ld	hl,tmpbyte
+	set	5,(hl)			; flag interrupts on
+	ei
+	ret
 
 	;;
 ;; Interrupts disable
 ;;
-INTRDI:
-	DI
-	CALL	BBRESCTC
+intrdi:
+	di
+	call	bbresctc
 	; will call keyboard res when available
-	LD	HL,TMPBYTE
-	RES	5,(HL)			; flag interrupts off
-	RET
+	ld	hl,tmpbyte
+	res	5,(hl)			; flag interrupts off
+	ret
 
 ;;
 ;; System timer
 ;;
-SYTIMR:
-	PUSH	AF
-	LD	A,(TIMRCON)
-	INC	A
-	LD	(TIMRCON),A
-	POP	AF
+sytimr:
+	push	af
+	ld	a,(timrcon)
+	inc	a
+	ld	(timrcon),a
+	pop	af
 
 	; fall through
 ;;
 ;; Void ISR
 ;;
-VOIDISR:
-	EI
-	RETI
+voidisr:
+	ei
+	reti
 
 ;;
 ;; Uart 0 receiver
 ;;
-U0ISR:
-	LD	(UASTAV),SP		; private stack
-	LD	SP,UASTAK
-	PUSH	AF			; reg. save
-	PUSH	BC
-	PUSH	IX
-	CALL	SRXSTP			; lock rx
-	LD	B,UART0
-UISRI:	CRDUREG	R5LSR			; read status
-	BIT	0,A			; data available in rx buffer?
-	JR	Z,UISRE			; no.
-	LD	C,B
-	IN	C,(C)			; read data
-	LD	IX,FIFOU0		; select our fifo
-	CALL	FSTAT			; chek for room in it
-	JR	C,UISRE			; throw away character if queue full
-	CALL	FIN			; insert
-	JR	UISRI			; repeat for more data in UART (not local) fifo
-UISRE:
-	POP	IX			; reg. restore
-	POP	BC
-	POP	AF
-	LD	SP,(UASTAV)
-	EI
-	RETI
+u0isr:
+	ld	(uastav),sp		; private stack
+	ld	sp,uastak
+	push	af			; reg. save
+	push	bc
+	push	ix
+	call	srxstp			; lock rx
+	ld	b,uart0
+uisri:	crdureg	r5lsr			; read status
+	bit	0,a			; data available in rx buffer?
+	jr	z,uisre			; no.
+	ld	c,b
+	in	c,(c)			; read data
+	ld	ix,fifou0		; select our fifo
+	call	fstat			; chek for room in it
+	jr	c,uisre			; throw away character if queue full
+	call	fin			; insert
+	jr	uisri			; repeat for more data in UART (not local) fifo
+uisre:
+	pop	ix			; reg. restore
+	pop	bc
+	pop	af
+	ld	sp,(uastav)
+	ei
+	reti
 
 ;;
 ;; Uart 1 receiver
 ;;
-U1ISR:
-	PUSH	AF
-	LD	A,(CNFBYTE)
-	BIT	0,A			; check for intr redir on rst8
-	JR	Z,U1NUL			; ignore interrupt
-	POP	AF
-	RST	8			; redirect to user handler
-U1NUL:
-	POP	AF
-	EI
-	RETI
+u1isr:
+	push	af
+	ld	a,(cnfbyte)
+	bit	0,a			; check for intr redir on rst8
+	jr	z,u1nul			; ignore interrupt
+	pop	af
+	rst	8			; redirect to user handler
+u1nul:
+	pop	af
+	ei
+	reti
 
 ;;
 ;;	Lock RX on UART0
 ;
-SRXSTP:
-	LD	B,XOFC
-	JR	DOSTX
+srxstp:
+	ld	b,xofc
+	jr	dostx
 
 ;;
 ;;	Unlock RX on UART0
 ;
-SRXRSM:
-	LD	B,XONC
-DOSTX:
-	LD	A,(CNFBYTE)
-	BIT	1,A			; xon/xoff enabled ?
-	RET	Z			; no
-	JR	TX0
+srxrsm:
+	ld	b,xonc
+dostx:
+	ld	a,(cnfbyte)
+	bit	1,a			; xon/xoff enabled ?
+	ret	z			; no
+	jr	tx0
 
 
 ;;
@@ -505,48 +505,48 @@ DOSTX:
 ;;
 ;; B: output char
 
-TX0:
-	LD	C, UART0+R5LSR
-TX01:
-	IN	A,(C)			; read status
-	BIT	5,A			; ready to send?
-	JP	Z,TX01			; no, retry.
-	LD	C, UART0+R0RXTX
-	OUT	(C),B
-	RET
+tx0:
+	ld	c, uart0+r5lsr
+tx01:
+	in	a,(c)			; read status
+	bit	5,a			; ready to send?
+	jp	z,tx01			; no, retry.
+	ld	c, uart0+r0rxtx
+	out	(c),b
+	ret
 
 
 ;---------------------------------------------------------------------
 
 ;;
 ;; Reentry routine for safe jump to sysbios base page
-RLDROM:
-	LD	B,BBPAG << 4		; select bios space
-	LD	C,MMUPORT
-	LD	A,EEPAGE0		; remount rom and start again
-	OUT	(C),A
-	JP	BBPAG << 12
+rldrom:
+	ld	b,bbpag << 4		; select bios space
+	ld	c,mmuport
+	ld	a,eepage0		; remount rom and start again
+	out	(c),a
+	jp	bbpag << 12
 
 ;
 ;-------------------------------------
 ; Storage
-UASTAV:	DEFW	0
+uastav:	defw	0
 ; SYCRES:	DEFW	0
-UASTKB:	DEFS	10
-UASTAK	EQU	$
+uastkb:	defs	10
+uastak	equ	$
 
-BBSTBASE:
-	DEFS	36
-BBSTACK:
-SYSCMLO:
-	DEFS	SYSCOMMON + $03FF - SYSCMLO - 15
+bbstbase:
+	defs	36
+bbstack:
+syscmlo:
+	defs	syscommon + $03ff - syscmlo - 15
 
-SINTVEC:				; interrupts vector table (8 entries)
-	DEFW	VOIDISR			; CTC - chan. 0
-	DEFW	SYTIMR			; CTC - chan. 1 sys timer
-	DEFW	U1ISR			; CTC - chan. 2 uart 1
-	DEFW	U0ISR			; CTC - chan. 3 uart 0
-	DEFS	16 - 8
+sintvec:				; interrupts vector table (8 entries)
+	defw	voidisr			; CTC - chan. 0
+	defw	sytimr			; CTC - chan. 1 sys timer
+	defw	u1isr			; CTC - chan. 2 uart 1
+	defw	u0isr			; CTC - chan. 3 uart 0
+	defs	16 - 8
 
 ; SYSCMHI:
 ; 	DEFB	0
@@ -556,10 +556,10 @@ SINTVEC:				; interrupts vector table (8 entries)
 ; the image
 
 
-IF	MZMAC
-WSYM syscommon.sym
-ENDIF
+if	mzmac
+wsym syscommon.sym
+endif
 ;
 ;
-	END
+	end
 ;

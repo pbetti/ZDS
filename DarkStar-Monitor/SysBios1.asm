@@ -29,20 +29,20 @@
 
 include Common.inc.asm
 
-	EXTERN	DELAY, MMPMAP, MMGETP, RLDROM
+	extern	delay, mmpmap, mmgetp, rldrom
 
-	DSEG
+	dseg
 
-	NAME	'SYS1BI'
+	name	'SYS1BI'
 
-SYSBIOS1	EQU	$		; start of non resident BIOS
+sysbios1	equ	$		; start of non resident BIOS
 
 	; safe reload, something goes wrong if we are here
 
-	JP	RLDROM
+	jp	rldrom
 
-SYSBID1:
-	DEFB	'SYSBIOS1'
+sysbid1:
+	defb	'SYSBIOS1'
 
 ;-------------------------------------
 ; Needed modules
@@ -53,20 +53,20 @@ include modules/kbd.inc.asm		; keyboard
 include modules/uartctc.inc.asm		; 16c550 and Z80CTC
 
 
-SYSB1LO:
-	DEFS	SYSBIOS1 + $0BFF - SYSB1LO
-SYSB1HI:
-	DEFB	$00
+sysb1lo:
+	defs	sysbios1 + $0bff - sysb1lo
+sysb1hi:
+	defb	$00
 ;;
 ;; end of monitor code - this will fill with zeroes to the end of
 ;; the eprom
 
 ;-------------------------------------
 
-IF	MZMAC
-WSYM sysbios1.sym
-ENDIF
+if	mzmac
+wsym sysbios1.sym
+endif
 ;
 ;
-	END
+	end
 ;

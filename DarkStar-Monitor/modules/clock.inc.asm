@@ -12,51 +12,51 @@
 ;; RTCWMOD
 ;; - set DS1302 I/O line as output
 
-RTCWMOD:
-	LD	A,$CF			; 11-00-1111 mode ctrl word
+rtcwmod:
+	ld	a,$cf			; 11-00-1111 mode ctrl word
 					; Mode 3 (bit mode port B)
-	OUT	(CRTSERVCNT),A		; load mode 3 ctrl word
-	LD	A,00011101B		; bit mask 00011101
+	out	(crtservcnt),a		; load mode 3 ctrl word
+	ld	a,00011101b		; bit mask 00011101
 					;           |------- b6 out  (ds1320 i/o line)
-	OUT	(CRTSERVCNT),A		; send to PIO2
-	RET
+	out	(crtservcnt),a		; send to PIO2
+	ret
 
 ;;
 ;; RTCWMOD
 ;; - set DS1302 I/O line as output
 
-RTCRMOD:
-	LD	A,$CF			; 11-00-1111 mode ctrl word
+rtcrmod:
+	ld	a,$cf			; 11-00-1111 mode ctrl word
 					; Mode 3 (bit mode port B)
-	OUT	(CRTSERVCNT),A		; load mode 3 ctrl word
-	LD	A,01011101B		; bit mask 01011101
+	out	(crtservcnt),a		; load mode 3 ctrl word
+	ld	a,01011101b		; bit mask 01011101
 					;           |------- b6 in  (ds1320 i/o line)
-	OUT	(CRTSERVCNT),A		; send to PIO2
-	RET
+	out	(crtservcnt),a		; send to PIO2
+	ret
 
-CLUPSCLK:
-	IN	A,(CRTSERVDAT)		; read data port PIO2
-	SET	CLKSCLK,A
-	OUT	(CRTSERVDAT),A		; send to PIO2
-	RET
+clupsclk:
+	in	a,(crtservdat)		; read data port PIO2
+	set	clksclk,a
+	out	(crtservdat),a		; send to PIO2
+	ret
 
-CLLOSCLK:
-	IN	A,(CRTSERVDAT)		; read data port PIO2
-	RES	CLKSCLK,A
-	OUT	(CRTSERVDAT),A		; send to PIO2
-	RET
+cllosclk:
+	in	a,(crtservdat)		; read data port PIO2
+	res	clksclk,a
+	out	(crtservdat),a		; send to PIO2
+	ret
 
-CLUPRST:
-	IN	A,(CRTSERVDAT)		; read data port PIO2
-	SET	CLKRST,A
-	OUT	(CRTSERVDAT),A		; send to PIO2
-	RET
+cluprst:
+	in	a,(crtservdat)		; read data port PIO2
+	set	clkrst,a
+	out	(crtservdat),a		; send to PIO2
+	ret
 
-CLLORST:
-	IN	A,(CRTSERVDAT)		; read data port PIO2
-	RES	CLKRST,A
-	OUT	(CRTSERVDAT),A		; send to PIO2
-	RET
+cllorst:
+	in	a,(crtservdat)		; read data port PIO2
+	res	clkrst,a
+	out	(crtservdat),a		; send to PIO2
+	ret
 
 ;-------------------------------------------------------------------------
 ; Dallas DS-1302 Clock Interface
@@ -75,56 +75,56 @@ CLLORST:
 ; In this implementation, the 12/24 hour bit is always set to 24-hour
 ; mode by clearing the MSB.
 
-RDTIME:	CALL	COPEN			; Set Clock to Read, returning BC->DRA Port
-	LD	D,7			; 7 Bytes to Read
+rdtime:	call	copen			; Set Clock to Read, returning BC->DRA Port
+	ld	d,7			; 7 Bytes to Read
 
 ; Command the DS-1302 for Burst Read of Clock
 
-	LD	A,$BF			; Load the Burst Clock Read Command
-	CALL	WR1302			; and Send it
+	ld	a,$bf			; Load the Burst Clock Read Command
+	call	wr1302			; and Send it
 
 ; Read the Clock Data.
 
-RDDSRE:	PUSH	HL			; Save Ptr
-	LD	E,8			; Gather 8 bit for a byte
-RDTIM1:	CALL	CLLOSCLK		; Clock LO
-	NOP				; (settle)
-	IN	A,(CRTSERVDAT)		; Read Bit to LSB
-	RLCA				; shift left to
-	RLCA				; move bit 6 to carry
-	RR	L			; to MSB of L
-	CALL	CLUPSCLK		; Clock HI
-	DEC	E			; Byte Done?
-	JR	NZ,RDTIM1		; ..jump if Not
-	LD	E,L			; Else Get Byte
-	POP	HL			; Restore Ptr to Dest
-	LD	(HL),E			; Save value in output string
-	INC	HL			; back down to previous byte in output
-	DEC	D			; decrement counter
-	JR	NZ,RDDSRE		; ..get another byte if not done
-	CALL	CCLOSE			; Else Deselect Clock
-	LD	A,$01			; Set Good Exit
-	RET
+rddsre:	push	hl			; Save Ptr
+	ld	e,8			; Gather 8 bit for a byte
+rdtim1:	call	cllosclk		; Clock LO
+	nop				; (settle)
+	in	a,(crtservdat)		; Read Bit to LSB
+	rlca				; shift left to
+	rlca				; move bit 6 to carry
+	rr	l			; to MSB of L
+	call	clupsclk		; Clock HI
+	dec	e			; Byte Done?
+	jr	nz,rdtim1		; ..jump if Not
+	ld	e,l			; Else Get Byte
+	pop	hl			; Restore Ptr to Dest
+	ld	(hl),e			; Save value in output string
+	inc	hl			; back down to previous byte in output
+	dec	d			; decrement counter
+	jr	nz,rddsre		; ..get another byte if not done
+	call	cclose			; Else Deselect Clock
+	ld	a,$01			; Set Good Exit
+	ret
 
 ;.....
 ; Activate the Clock chip and set Date/Time from the parsed string
 
-STTIM:	CALL	COPEN			; Open the Clock
-	LD	A,10001110B		; select write to control register (8E)
-	CALL	WR1302
-	LD	A,0			; Write-Protect Off
-	CALL	WR1302
-	CALL	CCLOSW
-	CALL	COPEN
-	LD	A,10111110B		; Burst Write (BE)
-	LD	B,8			; 8 bytes
-	CALL	WR1302
-STTI0:	LD	A,(HL)
-	CALL	WR1302
-	INC	HL
-	DJNZ	STTI0
-	CALL	CCLOSW
-	RET
+sttim:	call	copen			; Open the Clock
+	ld	a,10001110b		; select write to control register (8E)
+	call	wr1302
+	ld	a,0			; Write-Protect Off
+	call	wr1302
+	call	cclosw
+	call	copen
+	ld	a,10111110b		; Burst Write (BE)
+	ld	b,8			; 8 bytes
+	call	wr1302
+stti0:	ld	a,(hl)
+	call	wr1302
+	inc	hl
+	djnz	stti0
+	call	cclosw
+	ret
 
 ;;
 ;; Activate trickle charger
@@ -142,44 +142,44 @@ STTI0:	LD	A,(HL)
 ; Entry: None
 ; Uses : AF
 
-COPEN:	CALL	RTCRMOD		; Data Line to Input
-	CALL	CLLOSCLK	; Clk LO to Start
-	CALL	CLUPRST		; Clear Reset to HI
-	RET
+copen:	call	rtcrmod		; Data Line to Input
+	call	cllosclk	; Clk LO to Start
+	call	cluprst		; Clear Reset to HI
+	ret
 
 ;.....
 ; Write the Byte in A to the clock (used for Command)
 ; Exit : None
 ; Uses : AF,E
 
-WR1302:	PUSH	HL			; Save Regs
-	LD	L,A			; Store byte
-	LD	E,8			; set bit count
-	CALL	RTCWMOD			; data line to output
-WR130L:	CALL	CLLOSCLK
-	RRC	L			; Data Byte LSB to Carry
-	JR	NC,WR13B0		; is zero ?
-	IN	A,(CRTSERVDAT)		; no set to 1
-	SET	CLKIO,A
-	OUT	(CRTSERVDAT),A
-	JR	WR13NX			; next
-WR13B0:	IN	A,(CRTSERVDAT)		; yes set to 0
-	RES	CLKIO,A
-	OUT	(CRTSERVDAT),A
-WR13NX:	CALL	CLUPSCLK
-	DEC	E			; Eight Bits Sent?
-	JR	NZ,WR130L		; ..loop if Not
+wr1302:	push	hl			; Save Regs
+	ld	l,a			; Store byte
+	ld	e,8			; set bit count
+	call	rtcwmod			; data line to output
+wr130l:	call	cllosclk
+	rrc	l			; Data Byte LSB to Carry
+	jr	nc,wr13b0		; is zero ?
+	in	a,(crtservdat)		; no set to 1
+	set	clkio,a
+	out	(crtservdat),a
+	jr	wr13nx			; next
+wr13b0:	in	a,(crtservdat)		; yes set to 0
+	res	clkio,a
+	out	(crtservdat),a
+wr13nx:	call	clupsclk
+	dec	e			; Eight Bits Sent?
+	jr	nz,wr130l		; ..loop if Not
 	;
-	CALL	RTCRMOD			; Set Port to Data IN
-	POP	HL			;  Restore Regs
-	RET
+	call	rtcrmod			; Set Port to Data IN
+	pop	hl			;  Restore Regs
+	ret
 
 ;.....
 ; Deselect the Clock for Exit
 ; Uses : AF
 
-CCLOSW:	CALL	RTCRMOD
-CCLOSE:	CALL	CLUPSCLK		; HI CLK
-	CALL	CLLORST			; LOW RST
-	RET
+cclosw:	call	rtcrmod
+cclose:	call	clupsclk		; HI CLK
+	call	cllorst			; LOW RST
+	ret
 

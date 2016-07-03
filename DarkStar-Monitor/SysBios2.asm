@@ -29,29 +29,29 @@
 
 include Common.inc.asm
 
-	EXTERN	DELAY, MMPMAP, MMGETP, RLDROM
+	extern	delay, mmpmap, mmgetp, rldrom
 
-	DSEG
+	dseg
 
-	NAME	'SYS2BI'
+	name	'SYS2BI'
 
-SYSBIOS2	EQU	$		; start of non resident BIOS
+sysbios2	equ	$		; start of non resident BIOS
 
 	; safe reload, something goes wrong if we are here
 
-	JP	RLDROM
+	jp	rldrom
 
-SYSBID2:
-	DEFB	'SYSBIOS2'
+sysbid2:
+	defb	'SYSBIOS2'
 
 ;
 ; store sector size for variable disk format operations
 ;
 ; HL < # secs per track, DE < sec. lenght
-SETDPRM:
-	LD	(CSPTR),HL
-	LD	(CSLEN),DE
-	RET
+setdprm:
+	ld	(csptr),hl
+	ld	(cslen),de
+	ret
 
 
 ;-------------------------------------
@@ -65,23 +65,23 @@ include modules/ide.inc.asm		; 8255 ide i/f
 
 ;-------------------------------------
 
-CSPTR:	DEFW	0
-CSLEN:	DEFW	0
+csptr:	defw	0
+cslen:	defw	0
 
-SYSB2LO:
-	DEFS	SYSBIOS2 + $0BFF - SYSB2LO
-SYSB2HI:
-	DEFB	$00
+sysb2lo:
+	defs	sysbios2 + $0bff - sysb2lo
+sysb2hi:
+	defb	$00
 ;;
 ;; end of code - this will fill with zeroes to the end of
 ;; the image
 
 ;-------------------------------------
 
-IF	MZMAC
-WSYM sysbios2.sym
-ENDIF
+if	mzmac
+wsym sysbios2.sym
+endif
 ;
 ;
-	END
+	end
 ;

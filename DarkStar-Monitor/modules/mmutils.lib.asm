@@ -37,34 +37,34 @@
 ;; Registers are not saved because we could
 ;; not rely on stack position
 ;;
-MMUPMAP:
-	LD	C,MMUPORT
-	OUT	(C),D
-	RET
+; mmupmap:
+; 	ld	c,mmuport
+; 	out	(c),d
+; 	ret
 
 
 ;; FMEMSIZ - Size memory in physical space
 ;;           DO NOT TRY to check eeprom region
 ;;
-FMEMSIZ:
-	LD	B,MMTPAPAG		; last ram page before eeprom
-	LD	HL,$FFFF
-FMEMNP:
-	INC	H
-	LD	A,(HL)
-	CPL
-	LD	(HL),A
-	CP	(HL)
-	CPL
-	LD	(HL),A
-	JR	NZ,FMESTP
-	LD	A,H
-	CP	B
-	JR	NZ,FMEMNP
-	RET
-FMESTP:
-	DEC	H			; error or unavailable page
-	RET
+fmemsiz:
+	ld	b,mmtpapag		; last ram page before eeprom
+	ld	hl,$ffff
+fmemnp:
+	inc	h
+	ld	a,(hl)
+	cpl
+	ld	(hl),a
+	cp	(hl)
+	cpl
+	ld	(hl),a
+	jr	nz,fmestp
+	ld	a,h
+	cp	b
+	jr	nz,fmemnp
+	ret
+fmestp:
+	dec	h			; error or unavailable page
+	ret
 
 ;;
 ;; Size banked memory
@@ -77,36 +77,37 @@ FMESTP:
 ;;
 ;; *** WE NEED STACK IN A SAFE PLACE ***
 ;;
-BNKMSIZ:
-	LD	B,MMUTSTPAGE << 4	; save actual test page
-	LD	C,MMUPORT
-	LD	HL,MMUTSTADDR
-	IN	A,(C)
-	PUSH	AF
+bnkmsiz:
+	ld	b,mmutstpage << 4	; save actual test page
+	ld	c,mmuport
+	ld	hl,mmutstaddr
+	in	a,(c)
+	push	af
 
-	LD	E,$BF-$0F		; number of pages to check
-	LD	D,$0F			; first page
-BNKPNXT:
-	OUT	(C),D			; setup page
+	ld	e,$bf-$0f		; number of pages to check
+	ld	d,$0f			; first page
+bnkpnxt:
+	out	(c),d			; setup page
 
-	LD	A,(HL)			; test if writable
-	CPL
-	LD	(HL),A
-	CP	(HL)
-	CPL
-	LD	(HL),A
-	JR	NZ,BNKTOHPAG
+	ld	a,(hl)			; test if writable
+	cpl
+	ld	(hl),a
+	cp	(hl)
+	cpl
+	ld	(hl),a
+	jr	nz,bnktohpag
 
-	INC	D			; next page
-	DEC	E
-	JR	NZ,BNKPNXT
-BNKTOHPAG:
-	POP	AF			; restore test page
-	OUT	(C),A
+	inc	d			; next page
+	dec	e
+	jr	nz,bnkpnxt
+bnktohpag:
+	pop	af			; restore test page
+	out	(c),a
 
-	LD	A,D			; save size
+	ld	a,d			; save size
 ; 	LD	A,$80
-	LD	(HMEMPAG),A
-	RET
+	ld	(hmempag),a
+	ret
+
 
 

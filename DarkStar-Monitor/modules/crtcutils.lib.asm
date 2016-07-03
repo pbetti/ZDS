@@ -13,18 +13,18 @@
 ;;
 ;;
 ;; OUTSTR print a string using BBCONOUT
-OUTSTR:
-	PUSH	BC
-OSLP0:	LD	C,(HL)
-	LD	B,C
-	RES	7,C
-	CALL	BBCONOUT
-	INC	HL
-	LD	A,B
-	RLCA
-	JR	NC,OSLP0
-	POP	BC
-	RET
+outstr:
+	push	bc
+oslp0:	ld	c,(hl)
+	ld	b,c
+	res	7,c
+	call	bbconout
+	inc	hl
+	ld	a,b
+	rlca
+	jr	nc,oslp0
+	pop	bc
+	ret
 
 
 ;;
@@ -44,52 +44,12 @@ OSLP0:	LD	C,(HL)
 ;; OUTCRLF - CR/LF through OUTSTR
 ;
 
-OUTCRLF:
-	PUSH	HL			; was 00FAB0 E5
-OCRLF1:	LD	HL,CRLFTAB
-	CALL	OUTSTR
-	POP	HL
-	RET
-
-; ;;
-; ;; CLRSCRGR - Clear screen graphic mode
-; ;
-; CLRSCRGR:
-; 	CALL	SCUROF			; was 00F0E7 CD 7E F0
-; 	LD	HL,$0020
-; 	LD	(RAM0BUF),HL
-; 	LD	HL,$FF00
-; 	LD	(RAM2BUF),HL
-; 	CALL	RSTDPY
-; 	LD	HL,$0000
-; CSGLP0:	LD	A,(RAM0BUF)
-; 	CALL	DISPCH
-; 	INC	HL
-; 	LD	A,H
-; 	CP	$07
-; 	JR	NZ,CSGLP0
-; 	LD	A,L
-; 	CP	$80
-; 	JR	NZ,CSGLP0
-; 	CALL	RSTDPY
-; 	JP	SCURON
-
-; ;;
-; ;; OUTGRBUF - set graphic mode, display RAM[012]BUF and revert to ascii
-; ;;
-; OUTGRBUF:
-; 	CALL	GCRSPOS           ; was 00FF59 CD B0 F7
-; 	DEC	HL
-; 	LD	A,(RAM3BUF)
-; 	PUSH	AF
-; 	PUSH	HL
-; 	RES	4,A
-; 	LD	(RAM3BUF),A
-; 	CALL	DISPGR
-; 	POP	HL
-; 	POP	AF
-; 	LD	(RAM3BUF),A
-; 	JP	SCRSPOS
+outcrlf:
+	push	hl			; was 00FAB0 E5
+ocrlf1:	ld	hl,crlftab
+	call	outstr
+	pop	hl
+	ret
 
 ; ;;
 ; ;; GETLPEN - manage light-pen operations
@@ -125,21 +85,6 @@ OCRLF1:	LD	HL,CRLFTAB
 ; 	POP	AF
 ; 	JP	CILOP			; re-enter normal char processing
 
-; ;;
-; ;; SGRMODE - set graphic mode on
-; ;
-; SGRMODE:
-; 	IN	A,(CRT6545ADST)		; was 00FF40 DB 8C
-; 	BIT	7,A
-; 	JR	Z,SGRMODE
-; 	IN	A,(CRTRAM3PORT)
-; 	SET	4,A
-; 	LD	(RAM3BUF),A
-; 	IN	A,(CRTRAM0DAT)
-; ; 	POP	HL
-; ; 	POP	HL
-; 	RET
-
 ; GRAPHOFF:
 ; 	LD	HL,RAM3BUF
 ; 	SET	4,(HL)
@@ -150,5 +95,5 @@ OCRLF1:	LD	HL,CRLFTAB
 ; 	RES	4,(HL)
 ; 	RET
 
-CRLFTAB:
-	DB	$0D,$8A
+crlftab:
+	db	$0d,$8a

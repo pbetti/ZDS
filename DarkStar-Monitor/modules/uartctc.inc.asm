@@ -9,58 +9,58 @@
 ; ---------------------------------------------------------------------
 
 
-ANSIDRV	EQU	TRUE			; set TRUE to enable ANSI console driver
+ansidrv	equ	true			; set TRUE to enable ANSI console driver
 
 ;------- UARTS Section ---------
 
 
-WRUREG0	macro	uregister
-	LD	A,UART0
-	ADD	A,uregister
-	LD	C,A
-	OUT	(C),B
+wrureg0	macro	uregister
+	ld	a,uart0
+	add	a,uregister
+	ld	c,a
+	out	(c),b
 	endm
 
-RDUREG0	macro	uregister
-	LD	A,UART0
-	ADD	A,uregister
-	LD	C,A
-	IN	A,(C)
+rdureg0	macro	uregister
+	ld	a,uart0
+	add	a,uregister
+	ld	c,a
+	in	a,(c)
 	endm
 
-WRUREG1	macro	uregister
-	LD	A,UART1
-	ADD	A,uregister
-	LD	C,A
-	OUT	(C),B
+wrureg1	macro	uregister
+	ld	a,uart1
+	add	a,uregister
+	ld	c,a
+	out	(c),b
 	endm
 
-RDUREG1	macro	uregister
-	LD	A,UART1
-	ADD	A,uregister
-	LD	C,A
-	IN	A,(C)
+rdureg1	macro	uregister
+	ld	a,uart1
+	add	a,uregister
+	ld	c,a
+	in	a,(c)
 	endm
 
-WRUREG	macro	uregister
-	LD	A,(SUART)
-	ADD	A,uregister
-	LD	C,A
-	OUT	(C),B
+wrureg	macro	uregister
+	ld	a,(suart)
+	add	a,uregister
+	ld	c,a
+	out	(c),b
 	endm
 
-RDUREG	macro	uregister
-	LD	A,(SUART)
-	ADD	A,uregister
-	LD	C,A
-	IN	A,(C)
+rdureg	macro	uregister
+	ld	a,(suart)
+	add	a,uregister
+	ld	c,a
+	in	a,(c)
 	endm
 
-DESEQ	macro	p1,p2
-	LD	DE,[p1 << 8] + p2
+deseq	macro	p1,p2
+	ld	de,[p1 << 8] + p2
 	endm
 
-	EXTERN	FSTAT, FOUT, SRXRSM
+	extern	fstat, fout, srxrsm
 
 ; ;;
 ; ;; Select UART for following operations
@@ -78,47 +78,47 @@ DESEQ	macro	p1,p2
 ;; A = Selected chip
 ;;
 
-INIUART0:
-	LD	A,UART0
-	LD	(SUART),A
-	CALL	DOINIUART
-	RET
+iniuart0:
+	ld	a,uart0
+	ld	(suart),a
+	call	doiniuart
+	ret
 
-INIUART1:
-	LD	A,UART1
-	LD	(SUART),A
-	CALL	DOINIUART
-	RET
+iniuart1:
+	ld	a,uart1
+	ld	(suart),a
+	call	doiniuart
+	ret
 
-DOINIUART:
-	PUSH	BC
-	LD	B,$AA
-	WRUREG	R7SPR
-	RDUREG	R7SPR
-	CP	$AA			; test if you could store aa
-	JP	NZ,INIUNOK		; if not, the uart can't be found
+doiniuart:
+	push	bc
+	ld	b,$aa
+	wrureg	r7spr
+	rdureg	r7spr
+	cp	$aa			; test if you could store aa
+	jp	nz,iniunok		; if not, the uart can't be found
 
-	LD	B,$55
-	WRUREG	R7SPR
-	RDUREG	R7SPR
-	CP	$55			; or is defective
-	JP	NZ,INIUNOK
+	ld	b,$55
+	wrureg	r7spr
+	rdureg	r7spr
+	cp	$55			; or is defective
+	jp	nz,iniunok
 
-	LD      B, $80
-	WRUREG	R3LCR			; enable baud rate divisor registers
-	LD	A,(SUART)		; initialize baud rate.
-	CP	UART0			; which uart ?
-	JR	NZ,INIU1
-	LD	A,(UART0BR)		; uart 0
-	LD	B,A
-	JR	INIU2
-INIU1:	LD	A,(UART1BR)		; uart 1
-	LD	B,A
-INIU2:	WRUREG	R0BRDL			; write lsb divisor register
-	LD	B,$0
-	WRUREG	R1BRDM			; write msb divisor register (alwyas 0 for us)
+	ld      b, $80
+	wrureg	r3lcr			; enable baud rate divisor registers
+	ld	a,(suart)		; initialize baud rate.
+	cp	uart0			; which uart ?
+	jr	nz,iniu1
+	ld	a,(uart0br)		; uart 0
+	ld	b,a
+	jr	iniu2
+iniu1:	ld	a,(uart1br)		; uart 1
+	ld	b,a
+iniu2:	wrureg	r0brdl			; write lsb divisor register
+	ld	b,$0
+	wrureg	r1brdm			; write msb divisor register (alwyas 0 for us)
 
-	LD	B,00000011B		; setup 8 bit, 1 stop, no parity
+	ld	b,00000011b		; setup 8 bit, 1 stop, no parity
 					; 7 6 5 4 3 2 1 0
 					;             +------ 11 = 8 bit word length
 					;           +-------- 0 = 1 stop bit
@@ -127,8 +127,8 @@ INIU2:	WRUREG	R0BRDL			; write lsb divisor register
 					;     +-------------- 0 = parity disabled (n/a)
 					;   +---------------- 0 = turn break off
 					; +------------------ 0 = disable divisor registers
-	WRUREG	R3LCR
-	LD	B,10000111B		; 7 6 5 4 3 2 1 0
+	wrureg	r3lcr
+	ld	b,10000111b		; 7 6 5 4 3 2 1 0
 					;               +---- 1 = enable FIFO and clear XMIT and RCVR FIFO queues
 					;             +------ 1 = clear RCVR FIFO
 					;           +-------- 1 = clear XMIT FIFO
@@ -141,62 +141,62 @@ INIU2:	WRUREG	R0BRDL			; write lsb divisor register
 					;	 01        4 bytes
 					;	 10        8 bytes         <-- actually
 					;	 11       14 bytes
-	WRUREG	R2FCR
-	LD	B,00000001B	        ; 7 6 5 4 3 2 1 0
+	wrureg	r2fcr
+	ld	b,00000001b	        ; 7 6 5 4 3 2 1 0
 					;               +---- 1 = enable data available interrupt (and 16550 Timeout)
 					;             +------ 0 = disable Transmit Holding Register empty (THRE) interrupt
 					;           +-------- 0 = disable Receiver lines status interrupt
 					;         +---------- 0 = disable modem-status-change interrupt
 					; +------------------ reserved (zero)
-	WRUREG	R1IER
-	POP	BC
-	XOR	A			; init ok
-	RET
-INIUNOK:POP	BC
-	LD	A,$FF
-	RET
+	wrureg	r1ier
+	pop	bc
+	xor	a			; init ok
+	ret
+iniunok:pop	bc
+	ld	a,$ff
+	ret
 
 ;;
 ;; Sends a char over serial line 0
 ;;
 ;; C: output char
 
-	IF NOT ANSIDRV
-TXCHAR0:
-	ELSE
-DOTXCHAR:
-	ENDIF
-	LD	A,C
-	PUSH	BC
-	PUSH	AF
-TXBUSY0:
-	RDUREG0	R5LSR			; read status
-	BIT	5,A			; ready to send?
-	JP	Z,TXBUSY0		; no, retry.
-	POP	AF
-	LD	B,A
-	WRUREG0	R0RXTX
-	POP	BC
-	RET
+	if not ansidrv
+txchar0:
+	else
+dotxchar:
+	endif
+	ld	a,c
+	push	bc
+	push	af
+txbusy0:
+	rdureg0	r5lsr			; read status
+	bit	5,a			; ready to send?
+	jp	z,txbusy0		; no, retry.
+	pop	af
+	ld	b,a
+	wrureg0	r0rxtx
+	pop	bc
+	ret
 
 ;;
 ;; Sends a char over serial line 1
 ;;
 ;; C: output char
 
-TXCHAR1:
-	LD	A,C
-	PUSH	BC
-	PUSH	AF
-TXBUSY1:
-	RDUREG1	R5LSR			; read status
-	BIT	5,A			; ready to send?
-	JP	Z,TXBUSY1		; no, retry.
-	POP	AF
-	LD	B,A
-	WRUREG1	R0RXTX
-	POP	BC
-	RET
+txchar1:
+	ld	a,c
+	push	bc
+	push	af
+txbusy1:
+	rdureg1	r5lsr			; read status
+	bit	5,a			; ready to send?
+	jp	z,txbusy1		; no, retry.
+	pop	af
+	ld	b,a
+	wrureg1	r0rxtx
+	pop	bc
+	ret
 
 
 
@@ -205,167 +205,167 @@ TXBUSY1:
 ;;
 ;; A: return input char
 
-RXCHAR1:
-	PUSH	BC
-RXBUSY1:
-	RDUREG1	R5LSR			; read status
-	BIT	0,A			; data available in rx buffer?
-	JR	Z,RXBUSY1		; loop until data is ready
-	RDUREG1	R0RXTX
-	POP	BC
-	RET
+rxchar1:
+	push	bc
+rxbusy1:
+	rdureg1	r5lsr			; read status
+	bit	0,a			; data available in rx buffer?
+	jr	z,rxbusy1		; loop until data is ready
+	rdureg1	r0rxtx
+	pop	bc
+	ret
 
 ;;
 ;; Receive a char from serial line 0
 ;;
 ;; A: return input char
 
-RXCHAR0:
-	PUSH	BC
-	PUSH	IX
-	PUSH	DE
-	PUSH	HL
-	LD	IX,TMPBYTE
+rxchar0:
+	push	bc
+	push	ix
+	push	de
+	push	hl
+	ld	ix,tmpbyte
 
-	IF	ANSIDRV
-	LD	DE,(ALINKS)
-	BIT	3,(IX)			; two byte seq pending
-	JP	NZ,RXEXSB
-	ENDIF
+	if	ansidrv
+	ld	de,(alinks)
+	bit	3,(ix)			; two byte seq pending
+	jp	nz,rxexsb
+	endif
 
 ; ESCNX:	LD	A,(IX)
 ; 	BIT	5,A			; test system interrupt status
-ESCNX:	BIT	5,(IX)			; test system interrupt status
-	JR	NZ,RXCHAFIF		; enabled, uses queue
-RXBUSY0:
-	RDUREG0	R5LSR			; read status
-	BIT	0,A			; data available in rx buffer?
-	JR	Z,RXBUSY0		; loop until data is ready
-	RDUREG0	R0RXTX
-	JR	RXCHE
-RXCHAFIF:
-	LD	IX,FIFOU0
-	CALL	FSTAT			; queue status
-	CALL	Z,SRXRSM		; if empty ensure rx is unlocked
-RXCHAFLP:
-	CALL	FSTAT			; queue status
-	JR	Z,RXCHAFLP		; loop until char is ready
-	DI
-	CALL	FOUT			; get a character from the queue
-	EI
-	LD	A,C 			; and put it in correct register
-RXCHE:	LD	HL,MIOBYTE
-	BIT	3,(HL)			; yes: transform to uppercase ?
-	JR	Z,RXCHE1		; no
-	CP	'a'			; yes: is less then 'a' ?
-	JP	M,RXCHE1		; yes: return, already ok
-	CP	'{'			; no: then is greater than 'z' ?
-	JP	P,RXCHE1		; yes: do nothing
-	RES	5,A			; no: convert uppercase...
-RXCHE1:
-	IF 	NOT ANSIDRV
-	LD	A,(TMPBYTE)
-	BIT	5,A			; test system interrupt status
-	JR	Z,RXCHE1A		; disabled don't check queue
-	CALL	FSTAT			; queue status
-	CALL	Z,SRXRSM		; if empty unlock rx
-RXCHE1A:
-	POP	HL
-	POP	DE
-	POP	IX
-	POP	BC
-	RET
-	ELSE
-	LD	IX,TMPBYTE		; point to flag byte
-	BIT	4,(IX)			; driver disabled ?
-	JP	NZ,RXEXIMM		; yes exit
-	BIT	2,(IX)			; in sequence job?
-	JR	NZ,PRCSQ		; yes
-	BIT	1,(IX)			; in CSI job?
-	JR	NZ,WTCSI		; yes
-	CP	ESC			; ESC ?
-	JP	NZ,RXEXIMM		; no exit
+escnx:	bit	5,(ix)			; test system interrupt status
+	jr	nz,rxchafif		; enabled, uses queue
+rxbusy0:
+	rdureg0	r5lsr			; read status
+	bit	0,a			; data available in rx buffer?
+	jr	z,rxbusy0		; loop until data is ready
+	rdureg0	r0rxtx
+	jr	rxche
+rxchafif:
+	ld	ix,fifou0
+	call	fstat			; queue status
+	call	z,srxrsm		; if empty ensure rx is unlocked
+rxchaflp:
+	call	fstat			; queue status
+	jr	z,rxchaflp		; loop until char is ready
+	di
+	call	fout			; get a character from the queue
+	ei
+	ld	a,c 			; and put it in correct register
+rxche:	ld	hl,miobyte
+	bit	3,(hl)			; yes: transform to uppercase ?
+	jr	z,rxche1		; no
+	cp	'a'			; yes: is less then 'a' ?
+	jp	m,rxche1		; yes: return, already ok
+	cp	'{'			; no: then is greater than 'z' ?
+	jp	p,rxche1		; yes: do nothing
+	res	5,a			; no: convert uppercase...
+rxche1:
+	if 	not ansidrv
+	ld	a,(tmpbyte)
+	bit	5,a			; test system interrupt status
+	jr	z,rxche1a		; disabled don't check queue
+	call	fstat			; queue status
+	call	z,srxrsm		; if empty unlock rx
+rxche1a:
+	pop	hl
+	pop	de
+	pop	ix
+	pop	bc
+	ret
+	else
+	ld	ix,tmpbyte		; point to flag byte
+	bit	4,(ix)			; driver disabled ?
+	jp	nz,rxeximm		; yes exit
+	bit	2,(ix)			; in sequence job?
+	jr	nz,prcsq		; yes
+	bit	1,(ix)			; in CSI job?
+	jr	nz,wtcsi		; yes
+	cp	esc			; ESC ?
+	jp	nz,rxeximm		; no exit
 	;
-	SET	1,(IX)			; activate ANSI keys processing
+	set	1,(ix)			; activate ANSI keys processing
 	; may be that user pressed ESC and this is not a sequence...
-	LD	DE,2			; wait 2 ms, trying to see if this is a user
-	CALL	DELAY			; operation with the ESC key.
-	BIT	5,(IX)			; now we see if other chars are already availables
-	JR	NZ,RXESCFIF		; int enabled, test uses queue
-	RDUREG0	R5LSR			; read status
-	BIT	0,A			; data available in rx buffer?
-	JR	Z,RXEXESC		; no, user pressed ESC
-	JP	ESCNX			; yes, go on
-RXESCFIF:
-	PUSH	IX
-	LD	IX,FIFOU0
-	CALL	FSTAT			; data available in queue?
-	POP	IX
-	JR	Z,RXEXESC		; no, user pressed ESC
-	JP	ESCNX			; yes, we have something to work on
+	ld	de,2			; wait 2 ms, trying to see if this is a user
+	call	delay			; operation with the ESC key.
+	bit	5,(ix)			; now we see if other chars are already availables
+	jr	nz,rxescfif		; int enabled, test uses queue
+	rdureg0	r5lsr			; read status
+	bit	0,a			; data available in rx buffer?
+	jr	z,rxexesc		; no, user pressed ESC
+	jp	escnx			; yes, go on
+rxescfif:
+	push	ix
+	ld	ix,fifou0
+	call	fstat			; data available in queue?
+	pop	ix
+	jr	z,rxexesc		; no, user pressed ESC
+	jp	escnx			; yes, we have something to work on
 	;
-WTCSI:	RES	1,(IX)			; in CSI reset flags
-	CP	'['			; is a CSI: ESC+[ ?
-	JR	Z,GOCSI			; yes
-	CP	'O'			; is a CSI: ESC+O ? (used by F1 ... F4)
-	JR	NZ,RXEXIMM		; WRONG sequence
-GOCSI:	;
-	SET	2,(IX)			; CSI ok
-	JP	ESCNX			; wait for next chars
-PRCSQ:	;
-	LD	HL,ASQBUF		; setup string
-	LD	B,(HL)
-	INC	B
-	LD	(HL),B
-POSBF:	INC	HL
-	DJNZ	POSBF			; position in buffer
-	LD	(HL),A			; write
-	INC	HL
-	LD	(HL),0			; terminate
-	LD	DE,ASQBUF+1		; init search
-	LD	HL,ANSIKEYS
-	LD	BC,NAKEYS
-	CALL	TLOOK			; perform it
-	JR	NZ,RXEXIMM		; unknown seq
+wtcsi:	res	1,(ix)			; in CSI reset flags
+	cp	'['			; is a CSI: ESC+[ ?
+	jr	z,gocsi			; yes
+	cp	'O'			; is a CSI: ESC+O ? (used by F1 ... F4)
+	jr	nz,rxeximm		; WRONG sequence
+gocsi:	;
+	set	2,(ix)			; CSI ok
+	jp	escnx			; wait for next chars
+prcsq:	;
+	ld	hl,asqbuf		; setup string
+	ld	b,(hl)
+	inc	b
+	ld	(hl),b
+posbf:	inc	hl
+	djnz	posbf			; position in buffer
+	ld	(hl),a			; write
+	inc	hl
+	ld	(hl),0			; terminate
+	ld	de,asqbuf+1		; init search
+	ld	hl,ansikeys
+	ld	bc,nakeys
+	call	tlook			; perform it
+	jr	nz,rxeximm		; unknown seq
 	;				; found in table, but we need
-	LD	DE,(ALINKS)		; to test for a partial match
-	OR	A			; diff from string head
-	SBC	HL,DE
-	DEC	L
-	DEC	L
-	DEC	L			; include head
-	LD	A,(ALNGHT)		; check for len
-	SUB	L
-	JP	NZ,ESCNX		; partial match, wait for more
-	LD	A,(DE)			; got it!
-	CP	ESC			; if ESC is a two byte seq
-	JR	NZ,RXEXSB		; exit for single byte code
-	SET	3,(IX)			; flag a two byte retcode
-	JR	RXEXIMM
-RXEXSB:	RES	3,(IX)			; clear two-byters flag
-	XOR	A
-	LD	(ASQBUF),A
-	INC	DE
-	LD	A,(DE)			; return code
-	JR	RXEXIMM
-RXEX0:
-	POP	AF
-	JR	RXEXIMM
-RXEXESC:
-	LD	A,ESC
-RXEXIMM:
-	RES	2,(IX)
+	ld	de,(alinks)		; to test for a partial match
+	or	a			; diff from string head
+	sbc	hl,de
+	dec	l
+	dec	l
+	dec	l			; include head
+	ld	a,(alnght)		; check for len
+	sub	l
+	jp	nz,escnx		; partial match, wait for more
+	ld	a,(de)			; got it!
+	cp	esc			; if ESC is a two byte seq
+	jr	nz,rxexsb		; exit for single byte code
+	set	3,(ix)			; flag a two byte retcode
+	jr	rxeximm
+rxexsb:	res	3,(ix)			; clear two-byters flag
+	xor	a
+	ld	(asqbuf),a
+	inc	de
+	ld	a,(de)			; return code
+	jr	rxeximm
+rxex0:
+	pop	af
+	jr	rxeximm
+rxexesc:
+	ld	a,esc
+rxeximm:
+	res	2,(ix)
 ;RXEXNP:
-	LD	IX,FIFOU0
-	LD	D,A			; save A
-	CALL	FSTAT			; queue status
-	CALL	Z,SRXRSM		; if empty unlock rx
-	LD	A,D			; restore char
-	POP	HL
-	POP	DE
-	POP	IX
-	POP	BC
-	RET
+	ld	ix,fifou0
+	ld	d,a			; save A
+	call	fstat			; queue status
+	call	z,srxrsm		; if empty unlock rx
+	ld	a,d			; restore char
+	pop	hl
+	pop	de
+	pop	ix
+	pop	bc
+	ret
 
 ;;
 ;; Any lenght string compare
@@ -373,57 +373,57 @@ RXEXIMM:
 ;; DE, HL < strings addresses
 ;; BC < max lenght
 ;; > Z = 1 found
-CPSTR:	LD	A,(DE)			; get char from str1
-	INC	DE			; index next and compare
-	CPI
-	RET	NZ			; no match
-	RET	PO			; end of string
-	JR	CPSTR
+cpstr:	ld	a,(de)			; get char from str1
+	inc	de			; index next and compare
+	cpi
+	ret	nz			; no match
+	ret	po			; end of string
+	jr	cpstr
 
 ;;
 ;; string table lookup
 ;;
 ;; DE < test string, HL < table, BC < # strings in table
 ;; > Z = 1 match, HL > in string match + 1
-TSTLP:	PUSH	DE			; saves
-	PUSH	BC
-	LD	(ALINKS),HL		; current string start (incl. head)
-	INC	HL
-	INC	HL			; skip linked address
-	LD	B,0
-	LD	C,(HL)			; current string length
-	LD	A,C
-	LD	(ALNGHT),A		; current string len
-	INC	HL
-	LD	A,(ASQBUF)
-	LD	C,A			; test string len
-	CALL	CPSTR			; do compare
-	JR	Z,MATCH			; exit if found
-	LD	HL,(ALINKS)
-	LD	A,(ALNGHT)		; reload current string len
-	ADD	A,3
-	LD	C,A
-	ADD	HL,BC			; add length, address next
-	POP	BC			; restore count
-	POP	DE			; restore test string
-	DEC	BC			; update string count
+tstlp:	push	de			; saves
+	push	bc
+	ld	(alinks),hl		; current string start (incl. head)
+	inc	hl
+	inc	hl			; skip linked address
+	ld	b,0
+	ld	c,(hl)			; current string length
+	ld	a,c
+	ld	(alnght),a		; current string len
+	inc	hl
+	ld	a,(asqbuf)
+	ld	c,a			; test string len
+	call	cpstr			; do compare
+	jr	z,match			; exit if found
+	ld	hl,(alinks)
+	ld	a,(alnght)		; reload current string len
+	add	a,3
+	ld	c,a
+	add	hl,bc			; add length, address next
+	pop	bc			; restore count
+	pop	de			; restore test string
+	dec	bc			; update string count
 	;
-TLOOK:	LD	A,B			; table search entry point
-	OR	C			; check count = 0
-	JR	NZ,TSTLP		; search next if not
-	INC	A			; not found z = 0
-	RET
-MATCH:	POP	BC
-	POP	DE			; clear stack
-	RET				; found !
+tlook:	ld	a,b			; table search entry point
+	or	c			; check count = 0
+	jr	nz,tstlp		; search next if not
+	inc	a			; not found z = 0
+	ret
+match:	pop	bc
+	pop	de			; clear stack
+	ret				; found !
 
 
-ASQBUF:	DEFB	0
-ASQSTR:	DEFS	4
-ALINKS:	DEFW	0
-ALNGHT:	DEFB	0
+asqbuf:	defb	0
+asqstr:	defs	4
+alinks:	defw	0
+alnght:	defb	0
 
-	ENDIF
+	endif
 
 
 ;;
@@ -452,27 +452,27 @@ ALNGHT:	DEFB	0
 ;; A =  0: No character in queue
 ;; A = FF: A character is available
 
-USTATUS0:
-	LD	A,(TMPBYTE)
-	BIT	5,A			; test system interrupt status
-	JR	NZ,USTAFIF		; enabled, uses queue
-	PUSH	BC
-	RDUREG0	R5LSR			; read status
-	BIT	0,A			; data available in rx buffer?
-	POP	BC
-	JR	NZ,USTAT0
-	XOR	A
-	RET
-USTAFIF:
-	PUSH	IX
-	LD	IX,FIFOU0
-USTAF1:	CALL	FSTAT			; check on the status of the queue
-	POP	IX
-	JR	NZ,USTAT0		; return if z-flag set
-	XOR	A
-	RET
-USTAT0:	LD	A,$FF
-	RET
+ustatus0:
+	ld	a,(tmpbyte)
+	bit	5,a			; test system interrupt status
+	jr	nz,ustafif		; enabled, uses queue
+	push	bc
+	rdureg0	r5lsr			; read status
+	bit	0,a			; data available in rx buffer?
+	pop	bc
+	jr	nz,ustat0
+	xor	a
+	ret
+ustafif:
+	push	ix
+	ld	ix,fifou0
+ustaf1:	call	fstat			; check on the status of the queue
+	pop	ix
+	jr	nz,ustat0		; return if z-flag set
+	xor	a
+	ret
+ustat0:	ld	a,$ff
+	ret
 
 ;; Test UART 1 status
 ;;
@@ -480,19 +480,19 @@ USTAT0:	LD	A,$FF
 ;; A =  0: No character in queue
 ;; A = FF: A character is available
 
-USTATUS1:
-	PUSH	BC
-	RDUREG1	R5LSR			; read status
-	BIT	0,A			; data available in rx buffer?
-	POP	BC
-	JR	NZ,USTAT1
-	XOR	A
-	RET
-USTAT1:	LD	A,$FF
-	RET
+ustatus1:
+	push	bc
+	rdureg1	r5lsr			; read status
+	bit	0,a			; data available in rx buffer?
+	pop	bc
+	jr	nz,ustat1
+	xor	a
+	ret
+ustat1:	ld	a,$ff
+	ret
 
 
-	IF ANSIDRV			; ANSI driver for serial console
+	if ansidrv			; ANSI driver for serial console
 ;;
 ;; TXCHAR print out the char in reg C
 ;; with full evaluation of kegacy escape sequences
@@ -500,405 +500,405 @@ USTAT1:	LD	A,$FF
 ;;
 ;; register clean: can be used as CP/M BIOS replacement
 ;;
-TXCHAR0:
-	PUSH	AF
-	PUSH	BC
-	PUSH	DE
-	PUSH	HL
+txchar0:
+	push	af
+	push	bc
+	push	de
+	push	hl
 	; force jump to register restore and exit in stack
-	LD	HL,TXCEXIT
-	PUSH	HL
+	ld	hl,txcexit
+	push	hl
 	;
-	LD	A,C
-	LD	HL,TMPBYTE
-	BIT	4,(HL)			; plain serial i/o ?
-	JR	NZ,TXJP3		; yes. transmit as-is
-	LD	HL,MIOBYTE
-	BIT	7,(HL)			; alternate char processing ?
-	EX	DE,HL
-	JR	NZ,TXCOU2		; yes: do alternate
-	CP	$20			; no: is less then 0x20 (space) ?
-	JR	NC,TXJP1		; no: go further
-	ADD	A,A			; yes: is a special char
-	LD	H,0
-	LD	L,A
-	LD	BC,TXVEC1
-	ADD	HL,BC
-	LD	A,(HL)
-	INC	HL
-	LD	H,(HL)
-	LD	L,A
-	JP	(HL)			; jump to TXVEC1 handler
-TXJP1:	EX	DE,HL
-	BIT	6,(HL)			; auto ctrl chars ??
-	JR	Z,TXJP2			; no
-	CP	$40			; yes: convert
-	JR	C,TXJP2
-	CP	$60
-	JR	NC,TXJP2
-	SUB	$40
-	JR	TXJP3
-TXJP2:	CP	$C0			; is semigraphic ?
-	JR	C,TXJP3			; no
-	SUB	$C0			; to table offset
-	LD	H,0
-	LD	L,A
-	LD	BC,EQCP437
-	ADD	HL,BC
-	LD	C,(HL)
-TXJP3:	CALL	DOTXCHAR		; display char
-	RET
-TXCOU2:					; alternate processing....
-	CP	$20			; is a ctrl char ??
-	JR	NC,ACRADR		; no: will set cursor pos
-	ADD	A,A			; yes
-	LD	H,0
-	LD	L,A
-	LD	BC,TXVEC2
-	ADD	HL,BC
-	LD	A,(HL)
-	INC	HL
-	LD	H,(HL)
-	LD	L,A
-	JP	(HL)			; jump to service routine... (TXVEC2)
+	ld	a,c
+	ld	hl,tmpbyte
+	bit	4,(hl)			; plain serial i/o ?
+	jr	nz,txjp3		; yes. transmit as-is
+	ld	hl,miobyte
+	bit	7,(hl)			; alternate char processing ?
+	ex	de,hl
+	jr	nz,txcou2		; yes: do alternate
+	cp	$20			; no: is less then 0x20 (space) ?
+	jr	nc,txjp1		; no: go further
+	add	a,a			; yes: is a special char
+	ld	h,0
+	ld	l,a
+	ld	bc,txvec1
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	(hl)			; jump to TXVEC1 handler
+txjp1:	ex	de,hl
+	bit	6,(hl)			; auto ctrl chars ??
+	jr	z,txjp2			; no
+	cp	$40			; yes: convert
+	jr	c,txjp2
+	cp	$60
+	jr	nc,txjp2
+	sub	$40
+	jr	txjp3
+txjp2:	cp	$c0			; is semigraphic ?
+	jr	c,txjp3			; no
+	sub	$c0			; to table offset
+	ld	h,0
+	ld	l,a
+	ld	bc,eqcp437
+	add	hl,bc
+	ld	c,(hl)
+txjp3:	call	dotxchar		; display char
+	ret
+txcou2:					; alternate processing....
+	cp	$20			; is a ctrl char ??
+	jr	nc,acradr		; no: will set cursor pos
+	add	a,a			; yes
+	ld	h,0
+	ld	l,a
+	ld	bc,txvec2
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	(hl)			; jump to service routine... (TXVEC2)
 ;; cursor addressing service routine
 ;; address is ESC + (COL # + 32) + (ROW # + 32) (then need a NUL to terminate...)
 ;; will be: CSI (ESC,[) + row + ';' + col + 'H'
-ACRADR:	LD	HL,TMPBYTE
-	BIT	0,(HL)
-	JR	NZ,ROWSET
-	CP	$70			; greater then 80 ?
-	RET	NC			; yes: error
-	SUB	$1F			; no: ok
-	LD	(APPBUF),A		; store column
-	SET	0,(HL)			; switch row/col flag
-	RET
-ROWSET:	CP	$39			; greater than 24 ?
-	RET	NC			; yes: error
-	SUB	$1F			; no: ok
-	RES	0,(HL)			; resets flags
-	LD	HL,MIOBYTE
-	RES	7,(HL)			; done reset
-	LD	D,A			; load row
-	LD	E,';'
-	CALL	SEQEMIT			; and send
-	LD	A,(APPBUF)		; load column
-	LD	D,A
-	LD	E,'H'
-	CALL	SEQPAR			; and send
-	POP	HL			; clean stack
-TXCEXIT:
-	POP	HL
-	POP	DE
-	POP	BC
-	POP	AF
-	RET
+acradr:	ld	hl,tmpbyte
+	bit	0,(hl)
+	jr	nz,rowset
+	cp	$70			; greater then 80 ?
+	ret	nc			; yes: error
+	sub	$1f			; no: ok
+	ld	(appbuf),a		; store column
+	set	0,(hl)			; switch row/col flag
+	ret
+rowset:	cp	$39			; greater than 24 ?
+	ret	nc			; yes: error
+	sub	$1f			; no: ok
+	res	0,(hl)			; resets flags
+	ld	hl,miobyte
+	res	7,(hl)			; done reset
+	ld	d,a			; load row
+	ld	e,';'
+	call	seqemit			; and send
+	ld	a,(appbuf)		; load column
+	ld	d,a
+	ld	e,'H'
+	call	seqpar			; and send
+	pop	hl			; clean stack
+txcexit:
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	ret
 
-CSIEMIT:
-	LD	B,2
-	LD	HL,CSI
-CSICH:	LD	C,(HL)
-	CALL	DOTXCHAR
-	INC	HL
-	DJNZ	CSICH
-	RET
+csiemit:
+	ld	b,2
+	ld	hl,csi
+csich:	ld	c,(hl)
+	call	dotxchar
+	inc	hl
+	djnz	csich
+	ret
 
-SEQEMIT:
-	CALL	CSIEMIT			; send CSI
-SEQPAR:	LD	A,D			; sequence parameter in D
-	CP	$FF			; null, skip it
-	JR	Z,SEQCMD
-	OR	A			; zero ?
-	JR	Z,SEQZER
-	LD	B,A			; convert to BCD
-	XOR	A
-SQDAA:	INC	A
-	DAA
-	DJNZ	SQDAA
-	LD	D,A
-	AND	$F0			; hi nibble
-	SRL	A
-	SRL	A
-	SRL	A
-	SRL	A
-	ADD	A,'0'
-	CALL	SEQCHR			; send over
-	LD	A,D			; reload parameter
-	AND	$0F			; lo nibble
-SEQZER:	ADD	A,'0'
-	CALL	SEQCHR
-SEQCMD:	LD	A,E			; sequence command in E
-	CP	$FF			; null, skip it
-	JR	Z,SEQEND
-	JR	SEQCHR			; ...and send this too
-SEQEND:	RET
+seqemit:
+	call	csiemit			; send CSI
+seqpar:	ld	a,d			; sequence parameter in D
+	cp	$ff			; null, skip it
+	jr	z,seqcmd
+	or	a			; zero ?
+	jr	z,seqzer
+	ld	b,a			; convert to BCD
+	xor	a
+sqdaa:	inc	a
+	daa
+	djnz	sqdaa
+	ld	d,a
+	and	$f0			; hi nibble
+	srl	a
+	srl	a
+	srl	a
+	srl	a
+	add	a,'0'
+	call	seqchr			; send over
+	ld	a,d			; reload parameter
+	and	$0f			; lo nibble
+seqzer:	add	a,'0'
+	call	seqchr
+seqcmd:	ld	a,e			; sequence command in E
+	cp	$ff			; null, skip it
+	jr	z,seqend
+	jr	seqchr			; ...and send this too
+seqend:	ret
 
-SEQCHR:	LD	C,A			; send
-	CALL	DOTXCHAR
-	RET
+seqchr:	ld	c,a			; send
+	call	dotxchar
+	ret
 
-CSI:	DEFB	ESC,'['
+csi:	defb	esc,'['
 
 
 ;; This table define the offsets to jump to translation routines
 ;; for primary (non-escaped) mode
 
-TXVEC1:
-	DW	RIOCESC			; NUL 0x00 (^@)  clear alternate output processing
-	DW	UCASEMOD		; SOH 0x01 (^A)  uppercase mode
-	DW	LCASEMOD		; STX 0x02 (^B)  normal case mode
-	DW	TXNULL			; ETX 0x00 (^C)  no-op
-	DW	ACUROF			; EOT 0x04 (^D)  cursor off
-	DW	ACURON			; ENQ 0x05 (^E)  cursor on
-	DW	TXNULL			; ACK 0x06 (^F)  locate cursor at CURPBUF
-	DW	TXBEL			; BEL 0x07 (^G)  beep
-	DW	AMVLFT			; BS  0x08 (^H)  cursor left (destr. and non destr.)
-	DW	TXNULL			; HT  0x09 (^I)  no-op
-	DW	TXLF			; LF  0x0a (^J)  cursor down one line
-	DW	ACHOME			; VT  0x0b (^K)  cursor @ column 0
-	DW	ACLS			; FF  0x0c (^L)  page down (clear screen)
-	DW	TXCR			; CR  0x0d (^M)  provess CR
-	DW	ACLEOP			; SO  0x0e (^N)  clear to EOP
-	DW	ACLEOL			; SI  0x0f (^O)  clear to EOL
-	DW	TXNULL			; DLE 0x10 (^P)  no-op
-	DW	ARESATR			; DC1 0x11 (^Q)  reset all attributes
-	DW	TXNULL			; DC2 0x12 (^R)  hard crt reset and clear
-	DW	TXNULL			; DC3 0x13 (^S)  no-op
-	DW	TXNULL			; DC4 0x14 (^T)  no-op
-	DW	AMVUP			; NAK 0x15 (^U)  cursor up one line
-	DW	TXNULL			; SYN 0x16 (^V)  scroll off
-	DW	TXNULL			; ETB 0x17 (^W)  scroll on
-	DW	AMVLFTND		; CAN 0x18 (^X)  cursor left (non destr. only)
-	DW	AMVRGT			; EM  0x19 (^Y)  cursor right
-	DW	AMVDWN			; SUB 0x1a (^Z)  cursor down one line
-	DW	SIOCESC			; ESC 0x1b (^[)  activate alternate output processing
-	DW	TXNULL			; FS  0x1c (^\)  no-op
-	DW	TXNULL			; GS  0x1d (^])  no-op
-	DW	TXNULL			; RS  0x1e (^^)  disabled (no-op)
-	DW	TXNULL			; US  0x1f (^_)  no-op
+txvec1:
+	dw	riocesc			; NUL 0x00 (^@)  clear alternate output processing
+	dw	ucasemod		; SOH 0x01 (^A)  uppercase mode
+	dw	lcasemod		; STX 0x02 (^B)  normal case mode
+	dw	txnull			; ETX 0x00 (^C)  no-op
+	dw	acurof			; EOT 0x04 (^D)  cursor off
+	dw	acuron			; ENQ 0x05 (^E)  cursor on
+	dw	txnull			; ACK 0x06 (^F)  locate cursor at CURPBUF
+	dw	txbel			; BEL 0x07 (^G)  beep
+	dw	amvlft			; BS  0x08 (^H)  cursor left (destr. and non destr.)
+	dw	txnull			; HT  0x09 (^I)  no-op
+	dw	txlf			; LF  0x0a (^J)  cursor down one line
+	dw	achome			; VT  0x0b (^K)  cursor @ column 0
+	dw	acls			; FF  0x0c (^L)  page down (clear screen)
+	dw	txcr			; CR  0x0d (^M)  provess CR
+	dw	acleop			; SO  0x0e (^N)  clear to EOP
+	dw	acleol			; SI  0x0f (^O)  clear to EOL
+	dw	txnull			; DLE 0x10 (^P)  no-op
+	dw	aresatr			; DC1 0x11 (^Q)  reset all attributes
+	dw	txnull			; DC2 0x12 (^R)  hard crt reset and clear
+	dw	txnull			; DC3 0x13 (^S)  no-op
+	dw	txnull			; DC4 0x14 (^T)  no-op
+	dw	amvup			; NAK 0x15 (^U)  cursor up one line
+	dw	txnull			; SYN 0x16 (^V)  scroll off
+	dw	txnull			; ETB 0x17 (^W)  scroll on
+	dw	amvlftnd		; CAN 0x18 (^X)  cursor left (non destr. only)
+	dw	amvrgt			; EM  0x19 (^Y)  cursor right
+	dw	amvdwn			; SUB 0x1a (^Z)  cursor down one line
+	dw	siocesc			; ESC 0x1b (^[)  activate alternate output processing
+	dw	txnull			; FS  0x1c (^\)  no-op
+	dw	txnull			; GS  0x1d (^])  no-op
+	dw	txnull			; RS  0x1e (^^)  disabled (no-op)
+	dw	txnull			; US  0x1f (^_)  no-op
 
 ;; This table define the offsets to jump to translation routines
 ;; for alternate (escaped) mode
 
-TXVEC2:
-	DW	RIOCESC			; NUL 0x00 (^@)  clear alternate output processing
-	DW	ABLNKOF			; SOH 0x01 (^A)  BLINK OFF
-	DW	ABLNKON			; STX 0x02 (^B)  BLINK ON
-	DW	AUNDROF			; ETX 0x03 (^C)  UNDER OFF
-	DW	AUNDRON			; EOT 0x04 (^D)  UNDER ON
-	DW	AHLITOF			; ENQ 0x05 (^E)  HLIGHT OFF
-	DW	AHLITON			; ACK 0x06 (^F)  HLIGHT ON
-	DW	TXNULL			; BEL 0x07 (^G)  no-op
-	DW	TXNULL			; BS  0x08 (^H)  no-op
-	DW	TXNULL			; HT  0x09 (^I)  no-op
-	DW	TXNULL			; LF  0x0a (^J)  no-op
-	DW	TXNULL			; VT  0x0b (^K)  no-op
-	DW	ACLS			; FF  0x0c (^L)  blank screen
-	DW	RIOCESC			; CR  0x0d (^M)  clear alternate output processing
-	DW	AREDON			; SO  0x0e (^N)  set bit 5 RAM3BUF (red)
-	DW	AWHTON			; SI  0x0f (^O)  res bit 5 RAM3BUF (red)
-	DW	AGRNON			; DLE 0x10 (^P)  set bit 6 RAM3BUF (green)
-	DW	AWHTON			; DC1 0x11 (^Q)  res bit 6 RAM3BUF (green)
-	DW	TXNULL			; DC2 0x12 (^R)  cursor blink slow block
-	DW	TXNULL			; DC3 0x13 (^S)  cursor blink slow line
-	DW	TXNULL			; DC4 0x14 (^T)  no-op
-	DW	TXNULL			; NAK 0x15 (^U)  no-op
-	DW	TXNULL			; SYN 0x16 (^V)  no-op
-	DW	SASCFLTR		; ETB 0x17 (^W)  set ascii filter
-	DW	RASCFLTR		; CAN 0x18 (^X)  reset ascii filter
-	DW	NDBKSP			; EM  0x19 (^Y)  set non destructive BS
-	DW	DBKSP			; SUB 0x1a (^Z)  set destructive BS
-	DW	AREVSON			; ESC 0x1b (^[)  REVERSE ON
-	DW	AREVSOF			; FS  0x1c (^\)  REVERSE OFF
-	DW	ABLUON			; GS  0x1d (^])  set bit 7 RAM3BUF (blue)
-	DW	AWHTON			; RS  0x1e (^^)  res bit 7 RAM3BUF (blue)
-	DW	TXNULL			; US  0x1f (^_)  no-op
+txvec2:
+	dw	riocesc			; NUL 0x00 (^@)  clear alternate output processing
+	dw	ablnkof			; SOH 0x01 (^A)  BLINK OFF
+	dw	ablnkon			; STX 0x02 (^B)  BLINK ON
+	dw	aundrof			; ETX 0x03 (^C)  UNDER OFF
+	dw	aundron			; EOT 0x04 (^D)  UNDER ON
+	dw	ahlitof			; ENQ 0x05 (^E)  HLIGHT OFF
+	dw	ahliton			; ACK 0x06 (^F)  HLIGHT ON
+	dw	txnull			; BEL 0x07 (^G)  no-op
+	dw	txnull			; BS  0x08 (^H)  no-op
+	dw	txnull			; HT  0x09 (^I)  no-op
+	dw	txnull			; LF  0x0a (^J)  no-op
+	dw	txnull			; VT  0x0b (^K)  no-op
+	dw	acls			; FF  0x0c (^L)  blank screen
+	dw	riocesc			; CR  0x0d (^M)  clear alternate output processing
+	dw	aredon			; SO  0x0e (^N)  set bit 5 RAM3BUF (red)
+	dw	awhton			; SI  0x0f (^O)  res bit 5 RAM3BUF (red)
+	dw	agrnon			; DLE 0x10 (^P)  set bit 6 RAM3BUF (green)
+	dw	awhton			; DC1 0x11 (^Q)  res bit 6 RAM3BUF (green)
+	dw	txnull			; DC2 0x12 (^R)  cursor blink slow block
+	dw	txnull			; DC3 0x13 (^S)  cursor blink slow line
+	dw	txnull			; DC4 0x14 (^T)  no-op
+	dw	txnull			; NAK 0x15 (^U)  no-op
+	dw	txnull			; SYN 0x16 (^V)  no-op
+	dw	sascfltr		; ETB 0x17 (^W)  set ascii filter
+	dw	rascfltr		; CAN 0x18 (^X)  reset ascii filter
+	dw	ndbksp			; EM  0x19 (^Y)  set non destructive BS
+	dw	dbksp			; SUB 0x1a (^Z)  set destructive BS
+	dw	arevson			; ESC 0x1b (^[)  REVERSE ON
+	dw	arevsof			; FS  0x1c (^\)  REVERSE OFF
+	dw	abluon			; GS  0x1d (^])  set bit 7 RAM3BUF (blue)
+	dw	awhton			; RS  0x1e (^^)  res bit 7 RAM3BUF (blue)
+	dw	txnull			; US  0x1f (^_)  no-op
 
 ;;
 ;; ANSI ESCapes specific routines
 ;;
 ;; no comments on code below but it should be quite intuitive
 
-TXNULL:
-	RET
+txnull:
+	ret
 
-TXCR:
-	LD	C,CR
-	JP	DOTXCHAR
+txcr:
+	ld	c,cr
+	jp	dotxchar
 
-TXLF:
-	LD	C,LF
-	JP	DOTXCHAR
+txlf:
+	ld	c,lf
+	jp	dotxchar
 
-TXBKSP:
-	LD	C,$08
-	JP	DOTXCHAR
+txbksp:
+	ld	c,$08
+	jp	dotxchar
 
-TXBEL:
-	LD	C,$07
-	JP	DOTXCHAR
+txbel:
+	ld	c,$07
+	jp	dotxchar
 
-AMVLFT:
-	LD	HL,MIOBYTE
-	BIT	4,(HL)
-	JR	NZ,AMVLFTND
-	JR	TXBKSP
+amvlft:
+	ld	hl,miobyte
+	bit	4,(hl)
+	jr	nz,amvlftnd
+	jr	txbksp
 
-ACUROF:					; CSI ?25l
-	DESEQ	$FF,'?'
-	CALL	SEQEMIT
-	DESEQ	25,'l'
-	CALL	SEQPAR
-	RET
+acurof:					; CSI ?25l
+	deseq	$ff,'?'
+	call	seqemit
+	deseq	25,'l'
+	call	seqpar
+	ret
 
-ACURON:					; CSI ?25h
-	DESEQ	$FF,'?'
-	CALL	SEQEMIT
-	DESEQ	25,'h'
-	CALL	SEQPAR
-	RET
+acuron:					; CSI ?25h
+	deseq	$ff,'?'
+	call	seqemit
+	deseq	25,'h'
+	call	seqpar
+	ret
 
-AMVLFTND:
-	DESEQ	$FF,'D'			; CSI n D
-	JR	DOSND1
+amvlftnd:
+	deseq	$ff,'D'			; CSI n D
+	jr	dosnd1
 
-AMVDWN:
-	DESEQ	$FF,'B'			; CSI n B
-	JR	DOSND1
+amvdwn:
+	deseq	$ff,'B'			; CSI n B
+	jr	dosnd1
 
-AMVUP:
-	DESEQ	$FF,'A'			; CSI n A
-	JR	DOSND1
+amvup:
+	deseq	$ff,'A'			; CSI n A
+	jr	dosnd1
 
-AMVRGT:
-	DESEQ	$FF,'C'			; CSI n C
-	JR	DOSND1
+amvrgt:
+	deseq	$ff,'C'			; CSI n C
+	jr	dosnd1
 
-ACHOME:					; CSI 0 G
-	DESEQ	0,'G'
-	JR	DOSND1
+achome:					; CSI 0 G
+	deseq	0,'G'
+	jr	dosnd1
 
-ACLS:					; CSI 2 J
-	DESEQ	2,'J'
-	CALL	SEQEMIT
-	DESEQ	$FF,'H'
-	JR	DOSND1
+acls:					; CSI 2 J
+	deseq	2,'J'
+	call	seqemit
+	deseq	$ff,'H'
+	jr	dosnd1
 
-ACLEOP:					; CSI 0 J
-	DESEQ	0,'J'
-	JR	DOSND1
+acleop:					; CSI 0 J
+	deseq	0,'J'
+	jr	dosnd1
 
-ACLEOL:					; CSI 0 K
-	DESEQ	0,'K'
-	JR	DOSND1
+acleol:					; CSI 0 K
+	deseq	0,'K'
+	jr	dosnd1
 
-ARESATR:				; CSI 0 m
-	DESEQ	0,'m'
-	JR	DOSND1
+aresatr:				; CSI 0 m
+	deseq	0,'m'
+	jr	dosnd1
 
-ABLNKOF:				; CSI 25 m
-	DESEQ	25,'m'
-	JR	DOSND1
+ablnkof:				; CSI 25 m
+	deseq	25,'m'
+	jr	dosnd1
 
-ABLNKON:				; CSI 5 m
-	DESEQ	5,'m'
-	JR	DOSND1
+ablnkon:				; CSI 5 m
+	deseq	5,'m'
+	jr	dosnd1
 
-AREVSOF:				; CSI 27 m
-	DESEQ	27,'m'
-	JR	DOSND1
+arevsof:				; CSI 27 m
+	deseq	27,'m'
+	jr	dosnd1
 
-AREVSON:				; CSI 7 m
-	DESEQ	7,'m'
-	JR	DOSND1
+arevson:				; CSI 7 m
+	deseq	7,'m'
+	jr	dosnd1
 
 
-AUNDROF:				; CSI 24 m
-	DESEQ	24,'m'
-	JR	DOSND1
+aundrof:				; CSI 24 m
+	deseq	24,'m'
+	jr	dosnd1
 
-AUNDRON:				; CSI 4 m
-	DESEQ	4,'m'
-	JR	DOSND1
+aundron:				; CSI 4 m
+	deseq	4,'m'
+	jr	dosnd1
 
-AHLITOF:				; CSI 22 m
-	DESEQ	22,'m'
-	JR	DOSND1
+ahlitof:				; CSI 22 m
+	deseq	22,'m'
+	jr	dosnd1
 
-AHLITON:				; CSI 1 m
-	DESEQ	1,'m'
-	JR	DOSND1
+ahliton:				; CSI 1 m
+	deseq	1,'m'
+	jr	dosnd1
 
-AREDON:					; CSI 31 m
-	DESEQ	31,'m'
-	JR	DOSND1
+aredon:					; CSI 31 m
+	deseq	31,'m'
+	jr	dosnd1
 
-AGRNON:					; CSI 32 m
-	DESEQ	32,'m'
-	JR	DOSND1
+agrnon:					; CSI 32 m
+	deseq	32,'m'
+	jr	dosnd1
 
-ABLUON:					; CSI 34 m
-	DESEQ	34,'m'
-	JR	DOSND1
+abluon:					; CSI 34 m
+	deseq	34,'m'
+	jr	dosnd1
 
-AWHTON:					; CSI 37 m
-	DESEQ	37,'m'
-	JR	DOSND1
+awhton:					; CSI 37 m
+	deseq	37,'m'
+	jr	dosnd1
 
-DOSND1:	CALL	SEQEMIT
-	RET
+dosnd1:	call	seqemit
+	ret
 
 ; keyboard translation table
 
-NAKEYS	EQU	22
+nakeys	equ	22
 
 		; sequences emitted upon reception of valid
 		; keyboard input and valid sequences expected
-ANSIKEYS:	; on keyboard input
-	DEFB	$00,$7F		; DEL
-	DEFB	2,"3~"
-	DEFB	$00,$16		; INS
-	DEFB	2,"2~"
-	DEFB	$00,$1D		; HOME
-	DEFB	1,"H"
-	DEFB	$00,$14		; END
-	DEFB	1,"F"
-	DEFB	$00,$13		; PGUP
-	DEFB	2,"5~"
-	DEFB	$00,$07		; PGDN
-	DEFB	2,"6~"
-	DEFB	$00,$15		; UP
-	DEFB	1,"A"
-	DEFB	$00,$1A		; DOWN
-	DEFB	1,"B"
-	DEFB	$00,$18		; LEFT
-	DEFB	1,"D"
-	DEFB	$00,$19		; RIGHT
-	DEFB	1,"C"
-	DEFB	$1B,'A'		; F1 ...
-	DEFB	1,"P"
-	DEFB	$1B,'B'
-	DEFB	1,"Q"
-	DEFB	$1B,'C'
-	DEFB	1,"R"
-	DEFB	$1B,'D'
-	DEFB	1,"S"
-	DEFB	$1B,'E'
-	DEFB	3,"15~"
-	DEFB	$1B,'F'
-	DEFB	3,"17~"
-	DEFB	$1B,'G'
-	DEFB	3,"18~"
-	DEFB	$1B,'H'
-	DEFB	3,"19~"
-	DEFB	$1B,'I'
-	DEFB	3,"20~"
-	DEFB	$1B,'J'
-	DEFB	3,"21~"
-	DEFB	$1B,'K'
-	DEFB	3,"23~"
-	DEFB	$1B,'L'		; ... F12
-	DEFB	3,"24~"
+ansikeys:	; on keyboard input
+	defb	$00,$7f		; DEL
+	defb	2,"3~"
+	defb	$00,$16		; INS
+	defb	2,"2~"
+	defb	$00,$1d		; HOME
+	defb	1,"H"
+	defb	$00,$14		; END
+	defb	1,"F"
+	defb	$00,$13		; PGUP
+	defb	2,"5~"
+	defb	$00,$07		; PGDN
+	defb	2,"6~"
+	defb	$00,$15		; UP
+	defb	1,"A"
+	defb	$00,$1a		; DOWN
+	defb	1,"B"
+	defb	$00,$18		; LEFT
+	defb	1,"D"
+	defb	$00,$19		; RIGHT
+	defb	1,"C"
+	defb	$1b,'A'		; F1 ...
+	defb	1,"P"
+	defb	$1b,'B'
+	defb	1,"Q"
+	defb	$1b,'C'
+	defb	1,"R"
+	defb	$1b,'D'
+	defb	1,"S"
+	defb	$1b,'E'
+	defb	3,"15~"
+	defb	$1b,'F'
+	defb	3,"17~"
+	defb	$1b,'G'
+	defb	3,"18~"
+	defb	$1b,'H'
+	defb	3,"19~"
+	defb	$1b,'I'
+	defb	3,"20~"
+	defb	$1b,'J'
+	defb	3,"21~"
+	defb	$1b,'K'
+	defb	3,"23~"
+	defb	$1b,'L'		; ... F12
+	defb	3,"24~"
 
 	; This table definex (possible) equivalence from NEZ80 character ROMs
 	; and Code Page 437.
@@ -906,14 +906,14 @@ ANSIKEYS:	; on keyboard input
 	; 1) we consider only chars from $C0 to $FF
 	; 2) no equivalents from $81 to $BF
 
-EQCP437:
-	DEFB	179,196,197,195,180,194,193,192,217,218,191,186,205,206,204,185
-	DEFB	203,202,200,188,201,187,198,181,210,208,214,183,211,189,213,184
-	DEFB	212,190,199,182,209,207,215,216,025,026,006,003,004,005,156,157
-	DEFB	178,176,224,225,046,235,231,046,239,046,046,237,228,046,234,227
+eqcp437:
+	defb	179,196,197,195,180,194,193,192,217,218,191,186,205,206,204,185
+	defb	203,202,200,188,201,187,198,181,210,208,214,183,211,189,213,184
+	defb	212,190,199,182,209,207,215,216,025,026,006,003,004,005,156,157
+	defb	178,176,224,225,046,235,231,046,239,046,046,237,228,046,234,227
 
 
-	ENDIF
+	endif
 
 ;------- CTC Section ---------
 
@@ -924,16 +924,16 @@ EQCP437:
 ;; initialize Z80CTC
 ;;
 
-INICTC:
+inictc:
 	; First resets all four channels
-	CALL	RESCTC
+	call	resctc
 
 	; CTC interrupt vector
-	LD	A,$F0			; vec is at FFF0
-	OUT	(CTCCHAN0),A
+	ld	a,$f0			; vec is at FFF0
+	out	(ctcchan0),a
 
 	; Channel 3 - UART 0 interrupt handler
-	LD	A,11010111B		; 7 6 5 4 3 2 1 0
+	ld	a,11010111b		; 7 6 5 4 3 2 1 0
 					;               +---- 1 = command flag
 					;             +------ 1 = channel reset
 					;           +-------- 1 = time constant follow
@@ -942,13 +942,13 @@ INICTC:
 					;     +-------------- 0 = n/a in counter mode
 					;   +---------------- 1 = select counter mode
 					; +------------------ 1 = enable interrupts
-	OUT	(CTCCHAN3),A
-	LD	A,1			; time constant set to 1. At first interrupt request
+	out	(ctcchan3),a
+	ld	a,1			; time constant set to 1. At first interrupt request
 					; form the UART will route it to the CPU
-	OUT	(CTCCHAN3),A
+	out	(ctcchan3),a
 
 	; Channel 2 - UART 1 interrupt handler
-	LD	A,11010111B		; 7 6 5 4 3 2 1 0
+	ld	a,11010111b		; 7 6 5 4 3 2 1 0
 					;               +---- 1 = command flag
 					;             +------ 1 = channel reset
 					;           +-------- 1 = time constant follow
@@ -957,13 +957,13 @@ INICTC:
 					;     +-------------- 0 = n/a in counter mode
 					;   +---------------- 1 = select counter mode
 					; +------------------ 1 = enable interrupts
-	OUT	(CTCCHAN2),A
-	LD	A,1			; time constant set to 1. At first interrupt request
+	out	(ctcchan2),a
+	ld	a,1			; time constant set to 1. At first interrupt request
 					; form the UART will route it to the CPU
-	OUT	(CTCCHAN2),A
+	out	(ctcchan2),a
 
 	; Channel 1 - lo speed system timer
-	LD	A,11010111B		; 7 6 5 4 3 2 1 0
+	ld	a,11010111b		; 7 6 5 4 3 2 1 0
 					;               +---- 1 = command flag
 					;             +------ 1 = channel reset
 					;           +-------- 1 = time constant follow
@@ -972,12 +972,12 @@ INICTC:
 					;     +-------------- 0 = n/a in counter mode
 					;   +---------------- 1 = select counter mode
 					; +------------------ 1 = enable interrupts
-	OUT	(CTCCHAN1),A
-	LD	A,(CTC1TC)		; time constant for system timer (from 100 to 2 Hz)
-	OUT	(CTCCHAN1),A
+	out	(ctcchan1),a
+	ld	a,(ctc1tc)		; time constant for system timer (from 100 to 2 Hz)
+	out	(ctcchan1),a
 
 	; Channel 0 - hi speed timer/prescaler (feed channel 1)
-	LD	A,00100111B		; 7 6 5 4 3 2 1 0
+	ld	a,00100111b		; 7 6 5 4 3 2 1 0
 					;               +---- 1 = command flag
 					;             +------ 1 = channel reset
 					;           +-------- 1 = time constant follow
@@ -986,34 +986,35 @@ INICTC:
 					;     +-------------- 1 = prescale 256
 					;   +---------------- 0 = select timer mode
 					; +------------------ 0 = disable interrupts
-	OUT	(CTCCHAN0),A
-	LD	A,(CTC0TC)			; time constant set to 32. 4Mhz / 256 / 32 = 488.28Hz
-	OUT	(CTCCHAN0),A
+	out	(ctcchan0),a
+	ld	a,(ctc0tc)			; time constant set to 32. 4Mhz / 256 / 32 = 488.28Hz
+	out	(ctcchan0),a
 
-	RET				; all done
+	ret				; all done
 
 ;;
 ;;
 ;;
-CTCUNLCK:
-	RETI
+ctcunlck:
+	reti
 
 ;;
 ;; Resets CTC
 ;;
-RESCTC:
-	CALL	CTCUNLCK
-	LD	A,00000011B		; 7 6 5 4 3 2 1 0
+resctc:
+	call	ctcunlck
+	ld	a,00000011b		; 7 6 5 4 3 2 1 0
 					;               +---- 1 = command flag
 					;             +------ 1 = channel reset
 					; +------------------ 0 = n/a
-	OUT	(CTCCHAN0),A
-	OUT	(CTCCHAN1),A
-	OUT	(CTCCHAN2),A
-	OUT	(CTCCHAN3),A
-	RET
+	out	(ctcchan0),a
+	out	(ctcchan1),a
+	out	(ctcchan2),a
+	out	(ctcchan3),a
+	ret
 ; -----------
 
-SUART:	DEFB	0
+suart:	defb	0
 
 ; -----------
+

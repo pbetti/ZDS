@@ -82,349 +82,349 @@ include Common.inc.asm
 
 ;-------------------------------------
 ; External symbols
-	EXTERN	BBCONOUT, BBCONIN, BBCONST
-	EXTERN	BBCRTCINI, BBCRTFILL, BBCURSET
-	EXTERN	BBFREAD, BBFHOME, BBCPBOOT
-	EXTERN	BBHDINIT, BBDRIVEID, BBU0INI, BBU1INI
-	EXTERN	BBUPLCHR, BBPSNDBLK, BBPRCVBLK
-	EXTERN	BBPRNCHR, BBRDVDSK, BBVCPMBT
- 	EXTERN	BBHDBOOT
- 	EXTERN	BBEPMNGR, BBEIDCK, BBLDPART
+	extern	bbconout, bbconin, bbconst
+	extern	bbcrtcini, bbcrtfill, bbcurset
+	extern	bbfread, bbfhome, bbcpboot
+	extern	bbhdinit, bbdriveid, bbu0ini, bbu1ini
+	extern	bbuplchr, bbpsndblk, bbprcvblk
+	extern	bbprnchr, bbrdvdsk, bbvcpmbt
+ 	extern	bbhdboot
+ 	extern	bbepmngr, bbeidck, bbldpart
 
- 	EXTERN	BBDSKSEL, BBDMASET, BBTRKSET, BBSECSET, BBHDRD
+ 	extern	bbdsksel, bbdmaset, bbtrkset, bbsecset, bbhdrd
 
-	EXTERN	DELAY, MMPMAP, MMGETP
-	EXTERN	INTREN
+	extern	delay, mmpmap, mmgetp
+	extern	intren
 
 ;-------------------------------------
 
-	DSEG
+	dseg
 
-	NAME	'SYSMON'
+	name	'SYSMON'
 
-ZDSMNTR	EQU	$		; start of monitor code
+zdsmntr	equ	$		; start of monitor code
 
-BMSTACK	EQU	(BBPAG << 12) - 1
-HDIDBUF	EQU	(TRNPAG << 12)
+bmstack	equ	(bbpag << 12) - 1
+hdidbuf	equ	(trnpag << 12)
 
-BOOT:
-	IF NOT BBDEBUG
-	JP	BOOTI			; skip bank id
-	ELSE
-	JR	BOOTI
-	ENDIF
+boot:
+	if not bbdebug
+	jp	booti			; skip bank id
+	else
+	jr	booti
+	endif
 
-SYSBIDB:
-	DEFB	'SYSBIOSB'
+sysbidb:
+	defb	'SYSBIOSB'
 
 ;;
 ;; BOOT - Bring up system
 ;;
-BOOTI:
-	DI				; disable interrupts
-	LD	B,BBPAG << 4
-	LD	C,MMUPORT
-	LD	A,EEPAGE0		; mount rom and start
-	IF NOT BBDEBUG
-	OUT	(C),A
-	ENDIF
+booti:
+	di				; disable interrupts
+	ld	b,bbpag << 4
+	ld	c,mmuport
+	ld	a,eepage0		; mount rom and start
+	if not bbdebug
+	out	(c),a
+	endif
 	; Reset memory
-	LD	E,16			; ram page counter (15 + 1 for loop)
-	LD	C,MMUPORT		; MMU I/O address
-	XOR	A
-	LD	B,A
-	LD	D,A
-MMURSLP:
-	DEC	E
-	JR	Z, MMURSEND
-	OUT	(C),D
-	INC	D			; phis. page address 00xxxh, 01xxxh, etc.
-	ADD	A,$10
-	LD	B,A			; logical page 00h, 10h, etc.
-	JR	MMURSLP
-MMURSEND:
-	IF NOT BBDEBUG
-	LD	D,EEPAGE0		; EEPROM page 0 (here) @ F000h
-	OUT	(C),D
-	ENDIF
+	ld	e,16			; ram page counter (15 + 1 for loop)
+	ld	c,mmuport		; MMU I/O address
+	xor	a
+	ld	b,a
+	ld	d,a
+mmurslp:
+	dec	e
+	jr	z, mmursend
+	out	(c),d
+	inc	d			; phis. page address 00xxxh, 01xxxh, etc.
+	add	a,$10
+	ld	b,a			; logical page 00h, 10h, etc.
+	jr	mmurslp
+mmursend:
+	if not bbdebug
+	ld	d,eepage0		; EEPROM page 0 (here) @ F000h
+	out	(c),d
+	endif
 	; Reset bios position after reset
-	OUT	(MENAPRT),A  		; enable ram
+	out	(menaprt),a  		; enable ram
 	;
-	LD	SP,$0080		; go on
-	LD	HL,$0000
-	LD	(CURPBUF),HL
-	XOR	A			; initialize our buffers
-	LD	(TMPBYTE),A
-	LD	(CDISK),A
-	LD	(COLBUF),A
-	LD	(MIOBYTE),A
-	LD	(DSELBF),A
-	LD	(COPSYS),A
-	LD	(CNFBYTE),A
-	CPL
-	LD	(RAM3BUF),A
-	LD	HL,$FFFF
-	LD	(FSEKBUF),HL
-	LD	A,$C3
-	LD	($0066),A
-	LD	HL,BOOT
-	LD	($0067),HL
-	LD	A,$C9
-	LD	($0008),A
-	LD	($0038),A
-	LD	HL,CNFBYTE		; enable XON protcol by default (UART0)
-	SET	1,(HL)
+	ld	sp,$0080		; go on
+	ld	hl,$0000
+	ld	(curpbuf),hl
+	xor	a			; initialize our buffers
+	ld	(tmpbyte),a
+	ld	(cdisk),a
+	ld	(colbuf),a
+	ld	(miobyte),a
+	ld	(dselbf),a
+	ld	(copsys),a
+	ld	(cnfbyte),a
+	cpl
+	ld	(ram3buf),a
+	ld	hl,$ffff
+	ld	(fsekbuf),hl
+	ld	a,$c3
+	ld	($0066),a
+	ld	hl,boot
+	ld	($0067),hl
+	ld	a,$c9
+	ld	($0008),a
+	ld	($0038),a
+	ld	hl,cnfbyte		; enable XON protcol by default (UART0)
+	set	1,(hl)
 
 	; now size banked memory
-	LD	B,MMUTSTPAGE << 4	; save actual test page
-	LD	C,MMUPORT
-	LD	HL,MMUTSTADDR
-	IN	A,(C)
-	EX	AF,AF'
+	ld	b,mmutstpage << 4	; save actual test page
+	ld	c,mmuport
+	ld	hl,mmutstaddr
+	in	a,(c)
+	ex	af,af'
 
-	LD	E,$BF-$0F		; number of pages to check
-	LD	D,$0F			; first page
-BNKPNXT:
-	OUT	(C),D			; setup page
+	ld	e,$bf-$0f		; number of pages to check
+	ld	d,$0f			; first page
+bnkpnxt:
+	out	(c),d			; setup page
 
-	LD	A,(HL)			; test if writable
-	CPL
-	LD	(HL),A
-	CP	(HL)
-	CPL
-	LD	(HL),A
-	JR	NZ,BNKTOHPAG
+	ld	a,(hl)			; test if writable
+	cpl
+	ld	(hl),a
+	cp	(hl)
+	cpl
+	ld	(hl),a
+	jr	nz,bnktohpag
 
-	INC	D			; next page
-	DEC	E
-	JR	NZ,BNKPNXT
-BNKTOHPAG:
-	EX	AF,AF'			; restore test page
-	OUT	(C),A
+	inc	d			; next page
+	dec	e
+	jr	nz,bnkpnxt
+bnktohpag:
+	ex	af,af'			; restore test page
+	out	(c),a
 
-	LD	A,D			; save size
+	ld	a,d			; save size
 ; 	LD	A,$7F
-	LD	(HMEMPAG),A
+	ld	(hmempag),a
 	;
-	LD	HL,BMSTACK
-	LD	SP,HL
- 	LD	(BTPASIZ),HL
+	ld	hl,bmstack
+	ld	sp,hl
+ 	ld	(btpasiz),hl
 
  	; NOW prior to go on we must place BIOS images in ram
 
-	LD	A,(HMEMPAG)		; highest ram page
-	LD	E,4			; # of pages
-	SUB	E
-	LD	D,BBIMGP		; base sysbios page
-SHDWPAG:
- 	LD	B,TRNPAG << 4		; mount source page on transient
-	LD	C,MMUPORT
-	OUT	(C),D			; transient mounted
-	INC	D
-	LD	B,BBAPPP << 4		; app page for destination
-	OUT	(C),A			; destination in place
-	INC	A
-	EXX				; saves
-	LD	HL, TRNPAG << 12	; source
-	LD	DE, BBAPPP << 12	; dest
-	LD	BC, 4096		; one page
-	LDIR
-	EXX
-	DEC	E			; finished ?
-	JR	Z,SHDWDONE
-	JR	SHDWPAG
-SHDWDONE:
-	LD	B,BBPAG << 4		; put bootmonitor to final place
-	LD	A,(HMEMPAG)		; highest ram page
-	SUB	4
-	OUT	(C),A
-	JP	ONSHADOW		; jump to shadow
+	ld	a,(hmempag)		; highest ram page
+	ld	e,4			; # of pages
+	sub	e
+	ld	d,bbimgp		; base sysbios page
+shdwpag:
+ 	ld	b,trnpag << 4		; mount source page on transient
+	ld	c,mmuport
+	out	(c),d			; transient mounted
+	inc	d
+	ld	b,bbappp << 4		; app page for destination
+	out	(c),a			; destination in place
+	inc	a
+	exx				; saves
+	ld	hl, trnpag << 12	; source
+	ld	de, bbappp << 12	; dest
+	ld	bc, 4096		; one page
+	ldir
+	exx
+	dec	e			; finished ?
+	jr	z,shdwdone
+	jr	shdwpag
+shdwdone:
+	ld	b,bbpag << 4		; put bootmonitor to final place
+	ld	a,(hmempag)		; highest ram page
+	sub	4
+	out	(c),a
+	jp	onshadow		; jump to shadow
 
-ONSHADOW:
-	LD	B,BBAPPP << 4		; reset app page
-	LD	D,BBAPPP
-	OUT	(C),D
-	LD	B,TRNPAG << 4		; and transient page
-	LD	D,TRNPAG
-	OUT	(C),D
+onshadow:
+	ld	b,bbappp << 4		; reset app page
+	ld	d,bbappp
+	out	(c),d
+	ld	b,trnpag << 4		; and transient page
+	ld	d,trnpag
+	out	(c),d
 
  	; init fifo queues and remaining hw
-	LD	B,FIFSIZE
-	LD	HL,FIFOU0		; uart 0
-	CALL	FIFOINI
-	LD	HL,FIFOKB		; keyboard
-	CALL	FIFOINI
+	ld	b,fifsize
+	ld	hl,fifou0		; uart 0
+	call	fifoini
+	ld	hl,fifokb		; keyboard
+	call	fifoini
 	;
-	XOR	A
-	OUT	(FDCDRVRCNT),A		; resets floppy selection
-	OUT	(CRTPRNTDAT),A
-	OUT	(ALTPRNPRT),A
-	CPL
-	OUT	(CRTPRNTDAT),A
-	OUT	(ALTPRNPRT),A
-	LD	A, PPUINI		; init parallel port for rx
-	OUT	(PPCNTRP), A
-	LD	A,BLIFASTLINE
-	LD	(CURSSHP),A
+	xor	a
+	out	(fdcdrvrcnt),a		; resets floppy selection
+	out	(crtprntdat),a
+	out	(altprnprt),a
+	cpl
+	out	(crtprntdat),a
+	out	(altprnprt),a
+	ld	a, ppuini		; init parallel port for rx
+	out	(ppcntrp), a
+	ld	a,blifastline
+	ld	(cursshp),a
 	;
-	CALL	BBCRTCINI		; Initialize CRTC
+	call	bbcrtcini		; Initialize CRTC
 		; workaround for "slow" init video boads
-	LD	DE, 1000		; sleep 1 sec.
-	CALL	DELAY
-	CALL	BBCRTCINI		; Initialize CRTC (again)
+	ld	de, 1000		; sleep 1 sec.
+	call	delay
+	call	bbcrtcini		; Initialize CRTC (again)
 		;
-	CALL	BBCURSET		; and cursor shape
+	call	bbcurset		; and cursor shape
 	;
- 	LD	HL,MSYSRES		; tell user whats going on from now
- 	CALL	OUTSTR
- 	CALL	BBNKSIZ			; tell how many memory
+ 	ld	hl,msysres		; tell user whats going on from now
+ 	call	outstr
+ 	call	bbnksiz			; tell how many memory
 	;
-	LD	HL,MHD			; about IDE
-	CALL	OUTSTR
- 	CALL	BBHDINIT		; IDE init
-	OR	A
-	JR	NZ,IDEINOK
-	CALL	BBLDPART
- 	CALL	BBDRIVEID
-	OR	A
-	JR	NZ,IDEINOK
-	LD	HL,MRDY
-	CALL	OUTSTR
+	ld	hl,mhd			; about IDE
+	call	outstr
+ 	call	bbhdinit		; IDE init
+	or	a
+	jr	nz,ideinok
+	call	bbldpart
+ 	call	bbdriveid
+	or	a
+	jr	nz,ideinok
+	ld	hl,mrdy
+	call	outstr
 	; get hd params from scratch
-	LD	B, TRNPAG
-	CALL	MMGETP
-	PUSH	AF			; save current
+	ld	b, trnpag
+	call	mmgetp
+	push	af			; save current
 	;
-	LD	A,(HMEMPAG)		; bios scratch page (phy)
-	LD	B,TRNPAG		; transient page
-	CALL	MMPMAP			; mount it
+	ld	a,(hmempag)		; bios scratch page (phy)
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
 	;
-	LD	A,' '+$80
-	LD	HL,HDIDBUF + 54		; drive id string is @ BLDOFFS + 54
-	LD	B,10                    ; and 20 bytes long
-	CALL	HDBUFPRN
-	CALL	OUTSTR
-	CALL	OUTCRLF
-	POP	AF			; remove scratch
-	LD	B,TRNPAG		; transient page
-	CALL	MMPMAP			; mount it
+	ld	a,' '+$80
+	ld	hl,hdidbuf + 54		; drive id string is @ BLDOFFS + 54
+	ld	b,10                    ; and 20 bytes long
+	call	hdbufprn
+	call	outstr
+	call	outcrlf
+	pop	af			; remove scratch
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
 
-	JR	IDEIOK
-IDEINOK:
-	LD	HL,MNOT
-	CALL	OUTSTR
-IDEIOK:
-	LD	A,U0DEFSPEED		; uart 0 init
-	LD	(UART0BR),A
-	CALL	BBU0INI
-	LD	C,'0'
-	CALL	DSUSTAT
-	LD	A,U1DEFSPEED		; uart 1 init
-	LD	(UART1BR),A
-	CALL	BBU1INI
-	LD	C,'1'
-	CALL	DSUSTAT
+	jr	ideiok
+ideinok:
+	ld	hl,mnot
+	call	outstr
+ideiok:
+	ld	a,u0defspeed		; uart 0 init
+	ld	(uart0br),a
+	call	bbu0ini
+	ld	c,'0'
+	call	dsustat
+	ld	a,u1defspeed		; uart 1 init
+	ld	(uart1br),a
+	call	bbu1ini
+	ld	c,'1'
+	call	dsustat
 	;
-	LD	HL,MEEPR		; eeprom type
-	CALL	OUTSTR
-	CALL	BBEIDCK
-	LD	B,A			; temp save
-	AND	$0F			; mask result
-	CP	EEP29EE
-	JR	NZ,IS29X
-	LD	HL,MEPEE		; 29ee
-	JR	GOTETYPE
-IS29X:	CP	EEP29XE
-	JR	NZ,IS29C
-	LD	HL,MEPXE		; 29xe
-	JR	GOTETYPE
-IS29C:	CP	EEP29C
-	JR	NZ,ISUNS
-	LD	HL,MEPC			; 29ee
-	JR	GOTETYPE
-ISUNS:	LD	HL,MEPUNS
-GOTETYPE:
-	CALL	OUTSTR
-	LD	B,A
-	AND	EEPROGLOCK
-	JR	NZ,ISLCKD
-	LD	HL,MPRON
-	JR	ISPROG
-ISLCKD:	LD	HL,MPROF
-ISPROG:	CALL	OUTSTR
-	CALL	OUTCRLF
+	ld	hl,meepr		; eeprom type
+	call	outstr
+	call	bbeidck
+	ld	b,a			; temp save
+	and	$0f			; mask result
+	cp	eep29ee
+	jr	nz,is29x
+	ld	hl,mepee		; 29ee
+	jr	gotetype
+is29x:	cp	eep29xe
+	jr	nz,is29c
+	ld	hl,mepxe		; 29xe
+	jr	gotetype
+is29c:	cp	eep29c
+	jr	nz,isuns
+	ld	hl,mepc			; 29ee
+	jr	gotetype
+isuns:	ld	hl,mepuns
+gotetype:
+	call	outstr
+	ld	b,a
+	and	eeproglock
+	jr	nz,islckd
+	ld	hl,mpron
+	jr	isprog
+islckd:	ld	hl,mprof
+isprog:	call	outstr
+	call	outcrlf
 	;
-	LD	A,CTC0TCHI		; chan 0 prescaler
-	LD	(CTC0TC),A
-	LD	A,SYSHERTZ		; chan 1 prescaler
-	LD	(CTC1TC),A
+	ld	a,ctc0tchi		; chan 0 prescaler
+	ld	(ctc0tc),a
+	ld	a,syshertz		; chan 1 prescaler
+	ld	(ctc1tc),a
 	;
-	CALL	INTREN			; enable interrupts
+	call	intren			; enable interrupts
 	; finally print bios greetings
-	JP	UGREET
+	jp	ugreet
 ;;
 ;; New code for direct access to bootloaders
 ;;
-BOOTM:
-	LD	HL,(BTPASIZ)		; The same as USRCMD
-	LD	SP,HL
-	LD	HL,USRCMD
-	PUSH	HL
-	LD	($0001),HL
-	LD	A,$C3
-	LD	($0000),A
+bootm:
+	ld	hl,(btpasiz)		; The same as USRCMD
+	ld	sp,hl
+	ld	hl,usrcmd
+	push	hl
+	ld	($0001),hl
+	ld	a,$c3
+	ld	($0000),a
 	;
-BMPRO:	LD	HL,MBMENU		; display the menu
-	CALL	OUTSTR
-	CALL	DOGETCHR		; get user choice
-	PUSH	AF
-	CALL	OUTCRLF
-	POP	AF
-	CP	CR			; go to monitor ?
-	JP	Z,WELCOM		; yes
-	CP	'A'			; is  a valid drive ?
-	JP	M,BMPRO			; no < A
-	CP	'Q'
-	JP	P,BMPRO			; no > P
-	SUB	'A'			; makes a number
-	LD	(FDRVBUF),A		; is valid: store in monitor buffer
-	LD	(CDISK),A		; and in CP/M buf
-	CP	'C'-'A'			; is floppy ?
-	JP	M,BBCPBOOT		; yes
-	CP	'O'-'A'			; is hard disk ?
-	JP	M,HDBOOT		; yes
+bmpro:	ld	hl,mbmenu		; display the menu
+	call	outstr
+	call	dogetchr		; get user choice
+	push	af
+	call	outcrlf
+	pop	af
+	cp	cr			; go to monitor ?
+	jp	z,welcom		; yes
+	cp	'A'			; is  a valid drive ?
+	jp	m,bmpro			; no < A
+	cp	'Q'
+	jp	p,bmpro			; no > P
+	sub	'A'			; makes a number
+	ld	(fdrvbuf),a		; is valid: store in monitor buffer
+	ld	(cdisk),a		; and in CP/M buf
+	cp	'C'-'A'			; is floppy ?
+	jp	m,bbcpboot		; yes
+	cp	'O'-'A'			; is hard disk ?
+	jp	m,hdboot		; yes
 
 	; ... fall through
-DOVCPMB:
-	CALL	BBVCPMBT
-	JP	Z,BLDOFFS+2
-	JR	BLERR
+dovcpmb:
+	call	bbvcpmbt
+	jp	z,bldoffs+2
+	jr	blerr
 
-DOCPMB:
-	CALL	BBCPBOOT
-	JR	BLERR
-HDBOOT:
-	CALL	BBHDBOOT
-	LD	A,D
-	OR	A
-	JR	NZ,NOBLER
-	LD	HL,MHDERR
-	JR	PBERR
-BLERR:
-	LD	HL,MBTERR
-	JR	PBERR
-NOBLER:
-	LD	HL,MBTNBL
-PBERR:	CALL	OUTSTR
-	JR	BOOTM
+docpmb:
+	call	bbcpboot
+	jr	blerr
+hdboot:
+	call	bbhdboot
+	ld	a,d
+	or	a
+	jr	nz,nobler
+	ld	hl,mhderr
+	jr	pberr
+blerr:
+	ld	hl,mbterr
+	jr	pberr
+nobler:
+	ld	hl,mbtnbl
+pberr:	call	outstr
+	jr	bootm
 
 ;;
 ;; Display command help
 ;;
-CMDHELP:
-	LD	HL,MHELP
-	CALL	OUTSTR
-	JP	USRCMD
+cmdhelp:
+	ld	hl,mhelp
+	call	outstr
+	jp	usrcmd
 
 ;;
 ;; initialize fifo queue
@@ -432,289 +432,289 @@ CMDHELP:
 ;; HL = base address
 ;;  B = size
 
-FIFOINI:
-	PUSH	BC
-	XOR	A
-	LD	(HL),A			; cnt
-	INC	HL
-	LD	(HL),A			; nout
-	INC	HL
-	LD	A,B
-	DEC	A
-	LD	(HL),A			; mask for MOD ops
-	INC	HL
-	XOR	A
-FIFINL:	LD	(HL),A			; actual buffer
-	INC	HL
-	DJNZ	FIFINL
-	POP	BC
-	RET
+fifoini:
+	push	bc
+	xor	a
+	ld	(hl),a			; cnt
+	inc	hl
+	ld	(hl),a			; nout
+	inc	hl
+	ld	a,b
+	dec	a
+	ld	(hl),a			; mask for MOD ops
+	inc	hl
+	xor	a
+fifinl:	ld	(hl),a			; actual buffer
+	inc	hl
+	djnz	fifinl
+	pop	bc
+	ret
 
 ;;
 ;; UART init result
 ;;
-DSUSTAT:
-	PUSH	AF
-	LD	HL,MUART
-	CALL	OUTSTR
-	CALL	BBCONOUT
-	LD	C,' '
-	CALL	BBCONOUT
-	POP	AF
-	OR	A
-	JR	Z,DSUOK
-	LD	HL,MNOT
-	CALL	OUTSTR
-	RET
-DSUOK:	LD	HL,MRDY
-	CALL	OUTSTR
-	CALL	OUTCRLF
-	RET
+dsustat:
+	push	af
+	ld	hl,muart
+	call	outstr
+	call	bbconout
+	ld	c,' '
+	call	bbconout
+	pop	af
+	or	a
+	jr	z,dsuok
+	ld	hl,mnot
+	call	outstr
+	ret
+dsuok:	ld	hl,mrdy
+	call	outstr
+	call	outcrlf
+	ret
 
 ;;
 ;; Print string fro IDE buffer
 ;;
-HDBUFPRN:
-	INC	HL		;Text is low byte high byte format
-	LD	C,(HL)
-	CALL	BBCONOUT
-	DEC	HL
-	LD	C,(HL)
-	CALL	BBCONOUT
-	INC	HL
-	INC	HL
-	DEC	B
-	JP	NZ,HDBUFPRN
-	RET
+hdbufprn:
+	inc	hl		;Text is low byte high byte format
+	ld	c,(hl)
+	call	bbconout
+	dec	hl
+	ld	c,(hl)
+	call	bbconout
+	inc	hl
+	inc	hl
+	dec	b
+	jp	nz,hdbufprn
+	ret
 
 ;;
 ;; Size memory and report
 ;;
-BBNKSIZ:
-	LD	HL,$0000
-	LD	DE,$0004
-	LD	A,(HMEMPAG)
-	INC	A			; correct count for last 4k
-	LD	B,A
-BBNKSIZ1:
-	ADD	HL,DE
-	DJNZ	BBNKSIZ1
-	CALL	ASCIIHL
-	LD	HL,MMBSIZE
-	CALL	OUTSTR
-	RET
+bbnksiz:
+	ld	hl,$0000
+	ld	de,$0004
+	ld	a,(hmempag)
+	inc	a			; correct count for last 4k
+	ld	b,a
+bbnksiz1:
+	add	hl,de
+	djnz	bbnksiz1
+	call	asciihl
+	ld	hl,mmbsize
+	call	outstr
+	ret
 
 
 ;;
 ;; Output HL converted to ascii decimal (max 9999)
 ;;
-ASCIIA:
-	PUSH	BC
-	PUSH	DE
-	LD	H,0
-	LD	L,A
-	LD	E,4
-	CALL	ASCIIHL0
-	POP	DE
-	POP	BC
-	RET
+asciia:
+	push	bc
+	push	de
+	ld	h,0
+	ld	l,a
+	ld	e,4
+	call	asciihl0
+	pop	de
+	pop	bc
+	ret
 
-ASCIIHL:
-	PUSH	BC
-	PUSH	DE
-	LD	E,1
-	CALL	ASCIIHL0
-	POP	DE
-	POP	BC
-	RET
+asciihl:
+	push	bc
+	push	de
+	ld	e,1
+	call	asciihl0
+	pop	de
+	pop	bc
+	ret
 
-ASCIIHL0:
-	LD	BC,-10000
-	CALL	ASCIIHL1
-	LD	BC,-1000
-	CALL	ASCIIHL1
-	LD	BC,-100
-	CALL	ASCIIHL1
-	LD	C,-10
-	CALL	ASCIIHL1
-	LD	C,-1
-ASCIIHL1:
-	LD	A,'0'-1
-ASCIIHL2:
-	INC	A
-	ADD	HL,BC
-	JR	C,ASCIIHL2
-	SBC	HL,BC
-	LD	C,A
-	DEC	E
-	RET	NZ
-	INC	E
-	CALL	BBCONOUT
-	RET
+asciihl0:
+	ld	bc,-10000
+	call	asciihl1
+	ld	bc,-1000
+	call	asciihl1
+	ld	bc,-100
+	call	asciihl1
+	ld	c,-10
+	call	asciihl1
+	ld	c,-1
+asciihl1:
+	ld	a,'0'-1
+asciihl2:
+	inc	a
+	add	hl,bc
+	jr	c,asciihl2
+	sbc	hl,bc
+	ld	c,a
+	dec	e
+	ret	nz
+	inc	e
+	call	bbconout
+	ret
 
 ;;
 ;; GETHNUM - get an hexadecimal string
 ;;
-GET1HNUM:
-	LD	B,$01
-	LD	HL,$0000
-	JR	GENTR
+get1hnum:
+	ld	b,$01
+	ld	hl,$0000
+	jr	gentr
 
-HEHEX:	JR	NZ,UCPROMPT
-POP1PRM:
-	DEC	B
-	RET	Z
-GETHNUM:
-	LD	HL,$0000
-GNXTC:	CALL	DOGETCHR
-GENTR:	LD	C,A
-	CALL	CHKHEX
-	JR	C,HNHEX			; if not hex digit
-	ADD	HL,HL
-	ADD	HL,HL
-	ADD	HL,HL
-	ADD	HL,HL
-	OR	L
-	LD	L,A
-	JR	GNXTC
-HNHEX:	EX	(SP),HL
-	PUSH	HL
-	LD	A,C
-	CALL	CHKCTR
-	JR	NC,HEHEX
-	DJNZ	UCPROMPT
-	RET
+hehex:	jr	nz,ucprompt
+pop1prm:
+	dec	b
+	ret	z
+gethnum:
+	ld	hl,$0000
+gnxtc:	call	dogetchr
+gentr:	ld	c,a
+	call	chkhex
+	jr	c,hnhex			; if not hex digit
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	or	l
+	ld	l,a
+	jr	gnxtc
+hnhex:	ex	(sp),hl
+	push	hl
+	ld	a,c
+	call	chkctr
+	jr	nc,hehex
+	djnz	ucprompt
+	ret
 
 ;;
 ;; Get a decimal string
 ;;
 ;; B < input len (in # of chars) HL > user input
 
-IDHL:
-	PUSH	BC		; save
-	PUSH	DE
-	LD	HL,0
-IDHL2:
-	CALL	BBCONIN		; Get a character
-	CP	ESC
-	JR	Z,IDHLE
-	CP	CR
-	JR	Z,IDHLOK
-	LD	C,A
-	PUSH	AF
-	CALL	BBCONOUT
-	POP	AF
-	SUB	'0'
-	JR	C,IDHL3		; Error since a non number
-	CP	9 + 1		; Check if greater than 9
-	JR	NC,IDHL3	; as above
-	LD	D,H		; copy HL -> DE
-	LD	E,L
-	ADD	HL,HL		; * 2
-	ADD	HL,HL		; * 4
-	ADD	HL,DE		; * 5
-	ADD	HL,HL		; * 10 total now
-	LD	E,A		; Now add in the digit from the buffer
-	LD	D,0
-	ADD	HL,DE		; all done now
-	DJNZ	IDHL2		; do next character from buffer
-	JR	IDHLOK
-IDHL3:	LD	A,$FF
-	JR	IDHLE
-IDHLOK:	XOR	A		; ok
-IDHLE:	POP	DE
-	POP	BC
-	RET
+idhl:
+	push	bc		; save
+	push	de
+	ld	hl,0
+idhl2:
+	call	bbconin		; Get a character
+	cp	esc
+	jr	z,idhle
+	cp	cr
+	jr	z,idhlok
+	ld	c,a
+	push	af
+	call	bbconout
+	pop	af
+	sub	'0'
+	jr	c,idhl3		; Error since a non number
+	cp	9 + 1		; Check if greater than 9
+	jr	nc,idhl3	; as above
+	ld	d,h		; copy HL -> DE
+	ld	e,l
+	add	hl,hl		; * 2
+	add	hl,hl		; * 4
+	add	hl,de		; * 5
+	add	hl,hl		; * 10 total now
+	ld	e,a		; Now add in the digit from the buffer
+	ld	d,0
+	add	hl,de		; all done now
+	djnz	idhl2		; do next character from buffer
+	jr	idhlok
+idhl3:	ld	a,$ff
+	jr	idhle
+idhlok:	xor	a		; ok
+idhle:	pop	de
+	pop	bc
+	ret
 
 ;;
 ;; USRCMD - display prompt and process user commands
 ;;
-UGREET:	CALL	OUTCRLF
-	LD	HL,MVERSTR
-	CALL	OUTSTR
-WELCOM:	LD	HL,MBWCOM
-	CALL	OUTSTR
-	JR	USRCMD
-UCPROMPT:
-	LD	HL,URESTR		; reject string
-	CALL	OUTSTR
-USRCMD:
-	LD	HL,(BTPASIZ)
-	LD	SP,HL
-	LD	HL,USRCMD
-	PUSH	HL
-	LD	($0001),HL
-	LD	A,$C3
-	LD	($0000),A
-	CALL	OUTCRLF
-	CALL	DOPROMPT
-	SUB	$41			; convert to number
-	JR	C,UCPROMPT		; minor 0
-	CP	$1A
-	JR	NC,UCPROMPT		; greater than jump table
-	ADD	A,A
-	LD	E,A
-	LD	D,$00
-	LD	B,$02
-	LD	HL,UCMDTAB
-	ADD	HL,DE
-	LD	A,(HL)
-	INC	HL
-	LD	H,(HL)
-	LD	L,A
-	JP	(HL)
+ugreet:	call	outcrlf
+	ld	hl,mverstr
+	call	outstr
+welcom:	ld	hl,mbwcom
+	call	outstr
+	jr	usrcmd
+ucprompt:
+	ld	hl,urestr		; reject string
+	call	outstr
+usrcmd:
+	ld	hl,(btpasiz)
+	ld	sp,hl
+	ld	hl,usrcmd
+	push	hl
+	ld	($0001),hl
+	ld	a,$c3
+	ld	($0000),a
+	call	outcrlf
+	call	doprompt
+	sub	$41			; convert to number
+	jr	c,ucprompt		; minor 0
+	cp	$1a
+	jr	nc,ucprompt		; greater than jump table
+	add	a,a
+	ld	e,a
+	ld	d,$00
+	ld	b,$02
+	ld	hl,ucmdtab
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	(hl)
 
 ;;
 ;; Echo input
 ;;
-KECHO:
-	CALL	BBCONIN
-	CP	3			; ^C stop test
-	JP	Z,WELCOM
-	LD	C,A
-	CP	$20
-	JR	NC,KDOE
-	CP	$08
-	JR	Z,KDOE
-	PUSH	AF
-	CALL	SPACER
-	POP	AF
-	CALL	H2AJ1
-	LD	C,'-'
-	CALL	BBCONOUT
-	JR	KECHO
-KDOE:	CALL	BBCONOUT
-	JR	KECHO
+kecho:
+	call	bbconin
+	cp	3			; ^C stop test
+	jp	z,welcom
+	ld	c,a
+; 	CP	$20
+; 	JR	NC,KDOE
+; 	CP	$08
+; 	JR	Z,KDOE
+; 	PUSH	AF
+; 	CALL	SPACER
+; 	POP	AF
+; 	CALL	H2AJ1
+; 	LD	C,'-'
+; 	CALL	BBCONOUT
+; 	JR	KECHO
+kdoe:	call	bbconout
+	jr	kecho
 
 ;;
 ;;
 ;; PDNLOAD- prompt user for parallel download
 ;;
-PDNLOAD:
-	CALL	OUTCRLF
-	LD	HL, SDLPR
-	CALL	OUTSTR
-	LD	B, 2			; get params (offset, size)
-	CALL	GETHNUM
-	POP	BC			; size
-	CALL	OUTCRLF
-	LD	HL, STRWAIT
-	CALL	OUTSTR
-	POP	DE			; offset
-	CALL	BBPSNDBLK		; send data
-	LD	D,C			; save result
-	LD	HL,MTX
-	CALL	OUTSTR
-	LD	D,A
-	OR	A
-	JR	Z,PDNLOK
-	LD	HL, MNOK		; error
-	CALL	OUTSTR
-	RET
-PDNLOK:
-	LD	HL,MOK			; success
-	CALL	OUTSTR
-	RET
+pdnload:
+	call	outcrlf
+	ld	hl, sdlpr
+	call	outstr
+	ld	b, 2			; get params (offset, size)
+	call	gethnum
+	pop	bc			; size
+	call	outcrlf
+	ld	hl, strwait
+	call	outstr
+	pop	de			; offset
+	call	bbpsndblk		; send data
+	ld	d,c			; save result
+	ld	hl,mtx
+	call	outstr
+	ld	d,a
+	or	a
+	jr	z,pdnlok
+	ld	hl, mnok		; error
+	call	outstr
+	ret
+pdnlok:
+	ld	hl,mok			; success
+	call	outstr
+	ret
 
 ;;
 ;; pupload data through parallel link
@@ -722,857 +722,857 @@ PDNLOK:
 ;; use:
 ;;	none
 ;; unclean register usage: ALL
-PUPLOAD:
-	CALL	OUTCRLF
-	LD	HL, STRWAIT
-	CALL	OUTSTR
+pupload:
+	call	outcrlf
+	ld	hl, strwait
+	call	outstr
 
-	CALL	BBUPLCHR		; in hi byte of upload offset
-	LD	H,A
-	CALL	BBUPLCHR		; in lo byte of upload offset
-	LD	L,A
-	CALL	BBUPLCHR		; in hi byte of data size
-	LD	B,A
-	CALL	BBUPLCHR		; in lo byte of data size
-	LD	C,A
-	EX	DE,HL			; put offset in DE
-	CALL	OUTCRLF
-	LD	HL, STRLOAD
-	CALL	OUTSTR
+	call	bbuplchr		; in hi byte of upload offset
+	ld	h,a
+	call	bbuplchr		; in lo byte of upload offset
+	ld	l,a
+	call	bbuplchr		; in hi byte of data size
+	ld	b,a
+	call	bbuplchr		; in lo byte of data size
+	ld	c,a
+	ex	de,hl			; put offset in DE
+	call	outcrlf
+	ld	hl, strload
+	call	outstr
 
-	CALL	BBPRCVBLK		; upload data block
-	PUSH	BC			; save result
-	LD	HL,MRX
-	CALL	OUTSTR
-	POP	BC
-	LD	A,C
-	OR	A
-	JR	Z,PUPLOK
-	LD	HL, MNOK		; error
-	CALL	OUTSTR
-	RET
-PUPLOK:
-	LD	HL,MOK			; success
-	CALL	OUTSTR
-	RET
+	call	bbprcvblk		; upload data block
+	push	bc			; save result
+	ld	hl,mrx
+	call	outstr
+	pop	bc
+	ld	a,c
+	or	a
+	jr	z,puplok
+	ld	hl, mnok		; error
+	call	outstr
+	ret
+puplok:
+	ld	hl,mok			; success
+	call	outstr
+	ret
 
 ;;
 ;; FILLMEM - fill memory with a given values
 ;
-FILLMEM:
-	CALL	POP3NUM           ; was 00F730 CD 33 F9
-FLME1:	LD	(HL),C
-	CALL	CHKEOR
-	JR	NC,FLME1
-	POP	DE
-	JP	USRCMD
+fillmem:
+	call	pop3num           ; was 00F730 CD 33 F9
+flme1:	ld	(hl),c
+	call	chkeor
+	jr	nc,flme1
+	pop	de
+	jp	usrcmd
 ;;
 ;; MEMCOMP - compare two ram regions
-MEMCOMP:
-	CALL	POP3NUM           ; was 00F73C CD 33 F9
-MCONX:	LD	A,(BC)
-	PUSH	BC
-	LD	B,(HL)
-	CP	B
-	JR	Z,MCO1
-	PUSH	AF
-	CALL	HL2ASCB
-	LD	A,B
-	CALL	H2AJ3
-	POP	AF
-	CALL	H2AJ1
-MCO1:	POP	BC
-	CALL	IPTRCKBD
-	JR	MCONX
+memcomp:
+	call	pop3num           ; was 00F73C CD 33 F9
+mconx:	ld	a,(bc)
+	push	bc
+	ld	b,(hl)
+	cp	b
+	jr	z,mco1
+	push	af
+	call	hl2ascb
+	ld	a,b
+	call	h2aj3
+	pop	af
+	call	h2aj1
+mco1:	pop	bc
+	call	iptrckbd
+	jr	mconx
 ;;
 ;; MEMDUMP - prompt user and dump memory area
 ;
-MEMDUMP:
-	CALL	POP2PRM
-MDP6:	CALL	HL2ASCB
-	LD	A,L
-	CALL	DMPALIB
-	PUSH	HL
-MDP2:	LD	A,(HL)
-	CALL	H2AJ1
-	CALL	CHKEOR
-	JR	C,MDP1
-	CALL	SPACER
-	LD	A,L
-	AND	$0F
-	JR	NZ,MDP2
-MDP7:	POP	HL
-	LD	A,L
-	AND	$0F
-	CALL	DMPALIA
-MDP5:	LD	A,(HL)
-	LD	C,A
-	LD	A,(MIOBYTE)
-	BIT	5,A			; serial output?
-	JR	Z,MDP8
-	RES	7,C
-MDP8:	LD	A,C
-	CP	$20
-	JR	C,MDP3
-	CP	$7F			; to protect serial output...
-	JR	Z,MDP3
-	JR	MDP4
-MDP3:	LD	C,$2E
-MDP4:	CALL	BBCONOUT
-	CALL	CHKBRK
-	LD	A,L
-	AND	$0F
-	JR	NZ,MDP5
-	JR	MDP6
-MDP1:	SUB	E
-	CALL	DMPALIB
-	JR	MDP7
+memdump:
+	call	pop2prm
+mdp6:	call	hl2ascb
+	ld	a,l
+	call	dmpalib
+	push	hl
+mdp2:	ld	a,(hl)
+	call	h2aj1
+	call	chkeor
+	jr	c,mdp1
+	call	spacer
+	ld	a,l
+	and	$0f
+	jr	nz,mdp2
+mdp7:	pop	hl
+	ld	a,l
+	and	$0f
+	call	dmpalia
+mdp5:	ld	a,(hl)
+	ld	c,a
+	ld	a,(miobyte)
+	bit	5,a			; serial output?
+	jr	z,mdp8
+	res	7,c
+mdp8:	ld	a,c
+	cp	$20
+	jr	c,mdp3
+	cp	$7f			; to protect serial output...
+	jr	z,mdp3
+	jr	mdp4
+mdp3:	ld	c,$2e
+mdp4:	call	bbconout
+	call	chkbrk
+	ld	a,l
+	and	$0f
+	jr	nz,mdp5
+	jr	mdp6
+mdp1:	sub	e
+	call	dmpalib
+	jr	mdp7
 ;;
 ;; DMPALIB - beginning align (spacing) for a memdump
-DMPALIB:
-	AND	$0F
-	LD	B,A
-	ADD	A,A
-	ADD	A,B
+dmpalib:
+	and	$0f
+	ld	b,a
+	add	a,a
+	add	a,b
 ;;
 ;; DMPALIB - ascii align (spacing) for a memdump
-DMPALIA:
-	LD	B,A
-	INC	B
-ALIBN:	CALL	SPACER
-	DJNZ	ALIBN
-	RET
+dmpalia:
+	ld	b,a
+	inc	b
+alibn:	call	spacer
+	djnz	alibn
+	ret
 ;;
 ;; GOEXEC - execute from user address
 ;
-GOEXEC:
-	CALL	POP1PRM
-	POP	HL
-	JP	(HL)
+goexec:
+	call	pop1prm
+	pop	hl
+	jp	(hl)
 ;;
 ;; PORTIN - input a byte from given port (display it in binary)
 ;
-PORTIN:
-	CALL	POP1PRM
-	POP	BC
-	IN	E,(C)
-	CALL	BINDISP
-	JP	USRCMD
+portin:
+	call	pop1prm
+	pop	bc
+	in	e,(c)
+	call	bindisp
+	jp	usrcmd
 ;;
 ;; PORTOUT - output a byte to a give port
-PORTOUT:
-	CALL	GETHNUM
-	POP	DE
-	POP	BC
-	OUT	(C),E
- 	JP	USRCMD
+portout:
+	call	gethnum
+	pop	de
+	pop	bc
+	out	(c),e
+ 	jp	usrcmd
 ;;
 ;; MEMMOVE - move data in memory
 ;
-MEMMOVE:
-	CALL	POP3NUM
-MMNXT:	LD	A,(HL)
-	LD	(BC),A
-	CALL	IPTRCKBD
-	JR	MMNXT
+memmove:
+	call	pop3num
+mmnxt:	ld	a,(hl)
+	ld	(bc),a
+	call	iptrckbd
+	jr	mmnxt
 ;;
 ;; RWMEM - lets user alter memory content
 ;
-RWMEM:
-	CALL	POP1PRM
-	POP	HL
-RWM3:	LD	A,(HL)
-	CALL	H2AJ3
-	CALL	VALGETCHR
-	RET	C
-	JR	Z,RWM1
-	CP	$0A
-	JR	Z,RWM2
-	PUSH	HL
-	CALL	GET1HNUM
-	POP	DE
-	POP	HL
-	LD	(HL),E
-	LD	A,C
-	CP	$0D
-	RET	Z
-RWM1:	INC	HL
-	INC	HL
-RWM2:	DEC	HL
-	LD	A,L
-	AND	$07
-	CALL	Z,HL2ASCB
-	JR	RWM3
+rwmem:
+	call	pop1prm
+	pop	hl
+rwm3:	ld	a,(hl)
+	call	h2aj3
+	call	valgetchr
+	ret	c
+	jr	z,rwm1
+	cp	$0a
+	jr	z,rwm2
+	push	hl
+	call	get1hnum
+	pop	de
+	pop	hl
+	ld	(hl),e
+	ld	a,c
+	cp	$0d
+	ret	z
+rwm1:	inc	hl
+	inc	hl
+rwm2:	dec	hl
+	ld	a,l
+	and	$07
+	call	z,hl2ascb
+	jr	rwm3
 
-OURADD	EQU	$9000
+ouradd	equ	$9000
 
 ;;
 ;; MEMTEST - test ram region
 ;;
-MEMTEST:
-	POP	HL			; Identify our page
-	PUSH	HL
-	LD	A,H
-	AND	$F0			; logical page
-	LD	B,A			; on B
-	RRC	B			; move on low nibble
-	RRC	B
-	RRC	B
-	RRC	B
-	CALL	MMGETP			; physical page in A
-	LD	(OURADD),A
+memtest:
+	pop	hl			; Identify our page
+	push	hl
+	ld	a,h
+	and	$f0			; logical page
+	ld	b,a			; on B
+	rrc	b			; move on low nibble
+	rrc	b
+	rrc	b
+	rrc	b
+	call	mmgetp			; physical page in A
+	ld	(ouradd),a
 
-	CALL	OUTCRLF
-	LD	E,0			; page count
-	LD	C,MMUPORT
-	LD	B,$80			; test page
-ETLOOP:
-	OUT	(C),E
-	PUSH	DE
-	LD	HL,$8000
-	LD	DE,$8FFF
-MTNXT:	LD	A,(HL)
-	PUSH	AF
-	CPL
-	LD	(HL),A
-	XOR	(HL)
-	CALL	NZ,MTERR
-	POP	AF
-	LD	(HL),A
-	CALL	CHKEOR
-	JR	C,ETPAGE
-	JR	MTNXT
-MTERR:
-	POP	DE
-	EXX
-	CALL	OUTCRLF
-	EXX
-	LD	A,E
-	EXX
-	CALL	H2AJ1
-	CALL	SPACER
-	EXX
-	LD	E,A
-	CALL	HL2ASCB
-	CALL	BINDISP
-	JR	ETEXI
-ETPAGE:
-	POP	DE
-ETPAG1:	INC	E
-	LD	A,E
-	CALL	ETPRPG
-	LD	A,(OURADD)
-	CP	E
-	JR	Z,ETPAG1
-	LD	A,(HMEMPAG)
-	CP	E
-	JR	NZ,ETLOOP
-	CALL	OUTCRLF
+	call	outcrlf
+	ld	e,0			; page count
+	ld	c,mmuport
+	ld	b,$80			; test page
+etloop:
+	out	(c),e
+	push	de
+	ld	hl,$8000
+	ld	de,$8fff
+mtnxt:	ld	a,(hl)
+	push	af
+	cpl
+	ld	(hl),a
+	xor	(hl)
+	call	nz,mterr
+	pop	af
+	ld	(hl),a
+	call	chkeor
+	jr	c,etpage
+	jr	mtnxt
+mterr:
+	pop	de
+	exx
+	call	outcrlf
+	exx
+	ld	a,e
+	exx
+	call	h2aj1
+	call	spacer
+	exx
+	ld	e,a
+	call	hl2ascb
+	call	bindisp
+	jr	etexi
+etpage:
+	pop	de
+etpag1:	inc	e
+	ld	a,e
+	call	etprpg
+	ld	a,(ouradd)
+	cp	e
+	jr	z,etpag1
+	ld	a,(hmempag)
+	cp	e
+	jr	nz,etloop
+	call	outcrlf
 
-ETEXI:	LD	E,$08		; reset page
-	LD	C,MMUPORT
-	LD	B,$80
-	OUT	(C),E
-	RET
+etexi:	ld	e,$08		; reset page
+	ld	c,mmuport
+	ld	b,$80
+	out	(c),e
+	ret
 
-ETPRPG:
-	PUSH	BC
-	PUSH	DE
-	PUSH	HL
-	LD	HL,$0000
-	LD	DE,$0004
-	INC	A
-	LD	B,A
-ETPRPG1:
-	ADD	HL,DE
-	DJNZ	ETPRPG1
-	CALL	ASCIIHL
-	LD	C,CR
-	CALL	BBCONOUT
-	POP	HL
-	POP	DE
-	POP	BC
-	RET
+etprpg:
+	push	bc
+	push	de
+	push	hl
+	ld	hl,$0000
+	ld	de,$0004
+	inc	a
+	ld	b,a
+etprpg1:
+	add	hl,de
+	djnz	etprpg1
+	call	asciihl
+	ld	c,cr
+	call	bbconout
+	pop	hl
+	pop	de
+	pop	bc
+	ret
 
 
 ;;
 ;; BINDISP - display E in binary form
 ;
-BINDISP:
-	LD	B,$08
-BDNXT:	LD	A,E
-	RLCA
-	LD	E,A
-	LD	A,$18
-	RLA
-	LD	C,A
-	CALL	BBCONOUT
-	DJNZ	BDNXT
-	POP	DE
-	RET
+bindisp:
+	ld	b,$08
+bdnxt:	ld	a,e
+	rlca
+	ld	e,a
+	ld	a,$18
+	rla
+	ld	c,a
+	call	bbconout
+	djnz	bdnxt
+	pop	de
+	ret
 ;;
 ;; DOPROMPT - display prompt and wait for first key (uppercase)
 ;
-DOPROMPT:
-	CALL	MPROMPT
+doprompt:
+	call	mprompt
 ;; get a char in uppercase, and display too...
-DOGETCHR:
-	CALL	COIUPC
-COUTCH:	PUSH	BC
-	LD	C,A
-	CALL	BBCONOUT
-	LD	A,C
-	POP	BC
-	RET
+dogetchr:
+	call	coiupc
+coutch:	push	bc
+	ld	c,a
+	call	bbconout
+	ld	a,c
+	pop	bc
+	ret
 ;
-POP3NUM:
-	INC	B
-	CALL	GETHNUM
-	POP	BC
-	POP	DE
-	JP	OCRLF1
+pop3num:
+	inc	b
+	call	gethnum
+	pop	bc
+	pop	de
+	jp	ocrlf1
 ;;
 ;; inc HL and do a 16 bit compare between HL and DE
-CHKEOR:
-	INC	HL
-	LD	A,H
-	OR	L
-	SCF
-	RET	Z
-	LD	A,E
-	SUB	L
-	LD	A,D
-	SBC	A,H
-	RET
+chkeor:
+	inc	hl
+	ld	a,h
+	or	l
+	scf
+	ret	z
+	ld	a,e
+	sub	l
+	ld	a,d
+	sbc	a,h
+	ret
 ;;
-CBKEND:	POP	DE
-	RET
+cbkend:	pop	de
+	ret
 ;;
 ;; inc pointer BC and check kbd
-IPTRCKBD:
-	INC	BC
+iptrckbd:
+	inc	bc
 ;;
-CHKBRK:
-	CALL	CHKEOR
-	JR	C,CBKEND
-	CALL	BBCONST
-	OR	A
-	RET	Z
-	CALL	COIUPC
-	CP	$13
-	JR	NZ,CBKEND
-	JP	COIUPC
+chkbrk:
+	call	chkeor
+	jr	c,cbkend
+	call	bbconst
+	or	a
+	ret	z
+	call	coiupc
+	cp	$13
+	jr	nz,cbkend
+	jp	coiupc
 ;;
 ;; CHKHEX - check for hex ascii char in A
 ;
-CHKHEX:
-	SUB	$30
-	RET	C
-	CP	$17
-	CCF
-	RET	C
-	CP	$0A
-	CCF
-	RET	NC
-	SUB	$07
-	CP	$0A
-	RET
+chkhex:
+	sub	$30
+	ret	c
+	cp	$17
+	ccf
+	ret	c
+	cp	$0a
+	ccf
+	ret	nc
+	sub	$07
+	cp	$0a
+	ret
 ;; get chr and validate
-VALGETCHR:
-	CALL	DOGETCHR
+valgetchr:
+	call	dogetchr
 ;;
 ;; CHKCTR: check for valid char in string (space,comma,<CR>)
 ;
-CHKCTR:
-	CP	$20
-	RET	Z
-	CP	$2C
-	RET	Z
-	CP	$0D
-	SCF
-	RET	Z
-	CCF
-	RET
+chkctr:
+	cp	$20
+	ret	z
+	cp	$2c
+	ret	z
+	cp	$0d
+	scf
+	ret	z
+	ccf
+	ret
 ;
 ;; User command reject string
-URESTR:
-	DB	$AA
+urestr:
+	db	$aa
 ;
 ;; TOGGLEIO - toggle i/o on video/serial
-TOGGLEIO:
-	LD	HL,MIOBYTE
-	BIT	5,(HL)
-	JR	Z,TOGPR
-	RES	5,(HL)
-	JR	TOGJU
-TOGPR:	SET	5,(HL)
-TOGJU:	JP	UGREET
+toggleio:
+	ld	hl,miobyte
+	bit	5,(hl)
+	jr	z,togpr
+	res	5,(hl)
+	jr	togju
+togpr:	set	5,(hl)
+togju:	jp	ugreet
 
 ;;
 ;; Invoke EEPROM manager
 ;;
-EPMANCAL:
-	CALL	BBEPMNGR
-	JP	WELCOM
+epmancal:
+	call	bbepmngr
+	jp	welcom
 
 ;;
 ;; MATHHLDE - perform 16 bit add & sub between HL and DE
 ;
-MATHHLDE:
-	CALL	POP2PRM
-	PUSH	HL
-	ADD	HL,DE
-	CALL	HL2ASCB
-	POP	HL
-	OR	A
-	SBC	HL,DE
-	JR	H2AEN1
+mathhlde:
+	call	pop2prm
+	push	hl
+	add	hl,de
+	call	hl2ascb
+	pop	hl
+	or	a
+	sbc	hl,de
+	jr	h2aen1
 ;;
 ;; HL2ASC - convert & display HL 2 ascii
-HL2ASC:
-	CALL	OUTCRLF
-H2AEN1:	LD	A,H
-	CALL	H2AJ1
-	LD	A,L
-H2AJ1:	PUSH	AF
-	RRCA
-	RRCA
-	RRCA
-	RRCA
-	CALL	H2AJ2
-	POP	AF
-H2AJ2:	CALL	NIB2ASC
-	CALL	BBCONOUT
-	RET
+hl2asc:
+	call	outcrlf
+h2aen1:	ld	a,h
+	call	h2aj1
+	ld	a,l
+h2aj1:	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	call	h2aj2
+	pop	af
+h2aj2:	call	nib2asc
+	call	bbconout
+	ret
 
-H2AJ3:	CALL	H2AJ1           ; entry point to display HEX and a "-"
-MPROMPT:
-	LD	C,$2D
-	CALL	BBCONOUT
-	RET
+h2aj3:	call	h2aj1           ; entry point to display HEX and a "-"
+mprompt:
+	ld	c,$2d
+	call	bbconout
+	ret
 
 
 
 ;;
 ;; HL2ASCB - convert & display HL 2 ascii leave a blank after
-HL2ASCB:
-	CALL	HL2ASC           ; was 00FA63 CD 46 FA
-SPACER:	LD	C,$20
-	CALL	BBCONOUT
-	RET
+hl2ascb:
+	call	hl2asc           ; was 00FA63 CD 46 FA
+spacer:	ld	c,$20
+	call	bbconout
+	ret
 ;;
 ;;
 ;; COIUPC- convert reg A uppercase
-COIUPC:
-	CALL	BBCONIN
-	CP	$60
-	JP	M,COIRE
-	CP	$7B
-	JP	P,COIRE
-	RES	5,A
-COIRE:	RET
+coiupc:
+	call	bbconin
+	cp	$60
+	jp	m,coire
+	cp	$7b
+	jp	p,coire
+	res	5,a
+coire:	ret
 
 ;;
 ;; NIB2ASC convert lower nibble in reg A to ascii in reg C
 ;
-NIB2ASC:
-	AND	$0F             ; was 00FDE0 E6 0F
-	ADD	A,$90
-	DAA
-	ADC	A,$40
-	DAA
-	LD	C,A
-	RET
+nib2asc:
+	and	$0f
+	add	a,$90
+	daa
+	adc	a,$40
+	daa
+	ld	c,a
+	ret
 
 ;;
 ;; Get 2 (hex) params from stack
 ;;
-POP2PRM:
-	CALL	GETHNUM			; was 00FAAB CD DE F6
-	POP	DE
-	POP	HL
-	JP	OUTCRLF
+pop2prm:
+	call	gethnum			; was 00FAAB CD DE F6
+	pop	de
+	pop	hl
+	jp	outcrlf
 
 ;;
 ;; Convert ascii buffer to binary
 ;;
 ;; (DE) < buffer, B < len, HL > converted
-HEXCNV:
-	LD	HL,$0000
-HNXTH:	LD	A,(DE)
+hexcnv:
+	ld	hl,$0000
+hnxth:	ld	a,(de)
 ; 	LD	C,A
-	CALL	CHKHEX
-	JR	C,CNHX			; if not hex digit
-	ADD	HL,HL
-	ADD	HL,HL
-	ADD	HL,HL
-	ADD	HL,HL
-	OR	L
-	LD	L,A
-	INC	DE
-	DJNZ	HNXTH
+	call	chkhex
+	jr	c,cnhx			; if not hex digit
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	or	l
+	ld	l,a
+	inc	de
+	djnz	hnxth
 
-CNHX:	XOR	A
-	CP	B			; ok if B = 0
-	RET				; else ret NZ
+cnhx:	xor	a
+	cp	b			; ok if B = 0
+	ret				; else ret NZ
 
 ;;
 ;; Get block
 ;;
 ;; B < block num - IY > blok address
-RGETBLK:
-	PUSH	HL
-	PUSH	DE
-	INC	B
-	LD	DE,TBLBLK
-	LD	HL,RAMTBL-TBLBLK
-RGETBL1:
-	ADD	HL,DE
-	DJNZ	RGETBL1
-	PUSH	HL		; ex HL,IY
-	POP	IY
-	POP	DE
-	POP	HL
-	RET
+rgetblk:
+	push	hl
+	push	de
+	inc	b
+	ld	de,tblblk
+	ld	hl,ramtbl-tblblk
+rgetbl1:
+	add	hl,de
+	djnz	rgetbl1
+	push	hl		; ex HL,IY
+	pop	iy
+	pop	de
+	pop	hl
+	ret
 
 ;;
 ;; Print a string of B length pointed by HL
 ;;
-NPRINT:
-	PUSH	BC
-NPRIN1:
-	LD	C,(HL)
-	CALL	BBCONOUT
-	INC	HL
-	DJNZ	NPRIN1
-	POP	BC
-	RET
+nprint:
+	push	bc
+nprin1:
+	ld	c,(hl)
+	call	bbconout
+	inc	hl
+	djnz	nprin1
+	pop	bc
+	ret
 
 
-INAMEP	EQU	2
-IPAGEP	EQU	2+TNAMELEN+2
-IADDRP	EQU	2+TNAMELEN+2+TPAGELEN+2
-ISIZEP	EQU	2+TNAMELEN+2+TPAGELEN+2+TIADDRLEN+2
-IDESCP	EQU	2+TNAMELEN+2+TPAGELEN+2+TIADDRLEN+2+TSIZELEN+2
+inamep	equ	2
+ipagep	equ	2+tnamelen+2
+iaddrp	equ	2+tnamelen+2+tpagelen+2
+isizep	equ	2+tnamelen+2+tpagelen+2+tiaddrlen+2
+idescp	equ	2+tnamelen+2+tpagelen+2+tiaddrlen+2+tsizelen+2
 
 ;;
 ;; Show image header
 ;;
-DSPBLKID:
-	PUSH	DE
-	PUSH	IY			; name
-	POP	HL
-	LD	DE,INAMEP
-	ADD	HL,DE
-	LD	B,TNAMELEN
-	CALL	NPRINT
-	LD	HL,MISEP2
-	CALL	OUTSTR
-	PUSH	IY			; description
-	POP	HL
-	LD	DE,IDESCP
-	ADD	HL,DE
-	LD	B,TDESCLEN
-	CALL	NPRINT
-	LD	HL,MISEP3
-	CALL	OUTSTR
-	PUSH	IY			; address
-	POP	HL
-	LD	DE,IADDRP
-	ADD	HL,DE
-	LD	B,TIADDRLEN
-	CALL	NPRINT
-	POP	DE
-	RET
+dspblkid:
+	push	de
+	push	iy			; name
+	pop	hl
+	ld	de,inamep
+	add	hl,de
+	ld	b,tnamelen
+	call	nprint
+	ld	hl,misep2
+	call	outstr
+	push	iy			; description
+	pop	hl
+	ld	de,idescp
+	add	hl,de
+	ld	b,tdesclen
+	call	nprint
+	ld	hl,misep3
+	call	outstr
+	push	iy			; address
+	pop	hl
+	ld	de,iaddrp
+	add	hl,de
+	ld	b,tiaddrlen
+	call	nprint
+	pop	de
+	ret
 
 ;;
 ;; Convert tbl field to binary
 ;;
-IMGT2BIN:
-	PUSH	IY			; size
-	POP	HL
-	ADD	HL,DE
-	EX	DE,HL
-	CALL	HEXCNV
-	RET
+imgt2bin:
+	push	iy			; size
+	pop	hl
+	add	hl,de
+	ex	de,hl
+	call	hexcnv
+	ret
 
-MRNRDY:
-	DEFB	"Image in place, any key to run or <ESC> to exit",CR,LF+$80
-MICHOI:
-	DEFB	"Select an image number or <ESC> to exit:",' '+$80
-MISLCT:
-	DEFB	" Available images:",CR,LF+$80
-MISEP1:
-	DEFB	":",' '+$80
-MISEP2:
-	DEFB	" -",' '+$80
-MISEP3:
-	DEFB	" @",' '+$80
+mrnrdy:
+	defb	"Image in place, any key to run or <ESC> to exit",CR,LF+$80
+michoi:
+	defb	"Select an image number or <ESC> to exit:",' '+$80
+mislct:
+	defb	" Available images:",CR,LF+$80
+misep1:
+	defb	":",' '+$80
+misep2:
+	defb	" -",' '+$80
+misep3:
+	defb	" @",' '+$80
 
-PAGBUF:	DEFB	0
-ROMBUF:	DEFS	6
+pagbuf:	defb	0
+rombuf:	defs	6
 ;;
 ;; Select a EEPROM image and run it
 ;;
-ROMRUN:
-	LD	B,TRNPAG		; copy table in ram
-	CALL	MMGETP
-	LD	(PAGBUF),A		; save current
+romrun:
+	ld	b,trnpag		; copy table in ram
+	call	mmgetp
+	ld	(pagbuf),a		; save current
 	;
-	LD	A,IMTPAG		; in eeprom table
-	LD	B,TRNPAG		; transient page
-	CALL	MMPMAP			; mount it
+	ld	a,imtpag		; in eeprom table
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
 	;
-	LD	HL,TRNPAG << 12
-	LD	DE,RAMTBL		; our copy
-	LD	BC,IMTSIZ
-	LDIR				; do copy
+	ld	hl,trnpag << 12
+	ld	de,ramtbl		; our copy
+	ld	bc,imtsiz
+	ldir				; do copy
 	;
-	LD	A,(PAGBUF)		; restore
-	LD	B,TRNPAG		; transient page
-	CALL	MMPMAP			; mount it
+	ld	a,(pagbuf)		; restore
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
 	; now we a copy of the table
-ROMR1:	LD	C,FF			; draw page
-	CALL	BBCONOUT
-	LD	HL,MISLCT
-	CALL	OUTSTR
+romr1:	ld	c,ff			; draw page
+	call	bbconout
+	ld	hl,mislct
+	call	outstr
 	;
-	LD	D,MAXBLK-1
-	LD	E,1			; sysbios image is not selectable
-RNBLK:
-	LD	B,5
-	LD	C,' '
-DSPSPC:	CALL	BBCONOUT
-	DJNZ	DSPSPC
-	LD	A,E			; image number
-	CALL	ASCIIA
-	LD	HL,MISEP1
-	CALL	OUTSTR
-	LD	B,E
-	CALL	RGETBLK
-	LD	A,(IY+2)		; is a valid block ?
-	OR	A
-	JR	Z,TONBLK
-	CALL	DSPBLKID		; yes, show it
-TONBLK:	CALL	OUTCRLF
-	INC	E
-	DEC	D
-	JR	NZ,RNBLK
+	ld	d,maxblk-1
+	ld	e,1			; sysbios image is not selectable
+rnblk:
+	ld	b,5
+	ld	c,' '
+dspspc:	call	bbconout
+	djnz	dspspc
+	ld	a,e			; image number
+	call	asciia
+	ld	hl,misep1
+	call	outstr
+	ld	b,e
+	call	rgetblk
+	ld	a,(iy+2)		; is a valid block ?
+	or	a
+	jr	z,tonblk
+	call	dspblkid		; yes, show it
+tonblk:	call	outcrlf
+	inc	e
+	dec	d
+	jr	nz,rnblk
 
-	LD	HL,MICHOI		; prompt user
-	CALL	OUTSTR
-	LD	B,2			; 0 ~ 99
-	CALL	IDHL
-	PUSH	AF
-	CALL	OUTCRLF
-	POP	AF
-	CP	ESC			; user abort ?
-	JR	NZ,ROMR2
-	JP	WELCOM
-ROMR2:	OR	A
-	JR	NZ,ROMR1
-	LD	A,L			; check selection
-	CP	MAXBLK
-	JR	NC,ROMR1		; too big. ask again
-	OR	A
-	JR	Z,ROMR1			; zero, ask again
-	LD	B,L
-	CALL	RGETBLK			; point to block, extract image data
+	ld	hl,michoi		; prompt user
+	call	outstr
+	ld	b,2			; 0 ~ 99
+	call	idhl
+	push	af
+	call	outcrlf
+	pop	af
+	cp	esc			; user abort ?
+	jr	nz,romr2
+	jp	welcom
+romr2:	or	a
+	jr	nz,romr1
+	ld	a,l			; check selection
+	cp	maxblk
+	jr	nc,romr1		; too big. ask again
+	or	a
+	jr	z,romr1			; zero, ask again
+	ld	b,l
+	call	rgetblk			; point to block, extract image data
 
-	LD	DE,IPAGEP
-	CALL	IMGT2BIN
-	LD	H,0
-	LD	(ROMBUF),HL		; uses ROMBUF as temporary buffer
+	ld	de,ipagep
+	call	imgt2bin
+	ld	h,0
+	ld	(rombuf),hl		; uses ROMBUF as temporary buffer
 
-	LD	DE,IADDRP
-	CALL	IMGT2BIN
-	LD	(ROMBUF+1),HL
-	LD	(ROMBUF+5),HL		; two copy, we need it later
+	ld	de,iaddrp
+	call	imgt2bin
+	ld	(rombuf+1),hl
+	ld	(rombuf+5),hl		; two copy, we need it later
 
-	LD	DE,ISIZEP
-	CALL	IMGT2BIN
-	LD	(ROMBUF+3),HL
+	ld	de,isizep
+	call	imgt2bin
+	ld	(rombuf+3),hl
 
-MULTI:
-	LD	HL,(ROMBUF+3)		; image size
-	LD	DE,4096
-	OR	A			; clear carry
-	SBC	HL,DE			; lesser than one page ?
-	JR	C,SINGLE		; yes
-	LD	HL,4096			; no
-	JR	CP4K
-SINGLE:
-	LD	HL,(ROMBUF+3)		; reload image size
-CP4K:	PUSH	HL			; ex HL,BC
-	POP	BC			; BC size
-	LD	A,(ROMBUF)		; A source (base) page in eeprom
-	LD	DE,(ROMBUF+1)		; image location in ram
+multi:
+	ld	hl,(rombuf+3)		; image size
+	ld	de,4096
+	or	a			; clear carry
+	sbc	hl,de			; lesser than one page ?
+	jr	c,single		; yes
+	ld	hl,4096			; no
+	jr	cp4k
+single:
+	ld	hl,(rombuf+3)		; reload image size
+cp4k:	push	hl			; ex HL,BC
+	pop	bc			; BC size
+	ld	a,(rombuf)		; A source (base) page in eeprom
+	ld	de,(rombuf+1)		; image location in ram
 
-	CALL	PLACEPAGE		; write page
+	call	placepage		; write page
 
-	LD	HL,(ROMBUF+3)		; reload image size
-	LD	DE,4096			; page size
-	OR	A			; clear carry
-	SBC	HL,DE			; subtract to get remaining size
-	JR	C,RUNRDY
-	JR	Z,RUNRDY
-	LD	(ROMBUF+3),HL		; left bytes
-	LD	A,(ROMBUF)		; write another page...
-	INC	A
-	LD	(ROMBUF),A		; next page
-	LD	HL,(ROMBUF+1)
-	LD	DE,4096
-	ADD	HL,DE
-	LD	(ROMBUF+1),HL
-	JR	MULTI
-RUNRDY:
-	LD	HL,MRNRDY		; all ready
-	CALL	OUTSTR
-	CALL	BBCONIN
-	CP	ESC			; abort ?
-	JP	Z,WELCOM
-	LD	HL,(ROMBUF+5)
-	JP	(HL)
-PLACEPAGE:
-	PUSH	BC
-	PUSH	AF
-	LD	B,TRNPAG		; place image in ram
-	CALL	MMGETP
-	LD	(PAGBUF),A		; save current
+	ld	hl,(rombuf+3)		; reload image size
+	ld	de,4096			; page size
+	or	a			; clear carry
+	sbc	hl,de			; subtract to get remaining size
+	jr	c,runrdy
+	jr	z,runrdy
+	ld	(rombuf+3),hl		; left bytes
+	ld	a,(rombuf)		; write another page...
+	inc	a
+	ld	(rombuf),a		; next page
+	ld	hl,(rombuf+1)
+	ld	de,4096
+	add	hl,de
+	ld	(rombuf+1),hl
+	jr	multi
+runrdy:
+	ld	hl,mrnrdy		; all ready
+	call	outstr
+	call	bbconin
+	cp	esc			; abort ?
+	jp	z,welcom
+	ld	hl,(rombuf+5)
+	jp	(hl)
+placepage:
+	push	bc
+	push	af
+	ld	b,trnpag		; place image in ram
+	call	mmgetp
+	ld	(pagbuf),a		; save current
 	;
-	POP	AF
-	LD	B,TRNPAG		; transient page
-	CALL	MMPMAP			; mount it
-	POP	BC
+	pop	af
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
+	pop	bc
 	;
-	LD	HL,TRNPAG << 12
-	LDIR				; do copy
+	ld	hl,trnpag << 12
+	ldir				; do copy
 	;
-	LD	A,(PAGBUF)		; restore
-	LD	B,TRNPAG		; transient page
-	CALL	MMPMAP			; mount it
-	RET
+	ld	a,(pagbuf)		; restore
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
+	ret
 
 
 ;-----------------------------------------------------------------------
 
-UCMDTAB:
-	DEFW	TOGGLEIO	; (A) alternate serial/video i/o
-	DEFW	BOOTM		; (B) boot menu
-	DEFW	MATHHLDE	; (C) sum & subtract HL, DE
-	DEFW	MEMDUMP		; (D) dump memory
-	DEFW	EPMANCAL	; (E) call eeprom manager
-	DEFW	FILLMEM		; (F) fill memory
-	DEFW	GOEXEC		; (G) go exec a sub
-	DEFW	CMDHELP		; (H) help
-	DEFW	PORTIN		; (I) port input
-	DEFW	UCPROMPT	; (J) n/a
-	DEFW	BOOT		; (K) restart system
-	DEFW	UCPROMPT	; (L) n/a
-	DEFW	MEMMOVE		; (M) move memory block
-	DEFW	UCPROMPT	; (N) n/a
-	DEFW	PORTOUT		; (O) output to a port
-	DEFW	UCPROMPT	; (P) n/a
-	DEFW	UCPROMPT	; (Q) n/a
-	DEFW	ROMRUN		; (R) select rom image
-	DEFW	RWMEM		; (S) alter memory
-	DEFW	MEMTEST		; (T) test ram region
-	DEFW	PUPLOAD		; (U) parallel Upload
-	DEFW	MEMCOMP		; (V) compare mem blocks
-	DEFW	PDNLOAD		; (W) parallel DoWnload
-	DEFW	UCPROMPT	; (X) n/a
-	DEFW	KECHO		; (Y) keyboard echo
-	DEFW	UCPROMPT	; (Z) n/a
+ucmdtab:
+	defw	toggleio	; (A) alternate serial/video i/o
+	defw	bootm		; (B) boot menu
+	defw	mathhlde	; (C) sum & subtract HL, DE
+	defw	memdump		; (D) dump memory
+	defw	epmancal	; (E) call eeprom manager
+	defw	fillmem		; (F) fill memory
+	defw	goexec		; (G) go exec a sub
+	defw	cmdhelp		; (H) help
+	defw	portin		; (I) port input
+	defw	ucprompt	; (J) n/a
+	defw	boot		; (K) restart system
+	defw	ucprompt	; (L) n/a
+	defw	memmove		; (M) move memory block
+	defw	ucprompt	; (N) n/a
+	defw	portout		; (O) output to a port
+	defw	ucprompt	; (P) n/a
+	defw	ucprompt	; (Q) n/a
+	defw	romrun		; (R) select rom image
+	defw	rwmem		; (S) alter memory
+	defw	memtest		; (T) test ram region
+	defw	pupload		; (U) parallel Upload
+	defw	memcomp		; (V) compare mem blocks
+	defw	pdnload		; (W) parallel DoWnload
+	defw	ucprompt	; (X) n/a
+	defw	kecho		; (Y) keyboard echo
+	defw	ucprompt	; (Z) n/a
 ;;
 
-MHELP:	DEFB	CR,LF,LF
-	DEFB	"A - Alternate console",CR,LF
-	DEFB	"B - Boot menu",CR,LF
-	DEFB	"C - HL/DE sum, subtract",CR,LF
-	DEFB	"D - Dump memory",CR,LF
-	DEFB	"E - Eeprom manager",CR,LF
-	DEFB	"F - Fill memory",CR,LF
-	DEFB	"G - Go to execute address",CR,LF
-	DEFB	"H - This help",CR,LF
-	DEFB	"I - Input from port",CR,LF
-	DEFB	"K - Reinit system",CR,LF
-	DEFB	"M - Move memory",CR,LF
-	DEFB	"O - Output to port",CR,LF
-	DEFB	"R - Select ROM image",CR,LF
-	DEFB	"S - Alter memory",CR,LF
-	DEFB	"T - Test ram",CR,LF
-	DEFB	"U - Upload from parallel",CR,LF
-	DEFB	"V - Compare memory",CR,LF
-	DEFB	"W - Download to parallel"
-	DEFB	CR,LF+$80
+mhelp:	defb	cr,lf,lf
+	defb	"A - Alternate console",CR,LF
+	defb	"B - Boot menu",CR,LF
+	defb	"C - HL/DE sum, subtract",CR,LF
+	defb	"D - Dump memory",CR,LF
+	defb	"E - Eeprom manager",CR,LF
+	defb	"F - Fill memory",CR,LF
+	defb	"G - Go to execute address",CR,LF
+	defb	"H - This help",CR,LF
+	defb	"I - Input from port",CR,LF
+	defb	"K - Reinit system",CR,LF
+	defb	"M - Move memory",CR,LF
+	defb	"O - Output to port",CR,LF
+	defb	"R - Select ROM image",CR,LF
+	defb	"S - Alter memory",CR,LF
+	defb	"T - Test ram",CR,LF
+	defb	"U - Upload from parallel",CR,LF
+	defb	"V - Compare memory",CR,LF
+	defb	"W - Download to parallel"
+	defb	cr,lf+$80
 ;;
-SDLPR:	DEFB	"Download",':'+$80
-STRWAIT:
-	DEFB	"Waiting for remote...",CR,LF+$80
-STRLOAD:
-	DEFB	"Loading",CR,LF+$80
+sdlpr:	defb	"Download",':'+$80
+strwait:
+	defb	"Waiting for remote...",CR,LF+$80
+strload:
+	defb	"Loading",CR,LF+$80
 ;
-MVERSTR:
-	IF NOT BBDEBUG
-	DEFB	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN,CR,LF+$80
-	ELSE
-	DEFB	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN," [DEBUG]",CR,LF+$80
-	ENDIF
+mverstr:
+	if not bbdebug
+	defb	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN,CR,LF+$80
+	else
+	defb	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN," [DEBUG]",CR,LF+$80
+	endif
 	; Boot messages
-MSYSRES:
- 	DEFB	"SYSTEM INIT...",CR,LF,LF+$80
-MMBSIZE:
-	DEFB	"k ram, 256k eeprom",CR,LF+$80
-MSETSHA:
-	DEFB	"Shadowing BIOS images:",CR,LF+$80
-MOK:	DEFB	"Successful",CR,LF+$80
-MNOK:	DEFB	"Error",CR,LF+$80
-MTX:	DEFB	"Tx",' '+$80
-MRX:	DEFB	"Rx",' '+$80
-MFOL:	DEFB	':',' '+$80
-MNOT:	DEFB	"not ready",CR,LF+$80
-MRDY:	DEFB	"ready",' '+$80
-MHD:	DEFB	"IDE Drive",' '+$80
-MUART:	DEFB	"UART 16C550",' '+$80
-MEEPR:	DEFB	"EEPROM is a",' '+$80
-MPRON:	DEFB	"unlocked",CR,LF+$80
-MPROF:	DEFB	"locked",CR,LF+$80
-MEPEE:	DEFB	"29EE020",' '+$80
-MEPXE:	DEFB	"29xE020",' '+$80
-MEPC:	DEFB	"29C020",' '+$80
-MEPUNS:	DEFB	"UNSUPPORTED",' '+$80
+msysres:
+ 	defb	"SYSTEM INIT...",CR,LF,LF+$80
+mmbsize:
+	defb	"k ram, 256k eeprom",CR,LF+$80
+msetsha:
+	defb	"Shadowing BIOS images:",CR,LF+$80
+mok:	defb	"Successful",CR,LF+$80
+mnok:	defb	"Error",CR,LF+$80
+mtx:	defb	"Tx",' '+$80
+mrx:	defb	"Rx",' '+$80
+mfol:	defb	':',' '+$80
+mnot:	defb	"not ready",CR,LF+$80
+mrdy:	defb	"ready",' '+$80
+mhd:	defb	"IDE Drive",' '+$80
+muart:	defb	"UART 16C550",' '+$80
+meepr:	defb	"EEPROM is a",' '+$80
+mpron:	defb	"unlocked",CR,LF+$80
+mprof:	defb	"locked",CR,LF+$80
+mepee:	defb	"29EE020",' '+$80
+mepxe:	defb	"29xE020",' '+$80
+mepc:	defb	"29C020",' '+$80
+mepuns:	defb	"UNSUPPORTED",' '+$80
 
-MBMENU:	DEFB	CR,LF
-	DEFB	"BOOT from:",CR,LF,LF
-	DEFB	" A-B = Floppy",CR,LF
-	DEFB	" C-N = IDE Volume",CR,LF
-	DEFB	" O-P = Virtual on parallel",CR,LF
-	DEFB	"<RET> = Monitor prompt",CR,LF,LF
-	DEFB	'-','>'+$80
-MBWCOM:	DEFB	CR,LF
-	DEFB	"Enter command: [B]oot Menu, [H]elp"
-	DEFB	CR,LF+$80
-MHDERR:	DEFB	"No Volume, "
-MBTERR:	DEFB	"Boot error!",CR,LF+$80
-MBTNBL:	DEFB	"No bootloader!",CR,LF+$80
+mbmenu:	defb	cr,lf
+	defb	"BOOT from:",CR,LF,LF
+	defb	" A-B = Floppy",CR,LF
+	defb	" C-N = IDE Volume",CR,LF
+	defb	" O-P = Virtual on parallel",CR,LF
+	defb	"<RET> = Monitor prompt",CR,LF,LF
+	defb	'-','>'+$80
+mbwcom:	defb	cr,lf
+	defb	"Enter command: [B]oot Menu, [H]elp"
+	defb	cr,lf+$80
+mhderr:	defb	"No Volume, "
+mbterr:	defb	"Boot error!",CR,LF+$80
+mbtnbl:	defb	"No bootloader!",CR,LF+$80
 
 ;-------------------------------------
 ; Needed modules
 
 include modules/crtcutils.lib.asm	; 6545 crtc utils
 
-BMFILLO:
-	DEFS	ZDSMNTR + $0BFF - BMFILLO
-BMFILHI:
-	DEFB	$00
+bmfillo:
+	defs	zdsmntr + $0bff - bmfillo
+bmfilhi:
+	defb	$00
 
 ; end of code - this will fill with zeroes to the end of
 ; the non-resident image
 
-IF	MZMAC
-WSYM bootmonitor.sym
-ENDIF
+if	mzmac
+wsym bootmonitor.sym
+endif
 ;
 ;
-	END
+	end
 ;

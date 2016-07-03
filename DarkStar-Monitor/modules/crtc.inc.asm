@@ -8,191 +8,209 @@
 ; CRTC
 ; SY6545A-1 and PIOs for video ram access on LX529
 ; ---------------------------------------------------------------------
+;
+; 20160626 - Major CRT routines rewrite.
+;		- Code cleanup
+;		- CRT handling rewrote
+;		- Some routine imported/adapted from original
+;		  ne eprom 683
+;		- Fixed lf/cr bug on scroll
 
-;; 6545 initialization string
-CRTTAB1:
-	DB	111		; VR0 Tot h chars -1
-	DB	80		; VR1 Disp h chars	
-	DB	87		; VR2 HSync pos
-	DB	$28		; VR3 Sync width
-	DB	26		; VR4 Tot rows -1
-	DB	0		; VR5 VAdj
-	DB	25		; VR6 Disp rows -1
-	DB	25		; VR7 VSync pos
-	DB	01001000b	; VR8 00 Non interl,
+;; 6545 registers initialization vector
+crttab:
+	db	111		; VR0 Tot h chars -1
+	db	80		; VR1 Disp h chars	
+	db	87		; VR2 HSync pos
+	db	$28		; VR3 Sync width
+	db	26		; VR4 Tot rows -1
+	db	0		; VR5 VAdj
+	db	25		; VR6 Disp rows -1
+	db	25		; VR7 VSync pos
+	db	01001000b	; VR8 00 Non interl,
 				;      0 binary addressing,
 				;      1 transparent mem,
 				;      0 display no delay,
 				;      0 cursor no delay
 				;      1 pin34 strobe
 				;      0 upd in blanking
-	DB	11		; VR9 Character scan lines
-	DB	0		; VR10 Curs start (and no blink)
-	DB	11		; VR11 Curs end
-	DB	0,0		; VR12/13 Display start
-	DB	0,0		; VR14/15 Cursor position
-	DB	0,0		; VR16/17 LPEN position
-	DB	0,0		; VR18/19 Update position
+	db	11		; VR9 Character scan lines
+	db	0		; VR10 Curs start (and no blink)
+	db	11		; VR11 Curs end
+	db	0,0		; VR12/13 Display start
+	db	0,0		; VR14/15 Cursor position
+	db	0,0		; VR16/17 LPEN position
+	db	0,0		; VR18/19 Update position
 ;;
 ;; CRTCINI - init buffers,6545,test vram,clear,leave cursor at home
 ;;
-CRTCINI:
-	CALL	INICRT
-	CALL	DBLANK
-	CALL	GIOINI			; init remaing hardware on the board
-	LD	A,$FF
-	LD	(RAM3BUF),A
-	LD	HL,$0000
-	LD	(CURPBUF),HL
-	JR	CRSLOC
+crtcini:
+	call	inicrt			; init video hw
+	call	clrscr			; clear vram
+	call	gioini			; init remaing hardware on the board
+	ret
 
 ;;
 ;; INICRT
 ;
-INICRT:
+inicrt:
 					; initialize PIOs
-	LD	A,$8F			; 10-00-1111 mode ctrl word
+	ld	a,$8f			; 10-00-1111 mode ctrl word
 					; Mode 2 (I/O port A)
-	OUT	(CRTRAM0CNT),A
-	OUT	(CRTRAM1CNT),A
-	OUT	(CRTRAM2CNT),A
-	CALL	INI6545			; init 6545
-	JP	CRTPRGEND		; go on...
-
-
-;;
-;; INI6545 - initialize sy6545
-;;
-INI6545:
-	LD	HL,CRTTAB1	; now read from eprom
-	LD	B,$00
-	LD	A,B
-ICTLP0:	OUT    (CRT6545ADST),A
-	LD	A,(HL)
-	OUT	(CRT6545DATA),A
-	INC	HL
-	INC	B
-	LD	A,B
-	CP	$14
-	JR	NZ,ICTLP0
-	LD	HL,$0000
-	LD	(CURPBUF),HL
-	CALL	SDPYSTA
-; 	JP	CRSLOC
-
-;	fall through...
+	out	(crtram0cnt),a
+	out	(crtram1cnt),a
+	out	(crtram2cnt),a
+	; initialize sy6545
+	ld	hl,crttab		; now read from eprom
+	ld	b,$00
+	ld	a,b
+ictlp0:	out    (crt6545adst),a		; 6545 init loop
+	ld	a,(hl)
+	out	(crt6545data),a
+	inc	hl
+	inc	b
+	ld	a,b
+	cp	$14
+	jr	nz,ictlp0
+	call	vstares			; reset origin, position
+	jp	crtprgend		; go on...
 
 ;;
-;; CRSLOC - init CRT cursor at CURPBUF
+;; Reset video start and cursor buffer
 ;
-CRSLOC:
-	LD	HL,(CURPBUF)
-	CALL	SCRSPOS
-	XOR	A
-	LD	(COLBUF),A		; save cursor position
-	RET
-
-
+vstares:
+	ld	hl,$0000		; reset buffers:
+	ld	(curpbuf),hl		; cursor position
+	ld	(vstabuf),hl		; dpy start
+	call	sdpysta			; reset start
+	call	scrspos			; cursor at home
+ 	ret
+;;
+;; Update display start address. Scroll or rotate.
+;
+scroll:
+	push	hl		; save position
+	ld	hl,miobyte		
+	bit	2,(hl)		; scroll disabled ?
+	jr	nz,noupdstart	; yes, then no scrolling
+	
+	ld	hl,(vstabuf)	; load curently display start
+	ld	de,80		; DE = char. for line
+	add	hl,de		; point to next line
+	res	3,h		;
+	ld	(vstabuf),hl	; save curently display start
+	call	sdpysta		; set it
+	ld	hl,endvid+1-80	; set new video pointer
+	call	cescr1		; go to clear to end screen
+	pop	hl		; restore position
+	ret
+;
+noupdstart:
+	pop	hl		; restore position
+	ld	bc,80		; BC = char/row
+	call	divide		; HL = Xco
+	ret			; and ret
+ 	
 ;;
 ;; GET DISPLAY CURSOR POSITION and return in HL
 ;
-GCRSPOS:
-	LD	A,VR14.CURPOSH
-	OUT	(CRT6545ADST),A
-	IN	A,(CRT6545DATA)
-	LD	H,A
-	LD	A,VR15.CURPOSL
-	OUT	(CRT6545ADST),A
-	IN	A,(CRT6545DATA)
-	LD	L,A
-	INC	HL
-	JR	CRTPRGEND
+gcrspos:
+	ld	a,vr14.curposh
+	out	(crt6545adst),a
+	in	a,(crt6545data)
+	ld	h,a
+	ld	a,vr15.curposl
+	out	(crt6545adst),a
+	in	a,(crt6545data)
+	ld	l,a
+	jr	crtprgend
 
 ;;
 ;; SET DISPLAY START ADDRESS
 ;
-SDPYSTA:
-	LD	A,VR12.DSTARTH
-	OUT	(CRT6545ADST),A
-	LD	A,H
-	OUT	(CRT6545DATA),A
-	LD	A,VR13.DSTARTL
-	OUT	(CRT6545ADST),A
-	LD	A,L
-	OUT	(CRT6545DATA),A
-	JR	CRTPRGEND
-
+sdpysta:
+	ld	a,vr12.dstarth
+	out	(crt6545adst),a
+	ld	a,h
+	out	(crt6545data),a
+	ld	a,vr13.dstartl
+	out	(crt6545adst),a
+	ld	a,l
+	out	(crt6545data),a
+	ret
 
 ;;
-;; DISMVC display char and move cursor
+;; Locate cursor @ HL (absolute 0-1919)
 ;
-DISMVC:
-	CALL	DISPCH
-; 	JP	SCRSPOS
-
+curloca:
+	call	scrtst			; bigger than endvid?
+	jr	c,curloc0		; ok go on
+	ld	hl,endvid		; place at edge
+curloc0:
+	ld	(curpbuf),hl		; update buf
 	; fall through...
 ;;
-;; SET DISPLAY CURSOR ADDRESS EXTENDED
-;;
-SCRSPOS:
-	LD	A,VR14.CURPOSH
-	OUT	(CRT6545ADST),A
-	LD	A,H
-	OUT	(CRT6545DATA),A
-	LD	A,VR15.CURPOSL
-	OUT	(CRT6545ADST),A
-	LD	A,L
-	OUT	(CRT6545DATA),A
-SCRSPOS1:
-	LD	A,VR18.UPDADDRH
-	OUT	(CRT6545ADST),A
-	LD	A,H
-	OUT	(CRT6545DATA),A
-	LD	A,VR19.UPDADDRL
-	OUT	(CRT6545ADST),A
-	LD	A,L
-	OUT	(CRT6545DATA),A
-	JR	CRTPRGEND
+;; Update video pointer
+;
+updvidp:
+	ld	de,(vstabuf)		; load curently display start 
+	add	hl,de			; compute relative position
+					; and count with updtcpur
+scrspos:
+	ld	a,vr14.curposh
+	out	(crt6545adst),a
+	ld	a,h
+	out	(crt6545data),a
+	ld	a,vr15.curposl
+	out	(crt6545adst),a
+	ld	a,l
+	out	(crt6545data),a
+updtureg:
+	ld	a,vr18.updaddrh
+	out	(crt6545adst),a
+	ld	a,h
+	out	(crt6545data),a
+	ld	a,vr19.updaddrl
+	out	(crt6545adst),a
+	ld	a,l
+	out	(crt6545data),a
+	jr	crtprgend
 
 ;;
 ;; DBLANK
 ;; fill video ram (2k) with 0's
 ;
-DBLANK:
-	LD	HL,$0000
-	LD	(RAM0BUF),HL
-	XOR	A
-	LD	(RAM2BUF),A
-;;
-;; CRTFILL - Fill video ram with ram buffer chrs
-;
-CRTFILL:
-	LD	A,$EF
-	LD	(RAM3BUF),A
-	LD	HL,$0000
-	LD	(CURPBUF),HL
-	CALL	RSTDPY
-CFIL1:	PUSH	HL
-	CALL	DISPGR
-	POP	HL
-	INC	HL
-	LD	A,H
-	CP	$08
-	JR	NZ,CFIL1
-	JR	RSTDPY
+clrscr:
+	ld	hl,$0000
+	ld	(ram0buf),hl
+	xor	a
+	ld	(ram2buf),a
+	ld	a,$ef
+	ld	(ram3buf),a
+	ld	hl,$0000
+	call	rstdpy
+clrs0:	push	hl
+	call	dispgr
+	pop	hl
+	inc	hl
+	ld	a,h
+	cp	$08
+	jr	nz,clrs0
+	ld	a,$ff
+	ld	(ram3buf),a		; resets vattr
+	call	vstares
+	jr	crtprgend
 
 ;;
 ;; RSTDPY - zeroes SY6545 higher register (R12 to R19)
 ;;
-RSTDPY:
-	LD	B,$08
-RDPY1:	LD	A,B
-	ADD	A,$0B
-	OUT	(CRT6545ADST),A
-	XOR	A
-	OUT	(CRT6545DATA),A
-	DJNZ	RDPY1
-; 	JP	CRTPRGEND
+rstdpy:
+	ld	b,$08
+rdpy1:	ld	a,b
+	add	a,$0b
+	out	(crt6545adst),a
+	xor	a
+	out	(crt6545data),a
+	djnz	rdpy1
 
 	; fall through...
 
@@ -200,49 +218,62 @@ RDPY1:	LD	A,B
 ;; CRTPRGEND
 ;; resets 6545 register pointer
 ;
-CRTPRGEND:
-	LD	A,$1F
-	OUT	(CRT6545ADST),A
-	RET
+crtprgend:
+	ld	a,vr31.dummy
+	out	(crt6545adst),a
+	ret
 
 ;;
 ;; DISPGR - display in graphic mode (raw output)
 ;
-DISPGR:
-	IN	A,(CRT6545ADST)
-	BIT	7,A
-	JR	Z,DISPGR
-	LD	HL,RAM0BUF
-	LD	A,(HL)
-	OUT	(CRTRAM0DAT),A
-	INC	HL
-	LD	A,(HL)
-	OUT	(CRTRAM1DAT),A
-	INC	HL
-	LD	A,(HL)
-	OUT	(CRTRAM2DAT),A
-	LD	A,(RAM3BUF)
-	OUT	(CRTRAM3PORT),A
-	XOR	A
-	OUT	(CRT6545DATA),A
-	RET
+dispgr:
+	in	a,(crt6545adst)
+	bit	7,a
+	jr	z,dispgr
+	ld	hl,ram0buf
+	ld	a,(hl)
+	out	(crtram0dat),a
+	inc	hl
+	ld	a,(hl)
+	out	(crtram1dat),a
+	inc	hl
+	ld	a,(hl)
+	out	(crtram2dat),a
+	ld	a,(ram3buf)
+	out	(crtram3port),a
+	xor	a
+	out	(crt6545data),a
+	ret
 
 ;;
 ;; DISPCH - Display in text mode (raw output)
 ;;
-DISPCH:
-	PUSH	AF
-DGCLP0:	IN	A,(CRT6545ADST)
-	BIT	7,A
-	JR	Z,DGCLP0
-	POP	AF
-	OUT	(CRTRAM0DAT),A
-	LD	A,(RAM3BUF)
-	OUT	(CRTRAM3PORT),A
-	XOR	A
-	OUT	(CRT6545DATA),A
-	RET
-
+dispch:
+	push	af
+dgclp0:	in	a,(crt6545adst)
+	bit	7,a
+	jr	z,dgclp0
+	pop	af
+	out	(crtram0dat),a
+	ld	a,(ram3buf)
+	out	(crtram3port),a
+	xor	a
+	out	(crt6545data),a
+	ret
+;;
+;; Fill screen of chars in C
+;
+crtfill:
+	ld	hl,$0000		; init count
+	call	rstdpy			; @ vhome
+crtf0:	ld	a,c			; 
+	call	dispch			; display
+	inc	hl			; go on
+	ld	a,h
+	cp	$08
+	jr	nz,crtf0		; screen end?
+	call	vstares			; reset origins
+	jr	crtprgend
 
 ;;
 ;; BCONOUT print out the char in reg C
@@ -250,567 +281,490 @@ DGCLP0:	IN	A,(CRT6545ADST)
 ;;
 ;; register clean: can be used as CP/M BIOS replacement
 ;;
-BCONOUT:
-	PUSH	AF
-	PUSH	BC
-	PUSH	DE
-	PUSH	HL
+bconout:
+	push	af
+	push	bc
+	push	de
+	push	hl
 	; force jump to register restore and exit in stack
-	LD	HL,BCEXIT
-	PUSH	HL
+	ld	hl,bcexit
+	push	hl
 	;
-	LD	A,C
-	LD	HL,MIOBYTE
-	BIT	7,(HL)			; alternate char processing ?
-	EX	DE,HL
-	JR	NZ,CONOU2		; yes: do alternate
-	CP	$20			; no: is less then 0x20 (space) ?
-	JR	NC,COJP1		; no: go further
-	ADD	A,A			; yes: is a special char
-	LD	H,0
-	LD	L,A
-	LD	BC,IOCVEC
-	ADD	HL,BC
-	LD	A,(HL)
-	INC	HL
-	LD	H,(HL)
-	LD	L,A
-	JP	(HL)			; jump to IOCVEC handler
-COJP1:	EX	DE,HL
-	BIT	6,(HL)			; auto ctrl chars ??
-	JR	Z,COJP2			; no
-	CP	$40			; yes: convert
-	JR	C,COJP2
-	CP	$60
-	JR	NC,COJP2
-	SUB	$40
-COJP2:	CALL	DISPCH			; display char
+	ld	a,c
+	ld	hl,miobyte
+	bit	7,(hl)			; alternate char processing ?
+	ex	de,hl
+	jr	nz,conou2		; yes: do alternate
+	cp	$20			; no: is less then 0x20 (space) ?
+	jr	nc,cojp1		; no: go further
+	
+	add	a,a			; yes: is a special char
+	ld	h,0
+	ld	l,a
+	ld	bc,iocvec
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	(hl)			; jump to IOCVEC handler
+	
+cojp1:	ex	de,hl
+	bit	6,(hl)			; auto ctrl chars ??
+	jr	z,cojp2			; no
+	
+	cp	$40			; yes: convert
+	jr	c,cojp2
+	cp	$60
+	jr	nc,cojp2
+	sub	$40
+	
+cojp2:	call	dispch			; display char
 	; move cursor right
-MOVRGT:
-	CALL	GCRSPOS			; update cursor position
-	CALL	SCRSPOS
-	LD	A,(COLBUF)
-	INC	A
-	CP	$50
-	JR	Z,LFEED			; go down if needed
+movrgt:
+	ld	hl,(curpbuf)		; get cursor position
+	inc	hl			; to next char
+eostest:
+	call	scrtst			; end of screen ?
+	jr	c,cout00		; no
+	ld	de,0ffb0h		;
+	add	hl,de			;
+	call	scroll			; update display start (scrolling)
+cout00:
+	ld	(curpbuf),hl		; save video pointer
+	call	updvidp			; update video pointer
+	ret
+	; alternate processing....
+conou2:
+	cp	$20			; is a ctrl char ??
+	jr	nc,curadr		; no: will set cursor pos
+
+	add	a,a			; yes
+	ld	h,0
+	ld	l,a
+	ld	bc,iocvec2
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	(hl)			; jump to service routine... (IOCVEC2)
 ;;
-SAVCOLB:
-	LD	(COLBUF),A		; save cursor position
-	RET
-CONOU2:					; alternate processing....
-	CP	$20			; is a ctrl char ??
-	JR	NC,CURADR		; no: will set cursor pos
-	ADD	A,A			; yes
-	LD	H,0
-	LD	L,A
-	LD	BC,IOCVEC2
-	ADD	HL,BC
-	LD	A,(HL)
-	INC	HL
-	LD	H,(HL)
-	LD	L,A
-	JP	(HL)			; jump to service routine... (IOCVEC2)
 ;; cursor addressing service routine
-;; address is ESC + (COL # + 32) + (ROW # + 32) (then need a NUL to terminate...)
-CURADR:	LD	HL,TMPBYTE
-	BIT	0,(HL)
-	JR	NZ,SETROW
-	CP	$70			; greater then 80 ?
-	RET	NC			; yes: error
-	SUB	$20			; no: ok
-	LD	(APPBUF),A		; store column
-	SET	0,(HL)			; switch row/col flag
-	RET
-SETROW:	RES	0,(HL)			; resets col/row flag
-	CP	$39			; greater than 24 ?
-	RET	NC			; yes: error
-	SUB	$1F			; no: ok
-	LD	HL,MIOBYTE		; resets ctrl char flag
-	RES	7,(HL)			; done reset
-	LD	B,A
-	LD	HL,$FFB0
-	LD	DE,$0050
-CUROFS:	ADD	HL,DE			; calc. new offset
-	DJNZ	CUROFS
-	LD	A,(APPBUF)
-	LD	(COLBUF),A
-	LD	E,A
-	ADD	HL,DE
-	EX	DE,HL
-	LD	HL,(CURPBUF)
-	ADD	HL,DE
-	JP	SCRSPOS			; update position
-BCEXIT:
-	POP	HL
-	POP	DE
-	POP	BC
-	POP	AF
-	RET
-;;
-;; LFEED: down one line, scroll, home, clreol
+;; address is ESC + (COL # + 32) + (ROW # + 32) + NUL
 ;
-LFEED:
-	XOR	A
-	LD	(COLBUF),A
-LFEED1:	CALL	SCRTST
-	RET	C
-	LD	HL,MIOBYTE
-	BIT	2,(HL)
-	LD	DE,$F830
-	CALL	GCRSPOS
-	DEC	HL
-	JR	Z,MDJMP0
-	ADD	HL,DE
-	JP	SCRSPOS
-MDJMP0:	PUSH	HL
-	CALL	CLRLIN
-	LD	HL,(CURPBUF)
-	LD	DE,$0050
-	ADD	HL,DE
-	LD	DE,$0820
-	PUSH	HL
-	SBC	HL,DE
-	POP	HL
-	JR	C,MDJMP1
-	RES	3,H
-MDJMP1:	LD	(CURPBUF),HL
-	CALL	SDPYSTA
-	POP	HL
-	JR	C,MEJP
-	RES	3,H
-MEJP:	JP	SCRSPOS
+curadr:	ld	hl,tmpbyte		; alredy do column ?
+	bit	0,(hl)
+	jr	nz,setrow		; yes, do row
+	
+	cp	112			; greater then 80 (+32) ?
+	ret	nc			; yes: error
+	sub	32			; no: adjust to real value
+	ld	(appbuf),a		; store column
+	set	0,(hl)			; switch row/col flag
+	ret
+	
+setrow:	res	0,(hl)			; resets col/row flag
+	cp	57			; greater than 25 (+32) ?
+	ret	nc			; yes: error
+	sub	31			; no: adjust to real value + 1 for count
+	ld	hl,miobyte		; resets ctrl char flag
+	res	7,(hl)			; done reset
+	ld	b,a
+	ld	hl,$ffb0
+	ld	de,$0050
+	
+curofs:	add	hl,de			; calc. new offset
+	djnz	curofs			; row
+	ld	a,(appbuf)
+	ld	e,a
+	add	hl,de
+	jr	cout00			; update position
+	
+bcexit:
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	ret
+	
+;;
+;; MOVDWN - cursor down one line
+;
+movdwn:
+	ld	hl,(curpbuf)		; current
+	ld	de,80			; 80 to add
+	add	hl,de			; move down
+	jr	eostest
+;;
+;; Move cursor up
+;
+movup:
+	ld	de,80			; line lenght
+movback:
+	ld	hl,(curpbuf)		; current
+	xor	a			; clear carry
+	sbc	hl,de			; HL = video pointer - one line
+	jr	nc,movb00		; ret if HL >= start video
+	add	hl,de			; restore originally video pointer
+movb00:
+	ld	(curpbuf),hl		; save video pointer
+	call	updvidp			; update video pointer
+	ret				; ret
+;;
+;; Move cursor left
+;
+movlft:
+	ld	de,1			; one char
+	jr	movback			; do it
+;;
+;; backspace 
+;; destructive or not depending on bit 4 miobyte
+;
+bakspc:
+	ld	hl,miobyte
+	bit	4,(hl)
+	jr	nz,movlft		; equal to movlft
+	; destructive
+	call	movlft			; go back
+	ld	a,' '			; clear
+	call	dispch
+	jr	movb00			; ret
 
 ;;
 ;; SCRTST - Verify if we need video scroll
 ;
-SCRTST:
-	LD	DE,(CURPBUF)
-	XOR	A
-	SBC	HL,DE
-	LD	A,H
-	CP	$07
-	RET	C
-	LD	A,L
-	CP	$CF
-	RET
-;;
-;; CLRSCR - clear screen (ASCII mode)
-;
-CLRSCR:
-	LD	HL,$0000
-	XOR	A
-	LD	(COLBUF),A
-	CPL
-	LD	(RAM3BUF),A
-	LD	(CURPBUF),HL
-	CALL	SCRSPOS
-	CALL	SDPYSTA
-	PUSH	HL
-CLSNC:	LD	A,$20
-	CALL	DISPCH
-	INC	HL
-	LD	A,H
-	CP	$08
-	JR	NZ,CLSNC
-	POP	HL
-	JP	SCRSPOS
+scrtst:
+	ld	de,endvid+1		; DE = end video + 1
+	xor	a			; clear carry
+	sbc	hl,de			; subctract and set carry
+	add	hl,de			; restore hl
+	ret				; and ret	ret
 
-CURBLB:
-	LD	L,$40           ; (0 10 00000) 1/16 blink scan 0
-	JR	CURSETMODE
-CURBLL:
-	LD	L,$4A           ; (0 10 01010) 1/16 blink scan 10
-	JR	CURSETMODE
-CURBFB:
-	LD	L,$60           ; (0 11 00000) 1/32 blink scan 0
-	JR	CURSETMODE
-CURBFL:
-	LD	L,$6A           ; (0 11 01010) 1/32 blink scan 10
-	JR	CURSETMODE
-SCUROF:
-	LD	L,$20           ; (0 01 00000) cursor off
-	JR	CURSETMODE
-CURFXB:
-	LD	L,$00           ; (0 00 00000) fixed scan 0
-	JR	CURSETMODE
-SCURON:
-; 	LD	L,$0A           ; (0 00 01010) cursor on
-	JR	CURSET
-CURSETMODE:
-	PUSH	HL
-	JR	CURSET1
+;;
+;; Cursor shape/mode handling
+;
+curblb:
+	ld	l,$40           ; (0 10 00000) 1/16 blink scan 0
+	jr	cursetmode
+curbll:
+	ld	l,$4a           ; (0 10 01010) 1/16 blink scan 10
+	jr	cursetmode
+curbfb:
+	ld	l,$60           ; (0 11 00000) 1/32 blink scan 0
+	jr	cursetmode
+curbfl:
+	ld	l,$6a           ; (0 11 01010) 1/32 blink scan 10
+	jr	cursetmode
+scurof:
+	ld	l,$20           ; (0 01 00000) cursor off
+	jr	cursetmode
+curfxb:
+	ld	l,$00           ; (0 00 00000) fixed scan 0
+	jr	cursetmode
+scuron:
+	jr	curset		; cursor on
+cursetmode:
+	push	hl
+	jr	curset1
 
 ;;
 ;; Setup cursor. (user mode)
 ;;
-CURSET:
-	PUSH	HL
-	LD	A,(CURSSHP)
-	LD	L,A
-CURSET1:
-	LD	A,VR10.CRSTART
-	OUT	(CRT6545ADST),A
-	LD	A,L
-	OUT	(CRT6545DATA),A
-	POP	HL
-	JP	CRTPRGEND
+curset:
+	push	hl
+	ld	a,(cursshp)
+	ld	l,a
+curset1:
+	ld	a,vr10.crstart
+	out	(crt6545adst),a
+	ld	a,l
+	out	(crt6545data),a
+	pop	hl
+	jp	crtprgend
 
-;;
-;; IOCNULL (a void routine) from here a list of routines to handle
-;; console char output
-;
-IOCNULL:
-	RET				; null entry. start of control routines vector
-					; for primary (non-escaped) mode
-;
-UCASEMOD:
-	EX	DE,HL
-	SET	3,(HL)
-	RET
-LCASEMOD:
-	EX	DE,HL
-	RES	3,(HL)
-	RET
 ;;
 ;; SNDBEEP - sound beep
-SNDBEEP:
-	OUT	(CRTBEEPPORT),A
-	RET
-;;
-;; backspace
-;;
-BAKSPC:
-	LD	HL,MIOBYTE
-	LD	A,(HL)
-	BIT	4,(HL)
-	JR	NZ,MOVLFTDND		; set ND
-	CALL	MOVLFTND		; destructive
-	LD	A,' '
-	CALL	DISPCH			; display char
-	CALL	MOVRGT
-	CALL	MOVLFTND
-	RET
-
-;;
-;; cursor left, non destructive only
-;;
-MOVLFTND:
-	LD	HL,MIOBYTE
-	LD	A,(HL)
-MLFTND:	PUSH	AF
-	SET	4,(HL)
-	CALL	MOVLFTDND
-	POP	AF
-	LD	(HL),A
-	RET
-
-;;
-;; cursor left
-;;
-MOVLFTDND:
-	CALL	GCRSPOS
-	DEC	HL
-	LD	DE,(CURPBUF)
-	XOR	A
-	SBC	HL,DE
-	CP	H
-	JR	NZ,MOVLFT1
-	CP	L
-	RET	Z
-MOVLFT1:
-	DEC	HL
-	ADD	HL,DE
-	CALL	SCRSPOS
-	PUSH	HL
-	LD	A,(COLBUF)
-	DEC	A
-	CP	$FF
-	JR	NZ,MOVLFT2
-	LD	A,$4F
-MOVLFT2:
-	LD	(COLBUF),A
-	LD	HL,MIOBYTE
-	BIT	4,(HL)
-	POP	HL
-	RET	NZ
-	LD	A,$20
-	JP	DISMVC
-; 	JP	DISPCH
+sndbeep:
+	out	(crtbeepport),a
+	ret
 ;;
 ;; CHOME - move cursor at col 0
 ;
-CHOME:
-	LD	HL,COLBUF
-	LD	E,(HL)
-	XOR	A
-	LD	(HL),A
-	LD	D,A
-	CALL	GCRSPOS
-	DEC	HL
-	SBC	HL,DE
-	CALL	SCRSPOS
-	RET
+chome:
+	ld	hl,0
+	jp	curloc0
 
+;;
+;; clear to end of page
+;
+clreop:
+	call	clreop00
+	ld	hl,(curpbuf)	; reinit hl to current
+	jp	cout00
+clreop00:
+	; clear to end of screen
+	ld	hl,(curpbuf)	; where to begin
+	ld	de,endvid+1	; DE = end video + 1
+cescr0:
+	xor	a		; clear carry
+	ex	de,hl		; computer number of
+	sbc	hl,de		; character then remaining
+	ex	de,hl		; until end
+cescr1:
+	push	de		; save number of char.
+	call	updvidp		; update video pointer
+	pop	de		; restore char. number
+cescr2:
+	ld	a,d		; DE is zero ?
+	or	e		;
+	ret	z		; yes, then exit
+cescr4:
+	ld	a,' '
+	call	dispch
+	dec	de		; dec. char counter
+	jr	cescr2		; and count
+;
+;
 ;; IOCCR - handle carriage return (0x0d)
 ;; should position the cursor at col 0
 ;
-IOCCR:
-	EX	DE,HL
-	BIT	3,(HL)
-	JR	Z,IOCCR1
-	CALL	CLREOL
-IOCCR1:	JR	CHOME
+ioccr:
+	call	cbeglin		; find begin
+	jp	cout00		; update
 ;;
-;; clear to end of page
-;;
-CLREOP:
-	XOR	A
-	LD	HL,(CURPBUF)
-	LD	DE,$07D0
-	ADD	HL,DE
-	EX	DE,HL
-	CALL	GCRSPOS
-	DEC	HL
-	EX	DE,HL
-	SBC	HL,DE
-	PUSH	HL
-	POP	BC
-CLRJ0:	CALL	CLRLIN1
-	EX	DE,HL
-	JP	SCRSPOS
+;; set HL to begin of line
+cbeglin:
+	; cursor beginning of line
+	ld	hl,(curpbuf)	; load current
+	ld	de,80
+	push	bc		; save register
+	ld	b,d
+	ld	c,e		; bc = char. for line
+	call	divide		;
+	ld	l,0		;
+	ld	d,b		;
+	ld	e,c		;
+	pop	bc		; restore register
+ioccr0:
+	ret	z		;
+	add	hl,de		;
+	dec	a		;
+	jr	ioccr0		;
 ;;
 ;; CLREOL - clear to end of line
 ;
-CLREOL:
-	LD	A,(COLBUF)
-	LD	B,A
-	LD	A,$50
-	SUB	B
-	LD	B,$00
-	LD	C,A
-	CALL	GCRSPOS
-	DEC	HL
-	EX	DE,HL
-	JR	CLRJ0
-;;
-SCROLLOFF:
-	EX	DE,HL
-	SET	2,(HL)
-	RET
-SCROLLON:
-	EX	DE,HL
-	RES	2,(HL)
-	RET
-SIOCESC:
-	EX	DE,HL
-	SET	7,(HL)
-	RET
+clreol:
+	call	cbeglin		; call cursor begin of line
+	add	hl,de		;
+	ex	de,hl		;
+	ld	hl,(curpbuf)	; restore video pointer
+	push	hl		; save
+	call	cescr0		; clear 'DE' char.
+	pop	hl		; restore again
+	jp	cout00		; update
+
+;;;
+scrolloff:
+	ex	de,hl
+	set	2,(hl)
+	ret
+scrollon:
+	ex	de,hl
+	res	2,(hl)
+	ret
+siocesc:
+	ex	de,hl
+	set	7,(hl)
+	ret
 ;;
 ;; RESATTR - reset all attributes
 ;
-RESATTR:
-	LD	A,$FF
-	LD	(RAM3BUF),A
-	RET
-
+resattr:
+	ld	a,$ff
+	ld	(ram3buf),a
+	ret
 ;;
-;; IOCNULL (a void routine) from here a list of routines to handle
-;; console char output while in alternate processing (ESC prefixed ctrl chars)
+;; void routine
 ;
-MOVUP:
-	CALL	GCRSPOS
-	LD	DE,$FFAF
-	ADD	HL,DE
-	EX	DE,HL
-	LD	HL,(CURPBUF)
-	EX	DE,HL
-	XOR	A
-	SBC	HL,DE
-	CPL
-	CP	H
-	ADD	HL,DE
-	RET	Z
-	JP	SCRSPOS
-RASCFLTR:
-	EX	DE,HL
-	RES	6,(HL)
-	RET
-NDBKSP:
-	EX	DE,HL
-	SET	4,(HL)
-	RET
-DBKSP:
-	EX	DE,HL
-	RES	4,(HL)
-	RET
-BLINKOFF:
-	LD	HL,RAM3BUF
-	SET	0,(HL)
-	RET
-REVOFF:
-	LD	HL,RAM3BUF
-	SET	1,(HL)
-	RET
-UNDEROFF:
-	LD	HL,RAM3BUF
-	SET	2,(HL)
-	RET
-HLIGHTOFF:
-	LD	HL,RAM3BUF
-	SET	3,(HL)
-	RET
-REDON:
-	LD	HL,RAM3BUF
-	SET	5,(HL)
-	RET
-GREENON:
-	LD	HL,RAM3BUF
-	SET	6,(HL)
-	RET
-BLUEON:
-	LD	HL,RAM3BUF
-	SET	7,(HL)
-	RET
-BLINKON:
-	LD	HL,RAM3BUF
-	RES	0,(HL)
-	RET
-REVON:
-	LD	HL,RAM3BUF
-	RES	1,(HL)
-	RET
-UNDERON:
-	LD	HL,RAM3BUF
-	RES	2,(HL)
-	RET
-HLIGHTON:
-	LD	HL,RAM3BUF
-	RES	3,(HL)
-	RET
-REDOFF:
-	LD	HL,RAM3BUF
-	RES	5,(HL)
-	RET
-GREENOFF:
-	LD	HL,RAM3BUF
-	RES	6,(HL)
-	RET
-BLUEOFF:
-	LD	HL,RAM3BUF
-	RES	7,(HL)
-	RET
+iocnull:
+	ret
 ;;
-;; MOVDWN - cursor down one line
-;
-MOVDWN:
-	CALL	GCRSPOS
-	DEC	HL
-	LD	DE,$0050
-	ADD	HL,DE
-	CALL	SCRSPOS
-	JP	LFEED1
+;; Various routines to manipulate control flags
 ;;
-RIOCESC:
-	EX	DE,HL
-	RES	7,(HL)
-	RET
 ;
-SASCFLTR:
-	EX	DE,HL
-	SET	6,(HL)
-	RET
-
+ucasemod:
+	ex	de,hl
+	set	3,(hl)
+	ret
+lcasemod:
+	ex	de,hl
+	res	3,(hl)
+	ret
+rascfltr:
+	ex	de,hl
+	res	6,(hl)
+	ret
+ndbksp:
+	ex	de,hl
+	set	4,(hl)
+	ret
+dbksp:
+	ex	de,hl
+	res	4,(hl)
+	ret
+blinkoff:
+	ld	hl,ram3buf
+	set	0,(hl)
+	ret
+revoff:
+	ld	hl,ram3buf
+	set	1,(hl)
+	ret
+underoff:
+	ld	hl,ram3buf
+	set	2,(hl)
+	ret
+hlightoff:
+	ld	hl,ram3buf
+	set	3,(hl)
+	ret
+redon:
+	ld	hl,ram3buf
+	set	5,(hl)
+	ret
+greenon:
+	ld	hl,ram3buf
+	set	6,(hl)
+	ret
+blueon:
+	ld	hl,ram3buf
+	set	7,(hl)
+	ret
+blinkon:
+	ld	hl,ram3buf
+	res	0,(hl)
+	ret
+revon:
+	ld	hl,ram3buf
+	res	1,(hl)
+	ret
+underon:
+	ld	hl,ram3buf
+	res	2,(hl)
+	ret
+hlighton:
+	ld	hl,ram3buf
+	res	3,(hl)
+	ret
+redoff:
+	ld	hl,ram3buf
+	res	5,(hl)
+	ret
+greenoff:
+	ld	hl,ram3buf
+	res	6,(hl)
+	ret
+blueoff:
+	ld	hl,ram3buf
+	res	7,(hl)
+	ret
+riocesc:
+	ex	de,hl
+	res	7,(hl)
+	ret
+;
+sascfltr:
+	ex	de,hl
+	set	6,(hl)
+	ret
 ;;
-;; CLRLIN - clear current line
+;; Internal division routine
+;; divide HL with BC; quoto in A, resto in HL
 ;
-CLRLIN:
-	LD	BC,$0050
-CLRLIN1:
-	LD	A,(RAM3BUF)
-	PUSH	AF
-	LD	A,$FF
-	LD	(RAM3BUF),A
-CLRLP1:	LD	A,$20
-	CALL	DISPCH
-	DEC	BC
-	LD	A,B
-	OR	C
-	JR	NZ,CLRLP1
-	POP	AF
-	LD	(RAM3BUF),A
-	RET
-
+divide:
+	xor	a		; clear accumulator and carry flag
+hl.gt.0:
+	sbc	hl,bc		;
+	inc	a		;
+	jr	nc,hl.gt.0	;
+	dec	a		;
+	add	hl,bc		;
+	ret	
+	
 ;; This table define the offsets to jump to control routines
 ;; for primary (non-escaped) mode
 
-IOCVEC:
-	DW	RIOCESC			; NUL 0x00 (^@)  clear alternate output processing
-	DW	UCASEMOD		; SOH 0x01 (^A)  uppercase mode
-	DW	LCASEMOD		; STX 0x02 (^B)  normal case mode
-	DW	IOCNULL			; ETX 0x00 (^C)  no-op
-	DW	SCUROF			; EOT 0x04 (^D)  cursor off
-	DW	SCURON			; ENQ 0x05 (^E)  cursor on
-	DW	CRSLOC			; ACK 0x06 (^F)  locate cursor at CURPBUF
-	DW	SNDBEEP			; BEL 0x07 (^G)  beep
-	DW	BAKSPC			; BS  0x08 (^H)  cursor left (destr. and non destr.)
-	DW	IOCNULL			; HT  0x09 (^I)  no-op
-	DW	MOVDWN			; LF  0x0a (^J)  cursor down one line
-	DW	CHOME			; VT  0x0b (^K)  cursor @ column 0
-	DW	CLRSCR			; FF  0x0c (^L)  page down (clear screen)
-	DW	IOCCR			; CR  0x0d (^M)  provess CR
-	DW	CLREOP			; SO  0x0e (^N)  clear to EOP
-	DW	CLREOL			; SI  0x0f (^O)  clear to EOL
-	DW	IOCNULL			; DLE 0x10 (^P)  no-op
-	DW	RESATTR			; DC1 0x11 (^Q)  reset all attributes
-	DW	CRTCINI			; DC2 0x12 (^R)  hard crt reset and clear
-	DW	IOCNULL			; DC3 0x13 (^S)  no-op
-	DW	IOCNULL			; DC4 0x14 (^T)  no-op
-	DW	MOVUP			; NAK 0x15 (^U)  cursor up one line
-	DW	SCROLLOFF		; SYN 0x16 (^V)  scroll off
-	DW	SCROLLON		; ETB 0x17 (^W)  scroll on
-	DW	MOVLFTND		; CAN 0x18 (^X)  cursor left (non destr. only)
-	DW	MOVRGT			; EM  0x19 (^Y)  cursor right
-	DW	MOVDWN			; SUB 0x1a (^Z)  cursor down one line
-	DW	SIOCESC			; ESC 0x1b (^[)  activate alternate output processing
-	DW	IOCNULL			; FS  0x1c (^\)  no-op
-	DW	IOCNULL			; GS  0x1d (^])  no-op
-	DW	IOCNULL			; RS  0x1e (^^)  disabled (no-op)
-	DW	IOCNULL			; US  0x1f (^_)  no-op
+iocvec:
+	dw	riocesc			; NUL 0x00 (^@)  clear alternate output processing
+	dw	ucasemod		; SOH 0x01 (^A)  uppercase mode
+	dw	lcasemod		; STX 0x02 (^B)  normal case mode
+	dw	iocnull			; ETX 0x00 (^C)  no-op
+	dw	scurof			; EOT 0x04 (^D)  cursor off
+	dw	scuron			; ENQ 0x05 (^E)  cursor on
+	dw	iocnull			; ACK 0x06 (^F)  no-op
+	dw	sndbeep			; BEL 0x07 (^G)  beep
+	dw	bakspc			; BS  0x08 (^H)  cursor left (destr. and non destr.)
+	dw	iocnull			; HT  0x09 (^I)  no-op
+	dw	movdwn			; LF  0x0a (^J)  cursor down one line
+	dw	chome			; VT  0x0b (^K)  cursor @ column 0
+	dw	clrscr			; FF  0x0c (^L)  page down (clear screen)
+	dw	ioccr			; CR  0x0d (^M)  provess CR
+	dw	clreop			; SO  0x0e (^N)  clear to EOP
+	dw	clreol			; SI  0x0f (^O)  clear to EOL
+	dw	iocnull			; DLE 0x10 (^P)  no-op
+	dw	resattr			; DC1 0x11 (^Q)  reset all attributes
+	dw	crtcini			; DC2 0x12 (^R)  hard crt reset and clear
+	dw	iocnull			; DC3 0x13 (^S)  no-op
+	dw	iocnull			; DC4 0x14 (^T)  no-op
+	dw	movup			; NAK 0x15 (^U)  cursor up one line
+	dw	scrolloff		; SYN 0x16 (^V)  scroll off
+	dw	scrollon		; ETB 0x17 (^W)  scroll on
+	dw	movlft			; CAN 0x18 (^X)  cursor left (non destr. only)
+	dw	movrgt			; EM  0x19 (^Y)  cursor right
+	dw	iocnull			; SUB 0x1a (^Z)  no-op
+	dw	siocesc			; ESC 0x1b (^[)  activate alternate output processing
+	dw	iocnull			; FS  0x1c (^\)  no-op
+	dw	iocnull			; GS  0x1d (^])  no-op
+	dw	iocnull			; RS  0x1e (^^)  disabled (no-op)
+	dw	iocnull			; US  0x1f (^_)  no-op
 
 ;; This table define the offsets to jump to control routines
 ;; for alternate (escaped) mode
 
-IOCVEC2:
-	DW	RIOCESC			; NUL 0x00 (^@)  clear alternate output processing
-	DW	BLINKOFF		; SOH 0x01 (^A)  BLINK OFF
-	DW	BLINKON			; STX 0x02 (^B)  BLINK ON
-	DW	UNDEROFF		; ETX 0x03 (^C)  UNDER OFF
-	DW	UNDERON			; EOT 0x04 (^D)  UNDER ON
-	DW	HLIGHTOFF		; ENQ 0x05 (^E)  HLIGHT OFF
-	DW	HLIGHTON		; ACK 0x06 (^F)  HLIGHT ON
-	DW	IOCNULL			; BEL 0x07 (^G)  no-op
-	DW	IOCNULL			; BS  0x08 (^H)  no-op
-	DW	IOCNULL			; HT  0x09 (^I)  no-op
-	DW	IOCNULL			; LF  0x0a (^J)  no-op
-	DW	IOCNULL			; VT  0x0b (^K)  no-op
-	DW	DBLANK			; FF  0x0c (^L)  blank screen
-	DW	RIOCESC			; CR  0x0d (^M)  clear alternate output processing
-	DW	REDON			; SO  0x0e (^N)  set bit 5 RAM3BUF (red)
-	DW	REDOFF			; SI  0x0f (^O)  res bit 5 RAM3BUF (red)
-	DW	GREENON			; DLE 0x10 (^P)  set bit 6 RAM3BUF (green)
-	DW	GREENOFF		; DC1 0x11 (^Q)  res bit 6 RAM3BUF (green)
-	DW	CURBLB			; DC2 0x12 (^R)  cursor blink slow block
-	DW	CURBLL			; DC3 0x13 (^S)  cursor blink slow line
-	DW	IOCNULL			; DC4 0x14 (^T)  no-op
-	DW	IOCNULL			; NAK 0x15 (^U)  no-op
-	DW	IOCNULL			; SYN 0x16 (^V)  no-op
-	DW	SASCFLTR		; ETB 0x17 (^W)  set ascii filter
-	DW	RASCFLTR		; CAN 0x18 (^X)  reset ascii filter
-	DW	NDBKSP			; EM  0x19 (^Y)  set non destructive BS
-	DW	DBKSP			; SUB 0x1a (^Z)  set destructive BS
-	DW	REVON			; ESC 0x1b (^[)  REVERSE ON
-	DW	REVOFF			; FS  0x1c (^\)  REVERSE OFF
-	DW	BLUEON			; GS  0x1d (^])  set bit 7 RAM3BUF (blue)
-	DW	BLUEOFF			; RS  0x1e (^^)  res bit 7 RAM3BUF (blue)
-	DW	IOCNULL			; US  0x1f (^_)  no-op
+iocvec2:
+	dw	riocesc			; NUL 0x00 (^@)  clear alternate output processing
+	dw	blinkoff		; SOH 0x01 (^A)  BLINK OFF
+	dw	blinkon			; STX 0x02 (^B)  BLINK ON
+	dw	underoff		; ETX 0x03 (^C)  UNDER OFF
+	dw	underon			; EOT 0x04 (^D)  UNDER ON
+	dw	hlightoff		; ENQ 0x05 (^E)  HLIGHT OFF
+	dw	hlighton		; ACK 0x06 (^F)  HLIGHT ON
+	dw	iocnull			; BEL 0x07 (^G)  no-op
+	dw	iocnull			; BS  0x08 (^H)  no-op
+	dw	iocnull			; HT  0x09 (^I)  no-op
+	dw	iocnull			; LF  0x0a (^J)  no-op
+	dw	iocnull			; VT  0x0b (^K)  no-op
+	dw	clrscr			; FF  0x0c (^L)  blank screen
+	dw	riocesc			; CR  0x0d (^M)  clear alternate output processing
+	dw	redon			; SO  0x0e (^N)  set bit 5 RAM3BUF (red)
+	dw	redoff			; SI  0x0f (^O)  res bit 5 RAM3BUF (red)
+	dw	greenon			; DLE 0x10 (^P)  set bit 6 RAM3BUF (green)
+	dw	greenoff		; DC1 0x11 (^Q)  res bit 6 RAM3BUF (green)
+	dw	curblb			; DC2 0x12 (^R)  cursor blink slow block
+	dw	curbll			; DC3 0x13 (^S)  cursor blink slow line
+	dw	iocnull			; DC4 0x14 (^T)  no-op
+	dw	iocnull			; NAK 0x15 (^U)  no-op
+	dw	iocnull			; SYN 0x16 (^V)  no-op
+	dw	sascfltr		; ETB 0x17 (^W)  set ascii filter
+	dw	rascfltr		; CAN 0x18 (^X)  reset ascii filter
+	dw	ndbksp			; EM  0x19 (^Y)  set non destructive BS
+	dw	dbksp			; SUB 0x1a (^Z)  set destructive BS
+	dw	revon			; ESC 0x1b (^[)  REVERSE ON
+	dw	revoff			; FS  0x1c (^\)  REVERSE OFF
+	dw	blueon			; GS  0x1d (^])  set bit 7 RAM3BUF (blue)
+	dw	blueoff			; RS  0x1e (^^)  res bit 7 RAM3BUF (blue)
+	dw	iocnull			; US  0x1f (^_)  no-op
+
+;-----------------------------------------
 

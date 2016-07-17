@@ -1,806 +1,900 @@
-   1:			
-   2:			
+   1:			;
+   2:			;=======================================================================
    3:			;
-   4:			;=======================================================================
+   4:			; Modular Z80 DarkStar (NE Z80) SysBios
    5:			;
-   6:			; Modular Z80 DarkStar (NE Z80) SysBios
+   6:			;=======================================================================
    7:			;
-   8:			;=======================================================================
-   9:			;
-  10:			; Original code:
-  11:			; Z80 Nuova Elettronica Monitor 390 su eprom 2532 (4k)
-  12:			;
-  13:			; Disassembled and reconstructed by
-  14:			; Piergiorgio Betti <pbetti@lpconsul.net> on 2005 01 26
-  15:			;
-  16:			; Latest non modular BIOS is DARKSTAR-MONITOR-0.9.0.asm
-  17:			; dated 20140531
-  18:			; - Following addition of MultiF-Board doing complete rewrite of the
-  19:			;   monitor/BIOS has been started.
-  20:			;   Major goals:
-  21:			;   o Modularization: Now monitor can grow up to 256kb instead of 4kb
-  22:			;     :-)
-  23:			;   o Specialized images fitted in memory page (4kb) or multiples
-  24:			;   o Full support for new hardware
-  25:			;   o I/O rewrite for MODE 2 interrupts
-  26:			;   Minor goals:
-  27:			;   o Full code clean-up & reoarganization
-  28:			; ---------------------------------------------------------------------
-  29:			; Revisions:
-  30:			; 20140905 - Modified hexadecimal constants to 0xxH format to widely
-  31:			;            accepeted by different assemblers
-  32:			; ---------------------------------------------------------------------
-  33:			
-  34:			
-  35:			; ---------------------------------------------------------------------
-  36:			; SYSBIOS
-  37:			;
-  38:			; This is the BIOS non-resident portion of the new (banked)
-  39:			; BIOS/Monitor for the NE Z80 (aka DarkStar)
+   8:			; Original code:
+   9:			; Z80 Nuova Elettronica Monitor 390 su eprom 2532 (4k)
+  10:			;
+  11:			; Disassembled and reconstructed by
+  12:			; Piergiorgio Betti <pbetti@lpconsul.net> on 2005 01 26
+  13:			;
+  14:			; Latest non modular BIOS is DARKSTAR-MONITOR-0.9.0.asm
+  15:			; dated 20140531
+  16:			; - Following addition of MultiF-Board doing complete rewrite of the
+  17:			;   monitor/BIOS has been started.
+  18:			;   Major goals:
+  19:			;   o Modularization: Now monitor can grow up to 256kb instead of 4kb
+  20:			;     :-)
+  21:			;   o Specialized images fitted in memory page (4kb) or multiples
+  22:			;   o Full support for new hardware
+  23:			;   o I/O rewrite for MODE 2 interrupts
+  24:			;   Minor goals:
+  25:			;   o Full code clean-up & reoarganization
+  26:			; ---------------------------------------------------------------------
+  27:			; Revisions:
+  28:			; 20140905 - Modified hexadecimal constants to 0xxH format to be widely
+  29:			;            accepted by different assemblers
+  30:			; 20150714 - Modified to implement serial XON/XOFF and RTS/CTS
+  31:			; ---------------------------------------------------------------------
+  32:			
+  33:			; ---------------------------------------------------------------------
+  34:			; SYSBIOS
+  35:			;
+  36:			; This is the BIOS non-resident portion of the new (banked)
+  37:			; BIOS/Monitor for the NE Z80 (aka DarkStar)
+  38:			;
+  39:			; ---------------------------------------------------------------------
   40:			;
-  41:			; ---------------------------------------------------------------------
+  41:			; Full BIOS memory scheme:
   42:			;
-  43:			; Full BIOS memory scheme:
-  44:			;
-  45:			;	+-----------------+
-  46:			;	+    SysCommon    +   <-- Resident portion. Common to all images
-  47:			;	+   FC00 - FFFF   +
-  48:			;	+-----------------+
-  49:			;	+-----------------+   +-----------------+   +-----------------+
-  50:			;	+     SysBios     +   +   BootMonitor   +   +     [Other]     +
-  51:			;	+   F000 - FBFF   +   +   F000 - FBFF   +   +   F000 - FBFF   +
-  52:			;	+-----------------+   +-----------------+   +-----------------+
-  53:			;
-  54:			;	         ^                     ^                     ^
-  55:			;	         |                     |                     |
-  56:			;	         ---------------------------------------------
-  57:			;	                      Variable section
-  58:			;
-  59:			; The above are always assembled at ORG F000 and linked and allocated
-  60:			; in the EEPROM in this way:
-  61:			;
-  62:			;	+-----------------+
-  63:			;	+    SysCommon    +
-  64:			;	+   FC00 - FFFF   +
-  65:			;	+     SysBios     +     <-- EEPROM page 1 ($C1000)
-  66:			;	+   F000 - FBFF   +
-  67:			;	+-----------------+
-  68:			;	+-----------------+
-  69:			;	+    SysCommon    +
-  70:			;	+   FC00 - FFFF   +
-  71:			;	+   BootMonitor   +     <-- EEPROM page 0 ($C0000)
-  72:			;	+   F000 - FBFF   +
-  73:			;	+-----------------+
+  43:			;	+-----------------+
+  44:			;	+    SysCommon    +   <-- Resident portion. Common to all images
+  45:			;	+   FC00 - FFFF   +
+  46:			;	+-----------------+
+  47:			;	+-----------------+   +-----------------+   +-----------------+
+  48:			;	+     SysBios     +   +   BootMonitor   +   +     [Other]     +
+  49:			;	+   F000 - FBFF   +   +   F000 - FBFF   +   +   F000 - FBFF   +
+  50:			;	+-----------------+   +-----------------+   +-----------------+
+  51:			;
+  52:			;	         ^                     ^                     ^
+  53:			;	         |                     |                     |
+  54:			;	         ---------------------------------------------
+  55:			;	                      Variable section
+  56:			;
+  57:			; The above are always assembled at ORG F000 and linked and allocated
+  58:			; in the EEPROM in this way:
+  59:			;
+  60:			;	+-----------------+
+  61:			;	+    SysCommon    +
+  62:			;	+   FC00 - FFFF   +
+  63:			;	+     SysBios     +     <-- EEPROM page 1 ($C1000)
+  64:			;	+   F000 - FBFF   +
+  65:			;	+-----------------+
+  66:			;	+-----------------+
+  67:			;	+    SysCommon    +
+  68:			;	+   FC00 - FFFF   +
+  69:			;	+   BootMonitor   +     <-- EEPROM page 0 ($C0000)
+  70:			;	+   F000 - FBFF   +
+  71:			;	+-----------------+
+  72:			;
+  73:			; ---------------------------------------------------------------------
   74:			;
-  75:			; ---------------------------------------------------------------------
+  75:			; Define which assembler we are using
   76:			;
-  77:			; Define which assembler we are using
-  78:			;
-  79:			
-  80:			; PASMO	EQU	1
-  81:	0001          	MZMAC	EQU	1
-  82:			; ZMAC	EQU	1			; ZMAC Z80 assembler, not Linux/Unix version
+  77:			
+  78:			; PASMO	equ	1
+  79:	0001          	mzmac	equ	1
+  80:			; ZMAC	equ	1			; ZMAC Z80 assembler, not Linux/Unix version
+  81:			
+  82:			; ... only one at a time can be active (1) ...
   83:			
-  84:			; ... only one at a time can be active (1) ...
-  85:			
+  84:			;
+  85:			; Monitor version numbers (major.minor)
   86:			;
-  87:			; Monitor version numbers (major.minor)
-  88:			;
-  89:	0033          	MONMAJ		EQU	'3'
-  90:	0033          	MONMIN		EQU	'3'
-  91:			
+  87:	0033          	monmaj		equ	'3'
+  88:	0034          	monmin		equ	'4'
+  89:			
+  90:			;
+  91:			; Buffers addresses labels
   92:			;
-  93:			; Buffers addresses labels
-  94:			;
-  95:			
-  96:			; -- Global --
-  97:	0003          	IOBYTE		EQU	0003H		; byte: Intel IOBYTE (CP/M 2.2 only)
-  98:	0004          	CDISK		EQU	0004H		; byte: Last logged drive
-  99:	0006          	BTPASIZ		EQU	0006H		; word: size of tpa + 1
- 100:			;
- 101:			; -- Private --
- 102:	000B          	HMEMPAG		EQU	000BH		; byte: highest ram page
- 103:	000C          	BBCBANK		EQU	000CH		; byte: current bank
- 104:	000D          	BBCSTCK		EQU	000DH		; word: current stack
- 105:					;
- 106:	004F          	PRVTOP		EQU	004FH		; top of private area storage
- 107:	004F          	COLBUF		EQU	PRVTOP		; byte:
- 108:	004E          	DSELBF		EQU	COLBUF-1	; byte: floppy drive select status
- 109:								; - bits: 0 = drive 0
- 110:								; - bits: 1 = drive 1
- 111:								; - bits: 2 = drive 2
- 112:								; - bits: 3 = drive 3
- 113:								; - bits: 4 = unused
- 114:								; - bits: 5 = head select
- 115:								; - bits: 6 = motor on (disabled by jumper)
- 116:								; - bits: 7 = unused
- 117:	004D          	KBDBYTE		EQU	DSELBF-1	; byte: store keyboard input
- 118:	004C          	MIOBYTE		EQU	KBDBYTE-1	; byte:
- 119:								; - bits: 0: 0 = floppy write		1 = floppy read
- 120:								;         1: 0 = no ctrl on keypress	1 = ctrl on keypress
- 121:								;         2: 0 = scroll			1 = no scroll
- 122:								;         3: 0 = accept lowercase	1 = convert to uppercase
- 123:								;         4: 0 = destr. bkspace		1 = non destr. bkspace
- 124:								;         5: 0 = console out		1 = serial out
- 125:								;         6: 0 = disp. all chars	1 = obscure non punct.
- 126:								;         7: 0 = ctrl chr set 1		1 = ctrl chr set 2
- 127:	004B          	TMPBYTE		EQU	MIOBYTE-1	; byte: transients flags
- 128:								; - bits: 0: 0 = high in cursor addressing
- 129:								;         1: 0 = ESC catched by ANSI driver
- 130:								;         2: 0 = CSI catched by ANSI driver
- 131:								;         3: 0 = Two byte code ESC seq. from serial
- 132:								;         4: 0 = Plain serial i/o (disable ANSI driver)
- 133:								;         5: 0 = store interrupt status (on/off)
- 134:								;         6: 0 = floppy home on err	1 = no home on err
- 135:								;         7: 0 = unlock LBA free addressing (unpartitioned)
- 136:	004A          	CURSSHP		EQU	TMPBYTE-1	; cursor shape
- 137:	0048          	CURPBUF		EQU	CURSSHP-2	; word: cursor position
- 138:	0046          	FTRKBUF		EQU	CURPBUF-2	; word: track # for i/o (0 - 65535)
- 139:	0045          	FDRVBUF		EQU	FTRKBUF-1	; byte: drive number for i/0 (0 - 15)
- 140:	0043          	FSECBUF		EQU	FDRVBUF-2	; word: sector # for i/o (1 .. 65535)
- 141:	0041          	FRDPBUF		EQU	FSECBUF-2	; word: dma address for i/o
- 142:	003F          	FSEKBUF		EQU	FRDPBUF-2	; word: current track number for drive A/B
- 143:	003E          	RAM3BUF		EQU	FSEKBUF-1	; byte:
- 144:	003D          	RAM2BUF		EQU	RAM3BUF-1	; byte:
- 145:	003C          	RAM1BUF		EQU	RAM2BUF-1	; byte:
- 146:	003B          	RAM0BUF		EQU	RAM1BUF-1	; byte:
- 147:	003A          	RST7SP3		EQU	003AH		; keep clear area of RST38 (RST7)
- 148:	0039          	RST7SP2		EQU	0039H
- 149:	0038          	RST7SP1		EQU	0038H
- 150:	002F          	RSRVBUF		EQU	RST7SP1-9	; free 9 byte buffer
- 151:	002D          	APPBUF		EQU	RSRVBUF-2	; word: generic buffer
- 152:	002C          	COPSYS		EQU	APPBUF-1	; Op system type for partition selection
- 153:	002B          	UART0BR		EQU	COPSYS-1	; UART 0 baudrate
- 154:	002A          	UART1BR		EQU	UART0BR-1	; UART 1 baudrate
- 155:	0029          	CTC0TC		EQU	UART1BR-1	; CTC channel 0 time constant
- 156:	0028          	CTC1TC		EQU	CTC0TC-1	; CTC channel 1 time constant
- 157:	0027          	TIMRCON		EQU	CTC1TC-1	; timer buf
- 158:	0026          	CNFBYTE		EQU	TIMRCON-1	; config byte
- 159:								; - bits: 0: 0 = UART1 intr disabled	1 = RST8 redir UART1
- 160:								;         1: 0 = unused/reserved
- 161:								;         2: 0 = unused/reserved
- 162:								;         3: 0 = unused/reserved
- 163:								;         4: 0 = unused/reserved
- 164:								;         5: 0 = unused/reserved
- 165:								;         6: 0 = unused/reserved
- 166:								;         7: 0 = unused/reserved
- 167:	000F          	FIFOSTO		EQU	000FH		; fifo queues storage start
- 168:	0008          	FIFSIZE		EQU	8		; fifo queue lenght
- 169:	000B          	FIFBLOK		EQU	11		; fifo queue size
- 170:	000F          	FIFOU0		EQU	FIFOSTO		; uart 0 queue (alternate console)
- 171:	001A          	FIFOKB		EQU	FIFOU0+FIFBLOK	; keyboard queue
- 172:	0025          	FIFOEND		EQU	FIFOKB+FIFBLOK	; fifo blocks end
- 173:			;
- 174:	3000          	BLDOFFS		EQU	3000H		; place for disk bootloader
- 175:			
- 176:			;
- 177:			; Some commodity equs
- 178:			;
- 179:	000D          	CR		EQU	0DH		; ascii CR & LF
- 180:	000A          	LF		EQU	0AH
- 181:	000C          	FF		EQU	0CH		; FORM FEED (clear screen)
- 182:	001B          	ESC		EQU	1BH		; ESCape
- 183:	FFFF          	TRUE		EQU	-1
- 184:	0000          	FALSE		EQU	0
- 185:	0100          	TPA		EQU	0100H		; TPA base address (for CP/M)
- 186:			
- 187:			;
- 188:			; Modules equs
- 189:			;
- 190:				; delay
- 191:	00F6          	MSCNT		EQU	246
- 192:				; mmu
- 193:	000D          	MMUTSTPAGE	EQU	0DH		; logical page used for sizing
- 194:	D000          	MMUTSTADDR	EQU	MMUTSTPAGE<<12	; logical page used for sizing
- 195:			
- 196:			; Conventionally all bios/monitor images start at $F000.
- 197:			; Except for special cases all code is copied to ram @ $F000.
- 198:			; In this case eeprom page 0 is directly mapped into logical space
- 199:			; by hardware so we can initialize the system at cold boot.
- 200:			;
- 201:			; We assume to initialize MMU as follow:
- 202:			;
- 203:			; +--------+
- 204:			; |  F000  |	-> $C0000  eeprom page 0
- 205:			; +--------+
+  93:			
+  94:			; -- Global --
+  95:	0003          	iobyte		equ	0003h		; byte: Intel IOBYTE (CP/M 2.2 only)
+  96:	0004          	cdisk		equ	0004h		; byte: Last logged drive
+  97:	0006          	btpasiz		equ	0006h		; word: size of tpa + 1
+  98:			;
+  99:			; -- Private --
+ 100:	000B          	hmempag		equ	000bh		; byte: highest ram page
+ 101:	000C          	bbcbank		equ	000ch		; byte: current bank
+ 102:	000D          	bbcstck		equ	000dh		; word: current stack
+ 103:					;
+ 104:	004F          	prvtop		equ	004fh		; top of private area storage
+ 105:	004F          	colbuf		equ	prvtop		; byte:
+ 106:	004E          	dselbf		equ	colbuf-1	; byte: floppy drive select status
+ 107:								; - bits: 0 = drive 0
+ 108:								; - bits: 1 = drive 1
+ 109:								; - bits: 2 = drive 2
+ 110:								; - bits: 3 = drive 3
+ 111:								; - bits: 4 = unused
+ 112:								; - bits: 5 = head select
+ 113:								; - bits: 6 = motor on (disabled by jumper)
+ 114:								; - bits: 7 = unused
+ 115:	004D          	kbdbyte		equ	dselbf-1	; byte: store keyboard input
+ 116:	004C          	miobyte		equ	kbdbyte-1	; byte:
+ 117:								; - bits: 0: 0 = floppy write		1 = floppy read
+ 118:								;         1: 0 = no ctrl on keypress	1 = ctrl on keypress
+ 119:								;         2: 0 = scroll			1 = no scroll
+ 120:								;         3: 0 = accept lowercase	1 = convert to uppercase
+ 121:								;         4: 0 = destr. bkspace		1 = non destr. bkspace
+ 122:								;         5: 0 = console out		1 = serial out
+ 123:								;         6: 0 = disp. all chars	1 = obscure non punct.
+ 124:								;         7: 0 = ctrl chr set 1		1 = ctrl chr set 2
+ 125:	004B          	tmpbyte		equ	miobyte-1	; byte: transients flags
+ 126:								; - bits: 0: 0 = high in cursor addressing
+ 127:								;         1: 0 = ESC catched by ANSI driver
+ 128:								;         2: 0 = CSI catched by ANSI driver
+ 129:								;         3: 0 = Two byte code ESC seq. from serial
+ 130:								;         4: 0 = Plain serial i/o (disable ANSI driver)
+ 131:								;         5: 0 = store interrupt status (on/off)
+ 132:								;         6: 0 = floppy home on err	1 = no home on err
+ 133:								;         7: 0 = unlock LBA free addressing (unpartitioned)
+ 134:	004A          	cursshp		equ	tmpbyte-1	; cursor shape
+ 135:	0048          	curpbuf		equ	cursshp-2	; word: cursor position
+ 136:	0046          	ftrkbuf		equ	curpbuf-2	; word: track # for i/o (0 - 65535)
+ 137:	0045          	fdrvbuf		equ	ftrkbuf-1	; byte: drive number for i/0 (0 - 15)
+ 138:	0043          	fsecbuf		equ	fdrvbuf-2	; word: sector # for i/o (1 .. 65535)
+ 139:	0041          	frdpbuf		equ	fsecbuf-2	; word: dma address for i/o
+ 140:	003F          	fsekbuf		equ	frdpbuf-2	; word: current track number for drive A/B
+ 141:	003E          	ram3buf		equ	fsekbuf-1	; byte:
+ 142:	003D          	ram2buf		equ	ram3buf-1	; byte:
+ 143:	003C          	ram1buf		equ	ram2buf-1	; byte:
+ 144:	003B          	ram0buf		equ	ram1buf-1	; byte:
+ 145:	003A          	rst7sp3		equ	003ah		; keep clear area of RST38 (RST7)
+ 146:	0039          	rst7sp2		equ	0039h
+ 147:	0038          	rst7sp1		equ	0038h
+ 148:	0036          	vstabuf		equ	rst7sp1-2	; word: Display start addr
+ 149:	002F          	rsrvbuf		equ	vstabuf-7	; free 7 byte buffer
+ 150:	002D          	appbuf		equ	rsrvbuf-2	; word: generic buffer
+ 151:	002C          	copsys		equ	appbuf-1	; Op system type for partition selection
+ 152:	002B          	uart0br		equ	copsys-1	; UART 0 baudrate
+ 153:	002A          	uart1br		equ	uart0br-1	; UART 1 baudrate
+ 154:	0029          	ctc0tc		equ	uart1br-1	; CTC channel 0 time constant
+ 155:	0028          	ctc1tc		equ	ctc0tc-1	; CTC channel 1 time constant
+ 156:	0027          	timrcon		equ	ctc1tc-1	; timer buf
+ 157:	0026          	cnfbyte		equ	timrcon-1	; config byte
+ 158:								; - bits: 0: 0 = UART1 intr disabled	1 = RST8 redir UART1
+ 159:								;         1: 1 = XON/XOFF enabled on UART0
+ 160:								;         2: 1 = RTS/CTS enabled on UART0
+ 161:								;         3: 0 = unused/reserved
+ 162:								;         4: 0 = unused/reserved
+ 163:								;         5: 0 = unused/reserved
+ 164:								;         6: 0 = unused/reserved
+ 165:								;         7: 0 = unused/reserved
+ 166:	000F          	fifosto		equ	000fh		; fifo queues storage start
+ 167:	0008          	fifsize		equ	8		; fifo queue lenght
+ 168:	000B          	fifblok		equ	11		; fifo queue size
+ 169:	000F          	fifou0		equ	fifosto		; uart 0 queue (alternate console)
+ 170:	001A          	fifokb		equ	fifou0+fifblok	; keyboard queue
+ 171:	0025          	fifoend		equ	fifokb+fifblok	; fifo blocks end
+ 172:			;
+ 173:	3000          	bldoffs		equ	3000h		; place for disk bootloader
+ 174:			
+ 175:			;
+ 176:			; Some commodity equs
+ 177:			;
+ 178:	000D          	cr		equ	0dh		; ascii CR & LF
+ 179:	000A          	lf		equ	0ah
+ 180:	000C          	ff		equ	0ch		; FORM FEED (clear screen)
+ 181:	001B          	esc		equ	1bh		; ESCape
+ 182:	0011          	xonc		equ	11h		; Xon
+ 183:	0013          	xofc		equ	13h		; Xoff
+ 184:	FFFF          	true		equ	-1
+ 185:	0000          	false		equ	0
+ 186:	0100          	tpa		equ	0100h		; TPA base address (for CP/M)
+ 187:			
+ 188:			;
+ 189:			; Modules equs
+ 190:			;
+ 191:				; delay
+ 192:	00F6          	mscnt		equ	246
+ 193:				; mmu
+ 194:	000D          	mmutstpage	equ	0dh		; logical page used for sizing
+ 195:	D000          	mmutstaddr	equ	mmutstpage<<12	; logical page used for sizing
+ 196:			
+ 197:			; Conventionally all bios/monitor images start at $F000.
+ 198:			; Except for special cases all code is copied to ram @ $F000.
+ 199:			; In this case eeprom page 0 is directly mapped into logical space
+ 200:			; by hardware so we can initialize the system at cold boot.
+ 201:			;
+ 202:			; We assume to initialize MMU as follow:
+ 203:			;
+ 204:			; +--------+
+ 205:			; |  F000  |	-> $C0000  eeprom page 0
  206:			; +--------+
- 207:			; |  EFFF  |
- 208:			; +--------+
- 209:			;     ...       -> $00000 to $0EFFF ram
- 210:			; +--------+
- 211:			; |  0000  |
- 212:			; +--------+
- 213:			;
- 214:			
+ 207:			; +--------+
+ 208:			; |  EFFF  |
+ 209:			; +--------+
+ 210:			;     ...       -> $00000 to $0EFFF ram
+ 211:			; +--------+
+ 212:			; |  0000  |
+ 213:			; +--------+
+ 214:			;
  215:			
- 216:			; include	modules/hwequs.inc.asm
- 217:			; Hardware equates
- 218:			; ---------------------------------------------------------------------
- 219:			
- 220:			; ---------------------------------------------------------------------
- 221:			; LX529 VIDEO BOARD:
- 222:			; ---------------------------------------------------------------------
- 223:	0080          	CRTBASE		EQU	80H
- 224:				; RAM0 for ascii chars & semi6. Combined with RAM1 and RAM2 for graphics
- 225:	0080          	CRTRAM0DAT	EQU	CRTBASE		; RAM0 access: PIO0 port A data register
- 226:	0082          	CRTRAM0CNT	EQU	CRTBASE+2	; RAM0 access: PIO0 port A control register
- 227:				; Printer port
- 228:	0081          	CRTPRNTDAT	EQU	CRTBASE+1	; PRINTER (output): PIO0 port B data register
- 229:	0083          	CRTPRNTCNT	EQU	CRTBASE+3	; PRINTER (output): PIO0 port B control register
- 230:								; STROBE is generated by hardware
- 231:				; RAM1 for graphics. (pixel index by RAM0+RAM1+RAM2)
- 232:	0084          	CRTRAM1DAT	EQU	CRTBASE+4	; RAM1 access: PIO1 port A data register
- 233:	0086          	CRTRAM1CNT	EQU	CRTBASE+6	; RAM1 access: PIO1 port A control register
- 234:				; Keyboard port (negated). Bit 7 is for strobe
- 235:	0085          	CRTKEYBDAT	EQU	CRTBASE+5	; KEYBOARD (input): PIO1 port B data register
- 236:	0087          	CRTKEYBCNT	EQU	CRTBASE+7	; KEYBOARD (input): PIO1 port B control register
- 237:	0007          	KEYBSTRBBIT	EQU	7		; Strobe bit
- 238:				; RAM2 for graphics. (pixel index by RAM0+RAM1+RAM2)
- 239:	0088          	CRTRAM2DAT	EQU	CRTBASE+8	; RAM2 access: PIO2 port A data register
- 240:	008A          	CRTRAM2CNT	EQU	CRTBASE+10	; RAM2 access: PIO2 port A control register
- 241:				; Service/User port
- 242:	0089          	CRTSERVDAT	EQU	CRTBASE+9	; Service (i/o): PIO2 port B data register
- 243:	008B          	CRTSERVCNT	EQU	CRTBASE+11	; Service (i/o): PIO2 port B control register
- 244:	0000          	PRNTBUSYBIT	EQU	0		; Printer BUSY bit		(in)	1
- 245:	0001          	CRTWIDTHBIT	EQU	1		; Set 40/80 chars per line	(out)	0
- 246:	0002          	PIO2BIT2	EQU	2		; user 1 (input)		(in)	1
- 247:	0003          	PIO2BIT3	EQU	3		; user 2 (input)		(in)	1
- 248:	0004          	PIO2BIT4	EQU	4		; user 3 (input)		(in)	1
- 249:	0005          	CLKSCLK		EQU	5		; DS1320 clock line		(out)	0
- 250:	0006          	CLKIO		EQU	6		; DS1320 I/O line		(i/o)	1
- 251:	0007          	CLKRST		EQU	7		; DS1320 RST line		(out)	0
- 252:				; normal set for PIO2 (msb) 01011101 (lsb) that is hex $5D
- 253:								; Other bits available to user
- 254:				; RAM3 control chars/graphics attributes
- 255:	008E          	CRTRAM3PORT	EQU	CRTBASE+14	; RAM3 port
- 256:	0000          	CRTBLINKBIT	EQU	0		; Blink
- 257:	0001          	CRTREVRSBIT	EQU	1		; Reverse
- 258:	0002          	CRTUNDERBIT	EQU	2		; Underline
- 259:	0003          	CRTHILITBIT	EQU	3		; Highlight
- 260:	0004          	CRTMODEBIT	EQU	4		; ASCII/GRAPHIC mode
- 261:				; Beeper port
- 262:	008F          	CRTBEEPPORT	EQU	CRTBASE+15	; Beeper port
- 263:				; 6545 CRT controller ports
- 264:	008C          	CRT6545ADST	EQU	CRTBASE+12	; Address & Status register
- 265:	008D          	CRT6545DATA	EQU	CRTBASE+13	; Data register
- 266:				; Cursor modes
- 267:	0040          	BLISLOWBLOK	EQU	40H		; Blink, slow, block
- 268:	004A          	BLISLOWLINE	EQU	4AH		; Blink, slow, line
- 269:	0060          	BLIFASTBLOK	EQU	60H		; Blink, fast, block
- 270:	006A          	BLIFASTLINE	EQU	6AH		; Blink, fast, line
- 271:	0020          	CURSOROFF	EQU	20H		; Off
- 272:	0000          	FIXBLOCK	EQU	00H		; Fixed, block
- 273:	000A          	CURSORON	EQU	0AH		; On
- 274:			
- 275:			; ---------------------------------------------------------------------
- 276:			; LX390 FDC CONTROLLER:
- 277:			; ---------------------------------------------------------------------
- 278:	00D0          	FDCBASE		EQU	0D0H
- 279:	00D0          	FDCCMDSTATR	EQU	FDCBASE		; Command and status register
- 280:	00D1          	FDCTRAKREG	EQU	FDCBASE+1	; Track register
- 281:	00D2          	FDCSECTREG	EQU	FDCBASE+2	; Sector register
- 282:	00D7          	FDCDATAREG	EQU	FDCBASE+7	; Data register *** Verificare che sia $d7
- 283:	00D6          	FDCDRVRCNT	EQU	FDCBASE+6	; Driver select/control register
- 284:			;
- 285:	0007          	FDCRESTC	EQU	00000111b	; 1771 restore (seek to trak 0) cmd
- 286:	0017          	FDCSEEKC	EQU	00010111b	; seek cmd
- 287:	0088          	FDCREADC	EQU	10001000b	; read cmd
- 288:	00A8          	FDCWRITC	EQU	10101000b	; write cmd
- 289:	00D0          	FDCRESET	EQU	11010000b	; fdc reset immediate cmd
- 290:			; ---------------------------------------------------------------------
- 291:			; LX389: PARALLEL INTERFACE
- 292:			; ---------------------------------------------------------------------
- 293:			; alternate printer port
- 294:	0003          	ALTPRNPRT	EQU	03H
- 295:			;
- 296:			; parallel port PC link
- 297:	0003          	PPDATAP		EQU	03H		; Data port
- 298:	0002          	PPCNTRP		EQU	02H		; Control port
- 299:	0000          	PPSTROB		EQU	0		; Strobe bit
- 300:	0001          	PPAKSTB		EQU	1		; Acknowledge/Stop bit
- 301:			;
- 302:	0000          	PPDINI		EQU	00H		; 00000000 Dnl Init byte
- 303:	0004          	PPDRDY		EQU	04H		; 00000100 Dnl Ready
- 304:	0006          	PPDSTP		EQU	06H		; 00000110 Dnl Stop
- 305:	0002          	PPDOKG		EQU	02H		; 00000010 Dnl Ok Go
- 306:	0001          	PPUINI		EQU	01H		; 00000001 Upl Init byte
- 307:	0005          	PPURDY		EQU	05H		; 00000101 Upl Ready
- 308:	0007          	PPUACK		EQU	07H		; 00000111 Upl Acknowledge
- 309:	0003          	PPUOKG		EQU	03H		; 00000011 Upl Ok Go
- 310:			;
- 311:			; virtual disks (PC-linked over parallel port)
- 312:	0000          	VDRDSEC		EQU	0		; read sector command
- 313:	0001          	VDWRSEC		EQU	1		; write sector command
- 314:	000A          	VDBUFSZ		EQU	10		; 10 bytes block
+ 216:			
+ 217:			; include	modules/hwequs.inc.asm
+ 218:			; Hardware equates
+ 219:			; ---------------------------------------------------------------------
+ 220:			
+ 221:			; ---------------------------------------------------------------------
+ 222:			; LX529 VIDEO BOARD:
+ 223:			; ---------------------------------------------------------------------
+ 224:	0080          	crtbase		equ	80h
+ 225:				; RAM0 for ascii chars & semi6. Combined with RAM1 and RAM2 for graphics
+ 226:	0080          	crtram0dat	equ	crtbase		; RAM0 access: PIO0 port A data register
+ 227:	0082          	crtram0cnt	equ	crtbase+2	; RAM0 access: PIO0 port A control register
+ 228:				; Printer port
+ 229:	0081          	crtprntdat	equ	crtbase+1	; PRINTER (output): PIO0 port B data register
+ 230:	0083          	crtprntcnt	equ	crtbase+3	; PRINTER (output): PIO0 port B control register
+ 231:								; STROBE is generated by hardware
+ 232:				; RAM1 for graphics. (pixel index by RAM0+RAM1+RAM2)
+ 233:	0084          	crtram1dat	equ	crtbase+4	; RAM1 access: PIO1 port A data register
+ 234:	0086          	crtram1cnt	equ	crtbase+6	; RAM1 access: PIO1 port A control register
+ 235:				; Keyboard port (negated). Bit 7 is for strobe
+ 236:	0085          	crtkeybdat	equ	crtbase+5	; KEYBOARD (input): PIO1 port B data register
+ 237:	0087          	crtkeybcnt	equ	crtbase+7	; KEYBOARD (input): PIO1 port B control register
+ 238:	0007          	keybstrbbit	equ	7		; Strobe bit
+ 239:				; RAM2 for graphics. (pixel index by RAM0+RAM1+RAM2)
+ 240:	0088          	crtram2dat	equ	crtbase+8	; RAM2 access: PIO2 port A data register
+ 241:	008A          	crtram2cnt	equ	crtbase+10	; RAM2 access: PIO2 port A control register
+ 242:				; Service/User port
+ 243:	0089          	crtservdat	equ	crtbase+9	; Service (i/o): PIO2 port B data register
+ 244:	008B          	crtservcnt	equ	crtbase+11	; Service (i/o): PIO2 port B control register
+ 245:	0000          	prntbusybit	equ	0		; Printer BUSY bit		(in)	1
+ 246:	0001          	crtwidthbit	equ	1		; Set 40/80 chars per line	(out)	0
+ 247:	0002          	pio2bit2	equ	2		; user 1 (input)		(in)	1
+ 248:	0003          	pio2bit3	equ	3		; user 2 (input)		(in)	1
+ 249:	0004          	pio2bit4	equ	4		; user 3 (input)		(in)	1
+ 250:	0005          	clksclk		equ	5		; DS1320 clock line		(out)	0
+ 251:	0006          	clkio		equ	6		; DS1320 I/O line		(i/o)	1
+ 252:	0007          	clkrst		equ	7		; DS1320 RST line		(out)	0
+ 253:				; normal set for PIO2 (msb) 01011101 (lsb) that is hex $5D
+ 254:								; Other bits available to user
+ 255:				; RAM3 control chars/graphics attributes
+ 256:	008E          	crtram3port	equ	crtbase+14	; RAM3 port
+ 257:	0000          	crtblinkbit	equ	0		; Blink
+ 258:	0001          	crtrevrsbit	equ	1		; Reverse
+ 259:	0002          	crtunderbit	equ	2		; Underline
+ 260:	0003          	crthilitbit	equ	3		; Highlight
+ 261:	0004          	crtmodebit	equ	4		; ASCII/GRAPHIC mode
+ 262:				; Beeper port
+ 263:	008F          	crtbeepport	equ	crtbase+15	; Beeper port
+ 264:				; 6545 CRT controller ports
+ 265:	008C          	crt6545adst	equ	crtbase+12	; Address & Status register
+ 266:	008D          	crt6545data	equ	crtbase+13	; Data register
+ 267:				; Cursor modes
+ 268:	0040          	blislowblok	equ	40h		; Blink, slow, block
+ 269:	004A          	blislowline	equ	4ah		; Blink, slow, line
+ 270:	0060          	blifastblok	equ	60h		; Blink, fast, block
+ 271:	006A          	blifastline	equ	6ah		; Blink, fast, line
+ 272:	0020          	cursoroff	equ	20h		; Off
+ 273:	0000          	fixblock	equ	00h		; Fixed, block
+ 274:	000A          	cursoron	equ	0ah		; On
+ 275:				; 6545 register index
+ 276:	0000          	vr0.hrtot	equ	0		; Total horizontal chars
+ 277:	0001          	vr1.hrdis	equ	1		; Total horizontal displayed ch.
+ 278:	0002          	vr2.hrsyncpos	equ	2		; Horizontal sync position
+ 279:	0003          	vr3.hrvrsyncw	equ	3		; Hsync and vsync width
+ 280:								; (bit 0-3 hsync, bit 4-7 vsync)
+ 281:	0004          	vr4.vrchrow	equ	4		; Total ch. rows in a frame
+ 282:	0005          	vr5.vradj	equ	5		; Vertical additional scan lines
+ 283:	0006          	vr6.vrdisrows	equ	6		; Displayed char rows
+ 284:	0007          	vr7.vrsyncpos	equ	7		; Vertical sync position
+ 285:	0008          	vr8.crtmode	equ	8		; Operating mode
+ 286:								; 76543210
+ 287:								; ||||||++ Interlace
+ 288:								; |||||+-- Addressing bin/rowcol
+ 289:								; ||||+--- Memory shared/transp.
+ 290:								; |||+---- Display delay no/yes
+ 291:								; ||+----- Cursor delay no/yes
+ 292:								; |+------ Pin 34 addr/strobe
+ 293:								; |------- Access blank/interl.
+ 294:	0009          	vr9.scanlines	equ	9		; Scan lines per char row
+ 295:	000A          	vr10.crstart	equ	10		; Cursor start line bit 0-4
+ 296:								; bit 6-5
+ 297:								;     0 0 = No blink
+ 298:								;     0 1 = No cursor
+ 299:								;     1 0 = Blink 1/16 rate
+ 300:								;     1 1 = Blink 1/32 rate
+ 301:	000B          	vr11.crend	equ	11		; Cursor end line bit 0-4
+ 302:	000C          	vr12.dstarth	equ	12		; Display start address high
+ 303:	000D          	vr13.dstartl	equ	13		; Display start address low
+ 304:	000E          	vr14.curposh	equ	14		; Cursor position high
+ 305:	000F          	vr15.curposl	equ	15		; Cursor position low
+ 306:	0010          	vr16.lpenh	equ	16		; LPEN position high
+ 307:	0011          	vr17.lpenl	equ	17		; LPEN position low
+ 308:	0012          	vr18.updaddrh	equ	18		; Update (next char) address H
+ 309:	0013          	vr19.updaddrl	equ	19		; Update (next char) address L
+ 310:	001F          	vr31.dummy	equ	31		; Dummy register for transparent
+ 311:								; addressing update checkin
+ 312:	07CF          	endvid		equ	07cfh		; end video cursor (25*80)
+ 313:			; ---------------------------------------------------------------------
+ 314:			; LX390 FDC CONTROLLER:
  315:			; ---------------------------------------------------------------------
- 316:			; MULTF-BOARD: MMU, IDE, SERIAL, CTC
- 317:			; ---------------------------------------------------------------------
- 318:			; -- I/O --
- 319:	0020          	MMUPORT		EQU	20H
- 320:	0021          	MENAPRT		EQU	21H
- 321:			; -- Map --
- 322:	00C0          	EEPAGE0		EQU	0C0H		; page 0 of eeprom
- 323:	F000          	EEPSTA		EQU	0F000H		; eeprom location after MMU reset
- 324:	00EF          	MMTPAPAG	EQU	(EEPSTA>>8)-1	; TPA top page (256 bytes pages)
- 325:	00FF          	IMTPAG		EQU	0FFH		; eeprom page with image table
- 326:	0400          	IMTSIZ		EQU	1024		; size
- 327:	E000          	RAMTBL		EQU	0E000H		; ram table location
- 328:	0030          	TBLBLK		EQU	48		; block size
- 329:	0014          	MAXBLK		EQU	20		; max images
- 330:	03C0          	RTBSIZ		EQU	TBLBLK * MAXBLK	; real table size
- 331:								; A table block is:
- 332:	0008          	TNAMELEN	EQU	8		;	name		: 8 bytes
- 333:	0002          	TPAGELEN	EQU	2		;	page offset	: 2 bytes
- 334:	0004          	TIADDRLEN	EQU	4		;	image address	: 4 bytes
- 335:	0004          	TSIZELEN	EQU	4		;	image size	: 4 bytes
- 336:	0014          	TDESCLEN	EQU	20		;	description	: 20 bytes
- 337:			; -- IDE --
- 338:	00E0          	IDEPORTA	EQU	0E0H		;lower 8 bits of IDE interface
- 339:	00E1          	IDEPORTB	EQU	0E1H		;upper 8 bits of IDE interface
- 340:	00E2          	IDEPORTC	EQU	0E2H		;control lines for IDE interface
- 341:	00E3          	IDEPORTCTRL	EQU	0E3H		;8255 configuration port
- 342:			
- 343:	0092          	READCFG8255	EQU	10010010b	;Set 8255 IDEportC to output, IDEportA/B input
- 344:	0080          	WRITECFG8255	EQU	10000000b	;Set all three 8255 ports to output mode
- 345:			;IDE control lines for use with IDEportC.
- 346:	0001          	IDEA0LINE	EQU	01H		;direct from 8255 to IDE interface
- 347:	0002          	IDEA1LINE	EQU	02H		;direct from 8255 to IDE interface
- 348:	0004          	IDEA2LINE	EQU	04H		;direct from 8255 to IDE interface
- 349:	0008          	IDECS0LINE	EQU	08H		;inverter between 8255 and IDE interface
- 350:	0010          	IDECS1LINE	EQU	10H		;inverter between 8255 and IDE interface
- 351:	0020          	IDEWRLINE	EQU	20H		;inverter between 8255 and IDE interface
- 352:	0040          	IDERDLINE	EQU	40H		;inverter between 8255 and IDE interface
- 353:	0080          	IDERSTLINE	EQU	80H		;inverter between 8255 and IDE interface
- 354:			;Symbolic constants for the IDE Drive registers
- 355:	0008          	REGDATA		EQU	IDECS0LINE
- 356:	0009          	REGERR		EQU	IDECS0LINE + IDEA0LINE
- 357:	000A          	REGSECCNT	EQU	IDECS0LINE + IDEA1LINE
- 358:	000B          	REGSECTOR	EQU	IDECS0LINE + IDEA1LINE + IDEA0LINE
- 359:	000C          	REGCYLLSB	EQU	IDECS0LINE + IDEA2LINE
- 360:	000D          	REGCYLMSB	EQU	IDECS0LINE + IDEA2LINE + IDEA0LINE
- 361:	000E          	REGSHD		EQU	IDECS0LINE + IDEA2LINE + IDEA1LINE		;(0EH)
- 362:	000F          	REGCOMMAND	EQU	IDECS0LINE + IDEA2LINE + IDEA1LINE + IDEA0LINE	;(0FH)
- 363:	000F          	REGSTATUS	EQU	IDECS0LINE + IDEA2LINE + IDEA1LINE + IDEA0LINE
- 364:	0016          	REGCONTROL	EQU	IDECS1LINE + IDEA2LINE + IDEA1LINE
- 365:	0016          	REGASTATUS	EQU	IDECS1LINE + IDEA2LINE + IDEA1LINE
- 366:			;IDE Command Constants.
- 367:	0010          	CMDRECAL	EQU	010H
- 368:	0020          	CMDREAD		EQU	020H
- 369:	0030          	CMDWRITE	EQU	030H
- 370:	0091          	CMDINIT		EQU	091H
- 371:	00EC          	CMDID		EQU	0ECH
- 372:	00E0          	CMDSPINDOWN	EQU	0E0H
- 373:	00E1          	CMDSPINUP	EQU	0E1H
- 374:			; -- 16C550 UARTS --
- 375:	00C0          	UART0BASE	EQU	0C0H		; Port base address for 0
- 376:	00C8          	UART1BASE	EQU	0C8H		; Port base address for 1
- 377:	00C0          	UART0		EQU	UART0BASE	; Select UART 0
- 378:	00C8          	UART1		EQU	UART1BASE	; Select UART 1
- 379:	0000          	R0RXTX		EQU	0		; (r/w) RXD/TXD Transmit/Receive Buffer
- 380:	0000          	R0BRDL		EQU	0		; (r/w) DLL  if bit 7 of LCR is set: Baud Rate Divisor LSB
- 381:	0001          	R1IER		EQU	1		; (r/w) IER - Interrupt Enable Register
- 382:	0001          	R1BRDM		EQU	1		; (r/w) DLM if bit 7 of LCR is set: Baud Rate Divisor MSB
- 383:	0002          	R2IIR		EQU	2		; (r)   IIR - Interrupt Identification Register
- 384:	0002          	R2FCR		EQU	2		; (w)   FCR - FIFO Control Register
- 385:	0003          	R3LCR		EQU	3		; (r/w) LCR - Line Control Register
- 386:	0004          	R4MCR		EQU	4		; (r/w) MCR - Modem Control Register
- 387:	0005          	R5LSR		EQU	5		; (r)   LSR - Line Status Register
- 388:	0006          	R6MSR		EQU	6		; (r)   MSR - Modem Status Register
- 389:	0007          	R7SPR		EQU	7		; (r/w) SPR - Scratch Pad Register
- 390:				; speeds:
- 391:	0060          	UART1200	EQU	96		; = 1,843,200 / ( 16 x 1200 )
- 392:	0030          	UART2400	EQU	48		; = 1,843,200 / ( 16 x 2400 )
- 393:	0018          	UART4800	EQU	24		; = 1,843,200 / ( 16 x 4800 )
- 394:	000C          	UART9600	EQU	12		; = 1,843,200 / ( 16 x 9600 )
- 395:	0006          	UART19K2	EQU	06		; = 1,843,200 / ( 16 x 19,200 )
- 396:	0003          	UART38K4	EQU	03		; = 1,843,200 / ( 16 x 38,400 )
- 397:	0002          	UART57K6	EQU	02		; = 1,843,200 / ( 16 x 57,600 )
- 398:	0001          	UART115K2	EQU	01		; = 1,843,200 / ( 16 x 115,200 )
- 399:			
- 400:	0006          	U0DEFSPEED	EQU	UART19K2	; UART 0 default speed
- 401:	000C          	U1DEFSPEED	EQU	UART9600	; UART 1 default speed
- 402:			; -- Z80CTC --
- 403:	00E8          	CTCBASE		EQU	0E8H
- 404:	00E8          	CTCCHAN0	EQU	CTCBASE+0	; Channel 1 - Free
- 405:	00E9          	CTCCHAN1	EQU	CTCBASE+1	; Channel 2 - System Timer
- 406:	00EA          	CTCCHAN2	EQU	CTCBASE+2	; Channel 3 - UART 1 Interrupt
- 407:	00EB          	CTCCHAN3	EQU	CTCBASE+3	; Channel 4 - UART 0 Interrupt
- 408:	0020          	CTC0TCHI	EQU	32		; hi speed chan. 0 tc: 4Mhz / 256 / 32 = 488.28 Hz
- 409:	0005          	CTC1TC100HZ	EQU	5		; lo speed chan. 1 tc: 488.28 Hz / 5 = ~ 97.6 Hz
- 410:	000A          	CTC1TC50HZ	EQU	10		; lo speed chan. 1 tc: 488.28 Hz / 10 = ~ 48.8 Hz
- 411:	0013          	CTC1TC25HZ	EQU	19		; lo speed chan. 1 tc: 488.28 Hz / 19 = ~ 25 Hz
- 412:	0030          	CTC1TC10HZ	EQU	48		; lo speed chan. 1 tc: 488.28 Hz / 48 = ~ 10 Hz
- 413:	00F4          	CTC1TC2HZ	EQU	244		; lo speed chan. 1 tc: 488.28 Hz / 244 = ~ 2 Hz
- 414:	0013          	SYSHERTZ	EQU	CTC1TC25HZ	; System timer hertz
- 415:			; -- EEPROM --
- 416:	0001          	EEP29EE		EQU	01H		; type 29EE020
- 417:	0002          	EEP29XE		EQU	02H		; type 29LE020 or 29VE020
- 418:	0004          	EEP29C		EQU	04H		; type 29C020
- 419:	0008          	EEPUNSUPP	EQU	08H		; unsupported
- 420:	0010          	EEPROGLOCK	EQU	10H		; programming locked
- 421:				;
- 422:	0080          	EERINEPROM	EQU	80H		; tried to program eeprom running inside it
- 423:			
- 424:			;
- 425:			; MMU organization
- 426:			;
- 427:			; MMU manage 16 4kb pages in Z80 address space (logical)
- 428:			; It can assign any of 256 4k pages (physical) from its
- 429:			; 1Mb address space.
- 430:			;
- 431:			; To load phisycal page XXh to logical page (in CPU address space) Y,
- 432:			; you should consider that MMU is at a fixed address 20h and that
- 433:			; logical 4K page Y is derived in the MMU by the usage of A12,A13,A14
- 434:			; and A15 address lines during an I/O instruction.
- 435:			;
- 436:			; So to address phys. ram page 00h at the top of logical space page Fh
- 437:			; you need to have Fh * on top address lines * because this address
- 438:			; is the index to MMU page.
- 439:			;
- 440:			; So:
- 441:			;
- 442:			; 	LD	A,00h		<--- phis. page number	00xxxh (4k page)
- 443:			; 	LD	B,F0h		<--- log. page number 	 Fxxxh (cpu page)
- 444:			; 	LD	C,20h		<--- MMU I/O address
- 445:			; 	OUT	(C),A
- 446:			; 	RET
- 447:			;
- 448:			; The OUT instruction place:
- 449:			; A on data lines D0-D7
- 450:			; Fh (from B register) on A12-A15
- 451:			; on port 20h (C register)
- 452:			;
- 453:			;
- 454:			; Memory is organized as follow:
- 455:			;
- 456:			;	Slot 1	-> RAM	  -> 512k from 00000h to 7ffffh (mandatory)
- 457:			;	Slot 2	-> RAM	  -> 128k from 80000h to 9ffffh (option 1)
- 458:			;	Slot 2	-> RAM    -> 256k from 80000h to bffffh (option 2)
- 459:			;	Slot 3	-> EEPROM -> 256k from c0000h to fffffh (mandatory)
- 460:			;
- 461:			
+ 316:	00D0          	fdcbase		equ	0d0h
+ 317:	00D0          	fdccmdstatr	equ	fdcbase		; Command and status register
+ 318:	00D1          	fdctrakreg	equ	fdcbase+1	; Track register
+ 319:	00D2          	fdcsectreg	equ	fdcbase+2	; Sector register
+ 320:	00D7          	fdcdatareg	equ	fdcbase+7	; Data register *** Verificare che sia $d7
+ 321:	00D6          	fdcdrvrcnt	equ	fdcbase+6	; Driver select/control register
+ 322:			;
+ 323:	0007          	fdcrestc	equ	00000111b	; 1771 restore (seek to trak 0) cmd
+ 324:	0017          	fdcseekc	equ	00010111b	; seek cmd
+ 325:	0088          	fdcreadc	equ	10001000b	; read cmd
+ 326:	00A8          	fdcwritc	equ	10101000b	; write cmd
+ 327:	00D0          	fdcreset	equ	11010000b	; fdc reset immediate cmd
+ 328:			;
+ 329:			; ---------------------------------------------------------------------
+ 330:			; LX389: PARALLEL INTERFACE
+ 331:			; ---------------------------------------------------------------------
+ 332:			; alternate printer port
+ 333:	0003          	altprnprt	equ	03h
+ 334:			;
+ 335:			; parallel port PC link
+ 336:	0003          	ppdatap		equ	03h		; Data port
+ 337:	0002          	ppcntrp		equ	02h		; Control port
+ 338:	0000          	ppstrob		equ	0		; Strobe bit
+ 339:	0001          	ppakstb		equ	1		; Acknowledge/Stop bit
+ 340:			;
+ 341:	0000          	ppdini		equ	00h		; 00000000 Dnl Init byte
+ 342:	0004          	ppdrdy		equ	04h		; 00000100 Dnl Ready
+ 343:	0006          	ppdstp		equ	06h		; 00000110 Dnl Stop
+ 344:	0002          	ppdokg		equ	02h		; 00000010 Dnl Ok Go
+ 345:	0001          	ppuini		equ	01h		; 00000001 Upl Init byte
+ 346:	0005          	ppurdy		equ	05h		; 00000101 Upl Ready
+ 347:	0007          	ppuack		equ	07h		; 00000111 Upl Acknowledge
+ 348:	0003          	ppuokg		equ	03h		; 00000011 Upl Ok Go
+ 349:			;
+ 350:			; virtual disks (PC-linked over parallel port)
+ 351:	0000          	vdrdsec		equ	0		; read sector command
+ 352:	0001          	vdwrsec		equ	1		; write sector command
+ 353:	000A          	vdbufsz		equ	10		; 10 bytes block
+ 354:			; ---------------------------------------------------------------------
+ 355:			; MULTF-BOARD: MMU, IDE, SERIAL, CTC
+ 356:			; ---------------------------------------------------------------------
+ 357:			; -- I/O --
+ 358:	0020          	mmuport		equ	20h
+ 359:	0021          	menaprt		equ	21h
+ 360:			; -- Map --
+ 361:	00C0          	eepage0		equ	0c0h		; page 0 of eeprom
+ 362:	F000          	eepsta		equ	0f000h		; eeprom location after MMU reset
+ 363:	00EF          	mmtpapag	equ	(eepsta>>8)-1	; TPA top page (256 bytes pages)
+ 364:	00FF          	imtpag		equ	0ffh		; eeprom page with image table
+ 365:	0400          	imtsiz		equ	1024		; size
+ 366:	E000          	ramtbl		equ	0e000h		; ram table location
+ 367:	0030          	tblblk		equ	48		; block size
+ 368:	0014          	maxblk		equ	20		; max images
+ 369:	03C0          	rtbsiz		equ	tblblk * maxblk	; real table size
+ 370:								; A table block is:
+ 371:	0008          	tnamelen	equ	8		;	name		: 8 bytes
+ 372:	0002          	tpagelen	equ	2		;	page offset	: 2 bytes
+ 373:	0004          	tiaddrlen	equ	4		;	image address	: 4 bytes
+ 374:	0004          	tsizelen	equ	4		;	image size	: 4 bytes
+ 375:	0014          	tdesclen	equ	20		;	description	: 20 bytes
+ 376:			; -- IDE --
+ 377:	00E0          	ideporta	equ	0e0h		; lower 8 bits of IDE interface
+ 378:	00E1          	ideportb	equ	0e1h		; upper 8 bits of IDE interface
+ 379:	00E2          	ideportc	equ	0e2h		; control lines for IDE interface
+ 380:	00E3          	ideportctrl	equ	0e3h		; 8255 configuration port
+ 381:			
+ 382:	0092          	readcfg8255	equ	10010010b	; Set 8255 IDEportC to output, IDEportA/B input
+ 383:	0080          	writecfg8255	equ	10000000b	; Set all three 8255 ports to output mode
+ 384:			;IDE control lines for use with IDEportC.
+ 385:	0001          	idea0line	equ	01h		; direct from 8255 to IDE interface
+ 386:	0002          	idea1line	equ	02h		; direct from 8255 to IDE interface
+ 387:	0004          	idea2line	equ	04h		; direct from 8255 to IDE interface
+ 388:	0008          	idecs0line	equ	08h		; inverter between 8255 and IDE interface
+ 389:	0010          	idecs1line	equ	10h		; inverter between 8255 and IDE interface
+ 390:	0020          	idewrline	equ	20h		; inverter between 8255 and IDE interface
+ 391:	0040          	iderdline	equ	40h		; inverter between 8255 and IDE interface
+ 392:	0080          	iderstline	equ	80h		; inverter between 8255 and IDE interface
+ 393:			;Symbolic constants for the IDE Drive registers
+ 394:	0008          	regdata		equ	idecs0line
+ 395:	0009          	regerr		equ	idecs0line + idea0line
+ 396:	000A          	regseccnt	equ	idecs0line + idea1line
+ 397:	000B          	regsector	equ	idecs0line + idea1line + idea0line
+ 398:	000C          	regcyllsb	equ	idecs0line + idea2line
+ 399:	000D          	regcylmsb	equ	idecs0line + idea2line + idea0line
+ 400:	000E          	regshd		equ	idecs0line + idea2line + idea1line		;(0EH)
+ 401:	000F          	regcommand	equ	idecs0line + idea2line + idea1line + idea0line	;(0FH)
+ 402:	000F          	regstatus	equ	idecs0line + idea2line + idea1line + idea0line
+ 403:	0016          	regcontrol	equ	idecs1line + idea2line + idea1line
+ 404:	0016          	regastatus	equ	idecs1line + idea2line + idea1line
+ 405:			;IDE Command Constants.
+ 406:	0010          	cmdrecal	equ	010h
+ 407:	0020          	cmdread		equ	020h
+ 408:	0030          	cmdwrite	equ	030h
+ 409:	0091          	cmdinit		equ	091h
+ 410:	00EC          	cmdid		equ	0ech
+ 411:	00E0          	cmdspindown	equ	0e0h
+ 412:	00E1          	cmdspinup	equ	0e1h
+ 413:			; -- 16C550 UARTS --
+ 414:	00C0          	uart0base	equ	0c0h		; Port base address for 0
+ 415:	00C8          	uart1base	equ	0c8h		; Port base address for 1
+ 416:	00C0          	uart0		equ	uart0base	; Select UART 0
+ 417:	00C8          	uart1		equ	uart1base	; Select UART 1
+ 418:	0000          	r0rxtx		equ	0		; (r/w) RXD/TXD Transmit/Receive Buffer
+ 419:	0000          	r0brdl		equ	0		; (r/w) DLL  if bit 7 of LCR is set: Baud Rate Divisor LSB
+ 420:	0001          	r1ier		equ	1		; (r/w) IER - Interrupt Enable Register
+ 421:	0001          	r1brdm		equ	1		; (r/w) DLM if bit 7 of LCR is set: Baud Rate Divisor MSB
+ 422:	0002          	r2iir		equ	2		; (r)   IIR - Interrupt Identification Register
+ 423:	0002          	r2fcr		equ	2		; (w)   FCR - FIFO Control Register
+ 424:	0003          	r3lcr		equ	3		; (r/w) LCR - Line Control Register
+ 425:	0004          	r4mcr		equ	4		; (r/w) MCR - Modem Control Register
+ 426:	0005          	r5lsr		equ	5		; (r)   LSR - Line Status Register
+ 427:	0006          	r6msr		equ	6		; (r)   MSR - Modem Status Register
+ 428:	0007          	r7spr		equ	7		; (r/w) SPR - Scratch Pad Register
+ 429:				; speeds:
+ 430:	0060          	uart1200	equ	96		; = 1,843,200 / ( 16 x 1200 )
+ 431:	0030          	uart2400	equ	48		; = 1,843,200 / ( 16 x 2400 )
+ 432:	0018          	uart4800	equ	24		; = 1,843,200 / ( 16 x 4800 )
+ 433:	000C          	uart9600	equ	12		; = 1,843,200 / ( 16 x 9600 )
+ 434:	0006          	uart19k2	equ	06		; = 1,843,200 / ( 16 x 19,200 )
+ 435:	0003          	uart38k4	equ	03		; = 1,843,200 / ( 16 x 38,400 )
+ 436:	0002          	uart57k6	equ	02		; = 1,843,200 / ( 16 x 57,600 )
+ 437:	0001          	uart115k2	equ	01		; = 1,843,200 / ( 16 x 115,200 )
+ 438:			
+ 439:	0006          	u0defspeed	equ	uart19k2	; UART 0 default speed
+ 440:	000C          	u1defspeed	equ	uart9600	; UART 1 default speed
+ 441:			; -- Z80CTC --
+ 442:	00E8          	ctcbase		equ	0e8h
+ 443:	00E8          	ctcchan0	equ	ctcbase+0	; Channel 1 - Free
+ 444:	00E9          	ctcchan1	equ	ctcbase+1	; Channel 2 - System Timer
+ 445:	00EA          	ctcchan2	equ	ctcbase+2	; Channel 3 - UART 1 Interrupt
+ 446:	00EB          	ctcchan3	equ	ctcbase+3	; Channel 4 - UART 0 Interrupt
+ 447:	0020          	ctc0tchi	equ	32		; hi speed chan. 0 tc: 4Mhz / 256 / 32 = 488.28 Hz
+ 448:	0005          	ctc1tc100hz	equ	5		; lo speed chan. 1 tc: 488.28 Hz / 5 = ~ 97.6 Hz
+ 449:	000A          	ctc1tc50hz	equ	10		; lo speed chan. 1 tc: 488.28 Hz / 10 = ~ 48.8 Hz
+ 450:	0013          	ctc1tc25hz	equ	19		; lo speed chan. 1 tc: 488.28 Hz / 19 = ~ 25 Hz
+ 451:	0030          	ctc1tc10hz	equ	48		; lo speed chan. 1 tc: 488.28 Hz / 48 = ~ 10 Hz
+ 452:	00F4          	ctc1tc2hz	equ	244		; lo speed chan. 1 tc: 488.28 Hz / 244 = ~ 2 Hz
+ 453:	0013          	syshertz	equ	ctc1tc25hz	; System timer hertz
+ 454:			; -- EEPROM --
+ 455:	0001          	eep29ee		equ	01h		; type 29EE020
+ 456:	0002          	eep29xe		equ	02h		; type 29LE020 or 29VE020
+ 457:	0004          	eep29c		equ	04h		; type 29C020
+ 458:	0008          	eepunsupp	equ	08h		; unsupported
+ 459:	0010          	eeproglock	equ	10h		; programming locked
+ 460:				;
+ 461:	0080          	eerineprom	equ	80h		; tried to program eeprom running inside it
  462:			
- 463:			;-------------------------------------
- 464:			; Production / Testing
- 465:			
- 466:	0000          	BBDEBUG	EQU	FALSE
- 467:			
- 468:			
- 469:			;-------------------------------------
- 470:			; Segments, pages locations
- 471:			
- 472:	0000          	IF	BBDEBUG
- 478:			ELSE
- 479:			
- 480:	00C0          	BBIMGP	EQU	EEPAGE0		; Image location
- 481:	000E          	BBAPPP	EQU	0EH
- 482:	000F          	BBPAG	EQU	0FH		; Base page location
- 483:			
- 484:			ENDIF
- 485:			
- 486:	000D          	TRNPAG	EQU	0DH		; Page used for transient MMU ops
- 487:	F000          	BBBASE	EQU	BBPAG << 12	; non resident base address
- 488:	FC00          	BBCOMN	EQU	BBBASE + 0C00H	; resident portion address
- 489:			
- 490:	F000          	SYSBASE EQU	BBBASE		; use this to have 60K TPA
- 491:			; SYSBASE EQU	BBCOMN		; use this to have 63K TPA
- 492:			
- 493:			;-------------------------------------
- 494:			
- 495:	0100          		org	$100
- 496:			
- 497:	0100          	start:
- 498:	0100  110002  		ld	de,512
- 499:	0103  CD2C01  		call	setdprm
- 500:	0106  010000  		ld	bc,$00
- 501:	0109  CD8201  		call	trkset
- 502:	010C  0E01    		ld	c,1			; drive B
- 503:	010E  CD9101  		call	dsksel
- 504:	0111  CD3801  		call	fdrvsel
- 505:	0114  CDC401  		call	fhome
- 506:			; 	ret	nz
- 507:	0117  010030  		ld	bc,bldoffs		; read in loader
- 508:	011A  CD8C01  		call	dmaset
- 509:	011D  010100  		ld	bc,$01
- 510:	0120  CD8701  		call	secset
- 511:	0123  CD0802  		call	fread
- 512:			
- 513:	0126  00      		nop
- 514:	0127  00      		nop
- 515:	0128  00      		nop
- 516:			
- 517:	0129  C30000  		jp	0
- 518:			
- 519:	012C          	SETDPRM:
- 520:	012C  223401  		LD	(CSPTR),HL
- 521:	012F  ED533601		LD	(CSLEN),DE
- 522:	0133  C9      		RET
- 523:			
- 524:	0134  0000    	CSPTR:	DEFW	0
- 525:	0136  0000    	CSLEN:	DEFW	0
+ 463:			;
+ 464:			; MMU organization
+ 465:			;
+ 466:			; MMU manage 16 4kb pages in Z80 address space (logical)
+ 467:			; It can assign any of 256 4k pages (physical) from its
+ 468:			; 1Mb address space.
+ 469:			;
+ 470:			; To load phisycal page XXh to logical page (in CPU address space) Y,
+ 471:			; you should consider that MMU is at a fixed address 20h and that
+ 472:			; logical 4K page Y is derived in the MMU by the usage of A12,A13,A14
+ 473:			; and A15 address lines during an I/O instruction.
+ 474:			;
+ 475:			; So to address phys. ram page 00h at the top of logical space page Fh
+ 476:			; you need to have Fh * on top address lines * because this address
+ 477:			; is the index to MMU page.
+ 478:			;
+ 479:			; So:
+ 480:			;
+ 481:			; 	LD	A,00h		<--- phis. page number	00xxxh (4k page)
+ 482:			; 	LD	B,F0h		<--- log. page number 	 Fxxxh (cpu page)
+ 483:			; 	LD	C,20h		<--- MMU I/O address
+ 484:			; 	OUT	(C),A
+ 485:			; 	RET
+ 486:			;
+ 487:			; The OUT instruction place:
+ 488:			; A on data lines D0-D7
+ 489:			; Fh (from B register) on A12-A15
+ 490:			; on port 20h (C register)
+ 491:			;
+ 492:			;
+ 493:			; Memory is organized as follow:
+ 494:			;
+ 495:			;	Slot 1	-> RAM	  -> 512k from 00000h to 7ffffh (mandatory)
+ 496:			;	Slot 2	-> RAM	  -> 128k from 80000h to 9ffffh (option 1)
+ 497:			;	Slot 2	-> RAM    -> 256k from 80000h to bffffh (option 2)
+ 498:			;	Slot 3	-> EEPROM -> 256k from c0000h to fffffh (mandatory)
+ 499:			;
+ 500:			
+ 501:			;*************************************
+ 502:			; Production / Testing
+ 503:	FFFF          	bbdebug		equ	true
+ 504:			;*************************************
+ 505:			
+ 506:			;-------------------------------------
+ 507:			; Segments, pages locations
+ 508:			
+ 509:	FFFF          	if	bbdebug
+ 510:			
+ 511:	0004          	bbimgp		equ	04h		; Image location (DEBUG)
+ 512:	000E          	bbappp		equ	0eh
+ 513:	000F          	bbpag		equ	0fh		; Base page location
+ 514:			
+ 515:			else
+ 521:			endif
+ 522:			
+ 523:	000D          	trnpag		equ	0dh		; Page used for transient MMU ops
+ 524:	F000          	bbbase		equ	bbpag << 12	; non resident base address
+ 525:	FC00          	bbcomn		equ	bbbase + 0c00h	; resident portion address
  526:			
- 527:			;
- 528:			;=======================================================================
- 529:			;
- 530:			; Modular Z80 DarkStar (NE Z80) Monitor
- 531:			;
- 532:			;=======================================================================
- 533:			;
- 534:			; CP/M 2 or 3 BIOS support utilities
- 535:			; ---------------------------------------------------------------------
- 536:			
- 537:			
- 538:				;       character and disk i/o handlers for cp/m BIOS
- 539:				;	This are moved here from BIOS since we need to keep
- 540:				;	space...
- 541:			;;
- 542:			;; FDRVSEL - select drive for r/w ops
- 543:			;
- 544:	0138          	FDRVSEL:
- 545:	0138  F5      		PUSH	AF			;
- 546:	0139  E5      		PUSH	HL			;
- 547:	013A  215201  		LD	HL,HDRVV		; 10
- 548:	013D  3A4500  		LD	A,(FDRVBUF)		; 13
- 549:	0140  85      		ADD	A,L			; 4
- 550:	0141  6F      		LD	L,A			; 4
- 551:	0142  7E      		LD	A,(HL)			; 7
- 552:	0143  67      		LD	H,A			;
- 553:	0144  3A4E00  		LD	A, (DSELBF)
- 554:	0147  E6F0    		AND	$F0
- 555:	0149  B4      		OR	H
- 556:	014A  324E00  		LD	(DSELBF),A		; 13
- 557:	014D  D3D6    		OUT	(FDCDRVRCNT),A		; 11
- 558:	014F  E1      		POP	HL			;
- 559:	0150  F1      		POP	AF			;
- 560:	0151  C9      		RET				;
- 561:				;
- 562:				; This used to translate the drive number in a cmd byte suitable
- 563:				; for drive selection on the floppy board
- 564:	0152  01      	HDRVV:	DEFB	$01			; drive 1
- 565:	0153  02      		DEFB	$02			; drive 2
- 566:	0154  04      		DEFB	$04			; drive 3
- 567:	0155  08      		DEFB	$08 			; drive 4
- 568:			
- 569:			;;
- 570:			;; CPMBOOT - boostrap cp/m
- 571:			;
- 572:	0156          	CPMBOOT:
- 573:	0156  110002  		LD	DE,512
- 574:	0159  CD2C01  		CALL	SETDPRM
- 575:	015C  010000  		LD	BC,$00
- 576:	015F  CD8201  		CALL	TRKSET
- 577:	0162  3A0400  		LD	A,(CDISK)		; get logged drive
- 578:	0165  4F      		LD	C,A
- 579:	0166  CD9101  		CALL	DSKSEL
- 580:	0169  CD3801  		CALL	FDRVSEL
- 581:	016C  CDC401  		CALL	FHOME
- 582:	016F  010030  		LD	BC,BLDOFFS		; read in loader
- 583:	0172  CD8C01  		CALL	DMASET
- 584:	0175  010100  		LD	BC,$01
- 585:	0178  CD8701  		CALL	SECSET
- 586:	017B  CD0802  		CALL	FREAD
- 587:	017E  C0      		RET	NZ
- 588:	017F  C30230  		JP	BLDOFFS+2		; jump to the loader if all ok
- 589:			
- 590:			
- 591:			;;
- 592:			
- 593:			
- 594:	0182          	TRKSET:
- 595:	0182  ED434600		LD	(FTRKBUF),BC
- 596:	0186  C9      		RET
- 597:	0187          	SECSET:
- 598:	0187  ED434300		LD	(FSECBUF),BC
- 599:	018B  C9      		RET
- 600:	018C          	DMASET:
- 601:	018C  ED434100		LD	(FRDPBUF),BC
- 602:	0190  C9      		RET
- 603:	0191          	DSKSEL:
- 604:	0191  79      		LD	A,C
- 605:	0192  324500  		LD	(FDRVBUF),A
- 606:	0195  C9      		RET
- 607:			
- 608:			
- 609:			
- 610:			;
- 611:			;=======================================================================
- 612:			;
- 613:			; Modular Z80 DarkStar (NE Z80) Monitor
- 614:			;
- 615:			;=======================================================================
- 616:			;
- 617:			; Floppy I/O
- 618:			; ---------------------------------------------------------------------
- 619:			
- 620:			;;
- 621:			;; FDC delay
- 622:			;
- 623:	0196          	FDCDLY:
- 624:	0196  E3      		EX	(SP),HL
- 625:	0197  E3      		EX	(SP),HL
- 626:	0198  E3      		EX	(SP),HL
- 627:	0199  E3      		EX	(SP),HL
- 628:	019A  C9      		RET
- 629:			
- 630:			;;
- 631:			;; waitfd - get 1771 status and copy on buffer
- 632:			;
- 633:	019B          	WAITFD:
- 634:				; wait until fdd busy is reset
- 635:	019B  CD9601  		CALL	FDCDLY			; wait aproax 56 micros
- 636:	019E  0605    		LD	B,5			; set soft timer
- 637:	01A0          	FWAIT00:
- 638:	01A0  110000  		LD	DE,0			; for ~ five seconds
- 639:	01A3          	FWAIT01:
- 640:	01A3  DBD0    		IN	A,(FDCCMDSTATR)		; input to fdd status
- 641:	01A5  CB47    		BIT	0,A			; test busy bit
- 642:	01A7  2811    		JR	Z,FWAIT02		; jump if no command is in progress
- 643:	01A9  1B      		DEC	DE			;
- 644:	01AA  7A      		LD	A,D			; timer down
- 645:	01AB  B3      		OR	E			;
- 646:	01AC  20F5    		JR	NZ,FWAIT01		;
- 647:	01AE  05      		DEC	B			;
- 648:	01AF  20EF    		JR	NZ,FWAIT00		; time out
- 649:	01B1          	FTIMEOUT:
- 650:	01B1  3ED0    		LD	A,FDCRESET		; reset fdd controller
- 651:	01B3  D3D0    		OUT	(FDCCMDSTATR),A		; exec. command
- 652:	01B5  AF      		XOR	A
- 653:	01B6  D3D6    		OUT	(FDCDRVRCNT),A
- 654:	01B8  3C      		INC	A			; set time-out bit error
- 655:	01B9  C9      		RET				; and ret
- 656:	01BA          	FWAIT02:
- 657:			; 	XOR	A
- 658:	01BA  C9      		RET				; normal return
- 659:			;
- 660:	01BB          	GCURTRK:
- 661:	01BB  213F00  		LD	HL,FSEKBUF
- 662:	01BE  3A4500  		LD	A,(FDRVBUF)
- 663:	01C1  85      		ADD	A,L
- 664:	01C2  6F      		LD	L,A
- 665:	01C3  C9      		RET
- 666:			;;
- 667:			;; FHOME - move head to trak 0 (cp/m home like)
- 668:			;;
- 669:	01C4          	FHOME:
- 670:	01C4  C5      		PUSH	BC			; save register
- 671:	01C5  D5      		PUSH	DE
- 672:	01C6  3E07    		LD	A,FDCRESTC		; fdd restore command
- 673:	01C8  D3D0    		OUT	(FDCCMDSTATR),A		; exec. command
- 674:	01CA  CD9B01  		CALL	WAITFD			; wait until end command
- 675:	01CD  4F      		LD	C,A			; save status
- 676:	01CE  CDBB01  		CALL	GCURTRK			; proceed
- 677:	01D1  DBD1    		IN	A,(FDCTRAKREG)
- 678:	01D3  77      		LD	(HL),A
- 679:	01D4  79      		LD	A,C			; restore status
- 680:	01D5  E619    		AND	00011001b		; set Z flag
- 681:	01D7  D1      		POP	DE
- 682:	01D8  C1      		POP	BC			; restore register
- 683:	01D9  C9      		RET
+ 527:	F000          	sysbase 	equ	bbbase		; use this to have 60K TPA
+ 528:			; SYSBASE 	equ	BBCOMN		; use this to have 63K TPA
+ 529:			
+ 530:			;-------------------------------------
+ 531:			
+ 532:	0100          		org	$100
+ 533:			
+ 534:	0100          	start:
+ 535:	0100  110002  		ld	de,512
+ 536:	0103  CD2C01  		call	setdprm
+ 537:	0106  010A00  		ld	bc,10
+ 538:	0109  CD7F01  		call	trkset
+ 539:	010C  0E01    		ld	c,1			; drive B
+ 540:	010E  CD8E01  		call	dsksel
+ 541:	0111  CD3801  		call	fdrvsel
+ 542:	0114  CDC401  		call	fhome
+ 543:			; 	ret	nz
+ 544:	0117  010030  		ld	bc,bldoffs		; read in loader
+ 545:	011A  CD8901  		call	dmaset
+ 546:	011D  010100  		ld	bc,1
+ 547:	0120  CD8401  		call	secset
+ 548:	0123  CD0902  		call	fread
+ 549:			
+ 550:	0126  00      		nop
+ 551:	0127  00      		nop
+ 552:	0128  00      		nop
+ 553:			
+ 554:	0129  C30000  		jp	0
+ 555:			
+ 556:	012C          	SETDPRM:
+ 557:	012C  223401  		LD	(CSPTR),HL
+ 558:	012F  ED533601		LD	(CSLEN),DE
+ 559:	0133  C9      		RET
+ 560:			
+ 561:	0134  0000    	CSPTR:	DEFW	0
+ 562:	0136  0000    	CSLEN:	DEFW	0
+ 563:			
+ 564:			;
+ 565:			;=======================================================================
+ 566:			;
+ 567:			; Modular Z80 DarkStar (NE Z80) Monitor
+ 568:			;
+ 569:			;=======================================================================
+ 570:			;
+ 571:			; CP/M 2 or 3 BIOS support utilities
+ 572:			; ---------------------------------------------------------------------
+ 573:			
+ 574:			
+ 575:				;       character and disk i/o handlers for cp/m BIOS
+ 576:				;	This are moved here from BIOS since we need to keep
+ 577:				;	space...
+ 578:			;;
+ 579:			;; FDRVSEL - select drive for r/w ops
+ 580:			;
+ 581:			; FDRVSEL:
+ 582:			; 	PUSH	AF			;
+ 583:			; 	PUSH	HL			;
+ 584:			; 	LD	HL,HDRVV		; 10
+ 585:			; 	LD	A,(FDRVBUF)		; 13
+ 586:			; 	ADD	A,L			; 4
+ 587:			; 	LD	L,A			; 4
+ 588:			; 	LD	A,(HL)			; 7
+ 589:			; 	LD	H,A			;
+ 590:			; 	LD	A, (DSELBF)
+ 591:			; 	AND	$F0
+ 592:			; 	OR	H
+ 593:			; 	LD	(DSELBF),A		; 13
+ 594:			; 	OUT	(FDCDRVRCNT),A		; 11
+ 595:			; 	POP	HL			;
+ 596:			; 	POP	AF			;
+ 597:			; 	RET				;
+ 598:			; 	;
+ 599:			; 	; This used to translate the drive number in a cmd byte suitable
+ 600:			; 	; for drive selection on the floppy board
+ 601:			; HDRVV:	DEFB	$01			; drive 1
+ 602:			; 	DEFB	$02			; drive 2
+ 603:			; 	DEFB	$04			; drive 3
+ 604:			; 	DEFB	$08 			; drive 4
+ 605:			
+ 606:	0138          	fdrvsel:
+ 607:	0138  F5      		push	af			; save regs
+ 608:	0139  C5      		push	bc
+ 609:				
+ 610:	013A  3A4500  		ld	a,(fdrvbuf)		; load drive #
+ 611:	013D  47      		ld	b,a
+ 612:	013E  04      		inc 	b			; on b (+1 for loop)
+ 613:	013F  AF      		xor	a
+ 614:	0140  37      		scf
+ 615:	0141          	fdrvs0:
+ 616:	0141  17      		rla				; rotate to get
+ 617:	0142  10FD    		djnz	fdrvs0			; drive id
+ 618:				
+ 619:	0144  47      		ld	b,a			; save on b
+ 620:	0145  3A4E00  		ld	a,(dselbf)		; current select
+ 621:	0148  E6F0    		and	11110000b		; reset current id
+ 622:	014A  B0      		or	b			; and replace with new
+ 623:	014B  324E00  		ld	(dselbf),a		; update current
+ 624:	014E  D3D6    		out	(fdcdrvrcnt),a		; activate selection
+ 625:				
+ 626:	0150  C1      		pop	bc
+ 627:	0151  F1      		pop	af
+ 628:	0152  C9      		ret
+ 629:			;;
+ 630:			;; CPMBOOT - boostrap cp/m
+ 631:			;
+ 632:	0153          	CPMBOOT:
+ 633:	0153  110002  		LD	DE,512
+ 634:	0156  CD2C01  		CALL	SETDPRM
+ 635:	0159  010000  		LD	BC,$00
+ 636:	015C  CD7F01  		CALL	TRKSET
+ 637:	015F  3A0400  		LD	A,(CDISK)		; get logged drive
+ 638:	0162  4F      		LD	C,A
+ 639:	0163  CD8E01  		CALL	DSKSEL
+ 640:	0166  CD3801  		CALL	FDRVSEL
+ 641:	0169  CDC401  		CALL	FHOME
+ 642:	016C  010030  		LD	BC,BLDOFFS		; read in loader
+ 643:	016F  CD8901  		CALL	DMASET
+ 644:	0172  010100  		LD	BC,$01
+ 645:	0175  CD8401  		CALL	SECSET
+ 646:	0178  CD0902  		CALL	FREAD
+ 647:	017B  C0      		RET	NZ
+ 648:	017C  C30230  		JP	BLDOFFS+2		; jump to the loader if all ok
+ 649:			
+ 650:			
+ 651:			;;
+ 652:			
+ 653:			
+ 654:	017F          	TRKSET:
+ 655:	017F  ED434600		LD	(FTRKBUF),BC
+ 656:	0183  C9      		RET
+ 657:	0184          	SECSET:
+ 658:	0184  ED434300		LD	(FSECBUF),BC
+ 659:	0188  C9      		RET
+ 660:	0189          	DMASET:
+ 661:	0189  ED434100		LD	(FRDPBUF),BC
+ 662:	018D  C9      		RET
+ 663:	018E          	DSKSEL:
+ 664:	018E  79      		LD	A,C
+ 665:	018F  324500  		LD	(FDRVBUF),A
+ 666:	0192  C9      		RET
+ 667:			
+ 668:			
+ 669:			
+ 670:			;
+ 671:			;=======================================================================
+ 672:			;
+ 673:			; Modular Z80 DarkStar (NE Z80) Monitor
+ 674:			;
+ 675:			;=======================================================================
+ 676:			;
+ 677:			; Floppy I/O
+ 678:			; ---------------------------------------------------------------------
+ 679:			; ---------------------------------------------------------------------
+ 680:			; Revisions:
+ 681:			; 20150714 - Changed to have timeouts on floppy operations that could
+ 682:			;            produce system locks. (I.e. in absence of floppy in drive)
+ 683:			; ---------------------------------------------------------------------
  684:			
- 685:			;;
- 686:			;; FSEEK - seek to specific track/sector
- 687:			;
- 688:	01DA          	FSEEK:
- 689:	01DA  C5      		PUSH	BC
- 690:	01DB  D5      		PUSH	DE
- 691:	01DC  0603    		LD	B,3			; retrys number
- 692:	01DE  CDBB01  		CALL	GCURTRK
- 693:	01E1  7E      		LD	A,(HL)
- 694:	01E2  D3D1    		OUT	(FDCTRAKREG),A
- 695:	01E4  3A4300  	FRETR1:	LD	A,(FSECBUF)
- 696:	01E7  D3D2    		OUT	(FDCSECTREG),A
- 697:	01E9  3A4600  		LD	A,(FTRKBUF)
- 698:	01EC  D3D7    		OUT	(FDCDATAREG),A
- 699:	01EE  3E17    		LD	A,FDCSEEKC		; seek cmd
- 700:	01F0  D3D0    		OUT	(FDCCMDSTATR),A		; exec. command
- 701:	01F2  48      		LD	C,B			; save retry count
- 702:	01F3  CD9B01  		CALL	WAITFD
- 703:	01F6  41      		LD	B,C			; restore retry count
- 704:	01F7  E619    		AND	00011001b
- 705:	01F9  2807    		JR	Z,FSKEND
- 706:	01FB  CDC401  		CALL	FHOME
- 707:	01FE  2002    		JR	NZ,FSKEND
- 708:	0200  10E2    		DJNZ	FRETR1
- 709:	0202  DBD1    	FSKEND:	IN	A,(FDCTRAKREG)
- 710:	0204  77      		LD	(HL),A
- 711:	0205  D1      	FTERR:	POP	DE
- 712:	0206  C1      		POP	BC
- 713:	0207  C9      		RET
- 714:			;;
- 715:			;; FREAD - read a sector
- 716:			;
- 717:	0208          	FREAD:
- 718:	0208  3A4C00  		LD	A,(MIOBYTE)
- 719:	020B  CBC7    		SET	0,A
- 720:	020D  1805    		JR	FLOPIO
- 721:			;;
- 722:			;; FWRITE - write a sector
- 723:			;
- 724:	020F          	FWRITE:
- 725:	020F  3A4C00  		LD	A,(MIOBYTE)
- 726:	0212  CB87    		RES	0,A
- 727:			;;
- 728:			;; FLOPIO - read or write a sector depending on MIOBYTE
- 729:			;
- 730:	0214          	FLOPIO:
- 731:	0214  D5      		PUSH	DE
- 732:	0215  DD213401		LD	IX,CSPTR
- 733:	0219  324C00  		LD	(MIOBYTE),A
- 734:	021C  CDDA01  	FRWLP:	CALL	FSEEK
- 735:	021F  2065    		JR	NZ,FSHTM
- 736:	0221  060A    		LD	B,$0A			; 10 retries
- 737:	0223  F3      	FRWNXT:	DI				; not interruptible
- 738:	0224  2A4100  		LD	HL,(FRDPBUF)
- 739:	0227  DD5E02  		LD	E,(IX+2)		; need to know buffer size on write
- 740:	022A  DD5603  		LD	D,(IX+3)
- 741:	022D  3A4C00  		LD	A,(MIOBYTE)
- 742:	0230  CB47    		BIT	0,A
- 743:	0232  2818    		JR	Z,FRWWRO
- 744:	0234  3E88    		LD	A,FDCREADC		; read command
- 745:	0236  D3D0    		OUT	(FDCCMDSTATR),A		; exec. command
- 746:	0238  CD9601  		CALL	FDCDLY
- 747:	023B  1803    		JR	FRRDY
- 748:	023D  0F      	FRBSY:	RRCA
- 749:	023E  3027    		JR	NC,FWEND
- 750:	0240  DBD0    	FRRDY:	IN	A,(FDCCMDSTATR)
- 751:	0242  CB4F    		BIT	1,A			; sec found
- 752:	0244  28F7    		JR	Z,FRBSY
- 753:	0246  DBD7    		IN	A,(FDCDATAREG)
- 754:	0248  77      		LD	(HL),A
- 755:	0249  23      		INC	HL
- 756:	024A  18F4    		JR	FRRDY
- 757:	024C  3EA8    	FRWWRO:	LD	A,FDCWRITC
- 758:	024E  D3D0    		OUT	(FDCCMDSTATR),A		; exec. command
- 759:	0250  CD9601  		CALL	FDCDLY
- 760:	0253  1803    		JR	FWRDY
- 761:	0255  0F      	FRWBSY:	RRCA
- 762:	0256  300F    		JR	NC,FWEND
- 763:	0258  DBD0    	FWRDY:	IN	A,(FDCCMDSTATR)
- 764:	025A  CB4F    		BIT	1,A
- 765:	025C  28F7    		JR	Z,FRWBSY
- 766:	025E  7E      		LD	A,(HL)
- 767:	025F  D3D7    		OUT	(FDCDATAREG),A
- 768:	0261  23      		INC	HL
- 769:	0262  1B      		DEC	DE		; 6 c.
- 770:	0263  7A      		LD	A,D		; 4 c.
- 771:	0264  B3      		OR	E		; 4 c.
- 772:	0265  20F1    		JR	NZ,FWRDY	; 7/12 c.
- 773:	0267  FB      	FWEND:	EI				; end of critical operations
- 774:	0268  48      		LD	C,B			; save retry count
- 775:	0269  CD9B01  		CALL	WAITFD
- 776:	026C  41      		LD	B,C			; restore retry count
- 777:	026D  E65C    		AND	01011100b		; mask wrt-prtc,rnf,crc,lst-dat error
- 778:	026F  2815    		JR	Z,FSHTM
- 779:	0271  10B0    		DJNZ	FRWNXT
- 780:	0273  3A4B00  		LD	A,(TMPBYTE)
- 781:	0276  CB77    		BIT	6,A
- 782:	0278  200C    		JR	NZ,FSHTM
- 783:	027A  CBF7    		SET	6,A
- 784:	027C  324B00  		LD	(TMPBYTE),A
- 785:	027F  CDC401  		CALL	FHOME
- 786:	0282  2002    		JR	NZ,FSHTM
- 787:	0284  1896    		JR	FRWLP
- 788:	0286          	FSHTM:
- 789:	0286  F5      		PUSH	AF
- 790:	0287  AF      		XOR	A
- 791:	0288  D3D6    		OUT	(FDCDRVRCNT),A
- 792:	028A  F1      		POP	AF
- 793:	028B  D1      		POP	DE
- 794:	028C  C9      		RET
- 795:			
- 796:			;;
- 797:			;; SIDSET - set current side bit on DSELBF
- 798:			;;          selected side on C
- 799:			;;
- 800:	028D  214E00  	SIDSET:	LD	HL,DSELBF		; loads drive interf. buffer
- 801:	0290  79      		LD	A,C			; which side ?
- 802:	0291  FE00    		CP	0			;
- 803:	0293  2003    		JR	NZ,SIDONE		; side 1
- 804:	0295  CBAE    		RES	5,(HL)			; side 0
- 805:	0297  C9      		RET				;
- 806:	0298  CBEE    	SIDONE:	SET	5,(HL)			;
- 807:	029A  C9      		RET
- 808:			
+ 685:			
+ 686:	0003          	rtrycnt		equ	3		; # retry count for errors
+ 687:			
+ 688:			;;
+ 689:			;; FDC delay
+ 690:			;
+ 691:	0193          	fdcdly:
+ 692:	0193  E3      		ex	(sp),hl
+ 693:	0194  E3      		ex	(sp),hl
+ 694:	0195  E3      		ex	(sp),hl
+ 695:	0196  E3      		ex	(sp),hl
+ 696:	0197  E3      		ex	(sp),hl
+ 697:	0198  E3      		ex	(sp),hl
+ 698:	0199  E3      		ex	(sp),hl
+ 699:	019A  E3      		ex	(sp),hl
+ 700:	019B  C9      		ret
+ 701:			
+ 702:			;;
+ 703:			;; waitfd - get 1771 status and copy on buffer
+ 704:			;
+ 705:	019C          	waitfd:
+ 706:				; wait until fdd busy is reset
+ 707:	019C  CD9301  		call	fdcdly			; wait aproax 56 micros
+ 708:	019F  0604    		ld	b,4			; set soft timer
+ 709:	01A1          	fwait00:
+ 710:	01A1  110000  		ld	de,0			; for ~ five seconds
+ 711:	01A4          	fwait01:
+ 712:	01A4  DBD0    		in	a,(fdccmdstatr)		; input to fdd status
+ 713:	01A6  CB47    		bit	0,a			; test busy bit
+ 714:	01A8  C8      		ret	z			; exit if no command is in progress
+ 715:			; 	jr	z,fwait02		; jump if no command is in progress
+ 716:	01A9  1B      		dec	de			;
+ 717:	01AA  7A      		ld	a,d			; timer down
+ 718:	01AB  B3      		or	e			;
+ 719:	01AC  20F6    		jr	nz,fwait01		;
+ 720:	01AE  05      		dec	b			;
+ 721:	01AF  20F0    		jr	nz,fwait00		; time out
+ 722:	01B1          	ftimeout:
+ 723:	01B1  3ED0    		ld	a,fdcreset		; reset fdd controller
+ 724:	01B3  D3D0    		out	(fdccmdstatr),a		; exec. command
+ 725:	01B5  AF      		xor	a
+ 726:	01B6  D3D6    		out	(fdcdrvrcnt),a
+ 727:	01B8  3C      		inc	a			; set time-out bit error
+ 728:	01B9  B7      		or	a			; set NZ
+ 729:	01BA  C9      		ret				; and ret
+ 730:			; fwait02:
+ 731:			; 	XOR	A
+ 732:			; 	ret				; normal return
+ 733:			;
+ 734:	01BB          	gcurtrk:
+ 735:	01BB  213F00  		ld	hl,fsekbuf
+ 736:	01BE  3A4500  		ld	a,(fdrvbuf)
+ 737:	01C1  85      		add	a,l
+ 738:	01C2  6F      		ld	l,a
+ 739:	01C3  C9      		ret
+ 740:			;;
+ 741:			;; FHOME - move head to trak 0 (cp/m home like)
+ 742:			;;
+ 743:	01C4          	fhome:
+ 744:	01C4  C5      		push	bc			; save register
+ 745:	01C5  D5      		push	de
+ 746:	01C6  3E07    		ld	a,fdcrestc		; fdd restore command
+ 747:	01C8  D3D0    		out	(fdccmdstatr),a		; exec. command
+ 748:	01CA  CD9C01  		call	waitfd			; wait until end command
+ 749:	01CD  4F      		ld	c,a			; save status
+ 750:				
+ 751:	01CE  CDBB01  		call	gcurtrk			; proceed
+ 752:	01D1  DBD1    		in	a,(fdctrakreg)
+ 753:	01D3  77      		ld	(hl),a
+ 754:	01D4  79      		ld	a,c			; restore status
+ 755:	01D5  E619    		and	00011001b		; set Z flag
+ 756:	01D7  B7      		or	a
+ 757:	01D8  D1      		pop	de
+ 758:	01D9  C1      		pop	bc			; restore register
+ 759:	01DA  C9      		ret
+ 760:			
+ 761:			;;
+ 762:			;; FSEEK - seek to specific track/sector
+ 763:			;
+ 764:	01DB          	fseek:
+ 765:	01DB  C5      		push	bc
+ 766:	01DC  D5      		push	de
+ 767:	01DD  0603    		ld	b,rtrycnt		; retrys number
+ 768:	01DF  CDBB01  		call	gcurtrk
+ 769:	01E2  7E      		ld	a,(hl)
+ 770:	01E3  D3D1    		out	(fdctrakreg),a
+ 771:	01E5          	fretr1:	
+ 772:	01E5  3A4300  		ld	a,(fsecbuf)
+ 773:	01E8  D3D2    		out	(fdcsectreg),a
+ 774:	01EA  3A4600  		ld	a,(ftrkbuf)
+ 775:	01ED  D3D7    		out	(fdcdatareg),a
+ 776:	01EF  3E17    		ld	a,fdcseekc		; seek cmd
+ 777:	01F1  D3D0    		out	(fdccmdstatr),a		; exec. command
+ 778:	01F3  48      		ld	c,b			; save retry count
+ 779:	01F4  CD9C01  		call	waitfd
+ 780:	01F7  41      		ld	b,c			; restore retry count
+ 781:	01F8  E619    		and	00011001b
+ 782:	01FA  2807    		jr	z,fskend		; ok
+ 783:				
+ 784:	01FC  CDC401  		call	fhome			; seek error
+ 785:	01FF  2002    		jr	nz,fskend
+ 786:	0201  10E2    		djnz	fretr1			; retry
+ 787:	0203          	fskend:	
+ 788:	0203  DBD1    		in	a,(fdctrakreg)
+ 789:	0205  77      		ld	(hl),a
+ 790:	0206  D1      		pop	de
+ 791:	0207  C1      		pop	bc
+ 792:	0208  C9      		ret
+ 793:			;;
+ 794:			;; FREAD - read a sector
+ 795:			;
+ 796:	0209          	fread:
+ 797:	0209  3A4C00  		ld	a,(miobyte)
+ 798:	020C  CBC7    		set	0,a
+ 799:	020E  1805    		jr	flopio
+ 800:			;;
+ 801:			;; FWRITE - write a sector
+ 802:			;
+ 803:	0210          	fwrite:
+ 804:	0210  3A4C00  		ld	a,(miobyte)
+ 805:	0213  CB87    		res	0,a
+ 806:			;;
+ 807:			;; FLOPIO - read or write a sector depending on MIOBYTE
+ 808:			;
+ 809:	0215          	flopio:
+ 810:	0215  D5      		push	de
+ 811:	0216  DD213401		ld	ix,csptr
+ 812:	021A  324C00  		ld	(miobyte),a
+ 813:	021D          	frwlp:	
+ 814:	021D  CDDB01  		call	fseek			; go to trk/sec
+ 815:	0220  205E    		jr	nz,fioend
+ 816:	0222  0603    		ld	b,rtrycnt		; # retries
+ 817:	0224          	frwnxt:	
+ 818:	0224  F3      		di				; not interruptible
+ 819:	0225  2A4100  		ld	hl,(frdpbuf)
+ 820:	0228  DD5E02  		ld	e,(ix+2)		; need to know buffer size on r/w
+ 821:	022B  DD5603  		ld	d,(ix+3)
+ 822:				
+ 823:	022E  3A4C00  		ld	a,(miobyte)
+ 824:	0231  CB47    		bit	0,a			; read or write?
+ 825:	0233  2818    		jr	z,frwwro		; go to write
+ 826:				
+ 827:	0235  3E88    		ld	a,fdcreadc		; read command
+ 828:	0237  D3D0    		out	(fdccmdstatr),a		; exec. command
+ 829:	0239  CD9301  		call	fdcdly
+ 830:	023C  1803    		jr	frrdy
+ 831:	023E          	frbsy:	
+ 832:	023E  0F      		rrca				; busy bit to carry flag
+ 833:	023F  3027    		jr	nc,fwend		; if busy 0 end read
+ 834:	0241          	frrdy:	
+ 835:	0241  DBD0    		in	a,(fdccmdstatr)
+ 836:	0243  CB4F    		bit	1,a			; data request active ?
+ 837:	0245  28F7    		jr	z,frbsy			; no: check busy bit
+ 838:				
+ 839:	0247  DBD7    		in	a,(fdcdatareg)		; get data
+ 840:	0249  77      		ld	(hl),a
+ 841:	024A  23      		inc	hl
+ 842:	024B  18F4    		jr	frrdy
+ 843:	024D          	frwwro:	
+ 844:	024D  3EA8    		ld	a,fdcwritc		; write command
+ 845:	024F  D3D0    		out	(fdccmdstatr),a		; exec. command
+ 846:	0251  CD9301  		call	fdcdly
+ 847:	0254  1803    		jr	fwrdy
+ 848:	0256          	frwbsy:	
+ 849:	0256  0F      		rrca				; busy bit to carry flag
+ 850:	0257  300F    		jr	nc,fwend		; if busy 0 end read
+ 851:	0259          	fwrdy:	
+ 852:	0259  DBD0    		in	a,(fdccmdstatr)
+ 853:	025B  CB4F    		bit	1,a
+ 854:	025D  28F7    		jr	z,frwbsy
+ 855:	025F  7E      		ld	a,(hl)
+ 856:	0260  D3D7    		out	(fdcdatareg),a
+ 857:	0262  23      		inc	hl
+ 858:	0263  1B      		dec	de		; 6 c.
+ 859:	0264  7A      		ld	a,d		; 4 c.
+ 860:	0265  B3      		or	e		; 4 c.
+ 861:	0266  20F1    		jr	nz,fwrdy	; 7/12 c.
+ 862:	0268          	fwend:	
+ 863:	0268  FB      		ei				; end of critical operations
+ 864:	0269  48      		ld	c,b			; save retry count
+ 865:	026A  CD9C01  		call	waitfd
+ 866:	026D  41      		ld	b,c			; restore retry count
+ 867:	026E  E65C    		and	01011100b		; mask wrt-prtc,rnf,crc,lst-dat error
+ 868:	0270  280E    		jr	z,fioend		; ok
+ 869:				
+ 870:	0272  3A4B00  		ld	a,(tmpbyte)		; nok
+ 871:	0275  CB77    		bit	6,a			; seek to home in error?
+ 872:	0277  2005    		jr	nz,fiotry		; no
+ 873:			
+ 874:	0279  CDC401  		call	fhome			; yes, do seek
+ 875:	027C  2002    		jr	nz,fioend		; seek error eeek!!
+ 876:	027E          	fiotry:
+ 877:	027E  10A4    		djnz	frwnxt			; retry if in count
+ 878:	0280          	fioend:
+ 879:	0280  F5      		push	af
+ 880:	0281  AF      		xor	a
+ 881:	0282  D3D6    		out	(fdcdrvrcnt),a		; shut down
+ 882:				
+ 883:	0284  F1      		pop	af
+ 884:	0285  D1      		pop	de
+ 885:	0286  C9      		ret
+ 886:			
+ 887:			;;
+ 888:			;; SIDSET - set current side bit on DSELBF
+ 889:			;;          selected side on C
+ 890:			;;
+ 891:	0287          	sidset:	
+ 892:	0287  214E00  		ld	hl,dselbf		; loads drive interf. buffer
+ 893:	028A  79      		ld	a,c			; which side ?
+ 894:	028B  FE00    		cp	0			;
+ 895:	028D  2003    		jr	nz,sidone		; side 1
+ 896:	028F  CBAE    		res	5,(hl)			; side 0
+ 897:	0291  C9      		ret				;
+ 898:	0292          	sidone:	
+ 899:	0292  CBEE    		set	5,(hl)			;
+ 900:	0294  C9      		ret
+ 901:			
+ 902:			
 
 
 
@@ -808,96 +902,104 @@ Statistics:
 
      5	passes
      0	jr promotions
-   256	symbols
+   281	symbols
      0	bytes
 
 
 
 Symbol Table:
 
-altprnprt      =   3+    false          =   0+    ppdini         =   0+    
-appbuf         =  2d+    fdcbase        =  d0+    ppdokg         =   2+    
-bbappp         =   e+    fdccmdstatr    =  d0+    ppdrdy         =   4+    
-bbbase         =f000+    fdcdatareg     =  d7+    ppdstp         =   6+    
-bbcbank        =   c+    fdcdly           196     ppstrob        =   0+    
-bbcomn         =fc00+    fdcdrvrcnt     =  d6+    ppuack         =   7+    
-bbcstck        =   d+    fdcreadc       =  88+    ppuini         =   1+    
-bbdebug        =   0+    fdcreset       =  d0+    ppuokg         =   3+    
-bbimgp         =  c0+    fdcrestc       =   7+    ppurdy         =   5+    
-bbpag          =   f+    fdcsectreg     =  d2+    prntbusybit    =   0+    
-bldoffs        =3000+    fdcseekc       =  17+    prvtop         =  4f+    
-blifastblok    =  60+    fdctrakreg     =  d1+    r0brdl         =   0+    
-blifastline    =  6a+    fdcwritc       =  a8+    r0rxtx         =   0+    
-blislowblok    =  40+    fdrvbuf        =  45+    r1brdm         =   1+    
-blislowline    =  4a+    fdrvsel          138     r1ier          =   1+    
-btpasiz        =   6+    ff             =   c+    r2fcr          =   2+    
-cdisk          =   4+    fhome            1c4     r2iir          =   2+    
-clkio          =   6+    fifblok        =   b+    r3lcr          =   3+    
-clkrst         =   7+    fifoend        =  25+    r4mcr          =   4+    
-clksclk        =   5+    fifokb         =  1a+    r5lsr          =   5+    
-cmdid          =  ec+    fifosto        =   f+    r6msr          =   6+    
-cmdinit        =  91+    fifou0         =   f+    r7spr          =   7+    
-cmdread        =  20+    fifsize        =   8+    ram0buf        =  3b+    
-cmdrecal       =  10+    fixblock       =   0+    ram1buf        =  3c+    
-cmdspindown    =  e0+    flopio           214     ram2buf        =  3d+    
-cmdspinup      =  e1+    frbsy            23d     ram3buf        =  3e+    
-cmdwrite       =  30+    frdpbuf        =  41+    ramtbl         =e000+    
-cnfbyte        =  26+    fread            208     readcfg8255    =  92+    
-colbuf         =  4f+    fretr1           1e4     regastatus     =  16+    
-copsys         =  2c+    frrdy            240     regcommand     =   f+    
-cpmboot          156+    frwbsy           255     regcontrol     =  16+    
-cr             =   d+    frwlp            21c     regcyllsb      =   c+    
-crt6545adst    =  8c+    frwnxt           223     regcylmsb      =   d+    
-crt6545data    =  8d+    frwwro           24c     regdata        =   8+    
-crtbase        =  80+    fsecbuf        =  43+    regerr         =   9+    
-crtbeepport    =  8f+    fseek            1da     regseccnt      =   a+    
-crtblinkbit    =   0+    fsekbuf        =  3f+    regsector      =   b+    
-crthilitbit    =   3+    fshtm            286     regshd         =   e+    
-crtkeybcnt     =  87+    fskend           202     regstatus      =   f+    
-crtkeybdat     =  85+    fterr            205+    rsrvbuf        =  2f+    
-crtmodebit     =   4+    ftimeout         1b1+    rst7sp1        =  38+    
-crtprntcnt     =  83+    ftrkbuf        =  46+    rst7sp2        =  39+    
-crtprntdat     =  81+    fwait00          1a0     rst7sp3        =  3a+    
-crtram0cnt     =  82+    fwait01          1a3     rtbsiz         = 3c0+    
-crtram0dat     =  80+    fwait02          1ba     secset           187     
-crtram1cnt     =  86+    fwend            267     setdprm          12c     
-crtram1dat     =  84+    fwrdy            258     sidone           298     
-crtram2cnt     =  8a+    fwrite           20f+    sidset           28d+    
-crtram2dat     =  88+    gcurtrk          1bb     start            100+    
-crtram3port    =  8e+    hdrvv            152     sysbase        =f000+    
-crtrevrsbit    =   1+    hmempag        =   b+    syshertz       =  13+    
-crtservcnt     =  8b+    idea0line      =   1+    tblblk         =  30+    
-crtservdat     =  89+    idea1line      =   2+    tdesclen       =  14+    
-crtunderbit    =   2+    idea2line      =   4+    tiaddrlen      =   4+    
-crtwidthbit    =   1+    idecs0line     =   8+    timrcon        =  27+    
-cslen            136     idecs1line     =  10+    tmpbyte        =  4b+    
-csptr            134     ideporta       =  e0+    tnamelen       =   8+    
-ctc0tc         =  29+    ideportb       =  e1+    tpa            = 100+    
-ctc0tchi       =  20+    ideportc       =  e2+    tpagelen       =   2+    
-ctc1tc         =  28+    ideportctrl    =  e3+    trkset           182     
-ctc1tc100hz    =   5+    iderdline      =  40+    trnpag         =   d+    
-ctc1tc10hz     =  30+    iderstline     =  80+    true           =ffff+    
-ctc1tc25hz     =  13+    idewrline      =  20+    tsizelen       =   4+    
-ctc1tc2hz      =  f4+    imtpag         =  ff+    u0defspeed     =   6+    
-ctc1tc50hz     =   a+    imtsiz         = 400+    u1defspeed     =   c+    
-ctcbase        =  e8+    iobyte         =   3+    uart0          =  c0+    
-ctcchan0       =  e8+    kbdbyte        =  4d+    uart0base      =  c0+    
-ctcchan1       =  e9+    keybstrbbit    =   7+    uart0br        =  2b+    
-ctcchan2       =  ea+    lf             =   a+    uart1          =  c8+    
-ctcchan3       =  eb+    maxblk         =  14+    uart115k2      =   1+    
-curpbuf        =  48+    menaprt        =  21+    uart1200       =  60+    
-cursoroff      =  20+    miobyte        =  4c+    uart19k2       =   6+    
-cursoron       =   a+    mmtpapag       =  ef+    uart1base      =  c8+    
-cursshp        =  4a+    mmuport        =  20+    uart1br        =  2a+    
-dmaset           18c     mmutstaddr     =d000+    uart2400       =  30+    
-dselbf         =  4e+    mmutstpage     =   d+    uart38k4       =   3+    
-dsksel           191     monmaj         =  33+    uart4800       =  18+    
-eep29c         =   4+    monmin         =  33+    uart57k6       =   2+    
-eep29ee        =   1+    mscnt          =  f6+    uart9600       =   c+    
-eep29xe        =   2+    mzmac          =   1+    vdbufsz        =   a+    
-eepage0        =  c0+    pio2bit2       =   2+    vdrdsec        =   0+    
-eeproglock     =  10+    pio2bit3       =   3+    vdwrsec        =   1+    
-eepsta         =f000+    pio2bit4       =   4+    waitfd           19b     
-eepunsupp      =   8+    ppakstb        =   1+    writecfg8255   =  80+    
-eerineprom     =  80+    ppcntrp        =   2+    
-esc            =  1b+    ppdatap        =   3+    
+altprnprt      =   3+    fdcreset       =  d0+    r2iir          =   2+    
+appbuf         =  2d+    fdcrestc       =   7+    r3lcr          =   3+    
+bbappp         =   e+    fdcsectreg     =  d2+    r4mcr          =   4+    
+bbbase         =f000+    fdcseekc       =  17+    r5lsr          =   5+    
+bbcbank        =   c+    fdctrakreg     =  d1+    r6msr          =   6+    
+bbcomn         =fc00+    fdcwritc       =  a8+    r7spr          =   7+    
+bbcstck        =   d+    fdrvbuf        =  45+    ram0buf        =  3b+    
+bbdebug        =ffff+    fdrvs0           141     ram1buf        =  3c+    
+bbimgp         =   4+    fdrvsel          138     ram2buf        =  3d+    
+bbpag          =   f+    ff             =   c+    ram3buf        =  3e+    
+bldoffs        =3000+    fhome            1c4     ramtbl         =e000+    
+blifastblok    =  60+    fifblok        =   b+    readcfg8255    =  92+    
+blifastline    =  6a+    fifoend        =  25+    regastatus     =  16+    
+blislowblok    =  40+    fifokb         =  1a+    regcommand     =   f+    
+blislowline    =  4a+    fifosto        =   f+    regcontrol     =  16+    
+btpasiz        =   6+    fifou0         =   f+    regcyllsb      =   c+    
+cdisk          =   4+    fifsize        =   8+    regcylmsb      =   d+    
+clkio          =   6+    fioend           280     regdata        =   8+    
+clkrst         =   7+    fiotry           27e     regerr         =   9+    
+clksclk        =   5+    fixblock       =   0+    regseccnt      =   a+    
+cmdid          =  ec+    flopio           215     regsector      =   b+    
+cmdinit        =  91+    frbsy            23e     regshd         =   e+    
+cmdread        =  20+    frdpbuf        =  41+    regstatus      =   f+    
+cmdrecal       =  10+    fread            209     rsrvbuf        =  2f+    
+cmdspindown    =  e0+    fretr1           1e5     rst7sp1        =  38+    
+cmdspinup      =  e1+    frrdy            241     rst7sp2        =  39+    
+cmdwrite       =  30+    frwbsy           256     rst7sp3        =  3a+    
+cnfbyte        =  26+    frwlp            21d+    rtbsiz         = 3c0+    
+colbuf         =  4f+    frwnxt           224     rtrycnt        =   3+    
+copsys         =  2c+    frwwro           24d     secset           184     
+cpmboot          153+    fsecbuf        =  43+    setdprm          12c     
+cr             =   d+    fseek            1db     sidone           292     
+crt6545adst    =  8c+    fsekbuf        =  3f+    sidset           287+    
+crt6545data    =  8d+    fskend           203     start            100+    
+crtbase        =  80+    ftimeout         1b1+    sysbase        =f000+    
+crtbeepport    =  8f+    ftrkbuf        =  46+    syshertz       =  13+    
+crtblinkbit    =   0+    fwait00          1a1     tblblk         =  30+    
+crthilitbit    =   3+    fwait01          1a4     tdesclen       =  14+    
+crtkeybcnt     =  87+    fwend            268     tiaddrlen      =   4+    
+crtkeybdat     =  85+    fwrdy            259     timrcon        =  27+    
+crtmodebit     =   4+    fwrite           210+    tmpbyte        =  4b+    
+crtprntcnt     =  83+    gcurtrk          1bb     tnamelen       =   8+    
+crtprntdat     =  81+    hmempag        =   b+    tpa            = 100+    
+crtram0cnt     =  82+    idea0line      =   1+    tpagelen       =   2+    
+crtram0dat     =  80+    idea1line      =   2+    trkset           17f     
+crtram1cnt     =  86+    idea2line      =   4+    trnpag         =   d+    
+crtram1dat     =  84+    idecs0line     =   8+    true           =ffff+    
+crtram2cnt     =  8a+    idecs1line     =  10+    tsizelen       =   4+    
+crtram2dat     =  88+    ideporta       =  e0+    u0defspeed     =   6+    
+crtram3port    =  8e+    ideportb       =  e1+    u1defspeed     =   c+    
+crtrevrsbit    =   1+    ideportc       =  e2+    uart0          =  c0+    
+crtservcnt     =  8b+    ideportctrl    =  e3+    uart0base      =  c0+    
+crtservdat     =  89+    iderdline      =  40+    uart0br        =  2b+    
+crtunderbit    =   2+    iderstline     =  80+    uart1          =  c8+    
+crtwidthbit    =   1+    idewrline      =  20+    uart115k2      =   1+    
+cslen            136     imtpag         =  ff+    uart1200       =  60+    
+csptr            134     imtsiz         = 400+    uart19k2       =   6+    
+ctc0tc         =  29+    iobyte         =   3+    uart1base      =  c8+    
+ctc0tchi       =  20+    kbdbyte        =  4d+    uart1br        =  2a+    
+ctc1tc         =  28+    keybstrbbit    =   7+    uart2400       =  30+    
+ctc1tc100hz    =   5+    lf             =   a+    uart38k4       =   3+    
+ctc1tc10hz     =  30+    maxblk         =  14+    uart4800       =  18+    
+ctc1tc25hz     =  13+    menaprt        =  21+    uart57k6       =   2+    
+ctc1tc2hz      =  f4+    miobyte        =  4c+    uart9600       =   c+    
+ctc1tc50hz     =   a+    mmtpapag       =  ef+    vdbufsz        =   a+    
+ctcbase        =  e8+    mmuport        =  20+    vdrdsec        =   0+    
+ctcchan0       =  e8+    mmutstaddr     =d000+    vdwrsec        =   1+    
+ctcchan1       =  e9+    mmutstpage     =   d+    vr0.hrtot      =   0+    
+ctcchan2       =  ea+    monmaj         =  33+    vr1.hrdis      =   1+    
+ctcchan3       =  eb+    monmin         =  34+    vr10.crstart   =   a+    
+curpbuf        =  48+    mscnt          =  f6+    vr11.crend     =   b+    
+cursoroff      =  20+    mzmac          =   1+    vr12.dstarth   =   c+    
+cursoron       =   a+    pio2bit2       =   2+    vr13.dstartl   =   d+    
+cursshp        =  4a+    pio2bit3       =   3+    vr14.curposh   =   e+    
+dmaset           189     pio2bit4       =   4+    vr15.curposl   =   f+    
+dselbf         =  4e+    ppakstb        =   1+    vr16.lpenh     =  10+    
+dsksel           18e     ppcntrp        =   2+    vr17.lpenl     =  11+    
+eep29c         =   4+    ppdatap        =   3+    vr18.updaddrh  =  12+    
+eep29ee        =   1+    ppdini         =   0+    vr19.updaddrl  =  13+    
+eep29xe        =   2+    ppdokg         =   2+    vr2.hrsyncpos  =   2+    
+eepage0        =  c0+    ppdrdy         =   4+    vr3.hrvrsyncw  =   3+    
+eeproglock     =  10+    ppdstp         =   6+    vr31.dummy     =  1f+    
+eepsta         =f000+    ppstrob        =   0+    vr4.vrchrow    =   4+    
+eepunsupp      =   8+    ppuack         =   7+    vr5.vradj      =   5+    
+eerineprom     =  80+    ppuini         =   1+    vr6.vrdisrows  =   6+    
+endvid         = 7cf+    ppuokg         =   3+    vr7.vrsyncpos  =   7+    
+esc            =  1b+    ppurdy         =   5+    vr8.crtmode    =   8+    
+false          =   0+    prntbusybit    =   0+    vr9.scanlines  =   9+    
+fdcbase        =  d0+    prvtop         =  4f+    vstabuf        =  36+    
+fdccmdstatr    =  d0+    r0brdl         =   0+    waitfd           19c     
+fdcdatareg     =  d7+    r0rxtx         =   0+    writecfg8255   =  80+    
+fdcdly           193     r1brdm         =   1+    xofc           =  13+    
+fdcdrvrcnt     =  d6+    r1ier          =   1+    xonc           =  11+    
+fdcreadc       =  88+    r2fcr          =   2+    

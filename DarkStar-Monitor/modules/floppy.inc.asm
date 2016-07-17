@@ -56,6 +56,7 @@ ftimeout:
 	xor	a
 	out	(fdcdrvrcnt),a
 	inc	a			; set time-out bit error
+	or	a			; set NZ
 	ret				; and ret
 ; fwait02:
 ; 	XOR	A
@@ -77,11 +78,13 @@ fhome:
 	out	(fdccmdstatr),a		; exec. command
 	call	waitfd			; wait until end command
 	ld	c,a			; save status
+	
 	call	gcurtrk			; proceed
 	in	a,(fdctrakreg)
 	ld	(hl),a
 	ld	a,c			; restore status
 	and	00011001b		; set Z flag
+	or	a
 	pop	de
 	pop	bc			; restore register
 	ret
@@ -96,7 +99,8 @@ fseek:
 	call	gcurtrk
 	ld	a,(hl)
 	out	(fdctrakreg),a
-fretr1:	ld	a,(fsecbuf)
+fretr1:	
+	ld	a,(fsecbuf)
 	out	(fdcsectreg),a
 	ld	a,(ftrkbuf)
 	out	(fdcdatareg),a
@@ -106,13 +110,15 @@ fretr1:	ld	a,(fsecbuf)
 	call	waitfd
 	ld	b,c			; restore retry count
 	and	00011001b
-	jr	z,fskend
-	call	fhome
+	jr	z,fskend		; ok
+	
+	call	fhome			; seek error
 	jr	nz,fskend
-	djnz	fretr1
-fskend:	in	a,(fdctrakreg)
+	djnz	fretr1			; retry
+fskend:	
+	in	a,(fdctrakreg)
 	ld	(hl),a
-fterr:	pop	de
+	pop	de
 	pop	bc
 	ret
 ;;
@@ -135,36 +141,46 @@ flopio:
 	push	de
 	ld	ix,csptr
 	ld	(miobyte),a
-frwlp:	call	fseek
-	jr	nz,fshtm
+frwlp:	
+	call	fseek			; go to trk/sec
+	jr	nz,fioend
 	ld	b,rtrycnt		; # retries
-frwnxt:	di				; not interruptible
+frwnxt:	
+	di				; not interruptible
 	ld	hl,(frdpbuf)
-	ld	e,(ix+2)		; need to know buffer size on write
+	ld	e,(ix+2)		; need to know buffer size on r/w
 	ld	d,(ix+3)
+	
 	ld	a,(miobyte)
-	bit	0,a
-	jr	z,frwwro
+	bit	0,a			; read or write?
+	jr	z,frwwro		; go to write
+	
 	ld	a,fdcreadc		; read command
 	out	(fdccmdstatr),a		; exec. command
 	call	fdcdly
 	jr	frrdy
-frbsy:	rrca
-	jr	nc,fwend
-frrdy:	in	a,(fdccmdstatr)
-	bit	1,a			; sec found
-	jr	z,frbsy
-	in	a,(fdcdatareg)
+frbsy:	
+	rrca				; busy bit to carry flag
+	jr	nc,fwend		; if busy 0 end read
+frrdy:	
+	in	a,(fdccmdstatr)
+	bit	1,a			; data request active ?
+	jr	z,frbsy			; no: check busy bit
+	
+	in	a,(fdcdatareg)		; get data
 	ld	(hl),a
 	inc	hl
 	jr	frrdy
-frwwro:	ld	a,fdcwritc
+frwwro:	
+	ld	a,fdcwritc		; write command
 	out	(fdccmdstatr),a		; exec. command
 	call	fdcdly
 	jr	fwrdy
-frwbsy:	rrca
-	jr	nc,fwend
-fwrdy:	in	a,(fdccmdstatr)
+frwbsy:	
+	rrca				; busy bit to carry flag
+	jr	nc,fwend		; if busy 0 end read
+fwrdy:	
+	in	a,(fdccmdstatr)
 	bit	1,a
 	jr	z,frwbsy
 	ld	a,(hl)
@@ -174,25 +190,27 @@ fwrdy:	in	a,(fdccmdstatr)
 	ld	a,d		; 4 c.
 	or	e		; 4 c.
 	jr	nz,fwrdy	; 7/12 c.
-fwend:	ei				; end of critical operations
+fwend:	
+	ei				; end of critical operations
 	ld	c,b			; save retry count
 	call	waitfd
 	ld	b,c			; restore retry count
 	and	01011100b		; mask wrt-prtc,rnf,crc,lst-dat error
-	jr	z,fshtm
-	djnz	frwnxt
-	ld	a,(tmpbyte)
-	bit	6,a
-	jr	nz,fshtm
-	set	6,a
-	ld	(tmpbyte),a
-	call	fhome
-	jr	nz,fshtm
-	jr	frwlp
-fshtm:
+	jr	z,fioend		; ok
+	
+	ld	a,(tmpbyte)		; nok
+	bit	6,a			; seek to home in error?
+	jr	nz,fiotry		; no
+
+	call	fhome			; yes, do seek
+	jr	nz,fioend		; seek error eeek!!
+fiotry:
+	djnz	frwnxt			; retry if in count
+fioend:
 	push	af
 	xor	a
-	out	(fdcdrvrcnt),a
+	out	(fdcdrvrcnt),a		; shut down
+	
 	pop	af
 	pop	de
 	ret
@@ -201,13 +219,15 @@ fshtm:
 ;; SIDSET - set current side bit on DSELBF
 ;;          selected side on C
 ;;
-sidset:	ld	hl,dselbf		; loads drive interf. buffer
+sidset:	
+	ld	hl,dselbf		; loads drive interf. buffer
 	ld	a,c			; which side ?
 	cp	0			;
 	jr	nz,sidone		; side 1
 	res	5,(hl)			; side 0
 	ret				;
-sidone:	set	5,(hl)			;
+sidone:	
+	set	5,(hl)			;
 	ret
 
 

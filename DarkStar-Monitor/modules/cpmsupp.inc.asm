@@ -16,29 +16,28 @@
 ;; FDRVSEL - select drive for r/w ops
 ;
 fdrvsel:
-	push	af			;
-	push	hl			;
-	ld	hl,hdrvv		; 10
-	ld	a,(fdrvbuf)		; 13
-	add	a,l			; 4
-	ld	l,a			; 4
-	ld	a,(hl)			; 7
-	ld	h,a			;
-	ld	a, (dselbf)
-	and	$f0
-	or	h
-	ld	(dselbf),a		; 13
-	out	(fdcdrvrcnt),a		; 11
-	pop	hl			;
-	pop	af			;
-	ret				;
-	;
-	; This used to translate the drive number in a cmd byte suitable
-	; for drive selection on the floppy board
-hdrvv:	defb	$01			; drive 1
-	defb	$02			; drive 2
-	defb	$04			; drive 3
-	defb	$08 			; drive 4
+	push	af			; save regs
+	push	bc
+	
+	ld	a,(fdrvbuf)		; load drive #
+	ld	b,a
+	inc 	b			; on b (+1 for loop)
+	xor	a
+	scf
+fdrvs0:
+	rla				; rotate to get
+	djnz	fdrvs0			; drive id
+	
+	ld	b,a			; save on b
+	ld	a,(dselbf)		; current select
+	and	11110000b		; reset current id
+	or	b			; and replace with new
+	ld	(dselbf),a		; update current
+	out	(fdcdrvrcnt),a		; activate selection
+	
+	pop	bc
+	pop	af
+	ret
 
 ;;
 ;; CPMBOOT - boostrap cp/m
@@ -135,43 +134,3 @@ dsksel:
 	ld	(fdrvbuf),a
 	ret
 
-; 	;
-; 	;
-; 	; RTC handler routine
-; 	;
-; CPTIME:	LD	A,C			; read or write ?
-; 	OR	A
-; 	JR	NZ,TIMWRI
-; 	PUSH	DE			; save user buffer address
-; 	PUSH	IY
-; 	POP	HL			; load private storage area
-; ; 	CALL	RDTIME
-; 	DEC	HL			; HL is at year buffer
-; 	POP	DE			; restore user buffer
-; 	;
-; 	LD	A,7			; 7 byte to fix
-; TIMLOA:	LD	C,(HL)
-; 	;
-; 	CP	6			; offset 6 (local) is day of week...
-; 	JR	Z,TIMSY0		; so skip it
-; 	;
-; 	EX	DE,HL			; swap HL and DE
-; 	CP	1			; last (old) byte need to be saved
-; 	JR	NZ,TIMNLS		; not the one
-; 	LD	B,(HL)			; save in B
-; TIMNLS:	LD	(HL),C			; now can load C in (DE)
-; 	EX	DE,HL			; reset swap
-; 	INC	DE			; advance RTCBUF ptr
-; TIMSY0:	DEC	HL			; back one on top of RTCBUF
-; 	DEC	A			; all done ?
-; 	JR	NZ,TIMLOA		; if no loop
-; 	DEC	DE			; exit: put DE at buffer top
-; 	EX	DE,HL			; save buffer top in HL
-; 	LD	E,B			; put in E old (top) buffer content
-; 	XOR	A
-; 	INC	A			; all good
-; 	RET
-; 	;
-; TIMWRI:	LD	A,$FF			; unsupported here
-; 	RET
-; 	RET

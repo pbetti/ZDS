@@ -409,6 +409,7 @@ movback:
 	add	hl,de			; restore originally video pointer
 movb00:
 	ld	(curpbuf),hl		; save video pointer
+movb01:
 	call	updvidp			; update video pointer
 	ret				; ret
 ;;
@@ -429,7 +430,8 @@ bakspc:
 	call	movlft			; go back
 	ld	a,' '			; clear
 	call	dispch
-	jr	movb00			; ret
+	ld	hl,(curpbuf)		; reinit hl
+	jr	movb01			; ret
 
 ;;
 ;; SCRTST - Verify if we need video scroll

@@ -78,46 +78,16 @@ HEX8	macro	p1
 	endif
 	endm
 
-	CSEG
-
-	; setup dma bank
-ADJBNK	macro
-	IF BANKED
-	CALL	BNKST			; select bank for disk i/o
-	ENDIF
-	endm
-
-RESBNK	macro
-	IF BANKED
-	CALL	BNKRS			; reselect old bank
-	ENDIF
-	endm
-
-
-	IF BANKED
-BNKST:
-	LD	A,(@CBNK)
-	LD	(BKSAVE),A
-	LD	A,(@DBNK)
-	CALL	?BANK			; really select bank for disk i/o
-	RET
-
-BNKRS:
-	PUSH	BC
-	LD	B,A			; save return status
-	LD	A,(BKSAVE)
-	CALL	?BANK			; really reselect old bank
-	LD	A,B
-	POP	BC
-	RET
-	ENDIF
 
 
 	; not all in common segment...
+;-------------------------------------------------------
+; possibly banked routines (entry points)
+;-------------------------------------------------------
+
 	IF BANKED
 	DSEG
 	ENDIF
-;-------------------------------------------------------
 
 FDDVOID:
 HDVOID:					; void routine
@@ -129,17 +99,15 @@ FDDLOG:
 	PUSH	DE
 	LD	HL,(FLSECS)
 	LD	DE,(FLSECS+2)
-	CALL	BBDPRMSET
-	POP	DE
-	POP	HL
-	RET
-
+	JR	HDVLO0
+	
 	; login virtual hd
 HDVLOG:
 	PUSH	HL
 	PUSH	DE
 	LD	HL,(HDSECS)
 	LD	DE,(HDSECS+2)
+HDVLO0:
 	CALL	BBDPRMSET
 	POP	DE
 	POP	HL
@@ -198,90 +166,12 @@ FDDWR:
 
 RDFLO0:
 	CALL	CHKSID			; side select
+	CALL	BBFDRVSEL		; activate drive
 	JP	RDFLO
 WRFLO0:
 	CALL	CHKSID			; side select
-	JP	WRFLO
-
-	CSEG
-;-------------------------------------------------------
-
-RDVRT:
-	ADJBNK				; dma bank in place
-	CALL	BBRDVDSK		; call par. read
-	RESBNK				; restore bank
-	JP	VDRET
-	;
-RDFLO:
-	ADJBNK				; dma bank in place
-	CALL	BBFDRVSEL		; activate driver
-	CALL	BBFREAD			; do read
-	RESBNK				; restore bank
-	JP	FDRET
-	;
-WRVRT:
-	ADJBNK				; dma bank in place
-	CALL	BBWRVDSK		; call par. write
-	RESBNK
-	JP	VDRET
-	;
-WRFLO:
-	ADJBNK				; dma bank in place
 	CALL	BBFDRVSEL		; activate drive
-	CALL	BBFWRITE		; do write
-	RESBNK				; restore bank
-	JP	VDRET
-	;
-DOHRDVD:
-	ADJBNK				; dma bank in place
-	CALL	BBRDVDSK
-	RESBNK
-	JP	VDRET
-
-DOHWRVD:
-	ADJBNK				; dma bank in place
-	CALL	BBWRVDSK
-	RESBNK
-	JP	VDRET
-
-DOIDERD:
-	ADJBNK				; dma bank in place
-	CALL	BBHDRD
-	RESBNK
-	JP	IDERET
-
-DOIDEWR:
-	ADJBNK				; dma bank in place
-	CALL	BBHDWR
-	RESBNK
-	JP	IDERET
-
-BKSAVE	DEFB	0			; must stay in common
-
-	IF BANKED
-	DSEG
-	ENDIF
-;-------------------------------------------------------
-VDRET:
-	POP	IX
-	RET
-
-	; adjust return value for floppies
-FDRET:
-	POP	IX
-	JR	Z,FDOK
-	XOR	A
-	INC	A
-	RET
-FDOK:	XOR	A
-	RET
-
-IDERET:
-	POP	IY
-	OR	A
-	RET	Z
-	LD	A,1			; correct return value for BDOS
-	RET
+	JP	WRFLO
 
 	;	test for side switch on floppies
 	;
@@ -302,6 +192,124 @@ FLSECS:	DEFW	11
 	DEFW	80			; tracks
 HDSECS:	DEFW	256
 	DEFW	512
+
+;-------------------------------------------------------
+; possibly banked routines (re-entry from common seg)
+;-------------------------------------------------------
+VDRET:
+	POP	IX
+	RET
+
+	; adjust return value for floppies
+FDRET:
+	POP	IX
+	OR	A
+	JR	Z,FDOK
+	XOR	A
+	INC	A
+	RET
+FDOK:	XOR	A
+	RET
+
+IDERET:
+	POP	IY
+	OR	A
+	RET	Z
+	LD	A,1			; correct return value for BDOS
+	RET
+
+
+;-------------------------------------------------------
+; resident / non-banked part
+;-------------------------------------------------------
+
+	CSEG
+
+	; setup dma bank
+DMABNK	macro
+	IF BANKED
+	CALL	BNKSET			; select bank for disk i/o
+	ENDIF
+	endm
+
+RSTBNK	macro
+	IF BANKED
+	CALL	BNKRST			; reselect old bank
+	ENDIF
+	endm
+
+
+	IF BANKED
+BNKSET:
+	LD	A,(@CBNK)
+	LD	(BKSAVE),A
+	LD	A,(@DBNK)
+	CALL	?BANK			; really select bank for disk i/o
+	RET
+
+BNKRST:
+	PUSH	BC
+	LD	B,A			; save return status
+	LD	A,(BKSAVE)
+	CALL	?BANK			; really reselect old bank
+	LD	A,B
+	POP	BC
+	RET
+; 	PUSH	AF
+; 	LD	A,(BKSAVE)
+; 	CALL	?BANK			; really reselect old bank
+; 	POP	AF
+; 	RET
+	ENDIF
+
+WRFLO:
+	DMABNK				; dma bank in place
+	CALL	BBFWRITE		; do write
+	JR	RDFLO1
+	;
+RDFLO:
+	DMABNK				; dma bank in place
+	CALL	BBFREAD			; do read
+RDFLO1:
+	RSTBNK				; restore bank
+	JP	FDRET
+	;
+WRVRT:
+	DMABNK				; dma bank in place
+	CALL	BBWRVDSK		; call par. write
+	JR	TOVDRET
+	;
+RDVRT:
+	DMABNK				; dma bank in place
+	CALL	BBRDVDSK		; call par. read
+	JR	TOVDRET
+	;
+DOHRDVD:
+	DMABNK				; dma bank in place
+	CALL	BBRDVDSK
+	JR	TOVDRET
+	
+DOHWRVD:
+	DMABNK				; dma bank in place
+	CALL	BBWRVDSK
+TOVDRET:
+	RSTBNK
+	JP	VDRET
+
+DOIDERD:
+	DMABNK				; dma bank in place
+	CALL	BBHDRD
+	JR	DOIDEW0
+
+DOIDEWR:
+	DMABNK				; dma bank in place
+	CALL	BBHDWR
+DOIDEW0:
+	RSTBNK
+	JP	IDERET
+
+BKSAVE	DEFB	0			; must stay in common
+
 
 ;-------------------------------------------------------
 

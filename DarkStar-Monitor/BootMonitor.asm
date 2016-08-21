@@ -224,12 +224,12 @@ shdwpag:
 	ld	b,bbappp << 4		; app page for destination
 	out	(c),a			; destination in place
 	inc	a
-	exx				; saves
+	exx				; save
 	ld	hl, trnpag << 12	; source
 	ld	de, bbappp << 12	; dest
 	ld	bc, 4096		; one page
 	ldir
-	exx
+	exx				; restore
 	dec	e			; finished ?
 	jr	z,shdwdone
 	jr	shdwpag
@@ -264,7 +264,7 @@ onshadow:
 	out	(altprnprt),a
 	ld	a, ppuini		; init parallel port for rx
 	out	(ppcntrp), a
-	ld	a,blifastline
+	ld	a,blifastline		; blink, fast, line shaped cursor
 	ld	(cursshp),a
 	;
 	call	bbcrtcini		; Initialize CRTC
@@ -284,7 +284,7 @@ onshadow:
  	call	bbhdinit		; IDE init
 	or	a
 	jr	nz,ideinok
-	call	bbldpart
+; 	call	bbldpart
  	call	bbdriveid
 	or	a
 	jr	nz,ideinok
@@ -309,6 +309,7 @@ onshadow:
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
 
+	call	bbldpart		; load partition table
 	jr	ideiok
 ideinok:
 	ld	hl,mnot

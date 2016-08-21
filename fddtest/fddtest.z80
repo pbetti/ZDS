@@ -129,7 +129,7 @@ tmpbyte		equ	miobyte-1	; byte: transients flags
 					;         3: 0 = Two byte code ESC seq. from serial
 					;         4: 0 = Plain serial i/o (disable ANSI driver)
 					;         5: 0 = store interrupt status (on/off)
-					;         6: 0 = floppy home on err	1 = no home on err
+					;         6: 0 = floppy no home on err	1 = home on err
 					;         7: 0 = unlock LBA free addressing (unpartitioned)
 cursshp		equ	tmpbyte-1	; cursor shape
 curpbuf		equ	cursshp-2	; word: cursor position
@@ -321,7 +321,7 @@ fdcdatareg	equ	fdcbase+7	; Data register *** Verificare che sia $d7
 fdcdrvrcnt	equ	fdcbase+6	; Driver select/control register
 ;
 fdcrestc	equ	00000111b	; 1771 restore (seek to trak 0) cmd
-fdcseekc	equ	00010111b	; seek cmd
+fdcseekc	equ	00010110b	; seek cmd
 fdcreadc	equ	10001000b	; read cmd
 fdcwritc	equ	10101000b	; write cmd
 fdcreset	equ	11010000b	; fdc reset immediate cmd
@@ -524,7 +524,7 @@ trnpag		equ	0dh		; Page used for transient MMU ops
 bbbase		equ	bbpag << 12	; non resident base address
 bbcomn		equ	bbbase + 0c00h	; resident portion address
 
-sysbase 	equ	bbbase		; use this to have 60K TPA
+; sysbase 	equ	bbbase		; use this to have 60K TPA
 ; SYSBASE 	equ	BBCOMN		; use this to have 63K TPA
 
 ;-------------------------------------
@@ -534,19 +534,36 @@ sysbase 	equ	bbbase		; use this to have 60K TPA
 start:
 	ld	de,512
 	call	setdprm
-	ld	bc,10
-	call	trkset
 	ld	c,1			; drive B
 	call	dsksel
 	call	fdrvsel
 	call	fhome
+	ld	bc,10
+	call	trkset
 ; 	ret	nz
 	ld	bc,bldoffs		; read in loader
 	call	dmaset
 	ld	bc,1
 	call	secset
 	call	fread
-
+	ld	bc,2
+	call	fdrvsel
+	call	secset
+	call	fread
+	ld	bc,11
+	call	trkset
+	; 	ret	nz
+	ld	bc,bldoffs		; read in loader
+	call	dmaset
+	ld	bc,1
+	call	secset
+	call	fdrvsel
+	call	fread
+	ld	bc,2
+	call	secset
+	call	fdrvsel
+	call	fread
+	
 	nop
 	nop
 	nop
@@ -578,31 +595,6 @@ CSLEN:	DEFW	0
 ;;
 ;; FDRVSEL - select drive for r/w ops
 ;
-; FDRVSEL:
-; 	PUSH	AF			;
-; 	PUSH	HL			;
-; 	LD	HL,HDRVV		; 10
-; 	LD	A,(FDRVBUF)		; 13
-; 	ADD	A,L			; 4
-; 	LD	L,A			; 4
-; 	LD	A,(HL)			; 7
-; 	LD	H,A			;
-; 	LD	A, (DSELBF)
-; 	AND	$F0
-; 	OR	H
-; 	LD	(DSELBF),A		; 13
-; 	OUT	(FDCDRVRCNT),A		; 11
-; 	POP	HL			;
-; 	POP	AF			;
-; 	RET				;
-; 	;
-; 	; This used to translate the drive number in a cmd byte suitable
-; 	; for drive selection on the floppy board
-; HDRVV:	DEFB	$01			; drive 1
-; 	DEFB	$02			; drive 2
-; 	DEFB	$04			; drive 3
-; 	DEFB	$08 			; drive 4
-
 fdrvsel:
 	push	af			; save regs
 	push	bc
@@ -626,46 +618,48 @@ fdrvs0:
 	pop	bc
 	pop	af
 	ret
+
 ;;
 ;; CPMBOOT - boostrap cp/m
 ;
-CPMBOOT:
-	LD	DE,512
-	CALL	SETDPRM
-	LD	BC,$00
-	CALL	TRKSET
-	LD	A,(CDISK)		; get logged drive
-	LD	C,A
-	CALL	DSKSEL
-	CALL	FDRVSEL
-	CALL	FHOME
-	LD	BC,BLDOFFS		; read in loader
-	CALL	DMASET
-	LD	BC,$01
-	CALL	SECSET
-	CALL	FREAD
-	RET	NZ
-	JP	BLDOFFS+2		; jump to the loader if all ok
+cpmboot:
+	ld	de,512
+	call	setdprm
+	ld	bc,$00
+	call	trkset
+	ld	a,(cdisk)		; get logged drive
+	ld	c,a
+	call	dsksel
+	call	fdrvsel
+	call	fhome
+	ret	nz
+	ld	bc,bldoffs		; read in loader
+	call	dmaset
+	ld	bc,$01
+	call	secset
+	call	fread
+	ret	nz
+	jp	bldoffs+2		; jump to the loader if all ok
 
 
 ;;
 
-
-TRKSET:
-	LD	(FTRKBUF),BC
-	RET
-SECSET:
-	LD	(FSECBUF),BC
-	RET
-DMASET:
-	LD	(FRDPBUF),BC
-	RET
-DSKSEL:
-	LD	A,C
-	LD	(FDRVBUF),A
-	RET
+hdbsig:	defb	$55,$aa
 
 
+trkset:
+	ld	(ftrkbuf),bc
+	ret
+secset:
+	ld	(fsecbuf),bc
+	ret
+dmaset:
+	ld	(frdpbuf),bc
+	ret
+dsksel:
+	ld	a,c
+	ld	(fdrvbuf),a
+	ret
 
 ;
 ;=======================================================================
@@ -727,11 +721,11 @@ ftimeout:
 	inc	a			; set time-out bit error
 	or	a			; set NZ
 	ret				; and ret
-; fwait02:
-; 	XOR	A
-; 	ret				; normal return
 ;
-gcurtrk:
+;;
+;; set HL to right track buffer (a or b)
+;
+gtrkbuf:
 	ld	hl,fsekbuf
 	ld	a,(fdrvbuf)
 	add	a,l
@@ -748,7 +742,7 @@ fhome:
 	call	waitfd			; wait until end command
 	ld	c,a			; save status
 	
-	call	gcurtrk			; proceed
+	call	gtrkbuf			; proceed
 	in	a,(fdctrakreg)
 	ld	(hl),a
 	ld	a,c			; restore status
@@ -765,7 +759,7 @@ fseek:
 	push	bc
 	push	de
 	ld	b,rtrycnt		; retrys number
-	call	gcurtrk
+	call	gtrkbuf
 	ld	a,(hl)
 	out	(fdctrakreg),a
 fretr1:	
@@ -810,11 +804,11 @@ flopio:
 	push	de
 	ld	ix,csptr
 	ld	(miobyte),a
-frwlp:	
-	call	fseek			; go to trk/sec
-	jr	nz,fioend
 	ld	b,rtrycnt		; # retries
 frwnxt:	
+	call	fseek			; go to trk/sec
+	jr	nz,fioend
+
 	di				; not interruptible
 	ld	hl,(frdpbuf)
 	ld	e,(ix+2)		; need to know buffer size on r/w

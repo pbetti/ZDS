@@ -129,7 +129,7 @@ tmpbyte		equ	miobyte-1	; byte: transients flags
 					;         3: 0 = Two byte code ESC seq. from serial
 					;         4: 0 = Plain serial i/o (disable ANSI driver)
 					;         5: 0 = store interrupt status (on/off)
-					;         6: 0 = floppy home on err	1 = no home on err
+					;         6: 0 = floppy no home on err	1 = no home on err
 					;         7: 0 = unlock LBA free addressing (unpartitioned)
 cursshp		equ	tmpbyte-1	; cursor shape
 curpbuf		equ	cursshp-2	; word: cursor position
@@ -321,7 +321,7 @@ fdcdatareg	equ	fdcbase+7	; Data register *** Verificare che sia $d7
 fdcdrvrcnt	equ	fdcbase+6	; Driver select/control register
 ;
 fdcrestc	equ	00000111b	; 1771 restore (seek to trak 0) cmd
-fdcseekc	equ	00010111b	; seek cmd
+fdcseekc	equ	00010110b	; seek cmd
 fdcreadc	equ	10001000b	; read cmd
 fdcwritc	equ	10101000b	; write cmd
 fdcreset	equ	11010000b	; fdc reset immediate cmd
@@ -500,7 +500,7 @@ eerineprom	equ	80h		; tried to program eeprom running inside it
 
 ;*************************************
 ; Production / Testing
-bbdebug		equ	true
+bbdebug		equ	false
 ;*************************************
 
 ;-------------------------------------
@@ -524,7 +524,7 @@ trnpag		equ	0dh		; Page used for transient MMU ops
 bbbase		equ	bbpag << 12	; non resident base address
 bbcomn		equ	bbbase + 0c00h	; resident portion address
 
-sysbase 	equ	bbbase		; use this to have 60K TPA
+; sysbase 	equ	bbbase		; use this to have 60K TPA
 ; SYSBASE 	equ	BBCOMN		; use this to have 63K TPA
 
 ;-------------------------------------

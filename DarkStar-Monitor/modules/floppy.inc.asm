@@ -58,11 +58,11 @@ ftimeout:
 	inc	a			; set time-out bit error
 	or	a			; set NZ
 	ret				; and ret
-; fwait02:
-; 	XOR	A
-; 	ret				; normal return
 ;
-gcurtrk:
+;;
+;; set HL to right track buffer (a or b)
+;
+gtrkbuf:
 	ld	hl,fsekbuf
 	ld	a,(fdrvbuf)
 	add	a,l
@@ -79,7 +79,7 @@ fhome:
 	call	waitfd			; wait until end command
 	ld	c,a			; save status
 	
-	call	gcurtrk			; proceed
+	call	gtrkbuf			; proceed
 	in	a,(fdctrakreg)
 	ld	(hl),a
 	ld	a,c			; restore status
@@ -96,7 +96,7 @@ fseek:
 	push	bc
 	push	de
 	ld	b,rtrycnt		; retrys number
-	call	gcurtrk
+	call	gtrkbuf
 	ld	a,(hl)
 	out	(fdctrakreg),a
 fretr1:	
@@ -141,11 +141,11 @@ flopio:
 	push	de
 	ld	ix,csptr
 	ld	(miobyte),a
-frwlp:	
-	call	fseek			; go to trk/sec
-	jr	nz,fioend
 	ld	b,rtrycnt		; # retries
 frwnxt:	
+	call	fseek			; go to trk/sec
+	jr	nz,fioend
+
 	di				; not interruptible
 	ld	hl,(frdpbuf)
 	ld	e,(ix+2)		; need to know buffer size on r/w

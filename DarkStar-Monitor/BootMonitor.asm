@@ -309,7 +309,7 @@ onshadow:
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
 
-	call	bbldpart		; load partition table
+; 	call	bbldpart		; load partition table
 	jr	ideiok
 ideinok:
 	ld	hl,mnot
@@ -375,7 +375,10 @@ bootm:
 	ld	a,$c3
 	ld	($0000),a
 	;
-bmpro:	ld	hl,mbmenu		; display the menu
+bmpro:	
+	call	bbhdinit
+	call	bbldpart		; load partition table
+	ld	hl,mbmenu		; display the menu
 	call	outstr
 	call	dogetchr		; get user choice
 	push	af

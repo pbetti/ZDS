@@ -85,7 +85,7 @@ mzmac	equ	1
 ; Monitor version numbers (major.minor)
 ;
 monmaj		equ	'3'
-monmin		equ	'4'
+monmin		equ	'5'
 
 ;
 ; Buffers addresses labels

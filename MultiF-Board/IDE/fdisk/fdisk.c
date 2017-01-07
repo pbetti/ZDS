@@ -75,6 +75,8 @@ extern	void lockHDAccess();
 extern	void unlockHDAccess();
 extern	void doFormat();
 
+// since C11 standard forbid gets...
+extern char * gets(char *);
 
 main()
 {
@@ -590,6 +592,17 @@ void doHelp()
 	x - exit\n\
 	");
 }
+
+char * gets(char * buf)
+{
+	register int c;
+	register char *s;
+	for (s = buf; (c = getchar()) != '\n';)
+		*s++ = c;
+	*s = 0;
+	return (buf);
+}
+
 
 // --- EOF
 

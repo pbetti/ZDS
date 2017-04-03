@@ -1,0 +1,260 @@
+;
+;=======================================================================
+;
+; DarkStar (NE Z80) Serial support library
+;
+;=======================================================================
+;;---------------------------------------------------------------------
+;; Version      : 1.0 - 20170311
+;; Assemble     : SLR z80asm, myzmac
+;; Revisions:
+;; 20170311	- Initial revision
+;;---------------------------------------------------------------------
+
+	title	zds_serial.lib - Serial i/o to host computer
+;
+	public	srlinit,srlout,srlin,vset
+	public	pushem,popem,cphlde,baud
+
+	extern	cnfbyte
+
+;;
+;; Using this lib require inclusion of "darkstar.equ"
+;;
+;
+;
+xon	equ	11h
+xoff	equ	13h
+rst8op	equ	0008h
+rst8adr	equ	0009h
+op_ret	equ	0c9h
+op_jp	equ	0c3h
+
+;;
+;; attach_1_legacy
+;;
+;; connect to uart1 via legacy RST8
+;;
+;; HL contain address of interrupt catch routine
+;; called by sysbios via rst8
+;;
+
+attach_1_legacy:
+	di			; hold interrupts
+	push	af
+	ld	a,op_jp		; jp opcode
+	ld	(rst8op),a	; in rst8 base
+	ld	(rst8adr),hl
+	ld	hl,cnfbyte
+	set	0,(hl)		; enable rst8 redirect
+	ei			; re-enable interrupts
+	pop	af
+	ret			; done
+
+;;
+;; detach_1_legacy
+;;
+;; disconnect uart1 from RST8 redirect
+;;
+
+detach_1_legacy:
+	di			; hold interrupts
+	push	af
+	push	hl
+	ld	a,op_ret	; ret opcode
+	ld	(rst8op),a	; in rst8 base
+	ld	hl,cnfbyte
+	res	0,(hl)		; disable rst8 redirect
+	ei			; re-enable interrupts
+	pop	hl
+	pop	af
+	ret			; done
+
+
+
+
+
+
+
+
+
+;
+; initialise interrupts
+;
+srlinit	call	initvspc
+	call	kbinit
+	call	tuinit
+	ret
+;
+; check for input
+;
+srlin	ld	a,(ilen)	;buffer length
+	or	a		;empty ?
+	ret	z		;Yes -> forget it
+	call	getbyte
+	scf
+	ret
+;
+; get input and update pointers.
+;
+getbyte	push	hl
+	push	de
+	ld	hl,(ibgp)
+	ld	a,(hl)		;get next char.
+	inc	hl
+	ld	de,ibend
+	call	cphlde		;buffer end ?
+	jr	c,noiwrap	;no ->
+	ld	hl,ibstrt	;yes, back to start
+noiwrap	ld	(ibgp),hl
+	ld	hl,ilen
+	dec	(hl)
+	push	af
+	ld	a,(ilen)
+	cp	imax-20
+	call	z,pson
+	pop	af
+	pop	de
+	pop	hl
+	ret
+;
+;  comms output routine
+;  upon entry:	a contains the character to be output
+;
+srlout	push	af
+sot0	ld	a,(opflg)	;test xon/xoff
+	bit	0,a
+	jr	nz,sot0		;idle if xoff
+sot1	in	a,stat
+	and	80h
+	jr	z,sot1
+	pop	af
+	out	data,a
+	ret
+;
+; vector setup routine
+;
+initvspc
+	ld	hl,vspce	;vector space
+	ld	l,0
+	inc	h		;get on page boundary.
+	ld	($vtab),hl	;save address.
+	ld	a,h
+	ld	i,a		;set i reg.
+	ld	b,80h		;fill table with
+	ld	de,dummy
+iv1	ld	(hl),e		;rst 0's just in case.
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	djnz	iv1
+	ret
+;
+vset	ld	hl,($vtab)
+	add	hl,bc
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	ret
+;
+tuinit	ld	a,9
+	out	cmdr,a
+	ld	a,(baud)
+	out	baudr,a
+	ld	a,10h		;enable receive interrupts
+	out	imskr,a
+	ld	bc,qbase+8
+	ld	de,rda
+	call	vset
+	im2
+	ei
+	ret
+;
+baud	db	84h	;for 300 baud
+;
+;	interrupt service routines
+;
+psoff	push	af
+	ld	a,xoff
+	call	srlout
+	pop	af
+	ret
+;
+pson	ld	a,xon
+	jp	srlout
+;
+rda	di
+	ld	(tstack),sp
+	ld	sp,stack
+	call	pushem
+	ld	a,(ilen)
+	ld	hl,opflg
+	cp	imax-16
+	call	z,psoff
+	cp	imax
+	jr	z,iret
+;
+	in	a,data
+	and	7fh
+	cp	xoff
+	jr	z,idle
+	cp	xon
+	jr	z,nidle
+	ld	hl,(ibpp)
+	ld	(hl),a
+	inc	hl
+	ld	de,ibend
+	call	cphlde
+	jr	c,norw
+	ld	hl,ibstrt
+norw	ld	(ibpp),hl
+	ld	hl,ilen
+	inc	(hl)
+;
+iret	call	popem
+	ld	sp,(tstack)
+	ei
+dummy	reti
+;
+idle	set	0,(hl)
+	jr	iret
+;
+nidle	res	0,(hl)
+	jr	iret
+;
+cphlde	push	hl		;compares hl & de
+	or	a		;and sets flags.
+	sbc	hl,de
+	pop	hl
+	ret
+;
+pushem	ex	(sp),hl		;save main regs on stack.
+	push	de		;the hl pair is mod'd.
+	push	bc
+	push	af
+	jp	(hl)
+;
+popem	pop	hl		;restore all main regs
+	pop	af		;from stack after a
+	pop	bc		;call to pushem.
+	pop	de
+	ex	(sp),hl
+	ret
+;
+opflg	db	0
+;
+ilen	db	0		;input buffer length
+ibgp	dw	ibstrt		;input buffer get pointer
+ibpp	dw	ibstrt		;input buffer put pointer
+ibstrt	equ	$		;input buffer start
+ibuff	ds	0ffh		;input buffer
+ibend	equ	$		;input buffer end
+imax	equ	0ffh		;input buffer max length
+;
+tstack	ds	80h
+stack	equ	$
+;
+$vtab	ds	2		;address of vector table
+vspce	ds	200h		;vector space
+;
+	end

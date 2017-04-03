@@ -1,0 +1,710 @@
+;
+; Altos 8000/Series 5/model 580 overlay file for ZMP          Nov 24, 88
+;
+; ALTOS uses the Z80 SIO & 8430 CTC timer
+;
+;   The Altos Series 5 (or 580) running Cp/m 2.23s1 uses a bank-switched
+;   bios that heavily uses the ix and iy registers. This creates a severe
+;   conflict with the runtime package used by ZMP. The program will not
+;   run unless the altos bios is patched to save the ix and iy registers
+;   before any bank switch and restoring the registers after returning
+;   from the switch. This cannot be done by pushing the registers onto
+;   the stack.
+;   A simple patch can be made that saves the ix and iy registers
+;   to memory and restores them after bios calls. A sample code listing
+;   is at the end of this file.
+;
+;-----------------------------------------------------------------------
+;       Name:  ZMO-AL05.Z80
+;
+;       Dated Nov 22, 1988
+;
+;	Written by - Ron Murray, c/o Z-Node 62, 061-9-450-0200
+;		     Perth, Western Australia.
+;
+; 89/04/12 - Modified to ZMP v1.5		- George Conover
+;       Modified to ZMP v1.4 standard Ken Reid    Nov 24, 88
+;       Modified to ZMP v1.3 standard Ken Reid    Oct 17, 88
+;	Modified to ZMP v1.2 standard Ron Murray Sept 15, 88
+;
+;-----------------------------------------------------------------------
+;
+;	System-dependent code overlay for ZMODEM
+;
+;   Insert your own code as  necessary	in  this  file.  Code  contained
+; herein  has been written in Z80 code for use with M80 or SLR. Assemble
+; as follows:
+;
+;	SLR ZMO-AL05/h
+;	MLOAD ZMP.COM=ZMPX.COM,ZMO-AL05
+;  or
+;	M80 =ZMO-MH05.Z80
+;	RELHEX ZMO-MH05
+;	MLOAD ZMP.COM=ZMPX.COM,ZMO-AL05
+;
+;
+; (Don't use L80 without changing the source  for  assembly  as  a  CSEG
+; file.)
+;
+;-----------------------------------------------------------------------
+;
+; Notes on modifying this file:
+;
+;    C	requires  that functions do not change either index register (IX
+; or IY). If your overlay requires either of these to be changed, ensure
+; they are restored to the original values on return.
+;
+;    Since  collecting	parameters  from C functions can be tricky, only
+; change the parts marked 'Insert your own code here'. Do NOT modify the
+; jump table at the start. Do NOT modify the entry/exit sections of each
+; function. Do NOT pass 'GO'. Do NOT collect $200.
+;
+;    Apart  from  defining  modem  functions,  this  file  also  defines
+; terminal characteristics. Examples provided are for ADM-3A (with a few
+; of my own additions). Modify to suit	your  own  terminal.  An  inline
+; print routine is provided for printing strings in the usual way, usage
+; is:
+;
+;		      CALL	PRINT
+;		      DB	'required string',0
+;
+;-----------------------------------------------------------------------
+;
+;    Don't forget to set your clock speed at the clkspd variable.
+;
+;    If you find  your	overlay  exceeds  the  maximum	size  (currently
+; 0500h),  you	will have to contact me for another version. If too many
+; people need to do it, we haven't allowed enough room.
+;
+; Ron Murray Aug 15, 88
+;
+;-----------------------------------------------------------------------
+;
+NO	EQU	0
+YES	EQU	NOT NO
+;
+; User-set variables
+;
+CLKSPD	EQU	4		; Processor clock speed in MHz
+DEBUG	EQU	NO
+;
+;Set the following two equates to the drive and user area which will contain
+;   ZMP's .OVR files, .CFG file, .FON file and .HLP file. Set both to zero
+;   (null) to locate them on the drive from which ZMP was invoked.
+
+OVERDRIVE      EQU     'A'     ; Drive to find overlay files on ('A'-'P')
+OVERUSER       EQU     0       ; User area to find files
+;
+USERDEF EQU     0145H           ; Origin of this overlay.  This address
+;				;   may change with subsequent revisions
+; NOT user-set variables
+;
+MSPEED  EQU     03CH            ; Location of current baud rate. 3C is normal
+OVSIZE	EQU	0400H		; Max size of this overlay
+;
+	.Z80			; Use z80 code
+	ASEG			; Absolute
+;
+	 IF	DEBUG
+	ORG	100H		; So you can debug it with CEBUG, ZSID,
+;				;   etc.
+	 ELSE
+	ORG	USERDEF
+	 ENDIF			; DEBUG
+;
+ESC	EQU	1BH
+CTRLQ	EQU	11H
+CR	EQU	0DH
+LF	EQU	0AH
+BDOS	EQU	5
+;
+;
+; Select one of the following two choices for your computer
+;
+A8000   EQU     NO      ; Altos 8000 series
+SER5    EQU     YES     ; Altos series 5
+;
+;
+	 IF	A8000
+PORT	EQU	28H	; Your Z80 SIO base port (data or status)
+MDCTL1	EQU	PORT+1	; Modem control port
+MDDATP	EQU	PORT	; Modem data port
+MDRCV	EQU	01H	; Modem receive ready
+MDSND	EQU	04H	; Modem send ready bit
+MDTXE	EQU	01H	; Modem send buffer empty, holding buffer empty
+;
+BRPORT	EQU	32H	; CTC port for baud rate
+	 ENDIF		; A8000
+;
+;
+	 IF	SER5
+PORT	EQU	1EH	; Your base port (data or status)
+MDCTL1	EQU	PORT+1	; Modem control port
+MDDATP	EQU	PORT	; Modem data port
+MDRCV	EQU	01H	; Modem receive ready
+MDSND	EQU	04H	; Modem send ready bit
+MDTXE	EQU	01H	; Modem send buffer empty, holding buffer empty
+;
+BRPORT	EQU	0EH	; CTC port for baud rate
+	 ENDIF		; SER5
+;
+;
+; Jump table for the overlay: do NOT change this
+;
+CODEBGN	EQU	$
+;
+JUMPTAB:JP	SCRNPR		; Screen print
+	JP	MRD		; Modem read with timeout
+	JP	MCHIN		; Get a character from modem
+	JP	MCHOUT		; Send a character to the modem
+	JP	MORDY		; Test for tx buffer empty
+	JP	MIRDY		; Test for character received
+	JP	SNDBRK		; Send break
+	JP	CURSADD		; Cursor addressing
+	JP	CLS		; Clear screen
+	JP	INVON		; Inverse video on
+	JP	INVOFF		; Inverse video off
+	JP	HIDE		; Hide cursor
+	JP	SHOW		; Show cursor
+	JP	SAVECU		; Save cursor position
+	JP	RESCU		; Restore cursor position
+	JP	MINT		; Service modem interrupt
+	JP	INVEC		; Initialise interrupt vectors
+	JP	DINVEC		; De-initialise interrupt vectors
+	JP	MDMERR		; Test uart flags for error
+	JP	DTRON		; Turn DTR on
+	JP	DTROFF		; Turn DTR OFF
+	JP	INIT		; Initialise uart
+	JP	WAIT		; Wait seconds
+	JP	MSWAIT		; Wait milliseconds
+	JP	USERIN		; User-defined entry routine
+	JP	USEROUT		; User-defined exit routine
+        JP      GETVARS         ; get system variables
+  	JP	SETPORT		; Set port (0 or 1)
+        JP      SPARE           ; Spare for later use
+        JP      SPARE           ; Spare for later use
+	JP	SPARE		; Spare for later use
+	JP	SPARE		; Spare for later use
+	JP	SPARE		; Spare for later use
+	JP	SPARE		; Spare for later use
+;
+; Screen print function
+;
+SCRNPR:
+;
+	CALL	PRINT
+	DB	'This function not supported.',CR,LF,0
+;
+SPARE:	RET
+;
+; User-defined entry routine
+;
+USERIN:	RET
+;
+; User-defined exit routine
+;
+USEROUT:RET
+;
+; Get a character from the modem: return in HL
+; It is not necessary to test for status
+;
+MCHIN:	PUSH	BC
+	IN	A,(MDDATP)	; Get the character in A
+	LD	L,A		; Put in HL
+	LD	H,0
+	OR	A		; Set/clear Z
+	POP	BC
+	RET
+;
+;Send a character to the modem
+;
+MCHOUT:	LD	HL,2		; Get the character
+	ADD	HL,SP
+	LD	A,(HL)		; In A
+;
+        PUSH    BC
+        LD      C,A
+MCHOUT1: IN     A,(MDCTL1)
+        AND     MDSND
+        JR      Z,MCHOUT1
+        LD      A,C
+        OUT     (MDDATP),A
+        POP     BC
+        RET                     ; Done
+;
+;Test for output ready: return TRUE (1) in HL if ok
+;
+MORDY:
+	IN	A,(MDCTL1)
+	AND	MDTXE
+	JR	Z,MORDYX
+	LD	L,1
+	LD	H,0
+MORDYX:
+	LD	A,L		; Set/clear Z
+	OR	A
+	RET
+;
+;Test for character at modem: return TRUE (1) in HL if so
+;
+MIRDY:
+	IN	A,(MDCTL1)
+	AND	MDRCV
+	JR	Z,MIRDY1
+	LD	L,1
+	JR	MIRDYX
+MIRDY1:	LD	L,0
+;
+MIRDYX:	LD	H,00H
+	LD	A,L		; Set/clear Z
+	OR	A
+	RET
+;
+;Send a break to the modem: leave empty if your system can't do it
+;
+SNDBRK:
+	LD	A,5
+	OUT	(MDCTL1),A	; Send to the status port
+	LD	A,0F8H		; DTR normal, send break tone
+	OUT	(MDCTL1),A
+;
+        LD      HL,300
+	CALL	WAITHLMS	; Wait 300 milliseconds
+;
+	LD	A,5		; Restore normal, 8 bits, DTR on, etc.
+	OUT	(MDCTL1),A
+        LD      A,0EAH
+	OUT	(MDCTL1),A
+;
+	RET
+;
+; Test UART flags for error: return TRUE (1) in HL if error
+;
+MDMERR:
+	LD	A,010H		; Register 0, reset interrupts
+	OUT	(MDCTL1),A
+	IN	A,(MDCTL1)
+;
+	LD	A,L		; Set/clear Z
+	OR	A
+	RET
+;
+; Turn DTR (and optionally RTS) ON
+;
+DTRON:
+	LD	A,05H
+	OUT	(MDCTL1),A
+        LD      A,0EAH
+	OUT	(MDCTL1),A
+;
+	RET
+;
+; Turn DTR ( and RTS?) OFF
+;
+DTROFF:
+	LD	A,05H
+	OUT	(MDCTL1),A
+	LD	A,078H
+	OUT	(MDCTL1),A
+;
+	RET
+;
+;Initialise the UART
+;
+INIT:	LD	HL,2		; Get parameters
+	ADD	HL,SP
+	EX	DE,HL
+	CALL	GETPARM		; In HL
+	LD	(BRATE),HL	; Baud rate
+	CALL	GETPARM
+	LD	(PARITY),HL	; Parity
+	CALL	GETPARM
+	LD	(DATA),HL	; Data bits
+	CALL	GETPARM
+	LD	(STOP),HL	; Stop bits
+;
+; <== Insert your own code here
+;
+        PUSH    BC
+        LD      A,0             ; Select register
+	OUT	(MDCTL1),A
+	LD	A,018H		; Throw out of mode
+	OUT	(MDCTL1),A
+	LD	A,04H		; Select register
+	OUT	(MDCTL1),A
+        LD      A,044H          ; Set ASCII parameters (44=1, 4C=2 stop)
+        OUT     (MDCTL1),A
+        LD      A,03H           ; Select register
+	OUT	(MDCTL1),A
+	LD	A,0C1H		; Enable receive
+	OUT	(MDCTL1),A
+	LD	A,05H		; Select register
+	OUT	(MDCTL1),A
+        LD      A,0EAH          ; Enable send, 'DTR', RTS'- E8h = RTS OFF
+	OUT	(MDCTL1),A
+;
+        LD      A,(BRATE)       ; Get the selected value
+	CP	1		; 300 bps
+	JP	Z,OK300
+	CP	5		; 1200 bps
+	JP	Z,OK1200
+	CP	6		; 2400 bps
+	JP	Z,OK2400
+	CP	8		; 9600 bps
+	JP	Z,OK9600
+        JR      SETBRX          ; Altos can't select over 9600 baud
+;
+OK300:  LD      A,07H           ; set CTC mode
+        OUT     (BRPORT),A
+        LD      A,1             ; MSPEED 300 bps value
+        LD      B,BD300
+        JP      LOADBD
+;
+OK1200: LD      A,47H           ; set CTC mode
+        OUT     (BRPORT),A
+        LD      A,5
+        LD      B,BD1200
+        JP      LOADBD
+;
+OK2400: LD      A,47H           ; set CTC mode
+        OUT     (BRPORT),A
+        LD      A,6
+        LD      B,BD2400
+        JP      LOADBD
+;
+OK9600: LD      A,47H
+        OUT     (BRPORT),A
+        LD      A,8
+        LD      B,BD9600
+;
+LOADBD:
+        LD      (MSPEED),A      ; set baud in low memory
+        LD      A,B
+        OUT     (BRPORT),A
+        POP     BC
+        RET
+;
+SETBRX: POP     BC
+        XOR      A              ; clear it
+        LD      (MSPEED),A      ; not a valid baud rate
+        RET
+;
+; Baudrate table
+;
+BD300	EQU	52		; 38400/300  converted to hex value
+BD1200	EQU	104		; 124800/1200 converted to hex value
+BD2400	EQU	52		; 124800/2400 converted to hex value
+BD9600	EQU	13		; 124800/9600 converted to hex value
+;
+; <== End of your own code
+;
+	RET
+;
+BRATE:  DW      6               ; Baud rate:
+				; 0 = 110 baud	1 = 300 baud	2 = 450 baud
+				; 3 = 600 baud	4 = 710 baud	5 = 1200 baud
+				; 6 = 2400 baud 7 = 4800 baud	8 = 9600 baud
+				; 9 = 19200 baud
+PARITY: DW      'N'             ; Parity (will be 'N', 'E' or 'O')
+DATA:   DW      8               ; Data bits (will be 7 or 8)
+STOP:   DW      1               ; Stop bits (will be 1 or 2)
+;
+; Set the port. ZMP supplies either 0 or 1 as a parameter.
+;
+setport:
+	ld	hl,2		; get port number
+	add	hl,sp
+	ex	de,hl
+	call	getparm		; in HL (values are 0 and 1)
+
+				; <== Insert your own code here
+
+				; <== End of your own code
+	ret
+;
+;-----------------------------------------------------------------------
+;
+; Video terminal sequences: these are for Adds-Viewpoint: Modify as you wish
+;
+; Cursor addressing
+;
+CURSADD:LD	HL,2		; Get parameters
+	ADD	HL,SP
+	EX	DE,HL
+	CALL	GETPARM		; In HL
+	LD	(ROW),HL	; Row
+	CALL	GETPARM
+	LD	(COL),HL	; Column
+;
+; <== Insert your own code here, using values in row and column
+;
+	CALL	PRINT
+        DB      ESC,'Y',0       ; ADDS-Viewpoint leadin
+	LD	A,(ROW)		; Row first
+	ADD	A,' '		; Add offset
+	CALL	COUT
+	LD	A,(COL)		; Sane for column
+	ADD	A,' '
+	CALL	COUT
+;
+; <== end of your own code
+;
+	RET
+;
+ROW:	DS	2		; Row
+COL:	DS	2		; Column
+;
+;Clear screen
+;
+CLS:	CALL	PRINT
+        DB      0CH,0
+	RET
+;
+; Inverse video on
+;
+INVON:	CALL	PRINT
+        DB      0EH,0
+	RET
+;
+; Inverse video off
+;
+INVOFF:	CALL	PRINT
+        DB      0FH,0
+	RET
+;
+; Turn off cursor
+;
+HIDE:
+	RET
+;
+; Turn on cursor
+;
+SHOW:
+	RET
+;
+; Save cursor position
+;
+SAVECU:	RET
+;
+; Restore cursor position
+;
+RESCU:	RET
+;
+;-----------------------------------------------------------------------
+;
+; Service modem interrupt
+;
+MINT:	RET			; My system doesn't need this
+;
+; Initialise interrupt vectors
+;
+INVEC:	RET			; Ditto
+;
+; De-initialise interrupt vectors
+;
+DINVEC:	RET			; Ditto
+;
+;------------------- End of user-defined code --------------------------
+;		 Do not change anything below here
+;
+; Modem character test for 100 ms
+;
+MRD:	PUSH	BC		; Save BC
+	LD	BC,100		; Set limit
+;
+MRD1:	CALL	MIRDY		; Char at modem?
+	JR	NZ,MRD2		; Yes, exit
+	LD	HL,1		; Else wait 1 ms
+	CALL	WAITHLMS
+	DEC	BC		; Loop till done
+	LD	A,B
+	OR	C
+	JR	NZ,MRD1
+	LD	HL,0		; None there, result=0
+	XOR	A
+;
+MRD2:	POP	BC
+	RET
+;
+; Inline print routine: destroys A and HL
+;
+PRINT:	EX	(SP),HL		; Get address of string
+;
+PLOOP:	LD	A,(HL)		; Get next
+	INC	HL		; Bump pointer
+	OR	A		; Done if zero
+	JR	Z,PDONE
+	CALL	COUT		; Else print
+	JR	PLOOP		; And loop
+;
+PDONE:	EX	(SP),HL		; Restore return address
+	RET			; And quit
+;
+; Output a character in A to the console
+;
+COUT:	PUSH	BC		; Save registers
+	PUSH	DE
+	PUSH	HL
+	LD	E,A		; Character to E
+	LD	C,2
+	CALL	BDOS		; Print it
+	POP	HL
+	POP	DE
+	POP	BC
+	RET
+;
+; Wait(seconds)
+;
+WAIT:	LD	HL,2
+	ADD	HL,SP
+	EX	DE,HL		; Get delay size
+	CALL	GETPARM
+;				; Fall thru to...
+; Wait seconds in HL
+;
+WAITHLS:PUSH	BC		; Save BC
+	PUSH	DE		; DE
+	PUSH	IX		; And IX
+	LD	IX,0		; Then point IX to 0
+;				;   so we don't upset memory-mapped I/O
+;
+; Calculate values for loop constants. Need to have two loops to avoid
+; 16-bit overflow with clock speeds above 9 MHz.
+;
+OUTERVAL EQU	(CLKSPD	/ 10) +	1
+;
+INNERVAL EQU	(6667 /	OUTERVAL) * CLKSPD
+;
+WAIT10:	LD	B,OUTERVAL
+;
+WAIT11:	LD	DE,INNERVAL
+;
+WAIT12:	BIT	0,(IX)		; Time-wasters
+	BIT	0,(IX)
+	BIT	0,(IX)		; 20 T-states each
+	BIT	0,(IX)
+	BIT	0,(IX)
+	BIT	0,(IX)
+	DEC	DE
+	LD	A,E
+	LD	A,D
+	OR	E
+	JR	NZ,WAIT12	; 150 T-states per inner loop
+	DJNZ	WAIT11		; Decrement outer loop
+	DEC	HL		; Ok, decrement count in HL
+	LD	A,H
+	OR	L
+	JR	NZ,WAIT10
+	POP	IX		; Done -- restore IX
+	POP	DE		; DE
+	POP	BC		; And BC
+	RET
+;
+; Wait milliseconds
+;
+MSWAIT:	LD	HL,2
+	ADD	HL,SP
+	EX	DE,HL		; Get delay size
+	CALL	GETPARM
+;
+; Wait milliseconds in HL
+;
+WAITHLMS:
+	PUSH	DE
+;
+W1MS0:	LD	DE,39 *	CLKSPD
+;
+W1MS1:	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,W1MS1
+	DEC	HL
+	LD	A,H
+	OR	L
+	JR	NZ,W1MS0
+	POP	DE
+	RET
+;
+; Get next parameter from (DE) into HL
+;
+GETPARM:EX	DE,HL		; Get address into HL
+	LD	E,(HL)		; Get low
+	INC	HL
+	LD	D,(HL)		; Then hihi
+	INC	HL		; Bump for next
+	EX	DE,HL		; Result in HL, address still in DE
+	RET
+;
+;Get address of user-defined variables
+
+getvars:
+       ld      hl,uservars
+       ret
+
+uservars:
+       dw      overdrive       ; .OVR etc. drive/user
+       dw      overuser
+
+
+         IF     ($ - CODEBGN) GT OVSIZE
+TOOBIG:	JP	ERRVAL		; Overlay is too large
+	 ENDIF
+;
+	END
+
+;--------------------------------------------------------------
+;
+;
+; The bios jump table starts at 5700h in the cbios64.com file loaded at boot.
+; Listed are the addresses used when patching this file.
+; this code winds up at F6B0 after boot up.
+; original code here, if yours doesnt look like this, then don't try this.
+;
+;57B0   LD      SP,(F757)
+;57B4   LD      B,A
+;57B5   LD      A,(F759)
+;
+; change next instruction
+;
+;57B8   OUT    9,A        change to   JP  0F644
+;57BA   LD     B,A
+;57BB   RET
+;
+;57BC   POP     HL
+;57BD   LD      (F757),SP
+;57C1   IN      A,9
+;57C3   LD      (F759),A
+;57C6   LD      A,18
+;57C8   OUT     9,A
+;
+; change next instruction
+;
+;57CA   LD      SP,C000    change to  JP  0F650
+;57CD   JP      (HL)
+;
+;57CE   LD  A,18
+;57D0   OUT 9,A
+;
+;
+;  add at 5744h , this area should be empty originally
+;
+;5744    LD      IX,(0F670)
+;5748    LD      IY,(0F672)
+;574C    OUT     9,A
+;574E    LD      A,B
+;574F    RET
+;5750    LD      (0F670),IX
+;5754    LD      (0F672),IY
+;5758    LD      SP,0C000
+;575B    JP      (HL)
+;
+; save changes as CBIOS64.new and make sure files are the same length
+; then rename cbios64.old=cbios64.com and cbios64.com=cbios64.new and reboot
+; and try it out.
+;
+; I take no responsiblity for whatever results from attempting this.
+; make sure you have backups always.
+; if your bios looks like this, then this will allow you to run
+; ZMP, RZMP, QL40, and other programs that may not have worked before.
+
+

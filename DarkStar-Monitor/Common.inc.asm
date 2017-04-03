@@ -28,6 +28,7 @@
 ; 20140905 - Modified hexadecimal constants to 0xxH format to be widely
 ;            accepted by different assemblers
 ; 20150714 - Modified to implement serial XON/XOFF and RTS/CTS
+; 20170331 - Fixed uart1 isr routine
 ; ---------------------------------------------------------------------
 
 ; ---------------------------------------------------------------------
@@ -85,7 +86,7 @@ mzmac	equ	1
 ; Monitor version numbers (major.minor)
 ;
 monmaj		equ	'3'
-monmin		equ	'5'
+monmin		equ	'6'
 
 ;
 ; Buffers addresses labels

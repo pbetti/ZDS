@@ -268,7 +268,7 @@ onshadow:
 	ld	(cursshp),a
 	;
 	call	bbcrtcini		; Initialize CRTC
-		; workaround for "slow" init video boads
+		; workaround for "slow" init video boards
 	ld	de, 1000		; sleep 1 sec.
 	call	delay
 	call	bbcrtcini		; Initialize CRTC (again)
@@ -375,7 +375,7 @@ bootm:
 	ld	a,$c3
 	ld	($0000),a
 	;
-bmpro:	
+bmpro:
 	call	bbhdinit
 	call	bbldpart		; load partition table
 	ld	hl,mbmenu		; display the menu

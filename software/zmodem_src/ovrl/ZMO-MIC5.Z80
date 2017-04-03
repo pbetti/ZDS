@@ -1,0 +1,639 @@
+;  PROGRAM: ZMO-MIC5.Z80                                     
+;  AUTHOR:  Ian Justman
+;  VERSION: 1.5
+;  DATE:  14 Sept, 1988
+;-----------------------------------------------------------------------
+;	This overlay is set up for a Multitech MIC-500 computer 
+;	 Uses a Z80 DART and Z80 CTC baudrate generator
+;-----------------------------------------------------------------------
+; 89/04/12 - Modified to ZMP v1.5		- George Conover
+; 89/03/15 - Removed the beginning remarks to make the file
+;            smaller. If you need the remarks there are in the
+;            file ZMP-BLNK.Z80 			- George Conover
+; 89/03/14 - Modified to ZMP v1.4		- George Conover
+; 89/00914 - First version of this file		- Ian Justman
+;
+;	Written by -
+;	  Ron Murray, c/o Z-Node 62, 061-9-450-0200, Perth, Western Australia.
+;-----------------------------------------------------------------------
+NO	EQU	0
+YES	EQU	NOT NO
+;
+;------------------------------------------------------------------------------
+; User-set variables
+;
+CLKSPD	EQU	4		; Processor clock speed in MHz
+;
+;Set the following two equates to the drive and user area which will contain
+;   ZMP's .OVR files, .CFG file, .FON file and .HLP file. Set both to zero
+;   (null) to locate them on the drive from which ZMP was invoked.
+
+OVERDRIVE	EQU	'A'	; Drive to find overlay files on ('A'-'P')
+OVERUSER	EQU	0	; User area to find files
+
+;
+DPORT	EQU	88H		; DART data port
+SPORT	EQU	DPORT+2		; DART status port
+;
+;The following are used in setting up the Z80 DART.
+;
+RSTINS	EQU	18H		; Reset DART - register 0
+;
+RSTERR	EQU	30H		; Reset parity and overrun flags - register 0
+REG1INS	EQU	0		; No interrupts - register 1
+REG3INS	EQU	0C1H		; 8 Rx bits, Rx enable
+REG4INS	EQU	44H		; 16X baud rate, 1 stop bit, no parity
+REG5INS	EQU	0E8H		; 8 Tx bits, Tx enable, no RTS, DTR
+;
+; Baud rate
+;
+BAUDA	EQU	85H		; Baud rate generator for serial chan a
+;
+; NOT user-set variables
+;
+USERDEF	EQU	00145H		; Origin of this overlay: get this value
+;				; From the .SYM file produced when
+;				;   ZMP.COM is linked
+MSPEED	EQU	003CH		; Current baud rate: as used by BYE etc
+;				;   ZMP.H
+OVSIZE	EQU	0400H		; Max size of this overlay
+;
+	.Z80			; Use Z80 code
+	ASEG			; Absolute
+;
+	ORG	USERDEF
+;
+ESC	EQU	1BH
+CTRLQ	EQU	11H
+CR	EQU	0DH
+LF	EQU	0AH
+BDOS	EQU	5
+;
+; Jump table for the overlay: do NOT change this
+;
+CODEBGN	EQU	$
+;
+JUMPTAB:
+	JP	SCRNPR		; Screen print
+	JP	MRD		; Modem read with timeout
+	JP	MCHIN		; Get a character from modem
+	JP	MCHOUT		; Send a character to the modem
+	JP	MORDY		; Test for tx buffer empty
+	JP	MIRDY		; Test for character received
+	JP	SNDBRK		; Send break
+	JP	CURSADD		; Cursor addressing
+	JP	CLS		; Clear screen
+	JP	INVON		; Inverse video on
+	JP	INVOFF		; Inverse video off
+	JP	HIDE		; Hide cursor
+	JP	SHOW		; Show cursor
+	JP	SAVECU		; Save cursor position
+	JP	RESCU		; Restore cursor position
+	JP	MINT		; Service modem interrupt
+	JP	INVEC		; Initialise interrupt vectors
+	JP	DINVEC		; De-initialise interrupt vectors
+	JP	MDMERR		; Test uart flags for error
+	JP	DTRON		; Turn DTR on
+	JP	DTROFF		; Turn DTR OFF
+	JP	INIT		; Initialise uart
+	JP	WAIT		; Wait seconds
+	JP	MSWAIT		; Wait milliseconds
+	JP	USERIN		; User-defined entry routine
+	JP	USEROUT		; User-defined exit routine
+	JP	GETVARS		; get system variables
+  	JP	SETPORT		; Set port (0 or 1)
+;
+; Spare jumps for compatibility with future versions
+;
+	JP	SPARE		; spare for later use
+	JP	SPARE		; Spare for later use
+	JP	SPARE		; Spare for later use
+	JP	SPARE		; Spare for later use
+	JP	SPARE		; Spare for later use
+	JP	SPARE		; Spare for later use
+;
+; Screen print function
+;
+SCRNPR:	DS	0
+;
+; <== Insert your own code here
+;
+	CALL	PRINT
+	DB	'This function not supported.',CR,LF,0
+;
+; <== End of your own code
+;
+SPARE:	RET
+;
+; User-defined entry routine
+;
+USERIN:	RET
+;
+; User-defined exit routine
+;
+USEROUT:RET
+;
+; Get a character from the modem: return in HL
+; It is not necessary to test for status
+;
+MCHIN:	PUSH	BC
+;
+; <== Insert your own code here, to get the character in A
+;
+	IN	A,(DPORT)	; Get the character from the serial port
+	LD	L,A		; Put in HL
+	LD	A,(PARITY)	; Strip hi bit if parity odd or even
+	CP	'N'		; No parity?
+	JR	Z,SKIPPAR	; Yes, skip
+	LD	A,L
+	AND	07FH		; Strip parity bit
+	LD	L,A		; Put the character in HL
+;
+SKIPPAR:LD	A,L		; Put the character back in A
+;
+; <== End of your own code
+;
+	LD	H,0
+	OR	A		; Set/clear Z
+	POP	BC
+	RET
+;
+; Send a character to the modem
+;
+MCHOUT:	LD	HL,2		; Get the character
+	ADD	HL,SP
+	LD	A,(HL)		; In A
+;
+; <== Insert your own code here
+;
+	OUT	(DPORT),A	; Put the character to the serial port
+;
+; <== End of your own code
+;
+	RET			; Done
+;
+; Test for output ready: return YES (1) in HL if ok
+;
+MORDY:	DS	0
+;
+; <== Insert your own code here
+;
+	IN	A,(SPORT)	; Read status port
+	LD	HL,0		; Assume not ready
+	AND	4		; Look at bit 0
+	JR	Z,MORDY1
+	INC	HL		; Otherwise set it
+;
+MORDY1:	DS	0
+;
+; <== End of your own code
+;
+	LD	A,L		; Set/clear Z
+	OR	A
+	RET
+;
+; Test for character at modem: return YES (1) in HL if so
+;
+MIRDY:	DS	0
+;
+; <== Insert your own code here
+;
+	IN	A,(SPORT)	; Read status of serial port
+	LD	HL,0		; Assume not ready
+	AND	1		; Test bit 1
+	JR	Z,MIRDY1
+	INC	HL		; Otherwise set it
+;
+MIRDY1:	DS	0
+;
+; <== End of your own code
+;
+	LD	A,L		; Set/clear Z
+	OR	A
+	RET
+;
+; Send a break to the modem: leave empty if your system can't do it
+;
+SNDBRK:	DS	0
+;
+; <== Insert your own code here, to go to 'break' level
+;
+; This routine sets a 300 ms break tone
+;
+	LD	A,5
+	OUT	(SPORT),A	; Output to the status port
+	LD	A,0F8H		; DTR normal, send break tone
+	OUT	(SPORT),A	; Output to the status port
+;
+; <== End of your own code
+;
+	LD	HL,300
+	CALL	WAITHLMS	; Wait 300 milliseconds
+;
+; <== Insert your own code here, to restore
+;
+	LD	A,5
+	OUT	(SPORT),A	; Output to the status port
+	LD	A,0E8H		; Restore normal, 8 bits, DTR on, etc.
+	OUT	(SPORT),A	; Output to the status port
+;
+; <== End of your own code
+;
+	RET
+;
+; Test UART flags for error: return YES (1) in HL if error
+;
+MDMERR:	DS	0
+;
+; <== Insert your own code here
+;
+	XOR	A		; Currently not implemented
+;
+; <== End of your own code
+;
+	LD	A,L		; Set/clear Z
+	OR	A
+	RET
+;
+; Turn DTR (and optionally RTS) ON.
+;
+DTRON:	DS	0
+;
+; <== Insert your own code here
+;
+	LD	A,5		; Select register 5
+	OUT	(SPORT),A
+	LD	A,REG5INS+2	; 8 Tx bits, Tx enable, RTS, DTR
+	OUT	(SPORT),A
+;
+; <== End of your own code
+;
+	RET
+;
+; Turn DTR ( and RTS?) OFF
+;
+DTROFF:	DS	0
+;
+; <== Insert your own code here
+;
+	LD	A,5		; Select register 5
+	OUT	(SPORT),A
+	LD	A,REG5INS	; 8 Tx bits, Tx enable, no RTS, DTR
+	OUT	(SPORT),A
+;
+; <== End of your own code
+;
+	RET
+;
+; Initialise the UART
+;
+INIT:	LD	HL,2		; Get parameters
+	ADD	HL,SP
+	EX	DE,HL
+	CALL	GETPARM		; In HL
+	LD	(BRATE),HL
+	CALL	GETPARM
+	LD	(PARITY),HL	; Parity
+	CALL	GETPARM
+	LD	(DATA),HL	; Data bits
+	CALL	GETPARM
+	LD	(STOP),HL	; Stop bits
+;
+; <== Insert your own code here
+;
+				; Using values below
+	LD	A,0		; Select register 0
+	OUT	(SPORT),A
+	LD	A,RSTINS	; Reset DART - 18h
+	OUT	(SPORT),A
+	LD	A,4		; Select register 4
+	OUT	(SPORT),A
+	LD	A,(PARITY)	; Do parity
+	LD	E,003H		; Assume even
+	CP	'E'		; Even?
+	JR	Z,SETSTOP	; Yes
+	LD	E,001H		; Try odd
+	CP	'O'
+	JR	Z,SETSTOP
+	LD	E,0		; Indicate no parity
+;
+SETSTOP:LD	A,(STOP)	; Set stop bits
+	CP	2
+	LD	A,REG4INS	; 16X baud rate, 1 stop bit, no parity
+	JR	NZ,ONESTOP
+	OR	00CH		; Set bits 2 and 3
+;
+ONESTOP:OR	E		; Put parity bits in the register
+	OUT	(SPORT),A
+	LD	A,3		; Select register 3
+	OUT	(SPORT),A
+	LD	A,(DATA)	; Get data bits parameter field
+	CP	7		; Is 7 required
+	LD	A,REG3INS	; 8 Rx bits, Rx enable
+	JR	NZ,SETBR
+	AND	07FH
+;
+SETBR:	OUT	(SPORT),A	; Set Rx bits
+	LD	A,5		; Select register 5
+	OUT	(SPORT),A
+	LD	A,(DATA)	; Set data bits
+	CP	7		; But 7 if required
+	LD	A,REG5INS	; 8 Tx bits, Tx enable, no RTS, DTR
+	JR	NZ,SETBS
+	AND	0BFH
+;
+SETBS:	OUT	(SPORT),A	; Set tx bits
+	LD	A,1		; Select register 1
+	OUT	(SPORT),A
+	LD	A,REG1INS	; No interrupts
+	OUT	(SPORT),A
+	LD	A,47H
+	OUT	(BAUDA),A
+	LD	A,(BRATE)	; Set baud rate: get index
+	LD	HL,BRVAL
+	LD	C,A		; Rate to BC
+	LD	B,0
+	ADD	HL,BC
+	LD	A,(HL)		; Get baud rate value
+	OR	A		; 0 = invalid
+	JR	Z,SETBRX
+	OUT	(BAUDA),A
+	LD	A,(BRATE)	; Tell zmp it's ok
+	LD	(MSPEED),A
+;
+SETBRX:	DS	0
+;
+; <== End of your own code
+;
+	RET
+;
+; Baud rate factors, output to bauda to select baud rate
+;
+BD10	EQU	00H		; 110 baud rate 	0
+BD30	EQU	80H		; 300 baud rate 	1
+BD12	EQU	20H		; 1200 baud rate	5
+BD24	EQU	10H		; 2400 baud rate	6
+BD48	EQU	08H		; 4800 baud rate	7
+BD96	EQU	04H		; 9600 baud rate	8
+BD19K	EQU	02H		; 19.2k baud rate	9
+;
+; Values for control reg for each baud rate: 0 if invalid
+;
+BRVAL:
+;;		 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12
+	DB	00,128,00,00,00,32,16,08,04,02,00,00,00,00
+
+BRATE:	DS	2		; Baud rate:
+				; 0 = 110 baud	  1 = 300 baud	  2 = 450 baud
+				; 3 = 600 baud	  4 = 710 baud	  5 = 1200 baud
+				; 6 = 2400 baud   7 = 4800 baud   8 = 9600 baud
+				; 9 = 19200 baud 10 = 38400 baud 11 = 57600 baud
+				; 12 = 76800 baud 13 = 115200 baud
+;
+PARITY:	DS	2		; Parity (will be 'N', 'E' or 'O')
+DATA:	DS	2		; Data bits (will be 7 or 8)
+STOP:	DS	2		; Stop bits (will be 1 or 2)
+;
+;-----------------------------------------------------------------------
+;
+; Set the port. ZMP supplies either 0 or 1 as a parameter.
+;
+setport:
+	ld	hl,2		; get port number
+	add	hl,sp
+	ex	de,hl
+	call	getparm		; in HL (values are 0 and 1)
+
+				; <== Insert your own code here
+
+				; <== End of your own code
+	ret
+;
+; Video terminal sequences: these are for ADM-3A: Modify as you wish
+;
+; Cursor addressing:
+;
+CURSADD:LD	HL,2		; Get parameters
+	ADD	HL,SP
+	EX	DE,HL
+	CALL	GETPARM		; In HL
+	LD	(ROW),HL	; Row
+	CALL	GETPARM
+	LD	(COL),HL	; Column
+;
+; <== Insert your own code here, using values in row and column
+;
+	CALL	PRINT
+	DB	ESC,'=',0	; ADM-3A leadin
+	LD	A,(ROW)		; Row first
+	ADD	A,' '		; Add offset
+	CALL	COUT
+	LD	A,(COL)		; Sane for column
+	ADD	A,' '
+	CALL	COUT
+;
+; <== end of your own code
+;
+	RET
+;
+ROW:	DS	2		; Row
+COL:	DS	2		; Column
+;
+; Clear screen
+;
+CLS:	CALL	PRINT
+	DB	01AH,0
+	RET
+;
+; Inverse video on
+;
+INVON:	CALL	PRINT
+	DB	ESC,')',0
+	RET
+;
+; Inverse video off
+;
+INVOFF:	CALL	PRINT
+	DB	ESC,'(',0
+	RET
+;
+; Turn off cursor
+;
+HIDE:	CALL	PRINT
+	DB	ESC,'z',0
+	RET
+;
+; Turn on cursor
+;
+SHOW:	CALL	PRINT
+	DB	ESC,'v',0
+	RET
+;
+; Save cursor position
+;
+SAVECU:	RET
+;
+; Restore cursor position
+;
+RESCU:	RET
+;
+;-----------------------------------------------------------------------
+;
+;Service modem interrupt
+;
+MINT:	RET			; My system doesn't need this
+;
+; Initialise interrupt vectors
+;
+INVEC:	RET			; Ditto
+;
+; De-initialise interrupt vectors
+;
+DINVEC:	RET			; Ditto
+;
+;------------------- End of user-defined code --------------------------
+;		 Do not change anything below here
+;
+; Modem character test for 100 ms
+;
+MRD:	PUSH	BC		; Save BC
+	LD	BC,100		; Set limit
+;
+MRD1:	CALL	MIRDY		; Char at modem?
+	JR	NZ,MRD2		; Yes, exit
+	LD	HL,1		; Else wait 1 ms
+	CALL	WAITHLMS
+	DEC	BC		; Loop till done
+	LD	A,B
+	OR	C
+	JR	NZ,MRD1
+	LD	HL,0		; None there, result=0
+	XOR	A
+;
+MRD2:	POP	BC
+	RET
+;
+; Inline print routine: destroys A and HL
+;
+PRINT:	EX	(SP),HL		; Get address of string
+;
+PLOOP:	LD	A,(HL)		; Get next
+	INC	HL		; Bump pointer
+	OR	A		; Done if zero
+	JR	Z,PDONE
+	CALL	COUT		; Else print
+	JR	PLOOP		; And loop
+;
+PDONE:	EX	(SP),HL		; Restore return address
+	RET			; And quit
+;
+; Output a character in A to the console
+;
+COUT:	PUSH	BC		; Save registers
+	PUSH	DE
+	PUSH	HL
+	LD	E,A		; Character to E
+	LD	C,2
+	CALL	BDOS		; Print it
+	POP	HL
+	POP	DE
+	POP	BC
+	RET
+;
+; Wait(seconds)
+;
+WAIT:	LD	HL,2
+	ADD	HL,SP
+	EX	DE,HL		; Get delay size
+	CALL	GETPARM
+;				; Fall thru to...
+; Wait seconds in HL
+;
+WAITHLS:PUSH	BC		; Save BC
+	PUSH	DE		; DE
+	PUSH	IX		; And IX
+	LD	IX,0		; Then point IX to 0
+;				;   so we don't upset memory-mapped I/O
+;
+; Calculate values for loop constants. Need to have two loops to avoid
+; 16-bit overflow with clock speeds above 9 MHz.
+;
+OUTERVAL EQU	(CLKSPD	/ 10) +	1
+;
+INNERVAL EQU	(6667 /	OUTERVAL) * CLKSPD
+;
+WAIT10:	LD	B,OUTERVAL
+;
+WAIT11:	LD	DE,INNERVAL
+;
+WAIT12:	BIT	0,(IX)		; Time-wasters
+	BIT	0,(IX)
+	BIT	0,(IX)		; 20 T-states each
+	BIT	0,(IX)
+	BIT	0,(IX)
+	BIT	0,(IX)
+	DEC	DE
+	LD	A,E
+	LD	A,D
+	OR	E
+	JR	NZ,WAIT12	; 150 T-states per inner loop
+	DJNZ	WAIT11		; Decrement outer loop
+	DEC	HL		; Ok, decrement count in HL
+	LD	A,H
+	OR	L
+	JR	NZ,WAIT10
+	POP	IX		; Done -- restore IX
+	POP	DE		; DE
+	POP	BC		; And BC
+	RET
+;
+; Wait milliseconds
+;
+MSWAIT:	LD	HL,2
+	ADD	HL,SP
+	EX	DE,HL		; Get delay size
+	CALL	GETPARM
+;
+; Wait milliseconds in HL
+;
+WAITHLMS:
+	PUSH	DE
+;
+W1MS0:	LD	DE,39 *	CLKSPD
+;
+W1MS1:	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,W1MS1
+	DEC	HL
+	LD	A,H
+	OR	L
+	JR	NZ,W1MS0
+	POP	DE
+	RET
+;
+; Get next parameter from (DE) into HL
+;
+GETPARM:EX	DE,HL		; Get address into HL
+	LD	E,(HL)		; Get low
+	INC	HL
+	LD	D,(HL)		; Then hihi
+	INC	HL		; Bump for next
+	EX	DE,HL		; Result in HL, address still in DE
+	RET
+;
+;Get address of user-defined variables
+;
+GETVARS:
+	LD	HL,USERVARS
+	RET
+USERVARS:
+	DW	OVERDRIVE	; .OVR etc. drive/user
+	DW	OVERUSER
+;
+	 IF	($ - CODEBGN) GT OVSIZE
+TOOBIG:	JP	ERRVAL		; Overlay is too large
+	 ENDIF
+;
+	END
+

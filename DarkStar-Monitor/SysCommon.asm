@@ -474,7 +474,6 @@ u1isr:
 	ld	a,(cnfbyte)
 	bit	0,a			; check for intr redir on rst8
 	jr	z,u1nul			; ignore interrupt
-	pop	af
 	rst	8			; redirect to user handler
 u1nul:
 	pop	af

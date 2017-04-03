@@ -1,0 +1,583 @@
+;  PROGRAM: ZMO-SN05.Z80
+;  AUTHOR:  Richard Kopplin
+;  VERSION: 1.5
+;  DATE:  25 Oct, 1988
+;-----------------------------------------------------------------------
+;	This overlay is set up for a Sanyo MBC-1200/1250
+;		UART 8251	NO baud rate generator
+;-----------------------------------------------------------------------
+; 89/04/12 - Modified to ZMP v1.5		- George Conover
+; 89/03/15 - Removed the beginning remarks to make the file
+;            smaller. If you need the remarks there are in the
+;            file ZMP-BLNK.Z80 			- George Conover
+; 89/03/14 - Modified to ZMP v1.4		- George Conover
+; 88/10/10 - Modified to ZMP v1.3		- Ron Murray
+; 88/09/15 - Modified to ZMP v1.2		- Ron Murray
+; 88/09/14 - First version of this file		- Richard Kopplin
+;
+;	Written by - Richard Kopplin, 805-486-6847, Port Hueneme, CA
+;-----------------------------------------------------------------------
+; NOTES: On use of ZMP with the Sanyo MBC-1200/1250
+;	Although the Sanyo has no baud rate generator the program will select
+; between 300 or 1200 baud. To get 300 you must select 300 any other baud 
+; rate will program the UART for 1200. Selection of 1 or 2 stop bits, Odd
+; Even or No parity and 7 or 8 bit selection is also enabled. This feature
+; can be disabled by deleting the call to "init2" in the "init" routine.
+;	The "userin:" routine redefines the Sanyo function keys, "userout:"
+; restores the orginal Sanyo function keys when exiting ZMP. The definition
+; table for the function keys while in ZMP is located in the "newkeys:" area
+; just below "userout:".
+;	I could not get the screen print funciton to work with my printer.
+; although if you had the "right" printer I'am sure it would work. What I did
+; add here is a one line message with the overlay date and version.
+;
+;============================================================================
+; User-set variables:
+
+CLKSPD	EQU	4	; Processor clock speed in MHz
+
+;Set the following two equates to the drive and user area which will contain
+;   ZMP's .OVR files, .CFG file, .FON file and .HLP file. Set both to zero
+;   (null) to locate them on the drive from which ZMP was invoked.
+
+OVERDRIVE	EQU	'A'	; Drive to find overlay files on ('A'-'P')
+OVERUSER	EQU	0	; User area to find files
+
+;------------------------------------------------------------------------------
+
+MDDATA  EQU	0ECH	; Modem data port for the Sanyo MBC-1200/1250
+MDCTRL  EQU	0EDH	; the UART is an 8251, no baud rate control.
+
+;============================================================================
+; NOT user-set variables
+
+USERDEF	EQU	0145H	; Origin of this overlay.  This address may
+			; change with subsequent revisions.
+MSPEED	EQU	05CH		; location of current baud rate. 
+OVSIZE	EQU	0400H		; max size of this overlay
+
+ESC	EQU	1BH
+CR	EQU	0DH
+LF	EQU	0AH
+BDOS	EQU	5
+
+	.Z80			; use z80 code
+	ASEG			; absolute
+	ORG	USERDEF
+
+CODEBGN	EQU	$
+
+;Jump table for the overlay: do NOT change this
+JUMPTAB:
+	JP	SCRNPR		; screen print
+	JP	MRD		; modem read with timeout
+	JP	MCHIN		; get a character from modem
+	JP	MCHOUT		; send a character to the modem
+	JP	MORDY		; test for tx buffer empty
+	JP	MIRDY		; test for character received
+	JP	SNDBRK		; send break
+	JP	CURSADD		; cursor addressing
+	JP	CLS		; clear screen
+	JP	INVON		; inverse video on
+	JP	INVOFF		; inverse video off
+	JP	HIDE		; hide cursor
+	JP	SHOW		; show cursor
+	JP	SAVECU		; save cursor position
+	JP	RESCU		; restore cursor position
+	JP	MINT		; service modem interrupt
+	JP	INVEC		; initialise interrupt vectors
+	JP	DINVEC		; de-initialise interrupt vectors
+	JP	MDMERR		; test uart flags for error
+	JP	DTRON		; turn DTR on
+	JP	DTROFF		; turn DTR OFF
+	JP	INIT		; initialise uart
+	JP	WAIT		; wait seconds
+	JP	MSWAIT		; wait milliseconds
+	JP	USERIN		; user-defined entry routine
+	JP	USEROUT		; user-defined exit routine
+	JP	GETVARS		; get system variables
+  	JP	SETPORT		; Set port (0 or 1)
+;
+; Spare jumps for compatibility with future versions
+;
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+
+;============================================================================
+; Main code starts here
+;
+;Screen print function
+SCRNPR:
+	CALL	PRINT
+	DB	'Zmodem v1.5 overlay for Sanyo MBC-1200/1250 '
+	DB	' v0.1  dated  25 October 1988',CR,LF
+	DB	'Print screen function is not supported.',CR,LF,0
+SPARE:
+	RET		; This ret used by both scrnpr and spare
+
+; User-defined entry routine: 
+; Install a new function key table for the Sanyo MBC-1200/1250
+USERIN:
+	LD	HL,(0001H)	; Load address of warm boot
+	LD	BC,0030H	; add offset for keytable
+	ADD	HL,BC
+	LD	BC,NEWKEYS	; load address of new key table
+	LD	E,(HL)		; store normal keytable in de
+	LD	(HL),C
+	INC	HL
+	LD	D,(HL)
+	LD	(HL),B
+	LD	(KEYADD),DE	; store address for normal keytable
+	RET
+
+; User-defined exit routine: Reinstall normal function key table
+USEROUT:
+	LD	HL,(0001H)	; Load address of warm boot
+	LD	BC,0030H	; add offset for keytable address
+	ADD	HL,BC
+	LD	BC,(KEYADD)	; load address of normal keytable
+	LD	(HL),C		; and restore it in BIOS
+	INC	HL
+	LD	(HL),B	
+	RET
+
+KEYADD: DW 0			; Temp storage of normal keytable address
+NEWKEYS:
+	DB 08H,0,0,0,0,0,0,0	; Brown "INS" key
+	DB CR, 0,0,0,0,0,0,0	; Brown "ENTER" key
+	DB ESC,'1',0,0,0,0,0,0	; PF1 - Macro key 1
+	DB ESC,'2',0,0,0,0,0,0	; PF2 - Macro key 2
+	DB ESC,'3',0,0,0,0,0,0	; PF3 - Macro key 3
+	DB ESC,'4',0,0,0,0,0,0	; PF4 - Macro key 4
+	DB ESC,'5',0,0,0,0,0,0	; PF5 - Macro key 5
+	DB ESC,'6',0,0,0,0,0,0	; PF6 - Macro key 6
+	DB ESC,'7',0,0,0,0,0,0	; PF7 - Macro key 7
+	DB ESC,'8',0,0,0,0,0,0	; PF8 - Macro key 8
+	DB ESC,'9',0,0,0,0,0,0	; PF9 - Macro key 9
+	DB ESC,'0',0,0,0,0,0,0	; PF10 - Macro key 0
+	DB ESC,'K',0,0,0,0,0,0	; PF11 - Display keyboard macros
+	DB ESC,'F',0,0,0,0,0,0	; PF12 - Disk Operation
+	DB ESC,'D',0,0,0,0,0,0	; PF13 - Disk Directory
+	DB ESC,'H',0,0,0,0,0,0	; PF14 - HELP
+	DB ESC,'Q',0,0,0,0,0,0	; PF15 - Quit/Exit program
+	DB ESC,'Z',0,0,0,0,0,0	; Left arrow - Clear Screen 
+	DB ESC,'M',0,0,0,0,0,0	; Right arrow - Toggle capture mode 
+	DB 'Q'-40H,0,0,0,0,0,0,0	; Up arrow  -   ctrl Q
+	DB 'S'-40H,0,0,0,0,0,0,0	; Down arrow  -   ctrl S
+	DB 'C'-40H,0,0,0,0,0,0,0	; Left/up arrow -   ctrl C
+
+;============================================================================
+;    Modem control area:   UART 8251  No baud rate generator
+;  -------------------------------------------------
+;  | DSR | syn |  FE |  OE |  PE | TxE | RxR | TxR |  Stauts format
+;  -------------------------------------------------
+;  | EH  | IR  | RTS |  ER | SBRK| RxE | DTR | TxE |  Command format
+;  -------------------------------------------------
+;  | S2  | S1  |  EP | PEN |  L2 |  L1 |  B2 |  B1 |  Commands
+;  -------------------------------------------------
+;   
+;  S2 S1 Bits   EP      PEN         L2 L1 Bits   B2 B1 Rate
+;   0  0  ?     0 Odd	0 Disable    0  0  5      0  0   ?
+;   0  1  1     1 Even  1 Enable     0  1  6      0  1  X1
+;   1  0  1.5                        1  0  7      1  0  X16
+;   1  1  2                          1  1  8      1  1  X64
+;
+;Get a character from the modem: return in HL
+MCHIN:				; <== Insert your own code here
+	IN	A,(MDDATA)
+				; <== End of your own code
+	LD	L,A		; put in HL
+	LD	H,0
+	OR	A		; set/clear Z
+	RET
+
+;Send a character to the modem
+MCHOUT:
+	LD	HL,2		; get the character
+	ADD	HL,SP
+	LD	A,(HL)
+				; <== Insert your own code here
+	OUT	(MDDATA),A
+				; <== End of your own code
+	RET			; done
+
+;Test for output ready: return TRUE (1) in HL if ok
+MORDY:				; <== Insert your own code here
+	LD	HL,0
+	IN	A,(MDCTRL)
+	BIT	0,A
+	JR	Z,MORDY1
+	INC	HL
+				; <== End of your own code
+MORDY1: LD	A,L		; set/clear Z
+	OR	A
+	RET
+
+;Test for character at modem: return TRUE (1) in HL if so
+MIRDY:				; <== Insert your own code here
+	LD	HL,0
+	IN	A,(MDCTRL)
+	BIT	1,A
+	JR	Z,MINDY1
+	INC	HL
+				; <== End of your own code
+MINDY1: LD	A,L		; set/clear Z
+	OR	A
+	RET
+
+;Send a break to the modem: leave empty if your system can't do it
+SNDBRK:
+	LD	A,00001000B
+	OUT	(MDCTRL),A
+	LD	HL,300		; wait 300 mS
+	CALL	WAITHLMS
+	LD	A,00110111B
+	OUT	(MDCTRL),A
+	RET
+
+;Test UART flags for error: return TRUE (1) in HL if error.
+MDMERR:				; <== Insert your own code here
+	LD	HL,0
+	IN	A,(MDCTRL)
+	BIT	4,A
+	JR	Z,MDMER1
+	LD	A,00110111B	; if error reset UART
+	OUT	(MDCTRL),A
+	INC	HL
+				; <== End of your own code
+MDMER1: LD	A,L		; set/clear Z
+	OR	A
+	RET
+
+;Turn DTR ON
+DTRON:
+	LD	A,00110111B
+	OUT	(MDCTRL),A
+	RET
+
+;Turn DTR OFF
+DTROFF:
+	LD	A,00110101B
+	OUT	(MDCTRL),A
+	RET
+
+;Initialise the uart
+INIT:
+	LD	HL,2		; get parameters
+	ADD	HL,SP
+	EX	DE,HL
+	CALL	GETPARM		; in HL and save it in ..
+	LD	(BRATE),HL	; baud rate
+	CALL	GETPARM
+	LD	(PARITY),HL	; parity
+	CALL	GETPARM
+	LD	(DATA),HL	; data bits (BINARY 7 or 8)
+	CALL	GETPARM
+	LD	(STOP),HL	; stop bits (BINARY 1 or 2)
+				; <== Insert your own code here
+	LD	A,5		; load mspeed with the current (default)
+	LD	(MSPEED),A	; brate value if the new rate is valid
+	LD	A,01000010B	; reset 8251 and leave DTR on
+	OUT	(MDCTRL),A
+	LD	A,01001110B	; 1 stop bit, parity disabled, 8 bits, X16
+	CALL	INIT2		; change UART default settings 
+	OUT	(MDCTRL),A
+	LD	A,00110111B	; FIX, no reset, RTS on, Error reset,
+	OUT	(MDCTRL),A	; no break, RX enable, DTR on, TX enable
+	RET			; <== End of your own code
+
+; Change default UART settings to those set by ZMP escape commands
+INIT2:
+	LD	E,A		; save default settings 01001110b
+	LD	A,(BRATE)
+	CP	1		; if 300 baud; set bit 0, X64
+	JR	NZ,INIT3
+	SET	0,E
+	LD	(MSPEED),A	; change mspeed value for new baud rate
+INIT3:
+	LD	A,(DATA)
+	CP	7		; if 7 data bits; reset bit 2
+	JR	NZ,INIT4
+	RES	2,E
+INIT4:
+	LD	A,(PARITY)
+	CP	'O'		; if Odd parity; set bit 4, reset bit 5
+	JR	NZ,INIT5
+	SET	4,E
+	RES	5,E
+INIT5:
+	CP	'E'		; if Even parity; set bits 4 and 5
+	JR	NZ,INIT6
+	SET	4,E
+	SET	5,E
+INIT6:
+	LD	A,(STOP)
+	CP	2		; if 2 stop bits; set bit 7
+	JR	NZ,INIT7
+	SET	7,E
+INIT7:
+	LD	A,E		; load new mode back in register a
+	RET
+
+;--------------------------------------------------------------------------
+
+STOP:	DW	1		; stop bits:  1 or 2
+PARITY:	DW	'N'		; parity:     N, O or E
+DATA:	DW	8		; data bits:  7 or 8
+BRATE:	DW	5		; baud rate:  see below
+
+;--------------------------------------------------------------------------
+; Values of brate for each baud rate allowed
+;
+; brate   baud rate       brate   baud rate       brate   baud rate
+;   0        110            5       1200            9       19200
+;   1        300            6       2400           10       38400
+;   2        450            7       4800           11       57600
+;   3        600            8       9600           12       76800
+;   4        710
+;
+; Set the port. ZMP supplies either 0 or 1 as a parameter.
+;
+setport:
+	ld	hl,2		; get port number
+	add	hl,sp
+	ex	de,hl
+	call	getparm		; in HL (values are 0 and 1)
+
+				; <== Insert your own code here
+
+				; <== End of your own code
+	ret
+;
+;============================================================================
+;	Video terminal sequences for the Sanyo MBC-1200/1250
+;Cursor addressing: 
+CURSADD:
+	LD	HL,2		; get parameters
+	ADD	HL,SP
+	EX	DE,HL
+	CALL	GETPARM		; in HL
+	LD	(ROW),HL	; row
+	CALL	GETPARM
+	LD	(COL),HL	; column
+				; <== Insert your own code here
+				; using values in row and col
+	CALL	PRINT
+	DB	ESC,'=',0	; Sanyo leadin characters
+	LD	A,(ROW)		; row first
+	ADD	A,' '		; add offset
+	CALL	COUT
+	LD	A,(COL)		; same for column
+	ADD	A,' '
+	CALL	COUT
+				; <== end of your own code
+	RET
+
+ROW:	DW	0		; row
+COL:	DW	0		; column
+
+;Clear screen:
+CLS:
+	CALL	PRINT
+	DB	1AH,0
+	RET
+
+;Inverse video on:
+INVON:
+	CALL	PRINT
+	DB	ESC,'t4',0
+	RET
+
+;Inverse video off:
+INVOFF:
+	CALL	PRINT
+	DB	ESC,'t0',0
+	RET
+
+;Turn off cursor:
+HIDE:
+	CALL	PRINT
+	DB	ESC,'E',0
+	RET
+
+;Turn on cursor:
+SHOW:
+	CALL	PRINT
+	DB	ESC,'D',0
+	RET
+
+;Save cursor position:
+SAVECU:
+	RET
+
+;Restore cursor position:
+RESCU:
+	RET
+
+;****************************************************************************
+
+;Service modem interrupt:
+MINT:
+	RET			; Not used by the Sanyo MBC-1200/1250
+
+;Initialise interrupt vectors:
+INVEC:
+	RET			; ditto
+
+;De-initialise interrupt vectors:
+DINVEC:
+	RET			; ditto
+
+;****************** End of user-defined code ********************************
+;		Do not change anything below here.
+
+;Modem character test for 100 ms
+MRD:
+	PUSH	BC		; save bc
+	LD	BC,100		; set limit
+MRD1:
+	CALL	MIRDY		; char at modem?
+	JR	NZ,MRD2		; yes, exit
+	LD	HL,1		; else wait 1ms
+	CALL	WAITHLMS
+	DEC	BC		; loop till done
+	LD	A,B
+	OR	C
+	JR	NZ,MRD1
+	LD	HL,0		; none there, result=0
+	XOR	A
+MRD2:
+	POP	BC
+	RET
+
+; Inline print routine: destroys A and HL
+PRINT:
+	EX	(SP),HL		; get address of string
+PLOOP:
+	LD	A,(HL)		; get next
+	INC	HL		; bump pointer
+	OR	A		; done if zero
+	JR	Z,PDONE
+	CALL	COUT		; else print
+	JR	PLOOP		; and loop
+PDONE:
+	EX	(SP),HL		; restore return address
+	RET			; and quit
+
+;Output a character in A to the console
+COUT:
+	PUSH	BC		; save regs
+	PUSH	DE
+	PUSH	HL
+	LD	E,A		; character to E
+	LD	C,2
+	CALL	BDOS		; print it
+	POP	HL
+	POP	DE
+	POP	BC
+	RET
+
+; Wait(seconds)
+WAIT:
+	LD	HL,2
+	ADD	HL,SP
+	EX	DE,HL		; get delay size
+	CALL	GETPARM
+				; fall thru to..
+; Wait seconds in HL
+WAITHLS:
+	PUSH	BC		; save bc
+	PUSH	DE		; de
+	PUSH	IX		; and ix
+	LD	IX,0		; then point ix to 0
+				; so we don't upset memory-mapped i/o
+
+; Calculate values for loop constants. Need to have two loops to avoid
+;   16-bit overflow with clock speeds above 9 MHz.
+
+OUTERVAL	EQU	(CLKSPD / 10) + 1
+INNERVAL	EQU	(6667 / OUTERVAL) * CLKSPD
+
+WAIT10:
+	LD	B,OUTERVAL
+
+WAIT11:
+	LD	DE,INNERVAL
+
+WAIT12:
+	BIT	0,(IX)		; time-wasters
+	BIT	0,(IX)
+	BIT	0,(IX)		; 20 T-states each
+	BIT	0,(IX)
+	BIT	0,(IX)
+	BIT	0,(IX)
+	DEC	DE
+	LD	A,E
+	LD	A,D
+	OR	E
+	JR	NZ,WAIT12	; 150 T-states per inner loop
+	DJNZ	WAIT11		; decrement outer loop
+	DEC	HL		; ok, decrement count in hl
+	LD	A,H
+	OR	L
+	JR	NZ,WAIT10
+	POP	IX		; done -- restore ix
+	POP	DE		; de
+	POP	BC		; and bc
+	RET
+
+; Wait milliseconds
+MSWAIT:
+	LD	HL,2
+	ADD	HL,SP
+	EX	DE,HL		; get delay size
+	CALL	GETPARM
+				; fall thru to..
+; Wait milliseconds in HL
+WAITHLMS:
+	PUSH	DE
+W1MS0:
+	LD	DE,39 * CLKSPD
+W1MS1:
+	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,W1MS1
+	DEC	HL
+	LD	A,H
+	OR	L
+	JR	NZ,W1MS0
+	POP	DE
+	RET
+
+; Get next parameter from (de) into hl
+GETPARM:
+	EX	DE,HL		; get address into hl
+	LD	E,(HL)		; get lo
+	INC	HL
+	LD	D,(HL)		; then hi
+	INC	HL		; bump for next
+	EX	DE,HL		; result in hl, address still in de
+	RET
+;
+;Get address of user-defined variables
+;
+GETVARS:
+	LD	HL,USERVARS
+	RET
+USERVARS:
+	DW	OVERDRIVE	; .OVR etc. drive/user
+	DW	OVERUSER
+
+USED:	EQU	($ - USERDEF)
+UNUSED: EQU	OVSIZE - USED
+	 IF	($ - USERDEF) GT OVSIZE
+TOOBIG:	JP	ERRVAL		; Overlay too large!
+	 ENDIF
+
+	END
+

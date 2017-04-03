@@ -1,0 +1,664 @@
+	.TITLE	'DEC VT180 computer overlay file for ZMP'
+	NAME	VT180
+;  PROGRAM: ZMO-ROB.Z80
+;  AUTHOR:  Ron Murray
+;  VERSION: 1.5
+;  DATE:  03 Mar, 1989
+;-----------------------------------------------------------------------
+;	This Overlay File supports the DEC Micro VT180 (aka ROBIN).
+;-----------------------------------------------------------------------
+; 89/04/12 - Modified to ZMP v1.5		- George Conover
+; 89/03/15 - Removed the beginning remarks to make the file
+;             smaller. If you need the remarks there are in the
+;             file ZMP-BLNK.Z80 			- George Conover
+; 88/03/03 - First version of this file	       	- George Conover
+;
+;	Written by -
+;	  Ron Murray, c/o Z-Node 62, 061-9-450-0200, Perth, Western Australia.
+;-----------------------------------------------------------------------
+;
+;We use the COMM-Port of the Micro's. Baud-rates are "parallel"
+;to the console Baud-rates - no need for a "special" baud-rate
+;routine.  Since the COMM-port is I/O-wise Reader/Punch, we use
+;the BDOS calls.
+;
+;To test for COMM-status , we use I/O byte redirection in
+;conjunction with direct BIOS-CONSTAT call.
+;
+;This technique although a little bit slower than direct I/O
+;using Interrupt on INPUT is general enough to be system
+;independent.
+;
+;	- George N. Conover
+;
+;-----------------------------------------------------------------------
+; Notes on modifying this file:
+;
+; See Sample Overlay ZMO-BLNK.Z80
+;	Written by - Ron Murray, c/o Z-Node 62, 061-9-450-0200
+;		     Perth, Western Australia.
+;
+;-----------------------------------------------------------------------
+;
+; User-set variables:
+;
+BDOS	EQU	0005		; Address of BDOS entry
+PUNCH	EQU	4		; Punch function
+READER	EQU	3		; Reader function
+MODDCDB EQU	4		; Carrier detect bit
+MODDCDA EQU	0		; Value when active
+MODRCVB EQU	0FFH		; Bit to test for recedive
+MODRCVR EQU	0FFH		; Value when ready
+MODSNDB EQU	0FFH		; Bit to test for send
+MODSNDR EQU	0FFH		; Value when ready
+;
+CLKSPD	EQU	4		; Processor clock speed in MHz
+;
+
+;Set the following two equates to the drive and user area which will contain
+;   ZMP's .OVR files, .CFG file, .FON file and .HLP file. Set both to zero
+;   (null) to locate them on the drive from which ZMP was invoked.
+
+OVERDRIVE	EQU	0	; Drive to find overlay files on ('A'-'P')
+OVERUSER	EQU	0	; User area to find files
+
+;-----------------------------------------------------------------------
+; NOT user-set variables
+
+USERDEF	EQU	0145H		; origin of this overlay
+				; This address should not change with
+				; subsequent revisions.
+MSPEED	EQU	03CH		; location of current baud rate.
+OVSIZE	EQU	0400H		; Max size of this overlay
+;
+;
+ESC	EQU	1BH
+CR	EQU	0DH
+LF	EQU	0AH
+
+	ORG	USERDEF
+;
+;Jump table for the overlay: do NOT change this
+;
+JUMPTAB:JP	SCRNPR		; Screen print
+	JP	MRD		; Modem read with timeout
+	JP	MCHIN		; Get a character from modem
+	JP	MCHOUT		; Send a character to the modem
+	JP	MORDY		; Test for tx buffer empty
+	JP	MIRDY		; Test for character received
+	JP	SNDBRK		; Send break
+	JP	CURSADD		; Cursor addressing
+	JP	CLS		; Clear screen
+	JP	INVON		; Highlight (inverse video) on
+	JP	INVOFF		; Highlight (inverse video) off
+	JP	HIDE		; Hide cursor
+	JP	SHOW		; Show cursor
+	JP	SAVECU		; Save cursor position
+	JP	RESCU		; Restore cursor position
+	JP	MINT		; Service modem interrupt
+	JP	INVEC		; Initialise interrupt vectors
+	JP	DINVEC		; De-initialise interrupt vectors
+	JP	MDMERR		; Test uart flags for error
+	JP	DTRON		; Turn DTR (and RTS) ON
+	JP	DTROFF		; Turn DTR (and RTS) OFF
+	JP	INIT		; Initialise uart
+	JP	WAIT		; Wait seconds
+	JP	MSWAIT		; Wait milliseconds
+	JP	USERIN		; user-defined entry routine
+	JP	USEROUT		; user-defined exit routine
+	JP	GETVARS		; get system variables
+  	JP	SETPORT		; Set port (0 or 1)
+
+; Spare jumps for compatibility with future versions
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+	JP	SPARE		; spare for later use
+
+;
+; Main code starts here
+;
+CODEBGN:
+;
+; Screen print function
+;
+SCRNPR:
+;
+; <== Insert your own code here
+;
+	CALL	PRINT
+	DB	CR,LF
+	DB	'Screen-print function not supported.',CR,LF,LF
+	DB	0
+;
+; <== End of your own code
+;
+SPARE:
+	RET
+
+; User-defined entry routine: leave empty if not needed
+USERIN:
+	LD	HL,(1)		; Get BIOS Jump-table adress
+	LD	DE,3
+	ADD	HL,DE		; CONSTAT routine in BIOS
+	LD	(BCONST+1),HL	; modify our "routine"
+	RET
+;
+BCONST:	JP	$-$		; address "filled in" by above code
+;
+; User-defined exit routine: leave empty if not needed
+USEROUT:
+	RET
+;
+; Get a character from the modem: return in HL
+; It is not necessary to test for status
+;
+MCHIN:	PUSH	BC
+;
+; <== Insert your own code here
+;
+;.....
+;
+; Subroutine to input a character from the modem.
+; This routine will wait until one becomes available.
+;
+	LD	C,READER	; Use the BDOS function
+	CALL	BBDOS		; Go
+;
+; <== End of your own code
+;
+	LD	L,A		; Put in HL
+	LD	H,0
+	OR	A		; Set/clear Z
+	POP	BC
+	RET
+;
+; Send a character to the modem
+;
+MCHOUT:
+	LD	HL,2		; Get the character
+	ADD	HL,SP
+	LD	A,(HL)		; In A
+;
+; <== Insert your own code here
+;
+	LD	E,A		; Move output byte into E
+	LD	C,PUNCH		; Use the BDOS function
+	CALL	BBDOS		; Go
+;
+; <== End of your own code
+;
+	RET			; Done
+;
+; Test for output ready: return YES (1) in HL if ok
+;
+MORDY:
+;
+; <== Insert your own code here
+;
+	LD	HL,01H		; Assume ready
+;
+; <== End of your own code
+;
+	LD	A,L		; Set/clear Z
+	OR	A
+	RET
+;
+; Test for character at modem: return YES (1) in HL if so
+;
+MIRDY:
+;
+; <== Insert your own code here
+;
+	CALL	INCTL		; In modem control port
+	LD	HL,00H		; Assume not ready for now
+      	AND	MODRCVB		; Bit to test for receive ready
+	CP	MODRCVR		; Value of rcv. bit when ready
+	JR	NZ,MIRDY1	; Still not ready
+	INC	HL		; Ready, so set HL
+;
+MIRDY1:
+;
+; <== End of your own code
+;
+	LD	A,L		; Set/clear Z
+	OR	A
+	RET
+;
+; The Check for characters at COMM-Port using I/O redirection
+;
+IOBYTE	EQU	3		; some definitions
+DEFIO	EQU	95H		; the "standard" setting
+BATIO	EQU	56H		;
+;
+INCTL:	PUSH	BC
+	PUSH	DE
+	PUSH	HL		; save the environment
+	PUSH	IY
+	PUSH	IX
+
+	LD	A,BATIO		; change I/O byte
+	LD	(IOBYTE),A
+	CALL	BCONST		; call BIOS direct - see INITMOD
+	PUSH	AF
+	LD	A,DEFIO		; change I/O byte back
+	LD	(IOBYTE),A
+	POP	AF
+
+	POP	IX
+	POP	IY
+	POP	HL		; restore environment
+	POP	DE
+	POP	BC
+	RET
+;
+; Send a break to the modem: leave empty if your system can't do it
+;
+SNDBRK:
+;
+; <== Insert your own code here, tTo go to 'break' level
+;
+;pbausl EQU	90H	;The Baud-Rate register.
+PRNTST	EQU	49H		; Printer
+;prndat	EQU	48H
+CONTST	EQU	41H		; Console
+;condat	EQU	40H
+GENTST	EQU	51H		; General port.
+;gendat	EQU	50H
+COMTST	EQU	59H		; COMM-Port
+;comdat	EQU	58H
+;output	EQU	01H	;Output ready bit.
+;input	EQU	02H	;Input ready bit.
+COMCTL	EQU	59H		; VT180 communications port
+CRTCTL	EQU	41H		; VT180 crt port
+;VT180 serial port command bits
+TXE	EQU	1		; Transmit enable
+DTR	EQU	2		; Dtr on
+RXE	EQU	4 		; Rx enable
+SDBRK	EQU	8
+RERR	EQU	10H		; Reset error
+RTS	EQU	20H		; RTS on
+RESET	EQU	40H		; Port reset
+;Send a break to the communications port.
+;
+	LD	A,COMCTL	; Get address of selected port
+	LD	C,A		; Into C
+	LD	A,SDBRK+DTR
+	OUT	C,A		;Want to send to port addressed by C
+; <== End of your own code
+;
+	LD	HL,300
+	CALL	WAITHLMS	; Wait 300 ms
+;
+; <== Insert your own code here, to restore
+	LD	A,COMCTL	; Get the address for the port
+	LD	C,A		; Into C
+	LD	A,TXE+DTR+RXE+RERR+RTS ; Enable tr/rc, dtr, reset error
+	OUT	C,A		;Z-80 only instruction
+	OUT	(CONTST),A	; Reset ports
+;
+; <== End of your own code
+;
+	RET
+;
+; Test UART flags for error: return YES (1) in HL if error
+;
+MDMERR:
+;
+; <== Insert your own code here
+;
+	LD	HL,00H		; Not yet implemented
+;
+; <== End of your own code
+;
+	LD	A,L		; Set/clear Z
+	OR	A
+	RET
+;
+; Turn DTR (and RTS) ON. (reset)
+;
+DTRON:
+;
+; <== Insert your own code here
+;
+;
+; <== End of your own code
+;
+	RET
+;
+;Turn DTR OFF
+;
+DTROFF:
+;
+; <== Insert your own code here
+;
+;
+; <== End of your own code
+;
+	RET
+;
+; Initializ the UART
+;
+INIT:
+	LD	HL,2		; Get parameters
+	ADD	HL,SP
+	EX	DE,HL
+	CALL	GETPARM		; In HL
+	LD	(BRATE),HL	; Baud rate
+	CALL	GETPARM
+	LD	(PARITY),HL	; Parity
+	CALL	GETPARM
+	LD	(DATA),HL	; Data bits
+	CALL	GETPARM
+	LD	(STOP),HL	; Stop bits
+;
+; <== Insert your own code here
+;
+	LD	A,5
+				; using values below
+	LD	(MSPEED),A	; don't forget to load mspeed with the
+				; current brate value if the new rate is
+				; valid. See table of values below.
+;
+; <== End of your own code
+;
+	RET
+;
+BRATE:	DS	2		; Baud rate:
+				; 0 =  110 baud 1 =   300 baud 3 =  600 baud
+				; 5 = 1200 baud 6 =  2400 baud 7 = 4800 baud
+				; 8 = 9600 baud 9 = 19200 baud
+PARITY:	DS	2		; Parity (will be 'N', 'E' or 'O')
+DATA:	DS	2		; Data bits (will be 7 or 8)
+STOP:	DS	2		; Stop bits (will be 1 or 2)
+;
+; Set the port. ZMP supplies either 0 or 1 as a parameter.
+;
+setport:
+	ld	hl,2		; get port number
+	add	hl,sp
+	ex	de,hl
+	call	getparm		; in HL (values are 0 and 1)
+
+				; <== Insert your own code here
+
+				; <== End of your own code
+	ret
+;
+;-----------------------------------------------------------------------
+;
+; Video terminal sequences: these are for VT-100 -- Modify as you
+; wish
+;
+;Cursor addressing:
+;
+CURSADD:	LD	HL,2		; Get parameters
+	ADD	HL,SP
+	EX	DE,HL
+	CALL	GETPARM	  	; In HL
+	INC	HL
+	LD	(ROW),HL	; Row
+	CALL	GETPARM
+	INC	HL
+	LD	(COL),HL	; Column
+;
+; <== Insert your own code here, Using values in row and col
+;
+	CALL	PRINT
+	DB	ESC,'[',0	; Cursor leadin
+	LD	HL,(ROW)	; Row first
+	CALL	NOUT		; output in decimal
+	LD	A,';'		; follow with semicolon
+	CALL	COUT		; print it
+	LD	HL,(COL)	; Same for column
+	CALL	NOUT
+	LD	A,'H'		; terminate with 'move cursor' command
+	CALL	COUT		; print it
+;
+; <== end of your own code
+;
+	RET
+;
+ROW:	DS	2		; Row
+COL:	DS	2		; Column
+;
+; Clear screen:
+;
+CLS:
+	CALL	PRINT
+	DB	ESC,'[2J'	;clear whole screen
+	DB	ESC,'[H',0	;HOME
+	RET
+;
+; Highlight on:
+;
+INVON:
+	CALL	PRINT
+	DB	ESC,'[0;7m',0
+	RET
+;
+; Highlight off:
+;
+INVOFF:
+	CALL	PRINT
+	DB	ESC,'[0m',0
+	RET
+;
+; Turn off cursor:
+;
+HIDE:
+	RET
+;
+; Turn on cursor:
+;
+SHOW:
+	RET
+;
+; Save cursor position:
+;
+SAVECU:
+	CALL	PRINT
+	DB	ESC,'7',0
+	RET
+;
+; Restore cursor position:
+;
+RESCU:
+	CALL	PRINT
+	DB	ESC,'8',0
+	RET
+;
+;-----------------------------------------------------------------------
+;
+; Service modem interrupt:
+;
+MINT:				; My system doesn't need this
+	RET
+;
+; Initialise interrupt vectors:
+;
+INVEC:
+	RET
+;
+; De-initialise interrupt vectors:
+;
+DINVEC:
+	RET
+;
+;------------------- End of user-defined code --------------------------
+;		 Do not change anything below here
+;
+; Modem character test for 100 ms
+;
+MRD:	PUSH	BC		; Save BC
+	LD	BC,100		; Set limit
+;
+MRD1:	CALL	MIRDY		; Char at modem?
+	JR	NZ,MRD2		; Yes, exit
+	LD	HL,1		; Else wait 1ms
+	CALL	WAITHLMS
+	DEC	BC		; Loop till done
+	LD	A,B
+	OR	C
+	JR	NZ,MRD1
+	LD	HL,0		; None there, result=0
+	XOR	A
+;
+MRD2:	POP	BC
+  	RET
+;
+;	This routine prints the number in HL on the screen in decimal.
+;	Uses all ACs.
+
+NOUT:	LD	BC,-10		; Get some useful constants.
+NOUT1:	LD	DE,-1
+
+NOUT2:	ADD	HL,BC		; Subtract as many 10s as possible.
+	INC	DE		; Count them.
+	JP	C,NOUT2		; If some left keep going.
+	PUSH	HL		; Save remainder - 10
+	EX	DE,HL		; Swap the remainder and the quotient.
+	LD	A,H		; Get the number of 10s found.
+	OR	L		; Check for quotient non zero
+	CALL	NZ,NOUT1	; If non zero, recurse.
+	POP	HL		; Get the remainder - 10
+	LD	A,L		; In a
+	ADD	A,'0'+10	; Make the number printable and add the 10 back
+	JP	COUT		; output the digit and return
+;
+; Inline print routine: destroys A and HL
+;
+PRINT:	EX	(SP),HL		; Get address of string
+;
+PLOOP:	LD	A,(HL)		; Get next
+	INC	HL		; Bump pointer
+	OR	A		; Done if zero
+	JR	Z,PDONE
+	CALL	COUT		; Else print
+	JR	PLOOP		; And loop
+;
+PDONE:	EX	(SP),HL		; Restore return address
+	RET			; And quit
+;
+; Output a character in A to the console
+;
+COUT:	PUSH	BC		; Save registers
+	PUSH	DE
+	PUSH	HL
+	LD	E,A		; Character to E
+	LD	C,2
+	CALL	BBDOS		; Print it
+	POP	HL
+	POP	DE
+	POP	BC
+	RET
+BBDOS:
+	PUSH	IX
+	PUSH	IY
+	CALL	BDOS
+	POP	IY
+	POP	IX
+	RET
+;
+; Wait(seconds)
+;
+WAIT:	LD	HL,2
+	ADD	HL,SP
+	EX	DE,HL		; Get delay size
+	CALL	GETPARM
+;				; Fall thru to...
+; Wait seconds in HL
+;
+WAITHLS:PUSH	BC		; Save BC
+	PUSH	DE		; DE
+	PUSH	IX		; And IX
+	LD	IX,0		; Then point IX to 0
+;				;   so we don't upset memory-mapped I/O
+;
+; Calculate values for loop constants. Need to have two loops to avoid
+; 16-bit overflow with clock speeds above 9 MHz.
+;
+OUTERVAL EQU	(CLKSPD/10)+1
+;
+INNERVAL EQU	(6667/OUTERVAL)*CLKSPD
+;
+WAIT10:	LD	B,OUTERVAL
+;
+WAIT11:	LD	DE,INNERVAL
+;
+WAIT12:	BIT	0,(IX)		; Time-wasters
+	BIT	0,(IX)
+	BIT	0,(IX)		; 20 T-states each
+	BIT	0,(IX)
+	BIT	0,(IX)
+	BIT	0,(IX)
+	DEC	DE
+	LD	A,E
+	LD	A,D
+	OR	E
+	JR	NZ,WAIT12	; 150 T-states per inner loop
+	DJNZ	WAIT11		; Decrement outer loop
+	DEC	HL		; Ok, decrement count in HL
+	LD	A,H
+	OR	L
+	JR	NZ,WAIT10
+	POP	IX		; Done -- restore IX
+	POP	DE		; DE
+	POP	BC		; And BC
+	RET
+;
+; Wait milliseconds
+;
+MSWAIT:	LD	HL,2
+	ADD	HL,SP
+	EX	DE,HL		; Get delay size
+	CALL	GETPARM
+;
+; Wait milliseconds in HL
+;
+WAITHLMS:
+	PUSH	DE
+;
+W1MS0:	LD	DE,39 *	CLKSPD
+;
+W1MS1:	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,W1MS1
+	DEC	HL
+	LD	A,H
+	OR	L
+	JR	NZ,W1MS0
+	POP	DE
+	RET
+;
+; Get next parameter from (DE) into HL
+;
+GETPARM:EX	DE,HL		; Get address into HL
+	LD	E,(HL)		; Get low
+	INC	HL
+	LD	D,(HL)		; Then hihi
+	INC	HL		; Bump for next
+	EX	DE,HL		; Result in HL, address still in DE
+	RET
+;
+
+;Get address of user-defined variables
+
+GETVARS:
+	LD	HL,USERVARS
+	RET
+
+USERVARS:
+	DW	OVERDRIVE	; .OVR etc. drive/user
+	DW	OVERUSER
+
+
+	 IF	($-CODEBGN) GT OVSIZE	;
+TOOBIG:	JP	ERRVAL		; Overlay is too large
+	 ENDIF
+;
+	END
+

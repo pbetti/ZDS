@@ -31,6 +31,7 @@ out0:
 	call	bbconin
 	cp	'\'
 	jr	z,out1
+	; qui test registro
 	call	srlout1
 	jr	loop1
 out1:
@@ -38,7 +39,7 @@ out1:
 	call	inline
 	defb	"Sending...",cr,lf,0
 
-loop2:					; minimal receive test
+loop2:					; minimal send test
 	call	bbconst
 	or	a
 	jp	nz,byebye
@@ -100,6 +101,19 @@ coe:
 	ld	c,a
 	call	bbconout
 	pop	bc
+	ret
+
+;; BINDISP - display E in binary form
+bindisp:
+	ld	b,$08
+bdnxt:	ld	a,e
+	rlca
+	ld	e,a
+	ld	a,$18
+	rla
+	ld	c,a
+	call	bbconout
+	djnz	bdnxt
 	ret
 
 include zds_serial1.lib

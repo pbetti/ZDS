@@ -48,6 +48,13 @@ attach_1_legacy:
 	ld	(rst8adr),hl
 	ld	hl,cnfbyte
 	set	0,(hl)			; enable rst8 redirect
+at_fls:
+	in	a,(uart1+r5lsr)		; read status to flush the queue
+	bit	0,a			; data available in rx buffer?
+	jr	z,at_clr			; no.
+	in	a,(uart1+r0rxtx)	; read data
+	jr	at_fls
+at_clr:
 	ei				; re-enable interrupts
 	pop	hl
 	pop	af
@@ -79,6 +86,13 @@ detach_1_legacy:
 ;;
 
 srlin1:
+; 	di				; not in race with isr
+	in	a,(uart1+r5lsr)		; read status
+	bit	7,a			; fifo overrun?
+; 	and	10000001b		; fifo overrun?
+	; DISABILITARE INTERRUPT
+	call	nz,isr_s1		; try to flush the fifo
+; 	ei
 	ld	a,(ilen)		; buffer length
 	or	a			; empty ?
 	ret	z			; yes -> forget it
@@ -115,8 +129,15 @@ noiwrap:
 	ret
 
 ;;
+;; Read 16c550 LSR register and return in A
+;;
+getlsr1:
+in	a,(uart1+r5lsr)		; read status
+	ret
+
+;;
 ;;  Output routine
-;;  upon entry:	A contains the character to be output
+;;  upon entry:	C contains the character to be output
 ;;
 
 srlout1:
@@ -130,8 +151,9 @@ sot1:
 	bit	5,a			; ready to send?
 	jp	z,sot1			; no, retry.
 
-	pop	af
+	ld	a,c			; fill in the char
 	out	(uart1+r0rxtx),a	; send it
+	pop	af
 	ret
 ;;
 ;;	Interrupt Service Routines
@@ -141,16 +163,14 @@ sot1:
 ;; psoff: send xoff to host
 ;;
 psoff:
-; 	push	af
-	ld	a,xoff
+	ld	c,xoff
 	call	srlout
-; 	pop	af
 	ret
 ;
 ;;
 ;; pson: send xon to host
 ;;
-pson:	ld	a,xon
+pson:	ld	c,xon
 	jp	srlout
 
 ;;
@@ -168,8 +188,6 @@ isr_s1:
 	ld	a,(ilen)		; buffer capacity ?
 	ld	hl,opflg
  	cp	imax-16			; uart hw fifo is 16 bytes
-; 	call	z,psoff
-; 	cp	imax			; buffer full
 	jr	z,iret			; wait for dequeue
 ;
 isr_s10:
@@ -177,9 +195,6 @@ isr_s10:
 	bit	0,a			; data available in rx buffer?
 	jr	z,iret0			; no.
 	in	a,(uart1+r0rxtx)	; read data
-
-; 	ld	c,a
-; 	call	bbconout
 
 	cp	xoff
 	call	z,idle

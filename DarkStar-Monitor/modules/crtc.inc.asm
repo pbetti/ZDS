@@ -19,7 +19,7 @@
 ;; 6545 registers initialization vector
 crttab:
 	db	111		; VR0 Tot h chars -1
-	db	80		; VR1 Disp h chars	
+	db	80		; VR1 Disp h chars
 	db	87		; VR2 HSync pos
 	db	$28		; VR3 Sync width
 	db	26		; VR4 Tot rows -1
@@ -89,10 +89,10 @@ vstares:
 ;
 scroll:
 	push	hl		; save position
-	ld	hl,miobyte		
+	ld	hl,miobyte
 	bit	2,(hl)		; scroll disabled ?
 	jr	nz,noupdstart	; yes, then no scrolling
-	
+
 	ld	hl,(vstabuf)	; load curently display start
 	ld	de,80		; DE = char. for line
 	add	hl,de		; point to next line
@@ -109,7 +109,7 @@ noupdstart:
 	ld	bc,80		; BC = char/row
 	call	divide		; HL = Xco
 	ret			; and ret
- 	
+
 ;;
 ;; GET DISPLAY CURSOR POSITION and return in HL
 ;
@@ -152,7 +152,7 @@ curloc0:
 ;; Update video pointer
 ;
 updvidp:
-	ld	de,(vstabuf)		; load curently display start 
+	ld	de,(vstabuf)		; load curently display start
 	add	hl,de			; compute relative position
 					; and count with updtcpur
 scrspos:
@@ -266,7 +266,7 @@ dgclp0:	in	a,(crt6545adst)
 crtfill:
 	ld	hl,$0000		; init count
 	call	rstdpy			; @ vhome
-crtf0:	ld	a,c			; 
+crtf0:	ld	a,c			;
 	call	dispch			; display
 	inc	hl			; go on
 	ld	a,h
@@ -297,7 +297,7 @@ bconout:
 	jr	nz,conou2		; yes: do alternate
 	cp	$20			; no: is less then 0x20 (space) ?
 	jr	nc,cojp1		; no: go further
-	
+
 	add	a,a			; yes: is a special char
 	ld	h,0
 	ld	l,a
@@ -308,17 +308,17 @@ bconout:
 	ld	h,(hl)
 	ld	l,a
 	jp	(hl)			; jump to IOCVEC handler
-	
+
 cojp1:	ex	de,hl
 	bit	6,(hl)			; auto ctrl chars ??
 	jr	z,cojp2			; no
-	
+
 	cp	$40			; yes: convert
 	jr	c,cojp2
 	cp	$60
 	jr	nc,cojp2
 	sub	$40
-	
+
 cojp2:	call	dispch			; display char
 	; move cursor right
 movrgt:
@@ -356,14 +356,14 @@ conou2:
 curadr:	ld	hl,tmpbyte		; alredy do column ?
 	bit	0,(hl)
 	jr	nz,setrow		; yes, do row
-	
+
 	cp	112			; greater then 80 (+32) ?
 	ret	nc			; yes: error
 	sub	32			; no: adjust to real value
 	ld	(appbuf),a		; store column
 	set	0,(hl)			; switch row/col flag
 	ret
-	
+
 setrow:	res	0,(hl)			; resets col/row flag
 	cp	57			; greater than 25 (+32) ?
 	ret	nc			; yes: error
@@ -373,21 +373,21 @@ setrow:	res	0,(hl)			; resets col/row flag
 	ld	b,a
 	ld	hl,$ffb0
 	ld	de,$0050
-	
+
 curofs:	add	hl,de			; calc. new offset
 	djnz	curofs			; row
 	ld	a,(appbuf)
 	ld	e,a
 	add	hl,de
 	jr	cout00			; update position
-	
+
 bcexit:
 	pop	hl
 	pop	de
 	pop	bc
 	pop	af
 	ret
-	
+
 ;;
 ;; MOVDWN - cursor down one line
 ;
@@ -419,7 +419,7 @@ movlft:
 	ld	de,1			; one char
 	jr	movback			; do it
 ;;
-;; backspace 
+;; backspace
 ;; destructive or not depending on bit 4 miobyte
 ;
 bakspc:
@@ -510,8 +510,8 @@ clreop00:
 	ld	de,endvid+1	; DE = end video + 1
 cescr0:
 	xor	a		; clear carry
-	ex	de,hl		; computer number of
-	sbc	hl,de		; character then remaining
+	ex	de,hl		; compute number of
+	sbc	hl,de		; character remaining
 	ex	de,hl		; until end
 cescr1:
 	push	de		; save number of char.
@@ -692,8 +692,8 @@ hl.gt.0:
 	jr	nc,hl.gt.0	;
 	dec	a		;
 	add	hl,bc		;
-	ret	
-	
+	ret
+
 ;; This table define the offsets to jump to control routines
 ;; for primary (non-escaped) mode
 

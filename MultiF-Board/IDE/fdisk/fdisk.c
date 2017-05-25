@@ -526,7 +526,7 @@ void writeTable()
 {
 	tab2Buf();
 	if ( hdWrite_(hdbuf, 0, 1) ) {
-		printf("Error reading table!\n");
+		printf("Error writing table!\n");
 		doExit();
 	}
 

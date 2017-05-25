@@ -24,14 +24,18 @@ loop1:					; minimal receive test
 	jp	nc,loop1
 	ld	c,a
 	call	bbconout
-; 	call	srlout1
+	call	srlout1
 
 	jp	loop1
 out0:
 	call	bbconin
 	cp	'\'
 	jr	z,out1
-	; qui test registro
+	cp	'|'
+	call	z,showstat
+	;
+	ld	c,a
+	call	bbconout
 	call	srlout1
 	jr	loop1
 out1:
@@ -43,8 +47,10 @@ loop2:					; minimal send test
 	call	bbconst
 	or	a
 	jp	nz,byebye
-	ld	a,'.'
-	call	srlout1
+; 	ld	c,'.'
+; 	call	srlout1
+	ld	de,w_str
+	call	serprint
 
 	jp	loop2
 
@@ -55,6 +61,19 @@ byebye:
 	call	detach_1_legacy		; init
 	jp	0
 
+showstat:
+	call	getlsr1
+	ld	e,a
+	call	bindisp
+	call	inline
+	defb	cr,lf,"any key to continue",cr,lf,0
+	call	bbconin
+	call	inline
+	defb	"ok",cr,lf,0
+	ret
+
+w_str:
+defb	"bla1, bla2,    1234.00",cr,lf,0
 
 ;----------------------------------------------------------------
 ; Print the string -> by DE. Return with DE pointing past the
@@ -77,6 +96,23 @@ print:
 ; 	inc	a
 ; 	ld	(curx),a		; loaded.updated.saved
 	jr	print
+
+
+serprint:
+	ld	a,(de)
+	inc	de
+	or	a
+	ret	z
+	cp	'$'			; END ?
+	ret	z
+	cp	0			; END ?
+	ret	z
+	push	bc
+	ld	c,a
+	call	srlout1
+	pop	bc
+	jr	serprint
+
 ;;
 ;; Inline print
 ;;

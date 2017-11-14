@@ -50,23 +50,28 @@ unsigned char skip_first = 0;
 int main(int argc, char *argv[])
 {
 	FILE * ifile, * ofile, * mfile;
-	unsigned char c;
+	unsigned char c, bl;
 	int block_count = 0, f_offset = 0;
 	int block_address = 0, last_block_address = -1, initial_offset;
 	int payload = 0;
+	int alt_block;
 
 	myname = argv[0];
 
 	// some check
-	if (argc < 3) {
+	if (argc < 2) {
 		usage();
 		exit(1);
 	}
-	
+
 	if (strcmp(argv[1], "--skip-first")==0)
 		++skip_first;
+	alt_block = skip_first;
 
-	oname_base = argv[2+skip_first];
+	if (argc == 2 || (argc == 3 && skip_first))
+		oname_base = strdup(argv[1+skip_first]);
+	else
+		oname_base = argv[2+skip_first];
 
 	ifile = open_file(argv[1+skip_first], "r");
 	mfile = open_file(map_filename(oname_base, buf), "w");
@@ -75,24 +80,41 @@ int main(int argc, char *argv[])
 	fprintf(mfile, "Converting [%s] into [%s]\n\n", argv[1+skip_first], oname_base);
 
 	while (!feof(ifile)) {
-		// begin: get first char...
-		if (!skip_first)
+		// begin: get first char ot block type
+		if (!skip_first) {
 			c = fgetc(ifile);
-		else
+			// block lenght
+			bl = fgetc(ifile);
+		}
+		else {
 			c = 0x01;
+			bl = 252;
+		}
+
+		// special cases
+		switch (bl)  {
+			case 0:
+				block_count = (alt_block) ? 254 : 256;
+				break;
+			case 1:
+				block_count = 254;
+				break;
+			case 2:
+				block_count = 255;
+				break;
+			default:
+				block_count = bl;
+		}
+
 
 		if (c == 0x01) {	// load data follows
 			if (skip_first) {
-				payload = block_count = 252;
+				payload = block_count;
 				skip_first = 0;
 			}
 			else {
-				block_count = fgetc(ifile);
 				payload = block_count;
 				++f_offset;
-				if (block_count == 0) block_count = 256;
-				if (block_count == 1) block_count = 254;
-				if (block_count == 2) block_count = 255;
 				c = fgetc(ifile);		// LSB
 				++f_offset;
 				block_address = fgetc(ifile); 	// MSB
@@ -117,7 +139,7 @@ int main(int argc, char *argv[])
 
 			fprintf(mfile, "block type 01, payload %02X at offset %04X, lenght %d (%02X) bytes in %s, offset=%04X\n",
 				payload, block_address, block_count, block_count, buf, f_offset);
-			
+
 			fwrite(block_data_buffer, block_count, 1, ofile);
 			if (ferror(ofile)) {
 				perror(argv[0]);
@@ -127,11 +149,7 @@ int main(int argc, char *argv[])
 			fclose(ofile);
 		}
 		else if (c == 0x02) {	// execution address start
-			block_count = fgetc(ifile);	// ignored
 			++f_offset;
-			if (block_count == 0) block_count = 256;
-			if (block_count == 1) block_count = 254;
-			if (block_count == 2) block_count = 255;
 			c = fgetc(ifile);		// LSB
 			++f_offset;
 			block_address = fgetc(ifile); 	// MSB
@@ -140,12 +158,41 @@ int main(int argc, char *argv[])
 			block_count -= 2;	// because block_address is part of the byte count
 			fprintf(mfile, "block type 02 set address %04X as execution starting point. File offset %04X\n",
 				block_address, f_offset);
-			break;
+			return EXIT_SUCCESS;
+		}
+		else if (c == 0x03) {	// eof
+			fprintf(mfile, "block type %02d EOF, offset=%04X\n",
+				c, block_count, block_count, f_offset);
+			return EXIT_SUCCESS;
+		}
+		else if (c == 0x05 || c == 0x07 || c == 0x1f) {	// header/patch/copyright
+			char * hdr_name;
+			switch (c) {
+				case 0x05:
+					hdr_name = "Header";
+					break;
+				case 0x07:
+					hdr_name = "Patch";
+					break;
+				case 0x1f:
+					hdr_name = "Copyright";
+					break;
+			}
+
+			f_offset += block_count + 1;
+
+			fprintf(mfile, "block type %02d %s %d (%02X) bytes, offset=%04X\n",
+				c, hdr_name, block_count, block_count, f_offset);
+
+			fprintf(mfile, "Value: '");
+			while (block_count-- > 0) {
+				c = fgetc(ifile);
+				fputc(c, mfile);
+			}
+			fprintf(mfile, "'\n");
 		}
 		else if (c < 0x20) {	// ignoring block
-			block_count = fgetc(ifile);
 			++f_offset;
-			if (block_count == 0) block_count = 256;
 
 			fread(block_data_buffer, block_count, 1, ifile);
 			f_offset += block_count;
@@ -204,7 +251,7 @@ char * bin_filename(char * nbase, int offset, char * buf)
 
 void usage()
 {
-	printf("usage: %s  in_filename out_filename\n", myname);
+	printf("usage: %s [--skip-first] in_filename [out_filename]\n", myname);
 }
 
 FILE * open_file(char * filename, char * mode)

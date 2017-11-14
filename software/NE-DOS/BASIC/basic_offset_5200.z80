@@ -2,6 +2,12 @@
 ;  MDZ80 V0.9.0 Z80 Disassembly of basic_offset_5200.bin
 ;  2008/03/02 21:56
 ;
+
+_LD.BC	macro
+db	001h
+endm
+
+
 	ORG	$5200
 ;
 X5200:	PUSH	AF		; 5200  F5		u
@@ -11,7 +17,7 @@ X5202:	RST	10H		; 5202  D7		W
 	JR	C,X520E		; 5205  38 07		8.
 	CP	$7B		; 5207  FE 7B		~{
 	JR	NC,X520E	; 5209  30 03		0.
-	SUB	$20		; 520B  D6 20		V 
+	SUB	$20		; 520B  D6 20		V
 	LD	(HL),A		; 520D  77		w
 X520E:	OR	A		; 520E  B7		7
 	JR	NZ,X5202	; 520F  20 F1		 q
@@ -317,7 +323,7 @@ X53F4:	CP	$40		; 53F4  FE 40		~@
 	LD	(DE),A		; 540A  12		.
 X540B:	DEC	DE		; 540B  1B		.
 	LD	A,(DE)		; 540C  1A		.
-	CP	$20		; 540D  FE 20		~ 
+	CP	$20		; 540D  FE 20		~
 	JR	Z,X540B		; 540F  28 FA		(z
 	CP	$24		; 5411  FE 24		~$
 	JR	NZ,X5428	; 5413  20 13		 .
@@ -744,7 +750,9 @@ X56BA:	LD	E,$2E		; 56BA  1E 2E		..
 	JP	X1E4A		; 56F7  C3 4A 1E	CJ.
 ;
 X56FA:	LD	A,$C3		; 56FA  3E C3		>C
-	LD	BC,XC93E	; 56FC  01 3E C9	.>I
+	_LD.BC
+X56FD:	LD	A,$C9
+; 	LD	BC,XC93E	; 56FC  01 3E C9	.>I
 	LD	(X4012),A	; 56FF  32 12 40	2.@
 	POP	HL		; 5702  E1		a
 	EI			; 5703  FB		{
@@ -773,7 +781,7 @@ X570A:	LD	A,(X5B29)	; 570A  3A 29 5B	:)[
 	LD	(HL),$2F	; 572A  36 2F		6/
 	INC	HL		; 572C  23		#
 	CALL	X5745		; 572D  CD 45 57	MEW
-	LD	(HL),$20	; 5730  36 20		6 
+	LD	(HL),$20	; 5730  36 20		6
 	INC	HL		; 5732  23		#
 	CALL	X5745		; 5733  CD 45 57	MEW
 	LD	(HL),$3A	; 5736  36 3A		6:
@@ -924,9 +932,10 @@ X581A:	CALL	X4436		; 581A  CD 36 44	M6D
 	JR	NZ,X5817	; 5825  20 F0		 p
 X5827:	JP	X5FFC		; 5827  C3 FC 5F	C|_
 ;
-	ADD	HL,SP		; 582A  39		9
-	SCF			; 582B  37		7
-	JR	C,X583B		; 582C  38 0D		8.
+; 	ADD	HL,SP		; 582A  39		9
+; 	SCF			; 582B  37		7
+; 	JR	C,X583B		; 582C  38 0D		8.
+	DEFB	$39,$37,$38,$0d
 	NOP			; 582E  00		.
 	RST	10H		; 582F  D7		W
 	CALL	X2335		; 5830  CD 35 23	M5#
@@ -1059,7 +1068,7 @@ X58AE:	POP	BC		; 58AE  C1		A
 	LD	HL,(X40F3)	; 58D9  2A F3 40	*s@
 	POP	BC		; 58DC  C1		A
 	LD	A,B		; 58DD  78		x
-X58DE:	AND	$20		; 58DE  E6 20		f 
+X58DE:	AND	$20		; 58DE  E6 20		f
 	JR	Z,X58E9		; 58E0  28 07		(.
 	LD	DE,X5BAA	; 58E2  11 AA 5B	.*[
 	OR	A		; 58E5  B7		7
@@ -1301,7 +1310,8 @@ X5B14:	DEFW	$1E4A		; 5B14   4A 1E      J.
 	DEFW	$1E4A		; 5B24   4A 1E      J.
 	DEFW	$1E4A		; 5B26   4A 1E      J.
 ;
-X5B28:	DEFW	$00		; 5B28   00 00      ..
+X5B28:	DEFB	$00		; 5B28   00 00      ..
+X5B29:	DEFB	$00		; 5B28   00 00      ..
 ;
 X5B2A:	NOP			; 5B2A  00		.
 ;
@@ -1366,7 +1376,7 @@ X5B52:	PUSH	AF		; 5B52  F5		u
 	OR	L		; 5B9E  B5		5
 	RET	Z		; 5B9F  C8		H
 	POP	HL		; 5BA0  E1		a
-	JP	X20E9		; 5BA1  C3 E9 20	Ci 
+	JP	X20E9		; 5BA1  C3 E9 20	Ci
 ;
 X5BA4:	CP	$01		; 5BA4  FE 01		~.
 	RET	Z		; 5BA6  C8		H
@@ -1602,7 +1612,7 @@ X5D77:	CP	$61		; 5D77  FE 61		~a
 	RET	C		; 5D79  D8		X
 	CP	$7B		; 5D7A  FE 7B		~{
 	RET	NC		; 5D7C  D0		P
-	SUB	$20		; 5D7D  D6 20		V 
+	SUB	$20		; 5D7D  D6 20		V
 	RET			; 5D7F  C9		I
 ;
 X5D80:	PUSH	BC		; 5D80  C5		E
@@ -1638,7 +1648,7 @@ X5DA6:	LD	A,(DE)		; 5DA6  1A		.
 	CP	$44		; 5DA9  FE 44		~D
 	RET			; 5DAB  C9		I
 ;
-	CP	$20		; 5DAC  FE 20		~ 
+	CP	$20		; 5DAC  FE 20		~
 	JR	NC,X5DB2	; 5DAE  30 02		0.
 	OR	$40		; 5DB0  F6 40		v@
 X5DB2:	EX	DE,HL		; 5DB2  EB		k
@@ -1758,7 +1768,7 @@ X5E8E:	PUSH	AF		; 5E8E  F5		u
 	PUSH	HL		; 5E90  E5		e
 X5E91:	CALL	X62E5		; 5E91  CD E5 62	Meb
 	JP	C,X63EC		; 5E94  DA EC 63	Zlc
-	CP	$20		; 5E97  FE 20		~ 
+	CP	$20		; 5E97  FE 20		~
 	JP	NZ,X5EA1	; 5E99  C2 A1 5E	B!^
 	INC	D		; 5E9C  14		.
 	DEC	D		; 5E9D  15		.
@@ -1797,7 +1807,7 @@ X5EBB:	LD	C,A		; 5EBB  4F		O
 	CP	$0D		; 5EDD  FE 0D		~.
 	JP	NZ,X5EEF	; 5EDF  C2 EF 5E	Bo^
 	LD	A,E		; 5EE2  7B		{
-	CP	$20		; 5EE3  FE 20		~ 
+	CP	$20		; 5EE3  FE 20		~
 	JP	Z,X5EFE		; 5EE5  CA FE 5E	J~^
 	CP	$2C		; 5EE8  FE 2C		~,
 	LD	A,$0D		; 5EEA  3E 0D		>.
@@ -1814,11 +1824,11 @@ X5EFE:	CALL	X62E5		; 5EFE  CD E5 62	Meb
 X5F04:	PUSH	HL		; 5F04  E5		e
 	CP	$22		; 5F05  FE 22		~"
 	JP	Z,X5F0F		; 5F07  CA 0F 5F	J._
-	CP	$20		; 5F0A  FE 20		~ 
+	CP	$20		; 5F0A  FE 20		~
 	JP	NZ,X5F4E	; 5F0C  C2 4E 5F	BN_
 X5F0F:	CALL	X62E5		; 5F0F  CD E5 62	Meb
 	JP	C,X5F4E		; 5F12  DA 4E 5F	ZN_
-	CP	$20		; 5F15  FE 20		~ 
+	CP	$20		; 5F15  FE 20		~
 	JP	Z,X5F0F		; 5F17  CA 0F 5F	J._
 	CP	$2C		; 5F1A  FE 2C		~,
 	JP	Z,X5F4E		; 5F1C  CA 4E 5F	JN_
@@ -1850,7 +1860,7 @@ X5F4F:	LD	(HL),$00	; 5F4F  36 00		6.
 	LD	HL,(X40A7)	; 5F51  2A A7 40	*'@
 	DEC	HL		; 5F54  2B		+
 	LD	A,E		; 5F55  7B		{
-	SUB	$20		; 5F56  D6 20		V 
+	SUB	$20		; 5F56  D6 20		V
 	JP	Z,X5F62		; 5F58  CA 62 5F	Jb_
 	LD	B,$00		; 5F5B  06 00		..
 	CALL	X2868		; 5F5D  CD 68 28	Mh(
@@ -2186,7 +2196,7 @@ X616F:	CALL	C,X6174		; 616F  DC 74 61	\ta
 	POP	HL		; 6172  E1		a
 	RET			; 6173  C9		I
 ;
-X6174:	LD	A,$20		; 6174  3E 20		> 
+X6174:	LD	A,$20		; 6174  3E 20		>
 	INC	C		; 6176  0C		.
 X6177:	DEC	C		; 6177  0D		.
 	RET	Z		; 6178  C8		H
@@ -2215,7 +2225,9 @@ X618F:	EX	(SP),HL		; 618F  E3		c
 	RST	8		; 6197  CF		O
 	INC	H		; 6198  24		$
 	RST	8		; 6199  CF		O
-	JR	Z,X6169		; 619A  28 CD		(M
+; 	JR	Z,X6169		; 619A  28 CD		(M
+	DEFB	$28
+	DEFB	$cd
 	INC	E		; 619C  1C		.
 	DEC	HL		; 619D  2B		+
 	PUSH	DE		; 619E  D5		U
@@ -2433,7 +2445,9 @@ X62E5:	PUSH	BC		; 62E5  C5		E
 	INC	DE		; 62EC  13		.
 	INC	DE		; 62ED  13		.
 	CALL	X0013		; 62EE  CD 13 00	M..
-	JR	Z,X62FA		; 62F1  28 07		(.
+; 	JR	Z,X62FA		; 62F1  28 07		(.
+	DEFB	$28
+	DEFB	$07
 	CP	$1C		; 62F3  FE 1C		~.
 	JP	NZ,X63FD	; 62F5  C2 FD 63	B}c
 	SCF			; 62F8  37		7
@@ -2463,7 +2477,7 @@ X6319:	LD	A,(BC)		; 6319  0A		.
 	JP	C,X6326		; 631C  DA 26 63	Z&c
 	CP	$7B		; 631F  FE 7B		~{
 	JP	NC,X6326	; 6321  D2 26 63	R&c
-	XOR	$20		; 6324  EE 20		n 
+	XOR	$20		; 6324  EE 20		n
 X6326:	LD	(HL),A		; 6326  77		w
 	INC	HL		; 6327  23		#
 	INC	BC		; 6328  03		.
@@ -2803,7 +2817,7 @@ X6537:	LD	A,$01		; 6537  3E 01		>.
 X653F:	LD	HL,(X3EFE)	; 653F  2A FE 3E	*~>
 	JR	X6503		; 6542  18 BF		.?
 ;
-X6544:	LD	A,$20		; 6544  3E 20		> 
+X6544:	LD	A,$20		; 6544  3E 20		>
 	CALL	X032A		; 6546  CD 2A 03	M*.
 	LD	HL,(X3EFC)	; 6549  2A FC 3E	*|>
 	INC	HL		; 654C  23		#
@@ -2813,14 +2827,14 @@ X6544:	LD	A,$20		; 6544  3E 20		>
 	LD	H,(HL)		; 6550  66		f
 	LD	L,A		; 6551  6F		o
 	CALL	X0FAF		; 6552  CD AF 0F	M/.
-	LD	A,$20		; 6555  3E 20		> 
+	LD	A,$20		; 6555  3E 20		>
 	CALL	X032A		; 6557  CD 2A 03	M*.
 	LD	HL,(X40A7)	; 655A  2A A7 40	*'@
 	CALL	X2B75		; 655D  CD 75 2B	Mu+
 	LD	A,$0D		; 6560  3E 0D		>.
 	CALL	X032A		; 6562  CD 2A 03	M*.
 X6565:	CALL	X32BF		; 6565  CD BF 32	M?2
-	CP	$20		; 6568  FE 20		~ 
+	CP	$20		; 6568  FE 20		~
 	JR	Z,X653F		; 656A  28 D3		(S
 	CP	$0D		; 656C  FE 0D		~.
 	JP	Z,X64BA		; 656E  CA BA 64	J:d
@@ -2879,7 +2893,7 @@ X65F5:	EXX			; 65F5  D9		Y
 	CALL	X0FAF		; 6601  CD AF 0F	M/.
 	LD	A,$0F		; 6604  3E 0F		>.
 	CALL	X0033		; 6606  CD 33 00	M3.
-	LD	A,$20		; 6609  3E 20		> 
+	LD	A,$20		; 6609  3E 20		>
 	CALL	X0033		; 660B  CD 33 00	M3.
 	POP	DE		; 660E  D1		Q
 	POP	BC		; 660F  C1		A
@@ -3270,7 +3284,6 @@ X54FE	EQU	$54FE
 X5504	EQU	$5504
 X5509	EQU	$5509
 X55F5	EQU	$55F5
-X56FD	EQU	$56FD
 X57C7	EQU	$57C7
 X57FA	EQU	$57FA
 X583B	EQU	$583B

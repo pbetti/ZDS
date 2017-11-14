@@ -13,8 +13,9 @@
 
 	title	zds_serial1.lib - Serial i/o to host computer
 ;
-	public	srlout1,srlin1
-	public attach_1_legacy, detach_1_legacy
+; 	public	srlout1,srlin1,srchk1
+; 	public	attach_1_legacy, detach_1_legacy
+; 	public	set_speed1
 
 ; 	extern	cnfbyte
 
@@ -29,7 +30,10 @@ rst8op		equ	0008h
 rst8adr		equ	0009h
 op_ret		equ	0c9h
 op_jp		equ	0c3h
-
+;
+; Receive lock work enable
+;
+lock_wround	equ	false
 
 ;;
 ;; attach_1_legacy
@@ -70,14 +74,69 @@ detach_1_legacy:
 	push	af
 	push	hl
 	di				; hold interrupts
+
+	ld	a,u1defspeed		; reset to defaults
+	ld	(uart1br),a
+	call	bbu1ini
+
 	ld	a,op_ret		; ret opcode
 	ld	(rst8op),a		; in rst8 base
 	ld	hl,cnfbyte
 	res	0,(hl)			; disable rst8 redirect
+
 	ei				; re-enable interrupts
 	pop	hl
 	pop	af
 	ret				; done
+
+;;
+;; set_fifo
+;;
+;; set fifo size, A is the define
+;;
+
+set_fifo1:
+	push	de
+	ld	e,a			; save param
+	ld	a,ufifo1		; and validate it
+	cp	e
+	jr	z,set_fifo10
+	ld	a,ufifo4
+	cp	e
+	jr	z,set_fifo10
+	ld	a,ufifo8
+	cp	e
+	jr	z,set_fifo10
+	ld	a,ufifo14
+	cp	e
+	jr	nz,set_fifo11		; wrong value entered
+set_fifo10:
+	out	(uart1+r2fcr),a		; transfer to uart
+set_fifo11:
+	pop	de
+	ret
+
+;;
+;; set_speed1
+;;
+;; set baud rate, A is the define (no validation)
+;;
+
+set_speed1:
+	ld	(uart1br),a		; store value
+	call	bbu1ini
+	ret
+
+;;
+;; set_mode1
+;;
+;; set baud rate, A is the define (no validation)
+;;
+;; TODO: Wrong, this should be done by sysbios.
+;;       To be fixed in future release.
+
+;set_mode1:
+
 
 ;;
 ;; Check for input (and get it)
@@ -86,19 +145,38 @@ detach_1_legacy:
 ;;
 
 srlin1:
-; 	di				; not in race with isr
 	in	a,(uart1+r5lsr)		; read status
 	bit	7,a			; fifo overrun?
-; 	and	10000001b		; fifo overrun?
-	; DISABILITARE INTERRUPT
 	call	nz,isr_s1		; try to flush the fifo
-; 	ei
+
+if	lock_wround
+	; try to override receive lock (workaround)
+	in	a,(uart1+r5lsr)		; get status
+	rra				; save bit 0 (data ready)
+	in	a,(uart1+r2iir)		; get interrupt status
+	rla				; restore dr and shift ip
+	and	00000011b		; mask
+	cp	00000011b		; data ready & no interrupt pending!!!
+	call	z,isr_s1		; try to flush the fifo
+endif
+
 	ld	a,(ilen)		; buffer length
 	or	a			; empty ?
 	ret	z			; yes -> forget it
 	call	getbyte
 	scf				; success
 	ret
+
+;;
+;; Check for input (and get it)
+;;
+
+srchk1:
+	ld	a,(ilen)		; buffer length
+	or	a			; empty ?
+	ret	z			; return Z flag
+
+
 
 ;;
 ;; getbyte - extract char from queue

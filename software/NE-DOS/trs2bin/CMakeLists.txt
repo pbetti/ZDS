@@ -8,3 +8,4 @@ set(trs2bin_SRCS
 add_executable(trs2bin ${trs2bin_SRCS})
 
 install(TARGETS trs2bin RUNTIME DESTINATION bin)
+

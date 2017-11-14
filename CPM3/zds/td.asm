@@ -24,9 +24,10 @@ BDOS	EQU	5
 GETTD	EQU	98		; ZSDOS Get Time & Date function
 SETTD	EQU	99		; ZSDOS Set Time & Date function
 
+	org	$100
 ; Opening Message
 
-ENTER:	JP	START		; Bypass US/EUR flag
+ENTER:	JP	BEGIN		; Bypass US/EUR flag
 
 	DEFB	'Z3ENV'
 	DEFB	1
@@ -39,7 +40,7 @@ FORM:	DEFB	$FF		; 0=US date format, FF=European date format
 
 ; Program execution begins here
 
-START:	LD	(STACK),SP
+BEGIN:	LD	(STACK),SP
 	LD	SP,STACK	; Switch to local stack
 	XOR	A
 	LD	(TDFLAG),A	; Clear data for go

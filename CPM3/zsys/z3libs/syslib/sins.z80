@@ -13,7 +13,7 @@
 
 ; External References
 
-	EXT		KEY, LL, RR, SNREC, SSIZE, SPOINT
+	EXT		KEY, LLB, RRB, SNREC, SSIZE, SPOINT
 	EXT		LOGSSB, SRCH, PTORD, PTREC, RETSSB
 
 ;=====================================================================
@@ -62,7 +62,7 @@ INSRT:	LD	A,H
 	JR	Z,SLLE		; Found it, save HL
 
 	EX	DE,HL		; Not found, save DE
-SLLE:	LD	(LL),HL		; Save I
+SLLE:	LD	(LLB),HL	; Save I
 	LD	A,(SPOINT)
 	OR	A
 	JR	Z,INSREC	; No pointers, insert the record
@@ -70,7 +70,7 @@ SLLE:	LD	(LL),HL		; Save I
 	CALL	PUTREC
 
 	LD	HL,(SNREC)	; N
-	LD	DE,(LL)		; I
+	LD	DE,(LLB)	; I
 	OR	A		; Clear Cy
 	SBC	HL,DE
 	ADD	HL,DE
@@ -98,7 +98,7 @@ SLLE:	LD	(LL),HL		; Save I
 ; Insert a record (No Pointers)
 
 INSREC:	CALL	PTREC		; R(I)
-	LD	(RR),HL		; Place for new record
+	LD	(RRB),HL		; Place for new record
 	EX	DE,HL		; Save it in DE
 
 	LD	HL,(SNREC)
@@ -120,7 +120,7 @@ INSREC:	CALL	PTREC		; R(I)
 	LDDR			; Open up the Record list
 
 INSR0:	LD	HL,(KEY)
-	LD	DE,(RR)
+	LD	DE,(RRB)
 	LD	BC,(SSIZE)
 	LDIR
 	JP	RETSSB
@@ -144,7 +144,7 @@ APP0:	CALL	PUTREC		; Increment N and put new record there
 
 	LD	HL,(SNREC)	; I(N+1)
 
-APPORD:	LD	DE,(RR)		; Ptr R(?)
+APPORD:	LD	DE,(RRB)		; Ptr R(?)
 	CALL	PTORD		; Point HL to P(?)
 	LD	(HL),E
 	INC	HL
@@ -158,7 +158,7 @@ PUTREC:	LD	HL,(SNREC)	; N
 	INC	HL		; N+1
 	LD	(SNREC),HL	; New N
 	CALL	PTREC		; Next free space
-	LD	(RR),HL		; Save pointer to new record
+	LD	(RRB),HL	; Save pointer to new record
 
 	LD	A,(NSRTO)
 	OR	A

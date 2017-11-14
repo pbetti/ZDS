@@ -1,0 +1,582 @@
+;
+; System-dependent installation overlay for ZMP
+;
+;    Insert your own code as necessary in this file. Code contained herein
+; has been written in Z80 code for use with M80. Once assembled,
+; convert to hex with RELHEX and use MLOAD to overlay it over the main
+; ZMPX.COM file to produce your very own ZMP.COM.
+;
+; Notes on modifying this file:
+;    Hi-Tech C requires that functions do not change either index register
+; (IX or IY). If your overlay requires either of these to be changed, ensure
+; they are restored to their original values on return.
+;    Since collecting parameters from C functions can be tricky, only change
+; the parts marked 'Insert your own code here'. Do NOT modify the jump
+; table at the start. Do NOT modify the entry/exit sections of each
+; function. Do NOT pass 'GO'. Do NOT collect $200.
+;    Apart from defining modem functions, this file also defines terminal
+; characteristics. Most have been set up for ADM-3A (with a few of my own
+; additions). Modify to suit your own terminal. An inline print routine
+; is provided for printing strings in the usual way: usage is
+;
+;	call	print
+;	db	'required string',0
+;
+;    Don't forget to set your clock speed at the clkspd variable.
+;
+;    If you find your overlay exceeds the maximum size (currently 0400h),
+; you will have to re-compile the whole thing. Good luck. You might try
+; informing us if you need to do this: if too many people need to do it, we
+; haven't allowed enough room.
+;
+; Ron Murray 15/8/88
+;
+
+;User-set variables:
+clkspd	equ	2		; Processor clock speed in MHz
+mspeed	equ	003ch		; Current baud rate: as used by BYE etc
+				; This MUST be the same as Mspeed in
+				; ZMP.H
+
+;Set the following two equates to the drive and user area which will
+;   contain zmp's .OVR files, .CFG file and .FON file. Set both to zero
+;   to locate them on the drive from which zmp is invoked.
+
+overdrive	equ	'A'	; Drive to find overlays on. Range is 'A'-'P'
+overuser	equ	0	; User area to find overlays
+
+userdef	equ	0145h		; origin of this overlay: get this value
+				; from the .SYM file produced when ZMP.COM
+				; is linked
+ovsize	equ	0400h		; max size of this overlay
+
+	.z80			; use z80 code
+	aseg			; absolute
+
+	org	userdef
+
+esc	equ	1bh
+ctrlq	equ	11h
+cr	equ	0dh
+lf	equ	0ah
+bdos	equ	5
+
+codebgn	equ	$
+
+;Jump table for the overlay: do NOT change this
+jump_tab:
+	jp	scrnpr		; screen print
+	jp	mrd		; modem read with timeout
+	jp	mchin		; get a character from modem
+	jp	mchout		; send a character to the modem
+	jp	mordy		; test for tx buffer empty
+	jp	mirdy		; test for character received
+	jp	sndbrk		; send break
+	jp	cursadd		; cursor addressing
+	jp	cls		; clear screen
+	jp	invon		; inverse video on
+	jp	invoff		; inverse video off
+	jp	hide		; hide cursor
+	jp	show		; show cursor
+	jp	savecu		; save cursor position
+	jp	rescu		; restore cursor position
+	jp	mint		; service modem interrupt
+	jp	invec		; initialise interrupt vectors
+	jp	dinvec		; de-initialise interrupt vectors
+	jp	mdmerr		; test uart flags for error
+	jp	dtron		; turn DTR on
+	jp	dtroff		; turn DTR OFF
+	jp	init		; initialise uart
+	jp	wait		; wait seconds
+	jp	mswait		; wait milliseconds
+	jp	userin		; user-defined entry routine
+	jp	userout		; user-defined exit routine
+	jp	getvars		; get variables
+
+;Spare jumps for compatibility with future versions
+	jp	spare		; spares for later use
+	jp	spare		; spares for later use
+	jp	spare		; spares for later use
+	jp	spare		; spares for later use
+	jp	spare		; spares for later use
+
+;
+; Main code starts here
+;
+;Screen print function
+scrnpr:
+				; <== Insert your own code here
+	call	print
+	db	'This function not supported.',cr,lf,0
+				; <== End of your own code
+spare:
+	ret
+
+;User-defined entry routine: leave empty if not needed
+userin:
+	ret
+
+;User-defined exit routine: leave empty if not needed
+userout:
+	ret
+
+
+;Get a character from the modem: return in HL
+mchin:
+	push	bc
+				; <== Insert your own code here
+	ld	b,0		; get input character
+	call	calmod		; in A
+				; <== End of your own code
+	ld	l,a		; put in HL
+	ld	h,0
+	or	a		; set/clear Z
+	pop	bc
+	ret
+
+;Send a character to the modem
+mchout:
+	ld	hl,2		; get the character
+	add	hl,sp
+	ld	a,(hl)
+				; <== Insert your own code here
+	push	bc
+	ld	b,2		; output to modem
+	call	calmod
+	pop	bc
+				; <== End of your own code
+	ret			; done
+
+;Test for output ready: return TRUE (1) in HL if ok
+mordy:
+				; <== Insert your own code here
+	push	bc
+	ld	b,4
+	call	calmod		; get status reg
+	pop	bc
+	ld	e,a		; save for test
+	and	010h		; get tx buffer empty flag in A
+	ld	hl,1		; assume ready
+	jr	nz,mordy1
+	ld	a,e		; ok, not ready. Is carrier there?
+	and	020h
+	jr	nz,mordy1	; no, fake it so we don't hang
+	dec	hl		; otherwise say not ready
+mordy1:
+				; <== End of your own code
+	ld	a,l		; set/clear Z
+	or	a
+	ret
+
+;Test for character at modem: return TRUE (1) in HL if so
+mirdy:
+				; <== Insert your own code here
+	push	bc
+	ld	b,4		; get status reg
+	call	calmod
+	pop	bc
+	and	08h		; 6551 bit 3
+	ld	hl,0		; assume not ready
+	jr	z,mirdy1
+	inc	hl		; otherwise set it
+mirdy1:
+				; <== End of your own code
+	ld	a,l		; set/clear Z
+	or	a
+	ret
+
+;Send a break to the modem: leave empty if your system can't do it
+sndbrk:
+				; <== Insert your own code here
+	push	bc
+	ld	b,8
+	call	calmod		; get current ctl reg
+	push	af		; save it
+	or	0ch		; set to send break
+	ld	b,10
+	call	calmod
+				; <== End of your own code
+	ld	hl,300
+	call	waithlms	; wait 300 mS
+
+				; <== Insert your own code here
+	pop	af
+	ld	b,10		; restore original
+	call	calmod
+	pop	bc
+				; <== End of your own code
+	ret
+
+;Test UART flags for error: return TRUE (1) in HL if error
+mdmerr:
+				; <== Insert your own code here
+	push	bc
+	ld	b,4
+	call	calmod		; get status reg
+	pop	bc
+	and	07h		; mask off error bits
+	ld	hl,0		; assume not ready
+	jr	z,mdmer1
+	inc	hl		; otherwise set it
+mdmer1:
+				; <== End of your own code
+	ld	a,l		; set/clear Z
+	or	a
+				; <== End of your own code
+	ret
+
+;Turn DTR ON
+dtron:
+				; <== Insert your own code here
+	push	bc
+	ld	b,8		; get command reg
+	call	calmod
+	and	0f0h
+	or	0bh		; set DTR & RTS on
+	ld	b,10
+	call	calmod
+	pop	bc
+				; <== End of your own code
+	ret
+
+;Turn DTR OFF
+dtroff:
+				; <== Insert your own code here
+	push	bc
+	ld	b,8		; get command reg
+	call	calmod
+	and	0f0h		; set DTR and RTS off
+	ld	b,10
+	call	calmod
+	pop	bc
+				; <== End of your own code
+	ret
+
+;Initialise the UART
+init:
+	ld	hl,2		; get parameters
+	add	hl,sp
+	ex	de,hl
+	call	getparm		; in HL
+	ld	(brate),hl	; baud rate
+	call	getparm
+	ld	(parity),hl	; parity
+	call	getparm
+	ld	(data),hl	; data bits
+	call	getparm
+	ld	(stop),hl	; stop bits
+				; <== Insert your own code here
+				; using values below
+	push	bc
+	ld	b,12		; read ctl reg
+	call	calmod		; to get old baud rate
+	and	0fh
+	ld	e,a		; save in E
+	ld	a,(data)	; get data bits
+	cp	7		; if 7,
+	jr	nz,setbits
+	set	5,e		; set bit 5
+
+setbits:
+	ld	a,(stop)	; get stop bits
+	cp	2
+	jr	nz,setbrate	; if 2,
+	set	7,e		; set bit 7
+
+setbrate:
+	ld	a,(brate)	; set baud rate: get index
+	ld	hl,brval
+	ld	c,a		; rate to BC
+	ld	b,0
+	add	hl,bc
+	ld	a,(hl)		; get baud rate value
+	or	a		; invalid if zero
+	jr	z,setctl
+	ld	a,e		; ok, remove old one
+	and	0f0h
+	or	(hl)		; add new baud rate
+	ld	e,a
+	ld	a,c		; restore id
+	ld	(mspeed),a	; save for future use: this one's valid
+
+setctl:
+	ld	a,e		; value to a
+	or	010h		; internal b/r gen
+	ld	b,14
+	call	calmod		; set it up
+	ld	a,(parity)	; do parity
+	ld	e,060h		; assume even
+	cp	'E'		; even?
+	jr	z,setpar	; yes
+	ld	e,040h		; try odd
+	cp	'O'
+	jr	z,setpar
+	ld	e,0		; none
+
+setpar:
+	ld	a,0bh		; RTS, DTR on
+	or	e		; add parity
+	ld	b,10
+	call	calmod		; set it
+	pop	bc
+				; <== End of your own code
+	ret
+
+brate:	ds	2	; baud rate:
+			;  0 =   110 baud   1 =   300 baud   2 =   450 baud
+			;  3 =   600 baud   4 =   710 baud   5 =  1200 baud
+			;  6 =  2400 baud   7 =  4800 baud   8 =  9600 baud
+			;  9 = 19200 baud  10 = 38400 baud  11 = 57600 baud
+			; 12 = 76800 baud
+
+parity:	ds	2		; parity
+data:	ds	2		; data bits
+stop:	ds	2		; stop bits
+
+;Values for 6551 control reg for each baud rate: 0 if invalid
+brval:
+	db	3,6,0,7,0,8,10,12,14,15,0,0,0
+
+;My system needs a BIOS call to access the UART. If yours doesn't, you don't
+;  need anything here. Otherwise write your own.
+;Modify the next instruction to jump to the BIOS routine
+calmod:
+	ld	hl,(1)		; get BIOS address
+	ld	l,0
+	ld	de,036h		; add offset into BIOS jump table
+	add	hl,de		; add to hl
+	ld	(calmod+1),hl	; modify the code
+	push	af		; save af
+	ld	a,0c3h		; use jp instruction
+	ld	(calmod),a
+	pop	af		; restore A
+	jr	calmod		; and do it
+
+;****************************************************************************
+;Video terminal sequences: these are for ADM-3A: Modify as you wish
+;Cursor addressing: 
+cursadd:
+	ld	hl,2		; get parameters
+	add	hl,sp
+	ex	de,hl
+	call	getparm		; in HL
+	ld	(row),hl	; row
+	call	getparm
+	ld	(col),hl	; column
+				; <== Insert your own code here
+				; using values in row and col
+	call	print
+	db	esc,'=',0	; ADM-3A leadin
+	ld	a,(row)		; row first
+	add	a,' '		; add offset
+	call	cout
+	ld	a,(col)		; sane for column
+	add	a,' '
+	call	cout
+				; <== end of your own code
+	ret
+
+row:	ds	2		; row
+col:	ds	2		; column
+
+
+;Clear screen:
+cls:
+	call	print
+	db	01ah,0
+	ret
+
+;Inverse video on:
+invon:
+	call	print
+	db	esc,')',0
+	ret
+
+;Inverse video off:
+invoff:
+	call	print
+	db	esc,'(',0
+	ret
+
+;Turn off cursor:
+hide:
+	call	print
+	db	esc,'z',0
+	ret
+
+;Turn on cursor:
+show:
+	call	print
+	db	esc,'v',0
+	ret
+
+;Save cursor position:
+savecu:
+	ret
+
+;Restore cursor position:
+rescu:
+	ret
+
+;****************************************************************************
+
+;Service modem interrupt:
+mint:
+	ret			; my system doesn't need this
+
+;Initialise interrupt vectors:
+invec:
+	ret			; ditto
+
+;De-initialise interrupt vectors:
+dinvec:
+	ret			; ditto
+
+;****************** End of user-defined code ********************************
+
+;Modem character test for 100 ms
+mrd:
+	push	bc		; save bc
+	ld	bc,100		; set limit
+mrd1:
+	call	mirdy		; char at modem?
+	jr	nz,mrd2		; yes, exit
+	ld	hl,1		; else wait 1ms
+	call	waithlms
+	dec	bc		; loop till done
+	ld	a,b
+	or	c
+	jr	nz,mrd1
+	ld	hl,0		; none there, result=0
+	xor	a
+mrd2:
+	pop	bc
+	ret
+
+; Inline print routine: destroys A and HL
+
+print:
+	ex	(sp),hl		; get address of string
+ploop:
+	ld	a,(hl)		; get next
+	inc	hl		; bump pointer
+	or	a		; done if zero
+	jr	z,pdone
+	call	cout		; else print
+	jr	ploop		; and loop
+pdone:
+	ex	(sp),hl		; restore return address
+	ret			; and quit
+
+;
+;Output a character in A to the console
+;
+cout:
+	push	bc		; save regs
+	push	de
+	push	hl
+	ld	e,a		; character to E
+	ld	c,2
+	call	bdos		; print it
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+;Wait(seconds)
+wait:
+	ld	hl,2
+	add	hl,sp
+	ex	de,hl		; get delay size
+	call	getparm
+				; fall thru to..
+;Wait seconds in HL
+waithls:
+	push	bc		; save bc
+	push	de		; de
+	push	ix		; and ix
+	ld	ix,0		; then point ix to 0
+				; so we don't upset memory-mapped i/o
+
+;Calculate values for loop constants. Need to have two loops to avoid
+;   16-bit overflow with clock speeds above 9 MHz.
+
+outerval	equ	(clkspd / 10) + 1
+innerval	equ	(6667 / outerval) * clkspd
+
+wait10:
+	ld	b,outerval
+
+wait11:
+	ld	de,innerval
+
+wait12:
+	bit	0,(ix)		; time-wasters
+	bit	0,(ix)
+	bit	0,(ix)		; 20 T-states each
+	bit	0,(ix)
+	bit	0,(ix)
+	bit	0,(ix)
+	dec	de
+	ld	a,e
+	ld	a,d
+	or	e
+	jr	nz,wait12	; 150 T-states per inner loop
+	djnz	wait11		; decrement outer loop
+	dec	hl		; ok, decrement count in hl
+	ld	a,h
+	or	l
+	jr	nz,wait10
+	pop	ix		; done -- restore ix
+	pop	de		; de
+	pop	bc		; and bc
+	ret
+
+;Wait milliseconds
+mswait:
+	ld	hl,2
+	add	hl,sp
+	ex	de,hl		; get delay size
+	call	getparm
+				; fall thru to..
+;Wait milliseconds in HL
+waithlms:
+	push	de
+w1ms0:
+	ld	de,39 * clkspd
+w1ms1:
+	dec	de
+	ld	a,d
+	or	e
+	jr	nz,w1ms1
+	dec	hl
+	ld	a,h
+	or	l
+	jr	nz,w1ms0
+	pop	de
+	ret
+
+;Get next parameter from (de) into hl
+getparm:
+	ex	de,hl		; get address into hl
+	ld	e,(hl)		; get lo
+	inc	hl
+	ld	d,(hl)		; then hi
+	inc	hl		; bump for next
+	ex	de,hl		; result in hl, address still in de
+	ret
+
+;Get address of user-defined variables
+getvars:
+	ld	hl,uservars
+	ret
+
+uservars:
+	dw	overdrive	; all integer
+	dw	overuser
+
+	 if	($ - codebgn) gt ovsize
+toobig:	jp	errval		; Overlay too large!
+	 endif
+
+	end

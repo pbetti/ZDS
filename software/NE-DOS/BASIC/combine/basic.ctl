@@ -74,9 +74,13 @@ c 1592-1603	; Code space
 b 1604-1607	; ignore data
 w 1608-164f	; Code space
 t 1650-1821	; ASCII text
+<<<<<<< HEAD
 w 1822-1899	; Code space
 b 189a-18a4	; Code space
 w 18a5-18c8	; Code space
+=======
+w 1822-18c8	; Code space
+>>>>>>> 6497619f20f6a34ba6317b5abeeb2b7734fd1225
 t 18c9-18f6	; Code space
 c 18f7-191c	; Code space
 t 191D-1935	; ASCII text

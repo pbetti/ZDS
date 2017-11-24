@@ -1,0 +1,2991 @@
+   1:			; Program:	ARUNZ (Copyright 1989, all rights reserved, by Jay Sage)
+   2:			; Version:	1.1
+   3:			; Author:	Jay Sage (with help from Howard Goldstein and Carson Wilson)
+   4:			; Date:		October 23, 1993
+   5:			
+   6:			; History:     See ARUNZxxx.HIS
+   7:			
+   8:	0031'         	VERSION$UNIT	equ	'1'
+   9:	0031'         	VERSION$TENTH	equ	'1'
+  10:	0020'         	VERSION$LETTER	equ	' '
+  11:			
+  12:			.comment \
+  13:			
+  14:			Notes:
+  15:			
+  16:			                            ASSEMBLING THE CODE
+  17:						    ===================
+  18:			
+  19:			To create a type-4 ARUNZ using LINK-80 and Z80ASM, the commands are:
+  20:			
+  21:				Z80ASM ARUNZ/6
+  22:				LINK ARUNZ,Z3LIB[S],DSLIB[S],SYSLIB[S,OP]
+  23:				MLOAD ARUNZ=ARUNZ.PRL,T4LDR11
+  24:			
+  25:			With ZMAC/ZML the commands are
+  26:			
+  27:				ZMAC ARUNZ
+  28:				ZML ARUNZ10.4OM=ARUNZ,Z3LIB/,DSLIB/,SYSLIB/,T4LDR11.HDR/P
+  29:			
+  30:			T4LDR11.HDR is T4LDR11.Z80 assembled to an absolute binary file.
+  31:			
+  32:			With SLRNK+ the commands are
+  33:			
+  34:				Z80ASM ARUNZ/S
+  35:				SLRNK+ ARUNZ/K,SLR,ARUNZ,Z3LIBS/S,DSLIBS/S,SYSLIBS/S,/E
+  36:				MLOAD ARUNZ=ARUNZ.PRL,T4LDR11
+  37:			
+  38:			SLRNK+ has a somewhat non-standard way of generating PRL files that
+  39:			necessitates linking in a header module (SLR.REL above) before the ARUNZ.REL
+  40:			module.  The source for this module is a simple "DS 256".  It just allocates
+  41:			a page of memory for the header.
+  42:			
+  43:			I have made things easier by merging all the libraries with SLRIB to make a
+  44:			single module LIBS.REL.  This saves disk space, reduces the number of files
+  45:			that must be opened, and simplifies the linkage command lines.  It also
+  46:			prevents the mistakes of omitting a module or including modules in the wrong
+  47:			order.
+  48:			
+  49:			
+  50:			                    Generating a Type-4 Version of ARUNZ
+  51:			                    ====================================
+  52:			
+  53:			See the comments in ARUNZ09S.NOT.
+  54:			
+  55:			        Making a Version for Extended Multiple Command Line Buffers
+  56:			        ===========================================================
+  57:			
+  58:			See the comments in ARUNZ10.NOT.
+  59:			\
+  60:			
+  61:	1300'         	CODESIZE	equ	1300h		; Bigger than actual code+data
+  62:			
+  63:	0000'         	MCLSIZE		equ	0		; Set to 0 for standard system
+  64:			
+  65:			;=============================================================================
+  66:			
+  67:			;			E Q U A T E S
+  68:			
+  69:	0000'         	NO	equ	0
+  70:	FFFF'         	YES	equ	NOT NO
+  71:			
+  72:	005F'         	WILDCHAR	equ	'_'
+  73:	002C'         	OPTCHAR		equ	','
+  74:	003A'         	DEFLTCHAR	equ	':'
+  75:	003E'         	TYPECHAR	equ	'>'
+  76:	0004'         	NPROMPTS	equ	4	; Number of prompted input parameters
+  77:	0004'         	FBUFSIZE	equ	4	; File input buffer in pages
+  78:	0000'         	Z33ONLY		equ	NO	; Yes if relying on Z33 parser
+  79:			
+  80:	00FF'         	CLSIZE		equ	0FFh	; Size of buffer for new command line
+  81:			
+  82:			; .accept	"Assemble for type 3 or 4? ",ENVTYP
+  83:	0004'         	ENVTYP		equ	4
+  84:	0000'         	XMCL		equ	NO		; Includ extended mcl code
+  85:	FFFF'         	PINPUT	equ	YES		; Include user input parameters $", $'
+  86:	FFFF'         	PREG	equ	YES		; Include register parameter $R
+  87:	FFFF'         	PMEM	equ	YES		; Include memory parameter $M
+  88:	FFFF'         	PENV	equ	YES		; Include ENV address parameter $A
+  89:	FFFF'         	PDATE	equ	YES		; Include datestamper date parameter
+  90:			
+  91:	0080'         	TBUFF	equ	80h
+  92:	005C'         	FCB	equ	5Ch
+  93:	000D'         	CR	equ	0Dh
+  94:	000A'         	LF	equ	0Ah
+  95:	0009'         	TAB	equ	09h
+  96:	0007'         	BELL	equ	07h
+  97:	001A'         	EOT	equ	1Ah
+  98:			
+  99:			
+ 100:			; ----------   Error codes
+ 101:			
+ 102:			; ZCPR34 uses the error byte at the beginning of the message buffer as a flag
+ 103:			; to show what kind of error occurred.  Advanced error handlers will be able
+ 104:			; to help the user further by suggesting the possible cause of the error.
+ 105:			
+ 106:	0006'         	ECECPERR	equ	6	; ECP error --  command could not be executed
+ 107:							; ..by ECP, error handling was forced by a
+ 108:							; ..transient for its own reasons
+ 109:							; (DO NOT CHANGE FROM 6)
+ 110:			
+ 111:			
+ 112:			;=============================================================================
+ 113:			
+ 114:			;		U S E R   M A C R O S
+ 115:			
+ 116:			; This macro places configuration flags in the code.
+ 117:			
+ 118:			CONFIG	 MACRO
+ 119:			
+ 120:				db	'SIZE'
+ 121:			CODESIZ:
+ 122:				dw	CODESIZE
+ 123:			
+ 124:				db	'TABFLAG'
+ 125:			TABFLAG:
+ 126:				db	0		; Set to 09 to allow tabs as token
+ 127:							; ..delimiters
+ 128:			
+ 129:				 IF	XMCL
+ 130:				db	'MCLSIZE'
+ 131:			MCLSIZ:
+ 132:				dw	MCLSIZE
+ 133:				 ENDIF			; XMCL
+ 134:			
+ 135:			; These two flags, which appear just before the marker string 'REG' determine
+ 136:			; which messages will be displayed by ARUNZ.  The QUIETECP flag applies when
+ 137:			; ARUNZ has been invoked as an extended command processor.  If invoked by the
+ 138:			; user, QUIETF applies.  Contrary to what the symbol name would imply, setting
+ 139:			; bits in the flag turns on the display of that message.
+ 140:			
+ 141:				db	'MSGFLAGS'
+ 142:			QUIETECP:
+ 143:				db	00000100b	; Quiet flag for ECP invocation
+ 144:			QUIETF:	db	00001110b	; Flag to control display of messages
+ 145:							; 	||||||||    ;set bit to display msg
+ 146:							; 	|||||||*---- signon message
+ 147:							; 	||||||*----- running alias "x" message
+ 148:							; 	|||||*------ alias.cmd file not found
+ 149:							; 	||||*------- alias "x" not found
+ 150:							; 	|||*-------- ECP error (no longer used)
+ 151:							; 	||*--------- shell invocation error
+ 152:							;		     (no longer used)
+ 153:							; 	**---------- bits not assigned
+ 154:			
+ 155:			; If the value of REGF is in the range 0..1FH, then that user register will be
+ 156:			; used to set the values for the three path-related flags to follow.  Bit 0
+ 157:			; is used to select path searching of some kind.  If it is not set, then the
+ 158:			; fixed DU is used.  Bit 1 determines whether only the root will be searched.
+ 159:			; If it is not set, then the entire path will be searched.  Bit 2 determines
+ 160:			; whether full path searches will include the current directory first.
+ 161:			
+ 162:				db	'REG'
+ 163:			REGF:	db	0FFh
+ 164:			
+ 165:			; PATHF determines whether path searching will be used to locate ALIAS.CMD.
+ 166:			; If the flag is 0, then the fixed DU area below will be used.  If it is 0FFH,
+ 167:			; then the other path-related flags will be used to determine how the search
+ 168:			; is performed.
+ 169:			
+ 170:				db	'PATH'
+ 171:			PATHF:	db	YES		; Path search flag (NO = use DU given below)
+ 172:			
+ 173:			; ROOTF determines whether only the root of the path will be searched.  If it
+ 174:			; is 0FFH, then only the root will be used; if it is 0, then the entire path
+ 175:			; will be searched.
+ 176:			
+ 177:				db	'ROOT'
+ 178:			ROOTF:	db	NO		; NO = use entire path / YES = root only
+ 179:			
+ 180:			; If full path searching is selected, then SCANCUR determines whether or not
+ 181:			; to include the current directory first.
+ 182:			
+ 183:				db	'SCANCUR'
+ 184:			SCANCUR:
+ 185:				db	YES		; YES = search current DU first
+ 186:			
+ 187:			; If path searching is disabled, then the explicit directory specified here
+ 188:			; will be searched for ALIAS.CMD.
+ 189:			
+ 190:				db	'DU'
+ 191:			CMDDRV:	db	'C' - 'A'	; Drive to use if not path (drive A = 0)
+ 192:			CMDUSR:	db	0		; User to use if not path
+ 193:			
+ 194:				 ENDM
+ 195:			
+ 196:			;=============================================================================
+ 197:			
+ 198:			;		E X T E R N A L    R E F E R E N C E S
+ 199:			
+ 200:			
+ 201:			; DSLIB
+ 202:			
+ 203:			;EXT	FINDCK,RDCLK <crw>
+ 204:			
+ 205:				EXT	TIMINI,RCLOCK
+ 206:			
+ 207:			; Z33LIB or Z34LIB (in Z3LIB in version-4 libraries)
+ 208:			
+ 209:				EXT	Z33CHK,SCAN,FCB1CHK,PRTTYPE,GETCCP,GZMTOP
+ 210:				EXT	Z3INIT,GETEFCB,GETENV,GETFN2,GETPATH,GETREG
+ 211:				EXT	GETCL1,GETCL2,ZPRSFN,ZSYSCHK,INVERROR
+ 212:			
+ 213:			; SYSLIB4
+ 214:			
+ 215:				EXT	SKSP,ISSP,CAPS,PRINT,CRLF,COUT,ACASE1
+ 216:				EXT	F$OPEN,F$READ,SETDMA,PFIND,INITFCB
+ 217:				EXT	LOGUD,RETUD
+ 218:				EXT	GETCST
+ 219:			
+ 220:	FFFF'         		 IF	PINPUT
+ 221:				EXT	BLINE,GETZEX,PUTZEX
+ 222:				 ENDIF
+ 223:			
+ 224:	FFFF'         		 IF	PREG
+ 225:				EXT	GETREG
+ 226:				 ENDIF
+ 227:			
+ 228:	FFFF'         		 IF	PMEM OR PENV OR PREG
+ 229:				EXT	MA2HC,MA3DC,MAFDC,EVAL16
+ 230:				 ENDIF
+ 231:			
+ 232:	FFFF'         		 IF	PENV
+ 233:				EXT	MHL4HC
+ 234:				 ENDIF
+ 235:			
+ 236:	0000'         		 IF	ENVTYP lt 4
+ 238:				 ENDIF
+ 239:			
+ 240:			
+ 241:			; ARUNZ-1.Z80	Initialization and Main Code Loop
+ 242:			
+ 243:			
+ 244:			; Initialization Code Section
+ 245:			
+ 246:			; TYP3HDR.Z80, Version 1.1, safety header
+ 247:			
+ 248:	0000'         	PENTRY:
+ 249:	0000' 1861    		jr	START00		; Must use relative jump
+ 250:	0002' 00      		db	0		; Filler
+ 251:	0003' 5A33454E		db	'Z3ENV'
+	      56
+ 252:	0008'         	TYPE:
+ 253:	0008' 04      		db	ENVTYP		; Type-3 or -4 environment
+ 254:	0009'         	Z3EADR:
+ 255:	0009' 00FE    		dw	0fe00h		; Filled in by Z33
+ 256:	0000'         		 if	ENVTYP lt 4
+ 258:				 else
+ 259:	000B' 7F1C    		dw	ldaddr		; Type 4 load address word
+ 260:				 endif			; ENVTYP lt 4
+ 261:			
+ 262:	000D'         		CONFIG			; Macro with configuration flags
+ 263:			
+ 264:	003F'         	IOFCB:
+ 265:	003F'         		ds	1		; Initialized by FXIO
+ 266:	0040' 414C4941		db	'ALIAS   '	; File name
+	      53202020
+ 267:	0048' 434D44  		db	'CMD'		; File type
+ 268:	004B'         		ds	24		; Initialized by FXIO
+ 269:			
+ 270:	0063'         	START00:
+ 271:	0000'         		 if	ENVTYP eq 3
+ 298:				 endif			; ENVTYP eq 3
+ 299:			
+ 300:	0063'         	START:				; Initialize
+ 301:	0063' 2A0900  		ld	hl,(Z3EADR)	; Pt to ZCPR3 environment
+ 302:	0066' CD0000  		call	ZSYSCHK		; Print msg if program not properly installed
+ 303:	0069' C0      		ret	nz		; ..and exit
+ 304:	006A' CD0000  		call	Z3INIT		; Initialize ZCPR3 environment
+ 305:			
+ 306:	0000'         		 IF	Z33ONLY
+ 314:				 ENDIF	;Z33ONLY
+ 315:			
+ 316:	006D' ED735D00		ld	(STACK),sp	; Save system stack pointer
+ 317:	0071' 315D00  		ld	sp,STACK	; Set up local stack
+ 318:			
+ 319:	0074' CD0000  		call	RETUD		; Save user/disk information
+ 320:	0077' ED431100		ld	(dusave),bc
+ 321:			
+ 322:	007B' 3A2800  		ld	a,(REGF)	; See if user register is setting configuration
+ 323:	007E' FE20    		cp	20h		; If not 00..1FH, use hard-coded options
+ 324:	0080' 301C    		jr	nc,START0
+ 325:			
+ 326:	0082' 47      		ld	b,a		; Get value of register
+ 327:	0083' CD0000  		call	GETREG
+ 328:	0086' 212D00  		ld	hl,PATHF	; Set up PATHF from user register
+ 329:	0089' CB47    		bit	0,a		; ..based on bit 0
+ 330:	008B' CD0809  		call	INITFLAG
+ 331:	008E' 213200  		ld	hl,ROOTF	; Set up ROOTF based
+ 332:	0091' CB4F    		bit	1,a		; ..on bit 1
+ 333:	0093' CD0809  		call	INITFLAG
+ 334:	0096' 213A00  		ld	hl,SCANCUR	; Set up SCANCUR based
+ 335:	0099' CB57    		bit	2,a		; ..on bit 2
+ 336:	009B' CD0809  		call	INITFLAG
+ 337:			
+ 338:	009E'         	START0:
+ 339:	009E' AF      		xor	a		; Set rflag for non-recursive script
+ 340:	009F' 321A00  		ld	(RFLAG),a
+ 341:			
+ 342:	FFFF'         		 IF	PINPUT
+ 343:	00A2' 3E02    		ld	a,2		; Set ZEX input redirection flag off
+ 344:	00A4' 321700  		ld	(ZEXFL),a
+ 345:				 ENDIF	;PINPUT
+ 346:			
+ 347:	00A7' CD0000  		call	GETCST		; Get command status flag
+ 348:	00AA' E604    		and	100b		; See if ECP invocation
+ 349:	00AC' 2808    		jr	z,START1	; If not, skip on
+ 350:	00AE' 3A2300  		ld	a,(QUIETECP)	; If so, substitute flag quietecp
+ 351:	00B1' 322400  		ld	(QUIETF),a
+ 352:	00B4' 3EFF    		ld	a,0ffh
+ 353:	00B6' 320000  	START1:	ld	(NLFLAG),a	; Set "new line" flag non-zero
+ 354:							; ..zero if prgram not invoked as ECP
+ 355:			
+ 356:				DSEG
+ 357:	0000"         	NLFLAG:	ds	1
+ 358:				CSEG
+ 359:			
+ 360:			;---------------------------------------------------------------------------
+ 361:			
+ 362:			; This section of the code defines and allocates space for the various
+ 363:			; buffers that are needed.
+ 364:			
+ 365:							; Define data buffer areas
+ 366:			
+ 367:	0001'         		 if	ENVTYP eq 4
+ 368:	00B9' 2A1100  		ld	hl,(CODESIZ)	; Size of code, including lib routines
+ 369:	00BC' 110000  		ld	de,PENTRY
+ 370:	00BF' 19      		add	hl,de		; HL now has address of end of code
+ 371:				 else
+ 373:				 endif			; ENVTYP eq 4
+ 374:			
+ 375:	00C0' 220100  		ld	(CLBUF),hl	; Command line will be first after code
+ 376:			
+ 377:				 DSEG
+ 378:	0001"         	CLBUF	ds	2
+ 379:				 CSEG
+ 380:			
+ 381:							; Allocate buffer for the new command line
+ 382:	0000'         		 if	XMCL
+ 391:				 endif			; XMCL
+ 392:			
+ 393:	00C3'         	start2:
+ 394:	00C3' EB      		ex	de,hl		; Move buffer pointer to DE
+ 395:	00C4' CD0000  		call	getcl1
+ 396:	00C7' B7      		or	a		; Check for zero size
+ 397:	00C8' CA8B01  		jp	z,QUIT		; If MCL length is 0, quit
+ 398:	00CB' 4F      		ld	c,a		; Save MCL size in C
+ 399:	00CC' 7C      		ld	a,h		; Check for no MCL
+ 400:	00CD' B5      		or	l
+ 401:	00CE' CA8B01  		jp	z,QUIT		; If none, quit
+ 402:	00D1' 69      		ld	l,c		; Get CL length into HL
+ 403:	00D2' 2600    		ld	h,0
+ 404:	00D4' 19      		add	hl,de
+ 405:	00D5' 22BC01  		ld	(HIGHLIMIT),hl	; Save this as buffer filling limit address
+ 406:	00D8' 21FF00  		ld	hl,CLSIZE	; Use oversize standard buffer
+ 407:	00DB' 19      		add	hl,de
+ 408:			
+ 409:	00DC'         	START3:
+ 410:	00DC' 23      		inc	hl		; Room for final null
+ 411:			
+ 412:	0001'         		 if	ENVTYP eq 4
+ 413:	0100'         	BUFFER	DEFL	CLSIZE + 1	; Keep track of buffer allocations
+ 414:				 endif			; ENVTYP eq 4
+ 415:	0000'         		 if	XMCL AND (high MCLSIZE ne 0)
+ 419:				 endif			; XMCL and (high MCLSIZE ne 0)
+ 420:			
+ 421:	00DD' 220300  		ld	(TAILBUF),hl	; Command tail buffer will be here
+ 422:	00E0' 118000  		ld	de,80h		; Allow 128 bytes
+ 423:	00E3' 19      		add	hl,de
+ 424:			
+ 425:	0001'         		 if	ENVTYP eq 4
+ 426:	0180'         	BUFFER	DEFL	BUFFER + 80h	; Tally buffer allocations
+ 427:				 endif			; ENVTYP eq 4
+ 428:			
+ 429:				 DSEG
+ 430:	0003"         	TAILBUF:
+ 431:	0003"         		ds	2
+ 432:				 CSEG
+ 433:			
+ 434:	FFFF'         		 IF	PINPUT		; Allow space for user responses to prompts
+ 435:	00E4' 220500  		ld	(PROMPTBUF),hl
+ 436:	00E7' 110002  		ld	de,NPROMPTS*80h
+ 437:	00EA' 19      		add	hl,de
+ 438:			
+ 439:	0001'         		 if	ENVTYP eq 4
+ 440:	0380'         	BUFFER	DEFL	BUFFER + ( NPROMPTS * 80h )
+ 441:				 endif			; ENVTYP eq 4
+ 442:			
+ 443:	00EB' AF      		xor	a		; Initialize prompt count
+ 444:	00EC' 320700  		ld	(PROMPTCNT),a
+ 445:			
+ 446:				 DSEG
+ 447:	0005"         	PROMPTBUF:
+ 448:	0005"         		ds	2
+ 449:	0007"         	PROMPTCNT:
+ 450:	0007"         		ds	1		; Number of prompts
+ 451:				 CSEG
+ 452:			
+ 453:				 ENDIF	;PINPUT
+ 454:			
+ 455:	00EF' 7D      		ld	a,l
+ 456:	00F0' B7      		or	a		; Are we already on a page boundary
+ 457:	00F1' 2803    		jr	z,START4	; Skip ahead if so
+ 458:	00F3' 24      		inc	h
+ 459:	00F4' 2E00    		ld	l,0		; Get to a page boundary
+ 460:			
+ 461:	00F6'         	START4:
+ 462:	00F6' 221B00  		ld	(BUFADR),hl	; File buffer will be here
+ 463:			
+ 464:	00F9' 110004  		ld	de,FBUFSIZE*100h
+ 465:	00FC' 19      		add	hl,de
+ 466:			
+ 467:	0001'         		 if	ENVTYP eq 4
+ 468:	087F'         	BUFFER	DEFL	BUFFER + ( FBUFSIZE * 100h ) + 255
+ 469:	1C7F'         	LDADDR	DEFL	CODESIZE + 100h + BUFFER
+ 470:				 endif			; ENVTYP eq 4
+ 471:			
+ 472:	00FD' EB      		ex	de,hl		; Ending address into DE
+ 473:	00FE' CD0000  		call	GZMTOP		; Get top of free memory (page) in HL
+ 474:	0101' AF      		xor	a		; Make sure carry is clear
+ 475:	0102' ED52    		sbc	hl,de
+ 476:	0104' 301A    		jr	nc,FINDEND1	; If no carry, we have enough room
+ 477:			
+ 478:	0106' CD0000  		call	PRINT
+ 479:	0109' 0D0A496E		db	CR,LF,'Insufficient TPA',BELL,0
+	      73756666
+	      69636965
+	      6E742054
+	      50410700
+ 480:	011D' C3F807  		jp	ERRQUIT
+ 481:			
+ 482:	0120'         	FINDEND1:
+ 483:	0120' CD350A  		call	SAVETAIL	; Save the command tail in tailbuf
+ 484:	0123' CD8608  		call	HELPCHK		; See if built-in help requested
+ 485:	0126' CD1308  		call	FINDFILE	; Find the ALIAS.CMD file
+ 486:	0129' CD0708  		call	FINDALIAS	; Find the named alias script
+ 487:	012C' CD6309  		call	PRTALIAS	; Display alias-running message
+ 488:			
+ 489:							; Process the alias script
+ 490:			
+ 491:	012F' ED5B0100		ld	de,(CLBUF)	; Point to buffer for new command line
+ 492:			
+ 493:			;---------------------------------------------------------------------------
+ 494:			
+ 495:			; This is the main character-processing loop.
+ 496:			
+ 497:							; Strip leading spaces and tabs
+ 498:			
+ 499:	0133'         	STRIP:
+ 500:	0133' CD7C08  		call	GETCH		; Get next character from ALIAS.CMD
+ 501:	0136' 280D    		jr	z,NXTCHAR1	; Skip ahead if end of line or file
+ 502:	0138' FE20    		cp	' '		; If space, skip over it
+ 503:	013A' 28F7    		jr	z,STRIP
+ 504:	013C' FE09    		cp	TAB		; Ditto if tab
+ 505:	013E' 28F3    		jr	z,STRIP
+ 506:	0140' 1803    		jr	NXTCHAR1	; Otherwise, process the character
+ 507:			
+ 508:	0142'         	NXTCHAR:
+ 509:	0142' CD7C08  		call	GETCH		; Get next character from ALIAS.CMD
+ 510:	0145'         	NXTCHAR1:
+ 511:	0145' 280E    		jr	z,DONE		; Jump if end of characters
+ 512:	0147' FE24    		cp	'$'		; Parameter lead-in char?
+ 513:	0149' CACE01  		jp	z,PARAM
+ 514:	014C' FE5E    		cp	'^'		; Control-char lead-in?
+ 515:	014E' 2873    		jr	z,CTRLCH
+ 516:			
+ 517:	0150' CDB201  		call	PUTCH		; Store the character
+ 518:	0153' 18ED    		jr	NXTCHAR
+ 519:			
+ 520:			;---------------------------------------------------------------------------
+ 521:			
+ 522:			; We get here when the alias script has been fully expanded and is ready for
+ 523:			; insertion into the command line buffer.
+ 524:			
+ 525:			; Done -- Buffer is Loaded
+ 526:			
+ 527:	0155'         	DONE:
+ 528:	0155' 2A0100  		ld	hl,(CLBUF)	; Point to expanded alias
+ 529:	0158' 7E      		ld	a,(hl)		; Skip if empty line
+ 530:	0159' B7      		or	a
+ 531:	015A' 282F    		jr	z,QUIT
+ 532:			
+ 533:			; Test flag for recursive script.  If set, ignore pending commands.
+ 534:			
+ 535:	015C' 3A1A00  		ld	a,(RFLAG)	; Get recursion flag
+ 536:	015F' 3C      		inc	a		; Set flag and accumulator 0 if flag set
+ 537:	0160' 280D    		jr	z,DONE3		; Recursive script, put final null in buffer
+ 538:			
+ 539:			; Get pointer to pending commands
+ 540:			
+ 541:	0162' CD0000  		call	GETCL2		; Set HL to pending commands, A to
+ 542:							; ..first character in commands
+ 543:			
+ 544:			; Append any commands pending in MCL.  At this point, DE points to end of
+ 545:			; expanded alias script, and HL points to the next command in the MCL.
+ 546:			
+ 547:	0165'         	DONE2:
+ 548:	0165' B7      		or	a		; Test character
+ 549:	0166' 2807    		jr	z,DONE3		; Jump if at end of commands
+ 550:	0168' CDB201  		call	PUTCH		; Add character to buffer at DE
+ 551:	016B' 23      		inc	hl		; Get next pending character
+ 552:	016C' 7E      		ld	a,(hl)
+ 553:	016D' 18F6    		jr	DONE2
+ 554:			
+ 555:	016F'         	DONE3:
+ 556:	016F' CDB801  		call	XPUTCH		; Add the ending null (there's always
+ 557:							; ..room for one more character)
+ 558:			
+ 559:			; Calculate actual length of new command line and load into BC
+ 560:			
+ 561:	0172' 2A0100  		ld	hl,(CLBUF)
+ 562:	0175' E5      		push	hl
+ 563:	0176' EB      		ex	de,hl
+ 564:	0177' AF      		xor	a
+ 565:	0178' ED52    		sbc	hl,de
+ 566:	017A' 44      		ld	b,h
+ 567:	017B' 4D      		ld	c,l
+ 568:			
+ 569:			; Initialize command line pointer in MCL
+ 570:			
+ 571:	017C' CD0000  		call	GETCL1		; HL points to start of MCL buffer
+ 572:	017F' EB      		ex	de,hl		; Put into DE
+ 573:	0180' 210400  		ld	hl,4		; Offset to beginning of command line
+ 574:	0183' 19      		add	hl,de		; HL -> MCL command line, DE -> MCL buffer
+ 575:	0184' EB      		ex	de,hl		; DE -> MCL command line, HL -> MCL buffer
+ 576:	0185' 73      		ld	(hl),e
+ 577:	0186' 23      		inc	hl
+ 578:	0187' 72      		ld	(hl),d
+ 579:			
+ 580:			; Now move the new command line to the MCL
+ 581:			
+ 582:	0188' E1      		pop	hl		; HL -> (CLBUF): source for move
+ 583:	0189' EDB0    		ldir
+ 584:			
+ 585:			; Work complete; return to system
+ 586:			
+ 587:	018B'         	QUIT:
+ 588:	018B' ED7B5D00		ld	sp,(STACK)	; Get old stack value
+ 589:	018F' C9      		ret			; Back to ZCPR3
+ 590:			
+ 591:			; Report MCL overflow error
+ 592:			
+ 593:	0190'         	OVFLERR:
+ 594:	0190' CD0000  		call	PRINT
+ 595:	0193' 0D0A0A2A		db	cr,lf,lf,'***> MCL Overflow <***',cr,lf,0
+	      2A2A3E20
+	      4D434C20
+	      4F766572
+	      666C6F77
+	      203C2A2A
+	      2A0D0A00
+ 596:	01AF' C3F807  		jp	ERRQUIT
+ 597:			
+ 598:			; Add character to buffer at DE with limit checking against the address
+ 599:			; in HIGHLIMIT.  If the carry flag is set on return, then there is room for
+ 600:			; only one more character.  At standard entry point PUTCH, the code branches
+ 601:			; on overflow to an alias-overflow-error exit.  At the entry point XPUTCH,
+ 602:			; the overflow flag is returned to the caller for action.  NOTE: this routine
+ 603:			; uses self-modifying code.
+ 604:			
+ 605:	01B2'         	PUTCH:
+ 606:	01B2' CDB801  		call	XPUTCH
+ 607:	01B5' 38D9    		jr	c,OVFLERR
+ 608:	01B7' C9      		ret
+ 609:			
+ 610:	01B8'         	XPUTCH:
+ 611:	01B8' E5      		push	hl
+ 612:	01B9' 12      		ld	(de),a		; Save the character
+ 613:	01BA' 13      		inc	de		; Advance pointer
+ 614:	01BC'         	HIGHLIMIT EQU	$ + 1
+ 615:	01BB' 210000  		ld	hl,0		; Filled in by code
+ 616:	01BE' B7      		or	a		; Clear carry but leave character alone
+ 617:	01BF' ED52    		sbc	hl,de		; Carry set if overflow
+ 618:	01C1' E1      		pop	hl
+ 619:	01C2' C9      		ret
+ 620:			
+ 621:			
+ 622:			; End of ARUNZ-1.Z80
+ 623:			
+ 624:			
+ 625:							; Process control character
+ 626:			
+ 627:	01C3'         	CTRLCH:
+ 628:	01C3' CD0307  		call	GETCHC		; Get next character from file
+ 629:	01C6' E61F    		and	01Fh		; Convert to control character
+ 630:	01C8' CDB201  		call	PUTCH		; Store the character
+ 631:	01CB' C34201  		jp	NXTCHAR
+ 632:			
+ 633:							; Process parameter
+ 634:			
+ 635:	01CE'         	PARAM:
+ 636:	01CE' CD0307  		call	GETCHC		; Get next character from file
+ 637:			
+ 638:	01D1' 014201  		ld	bc,NXTCHAR	; Establish return address
+ 639:	01D4' C5      		push	bc		; ... on stack
+ 640:			
+ 641:	01D5' 4F      		ld	c,a		; Save parameter character in C
+ 642:			
+ 643:							; Check for digit parameter
+ 644:			
+ 645:	01D6' CD7106  		call	DCHK09		; Is it a digit?
+ 646:	01D9' 2815    		jr	z,PLOOKUP	; ..if not, go to table lookup
+ 647:							; ..else fall through to process as digit
+ 648:			
+ 649:			;-----------------------------------------------------------------------------
+ 650:			
+ 651:							; digit parameter 0 .. 9
+ 652:			
+ 653:	01DB'         	DIGIT:
+ 654:			
+ 655:	01DB' CD4C0A  		call	SKIPPARAM	; Skip to parameter number in A
+ 656:			
+ 657:							; Copy parameter into new command line
+ 658:	01DE' 3A1A00  		ld	a,(TABFLAG)	; Value will be 9 if tabs are allowed
+ 659:	01E1' 47      		ld	b,a		; ..as a token separator
+ 660:	01E2'         	DIGIT1:
+ 661:	01E2' 7E      		ld	a,(hl)		; Get char
+ 662:			
+ 663:	01E3' B7      		or	a
+ 664:	01E4' C8      		ret	z		; Null is always a delimiter
+ 665:	01E5' FE20    		cp	' '
+ 666:	01E7' C8      		ret	z		; Space is always a delimiter
+ 667:	01E8' B8      		cp	b
+ 668:	01E9' C8      		ret	z		; Tab might be a delimiter
+ 669:			
+ 670:	01EA' CDB201  		call	PUTCH		; Store the character
+ 671:	01ED' 23      		inc	hl
+ 672:	01EE' 18F2    		jr	DIGIT1
+ 673:			
+ 674:			;-----------------------------------------------------------------------------
+ 675:			
+ 676:			; Look up parameter in table
+ 677:			
+ 678:	01F0'         	PLOOKUP:
+ 679:	01F0' 79      		ld	a,c		; Get original character back
+ 680:	01F1' CD0000  		call	ACASE1
+ 681:	01F4' 13      		db	PCOUNT		; Number of entries in table
+ 682:	01F5' 0907    		dw	BADFORM		; Error routine
+ 683:	01F7'         	PARAMTBL:
+ 684:	01F7' 23      		db	'#'		; Insert number of parameters in tail
+ 685:	01F8' 3002    		dw	NPARAMS
+ 686:	01FA' 24      		db	'$'		; Insert dollar sign
+ 687:	01FB' B201    		dw	PUTCH
+ 688:	01FD' 5E      		db	'^'		; Insert caret
+ 689:	01FE' B201    		dw	PUTCH
+ 690:			
+ 691:	0200' 21      		db	'!'		; Entire command line
+ 692:	0201' DC06    		dw	PUTCMD
+ 693:	0203' 2A      		db	'*'		; Entire tail
+ 694:	0204' EF06    		dw	PARAML
+ 695:	0206' 2D      		db	'-'		; Partial tail
+ 696:	0207' DF06    		dw	PARAMLP
+ 697:			
+ 698:	FFFF'         		 IF	PDATE
+ 699:	0209' 44      		db	'D'		; Date parameters
+ 700:	020A' 5802    		dw	DATE
+ 701:				 ENDIF	;PDATE
+ 702:			
+ 703:	020C' 48      		db	'H'		; Home directory
+ 704:	020D' 4A06    		dw	PHOME
+ 705:	020F' 54      		db	'T'		; Token parameter
+ 706:	0210' 6505    		dw	TOKEN
+ 707:			
+ 708:	0212' 53      		db	'S'		; System file parameter
+ 709:	0213' 7906    		dw	SYSFILE
+ 710:			
+ 711:	0215' 5A      		db	'Z'		; Set recursive mode
+ 712:	0216' FD06    		dw	RECURS
+ 713:			
+ 714:	FFFF'         		 IF	PINPUT
+ 715:	0218' 22      		db	'"'		; User input request
+ 716:	0219' C704    		dw	USERPROMPT
+ 717:	021B' 27      		db	''''		; Insertion of user input into command line
+ 718:	021C' EB02    		dw	PROMPTPARAM
+ 719:	021E' 49      		db	'I'		; Allow ZEX input redirection
+ 720:	021F' C204    		dw	ZEXIN
+ 721:				 ENDIF	;pinput
+ 722:			
+ 723:	FFFF'         		 IF	PMEM
+ 724:	0221' 4D      		db	'M'		; Memory contents
+ 725:	0222' 4604    		dw	MEMORY
+ 726:				 ENDIF
+ 727:			
+ 728:	FFFF'         		 IF	PREG
+ 729:	0224' 52      		db	'R'		; Register value
+ 730:	0225' 1A04    		dw	REGISTER
+ 731:				 ENDIF
+ 732:			
+ 733:	FFFF'         		 IF	PENV
+ 734:	0227' 41      		db	'A'		; Address of system module
+ 735:	0228' 5C03    		dw	ENVDATA
+ 736:	022A' 2B      		db	'+'		; Offset system address data
+ 737:	022B' 4B03    		dw	ENVOFFSET
+ 738:	022D' 40      		db	'@'		; Indirect versions of above two params
+ 739:	022E' 3503    		dw	INDIRECT
+ 740:				 ENDIF
+ 741:			
+ 742:	0013'         	PCOUNT	equ	( $ - PARAMTBL ) / 3
+ 743:			
+ 744:			;-----------------------------------------------------------------------------
+ 745:			
+ 746:			; This parameter inserts the number of parameters in the command tail as
+ 747:			; a floating decimal number.
+ 748:			
+ 749:	0230'         	NPARAMS:
+ 750:	0230' 0E00    		ld	c,0
+ 751:	0232'         	NPARAMS1:
+ 752:	0232' 0C      		inc	c		; Try next parameter
+ 753:	0233' 79      		ld	a,c		; Get value into A for SKIPPARAMS
+ 754:	0234' C5      		push	bc		; Protect value in C
+ 755:	0235' CD4C0A  		call	SKIPPARAM	; Skip to that parameter
+ 756:	0238' C1      		pop	bc		; Restore value in C
+ 757:	0239' B7      		or	a		; Set flag for last char found
+ 758:	023A' 20F6    		jr	nz,NPARAMS1	; If not null, continue search
+ 759:			
+ 760:	023C' 0D      		dec	c		; Back to last parameter found
+ 761:	023D' 79      		ld	a,c		; Test for value > 9
+ 762:	023E' FE0A    		cp	10
+ 763:	0240' 3810    		jr	c,NPARAMS3	; Skip if less than 10
+ 764:	0242' 06FF    		ld	b,-1		; Divide by 10 by subtracting
+ 765:	0244'         	NPARAMS2:
+ 766:	0244' 04      		inc	b		; Increment tens count
+ 767:	0245' D60A    		sub	10		; Subtract 10
+ 768:	0247' 30FB    		jr	nc,NPARAMS2	; Loop until carry
+ 769:	0249' C60A    		add	a,10		; Make positive again
+ 770:	024B' 4F      		ld	c,a		; Save ones place value in C
+ 771:	024C' 78      		ld	a,b		; Get tens digit
+ 772:	024D' C630    		add	a,'0'		; Convert to ASCII
+ 773:	024F' CDB201  		call	PUTCH		; Add character to command line
+ 774:	0252'         	NPARAMS3:
+ 775:	0252' 79      		ld	a,c		; Get ones digit
+ 776:	0253' C630    		add	a,'0'		; Convert to ASCII
+ 777:	0255' C3B201  		jp	PUTCH		; Add character and return
+ 778:			
+ 779:			;-----------------------------------------------------------------------------
+ 780:			
+ 781:			; Date parameters: format $Dt, where 't' is the type of date item.  The values
+ 782:			; are	Y (year), M (month), D (day), H (hour in 00-23 format), C (hour in
+ 783:			; civil format 01-12), N (miNute), S (seconds), and A (AM/PM flag).
+ 784:			
+ 785:	FFFF'         		 IF	PDATE
+ 786:			
+ 787:	0258'         	DATE:
+ 788:	0258' CD0307  		call	GETCHC
+ 789:	025B' 320E00  		ld	(PARAMTYPE),a	; Save character
+ 790:			
+ 791:				DSEG
+ 792:	0008"         	DATEBUF:
+ 793:	0008"         		DS	6
+ 794:				 CSEG
+ 795:			
+ 796:	025E' CD0000  		call	TIMINI		; Make sure clock is supported
+ 797:	0261' C8      		ret	z		; If not, return null parameter
+ 798:	0262' 210800  		ld	hl,DATEBUF	; Read the clock
+ 799:	0265' E5      		push	hl
+ 800:	0266' D5      		push	de
+ 801:	0267' CD0000  		call	RCLOCK
+ 802:	026A' D1      		pop	de
+ 803:	026B' E1      		pop	hl
+ 804:			;. . <crw>
+ 805:			
+ 806:	026C' 3A0E00  		ld	a,(PARAMTYPE)
+ 807:	026F' FE59    		cp	'Y'
+ 808:	0271' 2822    		jr	z,PUTHEX
+ 809:	0273' 23      		INC	HL
+ 810:	0274' FE4D    		cp	'M'
+ 811:	0276' 281D    		jr	z,PUTHEX
+ 812:	0278' 23      		INC	HL
+ 813:	0279' FE44    		cp	'D'
+ 814:	027B' 2818    		jr	z,PUTHEX
+ 815:	027D' 23      		INC	HL
+ 816:	027E' FE48    		cp	'H'
+ 817:	0280' 2813    		jr	z,PUTHEX
+ 818:	0282' FE43    		cp	'C'
+ 819:	0284' 2830    		jr	z,CIVHOUR
+ 820:	0286' FE41    		cp	'A'
+ 821:	0288' 281B    		jr	z,AMPM
+ 822:	028A' 23      		inc	hl
+ 823:	028B' FE4E    		cp	'N'
+ 824:	028D' 2806    		jr	z,PUTHEX
+ 825:	028F' 23      		INC	HL
+ 826:	0290' FE53    		cp	'S'
+ 827:	0292' C20907  		jp	nz,BADFORM
+ 828:			
+ 829:	0295'         	PUTHEX:
+ 830:	0295' 7E      		ld	a,(hl)		; HL points to year, month, etc.
+ 831:	0296' 1F      		rra
+ 832:	0297' 1F      		rra
+ 833:	0298' 1F      		rra
+ 834:	0299' 1F      		rra
+ 835:	029A' CD9E02  		call	PRINTHEX1
+ 836:	029D' 7E      		ld	a,(hl)
+ 837:	029E'         	PRINTHEX1:
+ 838:	029E' E60F    		and	0Fh
+ 839:	02A0' C630    		add	a,'0'		; Convert to ascii
+ 840:	02A2' C3B201  		jp	PUTCH		; Store the character and return
+ 841:			
+ 842:			;--------------------
+ 843:			
+ 844:	02A5'         	AMPM:
+ 845:	02A5' 7E      		ld	a,(hl)		; HL points to hours
+ 846:	02A6' FE12    		cp	12h
+ 847:	02A8' 3E41    		ld	a,'A'		; Ready for AM
+ 848:	02AA' 3802    		jr	c,AMPM1
+ 849:	02AC' 3E50    		ld	a,'P'
+ 850:	02AE'         	AMPM1:
+ 851:	02AE' CDB201  		call	PUTCH		; Store the character
+ 852:	02B1' 3E4D    		ld	a,'M'
+ 853:	02B3' C3B201  		jp	PUTCH		; Store the character and return
+ 854:			
+ 855:			;--------------------
+ 856:			
+ 857:	02B6'         	CIVHOUR:
+ 858:	02B6' 7E      		ld	a,(hl)		; HL poins to hour
+ 859:	02B7' B7      		or	a		; See if 00h
+ 860:	02B8' 2002    		jr	nz,CIVHOUR1
+ 861:	02BA' 3E24    		ld	a,24h		; Convert 00 to 24
+ 862:	02BC'         	CIVHOUR1:
+ 863:	02BC' FE13    		cp	13h
+ 864:	02BE' 38D5    		jr	c,PUTHEX
+ 865:	02C0' D612    		sub	12h
+ 866:	02C2' 27      		daa
+ 867:	02C3' 77      		ld	(hl),a		; Store at (hl)
+ 868:	02C4' 18CF    		jr	PUTHEX
+ 869:			
+ 870:				 ENDIF	;PDATE
+ 871:			
+ 872:			;-----------------------------------------------------------------------------
+ 873:			
+ 874:			; This parameter, of the form $Pp#, where # is the number of the prompted input
+ 875:			; string to substitute.  This number cannot be larger than the maximum number
+ 876:			; of prompted inputs allowed (NPROMPTS) or the actual number of prompted
+ 877:			; inputs supplied by the earlier script contents.  The 'p' option specifies
+ 878:			; the part of the prompt to be used.
+ 879:			
+ 880:	FFFF'         		 IF	PINPUT
+ 881:			
+ 882:	02C6'         	PROMPTCHK:
+ 883:	02C6' 211000  		ld	hl,TOKENFLAG
+ 884:	02C9' 3600    		ld	(hl),0		; Show nonparsed token type
+ 885:	02CB' FE4C    		cp	'L'		; Entire user line
+ 886:	02CD' C8      		ret	z
+ 887:	02CE' FE3B    		cp	';'		; One command max (not past semicolon)
+ 888:	02D0' C8      		ret	z
+ 889:	02D1' FE45    		cp	'E'		; Exactly one token (as is)
+ 890:	02D3' C8      		ret	z
+ 891:			
+ 892:	02D4' 34      		inc	(hl)		; Show parsed token type
+ 893:	02D5' 21E102  		ld	hl,OPTTBL	; Point to table of valid options
+ 894:	02D8' 010A00  		ld	bc,OPTBLEN	; Length of table
+ 895:	02DB' EDB1    		cpir			; Check for a valid option
+ 896:	02DD' C8      		ret	z
+ 897:	02DE' C30907  		jp	BADFORM		; Display message if invalid option
+ 898:			
+ 899:	02E1'         	opttbl:			; Table of valid parsing options
+ 900:	02E1' 46      		db	'F'		; File name and type
+ 901:	02E2' 4E      		db	'N'		; File name
+ 902:	02E3' 54      		db	'T'		; File type
+ 903:	02E4' 5A      		db	'Z'		; Crunched file type
+ 904:	02E5' 51      		db	'Q'		; Squeezed file type
+ 905:	02E6' 44      		db	'D'		; Drive
+ 906:	02E7' 55      		db	'U'		; User
+ 907:	02E8' 43      		db	'C'		; Token with DIR: converted to DU:
+ 908:	02E9' 50      		db	'P'		; Prefix
+ 909:	02EA' 53      		db	'S'		; Prefix without colon
+ 910:	000A'         	optblen	equ	$-opttbl
+ 911:			
+ 912:	02EB'         	PROMPTPARAM:
+ 913:	02EB' CD0307  		call	GETCHC
+ 914:	02EE' 320E00  		ld	(PARAMTYPE),a	; Save the character
+ 915:	02F1' CDC602  		call	PROMPTCHK	; Make sure it is a valid option
+ 916:			
+ 917:	02F4' CD7C08  		call	GETCH		; Get user string number
+ 918:	02F7' D631    		sub	'1'		; Convert to decremented numeric value
+ 919:	02F9' 210700  		ld	hl,PROMPTCNT	; Point to number of strings entered
+ 920:	02FC' BE      		cp	(hl)
+ 921:	02FD' D20907  		jp	nc,BADFORM	; Can't ask for one that has not been defined
+ 922:			
+ 923:	0300' 3C      		inc	a		; Shift buffer number to range 1..
+ 924:	0301' CD1F05  		call	GETPBUFPTR	; Get pointer to the requested input string
+ 925:			
+ 926:	0304' 3A1000  		ld	a,(TOKENFLAG)	; See if parsing is required
+ 927:	0307' B7      		or	a
+ 928:	0308' C26F05  		jp	nz,TOKEN1	; If so, branch to token parsing code
+ 929:			
+ 930:	030B' 3A0E00  		ld	a,(PARAMTYPE)	; If we want just a token, skip leading spaces
+ 931:	030E' FE45    		cp	'E'
+ 932:	0310' CC0000  		call	z,SKSP
+ 933:	0313' 47      		ld	b,a		; Get parameter type requested into B
+ 934:	0314' 3A1A00  		ld	a,(TABFLAG)	; Possible tab character
+ 935:	0317' 4F      		ld	c,a		; ...in c
+ 936:	0318'         	PROMPTP1:
+ 937:	0318' 7E      		ld	a,(hl)		; Get source character
+ 938:	0319' B7      		or	a		; Check for terminating null
+ 939:	031A' C8      		ret	z		; If so, return without storing character
+ 940:	031B' 78      		ld	a,b		; Get parameter type
+ 941:	031C' FE4C    		cp	'L'		; If requesting entire line, continue
+ 942:	031E' 7E      		ld	a,(hl)		; Get character back
+ 943:	031F' 280E    		jr	z,PROMPTP2
+ 944:	0321' FE3B    		cp	';'		; If semicolon, end of token or command
+ 945:	0323' C8      		ret	z		; ..so return without storing character
+ 946:	0324' 78      		ld	a,b		; See if request limited to a exact token
+ 947:	0325' FE45    		cp	'E'
+ 948:	0327' 7E      		ld	a,(hl)		; Get character back again
+ 949:	0328' 2005    		jr	nz,PROMPTP2	; If parameter type not 'E,' go on
+ 950:	032A' FE20    		cp	' '		; If space, end of token
+ 951:	032C' C8      		ret	z
+ 952:	032D' B9      		cp	c		; If tab, end of token
+ 953:	032E' C8      		ret	z
+ 954:			
+ 955:	032F'         	PROMPTP2:
+ 956:	032F' CDB201  		call	PUTCH		; Store the character
+ 957:	0332' 23      		inc	hl		; Advance pointer
+ 958:	0333' 18E3    		jr	PROMPTP1
+ 959:			
+ 960:				 ENDIF	;PINPUT
+ 961:			
+ 962:			;	 IF	PINPUT OR PREG
+ 963:				 DSEG
+ 964:	000E"         	PARAMTYPE:
+ 965:	000E"         		ds	1
+ 966:				 CSEG
+ 967:			;	 ENDIF	;PINPUT OR PREG
+ 968:			
+ 969:			;-----------------------------------------------------------------------------
+ 970:			
+ 971:			; Return value of a datum from the ENV, or for entry point INDIRECT the
+ 972:			; contents of the computed memory address.
+ 973:			
+ 974:	FFFF'         		 IF	PENV
+ 975:			
+ 976:				DSEG
+ 977:	000F"         	INDFLAG:
+ 978:	000F"         		ds	1
+ 979:				CSEG
+ 980:			
+ 981:	0335'         	INDIRECT:
+ 982:	0335' 3EFF    		ld	a,0FFh		; Set flag for memory indirection
+ 983:	0337' 320F00  		ld	(INDFLAG),a
+ 984:	033A' CD2E04  		call	GETCONVTYPE	; Get format for data conversion
+ 985:	033D' CD0307  		call	GETCHC		; Get 'A' or '+'
+ 986:	0340' FE41    		cp	'A'
+ 987:	0342' 281C    		jr	z,INDENVDATA
+ 988:	0344' FE2B    		cp	'+'
+ 989:	0346' 2807    		jr	z,INDENVOFF
+ 990:	0348' C30907  		jp	BADFORM		; If neither, we have a parameter error
+ 991:			
+ 992:	034B'         	ENVOFFSET:
+ 993:	034B' AF      		xor	a		; Set flag for no memory indirection
+ 994:	034C' 320F00  		ld	(INDFLAG),a
+ 995:	034F'         	INDENVOFF:
+ 996:	034F' CD7C03  		call	GETADDR
+ 997:	0352' D5      		push	de		; Save pointer to command line
+ 998:	0353' E5      		push	hl		; Save address value
+ 999:	0354' CDA604  		call	GETNUMBER	; Get next four characters as number in DE
+1000:	0357' E1      		pop	hl		; Get address value back into HL
+1001:	0358' 19      		add	hl,de
+1002:	0359' D1      		pop	de		; Restore pointer to command line
+1003:	035A' 1807    		jr	PUTVAL		; Put value into command line
+1004:			
+1005:	035C'         	ENVDATA:
+1006:	035C' AF      		xor	a		; Set flag for no memory indirection
+1007:	035D' 320F00  		ld	(INDFLAG),a
+1008:	0360'         	INDENVDATA:
+1009:	0360' CD7C03  		call	GETADDR		; Fall through to PUTVAL
+1010:			
+1011:	0363'         	PUTVAL:				; PUTVALUE with possible indirection
+1012:	0363' 3A0F00  		ld	a,(INDFLAG)
+1013:	0366' B7      		or	a
+1014:	0367' 2804    		jr	z,PUTVALUE	; Put in value in HL if no indirection
+1015:	0369' 7E      		ld	a,(hl)		; Otherwise use value of contents of (HL)
+1016:	036A' C34F04  		jp	MEMORY2
+1017:			
+1018:			;--------------------
+1019:			
+1020:			; Put value in HL into the command line
+1021:			
+1022:	036D'         	PUTVALUE:
+1023:	036D' D5      		push	de		; Save pointer to command being built
+1024:	036E' 118000  		ld	de,TBUFF	; Place to put the ASCII string
+1025:	0371' D5      		push	de		; Save tbuff pointer
+1026:	0372' CD0000  		call	MHL4HC		; Convert to ASCII hex representation
+1027:	0375' E1      		pop	hl		; HL points to TBUFF
+1028:	0376' D1      		pop	de		; DE points to cmd line
+1029:			;	ld	bc,4		; Characters to copy
+1030:			;	ldir			; Move them
+1031:			;	ret
+1032:	0377' 0604    		ld	b,4		; Characters to copy
+1033:	0379' C34B07  		JP	PUTC		; Move them
+1034:			
+1035:			;--------------------
+1036:			
+1037:	037C'         	GETADDR:
+1038:	037C' CD0307  		call	GETCHC		; Get next character from ALIAS.CMD
+1039:	037F' CD0000  		call	ACASE1
+1040:	0382' 0D      		db	ENVCNT		; Number of entries in table
+1041:	0383' 0907    		dw	BADFORM		; Default routine
+1042:	0385'         	ENVTBL:
+1043:	0385' 42      		db	'B'		; BIOS address
+1044:	0386' FB03    		dw	GETBIOS
+1045:	0388' 43      		db	'C'		; CCP address
+1046:	0389' DD03    		dw	GETCPR
+1047:	038B' 44      		db	'D'		; DOS address
+1048:	038C' EC03    		dw	GETDOS
+1049:	038E' 45      		db	'E'		; ENV address
+1050:	038F' AC03    		dw	ENVADDR
+1051:	0391' 46      		db	'F'		; FCP address
+1052:	0392' B003    		dw	FCPADDR
+1053:	0394' 49      		db	'I'		; IOP address
+1054:	0395' B403    		dw	IOPADDR
+1055:	0397' 4C      		db	'L'		; MCL (LINE) address
+1056:	0398' B803    		dw	LINADDR
+1057:	039A' 4D      		db	'M'		; MSG address
+1058:	039B' BC03    		dw	MSGADDR
+1059:	039D' 4E      		db	'N'		; NDR address
+1060:	039E' C003    		dw	NDRADDR
+1061:	03A0' 50      		db	'P'		; PATH address
+1062:	03A1' C403    		dw	PATHADDR
+1063:	03A3' 52      		db	'R'		; RCP address
+1064:	03A4' C803    		dw	RCPADDR
+1065:	03A6' 53      		db	'S'		; SHELL address
+1066:	03A7' CC03    		dw	SHELLADDR
+1067:	03A9' 58      		db	'X'		; XFCB address
+1068:	03AA' D003    		dw	XFCBADDR
+1069:	000D'         	ENVCNT	equ	( $ - ENVTBL ) / 3
+1070:			
+1071:			;----------------
+1072:			
+1073:	03AC'         	ENVADDR:
+1074:	03AC' 0E1B    		ld	c,01Bh		; Offset to ENV address in ENV
+1075:	03AE' 1822    		jr	PUTENVVAL
+1076:	03B0'         	FCPADDR:
+1077:	03B0' 0E12    		ld	c,012h
+1078:	03B2' 181E    		jr	PUTENVVAL
+1079:	03B4'         	IOPADDR:
+1080:	03B4' 0E0F    		ld	c,00Fh
+1081:	03B6' 181A    		jr	PUTENVVAL
+1082:	03B8'         	LINADDR:
+1083:	03B8' 0E18    		ld	c,018h
+1084:	03BA' 1816    		jr	PUTENVVAL
+1085:	03BC'         	MSGADDR:
+1086:	03BC' 0E22    		ld	c,022h
+1087:	03BE' 1812    		jr	PUTENVVAL
+1088:	03C0'         	NDRADDR:
+1089:	03C0' 0E15    		ld	c,015h
+1090:	03C2' 180E    		jr	PUTENVVAL
+1091:	03C4'         	PATHADDR:
+1092:	03C4' 0E09    		ld	c,009h
+1093:	03C6' 180A    		jr	PUTENVVAL
+1094:	03C8'         	RCPADDR:
+1095:	03C8' 0E0C    		ld	c,00Ch
+1096:	03CA' 1806    		jr	PUTENVVAL
+1097:	03CC'         	SHELLADDR:
+1098:	03CC' 0E1E    		ld	c,01Eh
+1099:	03CE' 1802    		jr	PUTENVVAL
+1100:	03D0'         	XFCBADDR:
+1101:	03D0' 0E24    		ld	c,024h
+1102:			
+1103:	03D2'         	PUTENVVAL:
+1104:	03D2' 0600    		ld	b,0		; BC has offset
+1105:	03D4' 2A0900  		ld	hl,(Z3EADR)	; ENV address into HL
+1106:	03D7' 09      		add	hl,bc
+1107:	03D8' 7E      		ld	a,(hl)
+1108:	03D9' 23      		inc	hl
+1109:	03DA' 66      		ld	h,(hl)
+1110:	03DB' 6F      		ld	l,a		; Package/module address in HL
+1111:	03DC' C9      		ret
+1112:			
+1113:			;----------------
+1114:			
+1115:	03DD'         	GETCPR:
+1116:	03DD' 013700  		ld	bc,3FH-8	; Additional offset to CCP address in ENV
+1117:	03E0' CD0904  		call	GETENVTYP
+1118:	03E3' D8      		ret	c		; Value in HL is what we want if C set
+1119:	03E4' 2A0100  		ld	hl,(1)		; Otherwise work from BIOS warmboot
+1120:	03E7' 01FDE9  		ld	bc,-0E00H-800H-3
+1121:	03EA' 09      		add	hl,bc
+1122:	03EB' C9      		ret
+1123:			
+1124:	03EC'         	GETDOS:
+1125:	03EC' 013A00  		ld	bc,3FH-8+3	; Additional offset to DOS address in ENV
+1126:	03EF' CD0904  		call	GETENVTYP
+1127:	03F2' D8      		ret	c		; Value in HL is what we want if C set
+1128:	03F3' 2A0100  		ld	hl,(1)		; Otherwise work from BIOS warmboot
+1129:	03F6' 01FDF1  		ld	bc,-0E00H-3
+1130:	03F9' 09      		add	hl,bc
+1131:	03FA' C9      		ret
+1132:			
+1133:	03FB'         	GETBIOS:
+1134:	03FB' 013D00  		ld	bc,3FH-8+6	; Additional offset to BIOS address in ENV
+1135:	03FE' CD0904  		call	GETENVTYP
+1136:	0401' D8      		ret	c		; Value in HL is what we want if C set
+1137:	0402' 2A0100  		ld	hl,(1)		; Otherwise work from BIOS warmboot
+1138:	0405' 2B      		dec	hl		; Back up to cold boot address
+1139:	0406' 2B      		dec	hl
+1140:	0407' 2B      		dec	hl
+1141:	0408' C9      		ret
+1142:			
+1143:	0409'         	GETENVTYP:
+1144:	0409' C5      		push	bc
+1145:	040A' 2A0900  		ld	hl,(Z3EADR)
+1146:	040D' 010800  		ld	bc,8		; Offset to ENV type
+1147:	0410' 09      		add	hl,bc
+1148:	0411' 7E      		ld	a,(hl)		; Get ENV type into A
+1149:	0412' C1      		pop	bc
+1150:	0413' 09      		add	hl,bc		; Point to package address
+1151:	0414' 4E      		ld	c,(hl)		; Get the value into HL eventually
+1152:	0415' 23      		inc	hl
+1153:	0416' 66      		ld	h,(hl)
+1154:	0417' 69      		ld	l,c
+1155:	0418' 17      		rla			; Set carry if extended ENV type
+1156:	0419' C9      		ret
+1157:			
+1158:				 ENDIF	;PENV
+1159:			
+1160:			;-----------------------------------------------------------------------------
+1161:			
+1162:			; Parameter $R
+1163:			;
+1164:			; The value of the designated system register is converted to the form
+1165:			; designated.  The parameter format is $Rt##, where 't' is the type of
+1166:			; conversion and '##' is an EXACTLY two-digit hex number of the register to
+1167:			; be used.  The allowed conversion types are:
+1168:			;	'H'	hex (HH)
+1169:			;	'F'	floating decimal (D, DD, or DDD depending on the value
+1170:			;	'D'	full decimal with leading zeros (DDD)
+1171:			;	'T'	two decimal digits (DD)
+1172:			;	'O'	one decimal digit (D)
+1173:			;	'A'	ascii (just take the value as is)
+1174:			;
+1175:			; The 'T' and 'O' types will give a bad script format error if the value of
+1176:			; the register is out of range.
+1177:			
+1178:	FFFF'         		 IF	PREG
+1179:			
+1180:	041A'         	REGISTER:
+1181:	041A' CD2E04  		call	GETCONVTYPE	; Get type of conversion
+1182:	041D' D5      		push	de		; Save pointer to command line
+1183:	041E' CDA204  		call	GETNUMB2	; Get register number into DE
+1184:	0421' 7B      		ld	a,e		; Move to A
+1185:	0422' FE20    		cp	20h		; Allow values from 00 to 1F
+1186:	0424' D20907  		jp	nc,BADFORM
+1187:	0427' D1      		pop	de
+1188:	0428' 47      		ld	b,a		; Get value of specified register
+1189:	0429' CD0000  		call	GETREG
+1190:	042C' 1821    		jr	MEMORY2		; Common code for putting value in cmd
+1191:			
+1192:				 ENDIF	;PREG
+1193:			
+1194:			;--------------------
+1195:			
+1196:	FFFF'         		 IF	PREG OR PMEM OR PENV
+1197:			
+1198:	042E'         	GETCONVTYPE:
+1199:	042E' CD0307  		call	GETCHC		; Get the next character (register ID)
+1200:	0431' 320E00  		ld	(PARAMTYPE),a
+1201:	0434' 214004  		ld	hl,CNVTBL	; Point to list of acceptable values
+1202:	0437' 010600  		ld	bc,CNVTBLLEN
+1203:	043A' EDB1    		cpir
+1204:	043C' C8      		ret	z		; Return if legal option
+1205:	043D' C30907  		jp	BADFORM
+1206:			
+1207:	0440'         	CNVTBL:
+1208:	0440' 41      		db	'A'
+1209:	0441' 48      		db	'H'
+1210:	0442' 46      		db	'F'
+1211:	0443' 44      		db	'D'
+1212:	0444' 54      		db	'T'
+1213:	0445' 4F      		db	'O'
+1214:	0006'         	cnvtbllen equ	$-cnvtbl
+1215:			
+1216:				 ENDIF	; PREG OR PMEM OR PENV
+1217:			
+1218:			;-----------------------------------------------------------------------------
+1219:			
+1220:			; Parameter $M
+1221:			;
+1222:			; Invoked as $Mnnnn, where 'nnnn' is exactly four characters representing a
+1223:			; hexadecimal address, it returns the ASCII two-character string representing
+1224:			; the contents of that memory location.
+1225:			
+1226:	FFFF'         		 IF	PMEM
+1227:			
+1228:	0446'         	MEMORY:
+1229:	0446' CD2E04  		call	GETCONVTYPE	; Get type of conversion
+1230:	0449' D5      		push	de
+1231:	044A' CDA604  		call	GETNUMBER
+1232:	044D' 1A      		ld	a,(de)		; Get value at designated address
+1233:	044E' D1      		pop	de
+1234:			
+1235:				 ENDIF	;PMEM
+1236:			
+1237:	FFFF'         		 IF	PMEM OR PENV OR PREG
+1238:			
+1239:	044F'         	MEMORY2:
+1240:	044F' 4F      		ld	c,a		; Save number to convert in C
+1241:	0450' 3A0E00  		ld	a,(PARAMTYPE)	; Find out kind of conversion to perform
+1242:	0453' FE41    		cp	'A'		; ASCII (use value as is)?
+1243:	0455' 2005    		jr	nz,MEMORY3
+1244:	0457' 79      		ld	a,c		; Store the value directly
+1245:	0458' CDB201  		call	PUTCH
+1246:	045B' C9      		ret
+1247:	045C'         	MEMORY3:
+1248:	045C' D5      		push	de		; Save pointer to command line
+1249:	045D' 118000  		ld	de,TBUFF	; Place to put the ASCII string
+1250:	0460' D5      		push	de		; Save tbuff pointer
+1251:	0461' 47      		ld	b,a		; Save conversion type letter in B
+1252:			
+1253:	0462' FE48    		cp	'H'		; Two-digit hex?
+1254:	0464' 282B    		jr	z,HCONVERT
+1255:			
+1256:	0466' FE46    		cp	'F'		; Floating decimal?
+1257:	0468' 2821    		jr	z,FCONVERT
+1258:			
+1259:	046A' 79      		ld	a,c		; Get number to convert
+1260:	046B' CD0000  		call	MA3DC		; For other cases, start with all three digits
+1261:	046E' AF      		xor	a		; Mark end with null
+1262:	046F' 12      		ld	(de),a
+1263:			
+1264:	0470' E1      		pop	hl		; Point to beginning of converted number
+1265:	0471' 78      		ld	a,b		; Check for conversion type 'D'
+1266:	0472' FE44    		cp	'D'
+1267:	0474' 2822    		jr	z,CONVERT1A	; If so, copy the string
+1268:			
+1269:	0476' 7E      		ld	a,(hl)		; Make sure highest digit is '0'
+1270:	0477' FE30    		cp	'0'
+1271:	0479' C20907  		jp	nz,BADFORM
+1272:	047C' 23      		inc	hl		; Point to second digit
+1273:	047D' 78      		ld	a,b		; Check for conversion type 'T'
+1274:	047E' FE54    		cp	'T'
+1275:	0480' 2816    		jr	z,CONVERT1A	; If so, copy string
+1276:	0482' 7E      		ld	a,(hl)		; Make sure second digit is also '0'
+1277:	0483' FE30    		cp	'0'
+1278:	0485' C20907  		jp	nz,BADFORM
+1279:	0488' 23      		inc	hl
+1280:	0489' 180D    		jr	CONVERT1A
+1281:			
+1282:	048B'         	FCONVERT:
+1283:	048B' 79      		ld	a,c		; Get number to convert
+1284:	048C' CD0000  		call	MAFDC		; Convert to up-to-three decimal digits
+1285:	048F' 1804    		jr	CONVERT1
+1286:			
+1287:	0491'         	HCONVERT:
+1288:	0491' 79      		ld	a,c		; Get number to convert
+1289:	0492' CD0000  		call	MA2HC		; Convert to ASCII hex representation
+1290:			
+1291:	0495'         	CONVERT1:
+1292:	0495' AF      		xor	a		; Mark end of converted string with null
+1293:	0496' 12      		ld	(de),a
+1294:	0497' E1      		pop	hl		; HL points to tbuff
+1295:	0498'         	CONVERT1A:
+1296:	0498' D1      		pop	de		; DE points to cmd line
+1297:	0499'         	CONVERT2:
+1298:	0499' 7E      		ld	a,(hl)		; Source digit
+1299:	049A' B7      		or	a		; Check for end of string
+1300:	049B' C8      		ret	z		; If so, quit
+1301:	049C' CDB201  		call	PUTCH		; Store the character
+1302:	049F' 23      		inc	hl
+1303:	04A0' 18F7    		jr	CONVERT2
+1304:			
+1305:			;--------------------
+1306:			
+1307:			; Returns value in DE of number represented by next four characters in the
+1308:			; script.  At entry point GETNUMB2 only (and exactly) two characters are used.
+1309:			
+1310:	04A2'         	GETNUMB2:
+1311:	04A2' 0602    		ld	b,2		; Read two characters
+1312:	04A4' 1802    		jr	GETNUMB0
+1313:			
+1314:	04A6'         	GETNUMBER:
+1315:	04A6' 0604    		ld	b,4		; Read four characters
+1316:			
+1317:	04A8'         	GETNUMB0:
+1318:	04A8' 48      		ld	c,b		; Save character count in C also
+1319:	04A9' 218000  		ld	hl,TBUFF	; Place to put characters
+1320:	04AC' E5      		push	hl
+1321:	04AD'         	GETNUMB1:
+1322:	04AD' CD0307  		call	GETCHC		; Read characters from cmd file
+1323:	04B0' 77      		ld	(hl),a		; Save the character
+1324:	04B1' 23      		inc	hl		; Bump the pointer
+1325:	04B2' 10F9    		djnz	GETNUMB1	; Loop through four characters
+1326:			
+1327:	04B4' 3600    		ld	(hl),0		; Mark end of string
+1328:	04B6' E1      		pop	hl		; Point to the string read
+1329:	04B7' CD0000  		call	EVAL16		; Evaluate as hex number
+1330:	04BA' 7D      		ld	a,l		; Make sure all four (two) characters were ok
+1331:	04BB' D680    		sub	80h
+1332:	04BD' B9      		cp	c		; Should be number of characters read
+1333:	04BE' C20907  		jp	nz,BADFORM	; If E not 4, bad format
+1334:	04C1' C9      		ret
+1335:			
+1336:				 ENDIF	;PMEM OR PENV OR PREG
+1337:			
+1338:			;-----------------------------------------------------------------------------
+1339:			
+1340:			; Parameter $"
+1341:			;
+1342:			; Display prompt and get input from user
+1343:			
+1344:			; The text up to the next double quote is sent to the console after a CRLF.
+1345:			; If a caret is encountered, then the next character is converted to a control
+1346:			; character before echoing to the screen.  If the character is a dollar sign,
+1347:			; then the next character is sent no matter what it is (e.g., a caret, a double
+1348:			; quote, or a dollar sign).  Then the user is prompted for input which is copied
+1349:			; to a buffer for later use by the $' parameter.
+1350:			
+1351:	FFFF'         		 IF	PINPUT
+1352:			
+1353:	04C2'         	ZEXIN:				; Set ZEXFL to allow redirection
+1354:	04C2' AF      		xor	a		; Zero for normal ZEX operation
+1355:	04C3' 321700  		ld	(ZEXFL),a
+1356:	04C6' C9      		ret
+1357:			
+1358:	04C7'         	USERPROMPT:
+1359:	04C7' CD0000  		call	CRLF		; Start new line
+1360:			
+1361:	04CA'         	USERP1:
+1362:	04CA' CD7C08  		call	GETCH		; Get next char from cmd file
+1363:	04CD' CA0907  		jp	z,BADFORM
+1364:	04D0' FE22    		cp	'"'		; See if end of prompt
+1365:	04D2' 2817    		jr	z,USERP4
+1366:			
+1367:	04D4' FE5E    		cp	'^'		; See if control character lead-in
+1368:	04D6' 2007    		jr	nz,USERP2	; If not, skip control character processing
+1369:			
+1370:	04D8' CD0307  		call	GETCHC		; Get next character
+1371:	04DB' E61F    		and	1Fh		; Convert to control character
+1372:	04DD' 1807    		jr	USERP3		; ..and output it
+1373:			
+1374:	04DF'         	USERP2:
+1375:	04DF' FE24    		cp	'$'		; See if escape character (to allow ^)
+1376:	04E1' 2003    		jr	nz,USERP3	; If not, output the character
+1377:	04E3' CD0307  		call	GETCHC		; Otherwise get next character
+1378:			
+1379:	04E6'         	USERP3:
+1380:	04E6' CD0000  		call	COUT		; Send character to console
+1381:	04E9' 18DF    		jr	USERP1		; ..and go back for more
+1382:			
+1383:	04EB'         	USERP4:
+1384:	04EB' 218000  		ld	hl,TBUFF	; Set up input buffer
+1385:	04EE' 367D    		ld	(hl),7Dh
+1386:	04F0' CD0000  		call	GETZEX		; Get ZEX redirection flag
+1387:	04F3' F5      		push	af		; Save it
+1388:	04F4' 3A1700  		ld	a,(ZEXFL)	; Get ARUNZ redirection setting ($I parameter)
+1389:	04F7' CD0000  		call	PUTZEX
+1390:	04FA' CD0000  		call	BLINE		; Get user input (capitalization irrelevant)
+1391:	04FD' F1      		pop	af		; Get original redirection flag back
+1392:	04FE' CD0000  		call	PUTZEX		; ..and restore it
+1393:	0501' 3E02    		ld	a,2		; Reset default to no ZEX redirection
+1394:	0503' 321700  		ld	(ZEXFL),a	; ..for next prompt
+1395:			
+1396:	0506' D5      		push	de		; Save pointer to command line
+1397:	0507' E5      		push	hl		; Save pointer to beginning of user input
+1398:	0508' 210700  		ld	hl,PROMPTCNT	; Point to current count of inputs
+1399:	050B' 7E      		ld	a,(hl)		; Check for legal number of inputs
+1400:	050C' FE04    		cp	NPROMPTS
+1401:	050E' D20907  		jp	nc,BADFORM
+1402:	0511' 3C      		inc	a		; Advance count
+1403:	0512' 77      		ld	(hl),a
+1404:	0513' CD1F05  		call	GETPBUFPTR	; Get pointer to correct buffer (numbered 1..)
+1405:	0516' EB      		ex	de,hl		; Destination into DE
+1406:	0517' E1      		pop	hl		; Restore pointer to source
+1407:	0518' 017E00  		ld	bc,7eh		; Max length of user input
+1408:	051B' EDB0    		ldir
+1409:			
+1410:	051D' D1      		pop	de
+1411:	051E' C9      		ret
+1412:			
+1413:			;--------------------
+1414:			
+1415:			; On entry A contains the prompted input buffer to which a pointer is to be
+1416:			; returned in HL.  The buffers are numbered from 1 (not zero) to conform to
+1417:			; the user's perspective.  No validity checks are performed here.  The BC
+1418:			; register is affected.
+1419:			
+1420:	051F'         	GETPBUFPTR:
+1421:	051F' 2A0500  		ld	hl,(PROMPTBUF)
+1422:	0522' 018000  		ld	bc,80h		; Spacing between strings
+1423:	0525'         	PBUFPTR1:
+1424:	0525' 3D      		dec	a
+1425:	0526' C8      		ret	z
+1426:	0527' 09      		add	hl,bc
+1427:	0528' 18FB    		jr	PBUFPTR1
+1428:			
+1429:				 ENDIF			; Pinput
+1430:			
+1431:			;-----------------------------------------------------------------------------
+1432:			
+1433:			; Token parsing parameters $Tp# (at entry TOKEN).
+1434:			
+1435:	052A'         	CONVSPEC:
+1436:	052A' CD0406  		call	PARSEP		; Parse the token
+1437:	052D' CD0000  		call	FCB1CHK		; See if parse error detected
+1438:	0530' 200A    		jr	nz,CONVSPEC0	; If so, leave token as it was
+1439:	0532' 3A8000  		ld	a,(TBUFF)	; Was there a directory prefix?
+1440:	0535' B7      		or	a
+1441:	0536' 281B    		jr	z,FULLSPEC1	; If not, use FULSPEC
+1442:	0538' FE3A    		cp	':'		; Colon only?
+1443:	053A' 2007    		jr	nz,CONVSPEC1	; If not, branch
+1444:			
+1445:	053C'         	CONVSPEC0:
+1446:	053C' 0600    		ld	b,0		; Include colon (flag used at PREFIX1)
+1447:	053E' CDF605  		call	PREFIX1		; Put prefix into command line (colon only)
+1448:	0541' 1810    		jr	FULLSPEC1	; ..followed by full filename
+1449:			
+1450:	0543'         	CONVSPEC1:			; Convert to explicit DU:
+1451:	0543' CD9E05  		call	DRVSPEC1	; Put in drive letter
+1452:	0546' CDB005  		call	USRSPEC1	; Put in user number
+1453:	0549' 3E3A    		ld	a,':'		; Put in colon
+1454:	054B' CDB201  		call	PUTCH		; Store the character
+1455:	054E' 1803    		jr	FULLSPEC1	; Put in full filename
+1456:			
+1457:			;--------------------
+1458:			
+1459:	0550'         	FULLSPEC:
+1460:	0550' CD0406  		call	PARSEP
+1461:	0553'         	FULLSPEC1:
+1462:	0553' CDB905  		call	NAMESPEC1	; Get name first
+1463:	0556' 216500  		ld	hl,FCB+1+8	; Point to file type
+1464:	0559' 7E      		ld	a,(hl)		; See if any type given
+1465:	055A' FE20    		cp	' '
+1466:	055C' C8      		ret	z		; If not, we are done
+1467:	055D' 3E2E    		ld	a,'.'		; Put dot into command
+1468:	055F' CDB201  		call	PUTCH		; Store the character
+1469:	0562' C34907  		jp	PUTT		; Put file type into command
+1470:			
+1471:			;--------------------
+1472:			
+1473:	0565'         	TOKEN:
+1474:	0565' AF      		xor	a		; Set flag to select command line token
+1475:	0566' 321000  		ld	(TOKENFLAG),a
+1476:			
+1477:				 DSEG
+1478:	0010"         	TOKENFLAG:
+1479:	0010"         		ds	1
+1480:				 CSEG
+1481:			
+1482:	0569' CD0307  		call	GETCHC		; Get the part of token requested
+1483:	056C' 320E00  		ld	(PARAMTYPE),a	; Save parameter type option
+1484:	056F'         	TOKEN1:
+1485:	056F' 3A0E00  		ld	a,(PARAMTYPE)	; Allow for entry from user input parser
+1486:	0572' FE43    		cp	'C'		; Full spec with DIR: converted to DU:
+1487:	0574' 28B4    		jr	z,CONVSPEC
+1488:	0576' FE46    		cp	'F'		; Full file name and type
+1489:	0578' 28D6    		jr	z,FULLSPEC
+1490:	057A' FE55    		cp	'U'		; User only
+1491:	057C' 282F    		jr	z,USRSPEC
+1492:	057E' FE4E    		cp	'N'		; File name only
+1493:	0580' 2834    		jr	z,NAMESPEC
+1494:	0582' FE54    		cp	'T'		; File type only
+1495:	0584' 2839    		jr	z,TYPESPEC
+1496:	0586' FE5A    		cp	'Z'		; Crunched file type
+1497:	0588' 2842    		jr	z,CRNCHSPEC
+1498:	058A' FE51    		cp	'Q'		; Squeezed file type
+1499:	058C' 283A    		jr	z,SQZSPEC
+1500:	058E' FE50    		cp	'P'		; Directory prefix (including colon)
+1501:	0590' 285F    		jr	z,PREFIX
+1502:	0592' FE53    		cp	'S'		; Short directory prefix (not including colon)
+1503:	0594' 2854    		jr	z,SPREFIX
+1504:	0596' FE44    		cp	'D'		; Drive only
+1505:	0598' C20907  		jp	nz,BADFORM
+1506:			
+1507:			;--------------------
+1508:			
+1509:			; Parameter $td#, #=0..9
+1510:			;
+1511:			; Return drive letter of drive specified in the indicated token.  If bad value
+1512:			; of #, report bad script format.
+1513:			
+1514:	059B'         	DRVSPEC:
+1515:	059B' CD0406  		call	PARSEP		; Get token and parse
+1516:	059E'         	DRVSPEC1:
+1517:	059E' 3A5C00  		ld	a,(FCB)		; Get drive value
+1518:	05A1' 3D      		dec	a		; Shift to range 0..15 (or FF if default)
+1519:	05A2' F2A805  		jp	p,DRVSPEC2	; Skip getting default if positive
+1520:	05A5' 3A1200  		ld	a,(DUSAVE+1)	; Get default drive number
+1521:			
+1522:	05A8'         	DRVSPEC2:
+1523:	05A8' C641    		add	a,'A'		; Convert to ascii
+1524:	05AA' C3B201  		jp	PUTCH		; Store the character and return
+1525:			
+1526:			;----------------
+1527:			
+1528:			; Parameter $tu#, #=0..9
+1529:			;
+1530:			; Return user number specified in the indicated token.  If bad value of #,
+1531:			; report bad script format.
+1532:			
+1533:	05AD'         	USRSPEC:
+1534:	05AD' CD0406  		call	PARSEP		; Get token and parse
+1535:	05B0'         	USRSPEC1:
+1536:	05B0' 3A6900  		ld	a,(FCB+13)	; Get user number
+1537:	05B3' C35707  		jp	PUTNUM		; Put number into command
+1538:			
+1539:			;----------------
+1540:			
+1541:			; Parameter $tn#, #=0..9
+1542:			
+1543:			; Returns the file name specified by token #.  If # is not a valid value,
+1544:			; a warning is displayed.
+1545:			
+1546:	05B6'         	NAMESPEC:
+1547:	05B6' CD0406  		call	PARSEP		; Get token and parse
+1548:	05B9'         	NAMESPEC1:
+1549:	05B9' 215D00  		ld	hl,FCB+1	; Copy name of file
+1550:	05BC' C34507  		jp	PUTN
+1551:			
+1552:			;----------------
+1553:			
+1554:			; Parameter $tt#, #=0..9
+1555:			
+1556:			; Returns the file type specified by token #.  If # is not a valid value,
+1557:			; a warning is displayed.
+1558:			
+1559:	05BF'         	TYPESPEC:
+1560:	05BF' CD0406  		call	PARSEP		; Get token and parse
+1561:	05C2' 216500  		ld	hl,FCB+1+8	; Copy type of file
+1562:	05C5' C34907  		jp	PUTT
+1563:			
+1564:			;----------------
+1565:			
+1566:			; Parameters $tz# and $tq#, #=0..9
+1567:			
+1568:			; Returns the file type of the crunched ($tz) or squeezed ($tq) file.  If #
+1569:			; is not a valid value, a warning is displayed.
+1570:			
+1571:	05C8'         	SQZSPEC:
+1572:	05C8' 0651    		ld	b,'Q'
+1573:	05CA' 1802    		jr	COMPSPEC
+1574:	05CC'         	CRNCHSPEC:
+1575:	05CC' 065A    		ld	b,'Z'
+1576:	05CE'         	COMPSPEC:
+1577:	05CE' C5      		push	bc
+1578:	05CF' CD0406  		call	PARSEP		; Get token and parse
+1579:	05D2' C1      		pop	bc
+1580:			
+1581:			; This is an entry point from the $sz# and $sq# parameters.  B contains
+1582:			; the special character, and the file type is in the FCB.
+1583:			
+1584:	05D3'         	PUTCOMP:
+1585:	05D3' 216600  		ld	hl,FCB+1+9	; Point to middle letter of type
+1586:	05D6' 7E      		LD	A,(HL)		; Save original middle character
+1587:	05D7' 70      		ld	(hl),b
+1588:	05D8' 2B      		dec	hl		; Point to first char of file type
+1589:	05D9' B8      		cp	b		; Was original middle char same as special char
+1590:	05DA' 2805    		jr	z,PUTCOMP1	; If so treat like null file type
+1591:	05DC' 7E      		ld	a,(hl)		; Check for null file type
+1592:	05DD' FE20    		cp	' '		; If not a space character
+1593:	05DF' 2006    		jr	nz,CSPEC1	; ..go ahead
+1594:	05E1'         	PUTCOMP1:
+1595:	05E1' E5      		push	hl		; Else save pointer to file type
+1596:	05E2' 23      		inc	hl		; Advance to last byte
+1597:	05E3' 23      		inc	hl
+1598:	05E4' 70      		ld	(hl),b		; Put in special character
+1599:	05E5' E1      		pop	hl		; Same thing for first byte
+1600:	05E6' 70      		ld	(hl),b
+1601:	05E7'         	CSPEC1:
+1602:	05E7' C34907  		jp	PUTT
+1603:			
+1604:			;----------------
+1605:			
+1606:			; This parameter returns the directory prefix of the designated token.
+1607:			
+1608:	05EA'         	SPREFIX:
+1609:	05EA' CD0406  		call	PARSEP		; Get token and parse
+1610:	05ED' 063A    		ld	b,':'		; Stop at colon
+1611:	05EF' 1805    		jr	PREFIX1
+1612:	05F1'         	PREFIX:
+1613:	05F1' CD0406  		call	PARSEP		; Get token and parse
+1614:	05F4' 0600    		ld	b,0		; Stop only at null
+1615:			
+1616:	05F6'         	PREFIX1:			; Entry point for token conversion
+1617:	05F6' 218000  		ld	hl,TBUFF	; Point to prefix string
+1618:	05F9'         	PUTSTR:
+1619:	05F9' 7E      		ld	a,(hl)
+1620:	05FA' B7      		or	a
+1621:	05FB' C8      		ret	z		; Return if end of string
+1622:	05FC' B8      		cp	b		; See if alternative end (colon)
+1623:	05FD' C8      		ret	z		; Return if so
+1624:	05FE' CDB201  		call	PUTCH		; Store the character
+1625:	0601' 23      		inc	hl		; Bump pointers
+1626:	0602' 18F5    		jr	PUTSTR
+1627:			
+1628:			;----------------
+1629:			
+1630:			; If entered with TOKENFLAG equal to 0, then this routine gets the requested
+1631:			; parameter number and finds that parameter.  If TOKENFLAG is nonzero, then it
+1632:			; uses whatever string HL is pointing to.  It then parses the string into the
+1633:			; default FCB using the Z33 parser.  In addition, the parameter string is
+1634:			; scanned for a directory prefix, and the prefix (if any), including the colon,
+1635:			; is placed into the temporary buffer at 80H.
+1636:			
+1637:	0604'         	PARSEP:
+1638:	0604' 3A1000  		ld	a,(TOKENFLAG)
+1639:	0607' B7      		or	a
+1640:	0608' 200C    		jr	nz,PARSEP0
+1641:	060A' CD0307  		call	GETCHC		; Get next character in file
+1642:	060D' CD7106  		call	DCHK09		; Check for value 0..9
+1643:	0610' CA0907  		jp	z,BADFORM
+1644:			
+1645:	0613' CD4C0A  		call	SKIPPARAM	; Skip to desired parameter
+1646:			
+1647:	0616'         	PARSEP0:
+1648:	0616' D5      		push	de		; Save pointer to command line
+1649:	0617' 118000  		ld	de,TBUFF	; Place to keep directory prefix as given
+1650:	061A' E5      		push	hl		; Save pointer to parameter
+1651:	061B'         	PARSEP1:
+1652:	061B' 7E      		ld	a,(hl)		; Copy characters to TBUFF
+1653:	061C' EDA0    		ldi
+1654:	061E' FE3A    		cp	':'		; If colon, we found the prefix
+1655:	0620' 2807    		jr	z,PARSEP2
+1656:	0622' FE21    		cp	' '+1		; See if end of token
+1657:	0624' 30F5    		jr	nc,PARSEP1	; If not, continue copying characters
+1658:	0626' 118000  		ld	de,TBUFF	; Otherwise, null out the buffer
+1659:	0629'         	PARSEP2:
+1660:	0629' AF      		xor	a
+1661:	062A' 12      		ld	(de),a		; Put null at end of string
+1662:	062B' E1      		pop	hl		; Restore pointer to parameter
+1663:	062C'         	PARSEP3:
+1664:	062C' ED4B1100		LD	BC,(DUSAVE)
+1665:	0630' CD0000  		call	LOGUD		; Return to original directory
+1666:	0633' 115C00  		ld	de,FCB		; Parse into default fcb
+1667:			
+1668:	0000'         		 IF	Z33ONLY
+1670:				 ELSE	;NOT Z33ONLY
+1671:	0636' CD0000  		call	Z33CHK		; Z if Z33 present
+1672:	0639' F5      		push	af		; Save result of Z33CHK
+1673:	063A' CC0000  		call	z,SCAN		; Use Z33 parser if possible
+1674:	063D' F1      		pop	af
+1675:	063E' C40000  		call	nz,ZPRSFN	; Else use Z3LIB routine
+1676:				 ENDIF;	Z33ONLY
+1677:			
+1678:	0641' ED4B1300		ld	bc,(CMDDIR)
+1679:	0645' CD0000  		call	LOGUD		; Log back into ALIAS.CMD's dir
+1680:	0648' D1      		pop	de
+1681:	0649' C9      		ret
+1682:			
+1683:			;-----------------------------------------------------------------------------
+1684:			
+1685:			; Parameter 'H' for home DU.  Followed by 'D' for drive, 'U' for user, or
+1686:			; 'B' for both (i.e., DU).
+1687:			
+1688:	064A'         	PHOME:
+1689:	064A' CD0307  		call	GETCHC		; Get the next character
+1690:	064D' CD0000  		call	ACASE1
+1691:	0650' 03      		db	HCOUNT		; Number of entries in table
+1692:	0651' 0907    		dw	BADFORM		; Default routine
+1693:	0653'         	HOMETBL:
+1694:	0653' 44      		db	'D'
+1695:	0654' 6506    		dw	PARAMD
+1696:	0656' 55      		db	'U'
+1697:	0657' 5F06    		dw	PARAMU
+1698:	0659' 42      		db	'B'
+1699:	065A' 5C06    		dw	PARAMDU
+1700:	0003'         	HCOUNT	equ	( $ - HOMETBL ) / 3
+1701:			
+1702:			;----------------
+1703:			
+1704:			; Logged DU at time ARUNZ called
+1705:			
+1706:	065C'         	PARAMDU:
+1707:	065C' CD6506  		call	PARAMD		; Get drive and fall through to user
+1708:			
+1709:			;----------------
+1710:			
+1711:			; Logged user number at time ARUNZ invoked
+1712:			
+1713:	065F'         	PARAMU:
+1714:	065F' 3A1100  		ld	a,(DUSAVE)	; Get user value of default DU:
+1715:	0662' C35707  		jp	PUTNUM
+1716:			
+1717:			;----------------
+1718:			
+1719:			; Current drive at time ARUNZ invoked
+1720:			
+1721:	0665'         	PARAMD:
+1722:	0665' 3A1200  		ld	a,(DUSAVE+1)	; Get drive value of default DU:
+1723:	0668' C641    		add	a,'A'		; Convert to ASCII
+1724:	066A' CDB201  		call	PUTCH		; Store the character and return
+1725:			
+1726:			;-----------------------------------------------------------------------------
+1727:			
+1728:	066D'         	DCHK19:				; Check for digit 1 to 9
+1729:	066D' 0631    		ld	b,'1'
+1730:	066F' 1802    		jr	DIGITCHK
+1731:			
+1732:	0671'         	DCHK09:				; Check for digit 0 to 9
+1733:	0671' 0630    		ld	b,'0'
+1734:			
+1735:	0673'         	DIGITCHK:
+1736:	0673' 90      		sub	b		; Convert and check for < value in b
+1737:	0674' FE0A    		cp	10
+1738:	0676' D8      		ret	c		; Carry set (zero reset) if good
+1739:	0677'         	DIGITCHK1:
+1740:	0677' AF      		xor	a		; Set zero flag
+1741:	0678' C9      		ret
+1742:			
+1743:			;-----------------------------------------------------------------------------
+1744:			
+1745:			; System file name parameters $Sp#.
+1746:			
+1747:	0679'         	SYSFILE:
+1748:	0679' CD0307  		call	GETCHC		; Get part of name specified
+1749:			
+1750:	067C' F5      		push	af		; Save character
+1751:	067D' CDC306  		call	GETFNUM		; Get file number (goes to BADFORM if bad)
+1752:	0680' CDCD06  		call	PTFN		; Set HL to file name
+1753:	0683' F1      		pop	af		; Restore part designator
+1754:			
+1755:	0684' FE4E    		cp	'N'		; Name only
+1756:	0686' CA4507  		jp	z,PUTN
+1757:	0689' FE54    		cp	'T'		; Type only
+1758:	068B' 2817    		jr	z,PARAMT
+1759:	068D' FE5A    		cp	'Z'		; Crunched type
+1760:	068F' 281E    		jr	z,PARAMZ
+1761:	0691' FE51    		cp	'Q'		; Squeezed type
+1762:	0693' 2816    		jr	z,PARAMQ
+1763:	0695' FE46    		cp	'F'		; Full file name and type
+1764:	0697' 2070    		jr	nz,BADFORM
+1765:			
+1766:			;--------------------
+1767:			
+1768:			; Parameter $s#, #=1..4
+1769:			;
+1770:			; Returns the file name and type stored in the designated system file.
+1771:			
+1772:	0699'         	PARAMF:
+1773:	0699' CD4507  		call	PUTN		; Put file name
+1774:	069C' 3E2E    		ld	a,'.'		; Dot
+1775:	069E' CDB201  		call	PUTCH		; Store the character
+1776:	06A1' C34907  		jp	PUTT		; Put file type
+1777:			
+1778:			;--------------------
+1779:			
+1780:			; Parameter $st#, #=1..4
+1781:			;
+1782:			; Returns the file type only stored in the designated system file.
+1783:			
+1784:	06A4'         	PARAMT:
+1785:	06A4' 010800  		ld	bc,8		; Point to file type
+1786:	06A7' 09      		add	hl,bc
+1787:	06A8' C34907  		jp	PUTT		; Put file type
+1788:			
+1789:			;--------------------
+1790:			
+1791:			; Parameters $sz# and $sq#, #=1..4
+1792:			;
+1793:			; Returns the crunched or squeezed version of the file type.
+1794:			
+1795:	06AB'         	PARAMQ:
+1796:	06AB' 0651    		ld	b,'Q'		; Special character for squeezed file
+1797:	06AD' 1802    		jr	COMPPARAM
+1798:	06AF'         	PARAMZ:
+1799:	06AF' 065A    		ld	b,'Z'		; Special character for crunched file
+1800:	06B1'         	COMPPARAM:
+1801:	06B1' C5      		push	bc
+1802:	06B2' D5      		push	de
+1803:	06B3' 010800  		ld	bc,8		; Point to file type
+1804:	06B6' 09      		add	hl,bc
+1805:	06B7' 116500  		ld	de,FCB+1+8	; Point to file type of FCB
+1806:	06BA' 0E03    		ld	c,3
+1807:	06BC' EDB0    		ldir			; Copy system file type to FCB
+1808:	06BE' D1      		pop	de		; Restore registers
+1809:	06BF' C1      		pop	bc
+1810:	06C0' C3D305  		jp	PUTCOMP		; Return the compressed file type
+1811:			
+1812:			;--------------------
+1813:			
+1814:			; GET SYSTEM FILE NUMBER
+1815:			
+1816:			; Get File Number (1 to 4)
+1817:			;	If valid number, return with value 0..3 in A
+1818:			;	If not valid, vector to BADFORM
+1819:			
+1820:	06C3'         	GETFNUM:
+1821:	06C3' CD7C08  		call	GETCH		; Get next character from file
+1822:	06C6' D631    		sub	'1'		; Convert
+1823:	06C8' FE04    		cp	4		; Range?
+1824:	06CA' 303D    		jr	nc,BADFORM	; Error if <0 or >4
+1825:	06CC' C9      		ret
+1826:			
+1827:			;--------------------
+1828:			
+1829:			; POINT TO SYSTEM FILE
+1830:			
+1831:			; Point to system file name whose number (0-3) is in A.  The value in A is
+1832:			; not checked.
+1833:			
+1834:	06CD'         	PTFN:
+1835:	06CD' CD0000  		call	GETFN2		; SYSLIB routine to set HL to first file
+1836:	06D0' 3C      		inc	a		; Shift to range 1..4
+1837:	06D1' 47      		ld	b,a		; Number in B
+1838:	06D2'         	PTFN1:
+1839:	06D2' 05      		dec	b		; Done?
+1840:	06D3' C8      		ret	z
+1841:			
+1842:							; Add 11 to HL to increment to next system file name
+1843:			
+1844:	06D4' D5      		push	de		; Save DE
+1845:	06D5' 110B00  		ld	de,11		; Size of file name and type
+1846:	06D8' 19      		add	hl,de		; Pt to next
+1847:	06D9' D1      		pop	de		; Restore DE
+1848:	06DA' 18F6    		jr	PTFN1
+1849:			
+1850:			;-----------------------------------------------------------------------------
+1851:			
+1852:			; Parameter is entire command line
+1853:			
+1854:	06DC'         	PUTCMD:
+1855:	06DC' AF      		xor	a		; Use value of 0 in SKIPPARAM
+1856:	06DD' 1812    		jr	PARAML1
+1857:			
+1858:			;-----------------------------------------------------------------------------
+1859:			
+1860:			; Parameter is command line tail or part of tail
+1861:			
+1862:	06DF'         	PARAMLP:			; Partial tail ($-n)
+1863:			
+1864:	06DF' CD7C08  		call	GETCH		; Get next character in file
+1865:	06E2' CD7106  		call	DCHK09		; Check for value 0..9
+1866:	06E5' CC0907  		call	z,BADFORM	; If bad value, give warning message
+1867:	06E8' C8      		ret	z		; ..and resume
+1868:			
+1869:	06E9' 3C      		inc	a		; Add one to token number for alias name
+1870:	06EA' CD4C0A  		call	SKIPPARAM	; Skip to desired parameter
+1871:	06ED' 1805    		jr	PARAMT1
+1872:			
+1873:	06EF'         	PARAML:				; Whole tail ($*)
+1874:			
+1875:	06EF' 3E01    		ld	a,1		; Skip to first parameter
+1876:	06F1'         	PARAML1:
+1877:	06F1' CD4C0A  		call	SKIPPARAM
+1878:			
+1879:	06F4'         	PARAMT1:
+1880:	06F4' 7E      		ld	a,(hl)		; Copy tail into line
+1881:	06F5' B7      		or	a		; End of tail?
+1882:	06F6' C8      		ret	z
+1883:	06F7' CDB201  		call	PUTCH		; Store the character
+1884:	06FA' 23      		inc	hl		; Pt to next
+1885:	06FB' 18F7    		jr	PARAMT1
+1886:			
+1887:			;-----------------------------------------------------------------------------
+1888:			
+1889:			; Set recursive mode ($Z)
+1890:			
+1891:	06FD'         	RECURS:
+1892:			
+1893:	06FD' 3EFF    		ld	a,0FFh		; Set rflag
+1894:	06FF' 321A00  		ld	(RFLAG),a
+1895:	0702' C9      		ret
+1896:			
+1897:			
+1898:			;=============================================================================
+1899:			
+1900:			;			S U B R O U T I N E S
+1901:			
+1902:			;-----------------------------------------------------------------------------
+1903:			
+1904:			;		CHARACTER RETRIEVAL WITH FORMAT CHECK
+1905:			
+1906:			; This routine attempts to get the next character from the script.
+1907:			; If we are at the end of the script, we fall through to BADFORM.
+1908:			; Otherwise, the capitalized character is returned in the accumulator.
+1909:			
+1910:	0703' CD7C08  	getchc:	call	GETCH		; Get a character
+1911:	0706' C20000  		jp	nz,CAPS		; Capitalize and return if char found
+1912:							; ..else fall through to BADFORM
+1913:			
+1914:			;-----------------------------------------------------------------------------
+1915:			
+1916:			;		BAD SCRIPT FORMAT WARNING MESSAGE
+1917:			
+1918:			; This routine sends a message to the screen to report a badly formatted
+1919:			; script line and then aborts operation of ARUNZ.
+1920:			
+1921:	0709'         	BADFORM:
+1922:	0709' CD3907  		call	CONDCRLF	; Turn up a new line if necessary
+1923:	070C' CD0000  		call	PRINT
+1924:	070F' 07      		db	BELL
+1925:	0710' 7761726E		db	'warning -- script line format error',CR,LF,0
+	      696E6720
+	      2D2D2073
+	      63726970
+	      74206C69
+	      6E652066
+	      6F726D61
+	      74206572
+	      726F720D
+	      0A00
+1926:	0736' C3F807  		jp	ERRQUIT
+1927:			
+1928:			;-----------------------------------------------------------------------------
+1929:			
+1930:			;		CONDITIONALLY TURN UP A NEW LINE
+1931:			
+1932:			; This routine prints a CRLF the first time it is called and does
+1933:			; nothing otherwise.
+1934:			
+1935:	0739'         	CONDCRLF:
+1936:	0739' 3A0000  		ld	a,(NLFLAG)	; Test "new line" flag
+1937:	073C' B7      		or	a
+1938:	073D' C8      		ret	z		; Return if flag not set
+1939:	073E' AF      		xor	a
+1940:	073F' 320000  		ld	(NLFLAG),a	; Else clear flag
+1941:	0742' C30000  		jp	CRLF		; ..and go print CRLF
+1942:			
+1943:			;-----------------------------------------------------------------------------
+1944:			
+1945:			;		COPY STRINGS OF VARIOUS LENGTHS FROM HL TO DE
+1946:			
+1947:			; Copy 8 characters for file name
+1948:			
+1949:	0745'         	PUTN:
+1950:	0745' 0608    		ld	b,8		; 8 chars
+1951:	0747' 1802    		jr	PUTC
+1952:			
+1953:			; Copy 3 characters for file type
+1954:			
+1955:	0749'         	PUTT:
+1956:	0749' 0603    		ld	b,3		; 3 chars
+1957:			
+1958:			; Copy number of characters in B but ignore spaces
+1959:			
+1960:	074B'         	PUTC:
+1961:	074B' 7E      		ld	a,(hl)		; Get next char
+1962:	074C' FE20    		cp	' '		; Skip if space
+1963:	074E' 2803    		jr	z,PUTC1
+1964:			
+1965:	0750' CDB201  		call	PUTCH		; Store character
+1966:			
+1967:	0753'         	PUTC1:
+1968:	0753' 23      		inc	hl		; Pt to next char in system file
+1969:	0754' 10F5    		djnz	PUTC		; Count down
+1970:	0756' C9      		ret
+1971:			
+1972:			;-----------------------------------------------------------------------------
+1973:			
+1974:	0757'         	PUTNUM:
+1975:	0757' 060A    		ld	b,10		; Compute 10's
+1976:	0759' 0E30    		ld	c,'0'
+1977:	075B'         	PMU1:
+1978:	075B' 90      		sub	b		; Subtract 10's
+1979:	075C' 3803    		jr	c,PMU2
+1980:	075E' 0C      		inc	c		; Increment 10's
+1981:	075F' 18FA    		jr	PMU1
+1982:	0761'         	PMU2:
+1983:	0761' 80      		add	a,b		; Add B back in
+1984:	0762' C630    		add	a,'0'		; Convert to ASCII
+1985:	0764' 47      		ld	b,a		; 10's in C, 1's in B
+1986:	0765' 79      		ld	a,c
+1987:	0766' FE30    		cp	'0'		; No leading 0's
+1988:	0768' C4B201  		call	nz,PUTCH	; Store character
+1989:	076B' 78      		ld	a,b		; Get 1's
+1990:	076C' C3B201  		jp	PUTCH		; Store character and return
+1991:			
+1992:			;-----------------------------------------------------------------------------
+1993:			
+1994:			;		CHECK FOR ALIAS NAME MATCH
+1995:			
+1996:			; This routine scans a new line in the ALIAS.CMD file for a match to the
+1997:			; first token on the command line that invoked ARUNZ.  Several special
+1998:			; features have been incorporated.
+1999:			;
+2000:			; 1) If the alias name begins with a colon, it will be taken as a match to
+2001:			;    any requested name.  Thus it will be selected as the default script.
+2002:			;    Obviously, such an alias name should be the last one in the file, since
+2003:			;    no more names will be scanned after it.
+2004:			; 2) If the alias name has the wildcard character (WILDCHAR, default "_"), it
+2005:			;    will be taken as a match for any existing character in the requested alias.
+2006:			;    Thus the alias name '_DIR' will match requests for 'SDIR' or 'XDIR' etc.
+2007:			; 3) If the alias name has the option character (OPTCHAR, default ","), then
+2008:			;    any characters after that must match the requested alias only if
+2009:			;    characters are present in the requested alias.  Thus the alias name
+2010:			;    'XD,IR' will match 'XD', 'XDI', or 'XDIR' but not 'XDD' or 'XDIRS'.
+2011:			; 4) Multiple names may be associated with a given script by using the form
+2012:			;    NAME1=NAME2=...=NAMEn SCRIPT.  The alias name string terminates with a
+2013:			;    space or tab, so there cannot be any imbedded spaces.
+2014:			; 5) If the alias name begins with '>' then the rest of the alias name is
+2015:			;    compared only to the file type in the command verb.
+2016:			;
+2017:			; If a match is found, the ALIAS.CMD file is read until the space or tab
+2018:			; character before the script has been read (or the end of line or file has
+2019:			; been reached).  On return from this routine, the zero flag is set if a match
+2020:			; was found.
+2021:			
+2022:	076F'         	COMPN:
+2023:	076F' AF      		xor	a		; Reset
+2024:	0770' 321800  		ld	(OPTFLAG),a	; ..optional match flag
+2025:	0773' 321900  		ld	(TYPEFLAG),a	; ..and type-only-match flag
+2026:	0776' 2A0300  		ld	hl,(TAILBUF)	; Point to name of alias in tail buffer
+2027:	0779' 0E3A    		ld	c,DEFLTCHAR	; Default alias name character
+2028:			
+2029:	077B'         	COMPN1:
+2030:	077B' 7E      		ld	a,(hl)		; Get next character of requested name
+2031:	077C' 23      		inc	hl		; Point to next char in name
+2032:	077D' 57      		ld	d,a		; Save character in D
+2033:	077E' CDEB07  		call	ENDTEST		; See if end of token (and branch)
+2034:			
+2035:	0781' CD6708  		call	GOPCH	; Get next character from ALIAS.CMD
+2036:	0784' 2862    		jr	z,COMPN5	; If eof, eot, or eol, no match
+2037:	0786' CD0000  		call	CAPS		; Convert to upper case
+2038:	0789' 47      		ld	b,a		; Save char in B
+2039:	078A' B9      		cp	c		; Match to default character?
+2040:	078B' 2851    		jr	z,COMPN4	; If so, assume match, flush rest of name
+2041:			
+2042:	078D' 0C      		inc	c		; See if C = FF (not first char in alias name)
+2043:	078E' 2820    		jr	z,COMPN2	; If so, skip code for type-only checking
+2044:	0790' 3A1900  		ld	a,(TYPEFLAG)	; See if comparing only file type
+2045:	0793' B7      		or	a
+2046:	0794' 78      		ld	a,b		; Restore fetched character
+2047:	0795' 2819    		jr	z,COMPN2	; If not type-only, proceed normally
+2048:			
+2049:	0797'         	FLUSHNAME:			; Flush verb name; point to verb type (if any)
+2050:	0797' 7A      		ld	a,d		; Get current character into A
+2051:	0798' 56      		ld	d,(hl)		; ..and next character into D
+2052:	0799' 23      		inc	hl		; Point to character after that
+2053:	079A' CDF207  		CALL	ENDTEST1	; Test for end of command verb
+2054:	079D' 281E    		JR	Z,FLUSH		; No filetype, so quit now
+2055:	079F' FE2E    		cp	'.'		; If current character is not dot
+2056:	07A1' 20F4    		jr	nz,FLUSHNAME	; ..process next character
+2057:	07A3' 7A      		ld	a,d
+2058:	07A4' CDF207  		CALL	ENDTEST1	; Does verb end in "."?
+2059:	07A7' 2006    		JR	NZ,GOTTYP	; No, go test filetype character(s)
+2060:	07A9' 3A1800  		LD	A,(OPTFLAG)	; Did alias name begin with ">,"
+2061:	07AC' B7      		OR	A		; ..(allow null filetype)?
+2062:	07AD' 280E    		JR	Z,FLUSH		; No, so no match
+2063:	07AF' 78      	GOTTYP:	LD	A,B		; Restore fetched ALIAS.CMD character
+2064:			
+2065:	07B0'         	COMPN2:
+2066:	07B0' 0EFF    		ld	c,0FFh		; Set C to FF so test done only
+2067:							; ..on first char of name in ALIAS.CMD
+2068:	07B2' FE3D    		cp	'='		; Do we have another name on the line?
+2069:	07B4' 28B9    		jr	z,COMPN	; If so, start over
+2070:			
+2071:	07B6' FE5F    		cp	WILDCHAR	; Is there a wildcard in name?
+2072:	07B8' 28C1    		jr	z,COMPN1	; If so, take as match and continue
+2073:	07BA' BA      		cp	d		; Match to char in specified name?
+2074:	07BB' 28BE    		jr	z,COMPN1	; If so, continue comparing
+2075:			
+2076:							; Match to this name failed, skip to next name
+2077:							; on line if any -- if none, return with
+2078:							; non-zero set
+2079:			
+2080:	07BD'         	FLUSH:
+2081:	07BD' CD7C08  		call	GETCH		; Read another character from file
+2082:	07C0' 2826    		jr	z,COMPN5	; If end of line/text/file, no match
+2083:	07C2' FE21    		cp	' ' + 1		; If space or less, no match
+2084:	07C4' 3822    		jr	c,COMPN5
+2085:	07C6' FE3D    		cp	'='		; If another name on line
+2086:	07C8' 28A5    		jr	z,COMPN	; ..start over
+2087:	07CA' 18F1    		jr	FLUSH		; ..else continue flushing
+2088:			
+2089:							; Reached end of specified alias name
+2090:			
+2091:	07CC'         	COMPN3:
+2092:	07CC' CD6708  		call	GOPCH	; Get next character in alias.cmd
+2093:	07CF' C8      		ret	z		; If eof, eot, or eol, call it a match
+2094:	07D0' FE3D    		cp	'='		; If equal sign. call it a match and
+2095:	07D2' 280A    		jr	z,COMPN4	; ..go flush rest of name string
+2096:	07D4' CD0000  		call	ISSP
+2097:	07D7' C8      		ret	z		; If space or tab, call it a match
+2098:	07D8' 3A1800  		ld	a,(OPTFLAG)	; See if option flag set
+2099:	07DB' B7      		or	a
+2100:	07DC' 28DF    		jr	z,FLUSH		; If not, flush rest of name and continue
+2101:			
+2102:							; Case of default alias
+2103:			
+2104:	07DE'         	COMPN4::
+2105:							; Flush rest of default alias name
+2106:	07DE' CD7C08  		call	GETCH
+2107:	07E1' C8      		ret	z		; Return if eof, eot, or eol
+2108:	07E2' CD0000  		call	ISSP
+2109:	07E5' C8      		ret	z		; Return if space or tab
+2110:	07E6' 18F6    		jr	COMPN4	; Else continue flushing characters
+2111:			
+2112:							; Reached eof, eot, or eol in alias.cmd
+2113:			
+2114:	07E8'         	COMPN5::
+2115:	07E8' AF      		xor	a		; Force non-zero flag to
+2116:	07E9' 3D      		dec	a		; ..show no match
+2117:	07EA' C9      		ret
+2118:			; Test for end of command verb token.  Return if not.  Otherwise pop the
+2119:			; return address off the stack and jump to COMPN3 (no match)
+2120:			
+2121:	07EB'         	ENDTEST:
+2122:	07EB' CDF207  		call	ENDTEST1
+2123:	07EE' C0      		ret	nz
+2124:	07EF' F1      		pop	af
+2125:	07F0' 18DA    		jr	COMPN3
+2126:			
+2127:	07F2'         	ENDTEST1:
+2128:	07F2' B7      		or	a		; If null
+2129:	07F3' C8      		ret	z		; ..we have end
+2130:	07F4' CD0000  		call	ISSP		; Ditto if space or tab
+2131:	07F7' C9      		ret
+2132:			
+2133:			;-----------------------------------------------------------------------------
+2134:			
+2135:			;		ERROR TERMINATION PROCESSING
+2136:			
+2137:			; This routine checks to see if ARUNZ was invoked as an extended command
+2138:			; processor.  If not, we just quit.  If so, we set the error status flag
+2139:			; and return to the CCP for normal error handling.  Messages are also
+2140:			; displayed to indicate the nature of the ZCPR3 processing error.  These
+2141:			; messages are under the control of the quiet flag.
+2142:			
+2143:	07F8'         	ERRQUIT:
+2144:	07F8' CD0000  		call	GETCST		; Get command status flag value
+2145:	07FB' E604    		and	100b		; Isolate ECP BIT
+2146:	07FD' EE04    		xor	100b		; Reverse sense for internal/external flag
+2147:	07FF' 0606    		ld	b,ECECPERR	; Command not found error
+2148:	0801' CD0000  		call	INVERROR	; Set up for error handler invokation
+2149:	0804' C38B01  		jp	QUIT
+2150:			
+2151:			;-----------------------------------------------------------------------------
+2152:			
+2153:			;		FIND THE NAMED ALIAS SCRIPT
+2154:			
+2155:			; This routine scans through the ALIAS.CMD file looking for the alias named
+2156:			; as the first token in the command tail.  If the end of the ALIAS.CMD file
+2157:			; is reached, this code jumps to the NOALAIS error code.
+2158:			
+2159:	0807'         	FINDALIAS:
+2160:	0807' CD6F07  		call	COMPN		; Compare first name
+2161:	080A' C8      		ret	z		; If found, return
+2162:	080B' CDD209  		call	SKIPLINE	; Skip to next line
+2163:	080E' 28F7    		jr	z,FINDALIAS	; If new line found, continue looking
+2164:	0810' C30D09  		jp	NOALIAS		; If end of file, jump to message
+2165:			
+2166:			;-----------------------------------------------------------------------------
+2167:			
+2168:			;		FIND ALIAS.CMD FILE
+2169:			
+2170:			; This routine finds the ALIAS.CMD file.  It will search the path, either
+2171:			; entirely or the root only, or go directly to a specified DU area depending
+2172:			; on the setting of flag bytes stored just before label START.  If the file
+2173:			; cannot be found and opened, then the code here branches to error messages.
+2174:			; The flag SCANCUR determines whether or not the current directory will be
+2175:			; included in the search.
+2176:			
+2177:	0813'         	FINDFILE:
+2178:	0813' 3A2D00  		ld	a,(PATHF)	; Check path flag
+2179:	0816' B7      		or	a
+2180:	0817' 282B    		jr	z,NOPATH	; If zero, use specified directory
+2181:			
+2182:	0819' 3A3200  		ld	a,(ROOTF)	; Check root-only flag
+2183:	081C' B7      		or	a
+2184:	081D' 2814    		jr	z,USEPATH	; If zero, use the entire path
+2185:			
+2186:							; Determine the root directory on the path
+2187:			
+2188:	081F' CD0000  		call	GETPATH		; HL points to path, zero flag set if no path
+2189:	0822' 2820    		jr	z,NOPATH	; If path not implemented, use specified du
+2190:	0824' 7E      		ld	a,(hl)		; Make sure the path is not empty
+2191:	0825' B7      		or	a
+2192:	0826' 281C    		jr	z,NOPATH	; If empty, use the fixed directory
+2193:	0828'         	PATHLOOP:
+2194:	0828' 3D      		dec	a		; Adjust drive (a=0)
+2195:	0829' FA4908  		jp	m,LOGIN		; If end of path, branch
+2196:	082C' 47      		ld	b,a		; Drive in b
+2197:	082D' 23      		inc	hl
+2198:	082E' 4E      		ld	c,(hl)		; User in C
+2199:	082F' 23      		inc	hl
+2200:	0830' 7E      		ld	a,(hl)		; Get next path element
+2201:	0831' 18F5    		jr	PATHLOOP		; ..and loop
+2202:			
+2203:							; Use path for search
+2204:			
+2205:	0833'         	USEPATH:
+2206:	0833' 113F00  		ld	de,IOFCB	; Point to file control block
+2207:	0836' CD0000  		call	INITFCB		; Initialize it for search
+2208:	0839' 3A3A00  		ld	a,(SCANCUR)	; Determine whether to include current DU
+2209:	083C' CD0000  		call	PFIND		; Try to find the file
+2210:	083F' CA3809  		jp	z,NOFILE	; Jump if not found
+2211:	0842' 1805    		jr	LOGIN
+2212:			
+2213:							; Go directly to default drive/user area
+2214:			
+2215:	0844'         	NOPATH:
+2216:	0844' 2A3D00  		ld	hl,(CMDDRV)	; Get drive/user value
+2217:	0847' 45      		ld	b,l		; ..into BC
+2218:	0848' 4C      		ld	c,h
+2219:			
+2220:	0849'         	LOGIN:
+2221:	0849' ED431300		ld	(CMDDIR),bc	; Save in memory for when needed again
+2222:	084D' CD0000  		call	LOGUD		; Log into DU: with the file
+2223:			
+2224:							; Open the input file
+2225:			
+2226:	0850' 113F00  		ld	de,IOFCB	; Open the input file
+2227:	0853' CD0000  		call	INITFCB
+2228:	0856' CD0000  		call	F$OPEN
+2229:	0859' C23809  		jp	nz,NOFILE	; If not there, go to error code
+2230:	085C' 321D00  		ld	(BUFPTR),a	; Low byte of buffer pointer = 0
+2231:	085F' 322000  		ld	(EOFLAG),a	; EOF flag = 0
+2232:	0862' 3C      		inc	a
+2233:	0863' 321F00  		ld	(SECNT),a	; SECNT= 1 forces buffer load
+2234:	0866' C9      		ret
+2235:			
+2236:			;-----------------------------------------------------------------------------
+2237:			
+2238:			;		GET NEXT CHARACTER FROM ALIAS.CMD
+2239:			
+2240:			; This routine reads another character from ALIAS.CMD.  If the end of file
+2241:			; is reached or if the characters is end-of-text or a carriage return (end
+2242:			; of line), then the routine returns with the zero flag set.  Otherwise it
+2243:			; returns with the character in A and the zero flag reset.
+2244:			;
+2245:			; At the special entry point GOPCH, if the character is the option
+2246:			; character (OPTCHAR, default ','), OPTFLAG is set, and another character is
+2247:			; read.  If the character is the file-type-only character (TYPECHAR,
+2248:			; default '>'), then the TYPEFLAG flag is set.
+2249:			
+2250:	0867'         	GOPCH:
+2251:	0867' CD7C08  		call	GETCH		; Get next character
+2252:	086A' C8      		ret	z		; If eof, eot, or eol, return now
+2253:	086B' FE2C    		cp	OPTCHAR		; Is it the option character?
+2254:	086D' 2005    		jr	nz,GOPCH1
+2255:	086F' 321800  		ld	(OPTFLAG),a	; If so, set OPTFLAG
+2256:	0872' 18F3    		jr	GOPCH		; ..and read another character
+2257:	0874'         	GOPCH1:
+2258:	0874' FE3E    		cp	TYPECHAR	; Is it the type-only match character
+2259:	0876' C0      		ret	nz		; If not, return NZ
+2260:	0877' 321900  		ld	(TYPEFLAG),a	; If so, set the TYPEFLAG
+2261:	087A' 18EB    		jr	GOPCH		; ..and read another character
+2262:			
+2263:	087C'         	GETCH::
+2264:	087C' CDE209  		call	GETBYT		; Get next character from file
+2265:			
+2266:	087F' C8      		ret	z		; Done if end of file
+2267:	0880' FE0D    		cp	CR		; Done if end of line
+2268:	0882' C8      		ret	z
+2269:	0883' FE1A    		cp	EOT		; Done if end of text
+2270:	0885' C9      		ret
+2271:			
+2272:			;-----------------------------------------------------------------------------
+2273:			
+2274:			;		DISPLAY BUILT-IN HELP SCREEN
+2275:			
+2276:			; This routine tests to see if the built-in help has been requested.  This
+2277:			; is signaled explicitly with a single or double slash in the tail or
+2278:			; implicitly by having no alias name in the command tail.  If the command
+2279:			; is not a help request, the signon message is displayed under the control
+2280:			; of the quiet flag.
+2281:			
+2282:	0886'         	HELPCHK:			; Test for help request
+2283:	0886' 2A0300  		ld	hl,(TAILBUF)	; Examine command line tail
+2284:	0889' 7E      		ld	a,(hl)		; Get first character
+2285:	088A' B7      		or	a		; See if end of command tail
+2286:	088B' 281B    		jr	z,HELP		; Show help screen if no alias name
+2287:	088D' FE2F    		cp	'/'		; Explicit slash?
+2288:	088F' 200E    		jr	nz,HELPCHK1	; If not, proceed to signon
+2289:	0891' 23      		inc	hl		; Check next character
+2290:	0892' 7E      		ld	a,(hl)
+2291:	0893' B7      		or	a		; End of tail?
+2292:	0894' 2812    		jr	z,HELP		; Show help screen
+2293:	0896' FE2F    		cp	'/'		; Second slash?
+2294:	0898' 2005    		jr	nz,HELPCHK1	; If not, proceed to signon
+2295:	089A' 23      		inc	hl		; Check for third character
+2296:	089B' 7E      		ld	a,(hl)
+2297:	089C' B7      		or	a		; End of tail?
+2298:	089D' 2809    		jr	z,HELP		; If so, show help screen
+2299:							; Else fall through
+2300:			
+2301:							; not a request for help
+2302:			
+2303:	089F'         	HELPCHK1:
+2304:	089F' 3A2400  		ld	a,(QUIETF)	; Check quiet flag
+2305:	08A2' E601    		and	00000001b	; Isolate signon msg bit
+2306:	08A4' C4A909  		call	nz,SIGNON	; If bit set, display signon
+2307:	08A7' C9      		ret
+2308:			
+2309:	08A8'         	HELP:
+2310:	08A8' CDA909  		call	SIGNON
+2311:	08AB' CD0000  		call	PRINT
+2312:	08AE' 20205379		db	'  Syntax: ARUNZ NAME [PARAMETERS]'
+	      6E746178
+	      3A204152
+	      554E5A20
+	      4E414D45
+	      205B5041
+	      52414D45
+	      54455253
+	      5D
+2313:	08CF' 0D0A    		db	CR,LF
+2314:	08D1' 20205275		db	'  Runs alias script NAME from text file ALIAS.CMD'
+	      6E732061
+	      6C696173
+	      20736372
+	      69707420
+	      4E414D45
+	      2066726F
+	      6D207465
+	      78742066
+	      696C6520
+	      414C4941
+	      532E434D
+	      44
+2315:	0902' 0D0A00  		db	CR,LF,0
+2316:			
+2317:	0905' C38B01  		jp	QUIT
+2318:			
+2319:			;-----------------------------------------------------------------------------
+2320:			
+2321:			; If the Z flag is set on entry, the flag pointed to by HL is reset to 0.
+2322:			; Otherwise it is set to 0FFH.
+2323:			
+2324:	0908'         	INITFLAG:
+2325:	0908' 3600    		ld	(hl),0		; reset flag
+2326:	090A' C8      		ret	z		; ..and return if bit not set
+2327:	090B' 35      		dec	(hl)		; Else, set flag
+2328:	090C' C9      		ret
+2329:			
+2330:			;-----------------------------------------------------------------------------
+2331:			
+2332:			;		DISPLAY MESSAGE WHEN NAMED ALIAS NOT FOUND
+2333:			
+2334:			; This routine displays a message indicating the name of the alias that
+2335:			; could not be found.  The display is under control of the quiet flag.
+2336:			
+2337:	090D'         	NOALIAS:
+2338:			
+2339:	090D' 3A2400  		ld	a,(QUIETF)	; See if quiet flag set
+2340:	0910' E608    		and	00001000b	; Isolate alias name not found bit
+2341:	0912' 284C    		jr	z,JPERRQT	; If off, skip the message
+2342:			
+2343:	0914' CD3907  		call	CONDCRLF	; Turn up a new line if necessary
+2344:	0917' CD0000  		call	PRINT
+2345:	091A' 416C6961		db	'Alias "'
+	      732022
+2346:	0921' 00      		db	0
+2347:			
+2348:	0922' CD8A09  		call	PRTNAME		; Display the alias name
+2349:			
+2350:	0925' CD0000  		call	PRINT
+2351:	0928' 22204E6F		db	'" Not Found'
+	      7420466F
+	      756E64
+2352:	0933' 0D0A00  		db	CR,LF,0
+2353:			
+2354:	0936' 1828    		jr	JPERRQT
+2355:			
+2356:			;-----------------------------------------------------------------------------
+2357:			
+2358:			;		DISPLAY MESSAGE WHEN ALIAS.CMD CANNOT BE FOUND
+2359:			
+2360:			; This routine displays (under control of the quiet flag) a message if the
+2361:			; alias.cmd file cannot be found.
+2362:			
+2363:	0938'         	NOFILE:
+2364:			
+2365:	0938' 3A2400  		ld	a,(QUIETF)
+2366:	093B' E604    		and	00000100b	; Isolate cmd file error msg
+2367:	093D' 2821    		jr	z,JPERRQT	; If off, quit without msg
+2368:			
+2369:	093F' CD3907  		call	CONDCRLF	; Turn up a new line if necessary
+2370:	0942' CD0000  		call	PRINT
+2371:	0945' 414C4941		db	'ALIAS.CMD File Not Found'
+	      532E434D
+	      44204669
+	      6C65204E
+	      6F742046
+	      6F756E64
+2372:	095D' 0D0A    		db	CR,LF
+2373:	095F' 00      		db	0
+2374:	0960'         	JPERRQT:
+2375:	0960' C3F807  		jp	ERRQUIT
+2376:			
+2377:			;-----------------------------------------------------------------------------
+2378:			
+2379:			;		DISPLAY ALIAS-RUNNING MESSAGE
+2380:			
+2381:	0963'         	PRTALIAS:
+2382:	0963' 3A2400  		ld	a,(QUIETF)
+2383:	0966' E602    		and	00000010b	; Isolate alias name display bit
+2384:	0968' C8      		ret	z		; If off, omit display
+2385:			
+2386:	0969' CD3907  		call	CONDCRLF	; Turn up a new line if necessary
+2387:	096C' CD0000  		call	PRINT
+2388:	096F' 52756E6E		db	'Running Alias "'
+	      696E6720
+	      416C6961
+	      732022
+2389:	097E' 00      		db	0
+2390:			
+2391:	097F' CD8A09  		call	PRTNAME
+2392:			
+2393:	0982' CD0000  		call	PRINT
+2394:	0985' 220D0A00		db	'"',CR,LF,0
+2395:	0989' C9      		ret
+2396:			
+2397:			;-----------------------------------------------------------------------------
+2398:			
+2399:			;		DISPLAY THE NAME OF THE ALIAS REQUESTED
+2400:			
+2401:			; This routine displays the name of the requested alias as passed as the
+2402:			; first token in the command tail.
+2403:			
+2404:	098A'         	PRTNAME:
+2405:	098A' 2A0300  		ld	hl,(TAILBUF)	; Point to tail to get name of alias
+2406:	098D'         	PRTNAME1:
+2407:	098D' 7E      		ld	a,(hl)		; Get character in alias name
+2408:	098E' B7      		or	a		; If end of tail, quit
+2409:	098F' C8      		ret	z
+2410:			;	cpi	' '+1			;see if space or control character
+2411:			;	rc				;if so, quit
+2412:	0990' CD0000  		call	ISSP		; Done if space or tab
+2413:	0993' C8      		ret	z
+2414:	0994' FE20    		cp	' '		; See if control character
+2415:	0996' DC9F09  		call	c,PRTCARET	; If so, print a leading caret
+2416:	0999' CD0000  		call	COUT		; Otherwise, display the character
+2417:	099C' 23      		inc	hl		; Point to next one
+2418:	099D' 18EE    		jr	PRTNAME1
+2419:			
+2420:	099F'         	PRTCARET:
+2421:	099F' F5      		push	af		; Save original character
+2422:	09A0' 3E5E    		ld	a,'^'		; Print leading caret
+2423:	09A2' CD0000  		call	COUT
+2424:	09A5' F1      		pop	af		; Restore original character
+2425:	09A6' C640    		add	a,40h		; Convert to printing character
+2426:	09A8' C9      		ret
+2427:			
+2428:			;-----------------------------------------------------------------------------
+2429:			
+2430:			;		DISPLAY SIGNON MESSAGE
+2431:			
+2432:	09A9'         	SIGNON:
+2433:	09A9' CD3907  		call	CONDCRLF	; Turn up a new line if necessary
+2434:	09AC' CD0000  		call	PRINT
+2435:	09AF' 4152554E		db	'ARUNZ, Version '
+	      5A2C2056
+	      65727369
+	      6F6E20
+2436:	09BE' 31      		db	VERSION$UNIT
+2437:	09BF' 2E      		db	'.'
+2438:	09C0' 31      		db	VERSION$TENTH
+2439:	09C1' 20      		db	VERSION$LETTER
+2440:	09C2' 2020    		db	'  '
+2441:	09C4' 00      		db	0
+2442:			
+2443:	09C5' 3A0800  		ld	a,(TYPE)
+2444:	09C8' 210000  		ld	hl,PENTRY
+2445:	09CB' CD0000  		call	PRTTYPE
+2446:			
+2447:	09CE' CD0000  		call	CRLF
+2448:			
+2449:	09D1' C9      		ret
+2450:			
+2451:			;-----------------------------------------------------------------------------
+2452:			
+2453:			;		SKIP TO NEXT LINE IN ALIAS.CMD
+2454:			
+2455:			; This routine reads characters from the file ALIAS.CMD until it reaches
+2456:			; a linefeed -- in which case it returns with the zero flag set -- or until
+2457:			; it reaches the end of the file or end of text -- in which case it returns
+2458:			; with the zero flag reset.
+2459:			
+2460:	09D2'         	SKIPLINE:
+2461:	09D2' CDE209  		call	GETBYT		; Get next character from file
+2462:	09D5' 2809    		jr	z,SKIPLINE2	; Jump if error in read
+2463:	09D7' FE1A    		cp	EOT		; End of text
+2464:	09D9' 2805    		jr	z,SKIPLINE2
+2465:	09DB' FE0A    		cp	LF		; End of line?
+2466:	09DD' C8      		ret	z		; If so, return with sero flag set
+2467:	09DE' 18F2    		jr	SKIPLINE	; If not, keep reading
+2468:			
+2469:	09E0'         	SKIPLINE2:
+2470:	09E0' 3D      		dec	a		; Reset the zero flag
+2471:	09E1' C9      		ret
+2472:			
+2473:			;-----------------------------------------------------------------------------
+2474:			
+2475:			;		GET A CHARACTER FROM FILE
+2476:			
+2477:			; The following routine was borrowed from LBREXT and modified slightly.
+2478:			; It requieres that the buffer begin and end on a page bounary.
+2479:			
+2480:			; "a" <-- next byte from ("physical") input stream.
+2481:			;	  returns with zero flag set on eof.
+2482:			
+2483:	09E2'         	GETBYT:
+2484:	09E2' E5      		push	hl
+2485:	09E3' 2A1D00  		ld	hl,(BUFPTR)
+2486:	09E6' 7D      		ld	a,l		; Pointer to next avail char
+2487:	09E7' E67F    		and	7fh		; See if 00h or 80h
+2488:	09E9' CCF309  		call	z,POSRLD	; "possibly reload" the buffer if 00 or 80h
+2489:	09EC' 7E      		ld	a,(hl)		; Get byte to return (garbage if eof)
+2490:	09ED' 23      		inc	hl		; Advance input pointer
+2491:	09EE' 221D00  		ld	(BUFPTR),hl
+2492:	09F1' E1      		pop	hl
+2493:	09F2' C9      		ret
+2494:			
+2495:	09F3'         	POSRLD:				; "possibly reload" the input buffer
+2496:	09F3' 3A1F00  		ld	a,(SECNT)	; Decr sector count (for this buffer)
+2497:	09F6' 3D      		dec	a
+2498:	09F7' 321F00  		ld	(SECNT),a
+2499:	09FA' C0      		ret	nz		; return if buffer not empty
+2500:			
+2501:			; reload  the input buffer, & reset hl to point to the beginning of it.  as-
+2502:			; sumes  input bfr starts page boundary and is of page multiple  length.
+2503:			;
+2504:	09FB'         	RELOAD:
+2505:	09FB' 3A2000  		ld	a,(EOFLAG)
+2506:	09FE' B7      		or	a		; was eof reached on last reload?
+2507:	09FF' 202C    		jr	nz,ZEREAD	; set flag and return if so
+2508:			
+2509:	0A01' C5      		push	bc
+2510:	0A02' D5      		push	de
+2511:	0A03' 0604    		ld	b,FBUFSIZE	; loop counter, buffer length in pages
+2512:	0A05' 2A1B00  		ld	hl,(BUFADR)	; Beg of buffer
+2513:	0A08' E5      		push	hl		; Save for later
+2514:	0A09' 0E00    		ld	c,0		; Will count sectors actually read
+2515:	0A0B' 113F00  		ld	de,IOFCB
+2516:			
+2517:	0A0E' 2E00    	RLDLP:	ld	l,0		; Lo byte of current dma
+2518:	0A10' CD2F0A  		call	RDSEC		; Read in 128 bytes (1/2 page)
+2519:	0A13' 200C    		jr	nz,RLDRTN	; (return if eof enecountered)
+2520:	0A15' 0C      		inc	c		; Incr "sectors read" count
+2521:	0A16' 2E80    		ld	l,80h		; To read in the next half page
+2522:	0A18' CD2F0A  		call	RDSEC		; Do that
+2523:	0A1B' 2004    		jr	nz,RLDRTN	; As above
+2524:	0A1D' 0C      		inc	c
+2525:	0A1E' 24      		inc	h		; Next page
+2526:	0A1F' 10ED    		djnz	RLDLP		; Loop till done
+2527:	0A21'         	RLDRTN:
+2528:	0A21' 322000  		ld	(EOFLAG),a
+2529:	0A24' 79      		ld	a,c		; Put count of sectors read into "secnt"
+2530:	0A25' 321F00  		ld	(SECNT),a
+2531:	0A28' E1      		pop	hl		; Reset input pointer to beg of input buffer
+2532:	0A29' D1      		pop	de
+2533:	0A2A' C1      		pop	bc		; Restore regs
+2534:	0A2B' A7      		and	a		; Clear zero flag if any data read
+2535:	0A2C' C9      		ret
+2536:			
+2537:	0A2D' AF      	ZEREAD:	xor	a		; Set flg indicating no sectors were read (eof)
+2538:	0A2E' C9      		ret
+2539:			
+2540:	0A2F'         	RDSEC:
+2541:	0A2F' CD0000  		call	SETDMA
+2542:	0A32' C30000  		jp	F$READ
+2543:			
+2544:			;-----------------------------------------------------------------------------
+2545:			
+2546:			;		SAVE COPY OF THE COMMAND TAIL
+2547:			
+2548:			; This routine copies the command tail up to the ending null into a buffer
+2549:			; whose address is stored at TAILBUF.  This is done because the path searching
+2550:			; code overwrites the tail.  A leading colon is not copied.  This allows the
+2551:			; ZCPR33 command form ":VERB etc." to skip resident commands and add the
+2552:			; current directory to the path search and still include the possibility of
+2553:			; looking for alias VERB in ALIAS.CMD.
+2554:			
+2555:	0A35'         	SAVETAIL:
+2556:	0A35' 218100  		ld	hl,TBUFF+1	; HL points to command tail
+2557:	0A38' ED5B0300		ld	de,(TAILBUF)	; DE points to tail buffer
+2558:			
+2559:	0A3C' CD0000  		call	SKSP		; Skip over leading spaces
+2560:	0A3F' 7E      		ld	a,(hl)
+2561:	0A40' FE3A    		cp	':'		; Is first non-space a colon?
+2562:	0A42' 2001    		jr	nz,COPYTAIL	; If so, get on with copy
+2563:	0A44' 23      		inc	hl		; Otherwise, skip over colon
+2564:			
+2565:	0A45'         	COPYTAIL:
+2566:	0A45' 7E      		ld	a,(hl)		; Get byte of tail
+2567:	0A46' EDA0    		ldi			; Save it in buffer
+2568:	0A48' B7      		or	a		; See if end of buffer
+2569:	0A49' 20FA    		jr	nz,COPYTAIL
+2570:	0A4B' C9      		ret
+2571:			
+2572:			;-----------------------------------------------------------------------------
+2573:			
+2574:			;		SKIP OVER PARAMETERS
+2575:			
+2576:			; This routine is entered with the number of the desired token in the A
+2577:			; register, and it skips over tokens until the desired one is reached.
+2578:			
+2579:	0A4C'         	SKIPPARAM:
+2580:	0A4C' 3C      		inc	a		; Shift one because of predecrement test
+2581:	0A4D' 47      		ld	b,a		; ..name in tail
+2582:	0A4E' 3A1A00  		ld	a,(TABFLAG)	; If tab allowed as separater, this flag
+2583:	0A51' 4F      		ld	c,a		; ..will contain 9
+2584:	0A52' 2A0300  		ld	hl,(TAILBUF)	; Pt to input line
+2585:	0A55'         	SKIP1:
+2586:	0A55' CD0000  		call	SKSP		; Skip to non-blank
+2587:	0A58' 7E      		ld	a,(hl)		; Check for done
+2588:	0A59' B7      		or	a
+2589:	0A5A' C8      		ret	z
+2590:	0A5B' 05      		dec	b		; Count down number of parameters
+2591:	0A5C' C8      		ret	z		; Return if we have desired prameter
+2592:			
+2593:							; skip over this parameter
+2594:			
+2595:	0A5D'         	SKIP2:
+2596:	0A5D' 7E      		ld	a,(hl)		; Skip to EOL or just past space
+2597:	0A5E' B7      		or	a		; EOL?
+2598:	0A5F' C8      		ret	z
+2599:	0A60' 23      		inc	hl		; Pt to next
+2600:	0A61' FE20    		cp	' '		; Was previous one a space?
+2601:	0A63' 28F0    		jr	z,SKIP1		; If so, back to check param count
+2602:	0A65' B9      		cp	c		; If tab allowed as separator
+2603:	0A66' 28ED    		jr	z,SKIP1		; ..go back on tab as well
+2604:	0A68' 18F3    		jr	SKIP2		; Else continue skipping
+2605:			
+2606:			
+2607:			;=============================================================================
+2608:			
+2609:			;			D A T A    S P A C E
+2610:			
+2611:				DSEG
+2612:			
+2613:	0011"         	DUSAVE:
+2614:	0011"         		ds	2		; Logged user and drive
+2615:			
+2616:	0013"         	CMDDIR:
+2617:	0013"         		ds	2		; User and drive where ALIAS.CMD file is
+2618:			
+2619:	0015"         	CLBFR:
+2620:	0015"         		ds	2		; Pointer to command line
+2621:			
+2622:	FFFF"         		 IF	PINPUT
+2623:	0017"         	ZEXFL:
+2624:	0017"         		ds	1		; Place to keep ZEX input redirection flag
+2625:				 ENDIF	; PINPUT
+2626:			
+2627:	0018"         	OPTFLAG:
+2628:	0018"         		ds	1		; Flag to show truncation matching
+2629:			
+2630:	0019"         	TYPEFLAG:			; Flag to show testing for command
+2631:	0019"         		ds	1		; ..filetype only
+2632:			
+2633:	001A"         	RFLAG:
+2634:	001A"         		ds	1		; Place to keep recursion flag
+2635:			
+2636:	001B"         	BUFADR:
+2637:	001B"         		ds	2		; Start address of file buffer
+2638:			
+2639:	001D"         	BUFPTR:
+2640:	001D"         		ds	2		; Ptr to next character in file buffer
+2641:			
+2642:	001F"         	SECNT:
+2643:	001F"         		ds	1		; Sectors read counter
+2644:			
+2645:	0020"         	EOFLAG:
+2646:	0020"         		ds	1		; End of file flag
+2647:			
+2648:	0021"         		ds	60		; Room for 30 local stack entries
+2649:	005D"         	STACK:
+2650:	005D"         		ds	2		; Place to keep old stack pointer
+2651:			
+2652:	005F"         		end
+
+
+
+Statistics:
+
+     6	passes
+     0	jr promotions
+   318	symbols
+     0	bytes
+
+     1	macro calls
+  2514	macro bytes
+     0	invented symbols
+
+
+
+Symbol Table:
+
+acase1             0      (extern)
+ampm             2a5'    
+ampm1            2ae'    
+badform          709'    
+bell           =   7     
+bline              0      (extern)
+bufadr            1b"    
+buffer         = 87f     
+bufptr            1d"    
+caps               0      (extern)
+civhour          2b6'    
+civhour1         2bc'    
+clbfr             15"    
+clbuf              1"    
+clsize         =  ff     
+cmddir            13"    
+cmddrv            3d'    
+cmdusr            3e'    
+cnvtbl           440'    
+cnvtbllen      =   6     
+codesiz           11'    
+codesize       =1300     
+compn            76f'    
+compn1           77b'    
+compn2           7b0'    
+compn3           7cc'    
+compn4           7de'     (public)
+compn5           7e8'     (public)
+compparam        6b1'    
+compspec         5ce'    
+condcrlf         739'    
+config             0     
+convert1         495'    
+convert1a        498'    
+convert2         499'    
+convspec         52a'    
+convspec0        53c'    
+convspec1        543'    
+copytail         a45'    
+cout               0      (extern)
+cr             =   d     
+crlf               0      (extern)
+crnchspec        5cc'    
+cspec1           5e7'    
+ctrlch           1c3'    
+date             258'    
+datebuf            8"    
+dchk09           671'    
+dchk19           66d'    
+defltchar      =  3a     
+digit            1db'    
+digit1           1e2'    
+digitchk         673'    
+digitchk1        677'    
+done             155'    
+done2            165'    
+done3            16f'    
+drvspec          59b'    
+drvspec1         59e'    
+drvspec2         5a8'    
+dusave            11"    
+ececperr       =   6     
+endtest          7eb'    
+endtest1         7f2'    
+envaddr          3ac'    
+envcnt         =   d     
+envdata          35c'    
+envoffset        34b'    
+envtbl           385'    
+envtyp         =   4     
+eoflag            20"    
+eot            =  1a     
+errquit          7f8'    
+eval16             0      (extern)
+f$open             0      (extern)
+f$read             0      (extern)
+fbufsize       =   4     
+fcb            =  5c     
+fcb1chk            0      (extern)
+fconvert         48b'    
+fcpaddr          3b0'    
+findalias        807'    
+findend1         120'    
+findfile         813'    
+flush            7bd'    
+flushname        797'    
+fullspec         550'    
+fullspec1        553'    
+getaddr          37c'    
+getbios          3fb'    
+getbyt           9e2'    
+getccp             0      (extern)
+getch            87c'     (public)
+getchc           703'    
+getcl1             0      (extern)
+getcl2             0      (extern)
+getconvtype      42e'    
+getcpr           3dd'    
+getcst             0      (extern)
+getdos           3ec'    
+getefcb            0      (extern)
+getenv             0      (extern)
+getenvtyp        409'    
+getfn2             0      (extern)
+getfnum          6c3'    
+getnumb0         4a8'    
+getnumb1         4ad'    
+getnumb2         4a2'    
+getnumber        4a6'    
+getpath            0      (extern)
+getpbufptr       51f'    
+getreg             0      (extern)
+getzex             0      (extern)
+gopch            867'    
+gopch1           874'    
+gottyp           7af'    
+gzmtop             0      (extern)
+hconvert         491'    
+hcount         =   3     
+help             8a8'    
+helpchk          886'    
+helpchk1         89f'    
+highlimit      = 1bc'    
+hometbl          653'    
+indenvdata       360'    
+indenvoff        34f'    
+indflag            f"    
+indirect         335'    
+initfcb            0      (extern)
+initflag         908'    
+inverror           0      (extern)
+iofcb             3f'    
+iopaddr          3b4'    
+issp               0      (extern)
+jperrqt          960'    
+ldaddr         =1c7f     
+lf             =   a     
+linaddr          3b8'    
+login            849'    
+logud              0      (extern)
+ma2hc              0      (extern)
+ma3dc              0      (extern)
+mafdc              0      (extern)
+mclsize        =   0     
+memory           446'    
+memory2          44f'    
+memory3          45c'    
+mhl4hc             0      (extern)
+msgaddr          3bc'    
+namespec         5b6'    
+namespec1        5b9'    
+ndraddr          3c0'    
+nlflag             0"    
+no             =   0     
+noalias          90d'    
+nofile           938'    
+nopath           844'    
+nparams          230'    
+nparams1         232'    
+nparams2         244'    
+nparams3         252'    
+nprompts       =   4     
+nxtchar          142'    
+nxtchar1         145'    
+optblen        =   a     
+optchar        =  2c     
+optflag           18"    
+opttbl           2e1'    
+ovflerr          190'    
+param            1ce'    
+paramd           665'    
+paramdu          65c'    
+paramf           699'    
+paraml           6ef'    
+paraml1          6f1'    
+paramlp          6df'    
+paramq           6ab'    
+paramt           6a4'    
+paramt1          6f4'    
+paramtbl         1f7'    
+paramtype          e"    
+paramu           65f'    
+paramz           6af'    
+parsep           604'    
+parsep0          616'    
+parsep1          61b'    
+parsep2          629'    
+parsep3          62c'    
+pathaddr         3c4'    
+pathf             2d'    
+pathloop         828'    
+pbufptr1         525'    
+pcount         =  13     
+pdate          =ffffffff 
+pentry             0'    
+penv           =ffffffff 
+pfind              0      (extern)
+phome            64a'    
+pinput         =ffffffff 
+plookup          1f0'    
+pmem           =ffffffff 
+pmu1             75b'    
+pmu2             761'    
+posrld           9f3'    
+prefix           5f1'    
+prefix1          5f6'    
+preg           =ffffffff 
+print              0      (extern)
+printhex1        29e'    
+promptbuf          5"    
+promptchk        2c6'    
+promptcnt          7"    
+promptp1         318'    
+promptp2         32f'    
+promptparam      2eb'    
+prtalias         963'    
+prtcaret         99f'    
+prtname          98a'    
+prtname1         98d'    
+prttype            0      (extern)
+ptfn             6cd'    
+ptfn1            6d2'    
+putc             74b'    
+putc1            753'    
+putch            1b2'    
+putcmd           6dc'    
+putcomp          5d3'    
+putcomp1         5e1'    
+putenvval        3d2'    
+puthex           295'    
+putn             745'    
+putnum           757'    
+putstr           5f9'    
+putt             749'    
+putval           363'    
+putvalue         36d'    
+putzex             0      (extern)
+quietecp          23'    
+quietf            24'    
+quit             18b'    
+rclock             0      (extern)
+rcpaddr          3c8'    
+rdsec            a2f'    
+recurs           6fd'    
+regf              28'    
+register         41a'    
+reload           9fb'    
+retud              0      (extern)
+rflag             1a"    
+rldlp            a0e'    
+rldrtn           a21'    
+rootf             32'    
+savetail         a35'    
+scan               0      (extern)
+scancur           3a'    
+secnt             1f"    
+setdma             0      (extern)
+shelladdr        3cc'    
+signon           9a9'    
+skip1            a55'    
+skip2            a5d'    
+skipline         9d2'    
+skipline2        9e0'    
+skipparam        a4c'    
+sksp               0      (extern)
+sprefix          5ea'    
+sqzspec          5c8'    
+stack             5d"    
+start             63'    
+start0            9e'    
+start00           63'    
+start1            b6'    
+start2            c3'    
+start3            dc'    
+start4            f6'    
+strip            133'    
+sysfile          679'    
+tab            =   9     
+tabflag           1a'    
+tailbuf            3"    
+tbuff          =  80     
+timini             0      (extern)
+token            565'    
+token1           56f'    
+tokenflag         10"    
+type               8'    
+typechar       =  3e     
+typeflag          19"    
+typespec         5bf'    
+usepath          833'    
+userp1           4ca'    
+userp2           4df'    
+userp3           4e6'    
+userp4           4eb'    
+userprompt       4c7'    
+usrspec          5ad'    
+usrspec1         5b0'    
+version$letter =  20     
+version$tenth  =  31     
+version$unit   =  31     
+wildchar       =  5f     
+xfcbaddr         3d0'    
+xmcl           =   0     
+xputch           1b8'    
+yes            =ffffffff 
+z33chk             0      (extern)
+z33only        =   0     
+z3eadr             9'    
+z3init             0      (extern)
+zeread           a2d'    
+zexfl             17"    
+zexin            4c2'    
+zprsfn             0      (extern)
+zsyschk            0      (extern)

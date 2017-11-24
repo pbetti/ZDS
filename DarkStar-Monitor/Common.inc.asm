@@ -135,7 +135,7 @@ tmpbyte		equ	miobyte-1	; byte: transients flags
 cursshp		equ	tmpbyte-1	; cursor shape
 curpbuf		equ	cursshp-2	; word: cursor position
 ftrkbuf		equ	curpbuf-2	; word: track # for i/o (0 - 65535)
-fdrvbuf		equ	ftrkbuf-1	; byte: drive number for i/0 (0 - 15)
+fdrvbuf		equ	ftrkbuf-1	; byte: drive number for i/o (0 - 15)
 fsecbuf		equ	fdrvbuf-2	; word: sector # for i/o (1 .. 65535)
 frdpbuf		equ	fsecbuf-2	; word: dma address for i/o
 fsekbuf		equ	frdpbuf-2	; word: current track number for drive A/B
@@ -427,6 +427,11 @@ r4mcr		equ	4		; (r/w) MCR - Modem Control Register
 r5lsr		equ	5		; (r)   LSR - Line Status Register
 r6msr		equ	6		; (r)   MSR - Modem Status Register
 r7spr		equ	7		; (r/w) SPR - Scratch Pad Register
+	; fifo
+ufifo1		equ	00000111b	; 1 char
+ufifo4		equ	01000111b	; 4 char
+ufifo8		equ	10000111b	; 8 char
+ufifo14		equ	11000111b	; 14 char
 	; speeds:
 uart1200	equ	96		; = 1,843,200 / ( 16 x 1200 )
 uart2400	equ	48		; = 1,843,200 / ( 16 x 2400 )

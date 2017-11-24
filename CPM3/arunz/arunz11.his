@@ -1,0 +1,431 @@
+ARUNZ Development History
+=========================
+
+VERSION 1.1		October 23, 1993  Howard Goldstein
+
+Under certain conditions, the previous version failed to find the
+ALIAS.CMD file if the program was configured to search the path and not
+scan the current directory first.  The problem was corrected by linking
+with version 4.5A of Z3Lib which contains a corrected PFIND routine. 
+While I was at it, I fixed a bug that caused ARUNZ error or status
+messages to overwrite the command line.  A few minor errors in the
+documentation were corrected as well.
+
+VERSION 1.0		August 3, 1993	Jay Sage
+
+A new parameter was added in this version: $#.  This returns the number
+of parameters in the command tail as a one or two digit ASCII number.
+
+The version was finally raised to 1.0.  The code will now be released to
+the public!
+
+VERSION 0.9V		Dec 90, Apr 91	Howard Goldstein
+
+This version was never released.  No new features were added.  The
+intent here was to shorten and simplify the code and possibly to speed
+it up.  Here are some of the highlights.
+
+Building the COM file, especially the type-4 version, is much easier
+now.  The code size word at ENTRY+0bH no longer needs to be patched
+after linking.  This value is now calculated automatically at assembly
+time based on the value of SIZE which, of course, must be set correctly.
+
+SYSLIB's bufferd, byte-oriented I/O module was replaced with a
+significantly shorter and faster routine taken from LBREXT.
+
+The code for expanding the date and time parameters was made much
+more efficient.
+
+Several code sequences which were repeated many times throughout the
+program were made into subroutines.
+
+The error handler invocation code was simplified.
+
+There is one modest functional change.  In previous versions, TABFLAG
+did not affect the parsing of tokens by the $'En parameter.  Now
+TABFLAG affects the parsing of all tokens.
+
+;--------------------
+
+VERSION 0.9U		October 2, 1990		Howard Goldstein
+
+The $Z paramater, which somehow stopped working somewhere in the
+development of ARUNZ09S, has been fixed.
+
+The determination of the length of the command line has been corrected and
+simplified.  It is now only done once; it used to be done a second time
+before pending commands were added.
+
+;--------------------
+
+VERSION 0.9T		September 23, 1990	Howard Goldstein
+
+Several bugs have been corrected.  $RA## now works as documented and
+several "off by one" errors in calculating the sizes of various buffers have
+been fixed.  The problem with scripts called by type where anything would
+match the first character was fixed as per Carson Wilson's suggestions.
+
+A new equate, XMCL, has been added to turn off the generation of the
+experimental "large MCL" code added in the previous version.  This will
+enable us to continue development of the standard version and re-introduce
+the large MCL version when standards for that have been established.
+
+This version was linked with test version 4.3 of the libraries.  I
+substituted ZPRSFN for ZFNAME since the latest version of ZPRSFN comes much
+closer to a true Z33-style parse than does ZFNAME.
+
+;--------------------
+
+VERSION 0.9S		June 26, 1989		Jay Sage, Carson Wilson
+
+Howard Goldstein figured out the problem with the type-4 version linked with
+SLRNK+.  It has a bug in the way it handles $MEMRY in PRL files that damages
+the code in CODEND.  I have overcome the problem here by not calling CODEND
+at all if the program is type-4 (rather than overwriting its result as I
+used to do).
+
+For some strange reason, when the multiple command line overflowed, I simply
+skipped the alias expansion and ran the commands that followed it.  This was
+not right!  The code now invokes the error handler so that the user will
+have control over how this problem should be handled.
+
+The code now has provision for working with arbitrarily long multiple
+command line (MCL) buffers under the control of the MCLSIZE equate and
+MCLSIZ patch point.
+
+The code was made more rigorous.  There were many places in which the code
+simply assumed that a buffer was large enough to hold what was being placed
+into it.  Now all buffer filling is checked.
+
+Carson Wilson made a number of changes to the code.  The most significant
+was to change the library references for the time and date functions to the
+DSLIB routines compatible with both DateStamper and CP/M-Plus (TIMINI
+instead of FINDCK and RCLOCK instead of RDCLK).  In addition, he made some
+cosmetic changes: shortened GETCHARxx labels to GETCHxx, GETCHAROPTxx to
+GOPCHxx, and CMPNAMExx to COMPNxx for use with LINK-80; all symbols and
+pseudo-ops now uppercase, all code lowercase.  His changes are marked <crw>.
+
+Following Carson's lead, the source code has been partitioned into smaller
+pieces that can be managed by in-memory editors like ZDE.  Unlike Carson,
+however, I have divided the code into logical units.  The main module,
+ARUNZ.Z80, has all the definitions and instructions.  ARUNZ-1.Z80 has the
+main code that loops through the alias and writes out the result.  Module
+ARUNZ-2.Z80 has the code for expanding special symbols (control characters
+and parameters).  The last module, ARUNZ-3.Z80, has all the subroutines.
+
+Again following Carson's lead, I have greatly clarified the discussion of
+the procedure for generating a type-4 version, including how to determine
+the values to patch into the code.  I also installed Jim Lill's (?) PRTVAL
+macro and some code to allow the assembler to report values that aid this
+patching process.
+
+;--------------------
+
+VERSION 0.9R
+
+At Ed McGovern's suggestion, I have added a ascii format for byte values,
+such as those from registers or memory.  This format designator is 'A' and
+joins 'H', 'F', 'D', 'T', and 'O'.  The code changes are near the following
+strings: "Parameter $R", "GETCONVTYPE:", "MEMORY2:", and "MEMORY3:".  Also
+changed the function TOPMEM to GZMTOP, the version-4 Z3LIB function.
+
+;--------------------
+
+VERSION 0.9Q
+
+Added the parameters $tz# and $tq# that return the file type of the crunched
+or squeezed (respectively) file types corresponding to the file name in the
+designated token.  Similarly, $sz# and $sq# return the crunched or squeezed
+type for the designated system file.  For prompted input, the expressions
+$'z# and $'q# can be used.  Also fixed the computation of the top of free
+memory.  Before, I was assuming that there was no RSX (shame on me!).
+
+;--------------------
+
+VERSION 0.9P
+
+This version has identical source.  A bug was discovered in the ZFNAME
+routine
+in Z3LIB.  Version 0.9O was an aborted attempt to fix the problem in the
+ARUNZ
+code before I realized what was really causing the trouble.
+
+;--------------------
+
+VERSION 0.9N
+
+I added a token data type 'S' for 'short prefix' that returns the directory
+prefix, if any, without the colon.
+
+I also added the parameter '$@' that returns the contents of the memory
+location otherwise specified by the '$A' and '$+' parameters.  The format is
+
+	$@fam   or   $@f+m####
+
+where '$@' is the parameter leadin, 'f' is the number conversion format
+('H',
+'F', 'D', 'T', or 'O' as with '$M' and '$R' parameters), and 'm' is the
+memory module to use as the address or base address.  With the '+' form, the
+four hex digits specify the offset from the base address.
+
+I added a flag (after the ascii string TABFLAG) to determine whether space
+only or either space or tab will be used to delimit command-line tokens. 
+The
+normal setting of this flag is '00' so that only spaces are used as the
+delimiter.  If this is changed to a value of '09', then tabs will be used
+also.
+
+;--------------------
+
+VERSION 0.9M
+
+I restored the code to allow ARUNZ to work without the Z33/Z34 parser call,
+but I included the Z33ONLY equate to govern which version would be
+generated. 
+If BGii is upgraded to Z34 compatibility, then Z33ONLY can be turned on even
+if
+BGii is going to be used.
+
+Following a suggestion from Rick Charnes, I added a series of parameters to
+return the DateStamper date fragments.  If DateStamper is not running, then
+00
+will be returned for all the values (and null for the AM/PM flag).  At some
+point in the future it might be good to provide a patch point where the user
+could provide the address of a routine to be called that returns the date in
+ASCII, as DS does, or perhaps some other alternative forms.  The date
+parameters have the form $Dt, where the 't' type options are:
+
+	Y	Year (YY)
+	M	Month (MM)
+	D	Day (DD)
+	H	Hour in military form 00-23 (HH)
+	C	hour in Civil form 01-12 (CC)
+	N	miNute
+	A	Am/pm flag (AM or PM)
+
+Added code to check for adequate TPA space for data buffers.  Added support
+for a type-4 version of ARUNZ.
+
+;--------------------
+
+VERSION 0.9L
+
+Made prompted input responses go into buffers so that user's answers can be
+used more than once.  Parameters are now requested using only the parameter
+$".  The user's response can later be invoked using a parameter of the form
+$'tn, where 't' is the type of data desired and 'n' is the index to the
+prompt (starting with 1).  The allowed types can include any of those
+allowed
+for token parameters (see below: 'D', 'U', 'P', 'F', 'N', 'T', 'C') or any
+of
+the following:
+
+	'L'	the entire line as the user entered it
+	';'	a single command (i.e., terminated by null or semicolon)
+	'E'	an exact token (terminated by a null, a semicolon, a space,
+		or a tab)
+
+The register ($R) and memory ($M) parameters were extended to allow the
+specification of the type of conversion to be performed.  After the 'R' or
+'M', one of the following letters specifies the format:
+
+	'H'	two hexadecimal digits
+	'F'	floating decimal (one, two, or three digits)
+	'D'	three decimal digits
+	'T'	two decimal digits
+	'O'	one decimal digit
+
+The 'T' and 'O' conversion options will give script parameter error messages
+if the number is two big to represented in the designated number of digits.
+
+Following the conversion type character will be either two (for $R) or four
+(for $M) characters that will be taken as the register or memory address. 
+Register values from 00 to 1F are allowed.
+
+I have finally rationalized the parameter forms for the system files and the
+command line tokens.  For the system files we have the $S parameter with the
+format $Sp#, where 'p' is the part of the file name and '#' is the system
+file number (1..4).  The part 'p' can be:
+
+	N	file name
+	T	file type
+	F	name and type together
+
+For the command line tokens, the parameter is, similarly, of the form $Tp#. 
+The part options are are 'N', 'T', and 'F' plus the following:
+
+	D	drive (or default)
+	U	user (or default)
+	P	directory prefix (including the colon)
+	C	converted file specification with DIR: form, if present
+		changed to equivalent DU: (if invalid name, then no
+		conversion is performed)
+
+The old parameters for the system files and command line tokens have been
+eliminated.
+
+To keep the code under 4K, I dropped some obscure error reports.
+
+----------------------------------------
+
+VERSION 0.9K
+
+Added parameter $+ that takes the value otherwise returned by the $a
+parameters and adds an offset to it.  For example, one might write:
+
+	$+e001D
+
+to get the address of the maxuser byte in the ENV.  I also made it possible
+to echo control characters in prompts by preceeding a with a caret.  The
+dollar sign is used as an escape; any character entered after a dollar sign
+is echoed as is.  Thus $$ gives $, $^ gives ^, $" gives ", and $' gives '. 
+Finally, I put the type-3 safety header into the code.
+
+----------------------------------------
+
+VERSION 0.9J
+
+Extended parameters $: and $. to take digit 0 so that the verb can be parsed
+into a file name and type.  $D0 and $U0 now return the drive and user
+specified in the command token.  A new parameter $H gives the home directory
+information.  $HD gives the drive letter; $HU gives the user number; and $HB
+gives both (i.e., full DU).  Added special character TYPECHAR (default '>')
+to signal comparison with filetype only in the command verb.  Added $A
+parameter with following option letters B, C, D, E, F, I, L, M, N, P, R, S,
+X to return in ASCII form the address of various system modules (BIOS, CCP,
+DOS, ENV, FCP, etc.). Added ability to call the Z33 or later token parser.
+
+----------------------------------------
+
+VERSION 0.9I
+
+Added parameter $! to represent the entire command as entered by the user.
+
+----------------------------------------
+
+VERSION 0.9H
+
+Changed to support Z34's ability to pass bad commands with wildcard
+characters and file types to ECP.  Equates now define the wildcard character
+(standard is '_' instead of '?'), the option character (standard is ','
+instead of '.'), and the default alias character (standard is ':' as
+before).  ARUNZ now determines the kind of error if the alias is not found
+and returns it to the command processor. Also added code to strip leading
+spaces and tabs in the script.
+
+----------------------------------------
+
+VERSION 0.9G
+
+Fixed bug introduced in 0.9f that required alias names to be entered in
+upper case.  Also fixed a bug that occurred with prompted input when no
+closing quote was provided.
+
+----------------------------------------
+
+VERSION 0.9F
+
+Added code to shut off ZEX input during input prompting.  The parameter $I
+can be used to turn on ZEX input redirection for the next input prompt.  I
+eliminated the automatic upper-casing of the ALIAS.CMD input so that prompts
+will be displayed as they appear in the alias script.  Extended the $R
+(register input) function to accept not only registers 0..9 but also
+registers 'A'..'F'.  The register that is used to set the configuration of
+ARUNZ can now be in the range 0..1FH.  Put data into a DSEG so that
+uninitialized data will not be included in the file.
+
+----------------------------------------
+
+VERSION 0.9E
+
+Added configuration option to control whether or not the current directory
+will be scanned for ALIAS.CMD (assuming path searching is ON and rootpath is
+OFF).  Also added option of using a user register to control all the flags.
+
+----------------------------------------
+
+VERSION 0.9D
+
+Fixed a problem with the use of the root path when the user's path was
+completely empty.  In that case, the fixed DU specification will be used
+instead.
+
+----------------------------------------
+
+VERSION 0.9C
+
+Converted to ZCPR33 type-3 environment.  Added code to skip leading spaces
+and a leading colon in the command tail so that the command line ":VERB
+etc." can invoke the alias VERB.  Turned of SCANCUR in search for ALIAS.CMD
+along the path.  Added minimum truncation feature.  If an alias name
+contains a dot ('.'), then any characters after the dot only have to match
+if they are present.
+
+----------------------------------------
+
+VERSION 0.9B
+
+Fixed help test not to invoke help screen when alias name starts with a
+control character.  In fact, modified routines to allow and process alias
+names with control characters other than tab.
+
+----------------------------------------
+
+VERSION 0.9A
+
+Fixed two relative jump range errors.  My previous definition of the macro
+@GENDD was inadequate with a single-pass assembler (or perhaps any
+assembler, really).  I rewrote the Zilog code to use the MACLIB Z80 pseudo-
+op of the SLRMAC assembler.  Those using other assemblers may have to alter
+this code.
+
+----------------------------------------
+
+VERSION 0.9
+
+Fixed bug in CMPNAME code that caused subsequent script names to be ignored
+if a previous script name matched but was longer than the one specified
+(e.g., NAME1=NAME SCRIPT).  On user input, modified code to skip leading
+spaces.
+
+----------------------------------------
+
+VERSION 0.8
+
+Changed code at ONAME to get the alias name not from the default FCB but
+from the command tail.  This will allow alias names longer than 8 characters
+and also avoid the problem caused by the bug in ZCPR3.ASM that messes up the
+FCB.  Added parameters $" and $' to allow user input.  Added parameter $M to
+return the contents of a memory location in hex and $R to return the hex
+representation of the value of a register.  Added macros for Z80 opcodes and
+put them in some of the code (may have missed a few places).
+
+----------------------------------------
+
+VERSION 0.7
+
+Put configuration flag code into a macro to eliminate possibility of making
+a code change in the wrong place (I did so several times). Added code to
+display a warning message when a bad script format is detected (bad
+parameter usage).  Added the facility to enter control characters using the
+form "^c", where "c" is any character.  "$^" is used to enter a caret into
+the line.  Added code for using root of path option.  Added capability to
+have multiple names for the same script using the form "NAME1=NAME2=..=NAMEn
+SCRIPT".  Also implemented wildcard name matching so that a name like "?DIR"
+will match a request for "XDIR" or "SDIR", etc.
+
+----------------------------------------
+
+VERSION 0.5
+
+Added patches to make a quiet version, using two flags with the other ones
+just before START.  These flags use individual bits to control the display
+of specific messages.  The bit assignments are documented below at the
+QUIETF label.  The alternate flag QUIETECP is used when ARUNZ is called as
+an ECP.
+
+The program also has a default alias feature.  An alias name in the file
+ALIAS.CMD that begins with a colon will be taken as a match for any alias
+name.  If used, such an alias script should be placed at the end of the
+file.
+                          

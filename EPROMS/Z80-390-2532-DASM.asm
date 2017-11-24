@@ -116,7 +116,8 @@ JCPMBO:	jp     CPMBOOT           ; 00F033 C3 61 F4
 JGETHN:	jp     GETHNUM           ; 00F036 C3 DE F6
 JCHKKB:	jp     CHKKBD           ; 00F039 C3 B9 FA
 JPRNCH:	jp     PRNCHR           ; 00F03C C3 75 FA
-	jp     $ffc0           ; 00F03F C3 C0 FF
+;	what is this?
+	jp     UKROUT           ; 00F03F C3 C0 FF
 	nop                    ; 00F042 00
 	nop                    ; 00F043 00
 ;;
@@ -168,7 +169,7 @@ SDCUAE1:
 ;;
 ;; SCUROF - turn off cursor
 ;
-SCUROF:	
+SCUROF:
 	ld     a,$0a           ; 00F07E 3E 0A
 	out    (CRT6545ADST),a         ; 00F080 D3 8C
 	ld     a,$20           ; 00F082 3E 20
@@ -177,7 +178,7 @@ SCUROF:
 ;; CRTPRGEND
 ;; resets 6545 register pointer
 ;
-CRTPRGEND:	
+CRTPRGEND:
 	ld     a,$1f           ; 00F086 3E 1F
 	out    (CRT6545ADST),a         ; 00F088 D3 8C
 	ret                    ; 00F08A C9
@@ -207,7 +208,7 @@ GKLP0:	in     a,(CRTKEYBDAT)         ; 00F09B DB 85
 	and    $7f             ; 00F0A2 E6 7F
 	ret                    ; 00F0A4 C9
 ;;
-;; INICRT - should be 
+;; INICRT - should be
 ;
 INICRT:
 	in     a,(CRTSERVDAT)         ; 00F0A5 DB 89
@@ -273,7 +274,7 @@ CSGLP0:	ld     a,(GRAM0BUF)       ; 00F0FC 3A 40 30
 	call   RDRR19R12           ; 00F10D CD D8 F0
 	jp     SCURON           ; 00F110 C3 8B F0
 ;;
-;; DISPGRCH - Display a char (from A reg.) atrributed from GRAM3BUF 
+;; DISPGRCH - Display a char (from A reg.) atrributed from GRAM3BUF
 ;
 DISPGRCH:
 	push   af              ; 00F113 F5
@@ -288,7 +289,7 @@ DGCLP0:	in     a,(CRT6545ADST)         ; 00F114 DB 8C
 	out    (CRT6545DATA),a         ; 00F123 D3 8D
 	ret                    ; 00F125 C9
 ;;
-;; FILVRAMG - Fill the video ram in graphic mode (from GRAMBUF)	
+;; FILVRAMG - Fill the video ram in graphic mode (from GRAMBUF)
 ;
 FILVRAMG:
 	ld     hl,$0000        ; 00F126 21 00 00
@@ -306,7 +307,7 @@ FVLP0:	push   hl              ; 00F12C E5
 	ret                    ; 00F13C C9
 ;;
 ;; NEDOSCR - NEDOS boot screen
-;	
+;
 NEDOSCR:
 	call   CLRSCRGR           ; 00F13D CD E7 F0
 	ld     hl,STR005        ; 00F140 21 56 F3
@@ -396,7 +397,7 @@ NDSJ4:	ld     hl,STR008        ; 00F1E4 21 B6 F3
 	call   DISPSTR           ; 00F1EF CD E1 F2
 	jp     NDSLP3           ; 00F1F2 C3 52 F1
 ;;
-NDSRDSEC:	
+NDSRDSEC:
 	ld     a,e             ; 00F1F5 7B
 	out    (FDCSECTREG),a         ; 00F1F6 D3 D2
 	ld     a,d             ; 00F1F8 7A
@@ -520,7 +521,7 @@ NDH4:	jp     CLRSCRGR           ; 00F2DE C3 E7 F0
 ;;
 ;; DISPSTR - Display a string of format:
 ;; R,C,"STRING",$00
-;	
+;
 DISPSTR:
 	ld     c,(hl)          ; 00F2E1 4E
 	inc    hl              ; 00F2E2 23
@@ -587,8 +588,8 @@ STR010:                        ; 00F3D9
 STR011:                        ; 00F3E9
 	db    $28,$00
 	db    "Please type a key",$00
-;;	
-;;	
+;;
+;;
 JNDSTA:	jp     NDOSSTA           ; 00F3FD C3 03 F4
 JJNDST:	jp     JNDSTA           ; 00F400 C3 FD F3
 NDOSSTA:
@@ -633,7 +634,7 @@ KBLP0:
 ;;
 ;; DRVSEL - select drive for r/w ops
 ;
-DRVSEL:	
+DRVSEL:
 	push   af              ; 00F450 F5
 	push   bc              ; 00F451 C5
 	ld     a,(FDRVBUF)       ; 00F452 3A 40 00
@@ -666,18 +667,18 @@ CPMBOOT:
 	call   FREADSEC        ; 00F480 CD 0D F5
 	jp     nz,UCREJ        ; 00F483 C2 FD F6
 	jp     $0080           ; jump to the loader if all ok
-INXTTRBUF:	
+INXTTRBUF:
 	ld     a,c             ; 00F489 79
 	ld     (FNTRBUF),a       ; 00F48A 32 41 00
 	ret                    ; 00F48D C9
-SAVSECBUF:	
+SAVSECBUF:
 	ld     a,c             ; 00F48E 79
 	ld     (FSECBUF),a       ; 00F48F 32 42 00
 	ret                    ; 00F492 C9
-INIRDPBUF:	
+INIRDPBUF:
 	ld     (FRDPBUF),bc      ; 00F493 ED 43 45 00
 	ret                    ; 00F497 C9
-ICURTRBUF:	
+ICURTRBUF:
 	ld     a,c             ; 00F498 79
 	ld     (FDRVBUF),a       ; 00F499 32 40 00
 	ret                    ; 00F49C C9
@@ -895,7 +896,7 @@ INIT0:
 ;;
 STR100:                        ; 00F5E2
 	db    "ELETTRO design * Monitor V. 1.0x"
-	
+
 ;;
 CRLFTAB:
 	db $0d,$8a,$00,$01
@@ -903,7 +904,7 @@ CRLFTAB:
 	                       ; 00F603 8A
 	                       ; 00F604 00
 	                       ; 00F605 01
-;;	
+;;
 ;; INICRTREG
 ;;
 INICRTREG:
@@ -933,10 +934,11 @@ ICTLP0:	out    (CRT6545ADST),a         ; 00F610 D3 8C
 	nop                    ; 00F62C 00
 	nop                    ; 00F62D 00
 	nop                    ; 00F62E 00
-	nop                    ; 00F62F 00
+; 	nop                    ; 00F62F 00
 BOOT:
+	di
 	; Reset bios position after reset
-	in     a,(FDCDRVRCNT)  ; 00F630 DB D6	
+	in     a,(FDCDRVRCNT)  ; 00F630 DB D6
 	ld     sp,$0080        ; 00F632 31 80 00
 	ld     hl,CRTTAB1        ; 00F635 21 A1 F5
 	ld     de,CRTTABUF        ; 00F638 11 10 00
@@ -986,7 +988,7 @@ BJMP2:
 	ld     a,h             ; 00F68C 7C
 	cp     b               ; 00F68D B8
 	jr     nz,BJMP2        ; 00F68E 20 F3
-BJMP1:	
+BJMP1:
 	dec    h               ; 00F690 25
 	ld     bc,$ffde        ; 00F691 01 DE FF should be a number in 2 compl.
 	add    hl,bc           ; 00F694 09
@@ -1003,7 +1005,7 @@ LPAGE:
 	dec    h               ; 00F6A0 25
 BJMP6:
 	ld     b,h             ; 00F6A1 44
-BJMP5:	
+BJMP5:
 	pop    hl              ; 00F6A2 E1
 	ret                    ; 00F6A3 C9
 ;
@@ -1012,7 +1014,7 @@ BJTAB:                         ; 00F6A4
 ;
 BJMP3:
 	;; copy 29 bytes of bios code from RAMBLK to last page of available ram
-	ld     sp,hl           ; 00F6A6 F9	
+	ld     sp,hl           ; 00F6A6 F9
 	ld     de,RAMBLK        ; 00F6A7 11 F2 F9
 	ex     de,hl           ; 00F6AA EB
 	ld     bc,$001d        ; 00F6AB 01 1D 00
@@ -1072,7 +1074,7 @@ HNHEX:	ex     (sp),hl         ; 00F6F2 E3
 	jr     nc,HEHEX        ; 00F6F8 30 E0
 	djnz   UCREJ           ; 00F6FA 10 01
 	ret                    ; 00F6FC C9
-;;	
+;;
 ;; USRCMD - display prompt and process user commands
 ;;
 UCREJ:
@@ -1213,7 +1215,7 @@ GDCUA:
 	ld     a,$1f           ; 00F7BF 3E 1F
 	out    (CRT6545ADST),a         ; 00F7C1 D3 8C
 	ret                    ; 00F7C3 C9
-;;	
+;;
 CIJP2:
 	out    (CRT6545ADST),a         ; 00F7C4 D3 8C
 	in     a,(CRT6545DATA)         ; 00F7C6 DB 8D
@@ -1224,7 +1226,7 @@ CIJP2:
 ;;
 ;; DISPCH - Display a char on CRT at current position
 ;
-DISPCH:	
+DISPCH:
 	push   af              ; 00F7D0 F5
 	ld     a,$1f           ; 00F7D1 3E 1F
 	out    (CRT6545ADST),a         ; 00F7D3 D3 8C
@@ -1340,7 +1342,7 @@ BDNXT:	ld     a,e             ; 00F853 7B
 ;
 CIRBF:	ld     a,$00           ; 00F861 3E 00
 	ld     (KBDBYTE),a       ; 00F863 32 26 00
-CONIN:	
+CONIN:
 	in     a,(CRTKEYBDAT)         ; 00F866 DB 85
 	cpl                    ; 00F868 2F
 	bit    7,a             ; 00F869 CB 7F
@@ -1393,7 +1395,7 @@ CITC2:	cp     $07             ; test == CTRL+G
 	cp     $05             ; test ==CTRL+E
 	jp     z,LINDN         ; 00F8C2 CA 9B FD
 	cp     $13             ; test == CTRL+S
-	jp     z,CIHCR         ; 00F8C7 CA DF F8 
+	jp     z,CIHCR         ; 00F8C7 CA DF F8
 	cp     $04             ; test == CTRL+D
 	jp     z,CURRGT         ; 00F8CC CA 4E FB
 	cp     $18             ; test == CTRL+X
@@ -1436,7 +1438,7 @@ CISTP:	push   af              ; 00F903 F5
 	nop                    ; 00F90D 00
 ;;
 ;; SET DISPLAY START ADDRESS
-;	
+;
 SDSTA:
 	ld     a,$0c           ; 00F90E 3E 0C
 	out    (CRT6545ADST),a         ; 00F910 D3 8C
@@ -1474,13 +1476,13 @@ POP3NUM:
 	pop    bc              ; 00F937 C1
 	pop    de              ; 00F938 D1
 	jp     OCRLF1           ; 00F939 C3 B1 FA
-;;	
+;;
 CHKEOR:
 	inc    hl              ; 00F93C 23
 	ld     a,h             ; 00F93D 7C
 	or     l               ; 00F93E B5
 	scf                    ; 00F93F 37
-	ret    z               ; 00F940 C8	
+	ret    z               ; 00F940 C8
 	ld     a,e             ; 00F941 7B
 	sub    l               ; 00F942 95
 	ld     a,d             ; 00F943 7A
@@ -1493,7 +1495,7 @@ CBKEND:	pop    de              ; 00F946 D1
 ;; inc pointer BC and check kbd
 IPTRCKBD:
 	inc    bc              ; 00F948 03
-;;	
+;;
 CHKBRK:
 	call   CHKEOR           ; 00F949 CD 3C F9
 	jr     c,CBKEND         ; 00F94C 38 F8
@@ -1522,7 +1524,7 @@ CHKHEX:
 ;; get chr and validate
 VALGETCHR:
 	call   DOGETCHR           ; 00F96D CD 28 F9
-;; 
+;;
 ;; CHKCTR: check for valid char in string (space,comma,<CR>)
 ;
 CHKCTR:
@@ -1588,11 +1590,11 @@ CCJP2:	ld     hl,$0020        ; 00F9A9 21 20 00
 	inc    hl              ; 00F9C0 23
 	ld     (hl),d          ; 00F9C1 72
 	ex     de,hl           ; 00F9C2 EB
-	call   $fa49           ; 00F9C3 CD 49 FA
+	call   hl2as1           ; 00F9C3 CD 49 FA
 CCJP4:	ld     hl,$0025        ; 00F9C6 21 25 00
 	add    hl,sp           ; 00F9C9 39
 	ld     bc,$0200        ; 00F9CA 01 00 02
-	ld     e,(hl)          ; 00F9CD 5E
+xf9cd:	ld     e,(hl)          ; 00F9CD 5E
 	ld     (hl),c          ; 00F9CE 71
 	inc    hl              ; 00F9CF 23
 	ld     d,(hl)          ; 00F9D0 56
@@ -1600,11 +1602,11 @@ CCJP4:	ld     hl,$0025        ; 00F9C6 21 25 00
 	inc    hl              ; 00F9D2 23
 	ld     a,e             ; 00F9D3 7B
 	or     d               ; 00F9D4 B2
-	jr     z,$f9d9         ; 00F9D5 28 02
+	jr     z,xf9d9         ; 00F9D5 28 02
 	ld     a,(hl)          ; 00F9D7 7E
 	ld     (de),a          ; 00F9D8 12
-	inc    hl              ; 00F9D9 23
-	djnz   $f9cd           ; 00F9DA 10 F1
+xf9d9:	inc    hl              ; 00F9D9 23
+	djnz   xf9cd           ; 00F9DA 10 F1
 	ex     af,af'          ; 00F9DC 08
 	exx                    ; 00F9DD D9
 	push   hl              ; 00F9DE E5
@@ -1665,7 +1667,7 @@ TOGJU:	jp     USRCMD           ; 00FA1D C3 03 F7
 ;;
 ;; SCRTST - Verify uf we need video scroll
 ;
-SCRTST:	
+SCRTST:
 	ld     de,(CURPBUF)      ; 00FA20 ED 5B 48 00
 	xor    a               ; 00FA24 AF
 	sbc    hl,de           ; 00FA25 ED 52
@@ -1696,12 +1698,12 @@ CALCHLDE:
 	pop    hl              ; 00FA40 E1
 	or     a               ; 00FA41 B7
 	sbc    hl,de           ; 00FA42 ED 52
-	jr     $fa49           ; 00FA44 18 03
-;;	
+	jr     hl2as1           ; 00FA44 18 03
+;;
 ;; HL2ASC - convert & display HL 2 ascii
 HL2ASC:
 	call   OUTCRLF           ; 00FA46 CD B0 FA
-	ld     a,h             ; 00FA49 7C
+hl2as1:	ld     a,h             ; 00FA49 7C
 	call   H2AJ1           ; 00FA4A CD 4E FA
 	ld     a,l             ; 00FA4D 7D
 H2AJ1:	push   af              ; 00FA4E F5
@@ -1717,7 +1719,7 @@ H2AJ3:	call   H2AJ1           ; entry point to display HEX and a "-"
 MPROMPT:
 	ld     c,$2d           ; 00FA5F 0E 2D
 	jr     OUTCHR           ; 00FA61 18 05
-;;	
+;;
 ;; HL2ASCB - convert & display HL 2 ascii leave a blank after
 HL2ASCB:
 	call   HL2ASC           ; 00FA63 CD 46 FA
@@ -1765,7 +1767,7 @@ COIUPC:
 	res    5,a             ; 00FA96 CB AF
 COIRE:	ret                    ; 00FA98 C9
 ;;
-;; 
+;;
 ;; GREET - ...comes here from boot...
 ;
 GREET:
@@ -1850,7 +1852,7 @@ CHKKBDJ:
 	ret z                  ; 00FB07 C8
 	cpl                    ; 00FB08 2F
 	ret                    ; 00FB09 C9
-;	
+;
 	nop                    ; 00FB0A 00
 	nop                    ; 00FB0B 00
 	nop                    ; 00FB0C 00
@@ -1910,7 +1912,7 @@ CURRGT:
 	inc    a               ; 00FB57 3C
 	cp     $50             ; 00FB58 FE 50
 	jr     z,MOVDN         ; 00FB5A 28 04
-;;	
+;;
 SAVCOLB:
 	ld     (COLBUF),a       ; 00FB5C 32 29 00
 	ret                    ; 00FB5F C9
@@ -1944,7 +1946,7 @@ MDJMP0:	push   hl              ; 00FB7A E5
 MDJMP1:	ld     (CURPBUF),hl      ; 00FB90 22 48 00
 	call   SDSTA           ; 00FB93 CD 0E F9
 	jr     MOVEND           ; 00FB96 18 4B
-CONOU2:	
+CONOU2:
 	cp     $20             ; 00FB98 FE 20
 	jr     nc,C2JP1        ; 00FB9A 30 0F
 	ld     hl,IOCVEC2        ; 00FB9C 21 20 FE
@@ -2006,22 +2008,22 @@ MEJP:	jp     SDCUAE           ; 00FBE8 C3 60 F0
 CURBLB:
 	ld     l,$40           ; 00FBF0 2E 40 (0 10 00000) 1/16 blink scan 0
 	jr     CURSETMODE           ; 00FBF2 18 16
-CURBLL:	
+CURBLL:
 	ld     l,$4a           ; 00FBF4 2E 4A (0 10 01010) 1/16 blink scan 10
 	jr     CURSETMODE           ; 00FBF6 18 12
-CURBFB:	
+CURBFB:
 	ld     l,$60           ; 00FBF8 2E 60 (0 11 00000) 1/32 blink scan 0
 	jr     CURSETMODE           ; 00FBFA 18 0E
-CURBFL:	
+CURBFL:
 	ld     l,$6a           ; 00FBFC 2E 6A (0 11 01010) 1/32 blink scan 10
 	jr     CURSETMODE           ; 00FBFE 18 0A
-CUROFB:	
+CUROFB:
 	ld     l,$20           ; 00FC00 2E 20 (0 01 00000) no cursor scan 0
 	jr     CURSETMODE           ; 00FC02 18 06
-CURFXB:	
+CURFXB:
 	ld     l,$00           ; 00FC04 2E 00 (0 00 00000) fixed scan 0
 	jr     CURSETMODE           ; 00FC06 18 02
-CURFXL:	
+CURFXL:
 	ld     l,$0a           ; 00FC08 2E 0A (0 00 01010) fixed scan 10
 CURSETMODE:
 	ld     a,$0a           ; 00FC0A 3E 0A
@@ -2034,7 +2036,7 @@ CURSETMODE:
 ;;
 ;; DLIGHT
 ;; fill video ram (2k) with ff's
-;	
+;
 DLIGHT:
 	ld     hl,$ffff        ; 00FC16 21 FF FF
 	ld     (RAM0BUF),hl      ; 00FC19 22 2A 00
@@ -2047,7 +2049,7 @@ DLIGHT:
 DISMVC:
 	call   DISPCH           ; 00FC24 CD D0 F7
 	jp     SDCUAE           ; 00FC27 C3 60 F0
-;;	
+;;
 	nop                    ; 00FC2A 00
 	nop                    ; 00FC2B 00
 	nop                    ; 00FC2C 00
@@ -2058,7 +2060,7 @@ DISMVC:
 ;; IOCBASE (a void routine) from here a list of routines to handle
 ;; console char output
 ;
-IOCBASE:	
+IOCBASE:
 	ret                    ; 00FC30 C9
 ;
 IOCSOH:
@@ -2069,7 +2071,7 @@ IOCSTX:
 	ex     de,hl           ; 00FC35 EB
 	res    3,(hl)          ; 00FC36 CB 9E
 	ret                    ; 00FC38 C9
-;;	
+;;
 ;; INICRTCUR - init CRT cursor at CURPBUF
 ;
 INICRTCUR:
@@ -2077,7 +2079,7 @@ INICRTCUR:
 	call   SDCUAE           ; 00FC3C CD 60 F0
 	xor    a               ; 00FC3F AF
 	jp     SAVCOLB           ; 00FC40 C3 5C FB
-;;	
+;;
 ;; IOCBEL - sound beep
 IOCBEL:
 	out    (CRTBEEPPORT),a         ; 00FC43 D3 8F
@@ -2173,7 +2175,7 @@ CLRJ0:	call   CLRLIN1           ; 00FCC7 CD C3 FD
 	jp     SDCUAE           ; 00FCCB C3 60 F0
 IOCENQ:
 	jp     CURBFL           ; 00FCCE C3 FC FB
-IOCUS:	
+IOCUS:
 	jp     SET3MIOB           ; 00FCD1 C3 F0 FF
 ;
 	nop                    ; 00FCD4 00
@@ -2224,14 +2226,14 @@ RESATTR:
 	ld     a,$ff           ; 00FCFF 3E FF
 	ld     (RAM3BUF),a       ; 00FD01 32 28 00
 	ret                    ; 00FD04 C9
-;;	
+;;
 IOCCAN:
 	jp     INIT0           ; 00FD05 C3 C8 F5
 IOCRS:
 	jp     OUTGRBUF           ; 00FD08 C3 59 FF
 IOCEOT:
 	jp     CURBFB           ; 00FD0B C3 F8 FB
-	
+
 	nop                    ; 00FD0E 00
 ;;
 ;; IOCBASE2 (a void routine) from here a list of routines to handle
@@ -2242,7 +2244,7 @@ IOCBAS2:
 	ret                    ; 00FD0F C9
 IOCNAK:
 	jp     CURRGT           ; 00FD10 C3 4E FB
-IOCSY2:	
+IOCSY2:
 	call   GDCUA           ; 00FD13 CD B0 F7
 	ld     de,$ffaf        ; 00FD16 11 AF FF
 	add    hl,de           ; 00FD19 19
@@ -2357,11 +2359,11 @@ IOCDC2:
 	jp     CURBLB           ; 00FDAD C3 F0 FB
 IOCDC3:
 	jp     CURBLL           ; 00FDB0 C3 F4 FB
-IOCET2:	
+IOCET2:
 	ex     de,hl           ; 00FDB3 EB
 	set    6,(hl)          ; 00FDB4 CB F6
 	ret                    ; 00FDB6 C9
-	
+
 	nop                    ; 00FDB7 00
 	nop                    ; 00FDB8 00
 	nop                    ; 00FDB9 00
@@ -2429,7 +2431,7 @@ IOCFF2:
 	nop                    ; 00FDFF 00
 ;; This table define the offsets to jump from
 ;; IOCBASE (IOCBASE+IOCVEC) to a set fo routines that
-;; handles cntrl char < 0x20 when we are in CONOUT 
+;; handles cntrl char < 0x20 when we are in CONOUT
 IOCVEC:
 	db    IOCBASE-IOCBASE          ; NUL 0x00 (00)  no-op
 	db    IOCSOH-IOCBASE           ; SOH 0x01 (01)  set bit 3 (de)
@@ -2502,7 +2504,7 @@ IOCVEC2:
 ;;
 ;; DBLANK
 ;; fill video ram (2k) with 0's
-;	
+;
 DBLANK:
 	ld     hl,$0000        ; 00FE40 21 00 00
 	ld     (RAM0BUF),hl      ; 00FE43 22 2A 00
@@ -2528,7 +2530,7 @@ CFIL1:	push   hl              ; 00FE58 E5
 ;;
 ;; DISPGR2 - absolutely the same of DISPGR but takes chars from locs
 ;; 002a/b/c WHY THIS???
-;	
+;
 DISPGR2:
 	in     a,(CRT6545ADST)         ; 00FE66 DB 8C
 	bit    7,a             ; 00FE68 CB 7F
@@ -2548,7 +2550,7 @@ DISPNORTR:
 	xor    a               ; 00FE7F AF
 	out    (CRT6545DATA),a         ; 00FE80 D3 8D
 	ret                    ; 00FE82 C9
-;;	
+;;
 	nop                    ; 00FE83 00
 UKR13:	call   GDCUA           ; 00FE84 CD B0 F7
 	push   hl              ; 00FE87 E5
@@ -2592,10 +2594,10 @@ UKR11:	ld     ($0025),a       ; 00FEC5 32 25 00
 	ret    nc              ; 00FED1 D0
 	ld     b,$01           ; 00FED2 06 01
 UKR12:	sub    $06             ; 00FED4 D6 06
-	jr     c,UKR11         ; 00FED6 38 03
+	jr     c,UKR41         ; 00FED6 38 03
 	inc    b               ; 00FED8 04
 	jr     UKR12           ; 00FED9 18 F9
-UKR11:	add    a,$06           ; 00FEDB C6 06
+UKR41:	add    a,$06           ; 00FEDB C6 06
 	ld     d,a             ; 00FEDD 57
 	jp     UKR13           ; 00FEDE C3 84 FE
 UKR04:	nop                    ; 00FEE1 00
@@ -2655,7 +2657,7 @@ UKR19:	or     $86             ; 00FF27 F6 86
 ;;
 ;; CIGRTOG - toggle graphic mode on
 ;
-CIGRTOG:	
+CIGRTOG:
 	in     a,(CRT6545ADST)         ; 00FF40 DB 8C
 	bit    7,a             ; 00FF42 CB 7F
 	jr     z,CIGRTOG         ; 00FF44 28 FA
@@ -2674,7 +2676,7 @@ CIGRTOG:
 	nop                    ; 00FF56 00
 	nop                    ; 00FF57 00
 	nop                    ; 00FF58 00
-;; 
+;;
 ;; OUTGRBUF - set graphic mode, display RAM[012]BUF and revert to ascii
 ;
 OUTGRBUF:
@@ -2758,16 +2760,16 @@ UKR01:	ld     ($002f),a       ; 00FFD1 32 2F 00
 	ld     hl,$002f        ; 00FFE0 21 2F 00
 	jr     nz,UKR02        ; 00FFE3 20 04
 	set    1,(hl)          ; 00FFE5 CB CE
-	jr     UKR19           ; 00FFE7 18 02
+	jr     UKR49           ; 00FFE7 18 02
 UKR02:	res    1,(hl)          ; 00FFE9 CB 8E
-UKR19:	jp     UKR03           ; 00FFEB C3 90 FE
+UKR49:	jp     UKR03           ; 00FFEB C3 90 FE
 	nop                    ; 00FFEE 00
 	nop                    ; 00FFEF 00
 SET3MIOB:
 	ld     hl,MIOBYTE        ; 00FFF0 21 47 00
 	set    3,(hl)          ; 00FFF3 CB DE
 	ret                    ; 00FFF5 C9
-RES3MIOB:	
+RES3MIOB:
 	ld     hl,MIOBYTE        ; 00FFF6 21 47 00
 	res    3,(hl)          ; 00FFF9 CB 9E
 	ret                    ; 00FFFB C9

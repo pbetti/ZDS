@@ -254,7 +254,7 @@ makdisk() {
 	cpmcp -f $1 $2 zds/fdformat.com 1:
 	cpmcp -f $1 $2 zds/diskcopy.com 1:
 	cpmcp -f $1 $2 zds/myide3.com 1:
-	cpmcp -f $1 $2 zds/z8d.com 1:
+	cpmcp -f $1 $2 zds/z8e.com 1:
 	cpmcp -f $1 $2 zds/clock.com 1:
 	cpmcp -f $1 $2 zds/td.com 1:
 	cpmcp -f $1 $2 zds/reboot.com 0:

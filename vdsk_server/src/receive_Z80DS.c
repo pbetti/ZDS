@@ -26,7 +26,7 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "config.h"
+// #include "config.h"
 
 #include "Z80_par_io.h"
 

@@ -32,6 +32,34 @@
 
 	CSEG				; time must be done from resident memory
 
+ZDSTIME:
+	PUSH	HL
+	PUSH	DE
+
+	LD	(SPSAVE),SP
+	LD	SP,@BIOS$STACK		; switch to a local stack
+
+	IF	BANKED
+	LD	A,(@CBNK)
+	PUSH	AF			; save current bank number
+	LD	A,0
+	CALL	?BANK
+	ENDIF
+
+	CALL	DOTIME
+
+	IF	BANKED
+	POP	AF
+	CALL	?BANK			; restore caller's bank
+	ENDIF
+
+	LD	SP,(SPSAVE)
+	POP	DE
+	POP	HL
+	RET
+
+SPSAVE: DW	0
+
 	; ZDS Clock support. Hardware details behind SYSBIOS
 
 	IF	BANKED
@@ -438,32 +466,5 @@ MDAYS:
 TIMSTR:
 	DB	0,0,0,0,0,0,0,0		; string for reading/setting date/time
 
-ZDSTIME:
-	PUSH	HL
-	PUSH	DE
-
-	LD	(SPSAVE),SP
-	LD	SP,@BIOS$STACK		; switch to a local stack
-
-	IF	BANKED
-	LD	A,(@CBNK)
-	PUSH	AF			; save current bank number
-	LD	A,0
-	CALL	?BANK
-	ENDIF
-
-	CALL	DOTIME
-
-	IF	BANKED
-	POP	AF
-	CALL	?BANK			; restore caller's bank
-	ENDIF
-
-	LD	SP,(SPSAVE)
-	POP	DE
-	POP	HL
-	RET
-
-SPSAVE: DW	0
 
 	END

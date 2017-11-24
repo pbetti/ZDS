@@ -17,8 +17,8 @@
 #include <string.h>
 #include <time.h>
 #include <fcntl.h>
-#include <libdsk.h>
-#include "config.h"
+#include "libdsk.h"
+// #include "config.h"
 #include "cpmdir.h"
 #include "cpmfs.h"
 /*}}}*/
@@ -394,9 +394,9 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, const char *format)
   FILE *fp;
   int insideDef=0,found=0;
 
-  if ((fp=fopen("Z80DS_diskdefs","r"))==(FILE*)0 && (fp=fopen("diskdefs","r"))==(FILE*)0)
+  if ((fp=fopen("ZDS_diskdefs","r"))==(FILE*)0 && (fp=fopen("diskdefs","r"))==(FILE*)0)
   {
-    fprintf(stderr,"%s: Neither " DISKDEFS " nor diskdefs could be opened.\n",cmd);
+	  fprintf(stderr,"%s: Neither ZDS_diskdefs nor diskdefs could be opened.\n",cmd);
     exit(1);
   }
   while (fgets(line,sizeof(line),fp)!=(char*)0)

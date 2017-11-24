@@ -40,20 +40,22 @@ Include (beatiful) code from:
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
-#include <libdsk.h>
 #include <fcntl.h>
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 // #include <asm/io.h>
-#include "config.h"
+#include "libdsk.h"
 #include "cpmfs.h"
 #include "Z80_par_io.h"
 
 /* command defines */
 #define Z80IO_READ	0
 #define	Z80IO_WRITE	1
+
+#define VERSION		"1.5"
 
 /* i/o command parameters */
 typedef struct
@@ -72,8 +74,8 @@ static byte image[ MAX_SIZE ];
 static int * unskew0 = 0;
 static int * unskew1 = 0;
 
-extern int do_write_sector( struct cpmSuperBlock *, Z80_IO_COMMAND *, byte *, int * );
-extern int do_read_sector( struct cpmSuperBlock *, Z80_IO_COMMAND *, byte *, int * );
+extern int do_write_sector( struct cpmSuperBlock *, Z80_IO_COMMAND *, byte *, int );
+extern int do_read_sector( struct cpmSuperBlock *, Z80_IO_COMMAND *, byte *, int );
 extern int do_file_transfer( Z80_IO_COMMAND * io_command );
 
 
@@ -163,7 +165,7 @@ int main( int argc, char *argv[] )        /*{{{*/
 {
 	char * image;
 	char * imageB = 0;
-	const char *format = "Z80DarkStar";
+	const char *format = "ZDS";
 	const char *format1 = 0;
 	int c, usage = 0;
 	struct cpmSuperBlock drive;
@@ -183,9 +185,16 @@ int main( int argc, char *argv[] )        /*{{{*/
 	int ASize = 0;
 	int BSize = 0;
 	int dbase = 'A';
+	int zeroskewA = 0;
+	int zeroskewB = 0;
 
-	while ( ( c = getopt( argc, argv, "b:f:F:L:n:h?" ) ) != EOF ) switch ( c )
+	fprintf( stdout, "ZDS - Z80NE Virtual Disk Server v%s\n\n", VERSION);
+
+
+	while ( ( c = getopt( argc, argv, "zZb:f:F:L:n:h?" ) ) != EOF ) switch ( c )
 		{
+			case 'z': zeroskewA++; break;
+			case 'Z': zeroskewB++; break;
 			case 'b':
 				{
 					if ( boot[ 0 ] == ( const char* ) 0 ) boot[ 0 ] = optarg;
@@ -298,7 +307,7 @@ int main( int argc, char *argv[] )        /*{{{*/
 		}
 	}
 
-	if (driveB.skew > 0) {
+	if (driveB.skew > 0 && imageB) {
 		unskew1 = malloc(driveB.sectrk*sizeof(int));
 		for (c = 0; c < driveB.sectrk; c++) {
 			int sec;
@@ -322,7 +331,15 @@ int main( int argc, char *argv[] )        /*{{{*/
 	printf( "sectrk:      %d\n", drive.sectrk );
 	printf( "skew:        %d\n", drive.skew );
 	printf( "boottrk:     %d\n", drive.boottrk);
+	printf( "skewtab:    ");
+	for (c = 0; c < drive.sectrk; c++) {
+		printf(" %d", drive.skewtab[c]);
+	}
 	printf( "\n" );
+	printf( "unskewtab   ");
+	for (c = 0; c < drive.sectrk; c++) {
+		printf(" %d", unskew0[c]);
+	}
 	printf( "\n" );
 	printf( "Translated to:\n" );
 	printf( "Heads:       %d\n", drive.dev.geom.dg_heads );
@@ -330,6 +347,11 @@ int main( int argc, char *argv[] )        /*{{{*/
 	printf( "Sectors:     %d\n", drive.dev.geom.dg_sectors );
 	printf( "Sector size: %d\n", drive.dev.geom.dg_secsize );
 	printf( "Disk size:   %d bytes (%dkb)\n", ASize, ASize / 1024 );
+	printf( "Options:     ");
+	if (zeroskewA)
+		printf("* Zero skew * ");
+	else
+		printf("None");
 	printf( "\n" );
 	if ( imageB )
 	{
@@ -341,6 +363,15 @@ int main( int argc, char *argv[] )        /*{{{*/
 		printf( "sectrk:      %d\n", driveB.sectrk );
 		printf( "skew:        %d\n", driveB.skew );
 		printf( "boottrk:     %d\n", driveB.boottrk);
+		printf( "skewtab:    ");
+		for (c = 0; c < driveB.sectrk; c++) {
+			printf(" %d", driveB.skewtab[c]);
+		}
+		printf( "\n" );
+		printf( "unskewtab   ");
+		for (c = 0; c < driveB.sectrk; c++) {
+			printf(" %d", unskew1[c]);
+		}
 		printf( "\n" );
 		printf( "Translated to:\n" );
 		printf( "Heads:       %d\n", driveB.dev.geom.dg_heads );
@@ -348,10 +379,15 @@ int main( int argc, char *argv[] )        /*{{{*/
 		printf( "Sectors:     %d\n", driveB.dev.geom.dg_sectors );
 		printf( "Sector size: %d\n", driveB.dev.geom.dg_secsize );
 		printf( "Disk size:   %d bytes (%dkb)\n", BSize, BSize / 1024 );
+		printf( "Options:     ");
+		if (zeroskewB)
+			printf("* Zero skew * ");
+		else
+			printf("None");
 		printf( "\n" );
 	}
+	printf( "\n" );
 
-	//	io_sector = ( byte * ) malloc( drive.secLength );
 	io_sector = ( byte * ) malloc( 4096 );
 
 	/* gets actual status */
@@ -364,17 +400,12 @@ int main( int argc, char *argv[] )        /*{{{*/
 	while ( 1 )
 	{	/* when this loop ends ?? */
 		/* wait for command */
-		//printf("\nwaiting command...\n");
 		if ( recv_block( ( char * ) & io_command, sizeof( Z80_IO_COMMAND ), 0 ) )
 		{
 			continue;
 		}
 
 		strncpy( app, ( char * ) io_command.header, 4 ); app[ 4 ] = '\0';
-		//printf("header:'%s' ", app);
-		//printf("drive :%d ", io_command.drive);
-		//printf("sector:%d ", io_command.sector);
-		//printf("track :%d\n", io_command.track);
 
 		/* is a command block ? */
 		if ( ! strncmp( ( char * ) io_command.header, ( char * ) ftr_header_string, 4 ) )
@@ -387,39 +418,36 @@ int main( int argc, char *argv[] )        /*{{{*/
 		/* process request */
 		struct cpmSuperBlock * req_drive = ( io_command.drive + 'A' - dbase ) ? &driveB : &drive;
 		int * unskewp = ( io_command.drive + 'A' - dbase ) ? unskew1 : unskew0;
+		int rwsec;
+
+		if (zeroskewA && ( io_command.drive + 'A' - dbase ) == 0)		// drive A
+			rwsec =  io_command.sector;
+		else if (zeroskewB && ( io_command.drive + 'A' - dbase ) == 1)		// drive B
+			rwsec =  io_command.sector;
+		else if (req_drive->skew == 0 || io_command.track >= req_drive->boottrk) {
+			rwsec =  io_command.sector;
+		}
+		else
+			rwsec = unskewp[io_command.sector];
+//		rwsec = (skewall) ? req_drive->skewtab[io_command.sector] : unskewp[io_command.sector];
+
 		if ( io_command.instruction == Z80IO_WRITE )
 		{
-			if (req_drive->skew == 0 || io_command.track >= req_drive->boottrk) {
-				printf( "SECTOR WRITE: %c: sector %d, track %d\n", io_command.drive + 'A', io_command.sector, io_command.track );
-			}
-			else {
-				printf( "SECTOR WRITE: %c: sector %d->%d, track %d\n",
+			printf( "SECTOR WRITE: %c: sector %d->%d, track %d\n",
 					io_command.drive + 'A',
 					io_command.sector,
-					unskewp[io_command.sector],
+					rwsec,
 					io_command.track );
-			}
-			do_write_sector( req_drive, &io_command, io_sector, unskewp );
+			do_write_sector( req_drive, &io_command, io_sector, rwsec );
 		}
 		else
 		{
-			if (unskewp && io_command.track < req_drive->boottrk) {
-				if (io_command.sector > req_drive->sectrk || io_command.sector < 0) {
-					printf( "INVALID REQUEST : %c: sector %d, track %d\n", io_command.drive + 'A', io_command.sector, io_command.track );
-					unskewp = 0;
-				}
-			}
-			if (req_drive->skew == 0 || io_command.track >= req_drive->boottrk) {
-				printf( "SECTOR READ : %c: sector %d, track %d\n", io_command.drive + 'A', io_command.sector, io_command.track );
-			}
-			else {
-				printf( "SECTOR READ : %c: sector %d->%d, track %d\n",
+			printf( "SECTOR READ : %c: sector %d->%d, track %d\n",
 					io_command.drive + 'A',
 					io_command.sector,
-					unskewp[io_command.sector],
+					rwsec,
 					io_command.track );
-			}
-			do_read_sector( req_drive, &io_command, io_sector, unskewp );
+			do_read_sector( req_drive, &io_command, io_sector, rwsec );
 		}
 
 	}
@@ -528,7 +556,7 @@ int do_file_transfer( Z80_IO_COMMAND * io_command )
 	return ( 0 );
 }
 
-int do_write_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, byte * io_sector, int * unskewp )
+int do_write_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, byte * io_sector, int rwsec )
 {
 	const char * err;
 	int sector;
@@ -539,31 +567,29 @@ int do_write_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, 
 		return ( 1 );
 	}
 
-	sector = (unskewp && io_command->track < drive->boottrk) ? unskewp[io_command->sector] : io_command->sector;
+// 	sector = (unskewp && io_command->track < drive->boottrk) ? unskewp[io_command->sector] : io_command->sector;
 
 	/* write to disk image */
-	if ( ( err = Device_writeSector( &drive->dev, io_command->track, sector, ( const char * ) io_sector ) ) )
+	if ( ( err = Device_writeSector( &drive->dev, io_command->track, rwsec, ( const char * ) io_sector ) ) )
 	{
-		fprintf( stdout, "%s: can not write sector %d, track %d (%s)\n",
-		         cmd, io_command->track, io_command->sector, err );
+		fprintf( stdout, "%s: can not write sector %d (%d), track %d (%s)\n",
+			 cmd, io_command->sector, rwsec, io_command->track, err );
 		return ( 1 );
 	}
 
 	return ( 0 );
 }
 
-int do_read_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, byte * io_sector, int * unskewp )
+int do_read_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, byte * io_sector, int rwsec )
 {
 	const char * err;
 	int sector;
 
-	sector = (unskewp && io_command->track < drive->boottrk) ? unskewp[io_command->sector] : io_command->sector;
-
 	/* read sector from disk image */
-	if ( ( err = Device_readSector( &drive->dev, io_command->track, sector, ( char * ) io_sector ) ) )
+	if ( ( err = Device_readSector( &drive->dev, io_command->track, rwsec, ( char * ) io_sector ) ) )
 	{
-		fprintf( stdout, "%s: can not read sector %d, track %d (%s)\n",
-		         cmd, io_command->track, io_command->sector, err );
+		fprintf( stdout, "%s: can not read sector %d (%d), track %d (%s)\n",
+			 cmd, io_command->sector, rwsec, io_command->track, err );
 		return ( 1 );
 	}
 

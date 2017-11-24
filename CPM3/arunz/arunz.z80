@@ -1,0 +1,2656 @@
+; Program:	ARUNZ (Copyright 1989, all rights reserved, by Jay Sage)
+; Version:	1.1
+; Author:	Jay Sage (with help from Howard Goldstein and Carson Wilson)
+; Date:		October 23, 1993
+
+; History:     See ARUNZxxx.HIS
+
+VERSION$UNIT	equ	'1'
+VERSION$TENTH	equ	'1'
+VERSION$LETTER	equ	' '
+
+.comment \
+
+Notes:
+
+                            ASSEMBLING THE CODE
+			    ===================
+
+To create a type-4 ARUNZ using LINK-80 and Z80ASM, the commands are:
+
+	Z80ASM ARUNZ/6
+	LINK ARUNZ,Z3LIB[S],DSLIB[S],SYSLIB[S,OP]
+	MLOAD ARUNZ=ARUNZ.PRL,T4LDR11
+
+With ZMAC/ZML the commands are
+
+	ZMAC ARUNZ
+	ZML ARUNZ10.4OM=ARUNZ,Z3LIB/,DSLIB/,SYSLIB/,T4LDR11.HDR/P
+
+T4LDR11.HDR is T4LDR11.Z80 assembled to an absolute binary file.
+
+With SLRNK+ the commands are
+
+	Z80ASM ARUNZ/S
+	SLRNK+ ARUNZ/K,SLR,ARUNZ,Z3LIBS/S,DSLIBS/S,SYSLIBS/S,/E
+	MLOAD ARUNZ=ARUNZ.PRL,T4LDR11
+
+SLRNK+ has a somewhat non-standard way of generating PRL files that
+necessitates linking in a header module (SLR.REL above) before the ARUNZ.REL
+module.  The source for this module is a simple "DS 256".  It just allocates
+a page of memory for the header.
+
+I have made things easier by merging all the libraries with SLRIB to make a
+single module LIBS.REL.  This saves disk space, reduces the number of files
+that must be opened, and simplifies the linkage command lines.  It also
+prevents the mistakes of omitting a module or including modules in the wrong
+order.
+
+
+                    Generating a Type-4 Version of ARUNZ
+                    ====================================
+
+See the comments in ARUNZ09S.NOT.
+
+        Making a Version for Extended Multiple Command Line Buffers
+        ===========================================================
+
+See the comments in ARUNZ10.NOT.
+\
+
+CODESIZE	equ	1300h		; Bigger than actual code+data
+
+MCLSIZE		equ	0		; Set to 0 for standard system
+
+;=============================================================================
+
+;			E Q U A T E S
+
+NO	equ	0
+YES	equ	NOT NO
+
+WILDCHAR	equ	'_'
+OPTCHAR		equ	','
+DEFLTCHAR	equ	':'
+TYPECHAR	equ	'>'
+NPROMPTS	equ	4	; Number of prompted input parameters
+FBUFSIZE	equ	4	; File input buffer in pages
+Z33ONLY		equ	NO	; Yes if relying on Z33 parser
+
+CLSIZE		equ	0FFh	; Size of buffer for new command line
+
+; .accept	"Assemble for type 3 or 4? ",ENVTYP
+ENVTYP		equ	4
+XMCL		equ	NO		; Includ extended mcl code
+PINPUT	equ	YES		; Include user input parameters $", $'
+PREG	equ	YES		; Include register parameter $R
+PMEM	equ	YES		; Include memory parameter $M
+PENV	equ	YES		; Include ENV address parameter $A
+PDATE	equ	YES		; Include datestamper date parameter
+
+TBUFF	equ	80h
+FCB	equ	5Ch
+CR	equ	0Dh
+LF	equ	0Ah
+TAB	equ	09h
+BELL	equ	07h
+EOT	equ	1Ah
+
+
+; ----------   Error codes
+
+; ZCPR34 uses the error byte at the beginning of the message buffer as a flag
+; to show what kind of error occurred.  Advanced error handlers will be able
+; to help the user further by suggesting the possible cause of the error.
+
+ECECPERR	equ	6	; ECP error --  command could not be executed
+				; ..by ECP, error handling was forced by a
+				; ..transient for its own reasons
+				; (DO NOT CHANGE FROM 6)
+
+
+;=============================================================================
+
+;		U S E R   M A C R O S
+
+; This macro places configuration flags in the code.
+
+CONFIG	 MACRO
+
+	db	'SIZE'
+CODESIZ:
+	dw	CODESIZE
+
+	db	'TABFLAG'
+TABFLAG:
+	db	0		; Set to 09 to allow tabs as token
+				; ..delimiters
+
+	 IF	XMCL
+	db	'MCLSIZE'
+MCLSIZ:
+	dw	MCLSIZE
+	 ENDIF			; XMCL
+
+; These two flags, which appear just before the marker string 'REG' determine
+; which messages will be displayed by ARUNZ.  The QUIETECP flag applies when
+; ARUNZ has been invoked as an extended command processor.  If invoked by the
+; user, QUIETF applies.  Contrary to what the symbol name would imply, setting
+; bits in the flag turns on the display of that message.
+
+	db	'MSGFLAGS'
+QUIETECP:
+	db	00000100b	; Quiet flag for ECP invocation
+QUIETF:	db	00001110b	; Flag to control display of messages
+				; 	||||||||    ;set bit to display msg
+				; 	|||||||*---- signon message
+				; 	||||||*----- running alias "x" message
+				; 	|||||*------ alias.cmd file not found
+				; 	||||*------- alias "x" not found
+				; 	|||*-------- ECP error (no longer used)
+				; 	||*--------- shell invocation error
+				;		     (no longer used)
+				; 	**---------- bits not assigned
+
+; If the value of REGF is in the range 0..1FH, then that user register will be
+; used to set the values for the three path-related flags to follow.  Bit 0
+; is used to select path searching of some kind.  If it is not set, then the
+; fixed DU is used.  Bit 1 determines whether only the root will be searched.
+; If it is not set, then the entire path will be searched.  Bit 2 determines
+; whether full path searches will include the current directory first.
+
+	db	'REG'
+REGF:	db	0FFh
+
+; PATHF determines whether path searching will be used to locate ALIAS.CMD.
+; If the flag is 0, then the fixed DU area below will be used.  If it is 0FFH,
+; then the other path-related flags will be used to determine how the search
+; is performed.
+
+	db	'PATH'
+PATHF:	db	YES		; Path search flag (NO = use DU given below)
+
+; ROOTF determines whether only the root of the path will be searched.  If it
+; is 0FFH, then only the root will be used; if it is 0, then the entire path
+; will be searched.
+
+	db	'ROOT'
+ROOTF:	db	NO		; NO = use entire path / YES = root only
+
+; If full path searching is selected, then SCANCUR determines whether or not
+; to include the current directory first.
+
+	db	'SCANCUR'
+SCANCUR:
+	db	YES		; YES = search current DU first
+
+; If path searching is disabled, then the explicit directory specified here
+; will be searched for ALIAS.CMD.
+
+	db	'DU'
+CMDDRV:	db	'C' - 'A'	; Drive to use if not path (drive A = 0)
+CMDUSR:	db	0		; User to use if not path
+
+	 ENDM
+
+;=============================================================================
+
+;		E X T E R N A L    R E F E R E N C E S
+
+
+; DSLIB
+
+;EXT	FINDCK,RDCLK <crw>
+
+	EXT	TIMINI,RCLOCK
+
+; Z33LIB or Z34LIB (in Z3LIB in version-4 libraries)
+
+	EXT	Z33CHK,SCAN,FCB1CHK,PRTTYPE,GETCCP,GZMTOP
+	EXT	Z3INIT,GETEFCB,GETENV,GETFN2,GETPATH,GETREG
+	EXT	GETCL1,GETCL2,ZPRSFN,ZSYSCHK,INVERROR
+
+; SYSLIB4
+
+	EXT	SKSP,ISSP,CAPS,PRINT,CRLF,COUT,ACASE1
+	EXT	F$OPEN,F$READ,SETDMA,PFIND,INITFCB
+	EXT	LOGUD,RETUD
+	EXT	GETCST
+
+	 IF	PINPUT
+	EXT	BLINE,GETZEX,PUTZEX
+	 ENDIF
+
+	 IF	PREG
+	EXT	GETREG
+	 ENDIF
+
+	 IF	PMEM OR PENV OR PREG
+	EXT	MA2HC,MA3DC,MAFDC,EVAL16
+	 ENDIF
+
+	 IF	PENV
+	EXT	MHL4HC
+	 ENDIF
+
+	 IF	ENVTYP lt 4
+	EXT	CODEND
+	 ENDIF
+
+
+; ARUNZ-1.Z80	Initialization and Main Code Loop
+
+
+; Initialization Code Section
+
+; TYP3HDR.Z80, Version 1.1, safety header
+
+PENTRY:
+	jr	START00		; Must use relative jump
+	db	0		; Filler
+	db	'Z3ENV'
+TYPE:
+	db	ENVTYP		; Type-3 or -4 environment
+Z3EADR:
+	dw	0fe00h		; Filled in by Z33
+	 if	ENVTYP lt 4
+	dw	PENTRY		; Intended load address
+	 else
+	dw	ldaddr		; Type 4 load address word
+	 endif			; ENVTYP lt 4
+
+	CONFIG			; Macro with configuration flags
+
+IOFCB:
+	ds	1		; Initialized by FXIO
+	db	'ALIAS   '	; File name
+	db	'CMD'		; File type
+	ds	24		; Initialized by FXIO
+
+START00:
+	 if	ENVTYP eq 3
+	ld	hl,0		; Point to warmboot entry
+	ld	a,(hl)		; Save the byte there
+	di			; Protect against interrupts
+	ld	(hl),0C9h	; Replace warmboot with a return opcode
+	rst	0		; Call address 0, pushing RETADDR onto stack
+RETADDR:
+	ld	(hl),a		; Restore byte at 0
+	dec	sp		; Get stack pointer to point
+	dec	sp		; ..to the value of RETADDR
+	pop	hl		; Get it into HL and restore stack
+	ei			; We can allow interrupts again
+	ld	de,RETADDR	; This is where we should be
+	xor	a		; Clear carry flag
+	push	hl		; Save address again
+	sbc	hl,de		; Subtract -- we should have 0 now
+	pop	hl		; Restore value of RETADDR
+	jr	z,START		; If addresses matched, begin real code
+
+	ld	de,NOTZ33MSG-RETADDR ; Offset to message
+	add	hl,de
+	ex	de,hl		; Switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; Return via BDOS print string function
+
+NOTZ33MSG:
+	db	'Bad load address',BELL,'$'
+	 endif			; ENVTYP eq 3
+
+START:				; Initialize
+	ld	hl,(Z3EADR)	; Pt to ZCPR3 environment
+	call	ZSYSCHK		; Print msg if program not properly installed
+	ret	nz		; ..and exit
+	call	Z3INIT		; Initialize ZCPR3 environment
+
+	 IF	Z33ONLY
+
+	call	Z33CHK		; Require Z33 or later
+	jr	z,STARTA
+	call	PRINT
+	db	CR,LF,'Z33 or later required',BELL,0
+	ret
+STARTA:
+	 ENDIF	;Z33ONLY
+
+	ld	(STACK),sp	; Save system stack pointer
+	ld	sp,STACK	; Set up local stack
+
+	call	RETUD		; Save user/disk information
+	ld	(dusave),bc
+
+	ld	a,(REGF)	; See if user register is setting configuration
+	cp	20h		; If not 00..1FH, use hard-coded options
+	jr	nc,START0
+
+	ld	b,a		; Get value of register
+	call	GETREG
+	ld	hl,PATHF	; Set up PATHF from user register
+	bit	0,a		; ..based on bit 0
+	call	INITFLAG
+	ld	hl,ROOTF	; Set up ROOTF based
+	bit	1,a		; ..on bit 1
+	call	INITFLAG
+	ld	hl,SCANCUR	; Set up SCANCUR based
+	bit	2,a		; ..on bit 2
+	call	INITFLAG
+
+START0:
+	xor	a		; Set rflag for non-recursive script
+	ld	(RFLAG),a
+
+	 IF	PINPUT
+	ld	a,2		; Set ZEX input redirection flag off
+	ld	(ZEXFL),a
+	 ENDIF	;PINPUT
+
+	call	GETCST		; Get command status flag
+	and	100b		; See if ECP invocation
+	jr	z,START1	; If not, skip on
+	ld	a,(QUIETECP)	; If so, substitute flag quietecp
+	ld	(QUIETF),a
+	ld	a,0ffh
+START1:	ld	(NLFLAG),a	; Set "new line" flag non-zero
+				; ..zero if prgram not invoked as ECP
+
+	DSEG
+NLFLAG:	ds	1
+	CSEG
+
+;---------------------------------------------------------------------------
+
+; This section of the code defines and allocates space for the various
+; buffers that are needed.
+
+				; Define data buffer areas
+
+	 if	ENVTYP eq 4
+	ld	hl,(CODESIZ)	; Size of code, including lib routines
+	ld	de,PENTRY
+	add	hl,de		; HL now has address of end of code
+	 else
+	call	CODEND		; Use CODEND value for type-3
+	 endif			; ENVTYP eq 4
+
+	ld	(CLBUF),hl	; Command line will be first after code
+
+	 DSEG
+CLBUF	ds	2
+	 CSEG
+
+				; Allocate buffer for the new command line
+	 if	XMCL
+	ld	de,(mclsiz)	; Get extended MCL size
+	ld	a,d		; See if bigger than 100h
+	or	a
+	jr	z,START2	; If so, use this value for the extended MCL
+
+	add	hl,de
+	ld	(HIGHLIMIT),hl	; Save in PUTCH code for overflow test
+	jr	START3
+	 endif			; XMCL
+
+start2:
+	ex	de,hl		; Move buffer pointer to DE
+	call	getcl1
+	or	a		; Check for zero size
+	jp	z,QUIT		; If MCL length is 0, quit
+	ld	c,a		; Save MCL size in C
+	ld	a,h		; Check for no MCL
+	or	l
+	jp	z,QUIT		; If none, quit
+	ld	l,c		; Get CL length into HL
+	ld	h,0
+	add	hl,de
+	ld	(HIGHLIMIT),hl	; Save this as buffer filling limit address
+	ld	hl,CLSIZE	; Use oversize standard buffer
+	add	hl,de
+
+START3:
+	inc	hl		; Room for final null
+
+	 if	ENVTYP eq 4
+BUFFER	DEFL	CLSIZE + 1	; Keep track of buffer allocations
+	 endif			; ENVTYP eq 4
+	 if	XMCL AND (high MCLSIZE ne 0)
+	 if	ENVTYP eq 4
+BUFFER	DEFL	MCLSIZE + 1	; Use extended mcl length if option enabled
+	 endif			; ENVTYP eq 4
+	 endif			; XMCL and (high MCLSIZE ne 0)
+
+	ld	(TAILBUF),hl	; Command tail buffer will be here
+	ld	de,80h		; Allow 128 bytes
+	add	hl,de
+
+	 if	ENVTYP eq 4
+BUFFER	DEFL	BUFFER + 80h	; Tally buffer allocations
+	 endif			; ENVTYP eq 4
+
+	 DSEG
+TAILBUF:
+	ds	2
+	 CSEG
+
+	 IF	PINPUT		; Allow space for user responses to prompts
+	ld	(PROMPTBUF),hl
+	ld	de,NPROMPTS*80h
+	add	hl,de
+
+	 if	ENVTYP eq 4
+BUFFER	DEFL	BUFFER + ( NPROMPTS * 80h )
+	 endif			; ENVTYP eq 4
+
+	xor	a		; Initialize prompt count
+	ld	(PROMPTCNT),a
+
+	 DSEG
+PROMPTBUF:
+	ds	2
+PROMPTCNT:
+	ds	1		; Number of prompts
+	 CSEG
+
+	 ENDIF	;PINPUT
+
+	ld	a,l
+	or	a		; Are we already on a page boundary
+	jr	z,START4	; Skip ahead if so
+	inc	h
+	ld	l,0		; Get to a page boundary
+
+START4:
+	ld	(BUFADR),hl	; File buffer will be here
+
+	ld	de,FBUFSIZE*100h
+	add	hl,de
+
+	 if	ENVTYP eq 4
+BUFFER	DEFL	BUFFER + ( FBUFSIZE * 100h ) + 255
+LDADDR	DEFL	CODESIZE + 100h + BUFFER
+	 endif			; ENVTYP eq 4
+
+	ex	de,hl		; Ending address into DE
+	call	GZMTOP		; Get top of free memory (page) in HL
+	xor	a		; Make sure carry is clear
+	sbc	hl,de
+	jr	nc,FINDEND1	; If no carry, we have enough room
+
+	call	PRINT
+	db	CR,LF,'Insufficient TPA',BELL,0
+	jp	ERRQUIT
+
+FINDEND1:
+	call	SAVETAIL	; Save the command tail in tailbuf
+	call	HELPCHK		; See if built-in help requested
+	call	FINDFILE	; Find the ALIAS.CMD file
+	call	FINDALIAS	; Find the named alias script
+	call	PRTALIAS	; Display alias-running message
+
+				; Process the alias script
+
+	ld	de,(CLBUF)	; Point to buffer for new command line
+
+;---------------------------------------------------------------------------
+
+; This is the main character-processing loop.
+
+				; Strip leading spaces and tabs
+
+STRIP:
+	call	GETCH		; Get next character from ALIAS.CMD
+	jr	z,NXTCHAR1	; Skip ahead if end of line or file
+	cp	' '		; If space, skip over it
+	jr	z,STRIP
+	cp	TAB		; Ditto if tab
+	jr	z,STRIP
+	jr	NXTCHAR1	; Otherwise, process the character
+
+NXTCHAR:
+	call	GETCH		; Get next character from ALIAS.CMD
+NXTCHAR1:
+	jr	z,DONE		; Jump if end of characters
+	cp	'$'		; Parameter lead-in char?
+	jp	z,PARAM
+	cp	'^'		; Control-char lead-in?
+	jr	z,CTRLCH
+
+	call	PUTCH		; Store the character
+	jr	NXTCHAR
+
+;---------------------------------------------------------------------------
+
+; We get here when the alias script has been fully expanded and is ready for
+; insertion into the command line buffer.
+
+; Done -- Buffer is Loaded
+
+DONE:
+	ld	hl,(CLBUF)	; Point to expanded alias
+	ld	a,(hl)		; Skip if empty line
+	or	a
+	jr	z,QUIT
+
+; Test flag for recursive script.  If set, ignore pending commands.
+
+	ld	a,(RFLAG)	; Get recursion flag
+	inc	a		; Set flag and accumulator 0 if flag set
+	jr	z,DONE3		; Recursive script, put final null in buffer
+
+; Get pointer to pending commands
+
+	call	GETCL2		; Set HL to pending commands, A to
+				; ..first character in commands
+
+; Append any commands pending in MCL.  At this point, DE points to end of
+; expanded alias script, and HL points to the next command in the MCL.
+
+DONE2:
+	or	a		; Test character
+	jr	z,DONE3		; Jump if at end of commands
+	call	PUTCH		; Add character to buffer at DE
+	inc	hl		; Get next pending character
+	ld	a,(hl)
+	jr	DONE2
+
+DONE3:
+	call	XPUTCH		; Add the ending null (there's always
+				; ..room for one more character)
+
+; Calculate actual length of new command line and load into BC
+
+	ld	hl,(CLBUF)
+	push	hl
+	ex	de,hl
+	xor	a
+	sbc	hl,de
+	ld	b,h
+	ld	c,l
+
+; Initialize command line pointer in MCL
+
+	call	GETCL1		; HL points to start of MCL buffer
+	ex	de,hl		; Put into DE
+	ld	hl,4		; Offset to beginning of command line
+	add	hl,de		; HL -> MCL command line, DE -> MCL buffer
+	ex	de,hl		; DE -> MCL command line, HL -> MCL buffer
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+
+; Now move the new command line to the MCL
+
+	pop	hl		; HL -> (CLBUF): source for move
+	ldir
+
+; Work complete; return to system
+
+QUIT:
+	ld	sp,(STACK)	; Get old stack value
+	ret			; Back to ZCPR3
+
+; Report MCL overflow error
+
+OVFLERR:
+	call	PRINT
+	db	cr,lf,lf,'***> MCL Overflow <***',cr,lf,0
+	jp	ERRQUIT
+
+; Add character to buffer at DE with limit checking against the address
+; in HIGHLIMIT.  If the carry flag is set on return, then there is room for
+; only one more character.  At standard entry point PUTCH, the code branches
+; on overflow to an alias-overflow-error exit.  At the entry point XPUTCH,
+; the overflow flag is returned to the caller for action.  NOTE: this routine
+; uses self-modifying code.
+
+PUTCH:
+	call	XPUTCH
+	jr	c,OVFLERR
+	ret
+
+XPUTCH:
+	push	hl
+	ld	(de),a		; Save the character
+	inc	de		; Advance pointer
+HIGHLIMIT EQU	$ + 1
+	ld	hl,0		; Filled in by code
+	or	a		; Clear carry but leave character alone
+	sbc	hl,de		; Carry set if overflow
+	pop	hl
+	ret
+
+
+; End of ARUNZ-1.Z80
+
+
+				; Process control character
+
+CTRLCH:
+	call	GETCHC		; Get next character from file
+	and	01Fh		; Convert to control character
+	call	PUTCH		; Store the character
+	jp	NXTCHAR
+
+				; Process parameter
+
+PARAM:
+	call	GETCHC		; Get next character from file
+
+	ld	bc,NXTCHAR	; Establish return address
+	push	bc		; ... on stack
+
+	ld	c,a		; Save parameter character in C
+
+				; Check for digit parameter
+
+	call	DCHK09		; Is it a digit?
+	jr	z,PLOOKUP	; ..if not, go to table lookup
+				; ..else fall through to process as digit
+
+;-----------------------------------------------------------------------------
+
+				; digit parameter 0 .. 9
+
+DIGIT:
+
+	call	SKIPPARAM	; Skip to parameter number in A
+
+				; Copy parameter into new command line
+	ld	a,(TABFLAG)	; Value will be 9 if tabs are allowed
+	ld	b,a		; ..as a token separator
+DIGIT1:
+	ld	a,(hl)		; Get char
+
+	or	a
+	ret	z		; Null is always a delimiter
+	cp	' '
+	ret	z		; Space is always a delimiter
+	cp	b
+	ret	z		; Tab might be a delimiter
+
+	call	PUTCH		; Store the character
+	inc	hl
+	jr	DIGIT1
+
+;-----------------------------------------------------------------------------
+
+; Look up parameter in table
+
+PLOOKUP:
+	ld	a,c		; Get original character back
+	call	ACASE1
+	db	PCOUNT		; Number of entries in table
+	dw	BADFORM		; Error routine
+PARAMTBL:
+	db	'#'		; Insert number of parameters in tail
+	dw	NPARAMS
+	db	'$'		; Insert dollar sign
+	dw	PUTCH
+	db	'^'		; Insert caret
+	dw	PUTCH
+
+	db	'!'		; Entire command line
+	dw	PUTCMD
+	db	'*'		; Entire tail
+	dw	PARAML
+	db	'-'		; Partial tail
+	dw	PARAMLP
+
+	 IF	PDATE
+	db	'D'		; Date parameters
+	dw	DATE
+	 ENDIF	;PDATE
+
+	db	'H'		; Home directory
+	dw	PHOME
+	db	'T'		; Token parameter
+	dw	TOKEN
+
+	db	'S'		; System file parameter
+	dw	SYSFILE
+
+	db	'Z'		; Set recursive mode
+	dw	RECURS
+
+	 IF	PINPUT
+	db	'"'		; User input request
+	dw	USERPROMPT
+	db	''''		; Insertion of user input into command line
+	dw	PROMPTPARAM
+	db	'I'		; Allow ZEX input redirection
+	dw	ZEXIN
+	 ENDIF	;pinput
+
+	 IF	PMEM
+	db	'M'		; Memory contents
+	dw	MEMORY
+	 ENDIF
+
+	 IF	PREG
+	db	'R'		; Register value
+	dw	REGISTER
+	 ENDIF
+
+	 IF	PENV
+	db	'A'		; Address of system module
+	dw	ENVDATA
+	db	'+'		; Offset system address data
+	dw	ENVOFFSET
+	db	'@'		; Indirect versions of above two params
+	dw	INDIRECT
+	 ENDIF
+
+PCOUNT	equ	( $ - PARAMTBL ) / 3
+
+;-----------------------------------------------------------------------------
+
+; This parameter inserts the number of parameters in the command tail as
+; a floating decimal number.
+
+NPARAMS:
+	ld	c,0
+NPARAMS1:
+	inc	c		; Try next parameter
+	ld	a,c		; Get value into A for SKIPPARAMS
+	push	bc		; Protect value in C
+	call	SKIPPARAM	; Skip to that parameter
+	pop	bc		; Restore value in C
+	or	a		; Set flag for last char found
+	jr	nz,NPARAMS1	; If not null, continue search
+
+	dec	c		; Back to last parameter found
+	ld	a,c		; Test for value > 9
+	cp	10
+	jr	c,NPARAMS3	; Skip if less than 10
+	ld	b,-1		; Divide by 10 by subtracting
+NPARAMS2:
+	inc	b		; Increment tens count
+	sub	10		; Subtract 10
+	jr	nc,NPARAMS2	; Loop until carry
+	add	a,10		; Make positive again
+	ld	c,a		; Save ones place value in C
+	ld	a,b		; Get tens digit
+	add	a,'0'		; Convert to ASCII
+	call	PUTCH		; Add character to command line
+NPARAMS3:
+	ld	a,c		; Get ones digit
+	add	a,'0'		; Convert to ASCII
+	jp	PUTCH		; Add character and return
+
+;-----------------------------------------------------------------------------
+
+; Date parameters: format $Dt, where 't' is the type of date item.  The values
+; are	Y (year), M (month), D (day), H (hour in 00-23 format), C (hour in
+; civil format 01-12), N (miNute), S (seconds), and A (AM/PM flag).
+
+	 IF	PDATE
+
+DATE:
+	call	GETCHC
+	ld	(PARAMTYPE),a	; Save character
+
+	DSEG
+DATEBUF:
+	DS	6
+	 CSEG
+
+	call	TIMINI		; Make sure clock is supported
+	ret	z		; If not, return null parameter
+	ld	hl,DATEBUF	; Read the clock
+	push	hl
+	push	de
+	call	RCLOCK
+	pop	de
+	pop	hl
+;. . <crw>
+
+	ld	a,(PARAMTYPE)
+	cp	'Y'
+	jr	z,PUTHEX
+	INC	HL
+	cp	'M'
+	jr	z,PUTHEX
+	INC	HL
+	cp	'D'
+	jr	z,PUTHEX
+	INC	HL
+	cp	'H'
+	jr	z,PUTHEX
+	cp	'C'
+	jr	z,CIVHOUR
+	cp	'A'
+	jr	z,AMPM
+	inc	hl
+	cp	'N'
+	jr	z,PUTHEX
+	INC	HL
+	cp	'S'
+	jp	nz,BADFORM
+
+PUTHEX:
+	ld	a,(hl)		; HL points to year, month, etc.
+	rra
+	rra
+	rra
+	rra
+	call	PRINTHEX1
+	ld	a,(hl)
+PRINTHEX1:
+	and	0Fh
+	add	a,'0'		; Convert to ascii
+	jp	PUTCH		; Store the character and return
+
+;--------------------
+
+AMPM:
+	ld	a,(hl)		; HL points to hours
+	cp	12h
+	ld	a,'A'		; Ready for AM
+	jr	c,AMPM1
+	ld	a,'P'
+AMPM1:
+	call	PUTCH		; Store the character
+	ld	a,'M'
+	jp	PUTCH		; Store the character and return
+
+;--------------------
+
+CIVHOUR:
+	ld	a,(hl)		; HL poins to hour
+	or	a		; See if 00h
+	jr	nz,CIVHOUR1
+	ld	a,24h		; Convert 00 to 24
+CIVHOUR1:
+	cp	13h
+	jr	c,PUTHEX
+	sub	12h
+	daa
+	ld	(hl),a		; Store at (hl)
+	jr	PUTHEX
+
+	 ENDIF	;PDATE
+
+;-----------------------------------------------------------------------------
+
+; This parameter, of the form $Pp#, where # is the number of the prompted input
+; string to substitute.  This number cannot be larger than the maximum number
+; of prompted inputs allowed (NPROMPTS) or the actual number of prompted
+; inputs supplied by the earlier script contents.  The 'p' option specifies
+; the part of the prompt to be used.
+
+	 IF	PINPUT
+
+PROMPTCHK:
+	ld	hl,TOKENFLAG
+	ld	(hl),0		; Show nonparsed token type
+	cp	'L'		; Entire user line
+	ret	z
+	cp	';'		; One command max (not past semicolon)
+	ret	z
+	cp	'E'		; Exactly one token (as is)
+	ret	z
+
+	inc	(hl)		; Show parsed token type
+	ld	hl,OPTTBL	; Point to table of valid options
+	ld	bc,OPTBLEN	; Length of table
+	cpir			; Check for a valid option
+	ret	z
+	jp	BADFORM		; Display message if invalid option
+
+opttbl:			; Table of valid parsing options
+	db	'F'		; File name and type
+	db	'N'		; File name
+	db	'T'		; File type
+	db	'Z'		; Crunched file type
+	db	'Q'		; Squeezed file type
+	db	'D'		; Drive
+	db	'U'		; User
+	db	'C'		; Token with DIR: converted to DU:
+	db	'P'		; Prefix
+	db	'S'		; Prefix without colon
+optblen	equ	$-opttbl
+
+PROMPTPARAM:
+	call	GETCHC
+	ld	(PARAMTYPE),a	; Save the character
+	call	PROMPTCHK	; Make sure it is a valid option
+
+	call	GETCH		; Get user string number
+	sub	'1'		; Convert to decremented numeric value
+	ld	hl,PROMPTCNT	; Point to number of strings entered
+	cp	(hl)
+	jp	nc,BADFORM	; Can't ask for one that has not been defined
+
+	inc	a		; Shift buffer number to range 1..
+	call	GETPBUFPTR	; Get pointer to the requested input string
+
+	ld	a,(TOKENFLAG)	; See if parsing is required
+	or	a
+	jp	nz,TOKEN1	; If so, branch to token parsing code
+
+	ld	a,(PARAMTYPE)	; If we want just a token, skip leading spaces
+	cp	'E'
+	call	z,SKSP
+	ld	b,a		; Get parameter type requested into B
+	ld	a,(TABFLAG)	; Possible tab character
+	ld	c,a		; ...in c
+PROMPTP1:
+	ld	a,(hl)		; Get source character
+	or	a		; Check for terminating null
+	ret	z		; If so, return without storing character
+	ld	a,b		; Get parameter type
+	cp	'L'		; If requesting entire line, continue
+	ld	a,(hl)		; Get character back
+	jr	z,PROMPTP2
+	cp	';'		; If semicolon, end of token or command
+	ret	z		; ..so return without storing character
+	ld	a,b		; See if request limited to a exact token
+	cp	'E'
+	ld	a,(hl)		; Get character back again
+	jr	nz,PROMPTP2	; If parameter type not 'E,' go on
+	cp	' '		; If space, end of token
+	ret	z
+	cp	c		; If tab, end of token
+	ret	z
+
+PROMPTP2:
+	call	PUTCH		; Store the character
+	inc	hl		; Advance pointer
+	jr	PROMPTP1
+
+	 ENDIF	;PINPUT
+
+;	 IF	PINPUT OR PREG
+	 DSEG
+PARAMTYPE:
+	ds	1
+	 CSEG
+;	 ENDIF	;PINPUT OR PREG
+
+;-----------------------------------------------------------------------------
+
+; Return value of a datum from the ENV, or for entry point INDIRECT the
+; contents of the computed memory address.
+
+	 IF	PENV
+
+	DSEG
+INDFLAG:
+	ds	1
+	CSEG
+
+INDIRECT:
+	ld	a,0FFh		; Set flag for memory indirection
+	ld	(INDFLAG),a
+	call	GETCONVTYPE	; Get format for data conversion
+	call	GETCHC		; Get 'A' or '+'
+	cp	'A'
+	jr	z,INDENVDATA
+	cp	'+'
+	jr	z,INDENVOFF
+	jp	BADFORM		; If neither, we have a parameter error
+
+ENVOFFSET:
+	xor	a		; Set flag for no memory indirection
+	ld	(INDFLAG),a
+INDENVOFF:
+	call	GETADDR
+	push	de		; Save pointer to command line
+	push	hl		; Save address value
+	call	GETNUMBER	; Get next four characters as number in DE
+	pop	hl		; Get address value back into HL
+	add	hl,de
+	pop	de		; Restore pointer to command line
+	jr	PUTVAL		; Put value into command line
+
+ENVDATA:
+	xor	a		; Set flag for no memory indirection
+	ld	(INDFLAG),a
+INDENVDATA:
+	call	GETADDR		; Fall through to PUTVAL
+
+PUTVAL:				; PUTVALUE with possible indirection
+	ld	a,(INDFLAG)
+	or	a
+	jr	z,PUTVALUE	; Put in value in HL if no indirection
+	ld	a,(hl)		; Otherwise use value of contents of (HL)
+	jp	MEMORY2
+
+;--------------------
+
+; Put value in HL into the command line
+
+PUTVALUE:
+	push	de		; Save pointer to command being built
+	ld	de,TBUFF	; Place to put the ASCII string
+	push	de		; Save tbuff pointer
+	call	MHL4HC		; Convert to ASCII hex representation
+	pop	hl		; HL points to TBUFF
+	pop	de		; DE points to cmd line
+;	ld	bc,4		; Characters to copy
+;	ldir			; Move them
+;	ret
+	ld	b,4		; Characters to copy
+	JP	PUTC		; Move them
+
+;--------------------
+
+GETADDR:
+	call	GETCHC		; Get next character from ALIAS.CMD
+	call	ACASE1
+	db	ENVCNT		; Number of entries in table
+	dw	BADFORM		; Default routine
+ENVTBL:
+	db	'B'		; BIOS address
+	dw	GETBIOS
+	db	'C'		; CCP address
+	dw	GETCPR
+	db	'D'		; DOS address
+	dw	GETDOS
+	db	'E'		; ENV address
+	dw	ENVADDR
+	db	'F'		; FCP address
+	dw	FCPADDR
+	db	'I'		; IOP address
+	dw	IOPADDR
+	db	'L'		; MCL (LINE) address
+	dw	LINADDR
+	db	'M'		; MSG address
+	dw	MSGADDR
+	db	'N'		; NDR address
+	dw	NDRADDR
+	db	'P'		; PATH address
+	dw	PATHADDR
+	db	'R'		; RCP address
+	dw	RCPADDR
+	db	'S'		; SHELL address
+	dw	SHELLADDR
+	db	'X'		; XFCB address
+	dw	XFCBADDR
+ENVCNT	equ	( $ - ENVTBL ) / 3
+
+;----------------
+
+ENVADDR:
+	ld	c,01Bh		; Offset to ENV address in ENV
+	jr	PUTENVVAL
+FCPADDR:
+	ld	c,012h
+	jr	PUTENVVAL
+IOPADDR:
+	ld	c,00Fh
+	jr	PUTENVVAL
+LINADDR:
+	ld	c,018h
+	jr	PUTENVVAL
+MSGADDR:
+	ld	c,022h
+	jr	PUTENVVAL
+NDRADDR:
+	ld	c,015h
+	jr	PUTENVVAL
+PATHADDR:
+	ld	c,009h
+	jr	PUTENVVAL
+RCPADDR:
+	ld	c,00Ch
+	jr	PUTENVVAL
+SHELLADDR:
+	ld	c,01Eh
+	jr	PUTENVVAL
+XFCBADDR:
+	ld	c,024h
+
+PUTENVVAL:
+	ld	b,0		; BC has offset
+	ld	hl,(Z3EADR)	; ENV address into HL
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		; Package/module address in HL
+	ret
+
+;----------------
+
+GETCPR:
+	ld	bc,3FH-8	; Additional offset to CCP address in ENV
+	call	GETENVTYP
+	ret	c		; Value in HL is what we want if C set
+	ld	hl,(1)		; Otherwise work from BIOS warmboot
+	ld	bc,-0E00H-800H-3
+	add	hl,bc
+	ret
+
+GETDOS:
+	ld	bc,3FH-8+3	; Additional offset to DOS address in ENV
+	call	GETENVTYP
+	ret	c		; Value in HL is what we want if C set
+	ld	hl,(1)		; Otherwise work from BIOS warmboot
+	ld	bc,-0E00H-3
+	add	hl,bc
+	ret
+
+GETBIOS:
+	ld	bc,3FH-8+6	; Additional offset to BIOS address in ENV
+	call	GETENVTYP
+	ret	c		; Value in HL is what we want if C set
+	ld	hl,(1)		; Otherwise work from BIOS warmboot
+	dec	hl		; Back up to cold boot address
+	dec	hl
+	dec	hl
+	ret
+
+GETENVTYP:
+	push	bc
+	ld	hl,(Z3EADR)
+	ld	bc,8		; Offset to ENV type
+	add	hl,bc
+	ld	a,(hl)		; Get ENV type into A
+	pop	bc
+	add	hl,bc		; Point to package address
+	ld	c,(hl)		; Get the value into HL eventually
+	inc	hl
+	ld	h,(hl)
+	ld	l,c
+	rla			; Set carry if extended ENV type
+	ret
+
+	 ENDIF	;PENV
+
+;-----------------------------------------------------------------------------
+
+; Parameter $R
+;
+; The value of the designated system register is converted to the form
+; designated.  The parameter format is $Rt##, where 't' is the type of
+; conversion and '##' is an EXACTLY two-digit hex number of the register to
+; be used.  The allowed conversion types are:
+;	'H'	hex (HH)
+;	'F'	floating decimal (D, DD, or DDD depending on the value
+;	'D'	full decimal with leading zeros (DDD)
+;	'T'	two decimal digits (DD)
+;	'O'	one decimal digit (D)
+;	'A'	ascii (just take the value as is)
+;
+; The 'T' and 'O' types will give a bad script format error if the value of
+; the register is out of range.
+
+	 IF	PREG
+
+REGISTER:
+	call	GETCONVTYPE	; Get type of conversion
+	push	de		; Save pointer to command line
+	call	GETNUMB2	; Get register number into DE
+	ld	a,e		; Move to A
+	cp	20h		; Allow values from 00 to 1F
+	jp	nc,BADFORM
+	pop	de
+	ld	b,a		; Get value of specified register
+	call	GETREG
+	jr	MEMORY2		; Common code for putting value in cmd
+
+	 ENDIF	;PREG
+
+;--------------------
+
+	 IF	PREG OR PMEM OR PENV
+
+GETCONVTYPE:
+	call	GETCHC		; Get the next character (register ID)
+	ld	(PARAMTYPE),a
+	ld	hl,CNVTBL	; Point to list of acceptable values
+	ld	bc,CNVTBLLEN
+	cpir
+	ret	z		; Return if legal option
+	jp	BADFORM
+
+CNVTBL:
+	db	'A'
+	db	'H'
+	db	'F'
+	db	'D'
+	db	'T'
+	db	'O'
+cnvtbllen equ	$-cnvtbl
+
+	 ENDIF	; PREG OR PMEM OR PENV
+
+;-----------------------------------------------------------------------------
+
+; Parameter $M
+;
+; Invoked as $Mnnnn, where 'nnnn' is exactly four characters representing a
+; hexadecimal address, it returns the ASCII two-character string representing
+; the contents of that memory location.
+
+	 IF	PMEM
+
+MEMORY:
+	call	GETCONVTYPE	; Get type of conversion
+	push	de
+	call	GETNUMBER
+	ld	a,(de)		; Get value at designated address
+	pop	de
+
+	 ENDIF	;PMEM
+
+	 IF	PMEM OR PENV OR PREG
+
+MEMORY2:
+	ld	c,a		; Save number to convert in C
+	ld	a,(PARAMTYPE)	; Find out kind of conversion to perform
+	cp	'A'		; ASCII (use value as is)?
+	jr	nz,MEMORY3
+	ld	a,c		; Store the value directly
+	call	PUTCH
+	ret
+MEMORY3:
+	push	de		; Save pointer to command line
+	ld	de,TBUFF	; Place to put the ASCII string
+	push	de		; Save tbuff pointer
+	ld	b,a		; Save conversion type letter in B
+
+	cp	'H'		; Two-digit hex?
+	jr	z,HCONVERT
+
+	cp	'F'		; Floating decimal?
+	jr	z,FCONVERT
+
+	ld	a,c		; Get number to convert
+	call	MA3DC		; For other cases, start with all three digits
+	xor	a		; Mark end with null
+	ld	(de),a
+
+	pop	hl		; Point to beginning of converted number
+	ld	a,b		; Check for conversion type 'D'
+	cp	'D'
+	jr	z,CONVERT1A	; If so, copy the string
+
+	ld	a,(hl)		; Make sure highest digit is '0'
+	cp	'0'
+	jp	nz,BADFORM
+	inc	hl		; Point to second digit
+	ld	a,b		; Check for conversion type 'T'
+	cp	'T'
+	jr	z,CONVERT1A	; If so, copy string
+	ld	a,(hl)		; Make sure second digit is also '0'
+	cp	'0'
+	jp	nz,BADFORM
+	inc	hl
+	jr	CONVERT1A
+
+FCONVERT:
+	ld	a,c		; Get number to convert
+	call	MAFDC		; Convert to up-to-three decimal digits
+	jr	CONVERT1
+
+HCONVERT:
+	ld	a,c		; Get number to convert
+	call	MA2HC		; Convert to ASCII hex representation
+
+CONVERT1:
+	xor	a		; Mark end of converted string with null
+	ld	(de),a
+	pop	hl		; HL points to tbuff
+CONVERT1A:
+	pop	de		; DE points to cmd line
+CONVERT2:
+	ld	a,(hl)		; Source digit
+	or	a		; Check for end of string
+	ret	z		; If so, quit
+	call	PUTCH		; Store the character
+	inc	hl
+	jr	CONVERT2
+
+;--------------------
+
+; Returns value in DE of number represented by next four characters in the
+; script.  At entry point GETNUMB2 only (and exactly) two characters are used.
+
+GETNUMB2:
+	ld	b,2		; Read two characters
+	jr	GETNUMB0
+
+GETNUMBER:
+	ld	b,4		; Read four characters
+
+GETNUMB0:
+	ld	c,b		; Save character count in C also
+	ld	hl,TBUFF	; Place to put characters
+	push	hl
+GETNUMB1:
+	call	GETCHC		; Read characters from cmd file
+	ld	(hl),a		; Save the character
+	inc	hl		; Bump the pointer
+	djnz	GETNUMB1	; Loop through four characters
+
+	ld	(hl),0		; Mark end of string
+	pop	hl		; Point to the string read
+	call	EVAL16		; Evaluate as hex number
+	ld	a,l		; Make sure all four (two) characters were ok
+	sub	80h
+	cp	c		; Should be number of characters read
+	jp	nz,BADFORM	; If E not 4, bad format
+	ret
+
+	 ENDIF	;PMEM OR PENV OR PREG
+
+;-----------------------------------------------------------------------------
+
+; Parameter $"
+;
+; Display prompt and get input from user
+
+; The text up to the next double quote is sent to the console after a CRLF.
+; If a caret is encountered, then the next character is converted to a control
+; character before echoing to the screen.  If the character is a dollar sign,
+; then the next character is sent no matter what it is (e.g., a caret, a double
+; quote, or a dollar sign).  Then the user is prompted for input which is copied
+; to a buffer for later use by the $' parameter.
+
+	 IF	PINPUT
+
+ZEXIN:				; Set ZEXFL to allow redirection
+	xor	a		; Zero for normal ZEX operation
+	ld	(ZEXFL),a
+	ret
+
+USERPROMPT:
+	call	CRLF		; Start new line
+
+USERP1:
+	call	GETCH		; Get next char from cmd file
+	jp	z,BADFORM
+	cp	'"'		; See if end of prompt
+	jr	z,USERP4
+
+	cp	'^'		; See if control character lead-in
+	jr	nz,USERP2	; If not, skip control character processing
+
+	call	GETCHC		; Get next character
+	and	1Fh		; Convert to control character
+	jr	USERP3		; ..and output it
+
+USERP2:
+	cp	'$'		; See if escape character (to allow ^)
+	jr	nz,USERP3	; If not, output the character
+	call	GETCHC		; Otherwise get next character
+
+USERP3:
+	call	COUT		; Send character to console
+	jr	USERP1		; ..and go back for more
+
+USERP4:
+	ld	hl,TBUFF	; Set up input buffer
+	ld	(hl),7Dh
+	call	GETZEX		; Get ZEX redirection flag
+	push	af		; Save it
+	ld	a,(ZEXFL)	; Get ARUNZ redirection setting ($I parameter)
+	call	PUTZEX
+	call	BLINE		; Get user input (capitalization irrelevant)
+	pop	af		; Get original redirection flag back
+	call	PUTZEX		; ..and restore it
+	ld	a,2		; Reset default to no ZEX redirection
+	ld	(ZEXFL),a	; ..for next prompt
+
+	push	de		; Save pointer to command line
+	push	hl		; Save pointer to beginning of user input
+	ld	hl,PROMPTCNT	; Point to current count of inputs
+	ld	a,(hl)		; Check for legal number of inputs
+	cp	NPROMPTS
+	jp	nc,BADFORM
+	inc	a		; Advance count
+	ld	(hl),a
+	call	GETPBUFPTR	; Get pointer to correct buffer (numbered 1..)
+	ex	de,hl		; Destination into DE
+	pop	hl		; Restore pointer to source
+	ld	bc,7eh		; Max length of user input
+	ldir
+
+	pop	de
+	ret
+
+;--------------------
+
+; On entry A contains the prompted input buffer to which a pointer is to be
+; returned in HL.  The buffers are numbered from 1 (not zero) to conform to
+; the user's perspective.  No validity checks are performed here.  The BC
+; register is affected.
+
+GETPBUFPTR:
+	ld	hl,(PROMPTBUF)
+	ld	bc,80h		; Spacing between strings
+PBUFPTR1:
+	dec	a
+	ret	z
+	add	hl,bc
+	jr	PBUFPTR1
+
+	 ENDIF			; Pinput
+
+;-----------------------------------------------------------------------------
+
+; Token parsing parameters $Tp# (at entry TOKEN).
+
+CONVSPEC:
+	call	PARSEP		; Parse the token
+	call	FCB1CHK		; See if parse error detected
+	jr	nz,CONVSPEC0	; If so, leave token as it was
+	ld	a,(TBUFF)	; Was there a directory prefix?
+	or	a
+	jr	z,FULLSPEC1	; If not, use FULSPEC
+	cp	':'		; Colon only?
+	jr	nz,CONVSPEC1	; If not, branch
+
+CONVSPEC0:
+	ld	b,0		; Include colon (flag used at PREFIX1)
+	call	PREFIX1		; Put prefix into command line (colon only)
+	jr	FULLSPEC1	; ..followed by full filename
+
+CONVSPEC1:			; Convert to explicit DU:
+	call	DRVSPEC1	; Put in drive letter
+	call	USRSPEC1	; Put in user number
+	ld	a,':'		; Put in colon
+	call	PUTCH		; Store the character
+	jr	FULLSPEC1	; Put in full filename
+
+;--------------------
+
+FULLSPEC:
+	call	PARSEP
+FULLSPEC1:
+	call	NAMESPEC1	; Get name first
+	ld	hl,FCB+1+8	; Point to file type
+	ld	a,(hl)		; See if any type given
+	cp	' '
+	ret	z		; If not, we are done
+	ld	a,'.'		; Put dot into command
+	call	PUTCH		; Store the character
+	jp	PUTT		; Put file type into command
+
+;--------------------
+
+TOKEN:
+	xor	a		; Set flag to select command line token
+	ld	(TOKENFLAG),a
+
+	 DSEG
+TOKENFLAG:
+	ds	1
+	 CSEG
+
+	call	GETCHC		; Get the part of token requested
+	ld	(PARAMTYPE),a	; Save parameter type option
+TOKEN1:
+	ld	a,(PARAMTYPE)	; Allow for entry from user input parser
+	cp	'C'		; Full spec with DIR: converted to DU:
+	jr	z,CONVSPEC
+	cp	'F'		; Full file name and type
+	jr	z,FULLSPEC
+	cp	'U'		; User only
+	jr	z,USRSPEC
+	cp	'N'		; File name only
+	jr	z,NAMESPEC
+	cp	'T'		; File type only
+	jr	z,TYPESPEC
+	cp	'Z'		; Crunched file type
+	jr	z,CRNCHSPEC
+	cp	'Q'		; Squeezed file type
+	jr	z,SQZSPEC
+	cp	'P'		; Directory prefix (including colon)
+	jr	z,PREFIX
+	cp	'S'		; Short directory prefix (not including colon)
+	jr	z,SPREFIX
+	cp	'D'		; Drive only
+	jp	nz,BADFORM
+
+;--------------------
+
+; Parameter $td#, #=0..9
+;
+; Return drive letter of drive specified in the indicated token.  If bad value
+; of #, report bad script format.
+
+DRVSPEC:
+	call	PARSEP		; Get token and parse
+DRVSPEC1:
+	ld	a,(FCB)		; Get drive value
+	dec	a		; Shift to range 0..15 (or FF if default)
+	jp	p,DRVSPEC2	; Skip getting default if positive
+	ld	a,(DUSAVE+1)	; Get default drive number
+
+DRVSPEC2:
+	add	a,'A'		; Convert to ascii
+	jp	PUTCH		; Store the character and return
+
+;----------------
+
+; Parameter $tu#, #=0..9
+;
+; Return user number specified in the indicated token.  If bad value of #,
+; report bad script format.
+
+USRSPEC:
+	call	PARSEP		; Get token and parse
+USRSPEC1:
+	ld	a,(FCB+13)	; Get user number
+	jp	PUTNUM		; Put number into command
+
+;----------------
+
+; Parameter $tn#, #=0..9
+
+; Returns the file name specified by token #.  If # is not a valid value,
+; a warning is displayed.
+
+NAMESPEC:
+	call	PARSEP		; Get token and parse
+NAMESPEC1:
+	ld	hl,FCB+1	; Copy name of file
+	jp	PUTN
+
+;----------------
+
+; Parameter $tt#, #=0..9
+
+; Returns the file type specified by token #.  If # is not a valid value,
+; a warning is displayed.
+
+TYPESPEC:
+	call	PARSEP		; Get token and parse
+	ld	hl,FCB+1+8	; Copy type of file
+	jp	PUTT
+
+;----------------
+
+; Parameters $tz# and $tq#, #=0..9
+
+; Returns the file type of the crunched ($tz) or squeezed ($tq) file.  If #
+; is not a valid value, a warning is displayed.
+
+SQZSPEC:
+	ld	b,'Q'
+	jr	COMPSPEC
+CRNCHSPEC:
+	ld	b,'Z'
+COMPSPEC:
+	push	bc
+	call	PARSEP		; Get token and parse
+	pop	bc
+
+; This is an entry point from the $sz# and $sq# parameters.  B contains
+; the special character, and the file type is in the FCB.
+
+PUTCOMP:
+	ld	hl,FCB+1+9	; Point to middle letter of type
+	LD	A,(HL)		; Save original middle character
+	ld	(hl),b
+	dec	hl		; Point to first char of file type
+	cp	b		; Was original middle char same as special char
+	jr	z,PUTCOMP1	; If so treat like null file type
+	ld	a,(hl)		; Check for null file type
+	cp	' '		; If not a space character
+	jr	nz,CSPEC1	; ..go ahead
+PUTCOMP1:
+	push	hl		; Else save pointer to file type
+	inc	hl		; Advance to last byte
+	inc	hl
+	ld	(hl),b		; Put in special character
+	pop	hl		; Same thing for first byte
+	ld	(hl),b
+CSPEC1:
+	jp	PUTT
+
+;----------------
+
+; This parameter returns the directory prefix of the designated token.
+
+SPREFIX:
+	call	PARSEP		; Get token and parse
+	ld	b,':'		; Stop at colon
+	jr	PREFIX1
+PREFIX:
+	call	PARSEP		; Get token and parse
+	ld	b,0		; Stop only at null
+
+PREFIX1:			; Entry point for token conversion
+	ld	hl,TBUFF	; Point to prefix string
+PUTSTR:
+	ld	a,(hl)
+	or	a
+	ret	z		; Return if end of string
+	cp	b		; See if alternative end (colon)
+	ret	z		; Return if so
+	call	PUTCH		; Store the character
+	inc	hl		; Bump pointers
+	jr	PUTSTR
+
+;----------------
+
+; If entered with TOKENFLAG equal to 0, then this routine gets the requested
+; parameter number and finds that parameter.  If TOKENFLAG is nonzero, then it
+; uses whatever string HL is pointing to.  It then parses the string into the
+; default FCB using the Z33 parser.  In addition, the parameter string is
+; scanned for a directory prefix, and the prefix (if any), including the colon,
+; is placed into the temporary buffer at 80H.
+
+PARSEP:
+	ld	a,(TOKENFLAG)
+	or	a
+	jr	nz,PARSEP0
+	call	GETCHC		; Get next character in file
+	call	DCHK09		; Check for value 0..9
+	jp	z,BADFORM
+
+	call	SKIPPARAM	; Skip to desired parameter
+
+PARSEP0:
+	push	de		; Save pointer to command line
+	ld	de,TBUFF	; Place to keep directory prefix as given
+	push	hl		; Save pointer to parameter
+PARSEP1:
+	ld	a,(hl)		; Copy characters to TBUFF
+	ldi
+	cp	':'		; If colon, we found the prefix
+	jr	z,PARSEP2
+	cp	' '+1		; See if end of token
+	jr	nc,PARSEP1	; If not, continue copying characters
+	ld	de,TBUFF	; Otherwise, null out the buffer
+PARSEP2:
+	xor	a
+	ld	(de),a		; Put null at end of string
+	pop	hl		; Restore pointer to parameter
+PARSEP3:
+	LD	BC,(DUSAVE)
+	call	LOGUD		; Return to original directory
+	ld	de,FCB		; Parse into default fcb
+
+	 IF	Z33ONLY
+	call	SCAN		; Use Z33 parser
+	 ELSE	;NOT Z33ONLY
+	call	Z33CHK		; Z if Z33 present
+	push	af		; Save result of Z33CHK
+	call	z,SCAN		; Use Z33 parser if possible
+	pop	af
+	call	nz,ZPRSFN	; Else use Z3LIB routine
+	 ENDIF;	Z33ONLY
+
+	ld	bc,(CMDDIR)
+	call	LOGUD		; Log back into ALIAS.CMD's dir
+	pop	de
+	ret
+
+;-----------------------------------------------------------------------------
+
+; Parameter 'H' for home DU.  Followed by 'D' for drive, 'U' for user, or
+; 'B' for both (i.e., DU).
+
+PHOME:
+	call	GETCHC		; Get the next character
+	call	ACASE1
+	db	HCOUNT		; Number of entries in table
+	dw	BADFORM		; Default routine
+HOMETBL:
+	db	'D'
+	dw	PARAMD
+	db	'U'
+	dw	PARAMU
+	db	'B'
+	dw	PARAMDU
+HCOUNT	equ	( $ - HOMETBL ) / 3
+
+;----------------
+
+; Logged DU at time ARUNZ called
+
+PARAMDU:
+	call	PARAMD		; Get drive and fall through to user
+
+;----------------
+
+; Logged user number at time ARUNZ invoked
+
+PARAMU:
+	ld	a,(DUSAVE)	; Get user value of default DU:
+	jp	PUTNUM
+
+;----------------
+
+; Current drive at time ARUNZ invoked
+
+PARAMD:
+	ld	a,(DUSAVE+1)	; Get drive value of default DU:
+	add	a,'A'		; Convert to ASCII
+	call	PUTCH		; Store the character and return
+
+;-----------------------------------------------------------------------------
+
+DCHK19:				; Check for digit 1 to 9
+	ld	b,'1'
+	jr	DIGITCHK
+
+DCHK09:				; Check for digit 0 to 9
+	ld	b,'0'
+
+DIGITCHK:
+	sub	b		; Convert and check for < value in b
+	cp	10
+	ret	c		; Carry set (zero reset) if good
+DIGITCHK1:
+	xor	a		; Set zero flag
+	ret
+
+;-----------------------------------------------------------------------------
+
+; System file name parameters $Sp#.
+
+SYSFILE:
+	call	GETCHC		; Get part of name specified
+
+	push	af		; Save character
+	call	GETFNUM		; Get file number (goes to BADFORM if bad)
+	call	PTFN		; Set HL to file name
+	pop	af		; Restore part designator
+
+	cp	'N'		; Name only
+	jp	z,PUTN
+	cp	'T'		; Type only
+	jr	z,PARAMT
+	cp	'Z'		; Crunched type
+	jr	z,PARAMZ
+	cp	'Q'		; Squeezed type
+	jr	z,PARAMQ
+	cp	'F'		; Full file name and type
+	jr	nz,BADFORM
+
+;--------------------
+
+; Parameter $s#, #=1..4
+;
+; Returns the file name and type stored in the designated system file.
+
+PARAMF:
+	call	PUTN		; Put file name
+	ld	a,'.'		; Dot
+	call	PUTCH		; Store the character
+	jp	PUTT		; Put file type
+
+;--------------------
+
+; Parameter $st#, #=1..4
+;
+; Returns the file type only stored in the designated system file.
+
+PARAMT:
+	ld	bc,8		; Point to file type
+	add	hl,bc
+	jp	PUTT		; Put file type
+
+;--------------------
+
+; Parameters $sz# and $sq#, #=1..4
+;
+; Returns the crunched or squeezed version of the file type.
+
+PARAMQ:
+	ld	b,'Q'		; Special character for squeezed file
+	jr	COMPPARAM
+PARAMZ:
+	ld	b,'Z'		; Special character for crunched file
+COMPPARAM:
+	push	bc
+	push	de
+	ld	bc,8		; Point to file type
+	add	hl,bc
+	ld	de,FCB+1+8	; Point to file type of FCB
+	ld	c,3
+	ldir			; Copy system file type to FCB
+	pop	de		; Restore registers
+	pop	bc
+	jp	PUTCOMP		; Return the compressed file type
+
+;--------------------
+
+; GET SYSTEM FILE NUMBER
+
+; Get File Number (1 to 4)
+;	If valid number, return with value 0..3 in A
+;	If not valid, vector to BADFORM
+
+GETFNUM:
+	call	GETCH		; Get next character from file
+	sub	'1'		; Convert
+	cp	4		; Range?
+	jr	nc,BADFORM	; Error if <0 or >4
+	ret
+
+;--------------------
+
+; POINT TO SYSTEM FILE
+
+; Point to system file name whose number (0-3) is in A.  The value in A is
+; not checked.
+
+PTFN:
+	call	GETFN2		; SYSLIB routine to set HL to first file
+	inc	a		; Shift to range 1..4
+	ld	b,a		; Number in B
+PTFN1:
+	dec	b		; Done?
+	ret	z
+
+				; Add 11 to HL to increment to next system file name
+
+	push	de		; Save DE
+	ld	de,11		; Size of file name and type
+	add	hl,de		; Pt to next
+	pop	de		; Restore DE
+	jr	PTFN1
+
+;-----------------------------------------------------------------------------
+
+; Parameter is entire command line
+
+PUTCMD:
+	xor	a		; Use value of 0 in SKIPPARAM
+	jr	PARAML1
+
+;-----------------------------------------------------------------------------
+
+; Parameter is command line tail or part of tail
+
+PARAMLP:			; Partial tail ($-n)
+
+	call	GETCH		; Get next character in file
+	call	DCHK09		; Check for value 0..9
+	call	z,BADFORM	; If bad value, give warning message
+	ret	z		; ..and resume
+
+	inc	a		; Add one to token number for alias name
+	call	SKIPPARAM	; Skip to desired parameter
+	jr	PARAMT1
+
+PARAML:				; Whole tail ($*)
+
+	ld	a,1		; Skip to first parameter
+PARAML1:
+	call	SKIPPARAM
+
+PARAMT1:
+	ld	a,(hl)		; Copy tail into line
+	or	a		; End of tail?
+	ret	z
+	call	PUTCH		; Store the character
+	inc	hl		; Pt to next
+	jr	PARAMT1
+
+;-----------------------------------------------------------------------------
+
+; Set recursive mode ($Z)
+
+RECURS:
+
+	ld	a,0FFh		; Set rflag
+	ld	(RFLAG),a
+	ret
+
+
+;=============================================================================
+
+;			S U B R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+;		CHARACTER RETRIEVAL WITH FORMAT CHECK
+
+; This routine attempts to get the next character from the script.
+; If we are at the end of the script, we fall through to BADFORM.
+; Otherwise, the capitalized character is returned in the accumulator.
+
+getchc:	call	GETCH		; Get a character
+	jp	nz,CAPS		; Capitalize and return if char found
+				; ..else fall through to BADFORM
+
+;-----------------------------------------------------------------------------
+
+;		BAD SCRIPT FORMAT WARNING MESSAGE
+
+; This routine sends a message to the screen to report a badly formatted
+; script line and then aborts operation of ARUNZ.
+
+BADFORM:
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	BELL
+	db	'warning -- script line format error',CR,LF,0
+	jp	ERRQUIT
+
+;-----------------------------------------------------------------------------
+
+;		CONDITIONALLY TURN UP A NEW LINE
+
+; This routine prints a CRLF the first time it is called and does
+; nothing otherwise.
+
+CONDCRLF:
+	ld	a,(NLFLAG)	; Test "new line" flag
+	or	a
+	ret	z		; Return if flag not set
+	xor	a
+	ld	(NLFLAG),a	; Else clear flag
+	jp	CRLF		; ..and go print CRLF
+
+;-----------------------------------------------------------------------------
+
+;		COPY STRINGS OF VARIOUS LENGTHS FROM HL TO DE
+
+; Copy 8 characters for file name
+
+PUTN:
+	ld	b,8		; 8 chars
+	jr	PUTC
+
+; Copy 3 characters for file type
+
+PUTT:
+	ld	b,3		; 3 chars
+
+; Copy number of characters in B but ignore spaces
+
+PUTC:
+	ld	a,(hl)		; Get next char
+	cp	' '		; Skip if space
+	jr	z,PUTC1
+
+	call	PUTCH		; Store character
+
+PUTC1:
+	inc	hl		; Pt to next char in system file
+	djnz	PUTC		; Count down
+	ret
+
+;-----------------------------------------------------------------------------
+
+PUTNUM:
+	ld	b,10		; Compute 10's
+	ld	c,'0'
+PMU1:
+	sub	b		; Subtract 10's
+	jr	c,PMU2
+	inc	c		; Increment 10's
+	jr	PMU1
+PMU2:
+	add	a,b		; Add B back in
+	add	a,'0'		; Convert to ASCII
+	ld	b,a		; 10's in C, 1's in B
+	ld	a,c
+	cp	'0'		; No leading 0's
+	call	nz,PUTCH	; Store character
+	ld	a,b		; Get 1's
+	jp	PUTCH		; Store character and return
+
+;-----------------------------------------------------------------------------
+
+;		CHECK FOR ALIAS NAME MATCH
+
+; This routine scans a new line in the ALIAS.CMD file for a match to the
+; first token on the command line that invoked ARUNZ.  Several special
+; features have been incorporated.
+;
+; 1) If the alias name begins with a colon, it will be taken as a match to
+;    any requested name.  Thus it will be selected as the default script.
+;    Obviously, such an alias name should be the last one in the file, since
+;    no more names will be scanned after it.
+; 2) If the alias name has the wildcard character (WILDCHAR, default "_"), it
+;    will be taken as a match for any existing character in the requested alias.
+;    Thus the alias name '_DIR' will match requests for 'SDIR' or 'XDIR' etc.
+; 3) If the alias name has the option character (OPTCHAR, default ","), then
+;    any characters after that must match the requested alias only if
+;    characters are present in the requested alias.  Thus the alias name
+;    'XD,IR' will match 'XD', 'XDI', or 'XDIR' but not 'XDD' or 'XDIRS'.
+; 4) Multiple names may be associated with a given script by using the form
+;    NAME1=NAME2=...=NAMEn SCRIPT.  The alias name string terminates with a
+;    space or tab, so there cannot be any imbedded spaces.
+; 5) If the alias name begins with '>' then the rest of the alias name is
+;    compared only to the file type in the command verb.
+;
+; If a match is found, the ALIAS.CMD file is read until the space or tab
+; character before the script has been read (or the end of line or file has
+; been reached).  On return from this routine, the zero flag is set if a match
+; was found.
+
+COMPN:
+	xor	a		; Reset
+	ld	(OPTFLAG),a	; ..optional match flag
+	ld	(TYPEFLAG),a	; ..and type-only-match flag
+	ld	hl,(TAILBUF)	; Point to name of alias in tail buffer
+	ld	c,DEFLTCHAR	; Default alias name character
+
+COMPN1:
+	ld	a,(hl)		; Get next character of requested name
+	inc	hl		; Point to next char in name
+	ld	d,a		; Save character in D
+	call	ENDTEST		; See if end of token (and branch)
+
+	call	GOPCH	; Get next character from ALIAS.CMD
+	jr	z,COMPN5	; If eof, eot, or eol, no match
+	call	CAPS		; Convert to upper case
+	ld	b,a		; Save char in B
+	cp	c		; Match to default character?
+	jr	z,COMPN4	; If so, assume match, flush rest of name
+
+	inc	c		; See if C = FF (not first char in alias name)
+	jr	z,COMPN2	; If so, skip code for type-only checking
+	ld	a,(TYPEFLAG)	; See if comparing only file type
+	or	a
+	ld	a,b		; Restore fetched character
+	jr	z,COMPN2	; If not type-only, proceed normally
+
+FLUSHNAME:			; Flush verb name; point to verb type (if any)
+	ld	a,d		; Get current character into A
+	ld	d,(hl)		; ..and next character into D
+	inc	hl		; Point to character after that
+	CALL	ENDTEST1	; Test for end of command verb
+	JR	Z,FLUSH		; No filetype, so quit now
+	cp	'.'		; If current character is not dot
+	jr	nz,FLUSHNAME	; ..process next character
+	ld	a,d
+	CALL	ENDTEST1	; Does verb end in "."?
+	JR	NZ,GOTTYP	; No, go test filetype character(s)
+	LD	A,(OPTFLAG)	; Did alias name begin with ">,"
+	OR	A		; ..(allow null filetype)?
+	JR	Z,FLUSH		; No, so no match
+GOTTYP:	LD	A,B		; Restore fetched ALIAS.CMD character
+
+COMPN2:
+	ld	c,0FFh		; Set C to FF so test done only
+				; ..on first char of name in ALIAS.CMD
+	cp	'='		; Do we have another name on the line?
+	jr	z,COMPN	; If so, start over
+
+	cp	WILDCHAR	; Is there a wildcard in name?
+	jr	z,COMPN1	; If so, take as match and continue
+	cp	d		; Match to char in specified name?
+	jr	z,COMPN1	; If so, continue comparing
+
+				; Match to this name failed, skip to next name
+				; on line if any -- if none, return with
+				; non-zero set
+
+FLUSH:
+	call	GETCH		; Read another character from file
+	jr	z,COMPN5	; If end of line/text/file, no match
+	cp	' ' + 1		; If space or less, no match
+	jr	c,COMPN5
+	cp	'='		; If another name on line
+	jr	z,COMPN	; ..start over
+	jr	FLUSH		; ..else continue flushing
+
+				; Reached end of specified alias name
+
+COMPN3:
+	call	GOPCH	; Get next character in alias.cmd
+	ret	z		; If eof, eot, or eol, call it a match
+	cp	'='		; If equal sign. call it a match and
+	jr	z,COMPN4	; ..go flush rest of name string
+	call	ISSP
+	ret	z		; If space or tab, call it a match
+	ld	a,(OPTFLAG)	; See if option flag set
+	or	a
+	jr	z,FLUSH		; If not, flush rest of name and continue
+
+				; Case of default alias
+
+COMPN4::
+				; Flush rest of default alias name
+	call	GETCH
+	ret	z		; Return if eof, eot, or eol
+	call	ISSP
+	ret	z		; Return if space or tab
+	jr	COMPN4	; Else continue flushing characters
+
+				; Reached eof, eot, or eol in alias.cmd
+
+COMPN5::
+	xor	a		; Force non-zero flag to
+	dec	a		; ..show no match
+	ret
+; Test for end of command verb token.  Return if not.  Otherwise pop the
+; return address off the stack and jump to COMPN3 (no match)
+
+ENDTEST:
+	call	ENDTEST1
+	ret	nz
+	pop	af
+	jr	COMPN3
+
+ENDTEST1:
+	or	a		; If null
+	ret	z		; ..we have end
+	call	ISSP		; Ditto if space or tab
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		ERROR TERMINATION PROCESSING
+
+; This routine checks to see if ARUNZ was invoked as an extended command
+; processor.  If not, we just quit.  If so, we set the error status flag
+; and return to the CCP for normal error handling.  Messages are also
+; displayed to indicate the nature of the ZCPR3 processing error.  These
+; messages are under the control of the quiet flag.
+
+ERRQUIT:
+	call	GETCST		; Get command status flag value
+	and	100b		; Isolate ECP BIT
+	xor	100b		; Reverse sense for internal/external flag
+	ld	b,ECECPERR	; Command not found error
+	call	INVERROR	; Set up for error handler invokation
+	jp	QUIT
+
+;-----------------------------------------------------------------------------
+
+;		FIND THE NAMED ALIAS SCRIPT
+
+; This routine scans through the ALIAS.CMD file looking for the alias named
+; as the first token in the command tail.  If the end of the ALIAS.CMD file
+; is reached, this code jumps to the NOALAIS error code.
+
+FINDALIAS:
+	call	COMPN		; Compare first name
+	ret	z		; If found, return
+	call	SKIPLINE	; Skip to next line
+	jr	z,FINDALIAS	; If new line found, continue looking
+	jp	NOALIAS		; If end of file, jump to message
+
+;-----------------------------------------------------------------------------
+
+;		FIND ALIAS.CMD FILE
+
+; This routine finds the ALIAS.CMD file.  It will search the path, either
+; entirely or the root only, or go directly to a specified DU area depending
+; on the setting of flag bytes stored just before label START.  If the file
+; cannot be found and opened, then the code here branches to error messages.
+; The flag SCANCUR determines whether or not the current directory will be
+; included in the search.
+
+FINDFILE:
+	ld	a,(PATHF)	; Check path flag
+	or	a
+	jr	z,NOPATH	; If zero, use specified directory
+
+	ld	a,(ROOTF)	; Check root-only flag
+	or	a
+	jr	z,USEPATH	; If zero, use the entire path
+
+				; Determine the root directory on the path
+
+	call	GETPATH		; HL points to path, zero flag set if no path
+	jr	z,NOPATH	; If path not implemented, use specified du
+	ld	a,(hl)		; Make sure the path is not empty
+	or	a
+	jr	z,NOPATH	; If empty, use the fixed directory
+PATHLOOP:
+	dec	a		; Adjust drive (a=0)
+	jp	m,LOGIN		; If end of path, branch
+	ld	b,a		; Drive in b
+	inc	hl
+	ld	c,(hl)		; User in C
+	inc	hl
+	ld	a,(hl)		; Get next path element
+	jr	PATHLOOP		; ..and loop
+
+				; Use path for search
+
+USEPATH:
+	ld	de,IOFCB	; Point to file control block
+	call	INITFCB		; Initialize it for search
+	ld	a,(SCANCUR)	; Determine whether to include current DU
+	call	PFIND		; Try to find the file
+	jp	z,NOFILE	; Jump if not found
+	jr	LOGIN
+
+				; Go directly to default drive/user area
+
+NOPATH:
+	ld	hl,(CMDDRV)	; Get drive/user value
+	ld	b,l		; ..into BC
+	ld	c,h
+
+LOGIN:
+	ld	(CMDDIR),bc	; Save in memory for when needed again
+	call	LOGUD		; Log into DU: with the file
+
+				; Open the input file
+
+	ld	de,IOFCB	; Open the input file
+	call	INITFCB
+	call	F$OPEN
+	jp	nz,NOFILE	; If not there, go to error code
+	ld	(BUFPTR),a	; Low byte of buffer pointer = 0
+	ld	(EOFLAG),a	; EOF flag = 0
+	inc	a
+	ld	(SECNT),a	; SECNT= 1 forces buffer load
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		GET NEXT CHARACTER FROM ALIAS.CMD
+
+; This routine reads another character from ALIAS.CMD.  If the end of file
+; is reached or if the characters is end-of-text or a carriage return (end
+; of line), then the routine returns with the zero flag set.  Otherwise it
+; returns with the character in A and the zero flag reset.
+;
+; At the special entry point GOPCH, if the character is the option
+; character (OPTCHAR, default ','), OPTFLAG is set, and another character is
+; read.  If the character is the file-type-only character (TYPECHAR,
+; default '>'), then the TYPEFLAG flag is set.
+
+GOPCH:
+	call	GETCH		; Get next character
+	ret	z		; If eof, eot, or eol, return now
+	cp	OPTCHAR		; Is it the option character?
+	jr	nz,GOPCH1
+	ld	(OPTFLAG),a	; If so, set OPTFLAG
+	jr	GOPCH		; ..and read another character
+GOPCH1:
+	cp	TYPECHAR	; Is it the type-only match character
+	ret	nz		; If not, return NZ
+	ld	(TYPEFLAG),a	; If so, set the TYPEFLAG
+	jr	GOPCH		; ..and read another character
+
+GETCH::
+	call	GETBYT		; Get next character from file
+
+	ret	z		; Done if end of file
+	cp	CR		; Done if end of line
+	ret	z
+	cp	EOT		; Done if end of text
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY BUILT-IN HELP SCREEN
+
+; This routine tests to see if the built-in help has been requested.  This
+; is signaled explicitly with a single or double slash in the tail or
+; implicitly by having no alias name in the command tail.  If the command
+; is not a help request, the signon message is displayed under the control
+; of the quiet flag.
+
+HELPCHK:			; Test for help request
+	ld	hl,(TAILBUF)	; Examine command line tail
+	ld	a,(hl)		; Get first character
+	or	a		; See if end of command tail
+	jr	z,HELP		; Show help screen if no alias name
+	cp	'/'		; Explicit slash?
+	jr	nz,HELPCHK1	; If not, proceed to signon
+	inc	hl		; Check next character
+	ld	a,(hl)
+	or	a		; End of tail?
+	jr	z,HELP		; Show help screen
+	cp	'/'		; Second slash?
+	jr	nz,HELPCHK1	; If not, proceed to signon
+	inc	hl		; Check for third character
+	ld	a,(hl)
+	or	a		; End of tail?
+	jr	z,HELP		; If so, show help screen
+				; Else fall through
+
+				; not a request for help
+
+HELPCHK1:
+	ld	a,(QUIETF)	; Check quiet flag
+	and	00000001b	; Isolate signon msg bit
+	call	nz,SIGNON	; If bit set, display signon
+	ret
+
+HELP:
+	call	SIGNON
+	call	PRINT
+	db	'  Syntax: ARUNZ NAME [PARAMETERS]'
+	db	CR,LF
+	db	'  Runs alias script NAME from text file ALIAS.CMD'
+	db	CR,LF,0
+
+	jp	QUIT
+
+;-----------------------------------------------------------------------------
+
+; If the Z flag is set on entry, the flag pointed to by HL is reset to 0.
+; Otherwise it is set to 0FFH.
+
+INITFLAG:
+	ld	(hl),0		; reset flag
+	ret	z		; ..and return if bit not set
+	dec	(hl)		; Else, set flag
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY MESSAGE WHEN NAMED ALIAS NOT FOUND
+
+; This routine displays a message indicating the name of the alias that
+; could not be found.  The display is under control of the quiet flag.
+
+NOALIAS:
+
+	ld	a,(QUIETF)	; See if quiet flag set
+	and	00001000b	; Isolate alias name not found bit
+	jr	z,JPERRQT	; If off, skip the message
+
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	'Alias "'
+	db	0
+
+	call	PRTNAME		; Display the alias name
+
+	call	PRINT
+	db	'" Not Found'
+	db	CR,LF,0
+
+	jr	JPERRQT
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY MESSAGE WHEN ALIAS.CMD CANNOT BE FOUND
+
+; This routine displays (under control of the quiet flag) a message if the
+; alias.cmd file cannot be found.
+
+NOFILE:
+
+	ld	a,(QUIETF)
+	and	00000100b	; Isolate cmd file error msg
+	jr	z,JPERRQT	; If off, quit without msg
+
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	'ALIAS.CMD File Not Found'
+	db	CR,LF
+	db	0
+JPERRQT:
+	jp	ERRQUIT
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY ALIAS-RUNNING MESSAGE
+
+PRTALIAS:
+	ld	a,(QUIETF)
+	and	00000010b	; Isolate alias name display bit
+	ret	z		; If off, omit display
+
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	'Running Alias "'
+	db	0
+
+	call	PRTNAME
+
+	call	PRINT
+	db	'"',CR,LF,0
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY THE NAME OF THE ALIAS REQUESTED
+
+; This routine displays the name of the requested alias as passed as the
+; first token in the command tail.
+
+PRTNAME:
+	ld	hl,(TAILBUF)	; Point to tail to get name of alias
+PRTNAME1:
+	ld	a,(hl)		; Get character in alias name
+	or	a		; If end of tail, quit
+	ret	z
+;	cpi	' '+1			;see if space or control character
+;	rc				;if so, quit
+	call	ISSP		; Done if space or tab
+	ret	z
+	cp	' '		; See if control character
+	call	c,PRTCARET	; If so, print a leading caret
+	call	COUT		; Otherwise, display the character
+	inc	hl		; Point to next one
+	jr	PRTNAME1
+
+PRTCARET:
+	push	af		; Save original character
+	ld	a,'^'		; Print leading caret
+	call	COUT
+	pop	af		; Restore original character
+	add	a,40h		; Convert to printing character
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY SIGNON MESSAGE
+
+SIGNON:
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	'ARUNZ, Version '
+	db	VERSION$UNIT
+	db	'.'
+	db	VERSION$TENTH
+	db	VERSION$LETTER
+	db	'  '
+	db	0
+
+	ld	a,(TYPE)
+	ld	hl,PENTRY
+	call	PRTTYPE
+
+	call	CRLF
+
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		SKIP TO NEXT LINE IN ALIAS.CMD
+
+; This routine reads characters from the file ALIAS.CMD until it reaches
+; a linefeed -- in which case it returns with the zero flag set -- or until
+; it reaches the end of the file or end of text -- in which case it returns
+; with the zero flag reset.
+
+SKIPLINE:
+	call	GETBYT		; Get next character from file
+	jr	z,SKIPLINE2	; Jump if error in read
+	cp	EOT		; End of text
+	jr	z,SKIPLINE2
+	cp	LF		; End of line?
+	ret	z		; If so, return with sero flag set
+	jr	SKIPLINE	; If not, keep reading
+
+SKIPLINE2:
+	dec	a		; Reset the zero flag
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		GET A CHARACTER FROM FILE
+
+; The following routine was borrowed from LBREXT and modified slightly.
+; It requieres that the buffer begin and end on a page bounary.
+
+; "a" <-- next byte from ("physical") input stream.
+;	  returns with zero flag set on eof.
+
+GETBYT:
+	push	hl
+	ld	hl,(BUFPTR)
+	ld	a,l		; Pointer to next avail char
+	and	7fh		; See if 00h or 80h
+	call	z,POSRLD	; "possibly reload" the buffer if 00 or 80h
+	ld	a,(hl)		; Get byte to return (garbage if eof)
+	inc	hl		; Advance input pointer
+	ld	(BUFPTR),hl
+	pop	hl
+	ret
+
+POSRLD:				; "possibly reload" the input buffer
+	ld	a,(SECNT)	; Decr sector count (for this buffer)
+	dec	a
+	ld	(SECNT),a
+	ret	nz		; return if buffer not empty
+
+; reload  the input buffer, & reset hl to point to the beginning of it.  as-
+; sumes  input bfr starts page boundary and is of page multiple  length.
+;
+RELOAD:
+	ld	a,(EOFLAG)
+	or	a		; was eof reached on last reload?
+	jr	nz,ZEREAD	; set flag and return if so
+
+	push	bc
+	push	de
+	ld	b,FBUFSIZE	; loop counter, buffer length in pages
+	ld	hl,(BUFADR)	; Beg of buffer
+	push	hl		; Save for later
+	ld	c,0		; Will count sectors actually read
+	ld	de,IOFCB
+
+RLDLP:	ld	l,0		; Lo byte of current dma
+	call	RDSEC		; Read in 128 bytes (1/2 page)
+	jr	nz,RLDRTN	; (return if eof enecountered)
+	inc	c		; Incr "sectors read" count
+	ld	l,80h		; To read in the next half page
+	call	RDSEC		; Do that
+	jr	nz,RLDRTN	; As above
+	inc	c
+	inc	h		; Next page
+	djnz	RLDLP		; Loop till done
+RLDRTN:
+	ld	(EOFLAG),a
+	ld	a,c		; Put count of sectors read into "secnt"
+	ld	(SECNT),a
+	pop	hl		; Reset input pointer to beg of input buffer
+	pop	de
+	pop	bc		; Restore regs
+	and	a		; Clear zero flag if any data read
+	ret
+
+ZEREAD:	xor	a		; Set flg indicating no sectors were read (eof)
+	ret
+
+RDSEC:
+	call	SETDMA
+	jp	F$READ
+
+;-----------------------------------------------------------------------------
+
+;		SAVE COPY OF THE COMMAND TAIL
+
+; This routine copies the command tail up to the ending null into a buffer
+; whose address is stored at TAILBUF.  This is done because the path searching
+; code overwrites the tail.  A leading colon is not copied.  This allows the
+; ZCPR33 command form ":VERB etc." to skip resident commands and add the
+; current directory to the path search and still include the possibility of
+; looking for alias VERB in ALIAS.CMD.
+
+SAVETAIL:
+	ld	hl,TBUFF+1	; HL points to command tail
+	ld	de,(TAILBUF)	; DE points to tail buffer
+
+	call	SKSP		; Skip over leading spaces
+	ld	a,(hl)
+	cp	':'		; Is first non-space a colon?
+	jr	nz,COPYTAIL	; If so, get on with copy
+	inc	hl		; Otherwise, skip over colon
+
+COPYTAIL:
+	ld	a,(hl)		; Get byte of tail
+	ldi			; Save it in buffer
+	or	a		; See if end of buffer
+	jr	nz,COPYTAIL
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		SKIP OVER PARAMETERS
+
+; This routine is entered with the number of the desired token in the A
+; register, and it skips over tokens until the desired one is reached.
+
+SKIPPARAM:
+	inc	a		; Shift one because of predecrement test
+	ld	b,a		; ..name in tail
+	ld	a,(TABFLAG)	; If tab allowed as separater, this flag
+	ld	c,a		; ..will contain 9
+	ld	hl,(TAILBUF)	; Pt to input line
+SKIP1:
+	call	SKSP		; Skip to non-blank
+	ld	a,(hl)		; Check for done
+	or	a
+	ret	z
+	dec	b		; Count down number of parameters
+	ret	z		; Return if we have desired prameter
+
+				; skip over this parameter
+
+SKIP2:
+	ld	a,(hl)		; Skip to EOL or just past space
+	or	a		; EOL?
+	ret	z
+	inc	hl		; Pt to next
+	cp	' '		; Was previous one a space?
+	jr	z,SKIP1		; If so, back to check param count
+	cp	c		; If tab allowed as separator
+	jr	z,SKIP1		; ..go back on tab as well
+	jr	SKIP2		; Else continue skipping
+
+
+;=============================================================================
+
+;			D A T A    S P A C E
+
+	DSEG
+
+DUSAVE:
+	ds	2		; Logged user and drive
+
+CMDDIR:
+	ds	2		; User and drive where ALIAS.CMD file is
+
+CLBFR:
+	ds	2		; Pointer to command line
+
+	 IF	PINPUT
+ZEXFL:
+	ds	1		; Place to keep ZEX input redirection flag
+	 ENDIF	; PINPUT
+
+OPTFLAG:
+	ds	1		; Flag to show truncation matching
+
+TYPEFLAG:			; Flag to show testing for command
+	ds	1		; ..filetype only
+
+RFLAG:
+	ds	1		; Place to keep recursion flag
+
+BUFADR:
+	ds	2		; Start address of file buffer
+
+BUFPTR:
+	ds	2		; Ptr to next character in file buffer
+
+SECNT:
+	ds	1		; Sectors read counter
+
+EOFLAG:
+	ds	1		; End of file flag
+
+	ds	60		; Room for 30 local stack entries
+STACK:
+	ds	2		; Place to keep old stack pointer
+
+	end
+
+
+
+

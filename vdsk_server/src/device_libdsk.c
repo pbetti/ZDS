@@ -12,8 +12,8 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <libdsk.h>
-#include "config.h"
+#include "libdsk.h"
+// #include "config.h"
 #include "device.h"
 /*}}}*/
 

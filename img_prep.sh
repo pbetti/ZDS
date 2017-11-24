@@ -22,16 +22,16 @@ fi
 
 echo "Using format $DFMT ..."
 
-mkfs.cpm -f $DFMT $DNAME
+mkfs.cpm -f $DFMT /tmp/$DNAME
 
 if [ -d "$DDIR" ]; then
 	for f in $DDIR/*
 	do
-		cpmcp -f $DFMT $DNAME $f 0:
+		cpmcp -f $DFMT /tmp/$DNAME $f 0:
 	done
 fi
 
-mv -f $DNAME $HOME/elettronica/Z80-CPM/hardware/Z80DarkStar/diskimgs
+mv -f /tmp/$DNAME $HOME/elettronica/Z80-CPM/hardware/Z80DarkStar/diskimgs
 
 #ln -sf `pwd`/$DNAME vdsk_server/debug/src/$DNAME
 #cd $HOME/elettronica/Z80-CPM/hardware/Z80DarkStar/vdsk_server/debug/src/

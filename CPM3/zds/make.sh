@@ -10,7 +10,7 @@ PATH=.:$PATH
 
 SRCS="systran \
 	fdformat \
-	z8d \
+	z8e \
 	reboot \
 	myide3 \
 	diskcopy \

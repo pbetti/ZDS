@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-ASMB=../../../../software/slr/z80asm.com
+ASMB=../../../software/tools/z80asm.com
 LNKB=../../../../software/tools/zmlib.com
 QUIET=yes
 

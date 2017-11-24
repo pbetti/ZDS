@@ -68,160 +68,14 @@ c 1483-158E	; Code space
 i 158F-1590	; ignore data
 i 1591		; ignore data
 c 1592-1603	; Code space
-i 1604-1605	; ignore data
-i 1606		; ignore data
-c 1607-1623	; Code space
-t 1624-1637	; ASCII text
-c 1638-1672	; Code space
-t 1673-1676	; ASCII text
-c 1677-167C	; Code space
-t 167D		; ASCII text
-c 167E-1681	; Code space
-t 1682-1684	; ASCII text
-c 1685-1687	; Code space
-t 1688-1689	; ASCII text
-c 168A-168C	; Code space
-t 168D-1695	; ASCII text
-c 1696-1698	; Code space
-t 1699-169B	; ASCII text
-c 169C-16A0	; Code space
-t 16A1-16A2	; ASCII text
-c 16A3		; Code space
-t 16A4-16A6	; ASCII text
-c 16A7-16A9	; Code space
-t 16AA		; ASCII text
-c 16AB-16AD	; Code space
-t 16AE-16AF	; ASCII text
-c 16B0-16B2	; Code space
-t 16B3-16B5	; ASCII text
-c 16B6-16B8	; Code space
-t 16B9-16BB	; ASCII text
-c 16BC-16BE	; Code space
-t 16BF-16C1	; ASCII text
-c 16C2-16C4	; Code space
-t 16C5-16C7	; ASCII text
-c 16C8-16CA	; Code space
-t 16CB		; ASCII text
-c 16CC		; Code space
-t 16CD-16CF	; ASCII text
-c 16D0		; Code space
-t 16D1-16D4	; ASCII text
-c 16D5-16D7	; Code space
-t 16D8-16DA	; ASCII text
-c 16DB-16DD	; Code space
-t 16DE-16DF	; ASCII text
-c 16E0		; Code space
-t 16E1-16E3	; ASCII text
-c 16E4-16E5	; Code space
-t 16E6-16E8	; ASCII text
-c 16E9-16EB	; Code space
-t 16EC-16EE	; ASCII text
-c 16EF-16F1	; Code space
-t 16F2-16F3	; ASCII text
-c 16F4-16F6	; Code space
-t 16F7		; ASCII text
-c 16F8-16FA	; Code space
-t 16FB-16FC	; ASCII text
-c 16FD-16FE	; Code space
-t 16FF-1700	; ASCII text
-c 1701-1702	; Code space
-t 1703-1704	; ASCII text
-c 1705-1707	; Code space
-t 1708		; ASCII text
-c 1709-170B	; Code space
-t 170C		; ASCII text
-c 170D-170E	; Code space
-t 170F-1710	; ASCII text
-c 1711-1712	; Code space
-t 1713-1716	; ASCII text
-c 1717-1719	; Code space
-t 171A-171C	; ASCII text
-c 171D-1720	; Code space
-t 1721-1723	; ASCII text
-c 1724		; Code space
-t 1725-1728	; ASCII text
-c 1729-172B	; Code space
-t 172C		; ASCII text
-c 172D-172F	; Code space
-t 1730		; ASCII text
-c 1731-1733	; Code space
-t 1734-1735	; ASCII text
-c 1736-1738	; Code space
-t 1739-173A	; ASCII text
-c 173B		; Code space
-t 173C-173E	; ASCII text
-c 173F-1741	; Code space
-t 1742-1743	; ASCII text
-c 1744-1746	; Code space
-t 1747-1749	; ASCII text
-c 174A-174C	; Code space
-t 174D-174F	; ASCII text
-c 1750-1773	; Code space
-t 1774-1777	; ASCII text
-c 1778		; Code space
-t 1779-177C	; ASCII text
-c 177D-177F	; Code space
-t 1780-1781	; ASCII text
-c 1782-1785	; Code space
-t 1786-178A	; ASCII text
-c 178B-178D	; Code space
-t 178E		; ASCII text
-c 178F-1790	; Code space
-t 1791		; ASCII text
-c 1792-17A2	; Code space
-t 17A3-17A5	; ASCII text
-c 17A6-17A8	; Code space
-t 17A9-17AB	; ASCII text
-c 17AC-17AE	; Code space
-t 17AF-17B1	; ASCII text
-c 17B2-17B4	; Code space
-t 17B5-17B7	; ASCII text
-c 17B8-17BA	; Code space
-t 17BB-17BD	; ASCII text
-c 17BE-17C0	; Code space
-t 17C1-17C3	; ASCII text
-c 17C4-17C6	; Code space
-t 17C7-17C9	; ASCII text
-c 17CA		; Code space
-t 17CB-17CC	; ASCII text
-c 17CD		; Code space
-t 17CE-17D0	; ASCII text
-c 17D1-17D3	; Code space
-t 17D4-17D6	; ASCII text
-c 17D7-17D9	; Code space
-t 17DA-17DC	; ASCII text
-c 17DD-17DF	; Code space
-t 17E0-17E2	; ASCII text
-c 17E3-17E5	; Code space
-t 17E6		; ASCII text
-c 17E7-17E9	; Code space
-t 17EA		; ASCII text
-c 17EB-17ED	; Code space
-t 17EE		; ASCII text
-c 17EF-17F1	; Code space
-t 17F2		; ASCII text
-c 17F3-17F5	; Code space
-t 17F6		; ASCII text
-c 17F7-17F9	; Code space
-t 17FA		; ASCII text
-c 17FB-17FD	; Code space
-t 17FE-1800	; ASCII text
-c 1801-1802	; Code space
-t 1803-1804	; ASCII text
-c 1805-1807	; Code space
-t 1808-180A	; ASCII text
-c 180B-180D	; Code space
-t 180E		; ASCII text
-c 180F-1811	; Code space
-t 1812-1813	; ASCII text
-c 1814-1816	; Code space
-t 1817-1819	; ASCII text
-c 181A-190F	; Code space
-i 1910-1912	; ignore data
-i 1913		; ignore data
-c 1914-191C	; Code space
-t 191D-1923	; ASCII text
-c 1924-1980	; Code space
+b 1604-1607	; ignore data
+w 1608-164f	; Code space
+t 1650-181d	; ASCII text
+c 181e-18c8	; Code space
+t 18c9-18f8	; Code space
+c 18f9-191d	; Code space
+t 192D-1935	; ASCII text
+c 1936-1980	; Code space
 t 1981		; ASCII text
 c 1982-1CA0	; Code space
 t 1CA1-1CA3	; ASCII text
@@ -268,3 +122,55 @@ i 31F3-31F4	; ignore data
 i 31F5		; ignore data
 c 31F6-3230	; Code space
 i 3231-3232	; ignore data
+s   60	blifastblok		; from Common.inc.asm
+s   6a	blifastline		; from Common.inc.asm
+s   40	blislowblok		; from Common.inc.asm
+s   4a	blislowline		; from Common.inc.asm
+s   4f	colbuf		; from Common.inc.asm
+s   8c	crt6545adst		; from Common.inc.asm
+s   8d	crt6545data		; from Common.inc.asm
+s   8f	crtbeepport		; from Common.inc.asm
+s   87	crtkeybcnt		; from Common.inc.asm
+s   85	crtkeybdat		; from Common.inc.asm
+s   83	crtprntcnt		; from Common.inc.asm
+s   81	crtprntdat		; from Common.inc.asm
+s   82	crtram0cnt		; from Common.inc.asm
+s   80	crtram0dat		; from Common.inc.asm
+s   86	crtram1cnt		; from Common.inc.asm
+s   84	crtram1dat		; from Common.inc.asm
+s   8a	crtram2cnt		; from Common.inc.asm
+s   88	crtram2dat		; from Common.inc.asm
+s   8e	crtram3port		; from Common.inc.asm
+s   8b	crtservcnt		; from Common.inc.asm
+s   89	crtservdat		; from Common.inc.asm
+s   48	curpbuf		; from Common.inc.asm
+s   4e	dselbf		; from Common.inc.asm
+s  7cf	endvid		; from Common.inc.asm
+s   1b	esc		; from Common.inc.asm
+s   d0	fdccmdstatr		; from Common.inc.asm
+s   d7	fdcdatareg		; from Common.inc.asm
+s   d6	fdcdrvrcnt		; from Common.inc.asm
+;s   88	fdcreadc		; from Common.inc.asm
+;s   d0	fdcreset		; from Common.inc.asm
+s   d2	fdcsectreg		; from Common.inc.asm
+s   16	fdcseekc		; from Common.inc.asm
+s   d1	fdctrakreg		; from Common.inc.asm
+s   a8	fdcwritc		; from Common.inc.asm
+s   45	fdrvbuf		; from Common.inc.asm
+s   41	frdpbuf		; from Common.inc.asm
+s   43	fsecbuf		; from Common.inc.asm
+s   3f	fsekbuf		; from Common.inc.asm
+s   46	ftrkbuf		; from Common.inc.asm
+s   4d	kbdbyte		; from Common.inc.asm
+s   4c	miobyte		; from Common.inc.asm
+s   3b	ram0buf		; from Common.inc.asm
+s   3c	ram1buf		; from Common.inc.asm
+s   3d	ram2buf		; from Common.inc.asm
+s   3e	ram3buf		; from Common.inc.asm
+s   38	rst7sp1		; from Common.inc.asm
+s   39	rst7sp2		; from Common.inc.asm
+s   3a	rst7sp3		; from Common.inc.asm
+s   4b	tmpbyte		; from Common.inc.asm
+s  100	tpa		; from Common.inc.asm
+s   13	xofc		; from Common.inc.asm
+s   11	xonc		; from Common.inc.asm

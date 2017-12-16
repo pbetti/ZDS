@@ -1,1 +1,1 @@
-msize	equ	62
+msize	equ	40

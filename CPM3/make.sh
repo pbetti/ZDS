@@ -211,7 +211,7 @@ makbldr() {
 
 maksyst() {
 
-	bash -c "cd zds; ./make.sh"
+	bash -c "cd ../zds; ./make.sh"
 
 }
 
@@ -246,19 +246,22 @@ makdisk() {
 			cpmcp -f $1 $2 cpm3.sys.hd.c 3:cpm3.sys
 			cpmcp -f $1 -t $2 profile.sub_p.z3p 0:profile.sub
 		fi
-# 		cpmcp -f $1 $2 zccp/zccp.com 0:ccp.com
+# 		cpmcp -f $1 $2 zccp/zccp.com 0:zccp.com
 		cpmcp -f $1 $2 ccp.com 0:
 	fi
-	cpmcp -f $1 $2 zds/systran.com 0:
-	cpmcp -f $1 $2 zds/sysinit.com 1:
-	cpmcp -f $1 $2 zds/fdformat.com 1:
-	cpmcp -f $1 $2 zds/diskcopy.com 1:
-	cpmcp -f $1 $2 zds/myide3.com 1:
-	cpmcp -f $1 $2 zds/z8e.com 1:
-	cpmcp -f $1 $2 zds/clock.com 1:
-	cpmcp -f $1 $2 zds/td.com 1:
-	cpmcp -f $1 $2 zds/reboot.com 0:
-	cpmcp -f $1 $2 zds/fdisk.com 1:
+	cpmcp -f $1 $2 ../zds/systran.com 0:
+	cpmcp -f $1 $2 ../zds/sysinit.com 1:
+	cpmcp -f $1 $2 ../zds/fdformat.com 1:
+	cpmcp -f $1 $2 ../zds/diskcopy.com 1:
+	cpmcp -f $1 $2 ../zds/myide3.com 1:
+	cpmcp -f $1 $2 ../zds/z8e.com 1:
+	cpmcp -f $1 $2 ../zds/clock.com 1:
+	cpmcp -f $1 $2 ../zds/td.com 1:
+	cpmcp -f $1 $2 ../zds/reboot.com 0:
+	cpmcp -f $1 $2 ../zds/fdisk.com 1:
+	cpmcp -f $1 $2 ../zds/dsktran.com 1:
+	cpmcp -f $1 $2 ../EPROMS/launchers/ml390db4.com 1:
+	cpmcp -f $1 $2 ../EPROMS/launchers/ml683son.com 1:
 
 
 	for d in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15

@@ -44,6 +44,8 @@ and inode maxdir+1 is the passwd file, if any. */
 /*}}}*/
 
 extern char **environ;
+extern char * myexe;
+
 const char *boo;
 static mode_t s_ifdir=1;
 static mode_t s_ifreg=1;
@@ -396,7 +398,7 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, const char *format)
 
   if ((fp=fopen("ZDS_diskdefs","r"))==(FILE*)0 && (fp=fopen("diskdefs","r"))==(FILE*)0)
   {
-	  fprintf(stderr,"%s: Neither ZDS_diskdefs nor diskdefs could be opened.\n",cmd);
+	  fprintf(stderr,"%s: Neither ZDS_diskdefs nor diskdefs could be opened.\n",myexe);
     exit(1);
   }
   while (fgets(line,sizeof(line),fp)!=(char*)0)
@@ -446,7 +448,7 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, const char *format)
   fclose(fp);
   if (!found)
   {
-    fprintf(stderr,"%s: unknown format %s\n",cmd,format);
+    fprintf(stderr,"%s: unknown format %s\n",myexe,format);
     exit(1);
   }
   return 0;
@@ -461,7 +463,7 @@ static int amsReadSuper(struct cpmSuperBlock *d, const char *format)
   Device_setGeometry(&d->dev,512,9,40);
   if ((err=Device_readSector(&d->dev, 0, 0, (char *)boot_sector)))
   {
-    fprintf(stderr,"%s: Failed to read Amstrad superblock (%s)\n",cmd,err);
+    fprintf(stderr,"%s: Failed to read Amstrad superblock (%s)\n",myexe,err);
     exit(1);
   }
   boot_spec=(boot_sector[0] == 0 || boot_sector[0] == 3)?boot_sector:(unsigned char*)0;
@@ -477,7 +479,7 @@ static int amsReadSuper(struct cpmSuperBlock *d, const char *format)
   ) boot_spec = boot_sector + 128;
   if (boot_spec==(unsigned char*)0)
   {
-    fprintf(stderr,"%s: Amstrad superblock not present\n",cmd);
+    fprintf(stderr,"%s: Amstrad superblock not present\n",myexe);
     exit(1);
   }
   /* boot_spec[0] = format number: 0 for SS SD, 3 for DS DD
@@ -591,7 +593,7 @@ int cpmReadSuper(struct cpmSuperBlock *d, struct cpmInode *root, const char *for
   /* generate skew table */ /*{{{*/
   if (( d->skewtab = malloc(d->sectrk*sizeof(int))) == (int*)0)
   {
-    fprintf(stderr,"%s: can not allocate memory for skew sector table\n",cmd);
+    fprintf(stderr,"%s: can not allocate memory for skew sector table\n",myexe);
     exit(1);
   }
   if (strcmp(format,"apple-do")==0)

@@ -16,7 +16,7 @@
 #--
 #
 DIRNAME	= vdsk_server
-SUBDIRS	= libdsk src
+SUBDIRS	= libdmk libdsk src
 EXES	= vdsk_server receive_Z80DS send_Z80DS
 #
 #

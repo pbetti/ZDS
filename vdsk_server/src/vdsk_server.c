@@ -24,6 +24,10 @@
 		Added colored output and rewrite make system for cmake
 	1.6	2017/11/29
 		Added DMK support
+	1.8	2018/01/19
+		Added IMD support
+	1.8.1	2018/03/21
+		Bug fix
 
    ---------------------------------------------------------------------- */
 
@@ -48,7 +52,7 @@ Include (beatiful) code from:
 
 */
 
-#define VERSION		"1.6"
+#define VERSION		"1.8.1"
 
 
 #include <ctype.h>
@@ -105,6 +109,14 @@ typedef struct
 }
 Z80_IO_COMMAND;
 
+typedef struct
+{
+	DSK_PDRIVER imd;
+	DSK_GEOMETRY geometry;
+	int skew;
+
+} imd_drive_t;
+
 static const char * cmd_header_string = "@IO@";
 static const char * ftr_header_string = "@FT@";
 static byte transbuf[ MAX_SIZE ];
@@ -135,9 +147,11 @@ static int zeroskewA = 0;
 static int zeroskewB = 0;
 static int docreate = 0;
 static int dmkmode = 0;
+static int imdmode = 0;
 static int dumpsec = 0;
 static char * dparm = 0;
 static dmk_drive_t dmkdrive;
+static imd_drive_t imddrive;
 
 extern int	do_write_sector( struct cpmSuperBlock *, Z80_IO_COMMAND *, byte *, int );
 extern int	do_read_sector( struct cpmSuperBlock *, Z80_IO_COMMAND *, byte *, int );
@@ -146,9 +160,11 @@ extern void	eprintf(const char* format, ...);
 extern int	mkfs( struct cpmSuperBlock *, const char *, const char *, char * );
 extern void	cpm_create();
 extern void	dmk_create();
+extern void	imd_create();
 extern char **	str_split(char *, const char);
 extern void	dparm_error();
 extern void	dmk_initialize();
+extern void	imd_initialize();
 extern void	print_sector_info (sector_info_t *sector_info);
 extern void	hex_dump(void *, int);
 
@@ -162,7 +178,7 @@ int main( int argc, char *argv[] )
 	printf( "%sZDS - Z80NE Virtual Disk Server v%s%s\n\n", col_cyan, VERSION, col_rset);
 
 
-	while ( ( c = getopt( argc, argv, "uDczZp:b:f:F:L:n:h?" ) ) != EOF )
+	while ( ( c = getopt( argc, argv, "uDIczZp:b:f:F:L:n:h?" ) ) != EOF )
 		switch ( c )
 		{
 			case 'u': dumpsec++; break;
@@ -170,6 +186,7 @@ int main( int argc, char *argv[] )
 			case 'Z': zeroskewB++; break;
 			case 'c': docreate++; break;
 			case 'D': dmkmode++; break;
+			case 'I': imdmode++; zeroskewA++; break;
 			case 'h':
 			case '?': usage = 1; break;
 			case 'b':
@@ -203,7 +220,7 @@ int main( int argc, char *argv[] )
 
 	if ( usage )
 	{
-		printf( "%sUsage: %s [-zZ] [-f A:format] [-F B:format] [-b boot] [-L label] [-n base] image [image2]%s\n\n", col_hpurple, myexe, col_rset );
+		printf( "%sUsage: %s [-zZchuDIp] [-f A:format] [-F B:format] [-b boot] [-L label] [-n base] image [image2]%s\n\n", col_hpurple, myexe, col_rset );
 		printf( "%sOptions:\n", col_purple);
 		printf( "-z		No skew for drive A:\n");
 		printf( "-Z		No skew for drive B:\n");
@@ -215,7 +232,8 @@ int main( int argc, char *argv[] )
 		printf( "-n <X>		Drive id remap base X: (CP/M only)\n");
 		printf( "-h		Usage help (this)\n");
 		printf( "-u		Dump sectors during transfer\n");
-		printf( "-D		DMK mode for non CP/M images (NE-DOS/TRS-DOS/other)\n");
+		printf( "-D		DMK mode for non CP/M images (NE-DOS/NEWDOS/other)\n");
+		printf( "-I		IMD mode for non CP/M images (NE-DOS/NEWDOS/other)\n");
 		printf( "-p <d:h:t:s:z:k>\n");
 		printf( "		Disk parameters for DMK create density:heads:tracks:sectors:sec. size:skew factor\n");
 		printf( "		where:\n");
@@ -229,10 +247,23 @@ int main( int argc, char *argv[] )
 		exit( 1 );
 	}
 
+	if (dmkmode && imdmode) {
+		eprintf("DMK mode and IMD mode can't be both active. Select only one\n");
+		exit(1);
+	}
+
 	if (dmkmode) {
 		printf("%s* DMK mode *%s\n\n", col_purple, col_rset);
 		if (imageB) {
 			printf("%sOnly image for drive A: handled in DMK mode. Ignoring B:%s\n", col_yellow, col_rset);
+		}
+		imageB = 0;
+	}
+
+	if (imdmode) {
+		printf("%s* IMD mode *%s\n\n", col_purple, col_rset);
+		if (imageB) {
+			printf("%sOnly image for drive A: handled in IMD mode. Ignoring B:%s\n", col_yellow, col_rset);
 		}
 		imageB = 0;
 	}
@@ -249,8 +280,10 @@ int main( int argc, char *argv[] )
 			exit(1);
 		}
 
-		if (!dmkmode)
+		if (!dmkmode && !imdmode)
 			cpm_create();
+		else if (imdmode)
+			imd_create();
 		else
 			dmk_create();
 	}
@@ -271,6 +304,9 @@ int main( int argc, char *argv[] )
 
 	if (dmkmode) {
 		dmk_initialize();
+	}
+	else if (imdmode) {
+		imd_initialize();
 	}
 	else {
 		/* open image file */
@@ -416,6 +452,9 @@ int main( int argc, char *argv[] )
 			else
 				rwsec = dmkdrive.sector_info[io_command.sector].sector;
 		}
+		else if (imdmode) {
+			rwsec =  io_command.sector;
+		}
 		else {
 			if (zeroskewA && ( io_command.drive + 'A' - dbase ) == 0)		// drive A
 				rwsec =  io_command.sector;
@@ -454,12 +493,65 @@ int main( int argc, char *argv[] )
 		cpmUmount( &drive );
 		if (imageB) cpmUmount( &driveB );
 	}
+	else if (imdmode)
+		dsk_close(&imddrive.imd);
 	else
 		dmk_close_image (dmkdrive.h);
 
 	// Job Done!!
 	exit( 0 );
 }
+
+void imd_initialize()
+{
+	int i;
+	dsk_err_t imd_err;
+
+	imd_err = dsk_open (&imddrive.imd, image, "imd", 0);
+	if (imd_err) {
+		eprintf("%s\n", dsk_strerror(imd_err));
+		eprintf ("Error opening input IMD file %s\n", image);
+		exit (1);
+	}
+
+	imd_err = dsk_getgeom (imddrive.imd, &imddrive.geometry);
+	if (imd_err) {
+		eprintf("%s\n", dsk_strerror(imd_err));
+		eprintf ("Error guessing IMD geometry %s\n", image);
+		exit (1);
+	}
+
+	printf( "\n" );
+	printf( "IMD Disk geometry for disk %c: (%s) Density %s:\n", dbase, image, (imddrive.geometry.dg_fm) ? "MFM" : "FM" );
+
+	printf( "Heads:       %d\n", imddrive.geometry.dg_heads );
+	printf( "Cylinders:   %d\n", imddrive.geometry.dg_cylinders );
+	printf( "Sectors:     %d\n", imddrive.geometry.dg_sectors );
+	printf( "Sector size: %d\n", imddrive.geometry.dg_secsize );
+	printf( "Skew:        %d\n", 0 );
+	printf( "Options:     ");
+	if (zeroskewA)
+		printf("* Zero skew forced *");
+	else
+		printf("None");
+	printf( "\n" );
+	int dsize = imddrive.geometry.dg_heads * imddrive.geometry.dg_cylinders * imddrive.geometry.dg_sectors * imddrive.geometry.dg_secsize;
+	printf( "Disk size:   %d bytes (%dkb)\n", dsize, dsize / 1024 );
+// 	printf( "skewtab:    ");
+// 	for (i = 0; i < sector_count; i++) {
+// 		printf(" %d", sector_info[i].sector);
+// 	}
+// 	printf( "\n" );
+// 	printf( "unskewtab   ");
+// 	for (i = 0; i < sector_count; i++) {
+// 		printf(" %d", sector_index [sector_info [i].sector]);
+// 	}
+// 	printf( "\n\n" );
+	printf("\n");
+
+}
+
+
 
 void dmk_initialize()
 {
@@ -705,7 +797,13 @@ int do_write_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, 
 {
 	const char * err;
 	int sector;
-	int tlen = (dmkmode) ? dmkdrive.secsize : drive->dev.secLength;
+	int tlen;
+	if (dmkmode)
+		tlen = dmkdrive.secsize;
+	else if (imdmode)
+		tlen = imddrive.geometry.dg_secsize;
+	else
+		tlen = drive->dev.secLength;
 
 	/* get sector data from remote */
 	if ( recv_block( ( char * ) io_sector, tlen, 1 ) )
@@ -751,6 +849,22 @@ int do_write_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, 
 		}
 
 	}
+	else if (imdmode) {
+		int head = ((double)io_command->track / (double)imddrive.geometry.dg_cylinders > 1.0) ? 1 : 0;
+		int track = (head == 1) ? io_command->track - imddrive.geometry.dg_cylinders : io_command->track;
+		int imd_err;
+
+		imd_err = dsk_pwrite(imddrive.imd, &imddrive.geometry, io_sector,track, head, rwsec);
+		if ( imd_err) {
+			eprintf ("%s\n", dsk_strerror(imd_err));
+			eprintf ("writing sector %d, track %d, head %d (request: %d, %d)\n",
+				 rwsec, track, head, io_command->track, io_command->sector
+			);
+			return ( 1 );
+		}
+
+		if (dumpsec) hex_dump(io_sector, tlen);
+	}
 	else {
 		if ( ( err = Device_writeSector( &drive->dev, io_command->track, rwsec, ( const char * ) io_sector ) ) )
 		{
@@ -758,6 +872,8 @@ int do_write_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, 
 				 myexe, io_command->sector, rwsec, io_command->track, err );
 			return ( 1 );
 		}
+
+		if (dumpsec) hex_dump(io_sector, tlen);
 	}
 
 	return ( 0 );
@@ -767,7 +883,13 @@ int do_read_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, b
 {
 	const char * err;
 	int sector;
-	int tlen = (dmkmode) ? dmkdrive.secsize : drive->dev.secLength;
+	int tlen;
+	if (dmkmode)
+		tlen = dmkdrive.secsize;
+	else if (imdmode)
+		tlen = imddrive.geometry.dg_secsize;
+	else
+		tlen = drive->dev.secLength;
 
 	/* read sector from disk image */
 	if (dmkmode) {
@@ -794,6 +916,22 @@ int do_read_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, b
 		if (dumpsec) hex_dump(io_sector, tlen);
 // 		getchar();
 	}
+	else if (imdmode) {
+		int head = ((double)io_command->track / (double)imddrive.geometry.dg_cylinders > 1.0) ? 1 : 0;
+		int track = (head == 1) ? io_command->track - imddrive.geometry.dg_cylinders : io_command->track;
+		int imd_err;
+
+		imd_err = dsk_pread(imddrive.imd, &imddrive.geometry, io_sector,track, head, rwsec);
+		if ( imd_err) {
+			eprintf ("%s\n", dsk_strerror(imd_err));
+			eprintf ("reading sector %d, track %d, head %d (request: %d, %d)\n",
+				 rwsec, track, head, io_command->track, io_command->sector
+			);
+			return ( 1 );
+		}
+
+		if (dumpsec) hex_dump(io_sector, tlen);
+	}
 	else {
 		if ( ( err = Device_readSector( &drive->dev, io_command->track, rwsec, ( char * ) io_sector ) ) )
 		{
@@ -801,6 +939,8 @@ int do_read_sector( struct cpmSuperBlock * drive, Z80_IO_COMMAND * io_command, b
 				 myexe, io_command->sector, rwsec, io_command->track, err );
 			return ( 1 );
 		}
+
+		if (dumpsec) hex_dump(io_sector, tlen);
 	}
 
 	if ( send_block( io_sector, tlen ) )
@@ -950,6 +1090,135 @@ void cpm_create()
 	}
 }
 
+
+void imd_create()
+{
+	int dens, nheads, ntracks, nsectors, sec_size, skew;
+	int i;
+	dsk_phead_t head;
+	dsk_pcyl_t cylinder;
+	char ** tokens;
+	char * str_prm[6];
+	int sectran[256];
+
+	DSK_GEOMETRY imd_geom;
+	dsk_err_t imd_err;
+	DSK_PDRIVER imd = 0;
+
+	if (!dparm) {
+		eprintf ("Disk parameters needed for DMK and -c option. Use -p option.\n\n");
+		exit(1);
+	}
+
+
+	tokens = str_split(dparm, ':');
+
+	if (tokens) {
+		int i;
+
+		for (i = 0; *(tokens + i); i++) {
+			if (i > 5)
+				dparm_error();
+			str_prm[i] = strdup(*(tokens + i));
+			free(*(tokens + i));
+		}
+		free(tokens);
+
+		if (i < 5)
+			dparm_error();
+	}
+	else
+		dparm_error();
+
+	dens = atoi(str_prm[0]);
+	nheads = atoi(str_prm[1]);
+	ntracks = atoi(str_prm[2]);
+	nsectors = atoi(str_prm[3]);
+	sec_size = atoi(str_prm[4]);
+	skew = atoi(str_prm[5]);
+
+	// a bit check
+	if (dens > 1 ||
+		nheads > 2 ||
+		ntracks > 80 ||
+		nsectors > 256 ||
+		sec_size > 512 ||
+		skew > nsectors
+	) {
+		eprintf("Your disk params %d:%d:%d:%d:%d:%d are wrong. Double check.\n",
+			dens,
+	  nheads,
+	  ntracks,
+	  nsectors,
+	  sec_size,
+	  skew
+		);
+		exit(1);
+	}
+
+	// setup geometry
+	imd_geom.dg_sidedness = SIDES_ALT;
+	imd_geom.dg_cylinders = ntracks;
+	imd_geom.dg_heads = nheads;
+	imd_geom.dg_sectors = nsectors;
+	imd_geom.dg_secbase = 0;
+	imd_geom.dg_secsize = sec_size;
+	imd_geom.dg_datarate = RATE_SD;
+	imd_geom.dg_rwgap = 0;
+	imd_geom.dg_fmtgap = 0;
+	imd_geom.dg_fm = (dens) ? RECMODE_MFM : RECMODE_FM;
+	imd_geom.dg_nomulti = 1;
+	imd_geom.dg_noskip = 1;
+
+	int sk = 0;
+	int skb = 0;
+	for (i = 0; i < nsectors; i++) {
+		sectran[i] = sk;
+		sk += skew;
+		if (sk > nsectors - 1) {
+			sk = ++skb;
+		}
+	}
+
+	printf("Creating/formatting disk with density %s, %d heads, %d tracks, %d sectors, %d sector size, skew factor %d\n",
+	       (dens) ? "MFM" : "FM",
+	       nheads,
+	ntracks,
+	nsectors,
+	sec_size,
+	skew
+	);
+	printf( "skewtab:    ");
+	for (i = 0; i < nsectors; i++) {
+		printf(" %d", sectran[i]);
+	}
+	printf( "\n" );
+
+	imd_err = dsk_creat( &imd, image, "imd", 0 );
+	if ( imd == 0 ) {
+		eprintf ("%s\n", dsk_strerror(imd_err));
+		eprintf ("error opening output file, check disk params and file permissions\n\n");
+		exit (1);
+	}
+
+	for (head = 0; head < nheads; head++) {
+		for (cylinder = 0; cylinder < ntracks; cylinder++) {
+
+			imd_err = dsk_apform (imd, &imd_geom, cylinder, head, 0xe5 );
+			if (imd_err) {
+				eprintf ( "error formatting cylinder %d, head %d\n", cylinder, head);
+				exit (1);
+			}
+		}
+	}
+
+	dsk_close (&imd);
+
+	printf( "%sSuccessfully created new file system: %s%s (IMD type)\n\n", col_green, image, col_rset );
+	exit( 0 );
+
+}
+
 void dmk_create()
 {
 	dmk_handle h;
@@ -1072,7 +1341,7 @@ void dmk_create()
 
 			if (! dmk_format_track (h, dens, nsectors, sector_info)) {
 				eprintf ( "error formatting cylinder %d\n", cylinder);
-				return;
+				exit (1);
 			}
 		}
 	}

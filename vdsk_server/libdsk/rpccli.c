@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2002  John Elliott <jce@seasip.demon.co.uk>            *
+ *    Copyright (C) 2002  John Elliott <seasip.webmaster@gmail.com>            *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -27,8 +27,6 @@
 #include "drvi.h"
 #include "rpcfuncs.h"
 #include "remote.h"
-#include <limits.h>
-
 
 #define SMALLBUF 200
 #define LARGEBUF 9000
@@ -124,7 +122,7 @@ dsk_err_t dsk_r_read (DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, cons
 }
 
 
-dsk_err_t dsk_r_secid(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, const DSK_GEOMETRY *geom, dsk_pcyl_t cylinder,
+dsk_err_t dsk_r_secid(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, const DSK_GEOMETRY *geom, dsk_pcyl_t cylinder, 
 					  dsk_phead_t head, DSK_FORMAT *result)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
@@ -172,7 +170,7 @@ dsk_err_t dsk_r_write(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, cons
 }
 
 
-dsk_err_t dsk_r_format(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, DSK_GEOMETRY *geom, dsk_pcyl_t cylinder,
+dsk_err_t dsk_r_format(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, DSK_GEOMETRY *geom, dsk_pcyl_t cylinder, 
 					  dsk_phead_t head, const DSK_FORMAT *format, unsigned char filler)
 {
 	unsigned char ibuf[300], *iptr = ibuf;
@@ -225,7 +223,7 @@ dsk_err_t dsk_r_drive_status(DSK_PDRIVER self, RPCFUNC func, unsigned int nDrive
 }
 
 
-dsk_err_t dsk_r_getgeom (DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver,
+dsk_err_t dsk_r_getgeom (DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, 
 		DSK_GEOMETRY *geom)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
@@ -247,7 +245,7 @@ dsk_err_t dsk_r_getgeom (DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver,
 
 
 
-dsk_err_t dsk_r_pseek(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver,
+dsk_err_t dsk_r_pseek(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, 
 	const DSK_GEOMETRY *geom, dsk_pcyl_t cylinder, dsk_phead_t head)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
@@ -262,17 +260,17 @@ dsk_err_t dsk_r_pseek(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver,
 	err = dsk_pack_geom  (&iptr, &ilen, geom);	   if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, cylinder);     if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, head);         if (err) return err;
-
+	
 	err = (*func)(self, ibuf, iptr - ibuf, obuf, &olen);	   if (err) return err;
 	err = dsk_unpack_err  (&optr, &olen, &err2);	   if (err) return err;
 	return err2;
 }
 
 
-dsk_err_t dsk_r_xread (DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver,
+dsk_err_t dsk_r_xread (DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, 
 		const DSK_GEOMETRY *geom, void *buf, dsk_pcyl_t cylinder,
-		dsk_phead_t head, dsk_pcyl_t cyl_expected,
-		dsk_phead_t head_expected, dsk_psect_t sector,
+		dsk_phead_t head, dsk_pcyl_t cyl_expected, 
+		dsk_phead_t head_expected, dsk_psect_t sector, 
 		size_t sector_size, int *deleted)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
@@ -305,10 +303,10 @@ dsk_err_t dsk_r_xread (DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver,
 
 }
 
-dsk_err_t dsk_r_xwrite(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver,
+dsk_err_t dsk_r_xwrite(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver, 
 		const DSK_GEOMETRY *geom, const void *buf, dsk_pcyl_t cylinder,
-		dsk_phead_t head, dsk_pcyl_t cyl_expected,
-		dsk_phead_t head_expected, dsk_psect_t sector,
+		dsk_phead_t head, dsk_pcyl_t cyl_expected, 
+		dsk_phead_t head_expected, dsk_psect_t sector, 
 		size_t sector_size, int deleted)
 {
 	unsigned char ibuf[LARGEBUF], *iptr = ibuf;
@@ -336,7 +334,7 @@ dsk_err_t dsk_r_xwrite(DSK_PDRIVER self, RPCFUNC func, unsigned int nDriver,
 
 
 dsk_err_t dsk_r_tread(DSK_DRIVER *self, RPCFUNC func, unsigned int nDriver,
-		const DSK_GEOMETRY *geom, void *buf, dsk_pcyl_t cylinder,
+		const DSK_GEOMETRY *geom, void *buf, dsk_pcyl_t cylinder, 
 		dsk_phead_t head)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
@@ -364,8 +362,8 @@ dsk_err_t dsk_r_tread(DSK_DRIVER *self, RPCFUNC func, unsigned int nDriver,
 
 
 dsk_err_t dsk_r_xtread(DSK_DRIVER *self, RPCFUNC func, unsigned int nDriver,
-		const DSK_GEOMETRY *geom, void *buf, dsk_pcyl_t cylinder,
-		dsk_phead_t head, dsk_pcyl_t cyl_expected,
+		const DSK_GEOMETRY *geom, void *buf, dsk_pcyl_t cylinder, 
+		dsk_phead_t head, dsk_pcyl_t cyl_expected, 
 		dsk_phead_t head_expected)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
@@ -396,7 +394,7 @@ dsk_err_t dsk_r_option_enum(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 		int idx, char **optname)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
-	/* Make the output buffer static; we will be returning a pointer
+	/* Make the output buffer static; we will be returning a pointer 
 	 * into it. */
 	static unsigned char obuf[SMALLBUF];
 	unsigned char *optr = obuf;
@@ -406,15 +404,15 @@ dsk_err_t dsk_r_option_enum(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 	dsk_err_t err2;
 	char *desc;
 
-	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_OPTION_ENUM);
+	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_OPTION_ENUM); 
 							   if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, nDriver);	   if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, idx);	   if (err) return err;
-
+	
 	err = (*func)(self, ibuf, iptr - ibuf, obuf, &olen);	   if (err) return err;
 	err = dsk_unpack_err  (&optr, &olen, &err2);	   if (err) return err;
 	if (err2 == DSK_ERR_UNKRPC) return err2;
-	err = dsk_unpack_string(&optr, &olen, &desc);
+	err = dsk_unpack_string(&optr, &olen, &desc); 
 	if (err) return err;
 	if (optname) *optname = desc;
 	return err2;
@@ -433,12 +431,12 @@ dsk_err_t dsk_r_option_set(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 	int olen = sizeof obuf;
 	dsk_err_t err2;
 
-	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_OPTION_SET);
+	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_OPTION_SET); 
 							   if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, nDriver);	   if (err) return err;
 	err = dsk_pack_string(&iptr, &ilen, optname);	   if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, value);	   if (err) return err;
-
+	
 	err = (*func)(self, ibuf, iptr - ibuf, obuf, &olen);	   if (err) return err;
 	err = dsk_unpack_err  (&optr, &olen, &err2);	   if (err) return err;
 	return err2;
@@ -456,11 +454,11 @@ dsk_err_t dsk_r_option_get(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 	dsk_err_t err2;
 	int32 result;
 
-	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_OPTION_GET);
+	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_OPTION_GET); 
 							   if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, nDriver);	   if (err) return err;
 	err = dsk_pack_string(&iptr, &ilen, optname);	   if (err) return err;
-
+	
 	err = (*func)(self, ibuf, iptr - ibuf, obuf, &olen);	   if (err) return err;
 	err = dsk_unpack_err  (&optr, &olen, &err2);	   if (err) return err;
 	if (err2 == DSK_ERR_UNKRPC) return err2;
@@ -473,7 +471,7 @@ dsk_err_t dsk_r_get_comment(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 		char **comment)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
-	/* Make the output buffer static; we will be returning a pointer
+	/* Make the output buffer static; we will be returning a pointer 
 	 * into it. */
 	static unsigned char obuf[2*SMALLBUF];
 	unsigned char *optr = obuf;
@@ -484,14 +482,14 @@ dsk_err_t dsk_r_get_comment(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 	char *desc;
 	if (comment) *comment = NULL;
 
-	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_GETCOMMENT);
+	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_GETCOMMENT); 
 							   if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, nDriver);	   if (err) return err;
-
+	
 	err = (*func)(self, ibuf, iptr - ibuf, obuf, &olen);	   if (err) return err;
 	err = dsk_unpack_err  (&optr, &olen, &err2);	   if (err) return err;
 	if (err2 == DSK_ERR_UNKRPC) return err2;
-	err = dsk_unpack_string(&optr, &olen, &desc);
+	err = dsk_unpack_string(&optr, &olen, &desc); 
 	if (err) return err;
 	if (comment) *comment = desc;
 	return err2;
@@ -509,11 +507,11 @@ dsk_err_t dsk_r_set_comment(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 	int olen = sizeof obuf;
 	dsk_err_t err2;
 
-	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_SETCOMMENT);
+	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_SETCOMMENT); 
 							   if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, nDriver);	   if (err) return err;
 	err = dsk_pack_string(&iptr, &ilen, comment);	   if (err) return err;
-
+	
 	err = (*func)(self, ibuf, iptr - ibuf, obuf, &olen);	   if (err) return err;
 	err = dsk_unpack_err  (&optr, &olen, &err2);	   if (err) return err;
 	if (err) return err;
@@ -527,7 +525,7 @@ dsk_err_t dsk_r_set_comment(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 
 
 dsk_err_t dsk_r_trackids(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
-		const DSK_GEOMETRY *geom, dsk_pcyl_t cylinder,
+		const DSK_GEOMETRY *geom, dsk_pcyl_t cylinder, 
 		dsk_phead_t head, dsk_psect_t *count, DSK_FORMAT **result)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
@@ -570,7 +568,7 @@ dsk_err_t dsk_r_trackids(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 
 
 dsk_err_t dsk_r_rtread(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
-		const DSK_GEOMETRY *geom, void *buf, dsk_pcyl_t cylinder,
+		const DSK_GEOMETRY *geom, void *buf, dsk_pcyl_t cylinder, 
 		dsk_phead_t head, int reserved, size_t *bufsize)
 {
 	unsigned char ibuf[SMALLBUF], *iptr = ibuf;
@@ -593,7 +591,7 @@ dsk_err_t dsk_r_rtread(DSK_DRIVER *self, RPCFUNC func, unsigned nDriver,
 	if (err2 == DSK_ERR_UNKRPC) return err2;
 	err = dsk_unpack_i32  (&optr, &olen, &buflen);	   if (err) return err;
 	err = dsk_unpack_bytes(&optr, &olen, &buf2);	   if (err) return err;
-	memcpy(buf, buf2, buflen);
+	memcpy(buf, buf2, buflen); 
 	*bufsize = buflen;
 	return err2;
 }
@@ -616,7 +614,7 @@ dsk_err_t dsk_r_properties(DSK_PDRIVER self, RPCFUNC func,
 	char *desc;
 
 	if (!self || !self->dr_remote) return DSK_ERR_BADPTR;
-	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_PROPERTIES);
+	err = dsk_pack_i16   (&iptr, &ilen, RPC_DSK_PROPERTIES); 
 							   if (err) return err;
 	err = dsk_pack_i32   (&iptr, &ilen, nDriver);	   if (err) return err;
 	err = (*func)(self, ibuf, iptr - ibuf, obuf, &olen);
@@ -624,20 +622,20 @@ dsk_err_t dsk_r_properties(DSK_PDRIVER self, RPCFUNC func,
 	err = dsk_unpack_err (&optr, &olen, &err2);	   if (err) return err;
 	if (err2 == DSK_ERR_UNKRPC) return err2;
 	err = dsk_unpack_i16 (&optr, &olen, &fncount);	   if (err) return err;
-	if (self->dr_remote->rd_functions != NULL)
+	if (self->dr_remote->rd_functions != NULL) 
 	{
 		dsk_free(self->dr_remote->rd_functions);
-		self->dr_remote->rd_functions = NULL;
+		self->dr_remote->rd_functions = NULL;	
 	}
 	if (fncount)
 	{
-		self->dr_remote->rd_functions
+		self->dr_remote->rd_functions 
 			= dsk_malloc((fncount+1) * sizeof(unsigned));
 		if (!self->dr_remote->rd_functions)
 		{
 			err2 = DSK_ERR_NOMEM;
 		}
-		else
+		else 
 		{
 			for (n = 0; n < fncount; n++)
 			{
@@ -648,15 +646,14 @@ dsk_err_t dsk_r_properties(DSK_PDRIVER self, RPCFUNC func,
 			self->dr_remote->rd_functions[n] = 0;
 		}
 	}
-	err = dsk_unpack_string(&optr, &olen, &desc);
+	err = dsk_unpack_string(&optr, &olen, &desc); 
 	if (err) return err;
 	if (self->dr_remote->rd_name) dsk_free(self->dr_remote->rd_name);
 	self->dr_remote->rd_name = NULL;
 	if (desc)
 	{
-		self->dr_remote->rd_name = dsk_malloc(1 + strlen(desc));
+		self->dr_remote->rd_name = dsk_malloc_string(desc);
 		if (!self->dr_remote->rd_name) err2 = DSK_ERR_NOMEM;
-		else strcpy(self->dr_remote->rd_name, desc);
 	}
 	return err2;
 }

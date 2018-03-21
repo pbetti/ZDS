@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2002  John Elliott <jce@seasip.demon.co.uk>            *
+ *    Copyright (C) 2002  John Elliott <seasip.webmaster@gmail.com>            *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -663,11 +663,10 @@ dsk_err_t sq_creat(COMPRESS_DATA *self)
 
 /* Try to guess the true name of the file from the compressed name. This 
  * can only be done for certain well-known name manglings. */
-        sq_self->sq_truename = malloc(1 + strlen(self->cd_cfilename));
+        sq_self->sq_truename = dsk_malloc_string(self->cd_cfilename);
         if (!sq_self->sq_truename) return DSK_ERR_NOMEM;
 
 	/* UNIX SQ squeezes files by appending ".SQ" */
-        strcpy(sq_self->sq_truename, self->cd_cfilename);
 	ss = strstr(sq_self->sq_truename, ".SQ");
 	if (ss) *ss = 0;
 

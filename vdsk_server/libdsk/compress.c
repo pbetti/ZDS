@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2002  John Elliott <jce@seasip.demon.co.uk>            *
+ *    Copyright (C) 2002  John Elliott <seasip.webmaster@gmail.com>            *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -23,14 +23,14 @@
 #include "drvi.h"   /* For LINUXFLOPPY and WIN32FLOPPY */
 #include "compi.h"
 #include "comp.h"
+
 /* LibDsk generalised compression support */
-#include <sys/types.h>
+#include <sys/sysmacros.h>
+#ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
-#include <unistd.h>
-#include <limits.h>
+#endif
 
 #define TMPDIR "/tmp"
-#define HAVE_MKSTEMP	1
 
 static COMPRESS_CLASS *classes[] =
 {
@@ -43,9 +43,8 @@ static COMPRESS_CLASS *classes[] =
 
 static dsk_err_t comp_construct(COMPRESS_DATA *cd, const char *filename)
 {
-    cd->cd_cfilename = dsk_malloc(1 + strlen(filename));
+    cd->cd_cfilename = dsk_malloc_string(filename);
     if (!cd->cd_cfilename) return DSK_ERR_NOMEM;
-    strcpy(cd->cd_cfilename, filename);
     cd->cd_ufilename = NULL;
     cd->cd_readonly = 0;
     return DSK_ERR_OK;
@@ -97,7 +96,7 @@ static dsk_err_t comp_icreat(COMPRESS_DATA **cd, const char *filename, int nc)
 {
         COMPRESS_CLASS *cc = classes[nc];
         dsk_err_t err;
-	FILE *fp;
+	FILE *fp = NULL;
 
         if (!cc) return DSK_ERR_BADPTR;
 
@@ -105,12 +104,12 @@ static dsk_err_t comp_icreat(COMPRESS_DATA **cd, const char *filename, int nc)
         if (!*cd) return DSK_ERR_NOMEM;
 	memset((*cd), 0, cc->cc_selfsize);
         err = comp_construct(*cd, filename);
-    (*cd)->cd_class = cc;
-    if (err == DSK_ERR_OK) err = (cc->cc_creat)(*cd);
+	(*cd)->cd_class = cc;
+	if (err == DSK_ERR_OK) err = (cc->cc_creat)(*cd);
 /* Stake out our claim to the temporary file. */
-        if (err == DSK_ERR_OK) err = comp_mktemp(*cd, &fp);
-    if (fp) fclose(fp);
-    if (err == DSK_ERR_OK) return err;
+	if (err == DSK_ERR_OK) err = comp_mktemp(*cd, &fp);
+	if (fp) fclose(fp);
+	if (err == DSK_ERR_OK) return err;
 
         comp_free (*cd);
         *cd = NULL;

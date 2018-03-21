@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2001-2, 2005  John Elliott <jce@seasip.demon.co.uk>    *
+ *    Copyright (C) 2001-2, 2005  John Elliott <seasip.webmaster@gmail.com>    *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -21,10 +21,8 @@
  ***************************************************************************/
 
 #include "drvi.h"
-#include <limits.h>
 
-
-/* Standard disc geometries. These are used
+/* Standard disc geometries. These are used 
  * (i)  when logging in a disc, if the superblock is recognised
  * (ii) when formatting */
 
@@ -38,7 +36,7 @@ typedef struct dsk_namedgeom
 
 /* These must match the order of the entries in dsk_format_t in libdsk.h */
 
-static DSK_NAMEDGEOM stdg[] =
+static DSK_NAMEDGEOM stdg[] = 
 {
         /*    sidedness cyl hd sec  psn  sz   rate    rwgap  fmtgap  fm  nomulti*/
 {"pcw180",  { SIDES_ALT,     40, 1, 9,    1, 512, RATE_SD, 0x2A, 0x52,   0,  0 }, "PCW / IBM 180k" }, /* 180k */
@@ -68,13 +66,15 @@ static DSK_NAMEDGEOM stdg[] =
 {"ampro400d",{ SIDES_ALT,     40, 2,10,   17, 512, RATE_SD, 0x0C, 0x17,   0,  0 }, "Ampro 40 track double-sided" }, /* Ampro 400k (22DISK AMP2) */
 {"ampro400s",{ SIDES_ALT,     80, 1, 5,   1,1024, RATE_SD, 0x04, 0x05,   0,  0 }, "Ampro 80 track single-sided" }, /* Ampro 400k (22DISK AMP3) */
 {"ampro800",{ SIDES_ALT,     80, 2, 5,   17,1024, RATE_SD, 0x04, 0x05,   0,  0 }, "Ampro 80 track double-sided" }, /* Ampro 800k (22DISK AMP4) */
+{"pcw1200", { SIDES_ALT,     80, 2,15,    1, 512, RATE_HD, 0x1B, 0x54,   0,  0 }, "PcW16 / IBM 1200k "}, /* 1.2M */
+
 /* Geometries below this line don't appear in dsk_format_t and can be accessed
  * only by name. */
 
 {"myz80",   { SIDES_ALT,     64, 1,128,   0,1024, RATE_ED, 0x2A, 0x52,   0,  0 }, "MYZ80 8Mb" }, /* MYZ80 8Mb */
 
-/* re this comment ('This was commented out in libdsk-1.1.3, but I can't
- * remember why. Bring it back.') -- I think I now remember why. The
+/* re this comment ('This was commented out in libdsk-1.1.3, but I can't 
+ * remember why. Bring it back.') -- I think I now remember why. The 
  * numeric format IDs were out of sync with the actual definitions, and I
  * think this may be part of the reason. Move it down to the bottom, beyond
  * the last numeric ID. */
@@ -92,7 +92,7 @@ static void dg_shell_folder(int csidl, char *buf)
     LPMALLOC pMalloc;
     LPITEMIDLIST pidl;
     char *cwd;
-        char result[PATH_MAX];
+        char result[PATH_MAX]; 
 
     cwd = getcwd(result, PATH_MAX);
     if (cwd == NULL) strcpy(result, ".");
@@ -119,18 +119,18 @@ const char *dg_homedir(void)
     char *t;
     long l;
 
-    l = RegOpenKeyEx(HKEY_CURRENT_USER,
+    l = RegOpenKeyEx(HKEY_CURRENT_USER, 
         "Software\\jce@seasip\\LibDsk", 0, KEY_READ, &hk);
     if (l == ERROR_SUCCESS)
     {
         dws = PATH_MAX;
-        l = RegQueryValueEx(hk, "HomeDir", NULL, NULL,
-                (BYTE *)buf, &dws);
+        l = RegQueryValueEx(hk, "HomeDir", NULL, NULL, 
+                (BYTE *)buf, &dws); 
         RegCloseKey(hk);
         if (l == ERROR_SUCCESS) return buf;
     }
     dg_shell_folder(CSIDL_PERSONAL, buf);
-
+    
     while ((t = strchr(buf, '\\'))) *t = '/';
 
     /* Ensure path ends with a slash */
@@ -208,10 +208,10 @@ const char *dg_sharedir(void)
     l = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
         "Software\\jce@seasip\\LibDsk", 0, KEY_READ, &hk);
     if (l == ERROR_SUCCESS)
-    {
+    {                                             
         dws = PATH_MAX;
-        l = RegQueryValueEx(hk, "ShareDir", NULL, NULL,
-                (BYTE *)buf, &dws);
+        l = RegQueryValueEx(hk, "ShareDir", NULL, NULL, 
+                (BYTE *)buf, &dws); 
         RegCloseKey(hk);
         if (l == ERROR_SUCCESS) return buf;
     }
@@ -228,7 +228,7 @@ const char *dg_sharedir(void)
     }
     strcat(buf, "share/");
     return buf;
-}
+}             
 
 #else /* def HAVE_WINDOWS_H */
 
@@ -290,7 +290,7 @@ dsk_err_t dg_parseline(char *linebuf, DSK_GEOMETRY *dg, char *description)
     ++value;
 
     /* Chop variable name at first space */
-    s = strchr(linebuf, ' ');
+    s = strchr(linebuf, ' '); 
     if (s) *s = 0;
     /* Skip leading spaces in the value */
     while (*value == ' ') ++value;
@@ -302,18 +302,20 @@ dsk_err_t dg_parseline(char *linebuf, DSK_GEOMETRY *dg, char *description)
     }
     if (!strcmp(linebuf, "description"))
     {
-        if (description)
+        if (description) 
             strcpy(description, value);
     }
     if (!strcmp(linebuf, "sidedness") || !strcmp(linebuf, "sides"))
     {
         for (s = value; s[0]; s++) *s = tolower(*s);
-        if (!strcmp(value, "alt"))
+        if (!strcmp(value, "alt"))     
             dg->dg_sidedness = SIDES_ALT;
-        if (!strcmp(value, "outback"))
+        if (!strcmp(value, "outback")) 
             dg->dg_sidedness = SIDES_OUTBACK;
-        if (!strcmp(value, "outout"))
+        if (!strcmp(value, "outout"))  
             dg->dg_sidedness = SIDES_OUTOUT;
+        if (!strcmp(value, "extsurface"))	/* [1.3.7] */
+            dg->dg_sidedness = SIDES_EXTSURFACE;
     }
     if (!strcmp(linebuf, "cylinders") && atoi(value))
         dg->dg_cylinders = atoi(value);
@@ -340,8 +342,30 @@ dsk_err_t dg_parseline(char *linebuf, DSK_GEOMETRY *dg, char *description)
     if (!strcmp(linebuf, "fm"))
     {
         for (s = value; s[0]; s++) *s = tolower(*s);
-        if (!strcmp(value, "y")) dg->dg_fm = 1;
-        if (!strcmp(value, "n")) dg->dg_fm = 0;
+        if (!strcmp(value, "y")) 
+	    dg->dg_fm = (dg->dg_fm & RECMODE_FLAGMASK) | RECMODE_FM;
+        if (!strcmp(value, "n")) 
+	    dg->dg_fm = (dg->dg_fm & RECMODE_FLAGMASK) | RECMODE_MFM;
+    }
+    /* [1.4.1] Allow 'recmode=mfm' / 'recmode=fm' as a synonym for 'fm=y / fm=n'
+     *         Obviously this syntax would allow additional recording modes in
+     *         future. */
+    if (!strcmp(linebuf, "recmode"))
+    {
+        for (s = value; s[0]; s++) *s = tolower(*s);
+        if (!strcmp(value, "fm")) 
+	    dg->dg_fm = (dg->dg_fm & RECMODE_FLAGMASK) | RECMODE_FM;
+        if (!strcmp(value, "mfm")) 
+	    dg->dg_fm = (dg->dg_fm & RECMODE_FLAGMASK) | RECMODE_MFM;
+    }
+    /* [1.4.1] 'Complement' flag */
+    if (!strcmp(linebuf, "complement"))
+    {
+        for (s = value; s[0]; s++) *s = tolower(*s);
+        if (!strcmp(value, "y")) 
+	    dg->dg_fm |= RECMODE_COMPLEMENT;
+        if (!strcmp(value, "n")) 
+	    dg->dg_fm &= ~RECMODE_COMPLEMENT;
     }
     if (!strcmp(linebuf, "multitrack"))
     {
@@ -365,10 +389,11 @@ dsk_err_t dg_store(FILE *fp, DSK_GEOMETRY *dg, char *description)
     if (description) fprintf(fp, "description=%s\n", description);
     switch(dg->dg_sidedness)
     {
-        case SIDES_ALT:     fprintf(fp, "sides=alt\n");     break;
-        case SIDES_OUTOUT:  fprintf(fp, "sides=outback\n"); break;
-        case SIDES_OUTBACK: fprintf(fp, "sides=outout\n");  break;
-        }
+        case SIDES_ALT:        fprintf(fp, "sides=alt\n");     break;
+        case SIDES_OUTOUT:     fprintf(fp, "sides=outback\n"); break;
+        case SIDES_OUTBACK:    fprintf(fp, "sides=outout\n");  break;
+        case SIDES_EXTSURFACE: fprintf(fp, "sides=extsurface\n");  break;
+    }
     fprintf(fp, "cylinders=%d\n", dg->dg_cylinders);
     fprintf(fp, "heads=%d\n",     dg->dg_heads);
     fprintf(fp, "sectors=%d\n",   dg->dg_sectors);
@@ -383,7 +408,13 @@ dsk_err_t dg_store(FILE *fp, DSK_GEOMETRY *dg, char *description)
     }
     fprintf(fp, "rwgap=%d\n", dg->dg_rwgap);
     fprintf(fp, "fmtgap=%d\n", dg->dg_fmtgap);
-    fprintf(fp, "fm=%c\n", dg->dg_fm ? 'Y' : 'N');
+  
+    switch (dg->dg_fm & RECMODE_MASK)
+    {
+        case RECMODE_MFM: fprintf(fp, "recmode=MFM\n"); break;
+        case RECMODE_FM:  fprintf(fp, "recmode=FM\n"); break;
+    }
+    fprintf(fp, "complement=%c\n", (dg->dg_fm & RECMODE_COMPLEMENT) ? 'Y' : 'N');
     fprintf(fp, "multitrack=%c\n", dg->dg_nomulti ? 'N' : 'Y');
     fprintf(fp, "skipdeleted=%c\n", dg->dg_noskip ? 'N' : 'Y');
     return DSK_ERR_OK;
@@ -409,7 +440,7 @@ static dsk_err_t dg_parse_file(FILE *fp)
         s = strchr(linebuf, '\n'); if (s) *s = 0;
 
         if (linebuf[0] != '[') continue;
-/* Format names cannot start with "-", so any section beginning "[-" is
+/* Format names cannot start with "-", so any section beginning "[-" is 
  * going to be something other than a format. */
 	if (linebuf[1] == '-') continue;
         strcpy(formname, linebuf+1);
@@ -418,9 +449,9 @@ static dsk_err_t dg_parse_file(FILE *fp)
         pos = ftell(fp);
         err = dg_parse(fp, &ng.dg, formdesc);
         if (err) return err;
-        fseek(fp, pos, SEEK_SET);
+        fseek(fp, pos, SEEK_SET);   
 
-        pg = dsk_malloc(sizeof(ng) + 2 +
+        pg = dsk_malloc(sizeof(ng) + 2 + 
                 strlen(formdesc) + strlen(formname));
         if (!pg) return DSK_ERR_NOMEM;
         memcpy(pg, &ng, sizeof(ng));
@@ -482,7 +513,7 @@ dsk_err_t dg_custom_init(void)
                 err = dg_parse_file(fp);
                 fclose(fp);
                 if (err) return err;
-            }
+            }       
         }
         custom_inited = 2;
     }
@@ -500,7 +531,7 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16 dg_stdformat(DSK_GEOMETRY *self, dsk_format_t fo
     dg_custom_init();
 
 /* If index is out of range in the standard set, search the custom set */
-    if ((unsigned)idx >= (sizeof(stdg)/sizeof(stdg[0]))  )
+    if ((unsigned)idx >= (sizeof(stdg)/sizeof(stdg[0]))  ) 
     {
         DSK_NAMEDGEOM *cg = customgeom;
         idx -= (sizeof(stdg) / sizeof(stdg[0]));

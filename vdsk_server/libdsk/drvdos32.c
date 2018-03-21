@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2001,2006  John Elliott <jce@seasip.demon.co.uk>       *
+ *    Copyright (C) 2001,2006  John Elliott <seasip.webmaster@gmail.com>       *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -35,7 +35,8 @@
 DRV_CLASS dc_dos32 = 
 {
 	sizeof(DOS32_DSK_DRIVER),
-	"floppy",
+	NULL,		/* superclass */
+	"floppy\0",
 	"DJGPP/PC BIOS floppy driver",
 
 	dos32_open,		/* open */

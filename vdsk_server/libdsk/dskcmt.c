@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2003  John Elliott <jce@seasip.demon.co.uk>            *
+ *    Copyright (C) 2003  John Elliott <seasip.webmaster@gmail.com>            *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -22,15 +22,27 @@
 
 #include "drvi.h"
 
+LDPUBLIC32 char * LDPUBLIC16 dsk_malloc_string(const char *s)
+{
+	char *buf = dsk_malloc(1 + strlen(s));
+
+	if (!buf) return NULL;
+	strcpy(buf, s);
+	return buf;
+}
+
 
 LDPUBLIC32 dsk_err_t  LDPUBLIC16 dsk_set_comment(DSK_PDRIVER self, const char *comment)
 {
-	if (!self || !comment) return DSK_ERR_BADPTR;
+	if (!self) return DSK_ERR_BADPTR;
 
 	if (self->dr_comment) dsk_free(self->dr_comment);
-	self->dr_comment = dsk_malloc(1 + strlen(comment));
-	if (!self->dr_comment) return DSK_ERR_NOMEM;
-	strcpy(self->dr_comment, comment);
+	if (comment)
+	{
+		self->dr_comment = dsk_malloc_string(comment);
+		if (!self->dr_comment) return DSK_ERR_NOMEM;
+		strcpy(self->dr_comment, comment);
+	}
 	self->dr_dirty = 1;	/* Comment will want writing back */
 	return DSK_ERR_OK;
 

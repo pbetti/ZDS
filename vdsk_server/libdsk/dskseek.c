@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2001  John Elliott <jce@seasip.demon.co.uk>            *
+ *    Copyright (C) 2001  John Elliott <seasip.webmaster@gmail.com>            *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -32,7 +32,11 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16 dsk_pseek(DSK_DRIVER *self, const DSK_GEOMETRY *
 
 	dc = self->dr_class;
 
-        if (!dc->dc_xseek) return DSK_ERR_NOTIMPL;
+	WALK_VTABLE(dc, dc_xseek)
+        if (!dc->dc_xseek) 
+	{
+		return DSK_ERR_NOTIMPL;
+	}
 	return (dc->dc_xseek)(self,geom,cylinder,head);	
 
 }

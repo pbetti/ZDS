@@ -21,7 +21,10 @@ set(libdsk_SRCS
 	drvdos16.c
 	drvdos32.c
 	drvdskf.c
+	drvimd.c
 	drvint25.c
+	drvjv3.c
+	drvldbs.c
 	drvlinux.c
 	drvlogi.c
 	drvmyz80.c
@@ -29,6 +32,7 @@ set(libdsk_SRCS
 	drvnwasp.c
 	drvposix.c
 	drvqm.c
+	drvqrst.c
 	drvrcpm.c
 	drvsimh.c
 	drvtele.c
@@ -37,10 +41,12 @@ set(libdsk_SRCS
 	drvydsk.c
 	dskcheck.c
 	dskcmt.c
+	dskcopy.c
 	dskdirty.c
 	dskerror.c
 	dskfmt.c
 	dskgeom.c
+	dskiconv.c
 	dskjni.c
 	dsklphys.c
 	dskopen.c
@@ -56,6 +62,7 @@ set(libdsk_SRCS
 	dsktread.c
 	dsktrkid.c
 	dskwrite.c
+	ldbs.c
 	remote.c
 	rpccli.c
 	rpcfork.c
@@ -67,6 +74,7 @@ set(libdsk_SRCS
 	rpcwin32.c
 )
 
+add_definitions(-DHAVE_CONFIG_H -DAUTOSHARE=./ -DNOTWINDLL)
 
 add_library(dsk STATIC ${libdsk_SRCS})
 

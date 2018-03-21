@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2001  John Elliott <jce@seasip.demon.co.uk>            *
+ *    Copyright (C) 2001  John Elliott <seasip.webmaster@gmail.com>            *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -37,11 +37,12 @@
 #include <sys/ioctl.h>
 #endif
 
+#include <sys/sysmacros.h>
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
 
-#ifdef HAVE_UNISTD_H 
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
@@ -50,10 +51,11 @@
 /* This struct contains function pointers to the driver's functions, and the
  * size of its DSK_DRIVER subclass */
 
-DRV_CLASS dc_linux = 
+DRV_CLASS dc_linux =
 {
 	sizeof(LINUX_DSK_DRIVER),
-	"floppy",
+	NULL,		/* superclass */
+	"floppy\0",
 	"Linux floppy driver",
 	&linux_open,	/* open */
 	&linux_creat,	/* create new */
@@ -87,7 +89,7 @@ static void init_raw_cmd(struct floppy_raw_cmd *raw_cmd)
 	raw_cmd->buffer_length = 0;
 	raw_cmd->cmd_count = 0;
 	raw_cmd->reply_count = 0;
-	raw_cmd->resultcode = 0;	
+	raw_cmd->resultcode = 0;
 }
 
 /* Translate an FDC765 error to LIBDSK */
@@ -107,12 +109,12 @@ static dsk_err_t xlt_error(unsigned char *st)
 	if (st[2] & ST2_BC)  return DSK_ERR_SEEKFAIL;
 	if (st[2] & ST2_MAM) return DSK_ERR_NOADDR;
 	return DSK_ERR_UNKNOWN;
-}	
+}
 
 
 /* Convert a LIBDSK data rate to Linux kernel data rate */
 static int get_rate(const DSK_GEOMETRY *dg)
-{	
+{
 	switch(dg->dg_datarate)
 	{
 		case RATE_HD: return 0;
@@ -167,22 +169,22 @@ dsk_err_t linux_open(DSK_DRIVER *self, const char *filename)
 {
 	LINUX_DSK_DRIVER *lxself;
 	struct stat st;
-	
+
 	/* Sanity check: Is this meant for our driver? */
 	if (self->dr_class != &dc_linux) return DSK_ERR_BADPTR;
 	lxself = (LINUX_DSK_DRIVER *)self;
 	lxself->lx_fd = -1;
 	lxself->lx_forcehead = -1;
 	lxself->lx_doublestep = 0;
-/* 
- * We are only interested in the file if it's a block device, major 2 
+/*
+ * We are only interested in the file if it's a block device, major 2
  */
 	if (stat(filename, &st)) return DSK_ERR_NOTME;
-	if (!S_ISBLK(st.st_mode)) return DSK_ERR_NOTME;	
+	if (!S_ISBLK(st.st_mode)) return DSK_ERR_NOTME;
 	if (major(st.st_rdev) != 2) return DSK_ERR_NOTME;
 
-	lxself->lx_cylinder = ~0;	
-/* [v0.8.3] fdutils uses O_NONBLOCK when opening drives in fdrawcmd. This 
+	lxself->lx_cylinder = ~0;
+/* [v0.8.3] fdutils uses O_NONBLOCK when opening drives in fdrawcmd. This
  * seems to allow FM-encoded discs and other discs which the Linux kernel
  * can't probe to be accepted, and it omits the long delay detecting CPC-
  * format discs. */
@@ -201,7 +203,7 @@ dsk_err_t linux_open(DSK_DRIVER *self, const char *filename)
 }
 
 
-/* For a floppy drive, opening it and creating it are the same thing, 
+/* For a floppy drive, opening it and creating it are the same thing,
  * unless we wanted to mess around with mknod() here */
 dsk_err_t linux_creat(DSK_DRIVER *self, const char *filename)
 {
@@ -216,17 +218,17 @@ dsk_err_t linux_close(DSK_DRIVER *self)
 	if (self->dr_class != &dc_linux) return DSK_ERR_BADPTR;
 	lxself = (LINUX_DSK_DRIVER *)self;
 
-	if (lxself->lx_fd > 0) 
+	if (lxself->lx_fd > 0)
 	{
 		if (close(lxself->lx_fd) == -1) return DSK_ERR_SYSERR;
 		lxself->lx_fd = -1;
 	}
-	return DSK_ERR_OK;	
+	return DSK_ERR_OK;
 }
 /*
-static unsigned char fakebuf[512] = 
+static unsigned char fakebuf[512] =
 {
-	0x03, 0x81, 0x50, 0x0a, 0x02, 0x01, 0x05, 0x02, 0x0c, 0x17, 
+	0x03, 0x81, 0x50, 0x0a, 0x02, 0x01, 0x05, 0x02, 0x0c, 0x17,
 	0xe5, 0xe5, 0xe5, 0xe5, 0xe5, 0xe5
 };
 */
@@ -235,8 +237,9 @@ dsk_err_t linux_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                              void *buf, dsk_pcyl_t cylinder,
                               dsk_phead_t head, dsk_psect_t sector)
 {
-	return linux_xread(self, geom, buf, cylinder, head, 
-			   cylinder, head, sector, geom->dg_secsize, 0);
+	return linux_xread(self, geom, buf, cylinder, head, cylinder,
+			dg_x_head(geom, head),
+			dg_x_sector(geom, head, sector), geom->dg_secsize, 0);
 }
 
 dsk_err_t linux_xread(DSK_DRIVER *self, const DSK_GEOMETRY *geom, void *buf,
@@ -258,7 +261,7 @@ dsk_err_t linux_xread(DSK_DRIVER *self, const DSK_GEOMETRY *geom, void *buf,
 	if (err) return err;
 
 	if (geom->dg_noskip)  mask &= ~0x20;	/* Don't skip deleted data */
-	if (geom->dg_fm)      mask &= ~0x40;	/* FM recording mode */
+	if (geom->dg_fm & RECMODE_MASK) mask &= ~0x40;	/* FM recording mode */
 	if (geom->dg_nomulti) mask &= ~0x80;	/* Disable multitrack */
 
 	init_raw_cmd(&raw_cmd);
@@ -280,7 +283,7 @@ dsk_err_t linux_xread(DSK_DRIVER *self, const DSK_GEOMETRY *geom, void *buf,
 	raw_cmd.cmd[raw_cmd.cmd_count++] = dsk_get_psh(sector_size);
 	raw_cmd.cmd[raw_cmd.cmd_count++] = sector;
 	raw_cmd.cmd[raw_cmd.cmd_count++] = geom->dg_rwgap;
-	raw_cmd.cmd[raw_cmd.cmd_count++] = (sector_size < 255) ? sector_size : 0xFF; 
+	raw_cmd.cmd[raw_cmd.cmd_count++] = (sector_size < 255) ? sector_size : 0xFF;
 
 	if (ioctl(lxself->lx_fd, FDRAWCMD, &raw_cmd) < 0) return DSK_ERR_SYSERR;
 
@@ -297,8 +300,10 @@ dsk_err_t linux_write(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                              const void *buf, dsk_pcyl_t cylinder,
                               dsk_phead_t head, dsk_psect_t sector)
 {
-	return linux_xwrite(self, geom, buf, cylinder, head, cylinder, head,
-				sector, geom->dg_secsize, 0);
+	return linux_xwrite(self, geom, buf, cylinder, head, cylinder,
+			dg_x_head(geom, head),
+			dg_x_sector(geom, head, sector),
+			geom->dg_secsize, 0);
 }
 
 
@@ -321,7 +326,7 @@ dsk_err_t linux_xwrite(DSK_DRIVER *self, const DSK_GEOMETRY *geom, const void *b
 	if (err) return err;
 
 	if (geom->dg_noskip)  mask &= ~0x20;	/* Don't skip deleted data */
-	if (geom->dg_fm)      mask &= ~0x40;
+	if (geom->dg_fm & RECMODE_MASK)      mask &= ~0x40;
 	if (geom->dg_nomulti) mask &= ~0x80;
 
 	init_raw_cmd(&raw_cmd);
@@ -332,7 +337,7 @@ dsk_err_t linux_xwrite(DSK_DRIVER *self, const DSK_GEOMETRY *geom, const void *b
 	raw_cmd.rate  = get_rate(geom);
 	raw_cmd.length= sector_size;
 	raw_cmd.data  = (void *)buf;
-		
+
 	if (deleted)	raw_cmd.cmd[raw_cmd.cmd_count++] = 0xE9     & mask;
 	else		raw_cmd.cmd[raw_cmd.cmd_count++] = FD_WRITE & mask;
 	raw_cmd.cmd[raw_cmd.cmd_count++] = encode_head(self, head);
@@ -342,7 +347,7 @@ dsk_err_t linux_xwrite(DSK_DRIVER *self, const DSK_GEOMETRY *geom, const void *b
 	raw_cmd.cmd[raw_cmd.cmd_count++] = dsk_get_psh(sector_size);
 	raw_cmd.cmd[raw_cmd.cmd_count++] = sector;
 	raw_cmd.cmd[raw_cmd.cmd_count++] = geom->dg_rwgap;
-	raw_cmd.cmd[raw_cmd.cmd_count++] = (sector_size < 255) ? sector_size : 0xFF; 
+	raw_cmd.cmd[raw_cmd.cmd_count++] = (sector_size < 255) ? sector_size : 0xFF;
 
 	if (ioctl(lxself->lx_fd, FDRAWCMD, &raw_cmd) < 0) return DSK_ERR_SYSERR;
 
@@ -373,7 +378,7 @@ dsk_err_t linux_format(DSK_DRIVER *self, DSK_GEOMETRY *geom,
 
 	err = check_geom(lxself, geom);
 	if (err) return err;
-	if (geom->dg_fm)      mask &= ~0x40;
+	if (geom->dg_fm & RECMODE_MASK)      mask &= ~0x40;
 	if (geom->dg_nomulti) mask &= ~0x80;
 
 	buf = dsk_malloc(geom->dg_sectors * 4);
@@ -430,10 +435,10 @@ dsk_err_t linux_secid(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 	lxself = (LINUX_DSK_DRIVER *)self;
 	if (lxself->lx_fd < 0) return DSK_ERR_NOTRDY;
 
-	if (geom->dg_fm)      mask &= ~0x40;
+	if (geom->dg_fm & RECMODE_MASK)      mask &= ~0x40;
 	if (geom->dg_nomulti) mask &= ~0x80;
 
-/* [v0.8.3] It was necessary to add this check correctly to detect 100k 
+/* [v0.8.3] It was necessary to add this check correctly to detect 100k
  * FM-recorded discs in a 5.25" drive */
 	err = check_geom(lxself, geom);
 	if (err) return err;
@@ -451,10 +456,10 @@ dsk_err_t linux_secid(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 
 	memcpy(lxself->lx_status, raw_cmd.reply, 4);
 	if (raw_cmd.reply[0] & 0x40) return xlt_error(raw_cmd.reply);
-	result->fmt_cylinder = raw_cmd.reply[3];	
-	result->fmt_head     = raw_cmd.reply[4];	
-	result->fmt_sector   = raw_cmd.reply[5];	
-	result->fmt_secsize  = 128 << raw_cmd.reply[6];	
+	result->fmt_cylinder = raw_cmd.reply[3];
+	result->fmt_head     = raw_cmd.reply[4];
+	result->fmt_sector   = raw_cmd.reply[5];
+	result->fmt_secsize  = 128 << raw_cmd.reply[6];
 	lxself->lx_cylinder = cylinder;
 	return DSK_ERR_OK;
 }
@@ -538,7 +543,7 @@ dsk_err_t linux_xtread(DSK_DRIVER *self, const DSK_GEOMETRY *geom, void *buf,
 	err = check_geom(lxself, geom);
 	if (err) return err;
 
-	if (geom->dg_fm)      mask &= ~0x40;
+	if (geom->dg_fm & RECMODE_MASK)      mask &= ~0x40;
 	if (geom->dg_nomulti) mask &= ~0x80;
 
 	init_raw_cmd(&raw_cmd);
@@ -549,8 +554,8 @@ dsk_err_t linux_xtread(DSK_DRIVER *self, const DSK_GEOMETRY *geom, void *buf,
 	raw_cmd.rate  = get_rate(geom);
 	raw_cmd.length= geom->dg_secsize * geom->dg_sectors;
 	raw_cmd.data  = buf;
-	
-	/* fdreg.h doesn't define the Read Track command, but here it is */	
+
+	/* fdreg.h doesn't define the Read Track command, but here it is */
 	raw_cmd.cmd[raw_cmd.cmd_count++] = 0x62 & mask;
 	raw_cmd.cmd[raw_cmd.cmd_count++] = encode_head(self, head);
 	raw_cmd.cmd[raw_cmd.cmd_count++] = cyl_expected;
@@ -584,7 +589,7 @@ dsk_err_t linux_option_enum(DSK_DRIVER *self, int idx, char **optname)
 		case 4: if (optname) *optname = "ST2"; return DSK_ERR_OK;
 		case 5: if (optname) *optname = "ST3"; return DSK_ERR_OK;
 	}
-	return DSK_ERR_BADOPT;	
+	return DSK_ERR_BADOPT;
 
 }
 
@@ -598,15 +603,15 @@ dsk_err_t linux_option_set(DSK_DRIVER *self, const char *optname, int value)
 
 	if (!strcmp(optname, "HEAD")) switch(value)
 	{
-		case 0: case 1: case -1: 
-			lxself->lx_forcehead = value;	
+		case 0: case 1: case -1:
+			lxself->lx_forcehead = value;
 			return DSK_ERR_OK;
 		default: return DSK_ERR_BADVAL;
 	}
 	if (!strcmp(optname, "DOUBLESTEP")) switch(value)
 	{
-		case 0: case 1: 
-			lxself->lx_doublestep = value;	
+		case 0: case 1:
+			lxself->lx_doublestep = value;
 			return DSK_ERR_OK;
 		default: return DSK_ERR_BADVAL;
 	}
@@ -617,7 +622,7 @@ dsk_err_t linux_option_set(DSK_DRIVER *self, const char *optname, int value)
 	    (!strcmp(optname, "ST3"))) return DSK_ERR_BADVAL;
 	return DSK_ERR_BADOPT;
 }
-	
+
 /* Get a driver-specific option */
 dsk_err_t linux_option_get(DSK_DRIVER *self, const char *optname, int *value)
 {
@@ -626,12 +631,12 @@ dsk_err_t linux_option_get(DSK_DRIVER *self, const char *optname, int *value)
 	if (self->dr_class != &dc_linux) return DSK_ERR_BADPTR;
 	lxself = (LINUX_DSK_DRIVER *)self;
 
-	if (!strcmp(optname, "HEAD")) 
+	if (!strcmp(optname, "HEAD"))
 	{
 		if (value) *value = lxself->lx_forcehead;
 		return DSK_ERR_OK;
 	}
-	if (!strcmp(optname, "DOUBLESTEP")) 
+	if (!strcmp(optname, "DOUBLESTEP"))
 	{
 		if (value) *value = lxself->lx_doublestep;
 		return DSK_ERR_OK;
@@ -658,7 +663,7 @@ dsk_err_t linux_option_get(DSK_DRIVER *self, const char *optname, int *value)
 	}
 	return DSK_ERR_BADOPT;
 }
-	
+
 
 
 #endif

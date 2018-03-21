@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2001  John Elliott <jce@seasip.demon.co.uk>            *
+ *    Copyright (C) 2001  John Elliott <seasip.webmaster@gmail.com>            *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -23,7 +23,9 @@
 
 #include "drvi.h"
 #include <string.h>
+#ifdef HAVE_ERRNO_H
 #include <errno.h>
+#endif
 
 LDPUBLIC32 char * LDPUBLIC16 dsk_strerror(dsk_err_t err)
 {
@@ -59,6 +61,7 @@ LDPUBLIC32 char * LDPUBLIC16 dsk_strerror(dsk_err_t err)
 		case DSK_ERR_TIMEOUT:	return "Timed out waiting for response.";
 		case DSK_ERR_UNKRPC:	return "RPC server did not recognise function.";
 		case DSK_ERR_BADMEDIA:	return "Disc is not suitable for this operation";
+                case DSK_ERR_CORRUPT:	return "Disc image file is corrupt.";
 		case DSK_ERR_UNKNOWN:	return "Controller returned unknown error.";
  	}
 	return "Unknown error.";
@@ -72,7 +75,7 @@ void *dsk_malloc(size_t size)
 {
 	void *ptr;
 
-	assert(size);
+	assert(size);	
 	printf("malloc(%d) ", size);
 	fflush(stdout);
 	ptr = malloc(size);

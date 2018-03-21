@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2005,2011  John Elliott <jce@seasip.demon.co.uk>       *
+ *    Copyright (C) 2005,2011  John Elliott <seasip.webmaster@gmail.com>       *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -20,25 +20,21 @@
  *                                                                         *
  ***************************************************************************/
 
-
-#include <limits.h>
-
-
 /* Declarations for the Reverse-CP/M driver */
 
 /* Sectors that are written but don't correspond to files have to be
- * saved in memory. These include the CP/M directory, and areas of the
- * disc that aren't allocated to files (but a future write to the
- * directory could change that!)
+ * saved in memory. These include the CP/M directory, and areas of the 
+ * disc that aren't allocated to files (but a future write to the 
+ * directory could change that!) 
  *
  * The sectors are buffered in a singly-linked list.
- */
+ */ 
 
 typedef struct rcpmfs_buffer
 {
 	struct rcpmfs_buffer *rcb_next;
 	size_t		      rcb_size;
-	dsk_lsect_t           rcb_lsect;
+	dsk_lsect_t           rcb_lsect;	
 	unsigned char         rcb_data[1];
 } RCPMFS_BUFFER;
 
@@ -54,7 +50,7 @@ typedef struct
 
 /* CP/M filesystem description */
 	unsigned rc_blocksize;
-	unsigned rc_dirblocks;
+	unsigned rc_dirblocks;	
 	unsigned rc_totalblocks;
 	unsigned rc_systracks;
 

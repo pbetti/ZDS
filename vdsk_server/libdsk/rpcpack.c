@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2002  John Elliott <jce@seasip.demon.co.uk>            *
+ *    Copyright (C) 2002  John Elliott <seasip.webmaster@gmail.com>            *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -58,7 +58,7 @@ dsk_err_t dsk_unpack_i32(unsigned char **input, int *inp_len, int32 *function)
 
 dsk_err_t dsk_unpack_err(unsigned char **input, int *inp_len, dsk_err_t *value)
 	{
-	signed short val;
+	signed short val = DSK_ERR_OK;
 	dsk_err_t err;
 
 	err = dsk_unpack_i16(input, inp_len, (int16 *)&val);
@@ -208,7 +208,7 @@ dsk_err_t dsk_pack_geom  (unsigned char **output, int *out_len, const DSK_GEOMET
 	err = dsk_pack_i16(output, out_len, (int16)g->dg_datarate);  if (err) return err;
 	err = dsk_pack_i16(output, out_len, g->dg_rwgap);     if (err) return err;
 	err = dsk_pack_i16(output, out_len, g->dg_fmtgap);    if (err) return err;
-	err = dsk_pack_i16(output, out_len, (int16)g->dg_fm);        if (err) return err;
+	err = dsk_pack_i16(output, out_len, (int16)g->dg_fm);   if (err) return err;
 	err = dsk_pack_i16(output, out_len, (int16)g->dg_nomulti);   if (err) return err;
 	err = dsk_pack_i16(output, out_len, (int16)g->dg_noskip);    if (err) return err;
 	return DSK_ERR_OK;

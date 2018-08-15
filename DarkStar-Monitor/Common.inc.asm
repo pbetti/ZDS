@@ -506,7 +506,7 @@ eerineprom	equ	80h		; tried to program eeprom running inside it
 
 ;*************************************
 ; Production / Testing
-bbdebug		equ	false
+bbdebug		equ	true
 ;*************************************
 
 ;-------------------------------------
@@ -515,13 +515,13 @@ bbdebug		equ	false
 if	bbdebug
 
 bbimgp		equ	04h		; Image location (DEBUG)
-bbappp		equ	0eh
+bbappp		equ	0eh		; Temporary page/bank
 bbpag		equ	0fh		; Base page location
 
 else
 
 bbimgp		equ	eepage0		; Image location
-bbappp		equ	0eh
+bbappp		equ	0eh		; Temporary page/bank
 bbpag		equ	0fh		; Base page location
 
 endif
@@ -531,6 +531,6 @@ bbbase		equ	bbpag << 12	; non resident base address
 bbcomn		equ	bbbase + 0c00h	; resident portion address
 
 ; sysbase 	equ	bbbase		; use this to have 60K TPA
-; SYSBASE 	equ	BBCOMN		; use this to have 63K TPA
+; sysbase 	equ	bbcomn		; use this to have 63K TPA
 
 ;-------------------------------------

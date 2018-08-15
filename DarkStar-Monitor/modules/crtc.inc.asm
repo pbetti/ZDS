@@ -441,7 +441,7 @@ scrtst:
 	xor	a			; clear carry
 	sbc	hl,de			; subctract and set carry
 	add	hl,de			; restore hl
-	ret				; and ret	ret
+	ret				; and ret
 
 ;;
 ;; Cursor shape/mode handling

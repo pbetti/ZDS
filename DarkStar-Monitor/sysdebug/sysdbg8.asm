@@ -5115,6 +5115,7 @@ xycp:
 	push	bc		;Enter with row in b and column in c
 	push	de
 	push	hl
+	inc	b		; ZDS origin 1,1
 	ld	hl,mxycp
 	ld	a,(row)		;Add in row offset
 	add	a,b

@@ -170,7 +170,7 @@ mmursend:
 	ld	hl,boot
 	ld	($0067),hl
 	ld	a,$c9
-	ld	($0008),a
+; 	ld	($0008),a
 	ld	($0038),a
 	ld	hl,cnfbyte		; enable XON protcol by default (UART0)
 	set	1,(hl)
@@ -1456,7 +1456,6 @@ placepage:
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
 	ret
-
 
 ;-----------------------------------------------------------------------
 

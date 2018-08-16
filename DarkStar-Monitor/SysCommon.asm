@@ -36,11 +36,20 @@ include sysbios.equ
 ;-------------------------------------
 ; Some macro
 
-bbjtobnk macro 	bnknum, raddr
-	call	bbexec
+bbjbnk_1 macro	raddr
+	call	bbexec1
 	defw	raddr
-	defb	bnknum
-	endm
+endm
+
+bbjbnk_2 macro	raddr
+call	bbexec2
+defw	raddr
+endm
+
+bbjbnk_3 macro	raddr
+	call	bbexec3
+	defw	raddr
+endm
 
 ;-------------------------------------
 
@@ -94,73 +103,90 @@ syscom:
 	public	sintvec, intren, intrdi, fstat
 	public	fout, srxstp, srxrsm
 
+	;::::::::::::::::::::::::::::::::::::::::::::::::::::::
+	;:: Please note: bios bank switch is not reentrant!  ::
+	;:: You CAN'T call a banked routine resident in your ::
+	;:: own bank.                                        ::
+	;::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 ;-------------------------------------
 ; Internal BIOS calls
 
-bbcrtcini:	bbjtobnk 1, crtcini
-bbcrtfill:	bbjtobnk 1, crtfill
-vconin:		bbjtobnk 1, bconin
-vconst:		bbjtobnk 1, bconst
-bbcurset:	bbjtobnk 1, curset
-sconout:	bbjtobnk 1, txchar0
-sconin:		bbjtobnk 1, rxchar0
-sconst:		bbjtobnk 1, ustatus0
-bbu0ini:	bbjtobnk 1, iniuart0
-bbu1tx:		bbjtobnk 1, txchar1
-bbu1rx:		bbjtobnk 1, rxchar1
-bbu1st:		bbjtobnk 1, ustatus1
-bbu1ini:	bbjtobnk 1, iniuart1
-bbinictc:	bbjtobnk 1, inictc
-bbresctc:	bbjtobnk 1, resctc
-bbscroll:	bbjtobnk 1, scroll
-bbconou2:	bbjtobnk 1, vconou2
+bbcrtcini:	bbjbnk_1 crtcini
+bbcrtfill:	bbjbnk_1 crtfill
+vconin:		bbjbnk_1 bconin
+vconst:		bbjbnk_1 bconst
+bbcurset:	bbjbnk_1 curset
+sconout:	bbjbnk_1 txchar0
+sconin:		bbjbnk_1 rxchar0
+sconst:		bbjbnk_1 ustatus0
+bbu0ini:	bbjbnk_1 iniuart0
+bbu1tx:		bbjbnk_1 txchar1
+bbu1rx:		bbjbnk_1 rxchar1
+bbu1st:		bbjbnk_1 ustatus1
+bbu1ini:	bbjbnk_1 iniuart1
+bbinictc:	bbjbnk_1 inictc
+bbresctc:	bbjbnk_1 resctc
+bbscroll:	bbjbnk_1 scroll
+bbconou2:	bbjbnk_1 vconou2
 
-bbpsndblk:	bbjtobnk 2, psndblk
-bbuplchr:	bbjtobnk 2, uplchr
-bbprcvblk:	bbjtobnk 2, prcvblk
-bbrdvdsk:	bbjtobnk 2, vdskrd
-bbwrvdsk:	bbjtobnk 2, vdskwr
-bbfhome:	bbjtobnk 2, fhome
-bbfread:	bbjtobnk 2, fread
-bbfwrite:	bbjtobnk 2, fwrite
-bbflopio:	bbjtobnk 2, flopio
-bbprnchr:	bbjtobnk 2, prnchr
-bbsttim:	bbjtobnk 2, sttim
-bbrdtime:	bbjtobnk 2, rdtime
-bbtrkset:	bbjtobnk 2, trkset
-bbsecset:	bbjtobnk 2, secset
-bbdmaset:	bbjtobnk 2, dmaset
-bbdsksel:	bbjtobnk 2, dsksel
-bbcpboot:	bbjtobnk 2, cpmboot
-bbvcpmbt:	bbjtobnk 2, vcpmbt
-bbsidset:	bbjtobnk 2, sidset
-bbfdrvsel:	bbjtobnk 2, fdrvsel
-bbdiv16:	bbjtobnk 2, div16
-bbmul16:	bbjtobnk 2, mul16
-bboffcal:	bbjtobnk 2, offcal
-bbhdinit:	bbjtobnk 2, hdinit
-bbdriveid:	bbjtobnk 2, driveid
-bbhdwr:		bbjtobnk 2, writesector
-bbhdrd:		bbjtobnk 2, readsector
-bbhdgeo:	bbjtobnk 2, gethdgeo
-bbhdboot:	bbjtobnk 2, hdcpm
-bbldpart:	bbjtobnk 2, getptable
-bbdprmset:	bbjtobnk 2, setdprm
+bbpsndblk:	bbjbnk_2 psndblk
+bbuplchr:	bbjbnk_2 uplchr
+bbprcvblk:	bbjbnk_2 prcvblk
+bbrdvdsk:	bbjbnk_2 vdskrd
+bbwrvdsk:	bbjbnk_2 vdskwr
+bbfhome:	bbjbnk_2 fhome
+bbfread:	bbjbnk_2 fread
+bbfwrite:	bbjbnk_2 fwrite
+bbflopio:	bbjbnk_2 flopio
+bbprnchr:	bbjbnk_2 prnchr
+bbsttim:	bbjbnk_2 sttim
+bbrdtime:	bbjbnk_2 rdtime
+bbtrkset:	bbjbnk_2 trkset
+bbsecset:	bbjbnk_2 secset
+bbdmaset:	bbjbnk_2 dmaset
+bbdsksel:	bbjbnk_2 dsksel
+bbcpboot:	bbjbnk_2 cpmboot
+bbvcpmbt:	bbjbnk_2 vcpmbt
+bbsidset:	bbjbnk_2 sidset
+bbfdrvsel:	bbjbnk_2 fdrvsel
+bbdiv16:	bbjbnk_2 div16
+bbmul16:	bbjbnk_2 mul16
+bboffcal:	bbjbnk_2 offcal
+bbhdinit:	bbjbnk_2 hdinit
+bbdriveid:	bbjbnk_2 driveid
+bbhdwr:		bbjbnk_2 writesector
+bbhdrd:		bbjbnk_2 readsector
+bbhdgeo:	bbjbnk_2 gethdgeo
+bbhdboot:	bbjbnk_2 hdcpm
+bbldpart:	bbjbnk_2 getptable
+bbdprmset:	bbjbnk_2 setdprm
 
-bbepmngr:	bbjtobnk 3, epmanager
-bbeidck:	bbjtobnk 3, eidcheck
+bbepmngr:	bbjbnk_3 epmanager
+bbeidck:	bbjbnk_3 eidcheck
 ; -- new --
 
 ;;
 ;; Switch bank and jump
 ;;
 
+bbexec3:
+	ex	af,af'			; save af
+	ld	a,3			; bank 3
+	jr	bbexec
+bbexec2:
+	ex	af,af'			; save af
+	ld	a,2			; bank 2
+	jr	bbexec
+bbexec1:
+	ex	af,af'			; save af
+	ld	a,1			; bank 1
 bbexec:
 	di				; protect bank switch
 	exx				; save registers
-	ex	af,af'
 	ex	(sp),hl
-	pop	de			; remove call to us from stack
+	pop	bc			; remove call to us from stack
+	ld	d,a			; remember bank
 
 	ld	b,bbpag	<< 4		; where we are ?
 	ld	c,mmuport
@@ -168,13 +194,12 @@ bbexec:
 	ld	(bbcbank),a		; save current bank
 
 	ld	e,(hl)			; E low byte of called routine
-	inc	hl			; and
-	ld	d,(hl)			; hi byte. DE = routine address
-	inc	hl
-	ld	l,(hl)			; routine bank in L
+	inc	hl			;
+	ld	h,(hl)			; H high byte of called routine
 	ld	a,(hmempag)		; calculate destination bank
-	sub	a,l
-	out	(c),a			; and switch to it
+	sub	a,d			; A phisical bank
+	ld	d,h			; DE routine address
+	out	(c),a			; bank switch
 
 	ld	(bbcstck),sp
 	ld	hl,(bbcstck)		; save current stack pointer

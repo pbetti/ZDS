@@ -89,12 +89,13 @@ include Common.inc.asm
 	extern	bbuplchr, bbpsndblk, bbprcvblk
 	extern	bbprnchr, bbrdvdsk, bbvcpmbt
  	extern	bbhdboot
- 	extern	bbepmngr, bbeidck, bbldpart
+ 	extern	bbeidck, bbldpart, bbepmngr
 
  	extern	bbdsksel, bbdmaset, bbtrkset, bbsecset, bbhdrd
 
 	extern	delay, mmpmap, mmgetp
 	extern	intren
+	;extern	bbscroll
 
 ;-------------------------------------
 
@@ -172,7 +173,7 @@ mmursend:
 	ld	a,$c9
 ; 	ld	($0008),a
 	ld	($0038),a
-	ld	hl,cnfbyte		; enable XON protcol by default (UART0)
+	ld	hl,cnfbyte		; enable XON protocol by default (UART0)
 	set	1,(hl)
 
 	; now size banked memory

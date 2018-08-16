@@ -86,7 +86,7 @@ mzmac	equ	1
 ; Monitor version numbers (major.minor)
 ;
 monmaj		equ	'3'
-monmin		equ	'6'
+monmin		equ	'9'
 
 ;
 ; Buffers addresses labels
@@ -121,7 +121,7 @@ miobyte		equ	kbdbyte-1	; byte:
 					;         3: 0 = accept lowercase	1 = convert to uppercase
 					;         4: 0 = destr. bkspace		1 = non destr. bkspace
 					;         5: 0 = console out		1 = serial out
-					;         6: 0 = disp. all chars	1 = obscure non punct.
+					;         6: unused
 					;         7: 0 = ctrl chr set 1		1 = ctrl chr set 2
 tmpbyte		equ	miobyte-1	; byte: transients flags
 					; - bits: 0: 0 = high in cursor addressing

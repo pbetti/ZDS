@@ -16,6 +16,9 @@
 ;		  ne eprom 683
 ;		- Fixed lf/cr bug on scroll
 
+	extern	movrgt, eostest, cout00
+	extern	scrtst, updvidp, scrspos, dispch
+
 ;; 6545 registers initialization vector
 crttab:
 	db	111		; VR0 Tot h chars -1
@@ -147,33 +150,7 @@ curloca:
 	ld	hl,endvid		; place at edge
 curloc0:
 	ld	(curpbuf),hl		; update buf
-	; fall through...
-;;
-;; Update video pointer
-;
-updvidp:
-	ld	de,(vstabuf)		; load curently display start
-	add	hl,de			; compute relative position
-					; and count with updtcpur
-scrspos:
-	ld	a,vr14.curposh
-	out	(crt6545adst),a
-	ld	a,h
-	out	(crt6545data),a
-	ld	a,vr15.curposl
-	out	(crt6545adst),a
-	ld	a,l
-	out	(crt6545data),a
-updtureg:
-	ld	a,vr18.updaddrh
-	out	(crt6545adst),a
-	ld	a,h
-	out	(crt6545data),a
-	ld	a,vr19.updaddrl
-	out	(crt6545adst),a
-	ld	a,l
-	out	(crt6545data),a
-	jr	crtprgend
+	jp	updvidp
 
 ;;
 ;; DBLANK
@@ -246,21 +223,6 @@ dispgr:
 	ret
 
 ;;
-;; DISPCH - Display in text mode (raw output)
-;;
-dispch:
-	push	af
-dgclp0:	in	a,(crt6545adst)
-	bit	7,a
-	jr	z,dgclp0
-	pop	af
-	out	(crtram0dat),a
-	ld	a,(ram3buf)
-	out	(crtram3port),a
-	xor	a
-	out	(crt6545data),a
-	ret
-;;
 ;; Fill screen of chars in C
 ;
 crtfill:
@@ -275,84 +237,41 @@ crtf0:	ld	a,c			;
 	call	vstares			; reset origins
 	jr	crtprgend
 
-;;
-;; BCONOUT print out the char in reg C
-;; with full evaluation of control chars
-;;
-;; register clean: can be used as CP/M BIOS replacement
-;;
-bconout:
-	push	af
-	push	bc
-	push	de
-	push	hl
-	; force jump to register restore and exit in stack
-	ld	hl,bcexit
-	push	hl
-	;
-	ld	a,c
-	ld	hl,miobyte
-	bit	7,(hl)			; alternate char processing ?
-	ex	de,hl
-	jr	nz,conou2		; yes: do alternate
-	cp	$20			; no: is less then 0x20 (space) ?
-	jr	nc,cojp1		; no: go further
 
-	add	a,a			; yes: is a special char
-	ld	h,0
-	ld	l,a
-	ld	bc,iocvec
-	add	hl,bc
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	jp	(hl)			; jump to IOCVEC handler
 
-cojp1:	ex	de,hl
-	bit	6,(hl)			; auto ctrl chars ??
-	jr	z,cojp2			; no
-
-	cp	$40			; yes: convert
-	jr	c,cojp2
-	cp	$60
-	jr	nc,cojp2
-	sub	$40
-
-cojp2:	call	dispch			; display char
-	; move cursor right
-movrgt:
-	ld	hl,(curpbuf)		; get cursor position
-	inc	hl			; to next char
-eostest:
-	call	scrtst			; end of screen ?
-	jr	c,cout00		; no
-	ld	de,0ffb0h		;
-	add	hl,de			;
-	call	scroll			; update display start (scrolling)
-cout00:
-	ld	(curpbuf),hl		; save video pointer
-	call	updvidp			; update video pointer
-	ret
-	; alternate processing....
-conou2:
-	cp	$20			; is a ctrl char ??
-	jr	nc,curadr		; no: will set cursor pos
-
-	add	a,a			; yes
-	ld	h,0
-	ld	l,a
-	ld	bc,iocvec2
-	add	hl,bc
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	jp	(hl)			; jump to service routine... (IOCVEC2)
-;;
-;; cursor addressing service routine
-;; address is ESC + (COL # + 32) + (ROW # + 32) + NUL
 ;
+; Special control chars and seqences processing
+;
+vconou2:
+	push	af
+	xor	a
+	cp	b			; b=0 means standard control chr
+	ld	bc, iocvec		; point to standard jump vector
+	jr	nz,conoalt
+
+	pop	af			; b=1 means ESC prefixed control chr
+	cp	$20			; is really a ctrl char ??
+	jr	nc,curadr		; no: will so will set cursor pos
+	ld	bc,iocvec2		; point to alternate jump vector
+	jr	vconjmp
+conoalt:
+	pop	af
+vconjmp:
+	; special
+	add	a,a
+	ld	h,0
+	ld	l,a
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	(hl)			; jump to service routine...
+
+;
+; cursor addressing service routine
+; address is ESC + (COL # + 32) + (ROW # + 32) + NUL
+
 curadr:	ld	hl,tmpbyte		; alredy do column ?
 	bit	0,(hl)
 	jr	nz,setrow		; yes, do row
@@ -379,14 +298,7 @@ curofs:	add	hl,de			; calc. new offset
 	ld	a,(appbuf)
 	ld	e,a
 	add	hl,de
-	jr	cout00			; update position
-
-bcexit:
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
-	ret
+	jp	cout00			; update position
 
 ;;
 ;; MOVDWN - cursor down one line
@@ -395,7 +307,13 @@ movdwn:
 	ld	hl,(curpbuf)		; current
 	ld	de,80			; 80 to add
 	add	hl,de			; move down
-	jr	eostest
+; 	jp	eostest
+	call	scrtst			; end of screen ?
+	jp	c,cout00		; no
+	ld	de,0ffb0h		;
+	add	hl,de			;
+	call	scroll			; update display start (scrolling)
+	jp	cout00
 ;;
 ;; Move cursor up
 ;
@@ -432,16 +350,6 @@ bakspc:
 	call	dispch
 	ld	hl,(curpbuf)		; reinit hl
 	jr	movb01			; ret
-
-;;
-;; SCRTST - Verify if we need video scroll
-;
-scrtst:
-	ld	de,endvid+1		; DE = end video + 1
-	xor	a			; clear carry
-	sbc	hl,de			; subctract and set carry
-	add	hl,de			; restore hl
-	ret				; and ret
 
 ;;
 ;; Cursor shape/mode handling

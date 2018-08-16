@@ -36,20 +36,11 @@ include sysbios.equ
 ;-------------------------------------
 ; Some macro
 
-bbjbnk_1 macro	raddr
-	call	bbexec1
+bbjtobnk macro 	bnknum, raddr
+	call	bbexec
 	defw	raddr
-endm
-
-bbjbnk_2 macro	raddr
-call	bbexec2
-defw	raddr
-endm
-
-bbjbnk_3 macro	raddr
-	call	bbexec3
-	defw	raddr
-endm
+	defb	bnknum
+	endm
 
 ;-------------------------------------
 
@@ -90,11 +81,14 @@ syscom:
 	public	bbhdrd, bbhdwr, bbhdboot, bbldpart
 
 	; SYSBIOS3
-	public	bbepmngr, bbeidck
+	public	bbeidck, bbepmngr
 
 	; Resident routines
 	public	delay, mmpmap, mmgetp, bbconst
 	public	bbconin, bbconout, rldrom
+	public	dispch, movrgt, eostest, cout00
+	public	scrtst, updvidp, scrspos
+	public	bbscroll
 
 	; Interrupts vector table & mngmt
 	public	sintvec, intren, intrdi, fstat
@@ -103,79 +97,70 @@ syscom:
 ;-------------------------------------
 ; Internal BIOS calls
 
-bbcrtcini:	bbjbnk_1 crtcini
-bbcrtfill:	bbjbnk_1 crtfill
-vconout:	bbjbnk_1 bconout
-vconin:		bbjbnk_1 bconin
-vconst:		bbjbnk_1 bconst
-bbcurset:	bbjbnk_1 curset
-sconout:	bbjbnk_1 txchar0
-sconin:		bbjbnk_1 rxchar0
-sconst:		bbjbnk_1 ustatus0
-bbu0ini:	bbjbnk_1 iniuart0
-bbu1tx:		bbjbnk_1 txchar1
-bbu1rx:		bbjbnk_1 rxchar1
-bbu1st:		bbjbnk_1 ustatus1
-bbu1ini:	bbjbnk_1 iniuart1
-bbinictc:	bbjbnk_1 inictc
-bbresctc:	bbjbnk_1 resctc
+bbcrtcini:	bbjtobnk 1, crtcini
+bbcrtfill:	bbjtobnk 1, crtfill
+vconin:		bbjtobnk 1, bconin
+vconst:		bbjtobnk 1, bconst
+bbcurset:	bbjtobnk 1, curset
+sconout:	bbjtobnk 1, txchar0
+sconin:		bbjtobnk 1, rxchar0
+sconst:		bbjtobnk 1, ustatus0
+bbu0ini:	bbjtobnk 1, iniuart0
+bbu1tx:		bbjtobnk 1, txchar1
+bbu1rx:		bbjtobnk 1, rxchar1
+bbu1st:		bbjtobnk 1, ustatus1
+bbu1ini:	bbjtobnk 1, iniuart1
+bbinictc:	bbjtobnk 1, inictc
+bbresctc:	bbjtobnk 1, resctc
+bbscroll:	bbjtobnk 1, scroll
+bbconou2:	bbjtobnk 1, vconou2
 
-bbpsndblk:	bbjbnk_2 psndblk
-bbuplchr:	bbjbnk_2 uplchr
-bbprcvblk:	bbjbnk_2 prcvblk
-bbrdvdsk:	bbjbnk_2 vdskrd
-bbwrvdsk:	bbjbnk_2 vdskwr
-bbfhome:	bbjbnk_2 fhome
-bbfread:	bbjbnk_2 fread
-bbfwrite:	bbjbnk_2 fwrite
-bbflopio:	bbjbnk_2 flopio
-bbprnchr:	bbjbnk_2 prnchr
-bbsttim:	bbjbnk_2 sttim
-bbrdtime:	bbjbnk_2 rdtime
-bbtrkset:	bbjbnk_2 trkset
-bbsecset:	bbjbnk_2 secset
-bbdmaset:	bbjbnk_2 dmaset
-bbdsksel:	bbjbnk_2 dsksel
-bbcpboot:	bbjbnk_2 cpmboot
-bbvcpmbt:	bbjbnk_2 vcpmbt
-bbsidset:	bbjbnk_2 sidset
-bbfdrvsel:	bbjbnk_2 fdrvsel
-bbdiv16:	bbjbnk_2 div16
-bbmul16:	bbjbnk_2 mul16
-bboffcal:	bbjbnk_2 offcal
-bbhdinit:	bbjbnk_2 hdinit
-bbdriveid:	bbjbnk_2 driveid
-bbhdwr:		bbjbnk_2 writesector
-bbhdrd:		bbjbnk_2 readsector
-bbhdgeo:	bbjbnk_2 gethdgeo
-bbhdboot:	bbjbnk_2 hdcpm
-bbldpart:	bbjbnk_2 getptable
-bbdprmset:	bbjbnk_2 setdprm
+bbpsndblk:	bbjtobnk 2, psndblk
+bbuplchr:	bbjtobnk 2, uplchr
+bbprcvblk:	bbjtobnk 2, prcvblk
+bbrdvdsk:	bbjtobnk 2, vdskrd
+bbwrvdsk:	bbjtobnk 2, vdskwr
+bbfhome:	bbjtobnk 2, fhome
+bbfread:	bbjtobnk 2, fread
+bbfwrite:	bbjtobnk 2, fwrite
+bbflopio:	bbjtobnk 2, flopio
+bbprnchr:	bbjtobnk 2, prnchr
+bbsttim:	bbjtobnk 2, sttim
+bbrdtime:	bbjtobnk 2, rdtime
+bbtrkset:	bbjtobnk 2, trkset
+bbsecset:	bbjtobnk 2, secset
+bbdmaset:	bbjtobnk 2, dmaset
+bbdsksel:	bbjtobnk 2, dsksel
+bbcpboot:	bbjtobnk 2, cpmboot
+bbvcpmbt:	bbjtobnk 2, vcpmbt
+bbsidset:	bbjtobnk 2, sidset
+bbfdrvsel:	bbjtobnk 2, fdrvsel
+bbdiv16:	bbjtobnk 2, div16
+bbmul16:	bbjtobnk 2, mul16
+bboffcal:	bbjtobnk 2, offcal
+bbhdinit:	bbjtobnk 2, hdinit
+bbdriveid:	bbjtobnk 2, driveid
+bbhdwr:		bbjtobnk 2, writesector
+bbhdrd:		bbjtobnk 2, readsector
+bbhdgeo:	bbjtobnk 2, gethdgeo
+bbhdboot:	bbjtobnk 2, hdcpm
+bbldpart:	bbjtobnk 2, getptable
+bbdprmset:	bbjtobnk 2, setdprm
 
-bbepmngr:	bbjbnk_3 epmanager
-bbeidck:	bbjbnk_3 eidcheck
+bbepmngr:	bbjtobnk 3, epmanager
+bbeidck:	bbjtobnk 3, eidcheck
+; -- new --
 
 ;;
 ;; Switch bank and jump
 ;;
 
-bbexec3:
-	ex	af,af'			; save af
-	ld	a,3			; bank 3
-	jr	bbexec
-bbexec2:
-	ex	af,af'			; save af
-	ld	a,2			; bank 2
-	jr	bbexec
-bbexec1:
-	ex	af,af'			; save af
-	ld	a,1			; bank 1
 bbexec:
 	di				; protect bank switch
 	exx				; save registers
+	ex	af,af'
 	ex	(sp),hl
-	pop	bc			; remove call to us from stack
-	ld	d,a			; remember bank
+	pop	de			; remove call to us from stack
 
 	ld	b,bbpag	<< 4		; where we are ?
 	ld	c,mmuport
@@ -183,12 +168,13 @@ bbexec:
 	ld	(bbcbank),a		; save current bank
 
 	ld	e,(hl)			; E low byte of called routine
-	inc	hl			;
-	ld	h,(hl)			; H high byte of called routine
+	inc	hl			; and
+	ld	d,(hl)			; hi byte. DE = routine address
+	inc	hl
+	ld	l,(hl)			; routine bank in L
 	ld	a,(hmempag)		; calculate destination bank
-	sub	a,d			; A phisical bank
-	ld	d,h			; DE routine address
-	out	(c),a			; bank switch
+	sub	a,l
+	out	(c),a			; and switch to it
 
 	ld	(bbcstck),sp
 	ld	hl,(bbcstck)		; save current stack pointer
@@ -324,7 +310,113 @@ bbconst:
 	jp	z,vconst		; video
 	jp	sconst			; serial
 
+;
+; VCONOUT print out the char in reg C
+; with full evaluation of control chars
+;
+; register clean: can be used as CP/M BIOS replacement
+;
+vconout:
+	push	af			; clean register usage
+	push	bc
+	push	de
+	push	hl
+					; force jump to register restore and exit in stack
+	ld	hl,vbcexit
+	push	hl
+	;
+	ld	b,0			; assume standard ctrl (if it is)
+	ld	a,c
+	ld	hl,miobyte
+	bit	7,(hl)			; alternate char processing active ?
+	ex	de,hl
+	jr	nz,vc00			; yes, do alternate
+	inc	b			; no
+	cp	$20			; no: but is less then 0x20 (ctrl) ?
+	jr	nc,vc01			; no: go further
+vc00:
+	call	bbconou2		; yes: do processing
+	ret
+vc01:
+	call	dispch			; display char
+					; move cursor right
+movrgt:
+	ld	hl,(curpbuf)		; get cursor position
+	inc	hl			; to next char
 
+eostest:
+	call	scrtst			; end of screen ?
+	jr	c,cout00		; no
+	ld	de,0ffb0h		;
+	add	hl,de			;
+	call	bbscroll		; update display start (scrolling)
+
+cout00:
+	ld	(curpbuf),hl		; save video pointer
+	call	updvidp			; update video pointer
+	ret
+
+vbcexit:
+	pop	hl			; clean exit...
+	pop	de
+	pop	bc
+	pop	af
+	ret
+
+;;
+;; DISPCH - Display in text mode (raw output)
+;;
+dispch:
+	push	af
+dgclp0:	in	a,(crt6545adst)
+	bit	7,a
+	jr	z,dgclp0
+	pop	af
+	out	(crtram0dat),a
+	ld	a,(ram3buf)
+	out	(crtram3port),a
+	xor	a
+	out	(crt6545data),a
+	ret
+
+;;
+;; SCRTST - Verify if we need video scroll
+;
+scrtst:
+	ld	de,endvid+1		; DE = end video + 1
+	xor	a			; clear carry
+	sbc	hl,de			; subctract and set carry
+	add	hl,de			; restore hl
+	ret				; and ret
+
+;;
+;; Update video pointer
+;
+updvidp:
+	ld	de,(vstabuf)		; load curently display start
+	add	hl,de			; compute relative position
+					; and count with updtcpur
+scrspos:
+	ld	a,vr14.curposh
+	out	(crt6545adst),a
+	ld	a,h
+	out	(crt6545data),a
+	ld	a,vr15.curposl
+	out	(crt6545adst),a
+	ld	a,l
+	out	(crt6545data),a
+updtureg:
+	ld	a,vr18.updaddrh
+	out	(crt6545adst),a
+	ld	a,h
+	out	(crt6545data),a
+	ld	a,vr19.updaddrl
+	out	(crt6545adst),a
+	ld	a,l
+	out	(crt6545data),a
+	ld	a,vr31.dummy
+	out	(crt6545adst),a
+	ret
 
 ;************************************************************************
 ;    FIFO BUFFERS FOR CP/M BIOS

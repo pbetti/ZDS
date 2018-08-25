@@ -9,74 +9,29 @@
 ;; Assemble     : SLR z80asm
 ;; Revisions:
 ;; 20140915	- Code start
+;; 20180825	- removed debug code
+;;		- lowecased
 ;;---------------------------------------------------------------------
 
 	TITLE	'MEDIA MODULE FOR CP/M 3.1'
 
-	.Z80
+	.z80
 
 	; define logical values:
 	include	common.inc
 	include syshw.inc
 
-LDRDBG	EQU	false
 
 	; define public labels:
-	PUBLIC	HDVOID, FDDVOID
-	PUBLIC	HRDVDSK, HWRVDSK, HDVLOG
-	PUBLIC	IDERDDSK, IDEWRDSK, IDELOGIN
-	PUBLIC	FDDRD, FDDWR, FDDLOG
+	public	hdvoid, fddvoid
+	public	hrdvdsk, hwrvdsk, hdvlog
+	public	iderddsk, idewrdsk, idelogin
+	public	fddrd, fddwr, fddlog
 
-	EXTRN	@BIOS$STACK
-	IF BANKED
-	EXTRN	@CBNK, @DBNK, ?BANK
-	ENDIF
-
-HEX16	macro	p1,p2
-	if	LDRDBG
-	ld	(OLDSTACK),SP
-	ld	sp,NEWSTACK
-	push	af
-	push	bc
-	push	de
-	push	hl
-	ld	a,p1
-	call	phex
-	ld	a,p2
-	call	phex
-	ld	c,CR
-	call	BBCONOUT
-	ld	c,LF
-	call	BBCONOUT
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
-	ld	sp,(OLDSTACK)
+	extrn	@bios$stack
+	if banked
+	extrn	@cbnk, @dbnk, ?bank
 	endif
-	endm
-
-HEX8	macro	p1
-	if	LDRDBG
-	ld	(OLDSTACK),SP
-	ld	sp,NEWSTACK
-	push	af
-	push	bc
-	push	de
-	push	hl
-	ld	a,p1
-	call	phex
-	ld	c,CR
-	call	BBCONOUT
-	ld	c,LF
-	call	BBCONOUT
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
-	ld	sp,(OLDSTACK)
-	endif
-	endm
 
 
 
@@ -85,264 +40,231 @@ HEX8	macro	p1
 ; possibly banked routines (entry points)
 ;-------------------------------------------------------
 
-	IF BANKED
-	DSEG
-	ENDIF
+	if banked
+	dseg
+	endif
 
-FDDVOID:
-HDVOID:					; void routine
-	RET
+fddvoid:
+hdvoid:					; void routine
+	ret
 
 	; login floppies
-FDDLOG:
-	PUSH	HL
-	PUSH	DE
-	LD	HL,(FLSECS)
-	LD	DE,(FLSECS+2)
-	JR	HDVLO0
-	
+fddlog:
+	push	hl
+	push	de
+	ld	hl,(flsecs)
+	ld	de,(flsecs+2)
+	jr	hdvlo0
+
 	; login virtual hd
-HDVLOG:
-	PUSH	HL
-	PUSH	DE
-	LD	HL,(HDSECS)
-	LD	DE,(HDSECS+2)
-HDVLO0:
-	CALL	BBDPRMSET
-	POP	DE
-	POP	HL
-	RET
+hdvlog:
+	push	hl
+	push	de
+	ld	hl,(hdsecs)
+	ld	de,(hdsecs+2)
+hdvlo0:
+	call	bbdprmset
+	pop	de
+	pop	hl
+	ret
 
 	; wrapper for virtual hd read routine
-HRDVDSK:
-	PUSH	IX
-	CALL	HDVLOG			; hd params
-	JP	DOHRDVD
+hrdvdsk:
+	push	ix
+	call	hdvlog			; hd params
+	jp	dohrdvd
 
 	; wrapper for virtual hd write routine
-HWRVDSK:
-	PUSH	IX
-	CALL	HDVLOG			; hd params
-	JP	DOHWRVD
+hwrvdsk:
+	push	ix
+	call	hdvlog			; hd params
+	jp	dohwrvd
 
 	; wrapper for ide hd read routine
-IDERDDSK:
-	PUSH	IY
-	JP	DOIDERD
+iderddsk:
+	push	iy
+	jp	doiderd
 
 	; wrapper for ide hd write routine
-IDEWRDSK:
-	PUSH	IY
-	JP	DOIDEWR
+idewrdsk:
+	push	iy
+	jp	doidewr
 
-	; ide login			; DISABLED
-IDELOGIN:				; done once at boot
-; 	LD	A,'3'
-; 	LD	(COPSYS),A		; identify opsys for partitions
+	; ide login			; disabled
+idelogin:				; done once at boot
+; 	ld	a,'3'
+; 	ld	(copsys),a		; identify opsys for partitions
 ;
-; 	CALL	BBHDINIT		; IDE init
-; 	OR	A
-; 	JP	NZ,IDEERR
-; 	CALL	BBLDPART
-	RET
+; 	call	bbhdinit		; ide init
+; 	or	a
+; 	jp	nz,ideerr
+; 	call	bbldpart
+	ret
 
 	; floppy read routine
-FDDRD:
-	PUSH	IX
-	CALL	FDDLOG
-	LD	A,(FDRVBUF)		; get active drive
-	CP	2			; is hw floppy ?
-	JR	C,RDFLO0		; yes
-	JP	RDVRT			; no, then is a virtual drive
+fddrd:
+	push	ix
+	call	fddlog
+	ld	a,(fdrvbuf)		; get active drive
+	cp	2			; is hw floppy ?
+	jr	c,rdflo0		; yes
+	jp	rdvrt			; no, then is a virtual drive
 	;
 	; floppy write routine
-FDDWR:
-	PUSH	IX
-	CALL	FDDLOG
-	LD	A,(FDRVBUF)		; get active drive
-	CP	2			; is floppy ?
-	JR	C,WRFLO0		; yes
-	JP	WRVRT			; no, then is a virtual drive
+fddwr:
+	push	ix
+	call	fddlog
+	ld	a,(fdrvbuf)		; get active drive
+	cp	2			; is floppy ?
+	jr	c,wrflo0		; yes
+	jp	wrvrt			; no, then is a virtual drive
 
-RDFLO0:
-	CALL	CHKSID			; side select
-	CALL	BBFDRVSEL		; activate drive
-	JP	RDFLO
-WRFLO0:
-	CALL	CHKSID			; side select
-	CALL	BBFDRVSEL		; activate drive
-	JP	WRFLO
+rdflo0:
+	call	chksid			; side select
+	call	bbfdrvsel		; activate drive
+	jp	rdflo
+wrflo0:
+	call	chksid			; side select
+	call	bbfdrvsel		; activate drive
+	jp	wrflo
 
 	;	test for side switch on floppies
 	;
-CHKSID:	LD	IX,FLSECS		; CHS infos
-	LD	C,0			; side 0 by default
-	LD	A,(FTRKBUF)		; get just the 8 bit part because we don't
+chksid:	ld	ix,flsecs		; chs infos
+	ld	c,0			; side 0 by default
+	ld	a,(ftrkbuf)		; get just the 8 bit part because we don't
 					; have drivers with more than 255 tracks !!!
-	CP	(IX+5)			; compare with physical (8 bit)
-	JP	C,BBSIDSET		; track in range (0-39/0-79) ?
-	LD	C,1			; no: side one
-	SUB	(IX+5)			; real cylinder on side 1
-	LD	(FTRKBUF),A		; store for i/o ops
-	JP	BBSIDSET		; ... and go to SETSID
+	cp	(ix+5)			; compare with physical (8 bit)
+	jp	c,bbsidset		; track in range (0-39/0-79) ?
+	ld	c,1			; no: side one
+	sub	(ix+5)			; real cylinder on side 1
+	ld	(ftrkbuf),a		; store for i/o ops
+	jp	bbsidset		; ... and go to setsid
 
-FLSECS:	DEFW	11
-	DEFW	512
-	DEFB	2			; heads
-	DEFW	80			; tracks
-HDSECS:	DEFW	256
-	DEFW	512
+flsecs:	defw	11
+	defw	512
+	defb	2			; heads
+	defw	80			; tracks
+hdsecs:	defw	256
+	defw	512
 
 ;-------------------------------------------------------
 ; possibly banked routines (re-entry from common seg)
 ;-------------------------------------------------------
-VDRET:
-	POP	IX
-	RET
+vdret:
+	pop	ix
+	ret
 
 	; adjust return value for floppies
-FDRET:
-	POP	IX
-	OR	A
-	JR	Z,FDOK
-	XOR	A
-	INC	A
-	RET
-FDOK:	XOR	A
-	RET
+fdret:
+	pop	ix
+	or	a
+	jr	z,fdok
+	xor	a
+	inc	a
+	ret
+fdok:	xor	a
+	ret
 
-IDERET:
-	POP	IY
-	OR	A
-	RET	Z
-	LD	A,1			; correct return value for BDOS
-	RET
+ideret:
+	pop	iy
+	or	a
+	ret	z
+	ld	a,1			; correct return value for bdos
+	ret
 
 
 ;-------------------------------------------------------
 ; resident / non-banked part
 ;-------------------------------------------------------
 
-	CSEG
+	cseg
 
 	; setup dma bank
-DMABNK	macro
-	IF BANKED
-	CALL	BNKSET			; select bank for disk i/o
-	ENDIF
+dmabnk	macro
+	if banked
+	call	bnkset			; select bank for disk i/o
+	endif
 	endm
 
-RSTBNK	macro
-	IF BANKED
-	CALL	BNKRST			; reselect old bank
-	ENDIF
+rstbnk	macro
+	if banked
+	call	bnkrst			; reselect old bank
+	endif
 	endm
 
 
-	IF BANKED
-BNKSET:
-	LD	A,(@CBNK)
-	LD	(BKSAVE),A
-	LD	A,(@DBNK)
-	CALL	?BANK			; really select bank for disk i/o
-	RET
+	if banked
+bnkset:
+	ld	a,(@cbnk)
+	ld	(bksave),a
+	ld	a,(@dbnk)
+	call	?bank			; really select bank for disk i/o
+	ret
 
-BNKRST:
-	PUSH	BC
-	LD	B,A			; save return status
-	LD	A,(BKSAVE)
-	CALL	?BANK			; really reselect old bank
-	LD	A,B
-	POP	BC
-	RET
-; 	PUSH	AF
-; 	LD	A,(BKSAVE)
-; 	CALL	?BANK			; really reselect old bank
-; 	POP	AF
-; 	RET
-	ENDIF
+bnkrst:
+	push	bc
+	ld	b,a			; save return status
+	ld	a,(bksave)
+	call	?bank			; really reselect old bank
+	ld	a,b
+	pop	bc
+	ret
+; 	push	af
+; 	ld	a,(bksave)
+; 	call	?bank			; really reselect old bank
+; 	pop	af
+; 	ret
+	endif
 
-WRFLO:
-	DMABNK				; dma bank in place
-	CALL	BBFWRITE		; do write
-	JR	RDFLO1
+wrflo:
+	dmabnk				; dma bank in place
+	call	bbfwrite		; do write
+	jr	rdflo1
 	;
-RDFLO:
-	DMABNK				; dma bank in place
-	CALL	BBFREAD			; do read
-RDFLO1:
-	RSTBNK				; restore bank
-	JP	FDRET
+rdflo:
+	dmabnk				; dma bank in place
+	call	bbfread			; do read
+rdflo1:
+	rstbnk				; restore bank
+	jp	fdret
 	;
-WRVRT:
-	DMABNK				; dma bank in place
-	CALL	BBWRVDSK		; call par. write
-	JR	TOVDRET
+wrvrt:
+	dmabnk				; dma bank in place
+	call	bbwrvdsk		; call par. write
+	jr	tovdret
 	;
-RDVRT:
-	DMABNK				; dma bank in place
-	CALL	BBRDVDSK		; call par. read
-	JR	TOVDRET
+rdvrt:
+	dmabnk				; dma bank in place
+	call	bbrdvdsk		; call par. read
+	jr	tovdret
 	;
-DOHRDVD:
-	DMABNK				; dma bank in place
-	CALL	BBRDVDSK
-	JR	TOVDRET
-	
-DOHWRVD:
-	DMABNK				; dma bank in place
-	CALL	BBWRVDSK
-TOVDRET:
-	RSTBNK
-	JP	VDRET
+dohrdvd:
+	dmabnk				; dma bank in place
+	call	bbrdvdsk
+	jr	tovdret
 
-DOIDERD:
-	DMABNK				; dma bank in place
-	CALL	BBHDRD
-	JR	DOIDEW0
+dohwrvd:
+	dmabnk				; dma bank in place
+	call	bbwrvdsk
+tovdret:
+	rstbnk
+	jp	vdret
 
-DOIDEWR:
-	DMABNK				; dma bank in place
-	CALL	BBHDWR
-DOIDEW0:
-	RSTBNK
-	JP	IDERET
+doiderd:
+	dmabnk				; dma bank in place
+	call	bbhdrd
+	jr	doidew0
 
-BKSAVE	DEFB	0			; must stay in common
+doidewr:
+	dmabnk				; dma bank in place
+	call	bbhdwr
+doidew0:
+	rstbnk
+	jp	ideret
+
+bksave	defb	0			; must stay in common
 
 
-;-------------------------------------------------------
-
-	IF LDRDBG
-
-PHEX:	PUSH	AF
-	PUSH	BC
-	PUSH	AF
-	RRCA
-	RRCA
-	RRCA
-	RRCA
-	CALL	ZCONV
-	POP	AF
-	CALL	ZCONV
-	POP	BC
-	POP	AF
-	RET
-;
-ZCONV:	AND	0FH		;HEX to ASCII and print it
-	ADD	A,90H
-	DAA
-	ADC	A,40H
-	DAA
-	LD	C,A
-	CALL	BBCONOUT
-	RET
-OLDSTACK:
-	DEFW	0
-	DEFS	40
-NEWSTACK:
-	DEFW	0
-
-	ENDIF
 
 	END

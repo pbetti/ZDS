@@ -45,7 +45,7 @@ ee29c020	equ	$da45			; 29c020 id (Winbond)
 
 eidcheck:
 	call	trnsave			; save page config
-	di				; NO interrupt on eeprom maniplation
+	di				; NO interrupt on eeprom manipulation
 	call	eprgintro		; start prg mode
 	ld	a,$90
 	ld	(eaddr5555),a		; 5555H

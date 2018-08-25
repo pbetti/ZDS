@@ -15,6 +15,9 @@
 ;		- Some routine imported/adapted from original
 ;		  ne eprom 683
 ;		- Fixed lf/cr bug on scroll
+; 20180814 - Standard char output routine (bconoout) moved to common
+;		seg for performance reason
+;
 
 	extern	movrgt, eostest, cout00
 	extern	scrtst, updvidp, scrspos, dispch

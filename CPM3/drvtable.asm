@@ -9,28 +9,29 @@
 ;; Assemble     : SLR z80asm
 ;; Revisions:
 ;; 20140905	- Code start
+;;		- lowercased
 ;;---------------------------------------------------------------------
 
-	TITLE	'CP/M 3.1 DRIVE TABLES'
+	title	'cp/m 3.1 drive tables'
 
 dph 	macro 	?trans,?dpb,?csize,?asize
 	local ?csv,?alv
 	dw	?trans			; translate table address
-	db	0,0,0,0,0,0,0,0,0	; BDOS Scratch area
+	db	0,0,0,0,0,0,0,0,0	; bdos scratch area
 	db	0			; media flag
 	dw	?dpb			; disk parameter block
 	if ?csize gt 0
 	dw	?csv			; checksum vector
 	else
 	dw	0fffeh			; checksum vector allocated by
-	endif				; GENCPM
+	endif				; gencpm
 	if ?asize gt 0
 	dw	?alv			; allocation vector
 	else
-	dw	0fffeh			; alloc vector allocated by GENCPM
+	dw	0fffeh			; alloc vector allocated by gencpm
 	endif
 	dw	0fffeh			; dirbcb, dtabcb, hash alloc'd
-	dw	0fffeh			; by GENCPM
+	dw	0fffeh			; by gencpm
 	dw	0fffeh			;
 	db	0			; hash bank
 	if ?csize gt 0
@@ -46,194 +47,194 @@ dph 	macro 	?trans,?dpb,?csize,?asize
 	include	common.inc
 
 	; define public labels:
-	PUBLIC	@DTBL
-	PUBLIC	DPH0,DPH1,DPH2,DPH3,DPH4,DPH5,DPH6
-	PUBLIC	DPH7,DPH8,DPH9,DPH10,DPH11,DPH12
-	PUBLIC	DPH13,DPH14,DPH15
+	public	@dtbl
+	public	dph0,dph1,dph2,dph3,dph4,dph5,dph6
+	public	dph7,dph8,dph9,dph10,dph11,dph12
+	public	dph13,dph14,dph15
 
-	EXTRN	HDVOID, FDDVOID
-	EXTRN	HRDVDSK, HWRVDSK, HDVLOG
-	EXTRN	IDERDDSK, IDEWRDSK, IDELOGIN
-	EXTRN	FDDRD, FDDWR, FDDLOG
+	extrn	hdvoid, fddvoid
+	extrn	hrdvdsk, hwrvdsk, hdvlog
+	extrn	iderddsk, idewrdsk, idelogin
+	extrn	fddrd, fddwr, fddlog
 
 	; include cp/m 3.0 macro library:
 
-	IF	BANKED
-	DSEG
-	ELSE
-	CSEG
-	ENDIF
+	if	banked
+	dseg
+	else
+	cseg
+	endif
 
 	; extended disk parameter header for drive 0:
-	DEFW	FDDWR			; virt floppy disk write routine
-	DEFW	FDDRD			; virt floppy disk read routine
-	DEFW	FDDLOG			; virt floppy disk login procedure
-	DEFW	FDDVOID			; virt floppy disk drive initialization routine (void)
-	DEFB	0			; relative drive 0 on this controller
-	DEFB	0			; media type
+	defw	fddwr			; virt floppy disk write routine
+	defw	fddrd			; virt floppy disk read routine
+	defw	fddlog			; virt floppy disk login procedure
+	defw	fddvoid			; virt floppy disk drive initialization routine (void)
+	defb	0			; relative drive 0 on this controller
+	defb	0			; media type
 
-DPH0:	DPH	TRANS,FDPB,0,0
+dph0:	dph	trans,fdpb,0,0
 
 	; extended disk parameter header for drive 1:
-	DEFW	FDDWR			; virt floppy disk write routine
-	DEFW	FDDRD			; virt floppy disk read routine
-	DEFW	FDDLOG			; virt floppy disk login procedure
-	DEFW	FDDVOID			; virt floppy disk drive initialization routine (void)
-	DEFB	0			; relative drive 0 on this controller
-	DEFB	0			; media type
+	defw	fddwr			; virt floppy disk write routine
+	defw	fddrd			; virt floppy disk read routine
+	defw	fddlog			; virt floppy disk login procedure
+	defw	fddvoid			; virt floppy disk drive initialization routine (void)
+	defb	0			; relative drive 0 on this controller
+	defb	0			; media type
 
-DPH1:	DPH	TRANS,FDPB,0,0
+dph1:	dph	trans,fdpb,0,0
 
 
-	; extended disk parameter header for drive 2: (8 Mb partition)
-	DW	IDEWRDSK		; hard disk write routine
-	DW	IDERDDSK		; hard disk read routine
-	DW	IDELOGIN		; hard disk login procedure
-	DW	HDVOID			; hard disk drive initialization routine (void)
-	DB	0			; relative drive 0 on this controller
-	DB	0			; media type
-DPH2:	DPH	0,IDEP8M,0,0
+	; extended disk parameter header for drive 2: (8 mb partition)
+	dw	idewrdsk		; hard disk write routine
+	dw	iderddsk		; hard disk read routine
+	dw	idelogin		; hard disk login procedure
+	dw	hdvoid			; hard disk drive initialization routine (void)
+	db	0			; relative drive 0 on this controller
+	db	0			; media type
+dph2:	dph	0,idep8m,0,0
 
-	; extended disk parameter header for drive 3: (8 Mb partition)
-	DW	IDEWRDSK		; hard disk write routine
-	DW	IDERDDSK		; hard disk read routine
-	DW	IDELOGIN		; hard disk login procedure
-	DW	HDVOID			; hard disk drive initialization routine (void)
-	DB	0			; relative drive 0 on this controller
-	DB	0			; media type
-DPH3:	DPH	0,IDEP8M,0,0
+	; extended disk parameter header for drive 3: (8 mb partition)
+	dw	idewrdsk		; hard disk write routine
+	dw	iderddsk		; hard disk read routine
+	dw	idelogin		; hard disk login procedure
+	dw	hdvoid			; hard disk drive initialization routine (void)
+	db	0			; relative drive 0 on this controller
+	db	0			; media type
+dph3:	dph	0,idep8m,0,0
 
 
 ; 	; extended disk parameter header for drive 14:
-	DEFW	FDDWR			; virt floppy disk write routine
-	DEFW	FDDRD			; virt floppy disk read routine
-	DEFW	FDDLOG			; virt floppy disk login procedure
-	DEFW	FDDVOID			; virt floppy disk drive initialization routine (void)
-	DEFB	0			; relative drive 0 on this controller
-	DEFB	0			; media type
+	defw	fddwr			; virt floppy disk write routine
+	defw	fddrd			; virt floppy disk read routine
+	defw	fddlog			; virt floppy disk login procedure
+	defw	fddvoid			; virt floppy disk drive initialization routine (void)
+	defb	0			; relative drive 0 on this controller
+	defb	0			; media type
 
-DPH14:	DPH	TRANS,FDPB,0,0
+dph14:	dph	trans,fdpb,0,0
 
-	; extended disk parameter header for drive 15:  (8 Mb virtual)
-	DW	HWRVDSK			; virt hard disk write routine
-	DW	HRDVDSK			; virt hard disk read routine
-	DW	HDVLOG			; virt hard disk login procedure
-	DW	HDVOID			; virt hard disk drive initialization routine (void)
-	DB	0			; relative drive 0 on this controller
-	DB	0			; media type
-DPH15:	DPH	0,IDEP8M,0,0
+	; extended disk parameter header for drive 15:  (8 mb virtual)
+	dw	hwrvdsk			; virt hard disk write routine
+	dw	hrdvdsk			; virt hard disk read routine
+	dw	hdvlog			; virt hard disk login procedure
+	dw	hdvoid			; virt hard disk drive initialization routine (void)
+	db	0			; relative drive 0 on this controller
+	db	0			; media type
+dph15:	dph	0,idep8m,0,0
 
 	; make sure dpb's are in common memory:
-	CSEG
+	cseg
 
-	; Floppy drive 0
+	; floppy drive 0
 
-FDPB:
-	DW	44			; SPT
-	DB	4,15			; BSH, BLM  --> 2048 BYTES BLOCK
-	DB	0			; EXM
-	DW	433			; DSM
-	DW	255			; DRM
-	DB	11110000B		; alloc 0
-	DB	00000000B		; alloc 1
+fdpb:
+	dw	44			; spt
+	db	4,15			; bsh, blm  --> 2048 bytes block
+	db	0			; exm
+	dw	433			; dsm
+	dw	255			; drm
+	db	11110000b		; alloc 0
+	db	00000000b		; alloc 1
 	;
-	DW	64			; CKS
+	dw	64			; cks
 	;
-	DW	2			; OFF
-	DB	2,3			; PSH, PHM  --> 512 BYTES PHYSICAL SECTOR
+	dw	2			; off
+	db	2,3			; psh, phm  --> 512 bytes physical sector
 
-	; IDE partition 1 is 512x256x64 LBA or 8.388.608 bytes
-	; DPB	512,256,64,2048,1024,1,8000H
+	; ide partition 1 is 512x256x64 lba or 8.388.608 bytes
+	; dpb	512,256,64,2048,1024,1,8000h
 
-IDEP8M:
-	DW	1024			; SPT
-	DB	4,15			; BSH, BLM  --> 2048 BYTES BLOCK
-	DB	0			; EXM
-	DW	4031			; DSM
-	DW	1023			; DRM
-	DB	0FFH,0FFH		; AL0, AL1
+idep8m:
+	dw	1024			; spt
+	db	4,15			; bsh, blm  --> 2048 bytes block
+	db	0			; exm
+	dw	4031			; dsm
+	dw	1023			; drm
+	db	0ffh,0ffh		; al0, al1
 	;
-	DW	8000H			; CKS
+	dw	8000h			; cks
 	;
-	DW	1			; OFF
-	DB	2,3			; PSH, PHM  --> 512 BYTES PHYSICAL SECTOR
+	dw	1			; off
+	db	2,3			; psh, phm  --> 512 bytes physical sector
 
-	; IDE partition 2 is 512x256x64 LBA or 8.388.608 bytes
-	; DPB	512,256,64,2048,1024,1,8000H
+	; ide partition 2 is 512x256x64 lba or 8.388.608 bytes
+	; dpb	512,256,64,2048,1024,1,8000h
 
-; IDEP2DPB:
-; 	DW	1024			; SPT
-; 	DB	4,15			; BSH, BLM  --> 2048 BYTES BLOCK
-; 	DB	0			; EXM
-; 	DW	4031			; DSM
-; 	DW	1023			; DRM
-; 	DB	0FFH,0FFH		; AL0, AL1
+; idep2dpb:
+; 	dw	1024			; spt
+; 	db	4,15			; bsh, blm  --> 2048 bytes block
+; 	db	0			; exm
+; 	dw	4031			; dsm
+; 	dw	1023			; drm
+; 	db	0ffh,0ffh		; al0, al1
 ; 	;
-; 	DW	8000H			; CKS
+; 	dw	8000h			; cks
 ; 	;
-; 	DW	1			; OFF
-; 	DB	2,3			; PSH, PHM  --> 512 BYTES PHYSICAL SECTOR
+; 	dw	1			; off
+; 	db	2,3			; psh, phm  --> 512 bytes physical sector
 
-; VHDDPB:
-; 	DW	1024			; SPT
-; 	DB	4,15			; BSH, BLM  --> 2048 BYTES BLOCK
-; 	DB	0			; EXM
-; 	DW	4031			; DSM
-; 	DW	1023			; DRM
-; 	DB	0FFH,0FFH		; AL0, AL1
+; vhddpb:
+; 	dw	1024			; spt
+; 	db	4,15			; bsh, blm  --> 2048 bytes block
+; 	db	0			; exm
+; 	dw	4031			; dsm
+; 	dw	1023			; drm
+; 	db	0ffh,0ffh		; al0, al1
 ; 	;
-; 	DW	8000H			; CKS
+; 	dw	8000h			; cks
 ; 	;
-; 	DW	1			; OFF
-; 	DB	2,3			; PSH, PHM  --> 512 BYTES PHYSICAL SECTOR
+; 	dw	1			; off
+; 	db	2,3			; psh, phm  --> 512 bytes physical sector
 
 	; sector translation table for 512 bytes/11 sec. track (skew = 4)
-TRANS:	DEFB	1,5,9,2 		; sectors 1,2,3,4
-	DEFB	6,10,3,7	 	; sectors 5,6,7,8
-	DEFB	11,4,8			; sectors 9,10,11
+trans:	defb	1,5,9,2 		; sectors 1,2,3,4
+	defb	6,10,3,7	 	; sectors 5,6,7,8
+	defb	11,4,8			; sectors 9,10,11
 
-	IF	BANKED
-	DSEG
-	ELSE
-	CSEG
-	ENDIF
+	if	banked
+	dseg
+	else
+	cseg
+	endif
 
 ;----------------------------------------------------
 
-; DPH0	EQU	0			; for each enabled drive in above code
-; DPH1	EQU	0			; comment equate here
-; DPH2	EQU	0
-; DPH3	EQU	0
-DPH4	EQU	0
-DPH5	EQU	0
-DPH6	EQU	0
-DPH7	EQU	0
-DPH8	EQU	0
-DPH9	EQU	0
-DPH10	EQU	0
-DPH11	EQU	0
-DPH12	EQU	0
-DPH13	EQU	0
-; DPH14	EQU	0
-; DPH15	EQU	0
+; dph0	equ	0			; for each enabled drive in above code
+; dph1	equ	0			; comment equate here
+; dph2	equ	0
+; dph3	equ	0
+dph4	equ	0
+dph5	equ	0
+dph6	equ	0
+dph7	equ	0
+dph8	equ	0
+dph9	equ	0
+dph10	equ	0
+dph11	equ	0
+dph12	equ	0
+dph13	equ	0
+; dph14	equ	0
+; dph15	equ	0
 
 
-@DTBL:	DW	DPH0	; A:
-	DW	DPH1	; B:
-	DW	DPH2	; C:
-	DW	DPH3	; D:
-	DW	DPH4	; E:
-	DW	DPH5	; F:
-	DW	DPH6	; G:
-	DW	DPH7	; H:
-	DW	DPH8	; I:
-	DW	DPH9	; J:
-	DW	DPH10	; K:
-	DW	DPH11	; L:
-	DW	DPH12	; M:
-	DW	DPH13	; N:
-	DW	DPH14	; O:
-	DW	DPH15	; P:
+@dtbl:	dw	dph0	; a:
+	dw	dph1	; b:
+	dw	dph2	; c:
+	dw	dph3	; d:
+	dw	dph4	; e:
+	dw	dph5	; f:
+	dw	dph6	; g:
+	dw	dph7	; h:
+	dw	dph8	; i:
+	dw	dph9	; j:
+	dw	dph10	; k:
+	dw	dph11	; l:
+	dw	dph12	; m:
+	dw	dph13	; n:
+	dw	dph14	; o:
+	dw	dph15	; p:
 
-	END
+	end
 ;----------------------------------------------------

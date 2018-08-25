@@ -16,8 +16,8 @@ CPMSRCS="bioskrnl.asm \
 	chario.asm \
 	media.asm \
 	drvtable.asm \
-	move.asm \
 	time.asm \
+	move.asm \
 	scb.asm"
 
 # Do .rel files
@@ -51,7 +51,7 @@ gencpm() {
 	echo
 	zxcc link.com bios3[b,q]=$OBJ
 	echo
-	
+
 	# gencpm.dat manual edit requested ?
 	if [ -z "$BANKED" ]; then
 		if [ "$DOGENCPM" = "yes" ]; then
@@ -74,9 +74,9 @@ gencpm() {
 	fi
 
 	# floppy run...
-	
+
 	echo "*** Creating CPM3.SYS for floppy images ***"
-	
+
 	if [ -z "$BANKED" ]; then
 		echo "     Doing floppy disk NON banked BIOS"
 		echo
@@ -84,22 +84,22 @@ gencpm() {
 		echo "* Virtual floppy O: *"
 		sed "s/BOOTDRV  = ./BOOTDRV  = O/g" gencpm.dat.nobank > gencpm.dat
 		echo
-		
+
 		zxcc gencpm.com auto
 		echo -e "\r"
 		echo "---------------------------------------"
-		
+
 		rm -f gencpm.dat
 		mv cpm3.sys cpm3.sys.floppy.o
-	
+
 		echo "* Virtual floppy $HWFLOPPYDRIVE: *"
 		sed "s/BOOTDRV  = ./BOOTDRV  = $HWFLOPPYDRIVE/g" gencpm.dat.nobank > gencpm.dat
 		echo
-		
+
 		zxcc gencpm.com auto
 		echo -e "\r"
 		echo "---------------------------------------"
-		
+
 		rm -f gencpm.dat
 		mv cpm3.sys cpm3.sys.floppy.o
 
@@ -110,32 +110,32 @@ gencpm() {
 		echo "* Virtual floppy O: *"
 		sed "s/BOOTDRV  = ./BOOTDRV  = O/g" gencpm.dat.bank > gencpm.dat
 		echo
-		
+
 		zxcc gencpm.com auto
 		echo -e "\r"
 		echo "---------------------------------------"
-		
+
 		rm -f gencpm.dat
 		mv cpm3.sys cpm3.sys.floppy.o
-	
+
 		echo "* Hardware floppy $HWFLOPPYDRIVE: *"
 		sed "s/BOOTDRV  = ./BOOTDRV  = $HWFLOPPYDRIVE/g" gencpm.dat.bank > gencpm.dat
 		echo
-		
+
 		zxcc gencpm.com auto
 		echo -e "\r"
 		echo "---------------------------------------"
-		
+
 		rm -f gencpm.dat
 		mv cpm3.sys cpm3.sys.floppy.a
 
 	fi
 
 	# hd run...
-	
+
 	echo
 	echo "*** Performing GENCPM for Hard Disk image ***"
-	
+
 	if [ -z "$BANKED" ]; then
 		echo "       Doing hard disk NON banked BIOS"
 		echo
@@ -143,22 +143,22 @@ gencpm() {
 		echo "* Virtual HD P: *"
 		sed "s/BOOTDRV  = ./BOOTDRV  = P/g" gencpm.dat.nobank > gencpm.dat
 		echo
-		
+
 		zxcc gencpm.com auto
 		echo -e "\r"
 		echo "---------------------------------------"
-		
+
 		rm -f gencpm.dat
 		mv cpm3.sys cpm3.sys.hd.p
-	
+
 		echo "* IDE HD $HWIDEDRIVE: *"
 		sed "s/BOOTDRV  = ./BOOTDRV  = $HWIDEDRIVE/g" gencpm.dat.nobank > gencpm.dat
 		echo
-		
+
 		zxcc gencpm.com auto
 		echo -e "\r"
 		echo "---------------------------------------"
-		
+
 		rm -f gencpm.dat
 		mv cpm3.sys cpm3.sys.hd.c
 
@@ -169,22 +169,22 @@ gencpm() {
 		echo "* Virtual HD P: *"
 		sed "s/BOOTDRV  = ./BOOTDRV  = P/g" gencpm.dat.bank > gencpm.dat
 		echo
-		
+
 		zxcc gencpm.com auto
 		echo -e "\r"
 		echo "---------------------------------------"
-		
+
 		rm -f gencpm.dat
 		mv cpm3.sys cpm3.sys.hd.p
-	
+
 		echo "* IDE HD $HWIDEDRIVE: *"
 		sed "s/BOOTDRV  = ./BOOTDRV  = $HWIDEDRIVE/g" gencpm.dat.bank > gencpm.dat
 		echo
-		
+
 		zxcc gencpm.com auto
 		echo -e "\r"
 		echo "---------------------------------------"
-		
+
 		rm -f gencpm.dat
 		mv cpm3.sys cpm3.sys.hd.c
 
@@ -240,6 +240,7 @@ makdisk() {
 			cpmcp -f $1 $2 cpm3.sys.floppy.o 0:cpm3.sys
 			cpmcp -f $1 $2 cpm3.sys.floppy.a 3:cpm3.sys
 			cpmcp -f $1 -t $2 profile.sub_o.z3p 0:profile.sub
+			cpmcp -f $1 -t $2 ttime.com 0:ttime.com
 		else
 			imgtype="hd"
 			cpmcp -f $1 $2 cpm3.sys.hd.p 0:cpm3.sys

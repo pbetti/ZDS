@@ -9,6 +9,8 @@
 ;; Assemble     : SLR z80asm
 ;; Revisions:
 ;; 20140905	- Code start
+;; 20180826	- Removed debug code
+;;		- lowecased
 ;;---------------------------------------------------------------------
 
 	TITLE	'BOOT LOADER MODULE FOR CP/M 3.1'
@@ -18,73 +20,6 @@
 	; define logical values:
 	include	common.inc
 	include	syshw.inc
-
-LDRDBG	EQU	false
-
-FTRACE	macro	p1
-	if ldrdbg
-	ld	(OLDSTACK),SP
-	ld	sp,NEWSTACK
-	push	af
-	push	bc
-	push	de
-	push	hl
-	call	inline
-	defb	p1,cr,lf,'$'
-	call	bbconin
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
-	ld	sp,(OLDSTACK)
-	endif
-	endm
-
-HEX16	macro	p1,p2
-	if ldrdbg
-	ld	(OLDSTACK),SP
-	ld	sp,NEWSTACK
-	push	af
-	push	bc
-	push	de
-	push	hl
-	ld	a,p1
-	call	phex
-	ld	a,p2
-	call	phex
-	ld	c,CR
-	call	BBCONOUT
-	ld	c,LF
-	call	BBCONOUT
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
-	ld	sp,(OLDSTACK)
-	endif
-	endm
-
-HEX8	macro	p1
-	if ldrdbg
-	ld	(OLDSTACK),SP
-	ld	sp,NEWSTACK
-	push	af
-	push	bc
-	push	de
-	push	hl
-	ld	a,p1
-	call	phex
-	ld	c,CR
-	call	BBCONOUT
-	ld	c,LF
-	call	BBCONOUT
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
-	ld	sp,(OLDSTACK)
-	endif
-	endm
 
 	; define public labels:
 	PUBLIC	?INIT,?LDCCP,?RLCCP
@@ -101,297 +36,246 @@ HEX8	macro	p1
 ;
 ;
 	; we can do initialization from banked memory (if we have it):
-	IF BANKED
-	DSEG				; init done from banked memory
-	ELSE
-	CSEG				; init to be done from common memory
-	ENDIF
+	if banked
+	dseg				; init done from banked memory
+	else
+	cseg				; init to be done from common memory
+	endif
 
-BDOS	EQU	5			; BDOS entry point
-CCPBNK	EQU	8
+bdos	equ	5			; bdos entry point
+ccpbnk	equ	8
 
 	;; ?init
 	;; hardware initialization other than character and disk i/o:
-?INIT:
+?init:
 	; assign console input and output to crtc:
-	LD	HL,1000000000000000B	; assign console to CRTC:
-	LD	(@CIVEC),HL
-	LD	(@COVEC),HL
-	LD	HL,0100000000000000B	; assign auxiliary to UART0:
-	LD	(@AIVEC),HL
-	LD	(@AOVEC),HL
-	LD	HL,0001000000000000B	; assign printer to LPT:
-	LD	(@LOVEC),HL
+	ld	hl,1000000000000000b	; assign console to crtc:
+	ld	(@civec),hl
+	ld	(@covec),hl
+	ld	hl,0100000000000000b	; assign auxiliary to uart0:
+	ld	(@aivec),hl
+	ld	(@aovec),hl
+	ld	hl,0001000000000000b	; assign printer to lpt:
+	ld	(@lovec),hl
 
-	LD	A,'3'
-	LD	(COPSYS),A		; identify opsys for partitions
+	ld	a,'3'
+	ld	(copsys),a		; identify opsys for partitions
 
-	LD	A,(CDISK)
-	INC	A
-	LD	(BOOTDRIVE),A		; remember boot drive
+	ld	a,(cdisk)
+	inc	a
+	ld	(bootdrive),a		; remember boot drive
 
-	PUSH	IY
-	CALL	BBHDINIT		; IDE init
-	OR	A
-	JR	NZ,IDEERR
-	CALL	BBLDPART
-	POP	IY
+	push	iy
+	call	bbhdinit		; ide init
+	or	a
+	jr	nz,ideerr
+	call	bbldpart
+	pop	iy
 
 	; print the sign-on message:
-	LD	HL,SIGNONMSG		; point to it
-	JP	?PMSG			; and print it
+	ld	hl,signonmsg		; point to it
+	jp	?pmsg			; and print it
 
-IDEERR:
-	LD	HL,IDEMSG		; report the error
-	JP	?PMSG
+ideerr:
+	ld	hl,idemsg		; report the error
+	jp	?pmsg
 	;
 
-	IF BANKED
-	CSEG
-	ENDIF
+	if banked
+	cseg
+	endif
 
 	;; ?ldccp
 	;; this routine is entered to load the ccp.com file into the tpa bank
 	;; at system cold start:
-?LDCCP:
+?ldccp:
 	; set up the fcb for the file operation:
-	XOR	A			; zero extent
-	LD	(CCPFCB+15),A
-	LD	A,(BOOTDRIVE)
-	LD	(CCPFCB),A		; set drive
-	LD	HL,0			; start at beginning of file
-	LD	(FCBNR),HL
+	xor	a			; zero extent
+	ld	(ccpfcb+15),a
+	ld	a,(bootdrive)
+	ld	(ccpfcb),a		; set drive
+	ld	hl,0			; start at beginning of file
+	ld	(fcbnr),hl
 
 	; try to open the ccp.com file:
-	LD	DE,CCPFCB		; point to fcb
-	CALL	LOPEN			; attempt the open operation
-	INC	A			; was it on the disk ?
-	JR	NZ,CCPFOUND		; yes -- go load it
+	ld	de,ccpfcb		; point to fcb
+	call	lopen			; attempt the open operation
+	inc	a			; was it on the disk ?
+	jr	nz,ccpfound		; yes -- go load it
 
 	; we arrive here when ccp.com file wasn't found:
-	LD	HL,CCPMSG		; report the error
-	CALL	?PMSG
-	CALL	?CONIN			; get a response
-	JR	?LDCCP			; and try again
+	ld	hl,ccpmsg		; report the error
+	call	?pmsg
+	call	?conin			; get a response
+	jr	?ldccp			; and try again
 
 	; file was opened ok -- read it in:
-CCPFOUND:
-	LD	DE,0100H		; load at bottom of tpa
-	CALL	LSETDMA			; by setting the next dma address
-	LD	DE,128			; Set multi sector i/o count
-	CALL	LSETMULTI		; to allow up to 16k bytes in one operation
-	LD	DE,CCPFCB		; point to the fcb
-	CALL	LREAD			; And read the ccp in
-	CP	1			; error 1 is ok, since we read until EOF
-	JR	Z,POSTLOAD
-	OR	A			; 0
-	JR	Z,POSTLOAD
+ccpfound:
+	ld	de,0100h		; load at bottom of tpa
+	call	lsetdma			; by setting the next dma address
+	ld	de,128			; set multi sector i/o count
+	call	lsetmulti		; to allow up to 16k bytes in one operation
+	ld	de,ccpfcb		; point to the fcb
+	call	lread			; and read the ccp in
+	cp	1			; error 1 is ok, since we read until eof
+	jr	z,postload
+	or	a			; 0
+	jr	z,postload
 
-	LD	HL,LDERRM
-	CALL	?PMSG
-	CALL	?PDERR
-	CALL	BBCONIN
-	JP	$FC00			; reboot system
+	ld	hl,lderrm
+	call	?pmsg
+	call	?pderr
+	call	bbconin
+	jp	$fc00			; reboot system
 
-POSTLOAD:
+postload:
 
 	; following code for banked systems -- moves ccp image to bank 2
 	; for later reloading at warm starts:
-	IF	BANKED
+	if	banked
 
-	LD	HL,0100H		; get ccp image from start of tpa
-	LD	B,25			; transfer 25 logical sectors
-	LD	A,(@CBNK)		; get current bank
-	PUSH	AF			; and save it
-LD1:
-	PUSH	BC			; save sector count
-	LD	A,1			; Select tpa bank
-	CALL	?BNKSL
-	LD	BC,128			; transfer 128 bytes to temporary buffer
-	LD	DE,BANKBF		; temporary buffer addr in [de]
-	PUSH	HL			; save source address
-	PUSH	DE			; and destination
-	PUSH	BC			; and count
-	LDIR				; block move sector to temporary buffer
-	LD	A,CCPBNK		; select bank to save ccp in
-	CALL	?BNKSL
-	POP	BC			; get back count
-	POP	HL			; last destination will be new source addr
-	POP	DE			; last source will be new destination
-	LDIR				; block move sector from buffer to alternate
+	ld	hl,0100h		; get ccp image from start of tpa
+	ld	b,25			; transfer 25 logical sectors
+	ld	a,(@cbnk)		; get current bank
+	push	af			; and save it
+ld1:
+	push	bc			; save sector count
+	ld	a,1			; select tpa bank
+	call	?bnksl
+	ld	bc,128			; transfer 128 bytes to temporary buffer
+	ld	de,bankbf		; temporary buffer addr in [de]
+	push	hl			; save source address
+	push	de			; and destination
+	push	bc			; and count
+	ldir				; block move sector to temporary buffer
+	ld	a,ccpbnk		; select bank to save ccp in
+	call	?bnksl
+	pop	bc			; get back count
+	pop	hl			; last destination will be new source addr
+	pop	de			; last source will be new destination
+	ldir				; block move sector from buffer to alternate
 	; bank
-	EX	DE,HL			; next addr will be new source addr
-	POP	BC			; get back sector count
-	DJNZ	LD1			; drop sector count and loop till done...
-	POP	AF			; when done -- restore original bank
-	JP	?BNKSL
+	ex	de,hl			; next addr will be new source addr
+	pop	bc			; get back sector count
+	djnz	ld1			; drop sector count and loop till done...
+	pop	af			; when done -- restore original bank
+	jp	?bnksl
 
-	ELSE
+	else
 
 	; if non-banked we return through here:
-	RET
+	ret
 
-	ENDIF
+	endif
 
 
 	;; ?rlccp
 	;; routine reloads ccp image from bank 2 if banked system or from the
 	;; disk if non-banked version:
-?RLCCP:
-	IF	BANKED
+?rlccp:
+	if	banked
 	; following code for banked version:
-	LD	HL,0100H		; get ccp image from start of alternate buffER
-	LD	B,25			; transfer 25 logical sectors
-	LD	A,(@CBNK)		; get current bank
-	PUSH	AF			; and save it
-RL1:
-	PUSH	BC			; save sector count
-	LD	A,CCPBNK		; select alternate bank
-	CALL	?BNKSL
-	LD	BC,128			; transfer 128 bytes to temporary buffER
-	LD	DE,BANKBF		; temporary buffer addr in [de]
-	PUSH	HL			; save source address
-	PUSH	DE			; and destination
-	PUSH	BC			; and count
-	LDIR				; block move sector to temporary buffer
-	LD	A,1			; put ccp to tpa bank
-	CALL	?BNKSL
-	POP	BC			; get back count
-	POP	HL			; last destination will be new source addr
-	POP	DE			; last source will be new destination
-	LDIR				; block move sector from buffer to tpa bank
-	EX	DE,HL			; next addr will be new source addr
-	POP	BC			; get back sector count
-	DJNZ	RL1			; drop sector count and loop till done...
-	POP	AF			; get back last current bank #
-	JP	?BNKSL			; select it and return
+	ld	hl,0100h		; get ccp image from start of alternate buffer
+	ld	b,25			; transfer 25 logical sectors
+	ld	a,(@cbnk)		; get current bank
+	push	af			; and save it
+rl1:
+	push	bc			; save sector count
+	ld	a,ccpbnk		; select alternate bank
+	call	?bnksl
+	ld	bc,128			; transfer 128 bytes to temporary buffer
+	ld	de,bankbf		; temporary buffer addr in [de]
+	push	hl			; save source address
+	push	de			; and destination
+	push	bc			; and count
+	ldir				; block move sector to temporary buffer
+	ld	a,1			; put ccp to tpa bank
+	call	?bnksl
+	pop	bc			; get back count
+	pop	hl			; last destination will be new source addr
+	pop	de			; last source will be new destination
+	ldir				; block move sector from buffer to tpa bank
+	ex	de,hl			; next addr will be new source addr
+	pop	bc			; get back sector count
+	djnz	rl1			; drop sector count and loop till done...
+	pop	af			; get back last current bank #
+	jp	?bnksl			; select it and return
 
-	ELSE
+	else
 	; following code is for non-banked versions:
-	JP	?LDCCP			; just do load as though cold boot
+	jp	?ldccp			; just do load as though cold boot
 
-	ENDIF
+	endif
 
 ;
-	IF	BANKED
-	CSEG
-	ENDIF
+	if	banked
+	cseg
+	endif
 
 	; cp/m bdos function interfaces
 
 	; open file:
-LOPEN:
-	LD	C,15
-	JP	BDOS		; open file control block
+lopen:
+	ld	c,15
+	jp	bdos		; open file control block
 
 	; set dma address:
-LSETDMA:
-	LD	C,26
-	JP	BDOS		; set data transfer address
+lsetdma:
+	ld	c,26
+	jp	bdos		; set data transfer address
 
 	; set multi sector i/o count:
-LSETMULTI:
-	LD	C,44
-	JP	BDOS		; set record count
+lsetmulti:
+	ld	c,44
+	jp	bdos		; set record count
 
 	; read file record:
-LREAD:
-	LD	C,20
-	JP	BDOS		; read records
+lread:
+	ld	c,20
+	jp	bdos		; read records
 
 	; ccp not found error message:
-CCPMSG:
-	DEFB	CR,LF,"BIOS ERR: NO CCP.COM FILE",0
+ccpmsg:
+	defb	cr,lf,"BIOS ERR: NO CCP.COM FILE",0
 	; ide init error
-IDEMSG:
-	DEFB	CR,LF,"IDE HD INIT ERROR.",0
+idemsg:
+	defb	cr,lf,"IDE HD INIT ERROR.",0
 	; load error
-LDERRM:
-	DEFB	CR,LF,"LOAD ERROR. REBOOTING",0
+lderrm:
+	defb	cr,lf,"LOAD ERROR. REBOOTING",0
 
-BOOTDRIVE:
-	DB	0
+bootdrive:
+	db	0
 
 	; fcb for ccp.com file loading:
-CCPFCB:
-	DEFB	1			; auto-select drive a
-	DEFB	"CCP     COM"		; file name and type
-	DEFB	0,0,0,0
-	DEFS	16
-FCBNR:	DEFB	0,0,0,0
+ccpfcb:
+	defb	1			; auto-select drive a
+	defb	"CCP     COM"		; file name and type
+	defb	0,0,0,0
+	defs	16
+fcbnr:	defb	0,0,0,0
 ;
 ;
-	IF	BANKED
-	CSEG
-	ENDIF
+	if	banked
+	cseg
+	endif
 
 
-	; SYSTEM SIGN-ON MESSAGE:
-SIGNONMSG:
-	DEFB	CR,LF,CR,LF,"Z80 CP/M version 3.1 (Piergiorgio Betti 06/09/2014)"
-	IF NOT BANKED
-	DEFB	CR,LF,"Non banked version."
-	ELSE
-	DEFB	CR,LF,"Banked version."
-	ENDIF
-	IF ZPM3
-	DEFB	CR,LF,"+ ZPM3 r.10 2/1/93 by Simeon Cran"
-	ELSE
-	DEFB	CR,LF,"+ CP/M 3 Plus standard BDOS"
-	ENDIF
-	DEFB	CR,LF,0
+	; system sign-on message:
+signonmsg:
+	defb	cr,lf,cr,lf,"Z80 CP/M version 3.1 (Piergiorgio Betti 06/09/2014)"
+	if not banked
+	defb	cr,lf,"Non banked version."
+	else
+	defb	cr,lf,"Banked version."
+	endif
+	if zpm3
+	defb	cr,lf,"+ ZPM3 r.10 2/1/93 by Simeon Cran"
+	else
+	defb	cr,lf,"+ CP/M 3 Plus standard BDOS"
+	endif
+	defb	cr,lf,0
 
 
-	IF LDRDBG
-; Print a string in [HL] up to '$'
-PSTRING:
-	LD	A,(HL)
-	CP	'$'
-	RET	Z
-	LD	C,A
-	CALL	BBCONOUT
-	INC	HL
-	JP	PSTRING
-
-;;
-;; Inline print
-;;
-INLINE:
-	EX	(SP),HL			; get address of string (ret address)
-	CALL	PSTRING
-	EX	(SP),HL			; load return address after the '$'
-	RET				; back to code immediately after string
-
-PHEX:	PUSH	AF
-	PUSH	BC
-	PUSH	AF
-	RRCA
-	RRCA
-	RRCA
-	RRCA
-	CALL	ZCONV
-	POP	AF
-	CALL	ZCONV
-	POP	BC
-	POP	AF
-	RET
-;
-ZCONV:	AND	0FH		;HEX to ASCII and print it
-	ADD	A,90H
-	DAA
-	ADC	A,40H
-	DAA
-	LD	C,A
-	CALL	BBCONOUT
-	RET
-
-OLDSTACK:
-	DEFW	0
-	DEFS	40
-NEWSTACK:
-	DEFW	0
-
-	ENDIF
-
-	END
+	end
 

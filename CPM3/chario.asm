@@ -9,11 +9,12 @@
 ;; Assemble     : SLR z80asm
 ;; Revisions:
 ;; 20140904	- Code start
+;; 20180224	- lowercased
 ;;---------------------------------------------------------------------
 
 	TITLE	'CHARACTER I/O HANDLER FOR CP/M 3.0'
 
-	.Z80
+	.z80
 
 	; define logical values:
 	include	common.inc
@@ -21,211 +22,152 @@
 	include modebaud.inc		; define mode bits and baud eqautes
 
 	; define public labels:
-	PUBLIC	?CINIT,?CI,?CO,?CIST,?COST
-	PUBLIC	@CTBL
+	public	?cinit,?ci,?co,?cist,?cost
+	public	@ctbl
 
-	; define external labels and entry points:
-	IF	BANKED
-	EXTRN	@CBNK
-	EXTRN	?BNKSL
-	ENDIF
-
-
-	; MISCELLANEOUS EQUATES:
+	; miscellaneous equates:
 
 
 	; will start off in common memory for banked or non-banked systems:
-	CSEG
+	cseg
+maxdevice	equ	7
 
-
-MAXDEVICE	EQU	7
-
+?cinit:
 					; c = device
+	ld	b,c
+	call	vectorio
+	dw	?initcrtc
+	dw	?inituart0
+	dw	?inituart1
+	dw	?initlpt
+	dw	rret
+	dw	rret
+	dw	rret
+	dw	rret
 
-?CINIT:					; init devices
-	LD	B,C
-	CALL	VECTORIO
-	DW	?INITCRTC
-	DW	?INITUART0
-	DW	?INITUART1
-	DW	?INITLPT
-	DW	RRET
-	DW	RRET
-	DW	RRET
-	DW	RRET
+	; physical code for device input:
+?ci:
+	call	vectorio
+	dw	bbconin
+	dw	sconin
+	dw	bbu1rx
+	dw	nullinput
+	dw	nullinput
+	dw	nullinput
+	dw	nullinput
+	dw	nullinput
 
-					; b = device, c = output char, a = input char
-?CI:					; character input
-	CALL	VECTORIO
-	DW	?CRTCIN
-	DW	?UART0IN
-	DW	?UART1IN
-	DW	NULLINPUT
-	DW	NULLINPUT
-	DW	NULLINPUT
-	DW	NULLINPUT
-	DW	NULLINPUT
+	; physical code for device input status:
+?cist:
+	call	vectorio
+	dw	bbconst
+	dw	sconst
+	dw	bbu1st
+	dw	nullstatus
+	dw	nullstatus
+	dw	nullstatus
+	dw	nullstatus
+	dw	nullstatus
 
-?CIST:					; character input status
-	CALL	VECTORIO
-	DW	?CRTCIST
-	DW	?UART0IST
-	DW	?UART1IST
-	DW	NULLSTATUS
-	DW	NULLSTATUS
-	DW	NULLSTATUS
-	DW	NULLSTATUS
-	DW	NULLSTATUS
+	; physical code for device output:
+?co:
+	call	vectorio
+	dw	bbconout
+	dw	sconout
+	dw	bbu1tx
+	dw	bbprnchr
+	dw	rret
+	dw	rret
+	dw	rret
+	dw	rret
 
-?CO:					; character output
-	CALL	VECTORIO
-	DW	?CRTCOUT
-	DW	?UART0OUT
-	DW	?UART1OUT
-	DW	?LPTOUT
-	DW	RRET
-	DW	RRET
-	DW	RRET
-	DW	RRET
+?cost:
+	call	vectorio
+	dw	rettrue
+	dw	rettrue
+	dw	rettrue
+	dw	?lptost
+	dw	rettrue
+	dw	rettrue
+	dw	rettrue
+	dw	rettrue
 
-?COST:					; character output status
-	CALL	VECTORIO
-	DW	RETTRUE
-	DW	RETTRUE
-	DW	RETTRUE
-	DW	?LPTOST
-	DW	RETTRUE
-	DW	RETTRUE
-	DW	RETTRUE
-	DW	RETTRUE
-
-VECTORIO:
-	LD	A,MAXDEVICE
-	LD	E,B
-VECTOR:
-	POP	HL
-	LD	D,0
-	CP	E
-	JR	NC,EXIST
-	LD	E,A			; use null device if a >= maxdevice
-EXIST:	ADD	HL,DE
-	ADD	HL,DE
-	LD	A,(HL)
-	INC	HL
-	LD	H,(HL)
-	LD	L,A
-	JP	(HL)
+vectorio:
+	ld	a,maxdevice
+	ld	e,b
+vector:
+	pop	hl
+	ld	d,0
+	cp	e
+	jr	nc,exist
+	ld	e,a			; use null device if a >= maxdevice
+exist:	add	hl,de
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jp	(hl)
 
 
-NULLINPUT:
-	LD	A,1AH
-RRET:
-	RET
-RETTRUE:
-	OR	0FFH
-	RET
+nullinput:
+	ld	a,1ah
+rret:
+	ret
+rettrue:
+	or	0ffh
+	ret
 
-NULLSTATUS:
-	XOR	A
-	RET
+nullstatus:
+	xor	a
+	ret
 
 	;;
 	;; physical device handler code:
 	;;
 
 	; init routines (void: done by sysbios)
-?INITCRTC:
-	RET
-?INITUART0:
-	RET
-?INITUART1:
-	RET
-?INITLPT:
-	RET
+?initcrtc:
+?inituart0:
+?inituart1:
+?initlpt:
+	ret
 
-	; input status routines (jump to sysbios calls)
 
-?CRTCIST:
-	JP	BBCONST
+?lptost:
+	in	a,(crtservdat)
+	bit	prntbusybit,a
+	jr	nz,lptbusy
+	xor	a
+	dec	a
+	ret
+lptbusy:xor	a
+	ret
 
-?UART0IST:
-	JP	SCONST
-
-?UART1IST:
-	JP	BBU1ST
-
-	; output status routines
-
-; ?CRTCOST:
-; 	OR	0FFH
-; 	RET
-;
-;
-; ?UART0OST:
-; 	OR	0FFH
-; 	RET
-;
-; ?UART1OST:
-; 	OR	0FFH
-; 	RET
-
-?LPTOST:
-	IN	A,(CRTSERVDAT)
-	BIT	PRNTBUSYBIT,A
-	JR	NZ,LPTBUSY
-	XOR	A
-	DEC	A
-	RET
-LPTBUSY:XOR	A
-	RET
-
-	; input routines (jump to sysbios calls)
-
-?CRTCIN:
-	JP	BBCONIN
-
-?UART0IN:
-	JP	SCONIN
-
-?UART1IN:
-	JP	BBU1RX
-
-	; output routines (jump to sysbios calls)
-
-?CRTCOUT:
-	JP	BBCONOUT
-
-?UART0OUT:
-	JP	SCONOUT
-
-?UART1OUT:
-	JP	BBU1TX
-
-?LPTOUT:
-	JP	BBPRNCHR
 
 	; character device table
 
-	CSEG				;must reside in common memory
+	cseg				;must reside in common memory
 
-@CTBL:
-	DB	'CRTC  '		; device 0
-	DB	MB$IN$OUT
-	DB	BAUD$NONE
+@ctbl:
+	db	'CRTC  '		; device 0
+	db	mb$in$out
+	db	baud$none
 
-	DB	'UART0 '		; device 1
-	DB	MB$IN$OUT
-	DB	BAUD$NONE		; baud rate selected by sysbios
+	db	'UART0 '		; device 1
+	db	mb$in$out
+	db	baud$none		; baud rate selected by sysbios
 
-	DB	'UART1 '		; device 2
-	DB	MB$IN$OUT
-	DB	BAUD$NONE		; baud rate selected by sysbios
+	db	'UART1 '		; device 2
+	db	mb$in$out
+	db	baud$none		; baud rate selected by sysbios
 
-	DB	'LPT   '		; device 3
-	DB	MB$OUTPUT
-	DB	BAUD$NONE
+	db	'LPT   '		; device 3
+	db	mb$output
+	db	baud$none
 
-	DB 	0			; table terminator
+	db 	0			; table terminator
 
-	END
+
+	end
 

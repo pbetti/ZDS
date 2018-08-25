@@ -5747,8 +5747,8 @@ fwndow:	defb	00
 nlmask:	defb	00
 
 case:
-	defb	000h		;flag to indicate case of output
 	defb	0ffh		;flag to indicate case of output
+; 	defb	000h		;flag to indicate case of output
 				;nz - lower   z - upper
 
 jstepf:	defb	0ffh		;00 -   screen is intact, if user wants j

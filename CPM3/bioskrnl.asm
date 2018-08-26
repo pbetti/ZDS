@@ -98,6 +98,7 @@ ccp	equ	0100h				; console command processor gets loaded
 	public	?lists,?sctrn
 	public	?conos,?auxis,?auxos,?dvtbl,?devin,?drtbl
 	public	?mltio,?flush,?mov,?tim,?bnksl,?stbnk,?xmov
+	extern	?lptost
 
 	public	@bios$stack
 	if WITHDBG
@@ -165,14 +166,6 @@ boot:
 	out	(c),a
 
 	ld	sp,@bios$stack
-	ld	c,15			; initialize all 16 character devices
-c$init$loop:
-	push	bc
-	call	?cinit
-	pop	bc
-	dec	c
-	jp	p,c$init$loop
-
 	call	?init			; perform any additional system initialization
 
 	ld	bc,16*256+0
@@ -270,17 +263,14 @@ getdrv:
 	;	to all selected devices
 
 conout:
-	ld	hl,(@covec)		; fetch console output bit vector
-	jr	out$scan
-
+	jp	bbconout
 
 	; auxout
 	;	auxiliary output. send character in <c>
 	;	to all selected devices
 
 auxout:
-	ld	hl,(@aovec)		; fetch aux output bit vector
-	jr	out$scan
+	jp	sconout
 
 
 	; blist
@@ -288,23 +278,7 @@ auxout:
 	;	to all selected devices.
 
 blist:
-	ld	hl,(@lovec)		; fetch list output bit vector
-
-out$scan:
-	ld	b,0			; start with device 0
-co$next:
-	add	hl,hl			; shift out next bit
-	jr	nc,not$out$device
-	push	hl			; save the vector
-	push	bc			; restore and resave the character and device
-	call	?co			; if device selected, print it
-	pop	bc			; recover count and character
-	pop	hl			; recover the rest of the vector
-not$out$device:
-	inc	b			; next device number
-	ld	a,h
-	or	l			; see if any devices left
-	jr	nz,co$next		; and go find them...
+	call	bbprnchr
 	ret
 
 
@@ -314,8 +288,8 @@ not$out$device:
 	;	are ready.
 
 conost:
-	ld	hl,(@covec)		; get console output bit vector
-	jr	ost$scan
+	or	0ffh
+	ret
 
 
 	; AUXOST
@@ -324,8 +298,8 @@ conost:
 	;	are ready.
 
 auxost:
-	ld	hl,(@aovec)		; get aux output bit vector
-	jr	ost$scan
+	or	0ffh
+	ret
 
 
 	; LISTST
@@ -334,84 +308,7 @@ auxost:
 	;	are ready.
 
 listst:
-	ld	hl,(@lovec)		; get list output bit vector
-
-ost$scan:
-	ld	b,0			; start with device 0
-cos$next:
-	add	hl,hl			; check next bit
-	push	hl			; save the vector
-	push	bc			; save the count
-	ld	a,0ffh			; assume device ready
-	call	c,coster		; check status for this device
-	pop	bc			; recover count
-	pop	hl			; recover bit vector
-	or	a			; see if device ready
-	ret	z			; if any not ready, return false
-	inc	b			; drop device number
-	ld	a,h
-	or	l			; see if any more selected devices
-	jr	nz,cos$next
-	or	0ffh			; all selected were ready, return true
-	ret
-
-coster:		; check for output device ready, including optional
-		;xon/xoff support
-	ld	l,b
-	ld	h,0			; make device code 16 bits
-	push	hl			; save it in stack
-	add	hl,hl
-	add	hl,hl
-	add	hl,hl			; create offset into device characteristics tbl
-	ld	de,@ctbl+6
-	add	hl,de			; make address of mode byte
-	ld	a,(hl)
-	and	mb$xon$xoff
-	pop	hl			; recover console number in <hl>
-	jp	z,?cost			; not a xon device, go get output status direct
-	ld	de,xofflist
-	add	hl,de			; make pointer to proper xon/xoff flag
-	call	cist1			; see if this keyboard has character
-	ld	a,(hl)
-	call	nz,ci1			; get flag or read key if any
-	cp	ctlq
-	jr	nz,not$q		; if its a ctl-q,
-	ld	a,0ffh			; set the flag ready
-not$q:
-	cp	ctls
-	jr	nz,not$s		; if its a ctl-s,
-	ld	a,00h			; clear the flag
-not$s:
-	ld	(hl),a			; save the flag
-	call	cost1			; get the actual output status,
-	and	(hl)			; and mask with ctl-q/ctl-s flag
-	ret				; return this as the status
-
-cist1:		; get input status with <bc> and <hl> saved
-	push	bc
-	push	hl
-	call	?cist
-	pop	hl
-	pop	bc
-	or	a
-	ret
-
-cost1:		; get output status, saving <bc> & <hl>
-	push	bc
-	push	hl
-	call	?cost
-	pop	hl
-	pop	bc
-	or	a
-	ret
-
-ci1:		; get input, saving <bc> & <hl>
-	push	bc
-	push	hl
-	call	?ci
-	pop	hl
-	pop	bc
-	ret
+	jp	?lptost
 
 
 	; CONST
@@ -420,9 +317,7 @@ ci1:		; get input, saving <bc> & <hl>
 	;	has an available character.
 
 const:
-	ld	hl,(@civec)		; get console input bit vector
-	jr	ist$scan
-
+	jp	bbconst
 
 	; AUXIST
 	;	Auxiliary Input Status. Return true if
@@ -430,31 +325,14 @@ const:
 	;	has an available character.
 
 auxist:
-	ld	hl,(@aivec)		; get aux input bit vector
-
-ist$scan:
-	ld	b,0			; start with device 0
-cis$next:
-	add	hl,hl			; check next bit
-	ld	a,0			; assume device not ready
-	call	c,cist1			; check status for this device
-	or	a
-	ret	nz			; if any ready, return true
-	inc	b			; next device number
-	ld	a,h
-	or	l			; see if any more selected devices
-	jr	nz,cis$next
-	xor	a			; all selected were not ready, return false
-	ret
-
+	jp	sconst
 
 	; CONIN
 	;	Console Input. Return character from first
 	;		ready console input device.
 
 conin:
-	ld	hl,(@civec)
-	jr	in$scan
+	jp	bbconin
 
 
 	; AUXIN
@@ -462,27 +340,7 @@ conin:
 	;	ready auxiliary input device.
 
 auxin:
-	ld	hl,(@aivec)
-
-in$scan:
-	push	hl			; save bit vector
-	ld	b,0
-ci$next:
-	add	hl,hl			; shift out next bit
-	ld	a,0			; insure zero a (nonexistant device not ready).
-	call	c,cist1			; see if the device has a character
-	or	a
-	jr	nz,ci$rdy		; this device has a character
-	inc	b			; else, next device
-	ld	a,h
-	or	l			; see if any more devices
-	jr	nz,ci$next		; go look at them
-	pop	hl			; recover bit vector
-	jr	in$scan			; loop til we find a character
-ci$rdy:
-	pop	hl			; discard extra stack
-	jp	?ci
-
+	jp	sconin
 
 	; utility subroutines
 

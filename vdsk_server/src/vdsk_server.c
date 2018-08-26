@@ -353,14 +353,16 @@ int main( int argc, char *argv[] )
 		printf( "sectrk:      %d\n", drive.sectrk );
 		printf( "skew:        %d\n", drive.skew );
 		printf( "boottrk:     %d\n", drive.boottrk);
-		printf( "skewtab:    ");
-		for (c = 0; c < drive.sectrk; c++) {
-			printf(" %d", drive.skewtab[c]);
-		}
-		printf( "\n" );
-		printf( "unskewtab   ");
-		for (c = 0; c < drive.sectrk; c++) {
-			printf(" %d", unskew0[c]);
+		if (drive.skew > 0) {
+			printf( "skewtab:    ");
+			for (c = 0; c < drive.sectrk; c++) {
+				printf(" %d", drive.skewtab[c]);
+			}
+			printf( "\n" );
+			printf( "unskewtab   ");
+			for (c = 0; c < drive.sectrk; c++) {
+				printf(" %d", unskew0[c]);
+			}
 		}
 		printf( "\n" );
 		printf( "Translated to:\n" );
@@ -385,14 +387,16 @@ int main( int argc, char *argv[] )
 			printf( "sectrk:      %d\n", driveB.sectrk );
 			printf( "skew:        %d\n", driveB.skew );
 			printf( "boottrk:     %d\n", driveB.boottrk);
-			printf( "skewtab:    ");
-			for (c = 0; c < driveB.sectrk; c++) {
-				printf(" %d", driveB.skewtab[c]);
-			}
-			printf( "\n" );
-			printf( "unskewtab   ");
-			for (c = 0; c < driveB.sectrk; c++) {
-				printf(" %d", unskew1[c]);
+			if (driveB.skew > 0) {
+				printf( "skewtab:    ");
+				for (c = 0; c < driveB.sectrk; c++) {
+					printf(" %d", driveB.skewtab[c]);
+				}
+				printf( "\n" );
+				printf( "unskewtab   ");
+				for (c = 0; c < driveB.sectrk; c++) {
+					printf(" %d", unskew1[c]);
+				}
 			}
 			printf( "\n" );
 			printf( "Translated to:\n" );

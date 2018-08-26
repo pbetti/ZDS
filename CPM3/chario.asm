@@ -22,7 +22,7 @@
 	include modebaud.inc		; define mode bits and baud eqautes
 
 	; define public labels:
-	public	?cinit,?ci,?co,?cist,?cost
+	public	?cinit,?ci,?co,?cist,?cost,?lptost
 	public	@ctbl
 
 	; miscellaneous equates:
@@ -30,84 +30,24 @@
 
 	; will start off in common memory for banked or non-banked systems:
 	cseg
-maxdevice	equ	7
 
 ?cinit:
-					; c = device
-	ld	b,c
-	call	vectorio
-	dw	?initcrtc
-	dw	?inituart0
-	dw	?inituart1
-	dw	?initlpt
-	dw	rret
-	dw	rret
-	dw	rret
-	dw	rret
+	jp	rret
 
 	; physical code for device input:
 ?ci:
-	call	vectorio
-	dw	bbconin
-	dw	sconin
-	dw	bbu1rx
-	dw	nullinput
-	dw	nullinput
-	dw	nullinput
-	dw	nullinput
-	dw	nullinput
+	jp	nullinput
 
-	; physical code for device input status:
+; 	physical code for device input status:
 ?cist:
-	call	vectorio
-	dw	bbconst
-	dw	sconst
-	dw	bbu1st
-	dw	nullstatus
-	dw	nullstatus
-	dw	nullstatus
-	dw	nullstatus
-	dw	nullstatus
+	jp	nullstatus
 
 	; physical code for device output:
 ?co:
-	call	vectorio
-	dw	bbconout
-	dw	sconout
-	dw	bbu1tx
-	dw	bbprnchr
-	dw	rret
-	dw	rret
-	dw	rret
-	dw	rret
+	jp	rret
 
 ?cost:
-	call	vectorio
-	dw	rettrue
-	dw	rettrue
-	dw	rettrue
-	dw	?lptost
-	dw	rettrue
-	dw	rettrue
-	dw	rettrue
-	dw	rettrue
-
-vectorio:
-	ld	a,maxdevice
-	ld	e,b
-vector:
-	pop	hl
-	ld	d,0
-	cp	e
-	jr	nc,exist
-	ld	e,a			; use null device if a >= maxdevice
-exist:	add	hl,de
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	jp	(hl)
+	jp	rettrue
 
 
 nullinput:
@@ -126,12 +66,6 @@ nullstatus:
 	;; physical device handler code:
 	;;
 
-	; init routines (void: done by sysbios)
-?initcrtc:
-?inituart0:
-?inituart1:
-?initlpt:
-	ret
 
 
 ?lptost:
@@ -158,16 +92,11 @@ lptbusy:xor	a
 	db	mb$in$out
 	db	baud$none		; baud rate selected by sysbios
 
-	db	'UART1 '		; device 2
-	db	mb$in$out
-	db	baud$none		; baud rate selected by sysbios
-
-	db	'LPT   '		; device 3
+	db	'LPT   '		; device 2
 	db	mb$output
 	db	baud$none
 
 	db 	0			; table terminator
-
 
 	end
 

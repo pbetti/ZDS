@@ -1,0 +1,165 @@
+;; FILE: io.s
+;; Manage basic i/o on ZDS (NEZ80)
+;; by P. Betti 2014
+;;
+
+
+.include "darkstar.inc"
+
+	.module c_bios
+
+	.area _CODE
+
+	; Fundamental routines for console i/o on sdcc
+_putchar::
+_putchar_rr_s::
+	ld	hl,#2
+	add	hl,sp
+
+	ld	c,(hl)
+	ld	a,c
+	cp	#0x0a
+	jr	nz,_putchar_00
+	ld	c,#0x0d
+	call	BBCONOUT
+	ld	c,#0x0a
+_putchar_00:
+	call	BBCONOUT
+	ret
+
+_putchar_rr_dbs::
+
+	ld	c,e
+	call	BBCONOUT
+	ret
+
+_getchar::
+	call	BBCONIN
+	ld	l,a
+	ret
+
+	; Bios interface
+	;
+	; expose sysbios entries as C api
+	;
+
+	;
+	; Screen clear
+	;
+_cls_::
+	ld	c,#0x0c
+	call	BBCONOUT
+	ret
+
+
+	;
+	; Get HD geometry
+	;
+_getHDgeo_::
+
+	; buffer address in DE
+	pop	bc
+	pop	de
+	push	de
+	push	bc
+	;
+	push	ix
+	; get data
+	call	BBHDGEO
+	push	hl
+	pop	bc			; sectors in BC
+	;
+	ex	de,hl			; buf addr now in HL
+	push	ix
+	pop	de
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	;
+	push	iy
+	pop	de
+	ld	(hl),e
+	inc	hl
+	;
+	push	bc
+	pop	de
+	ld	(hl),e
+
+	pop	ix
+	; return value
+	ld	hl,#0x0000
+	ret
+
+	;
+	; Read HD sector
+	;
+_hdRead_::
+	ld	hl,#2
+	add	hl,sp
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	; set DMA address (from BC)
+	call	BBDMASET
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	; set track #
+	call	BBTRKSET
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+; 	inc	hl
+	; set track #
+	call	BBSECSET
+
+	; now read it
+	call	BBHDRD
+	ld	l,a
+
+	; return value
+	ld	h,#0x00
+	ret
+
+	;
+	; Read HD sector
+	;
+_hdWrite_::
+	ld	hl,#2
+	add	hl,sp
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	; set DMA address (from BC)
+	call	BBDMASET
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	; set track #
+	call	BBTRKSET
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+; 	inc	hl
+	; set track #
+	call	BBSECSET
+
+	; now read it
+	call	BBHDWR
+	ld	l,a
+
+	; return value
+	ld	h,#0x00
+	ret
+
+
+; -----

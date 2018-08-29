@@ -240,6 +240,7 @@ makdisk() {
 			cpmcp -f $1 $2 cpm3.sys.floppy.o 0:cpm3.sys
 			cpmcp -f $1 $2 cpm3.sys.floppy.a 3:cpm3.sys
 			cpmcp -f $1 -t $2 profile.sub_o.z3p 0:profile.sub
+			cpmcp -f $1 $2 ../DarkStar-Monitor/test.com 0:test.com
 		else
 			imgtype="hd"
 			cpmcp -f $1 $2 cpm3.sys.hd.p 0:cpm3.sys

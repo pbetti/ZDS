@@ -506,7 +506,7 @@ eerineprom	equ	80h		; tried to program eeprom running inside it
 
 ;*************************************
 ; Production / Testing
-bbdebug		equ	false
+bbdebug		equ	true
 ;*************************************
 
 ;-------------------------------------

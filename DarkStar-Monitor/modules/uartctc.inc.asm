@@ -15,31 +15,19 @@ ansidrv	equ	true			; set TRUE to enable ANSI console driver
 
 
 wrureg0	macro	uregister
-	ld	a,uart0
-	add	a,uregister
-	ld	c,a
-	out	(c),b
+	out	(uart0+uregister),a
 	endm
 
 rdureg0	macro	uregister
-	ld	a,uart0
-	add	a,uregister
-	ld	c,a
-	in	a,(c)
+	in	a,(uart0+uregister)
 	endm
 
 wrureg1	macro	uregister
-	ld	a,uart1
-	add	a,uregister
-	ld	c,a
-	out	(c),b
+	out	(uart1+uregister),a
 	endm
 
 rdureg1	macro	uregister
-	ld	a,uart1
-	add	a,uregister
-	ld	c,a
-	in	a,(c)
+	in	a,(uart1+uregister)
 	endm
 
 wrureg	macro	uregister
@@ -233,8 +221,6 @@ rxchar0:
 	jp	nz,rxexsb
 	endif
 
-; ESCNX:	LD	A,(IX)
-; 	BIT	5,A			; test system interrupt status
 escnx:	bit	5,(ix)			; test system interrupt status
 	jr	nz,rxchafif		; enabled, uses queue
 rxbusy0:
@@ -355,7 +341,6 @@ rxexesc:
 	ld	a,esc
 rxeximm:
 	res	2,(ix)
-;RXEXNP:
 	ld	ix,fifou0
 	ld	d,a			; save A
 	call	fstat			; queue status

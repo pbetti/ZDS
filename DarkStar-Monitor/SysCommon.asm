@@ -480,6 +480,7 @@ fstat:
 ;; routine to enter a character into a buffer.
 ;; enter with C=chr, IX=.cnt
 fin:
+	push	ix
 	ld	a, (ix + 0)		; compute: (cnt + nout) mod size
 	inc	(ix + 0)		; first update cnt
 	add	a, (ix + 1)
@@ -493,6 +494,7 @@ fin:
 	add	ix, de
 	pop	de
 	ld	(ix+0), c		; store character
+	pop	ix
 	ret
 ;
 ;; FOUT
@@ -501,6 +503,7 @@ fin:
 ;; return with C=chr
 ;
 fout:
+	push	ix
 	dec	(ix + 0)		; update cnt
 	ld	a, (ix + 1)		; compute: base + nout
 	inc	(ix + 1)
@@ -514,6 +517,7 @@ fout:
 	add	ix, de
 	pop	de
 	ld	c, (ix + 0)		; get chr
+	pop	ix
 	ret
 
 ;************************************************************************
@@ -576,23 +580,30 @@ u0isr:
 	push	bc
 	push	ix
 	call	srxstp			; lock rx
-uisri:	in	a,(uart0+r5lsr)		; read status
-	bit	0,a			; data available in rx buffer?
-	jr	z,uisre			; no.
-	ld	c,uart0+r0rxtx
-	in	c,(c)			; read data
 	ld	ix,fifou0		; select our fifo
+uisri:
 	call	fstat			; chek for room in it
-	jr	c,uisre			; throw away character if queue full
-	call	fin			; insert
-	jr	uisri			; repeat for more data in UART (not local) fifo
+	jr	c,uisre			; full, wait for space
+
+	in	a,(uart0+r5lsr)		; read status
+	bit	0,a			; data available in rx buffer?
+	jr	z,uisrs			; no, emtpy, exit
+
+	in	a,(uart0+r0rxtx)	; read data
+	ld	c,a
+	call	fin			; put in local fifo
+
+	jr	uisri			; repeat for more data in UART fifo
+uisrs:
+	call	srxrsm
 uisre:
-	pop	ix			; reg. restore
+	pop	ix
 	pop	bc
 	pop	af
 	ld	sp,(uastav)
 	ei
 	reti
+
 
 ;;
 ;; Uart 1 receiver
@@ -656,8 +667,7 @@ rldrom:
 ;-------------------------------------
 ; Storage
 uastav:	defw	0
-; SYCRES:	DEFW	0
-uastkb:	defs	10
+uastkb:	defs	12
 uastak	equ	$
 
 bbstbase:
@@ -667,18 +677,14 @@ syscmlo:
 	defs	syscommon + $03ff - syscmlo - 15
 
 sintvec:				; interrupts vector table (8 entries)
-	defw	voidisr			; CTC - chan. 0
-	defw	sytimr			; CTC - chan. 1 sys timer
-	defw	u1isr			; CTC - chan. 2 uart 1
-	defw	u0isr			; CTC - chan. 3 uart 0
-	defs	16 - 8
-
-; SYSCMHI:
-; 	DEFB	0
-
-;
-; end of code - this will fill with zeroes to the end of
-; the image
+	vi0:	defw	voidisr			; CTC - chan. 0
+	vi1:	defw	sytimr			; CTC - chan. 1 sys timer
+	vi2:	defw	u1isr			; CTC - chan. 2 uart 1
+	vi3:	defw	u0isr			; CTC - chan. 3 uart 0
+	vi4:	defw	voidisr			; unused
+	vi5:	defw	voidisr			; unused
+	vi6:	defw	voidisr			; unused
+	vi7:	defw	voidisr			; unused
 
 
 if	mzmac

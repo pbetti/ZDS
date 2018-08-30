@@ -166,10 +166,9 @@ cnfbyte		equ	timrcon-1	; config byte
 					;         7: 0 = unused/reserved
 fifosto		equ	000fh		; fifo queues storage start
 fifsize		equ	8		; fifo queue lenght
-fifblok		equ	11		; fifo queue size
+fifblok		equ	fifsize+3	; fifo queue size
 fifou0		equ	fifosto		; uart 0 queue (alternate console)
-fifokb		equ	fifou0+fifblok	; keyboard queue
-fifoend		equ	fifokb+fifblok	; fifo blocks end
+fifoend		equ	fifou0+fifblok	; fifo blocks end
 ;
 bldoffs		equ	3000h		; place for disk bootloader
 
@@ -506,7 +505,7 @@ eerineprom	equ	80h		; tried to program eeprom running inside it
 
 ;*************************************
 ; Production / Testing
-bbdebug		equ	false
+bbdebug		equ	true
 ;*************************************
 
 ;-------------------------------------

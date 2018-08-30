@@ -89,12 +89,12 @@ include Common.inc.asm
 	extern	bbuplchr, bbpsndblk, bbprcvblk
 	extern	bbprnchr, bbrdvdsk, bbvcpmbt
  	extern	bbhdboot
- 	extern	bbeidck, bbldpart, bbepmngr
+ 	extern	bbeidck, bbldpart, bbsysint
 
  	extern	bbdsksel, bbdmaset, bbtrkset, bbsecset, bbhdrd
 
 	extern	delay, mmpmap, mmgetp
-	extern	intren
+	extern	intren, print, inline
 	;extern	bbscroll
 
 ;-------------------------------------
@@ -253,8 +253,6 @@ onshadow:
 	ld	b,fifsize
 	ld	hl,fifou0		; uart 0
 	call	fifoini
-	ld	hl,fifokb		; keyboard
-	call	fifoini
 	;
 	xor	a
 	out	(fdcdrvrcnt),a		; resets floppy selection
@@ -276,12 +274,15 @@ onshadow:
 		;
 	call	bbcurset		; and cursor shape
 	;
+	ld	c,1			; display logo
+	call	bbsysint
+	;
  	ld	hl,msysres		; tell user whats going on from now
- 	call	outstr
+ 	call	print
  	call	bbnksiz			; tell how many memory
 	;
 	ld	hl,mhd			; about IDE
-	call	outstr
+	call	print
  	call	bbhdinit		; IDE init
 	or	a
 	jr	nz,ideinok
@@ -290,7 +291,7 @@ onshadow:
 	or	a
 	jr	nz,ideinok
 	ld	hl,mrdy
-	call	outstr
+	call	print
 	; get hd params from scratch
 	ld	b, trnpag
 	call	mmgetp
@@ -304,7 +305,7 @@ onshadow:
 	ld	hl,hdidbuf + 54		; drive id string is @ BLDOFFS + 54
 	ld	b,10                    ; and 20 bytes long
 	call	hdbufprn
-	call	outstr
+	call	print
 	call	outcrlf
 	pop	af			; remove scratch
 	ld	b,trnpag		; transient page
@@ -314,7 +315,7 @@ onshadow:
 	jr	ideiok
 ideinok:
 	ld	hl,mnot
-	call	outstr
+	call	print
 ideiok:
 	ld	a,u0defspeed		; uart 0 init
 	ld	(uart0br),a
@@ -328,7 +329,7 @@ ideiok:
 	call	dsustat
 	;
 	ld	hl,meepr		; eeprom type
-	call	outstr
+	call	print
 	call	bbeidck
 	ld	b,a			; temp save
 	and	$0f			; mask result
@@ -346,14 +347,14 @@ is29c:	cp	eep29c
 	jr	gotetype
 isuns:	ld	hl,mepuns
 gotetype:
-	call	outstr
+	call	print
 	ld	b,a
 	and	eeproglock
 	jr	nz,islckd
 	ld	hl,mpron
 	jr	isprog
 islckd:	ld	hl,mprof
-isprog:	call	outstr
+isprog:	call	print
 	call	outcrlf
 	;
 	ld	a,ctc0tchi		; chan 0 prescaler
@@ -380,7 +381,7 @@ bmpro:
 	call	bbhdinit
 	call	bbldpart		; load partition table
 	ld	hl,mbmenu		; display the menu
-	call	outstr
+	call	print
 	call	dogetchr		; get user choice
 	push	af
 	call	outcrlf
@@ -420,7 +421,7 @@ blerr:
 	jr	pberr
 nobler:
 	ld	hl,mbtnbl
-pberr:	call	outstr
+pberr:	call	print
 	jr	bootm
 
 ;;
@@ -428,7 +429,7 @@ pberr:	call	outstr
 ;;
 cmdhelp:
 	ld	hl,mhelp
-	call	outstr
+	call	print
 	jp	usrcmd
 
 ;;
@@ -461,7 +462,7 @@ fifinl:	ld	(hl),a			; actual buffer
 dsustat:
 	push	af
 	ld	hl,muart
-	call	outstr
+	call	print
 	call	bbconout
 	ld	c,' '
 	call	bbconout
@@ -469,10 +470,10 @@ dsustat:
 	or	a
 	jr	z,dsuok
 	ld	hl,mnot
-	call	outstr
+	call	print
 	ret
 dsuok:	ld	hl,mrdy
-	call	outstr
+	call	print
 	call	outcrlf
 	ret
 
@@ -506,7 +507,7 @@ bbnksiz1:
 	djnz	bbnksiz1
 	call	asciihl
 	ld	hl,mmbsize
-	call	outstr
+	call	print
 	ret
 
 
@@ -636,13 +637,13 @@ idhle:	pop	de
 ;;
 ugreet:	call	outcrlf
 	ld	hl,mverstr
-	call	outstr
+	call	print
 welcom:	ld	hl,mbwcom
-	call	outstr
+	call	print
 	jr	usrcmd
 ucprompt:
 	ld	hl,urestr		; reject string
-	call	outstr
+	call	print
 usrcmd:
 	ld	hl,(btpasiz)
 	ld	sp,hl
@@ -698,27 +699,27 @@ kdoe:	call	bbconout
 pdnload:
 	call	outcrlf
 	ld	hl, sdlpr
-	call	outstr
+	call	print
 	ld	b, 2			; get params (offset, size)
 	call	gethnum
 	pop	bc			; size
 	call	outcrlf
 	ld	hl, strwait
-	call	outstr
+	call	print
 	pop	de			; offset
 	call	bbpsndblk		; send data
 	ld	d,c			; save result
 	ld	hl,mtx
-	call	outstr
+	call	print
 	ld	d,a
 	or	a
 	jr	z,pdnlok
 	ld	hl, mnok		; error
-	call	outstr
+	call	print
 	ret
 pdnlok:
 	ld	hl,mok			; success
-	call	outstr
+	call	print
 	ret
 
 ;;
@@ -730,7 +731,7 @@ pdnlok:
 pupload:
 	call	outcrlf
 	ld	hl, strwait
-	call	outstr
+	call	print
 
 	call	bbuplchr		; in hi byte of upload offset
 	ld	h,a
@@ -743,22 +744,22 @@ pupload:
 	ex	de,hl			; put offset in DE
 	call	outcrlf
 	ld	hl, strload
-	call	outstr
+	call	print
 
 	call	bbprcvblk		; upload data block
 	push	bc			; save result
 	ld	hl,mrx
-	call	outstr
+	call	print
 	pop	bc
 	ld	a,c
 	or	a
 	jr	z,puplok
 	ld	hl, mnok		; error
-	call	outstr
+	call	print
 	ret
 puplok:
 	ld	hl,mok			; success
-	call	outstr
+	call	print
 	ret
 
 ;;
@@ -1035,7 +1036,9 @@ pop3num:
 	call	gethnum
 	pop	bc
 	pop	de
-	jp	ocrlf1
+	call	outcrlf
+	pop	hl
+	ret
 ;;
 ;; inc HL and do a 16 bit compare between HL and DE
 chkeor:
@@ -1101,7 +1104,7 @@ chkctr:
 ;
 ;; User command reject string
 urestr:
-	db	$aa
+	db	'*',0
 ;
 ;; TOGGLEIO - toggle i/o on video/serial
 toggleio:
@@ -1112,13 +1115,6 @@ toggleio:
 	jr	togju
 togpr:	set	5,(hl)
 togju:	jp	ugreet
-
-;;
-;; Invoke EEPROM manager
-;;
-epmancal:
-	call	bbepmngr
-	jp	welcom
 
 ;;
 ;; MATHHLDE - perform 16 bit add & sub between HL and DE
@@ -1253,6 +1249,14 @@ nprin1:
 	pop	bc
 	ret
 
+;;
+;; emit CR,LF sequence
+;;
+outcrlf:
+	call	inline
+	defb	$0d,$0a,0
+	ret
+
 
 inamep	equ	2
 ipagep	equ	2+tnamelen+2
@@ -1272,7 +1276,7 @@ dspblkid:
 	ld	b,tnamelen
 	call	nprint
 	ld	hl,misep2
-	call	outstr
+	call	print
 	push	iy			; description
 	pop	hl
 	ld	de,idescp
@@ -1280,7 +1284,7 @@ dspblkid:
 	ld	b,tdesclen
 	call	nprint
 	ld	hl,misep3
-	call	outstr
+	call	print
 	push	iy			; address
 	pop	hl
 	ld	de,iaddrp
@@ -1302,17 +1306,17 @@ imgt2bin:
 	ret
 
 mrnrdy:
-	defb	"Image in place, any key to run or <ESC> to exit",CR,LF+$80
+	defb	"Image in place, any key to run or <ESC> to exit",CR,LF,0
 michoi:
-	defb	"Select an image number or <ESC> to exit:",' '+$80
+	defb	"Select an image number or <ESC> to exit:",' ',0
 mislct:
-	defb	" Available images:",CR,LF+$80
+	defb	" Available images:",CR,LF,0
 misep1:
-	defb	":",' '+$80
+	defb	":",' ',0
 misep2:
-	defb	" -",' '+$80
+	defb	" -",' ',0
 misep3:
-	defb	" @",' '+$80
+	defb	" @",' ',0
 
 pagbuf:	defb	0
 rombuf:	defs	6
@@ -1340,7 +1344,7 @@ romrun:
 romr1:	ld	c,ff			; draw page
 	call	bbconout
 	ld	hl,mislct
-	call	outstr
+	call	print
 	;
 	ld	d,maxblk-1
 	ld	e,1			; sysbios image is not selectable
@@ -1352,7 +1356,7 @@ dspspc:	call	bbconout
 	ld	a,e			; image number
 	call	asciia
 	ld	hl,misep1
-	call	outstr
+	call	print
 	ld	b,e
 	call	rgetblk
 	ld	a,(iy+2)		; is a valid block ?
@@ -1365,7 +1369,7 @@ tonblk:	call	outcrlf
 	jr	nz,rnblk
 
 	ld	hl,michoi		; prompt user
-	call	outstr
+	call	print
 	ld	b,2			; 0 ~ 99
 	call	idhl
 	push	af
@@ -1432,7 +1436,7 @@ cp4k:	push	hl			; ex HL,BC
 	jr	multi
 runrdy:
 	ld	hl,mrnrdy		; all ready
-	call	outstr
+	call	print
 	call	bbconin
 	cp	esc			; abort ?
 	jp	z,welcom
@@ -1465,7 +1469,7 @@ ucmdtab:
 	defw	bootm		; (B) boot menu
 	defw	mathhlde	; (C) sum & subtract HL, DE
 	defw	memdump		; (D) dump memory
-	defw	epmancal	; (E) call eeprom manager
+	defw	kecho		; (E) keyboard echo
 	defw	fillmem		; (F) fill memory
 	defw	goexec		; (G) go exec a sub
 	defw	cmdhelp		; (H) help
@@ -1485,7 +1489,7 @@ ucmdtab:
 	defw	memcomp		; (V) compare mem blocks
 	defw	pdnload		; (W) parallel DoWnload
 	defw	ucprompt	; (X) n/a
-	defw	kecho		; (Y) keyboard echo
+	defw	ucprompt	; (Y) n/a
 	defw	ucprompt	; (Z) n/a
 ;;
 
@@ -1494,7 +1498,7 @@ mhelp:	defb	cr,lf,lf
 	defb	"B - Boot menu",CR,LF
 	defb	"C - HL/DE sum, subtract",CR,LF
 	defb	"D - Dump memory",CR,LF
-	defb	"E - Eeprom manager",CR,LF
+	defb	"E - Echo test",CR,LF
 	defb	"F - Fill memory",CR,LF
 	defb	"G - Go to execute address",CR,LF
 	defb	"H - This help",CR,LF
@@ -1508,43 +1512,43 @@ mhelp:	defb	cr,lf,lf
 	defb	"U - Upload from parallel",CR,LF
 	defb	"V - Compare memory",CR,LF
 	defb	"W - Download to parallel"
-	defb	cr,lf+$80
+	defb	cr,lf,0
 ;;
-sdlpr:	defb	"Download",':'+$80
+sdlpr:	defb	"Download",':',0
 strwait:
-	defb	"Waiting for remote...",CR,LF+$80
+	defb	"Waiting for remote...",CR,LF,0
 strload:
-	defb	"Loading",CR,LF+$80
+	defb	"Loading",CR,LF,0
 ;
 mverstr:
 	if not bbdebug
-	defb	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN,CR,LF+$80
+	defb	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN,CR,LF,0
 	else
-	defb	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN," [DEBUG]",CR,LF+$80
+	defb	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN," [DEBUG]",CR,LF,0
 	endif
 	; Boot messages
 msysres:
- 	defb	"SYSTEM INIT...",CR,LF,LF+$80
+ 	defb	"SYSTEM INIT...",CR,LF,LF,0
 mmbsize:
-	defb	"k ram, 256k eeprom",CR,LF+$80
+	defb	"k ram, 256k eeprom",CR,LF,0
 msetsha:
-	defb	"Shadowing BIOS images:",CR,LF+$80
-mok:	defb	"Successful",CR,LF+$80
-mnok:	defb	"Error",CR,LF+$80
-mtx:	defb	"Tx",' '+$80
-mrx:	defb	"Rx",' '+$80
-mfol:	defb	':',' '+$80
-mnot:	defb	"not ready",CR,LF+$80
-mrdy:	defb	"ready",' '+$80
-mhd:	defb	"IDE Drive",' '+$80
-muart:	defb	"UART 16C550",' '+$80
-meepr:	defb	"EEPROM is a",' '+$80
-mpron:	defb	"unlocked",CR,LF+$80
-mprof:	defb	"locked",CR,LF+$80
-mepee:	defb	"29EE020",' '+$80
-mepxe:	defb	"29xE020",' '+$80
-mepc:	defb	"29C020",' '+$80
-mepuns:	defb	"UNSUPPORTED",' '+$80
+	defb	"Shadowing BIOS images:",CR,LF,0
+mok:	defb	"Successful",CR,LF,0
+mnok:	defb	"Error",CR,LF,0
+mtx:	defb	"Tx",' ',0
+mrx:	defb	"Rx",' ',0
+mfol:	defb	':',' ',0
+mnot:	defb	"not ready",CR,LF,0
+mrdy:	defb	"ready",' ',0
+mhd:	defb	"IDE Drive",' ',0
+muart:	defb	"UART 16C550",' ',0
+meepr:	defb	"EEPROM is a",' ',0
+mpron:	defb	"unlocked",CR,LF,0
+mprof:	defb	"locked",CR,LF,0
+mepee:	defb	"29EE020",' ',0
+mepxe:	defb	"29xE020",' ',0
+mepc:	defb	"29C020",' ',0
+mepuns:	defb	"UNSUPPORTED",' ',0
 
 mbmenu:	defb	cr,lf
 	defb	"BOOT from:",CR,LF,LF
@@ -1552,13 +1556,13 @@ mbmenu:	defb	cr,lf
 	defb	" C-N = IDE Volume",CR,LF
 	defb	" O-P = Virtual on parallel",CR,LF
 	defb	"<RET> = Monitor prompt",CR,LF,LF
-	defb	'-','>'+$80
+	defb	'-','>',0
 mbwcom:	defb	cr,lf
 	defb	"Enter command: [B]oot Menu, [H]elp"
-	defb	cr,lf+$80
+	defb	cr,lf,0
 mhderr:	defb	"No Volume, "
-mbterr:	defb	"Boot error!",CR,LF+$80
-mbtnbl:	defb	"No bootloader!",CR,LF+$80
+mbterr:	defb	"Boot error!",CR,LF,0
+mbtnbl:	defb	"No bootloader!",CR,LF,0
 
 ;-------------------------------------
 ; Needed modules

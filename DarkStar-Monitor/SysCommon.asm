@@ -84,20 +84,20 @@ syscom:
 	public	bbcpboot, bbvcpmbt
 
 	public	bbdiv16, bbmul16, bboffcal
-	public	bbsttim, bbrdtime
+	public	bbsttim, bbrdtime, bbeidck
 
 	public	bbhdinit, bbdriveid, bbhdgeo
 	public	bbhdrd, bbhdwr, bbhdboot, bbldpart
 
 	; SYSBIOS3
-	public	bbeidck, bbepmngr
+	public	bbsysint
 
 	; Resident routines
 	public	delay, mmpmap, mmgetp, bbconst
 	public	bbconin, bbconout, rldrom
 	public	dispch, movrgt, eostest, cout00
 	public	scrtst, updvidp, scrspos
-	public	bbscroll
+	public	bbscroll, print, inline
 
 	; Interrupts vector table & mngmt
 	public	sintvec, intren, intrdi, fstat
@@ -161,9 +161,9 @@ bbhdgeo:	bbjbnk_2 gethdgeo
 bbhdboot:	bbjbnk_2 hdcpm
 bbldpart:	bbjbnk_2 getptable
 bbdprmset:	bbjbnk_2 setdprm
+bbeidck:	bbjbnk_2 eidcheck
 
-bbepmngr:	bbjbnk_3 epmanager
-bbeidck:	bbjbnk_3 eidcheck
+bbsysint:	bbjbnk_3 sysint
 ; -- new --
 
 ;;
@@ -442,6 +442,39 @@ updtureg:
 	ld	a,vr31.dummy
 	out	(crt6545adst),a
 	ret
+
+;;
+;; Global print utility
+;;
+;; Print string pointed by HL
+;;
+print:
+	push	af
+	push	bc
+print0:
+	ld	a,(hl)
+	inc	hl
+	or	a			; '0' end ?
+	jr	z,print1
+	cp	'$'			; '$' end ?
+	jr	z,print1
+	ld	c,a
+	call	bbconout
+	jr	print0
+print1:
+	pop	bc
+	pop	af
+	ret
+
+;;
+;; Print inline string
+;;
+inline:
+	ex	(sp),hl			; get address of string (ret address)
+	call	print
+	ex	(sp),hl			; load return address after terminator
+	ret				; back to code immediately after string
+
 
 ;************************************************************************
 ;    FIFO BUFFERS FOR CP/M BIOS

@@ -88,7 +88,7 @@ mzmac	equ	1
 ;
 monmaj		equ	'3'
 monmin		equ	'9'
-subrel		equ	'1'
+subrel		equ	'3'
 
 ;
 ; Buffers addresses labels

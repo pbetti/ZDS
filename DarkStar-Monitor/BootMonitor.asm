@@ -1002,7 +1002,7 @@ bdnxt:	ld	a,e
 	pop	de
 	ret
 ;;
-;; DOPROMPT - display prompt and wait for first key (uppercase)
+;; DOPROMPT - display prompt and wait for cmd key (uppercase)
 ;
 doprompt:
 	call	mprompt
@@ -1042,7 +1042,7 @@ chkeor:
 ;
 ;; User command reject string
 urestr:
-	db	"**",0
+	db	" **",0
 ;
 ;; TOGGLEIO - toggle i/o on video/serial
 toggleio:
@@ -1082,8 +1082,14 @@ mathhlde:
 	call	h2a
 	jp	outcrlf
 
+;;
+;; Select rom image and run immediately
+;;
 selrom:
 	ld	c,SI_ROMSEL
+	call	bbsysint
+	ld	e,l
+	ld	c,SI_ROMRUN
 	call	bbsysint
 	ret
 

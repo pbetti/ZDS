@@ -19,6 +19,7 @@ SI_EFFECT	equ	2
 SI_GOTORC	equ	3
 SI_EDIT		equ	4
 SI_ROMSEL	equ	5
+SI_ROMRUN	equ	6
 SI_B2D		equ	7
 
 

@@ -36,7 +36,7 @@ srvtab:
 	defw	voidsrv		; 3
 	defw	sysedt		; 4
 	defw	romsel		; 5
-	defw	voidsrv		; 6
+	defw	romrun		; 6
 	defw	bin2dec		; 7
 
 srvtbe	equ	$
@@ -102,8 +102,6 @@ regrst:
 	ld	bc,(bcsav)
 	ret
 
-
-
 ;;
 ;; Print out logo
 ;;
@@ -153,8 +151,14 @@ voidsrv:
 ;;	D = buffer length
 ;;	E = mode
 ;;
+isysed:
+	ld	hl,seicll		; internal call
+	inc	(hl)
 sysedt:
+	call	seisin
+	jr	nz,seicll0
 	ld	de,(desav)
+seicll0:
 	push	de
 	call	bbgetcrs		; get position on screen
 	pop	de
@@ -226,6 +230,10 @@ seexff:
 	xor	a
 	dec	a
 seexit:
+	push	hl			; reset int. call
+	ld	hl,seicll
+	dec	(hl)
+	pop	hl
 	ld	(asav),a
 	ret
 
@@ -261,19 +269,16 @@ sysedd:
 	add	hl,de
 	pop	de
 	djnz	sysedd
+	call	seisin
+	jr	nz,seicll1
 	ld	(hlsav),hl
+seicll1:
 	jr	seex00
 sysedx:
-	ld	a,(de)
-	inc	de
-	call	sehexh
-	add	hl,hl      		; * 2
-	add	hl,hl      		; * 4
-	add	hl,hl      		; * 8
-	add	hl,hl      		; * 16 total now
-	or	l          		; Now add in the digit from the buffer
-	ld	l,a
-	djnz	sysedx
+	call	sehexcv
+	call	seisin
+	jr	nz,seicll2
+seicll2:
 	ld	(hlsav),hl
 	jr	seex00
 ; validate input on mode
@@ -398,6 +403,27 @@ seerr:
 	call	inline
 	defb	"Edt err!",0
 	ret
+	;
+; internal call ?
+seisin:
+	ld	a,(seicll)
+	or	a
+	ret
+	;
+; covert to hex (shared with romrun)
+sehexcv:
+	ld	a,(de)
+	inc	de
+	call	sehexh
+	add	hl,hl      		; * 2
+	add	hl,hl      		; * 4
+	add	hl,hl      		; * 8
+	add	hl,hl      		; * 16 total now
+	or	l          		; Now add in the digit from the buffer
+	ld	l,a
+	djnz	sehexcv
+	ret
+
 ;-- sysedt buffers --
 seiloc:					; initial crs position
 seicol:	defb	0			; column
@@ -411,6 +437,7 @@ sebrow:	defb	0			; row
 sebfl:	defb	0			;
 secnt:	defb	0			; chr count
 semode:	defb	0			; mode
+seicll:	defb	0
 
 ;----- rom map equates -----
 inamep	equ	2
@@ -419,20 +446,17 @@ iaddrp	equ	2+tnamelen+2+tpagelen+2
 isizep	equ	2+tnamelen+2+tpagelen+2+tiaddrlen+2
 idescp	equ	2+tnamelen+2+tpagelen+2+tiaddrlen+2+tsizelen+2
 
-;
-; Select a EEPROM image and run it
-;
+;;
+;; Select a EEPROM image
+;;
 romsel:
-	ld	b,trnpag		; move table in addr. space
-	call	mmgetp
-	ld	(pagbuf),a		; save current
+	call	rsavtp			; save current
 	;
 	ld	a,imtpag		; in eeprom table
-	ld	b,trnpag		; transient page
-	call	mmpmap			; mount it
+	call	rmnttp
 	;
 	; table in place
-romr1:	ld	c,ff			; draw page
+	ld	c,ff			; draw page
 	call	bbconout
 	ld	e,EF_REVON
 	call	iveff
@@ -459,111 +483,147 @@ tonblk:
 	call	crlf
 	inc	e
 	djnz	rnblk
+	;
+romask:
+	ld	h,24
+	ld	l,0
+	call	bbsetcrs
+	call	inline
+	defb	"Select an image number or <ESC> to exit: ",0
 
+	ld	d,2
+	ld	e,SE_DEC
+	call	isysed
+	ld	(asav),a		; exit status
+	or	a
+	jr	nz,romexi		; abort
+	ld	a,l
+	or	a
+	cp	maxblk
+	jr	nc,rombep		; too big. ask again
+	or	a
+	jr	z,rombep		; zero, ask again
+	ld	c,a
+	push	hl
+	call	toblk
+	pop	hl
+	ld	a,(iy+2)		; is a valid block ?
+	or	a
+	jr	z,rombep		; nok
+	;
+romexi:
+	ld	(hlsav),hl
+	call	rrestp
+	ret
+	;
+rombep:
+	ld	c,07h			; bell code
+	call	bbconout
+	jr	romask
+	;
+; get/save transient page
+rsavtp:
+	ld	b,trnpag		; ask mmu page
+	call	mmgetp
+	ld	(pagbuf),a		; save current
+	ret
+; mount on transient
+rmnttp:
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
+	ret
+; restore transient
+rrestp:
 	ld	a,(pagbuf)		; restore
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
-
-	call	bbconin
 	ret
+;;
+;; Get an EEPROM image on ram
+;;
+;; E = image id
+;;
+romrun:
+	call	rsavtp			; save current t. page
+	;
+	ld	a,imtpag		; in eeprom map
+	call	rmnttp
 
-; 	ld	hl,michoi		; prompt user
-; 	call	print
-; 	ld	b,2			; 0 ~ 99
-; 	call	idhl
-; 	push	af
-; 	call	crlf
-; 	pop	af
-; 	cp	esc			; user abort ?
-; 	jr	nz,romr2
-; 	jp	welcom
-; romr2:	or	a
-; 	jr	nz,romr1
-; 	ld	a,l			; check selection
-; 	cp	maxblk
-; 	jr	nc,romr1		; too big. ask again
-; 	or	a
-; 	jr	z,romr1			; zero, ask again
-; 	ld	b,l
-; 	call	toblk			; point to block, extract image data
-;
-; 	ld	de,ipagep
-; 	call	imgt2bin
-; 	ld	h,0
-; 	ld	(rombuf),hl		; uses ROMBUF as temporary buffer
-;
-; 	ld	de,iaddrp
-; 	call	imgt2bin
-; 	ld	(rombuf+1),hl
-; 	ld	(rombuf+5),hl		; two copy, we need it later
-;
-; 	ld	de,isizep
-; 	call	imgt2bin
-; 	ld	(rombuf+3),hl
-;
-; multi:
-; 	ld	hl,(rombuf+3)		; image size
-; 	ld	de,4096
-; 	or	a			; clear carry
-; 	sbc	hl,de			; lesser than one page ?
-; 	jr	c,single		; yes
-; 	ld	hl,4096			; no
-; 	jr	cp4k
-; single:
-; 	ld	hl,(rombuf+3)		; reload image size
-; cp4k:	push	hl			; ex HL,BC
-; 	pop	bc			; BC size
-; 	ld	a,(rombuf)		; A source (base) page in eeprom
-; 	ld	de,(rombuf+1)		; image location in ram
-;
-; 	call	placepage		; write page
-;
-; 	ld	hl,(rombuf+3)		; reload image size
-; 	ld	de,4096			; page size
-; 	or	a			; clear carry
-; 	sbc	hl,de			; subtract to get remaining size
-; 	jr	c,runrdy
-; 	jr	z,runrdy
-; 	ld	(rombuf+3),hl		; left bytes
-; 	ld	a,(rombuf)		; write another page...
-; 	inc	a
-; 	ld	(rombuf),a		; next page
-; 	ld	hl,(rombuf+1)
-; 	ld	de,4096
-; 	add	hl,de
-; 	ld	(rombuf+1),hl
-; 	jr	multi
-; runrdy:
-; 	ld	hl,mrnrdy		; all ready
-; 	call	print
-; 	call	bbconin
-; 	cp	esc			; abort ?
-; 	jp	z,welcom
-; 	ld	hl,(rombuf+5)
-; 	jp	(hl)
-; placepage:
-; 	push	bc
-; 	push	af
-; 	ld	b,trnpag		; place image in ram
-; 	call	mmgetp
-; 	ld	(pagbuf),a		; save current
-; 	;
-; 	pop	af
-; 	ld	b,trnpag		; transient page
-; 	call	mmpmap			; mount it
-; 	pop	bc
-; 	;
-; 	ld	hl,trnpag << 12
-; 	ldir				; do copy
-; 	;
-; 	ld	a,(pagbuf)		; restore
-; 	ld	b,trnpag		; transient page
-; 	call	mmpmap			; mount it
-; 	ret
+	ld	c,e
+	call	toblk
+	ld	de,ipagep
+	ld	b,2
+	call	imgt2bin
+	ld	h,0
+	ld	(rombuf),hl		; uses ROMBUF as temporary buffer
 
-; Convert ascii buffer to binary
-hexcnv:
-	ret				; else ret NZ
+	ld	de,iaddrp
+	ld	b,4
+	call	imgt2bin
+	ld	(rombuf+1),hl
+	ld	(rombuf+5),hl		; two copy, we need it later
+
+	ld	de,isizep
+	ld	b,4
+	call	imgt2bin
+	ld	(rombuf+3),hl
+
+	call	rrestp
+	; start interbank copy
+multi:
+	ld	hl,(rombuf+3)		; image size
+	ld	de,4096
+	or	a			; clear carry
+	sbc	hl,de			; lesser than one page ?
+	jr	c,single		; yes
+	ld	hl,4096			; no
+	jr	cp4k
+single:
+	ld	hl,(rombuf+3)		; reload image size
+cp4k:	ld	c,l
+	ld	b,h			; BC size
+	ld	a,(rombuf)		; A source (base) page in eeprom
+	ld	de,(rombuf+1)		; destination address in ram
+
+	call	placepage		; write page
+
+	ld	hl,(rombuf+3)		; reload image size
+	ld	de,4096			; page size
+	or	a			; clear carry
+	sbc	hl,de			; subtract to get remaining size
+	jr	c,runrdy
+	jr	z,runrdy
+	ld	(rombuf+3),hl		; left bytes
+	ld	a,(rombuf)		; write another page...
+	inc	a
+	ld	(rombuf),a		; next page
+	ld	hl,(rombuf+1)
+	ld	de,4096
+	add	hl,de
+	ld	(rombuf+1),hl
+	jr	multi
+runrdy:
+	call	inline			; what to do ?
+	defb	cr,lf,"Image in place, any key to run or <ESC> to exit",cr,lf,0
+	call	bbconin
+	cp	esc			; abort ?
+	ret	z
+	ld	hl,(rombuf+5)		; jump to
+	jp	(hl)
+placepage:
+	push	bc
+	push	af
+	call	rsavtp			; save transient
+	;
+	pop	af
+	call	rmnttp			; mount and
+	pop	bc
+	ld	hl,trnpag << 12
+	ldir				; do copy 4k
+	;
+	call	rrestp			; reset mmu
+	ret
+	;
 ; Convert A to ascii
 dispa:
 	push	bc
@@ -579,7 +639,7 @@ dispa:
 	;
 ; point to rom image record
 ;
-; B < block num - IY > blok address
+; C < block num - IY > blok address
 toblk:
 	push	bc
 	ld	b,c			; blk #
@@ -623,20 +683,9 @@ imgt2bin:
 	pop	hl
 	add	hl,de
 	ex	de,hl
-	call	hexcnv
+	call	sehexcv
 	ret
-
-mrnrdy:
-	defb	"Image in place, any key to run or <ESC> to exit",cr,lf,0
-michoi:
-	defb	"Select an image number or <ESC> to exit:",' ',0
-mislct:
-	defb	" Available images:",cr,lf,0
-misep2:
-	defb	" -",' ',0
-misep3:
-	defb	" @",' ',0
-
+	;
 pagbuf:	defb	0
 rombuf:	defs	6
 
@@ -725,7 +774,7 @@ s3stsav:
 hlsav:	dw	0			; hl i/o
 desav:	dw	0			; de i/o
 bcsav:	dw	0			; bc i/o
-asav:	db	0			; a i/o
+asav:	dw	0			; a i/o
 
 ;-------------------------------------
 ; Routine data

@@ -42,7 +42,38 @@ z8esp	equ	z8eorg - 2
 
 	org	z8eorg
 fillbegin:
-	jp	begin
+	ld	(hlreg),hl	;save user hl
+	pop	hl		;pop our call from stack
+	ld	(spreg),sp	;save user sp
+	ld	(pcreg),hl	;save user pc
+	ld	(dereg),de	;save user de
+	ld	(bcreg),bc	;save user bc
+	push	af
+	pop	hl		;user accumulator and flag to hl
+	ld	(afreg),hl	;save user af
+	ld	a,i
+	ld	h,a		;save user i reg
+	ld	a,r
+	ld	l,a		;save user r reg
+	ld	(rreg),hl
+	ex	af,af'          ;Bank In Prime Regs
+	exx
+	ld	(hlpreg),hl	;save
+	ld	(depreg),de
+	ld	(bcpreg),bc
+	push	af
+	pop	hl
+	ld	(afpreg),hl
+	ld	(ixreg),ix	;save user ix
+	ld	(iyreg),iy	;save user iy
+
+	ld	a,(iniok)	;check for init needed
+	or	a
+	jp	z,z8e
+	xor	a		;already inited
+	ld	(iniok),a
+	jr	begin
+
 
 mbannr:	defb	$0c
 	defb	cr,lf
@@ -5675,6 +5706,7 @@ zasmpc:	defw	100h		;next pc location for disassemble
 				;default at load time: start of	tpa
 zasmfl:	defw	00		;first disassembled address on jdbg screen
 
+iniok:	defb	0ffh		;need first call init
 
 from:
 oprn01:

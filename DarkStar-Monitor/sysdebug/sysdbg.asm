@@ -1,10 +1,10 @@
 ;------------------------------------------------------------------------------
 ;
-; include darkstar.equ
+include ../darkstar.equ
 ;
 
-true	equ	-1
-false	equ	0
+; true	equ	-1
+; false	equ	0
 
 ; The following equate setup an incarnation that will run without CP/M support
 ; It is hardware dependent (since calls are made directly to the monitor ROM)
@@ -20,7 +20,6 @@ lf	equ	0ah		;	line feed
 formf	equ	0ch		;	form feed
 cr	equ	0dh		;	carriage return
 esc	equ	1bh		;       escape
-; CTLX	EQU	'X' and	1fh	;	control	x - delete line
 ctlx	equ	$7f		;	control	x - delete line
 ctlc	equ	'C' and	1fh	;	control	c - warm boot
 eof	equ	'Z' and	1fh	;	control	z - logical eof
@@ -31,23 +30,65 @@ del	equ	7fh		;	del
 inop	equ	000		;Z80 instructions
 ijp	equ	0c3h
 irt	equ	0c9h
-; RST38	EQU	0CFH		; uses RST 8
-rst38	equ	0ffh		; uses RST 38
-; RSTVEC	EQU	08H	;Default (but patchable) breakpoint vector
-rstvec	equ	38h		;Default (but patchable) breakpoint vector
+rst38	equ	0cfh		; uses RST 8
+rstvec	equ	08h		;Default (but patchable) breakpoint vector
 iobuf	equ	80h		;Disk read buffer for symbol loading
-z8eorg	equ	$a000
-z8esp	equ	z8eorg - 2
+
 ;---------------------------------------------------------
 
-	org	z8eorg
-fillbegin:
-	jp	begin
+	org	9000h
+
+
+z8strt:
+	call	embdbg
+	jp	0
+
+
+z8ebuf	defs	32
+z8esp	defw	0
+
+;;
+;; ALWAYS arrive here by call
+;;
+
+
+embdbg:
+	ld	(hlreg),hl	;save user hl
+	pop	hl		;pop our call from stack
+	ld	(spreg),sp	;save user sp
+	ld	(pcreg),hl	;save user pc
+	ld	(dereg),de	;save user de
+	ld	(bcreg),bc	;save user bc
+	push	af
+	pop	hl		;user accumulator and flag to hl
+	ld	(afreg),hl	;save user af
+	ld	a,i
+	ld	h,a		;save user i reg
+	ld	a,r
+	ld	l,a		;save user r reg
+	ld	(rreg),hl
+	ex	af,af'          ;Bank In Prime Regs
+	exx
+	ld	(hlpreg),hl	;save
+	ld	(depreg),de
+	ld	(bcpreg),bc
+	push	af
+	pop	hl
+	ld	(afpreg),hl
+	ld	(ixreg),ix	;save user ix
+	ld	(iyreg),iy	;save user iy
+
+	ld	a,(iniok)	;check for init needed
+	or	a
+	jp	z,z8e
+	xor	a		;already inited
+	ld	(iniok),a
+	jr	begin
 
 mbannr:	defb	$0c
 	defb	cr,lf
-	defb	'Z80DARKSTAR (Z80NE) MONITOR DEBUGGER.',CR,LF
-	defb	'Copyright (c) 2006-2014 Piergiorgio Betti <pbetti@lpconsul.net>'
+	defb	'Z80 Darkstar monitor embedded debugger.',CR,LF
+	defb	'(c) 2018 Piergiorgio Betti v.0.9.1'
 	defb	cr,lf,lf
 	defb	0
 
@@ -55,7 +96,16 @@ begin:
 	ld	(spreg),sp	;save user sp
 
 	ld	de,mbannr	;Dispense with formalities
-	call	print
+	call	prints
+	ld	de,ment
+	call	prints
+	ld	hl,embdbg
+	call	outadr
+; 	ld	de,mbnk
+; 	call	prints
+; 	ld	a,(@cbnk)
+; 	call	outhex
+	call	crlf
 
 ; Do config based on max length of symbol names
 
@@ -75,7 +125,6 @@ begin:
 	ld	c,56		;C - column to display first byte of memory
 	ld	d,7		;    window for J command
 nint00:
-; 	call	inchar
 	ld	(maxlin),a
 	ld	a,b
 	ld	(maxlen),a
@@ -89,13 +138,8 @@ nint00:
 	ld	hl,bphn		;entry point to	breakpoint handler
 	ld	(rstvec+1),hl	;Init RST 38h trap location
 
-	ld	hl,z8esp-128
+	ld	hl,z8ebuf
 	ld	(bdosad),hl
-
-; 	LD	HL,Z8ESP-512
-; 	LD	(SPREG),HL
-
-	jp	z8e            ;Hi-ho, hi-ho to the loader we must go
 
 ;******************************************************************************
 ;*
@@ -112,18 +156,10 @@ nint00:
 ;******************************************************************************
 
 
-	org	($+255) and 0ff00h
-
 z8e:
 	ld	sp,z8esp
 
 z8ecmd:
-; 	DI			; lock interrupts and enable local RST38
-; 	LD	A,(INTRDI)	; check for syscommon presence
-; 	CP	$F3		; SHOULD be...
-; 	JR	NZ,NOSYSBIOS
-; 	CALL	INTRDI		; global ints disable
-; NOSYSBIOS:
 	ld 	a,ijp
 	ld	(rstvec),a
 	ld	hl,z8e
@@ -138,14 +174,13 @@ z8ecmd:
 
 	ld	c,10
 	call	spaces		;If this was jdbg clear command line residue
-	ld	a,$0b		; cursor @ home
+	ld	a,$0d		; cursor @ home
 	call	ttyo
 	ld	a,(prompt)
 	call	ttyo
 
 z8e10:
 	call	inchar		;Read in command character
-; +++ jrs 3.5.6 ++++++++++++++++++
 	cp	cr		;+Check for empty command line
 	jr	nz,z8e16	;+Something there - process it
 	ld	a,(lcmd)	;+Nothing - see if S or J was last command
@@ -156,7 +191,6 @@ z8e10:
 	jp	z,step40	;+
 	ld	a,cr		;+
 z8e16:				;+
-; ++++++++++++++++++++++++++++++++
 	call	ixlt		;Translate to upper case for compare
 	ld	(lcmd),a
 	cp	'J'		;If command is anything but j then indicate
@@ -307,14 +341,14 @@ bphn50:	or	b		;test if we had step bps
 	jp	m,bphn60	;this was go - print bp message
 	ld	a,'X'
 	ld	(lcmd),a	;clear command letter so xreg disassembles
-	call	home		;home cursor
+	call	gohome		;home cursor
 	call	xreg
 	ld	b,22		;cursor on penultimate line
 	ld	c,00
 	call	xycp
 
 bphn60:	ld	de,bpmsg	;print *bp*
-	call	print		;print message pointed to by de
+	call	prints		;print message pointed to by de
 	ld	hl,(pcreg)
 	call	outadr		;display breakpoint address
 	ex	de,hl
@@ -340,7 +374,7 @@ bphn90:	call	xreg		;display all registers
 
 
 bpxxx:	ld	de,bpemsg
-	call	print
+	call	prints
 	ld	hl,(pcreg)
 	call	outadr
 	jp	z8e
@@ -348,7 +382,7 @@ bpxxx:	ld	de,bpemsg
 
 exxx:	ex	de,hl
 	ld	de,emxxx
-	call	print
+	call	prints
 	ex	de,hl
 	ret
 
@@ -457,9 +491,7 @@ jdbg08:	ld	(pcreg),hl	;save address at which to start	tracing
 jdbg10:	ld	(timer),a
 	ld	a,formf
 	call	ttyo
-; 	LD	B,24		;xmit crlf's to clear screen
-jdbg15:	;CALL	CRLF		;clear screen
-; 	DJNZ	JDBG15
+jdbg15:
 	call	rgdisp		;display current user regs
 	call	zwnw		;display disassembled window
 	ld	a,(wnwsiz)
@@ -510,12 +542,6 @@ jdbg35:	ld	a,(de)		;compare old vs new
 	cp	(hl)
 	jr	z,jdbg45	;z - hi and lo bytes the same so try next reg
 jdbg40:
-;	ld	a,4		;col position of reg pair is (rel pos * 9) + 3
-;	and	b
-;	jr	z,jdbg42
-;	ld	a,3
-;	and	b		;- 9 bytes deleted here
-;	inc	a
 	push	bc		;+save register number
 	ld	c,b		;+move it to c while we build line number
 	ld	b,0		;+assume first line for now
@@ -537,10 +563,6 @@ jdbg42:
 	ld	c,a		;+
 	call	xycp		;+
 	pop	bc		;+ added 29 bytes
-
-;	add	a,3		;- deleted another 5 bytes here
-;	call	curs		;- nett cost = 14 bytes for new code
-;				;- but we save 19 bytes in 'curs:' routine
 
 	ld	a,(hl)		;display upper byte of reg contents
 	call	outhex
@@ -619,7 +641,7 @@ jdbg75:	ld	(lastro),a	;save position of arrow
 	ld	c,18		;pass column
 	call	xycp		;position cursor routine
 	ld	de,mrrow
-	call	print
+	call	prints
 	ld	a,(lastro)	;xy positioning added after '=>' as
 				;some systems have a destructive bs
 	ld	c,17		;new cursor loc
@@ -692,7 +714,7 @@ zwnw20:	call	printb
 
 
 				;display regs at top of screen:
-rgdisp:	call	home		;home cursor
+rgdisp:	call	gohome		;home cursor
 	call	xreg		;display regs
 	call	pswdsp		;display flag reg
 	jp	crlf
@@ -704,9 +726,6 @@ curs:	push	bc		;This routine has been simplified and shortened
 	push	hl		;register display positioning.  jrs 20/4/87
 	ld	d,a
 	ld	e,c		;save base row address
-;	cp	3		;test if reg or memory window (3 is reg)
-;	ld	a,7
-;	jr	z,curs00	;z - regs are eight per line (first line)
 
 	ld	a,(nlmask)
 curs00:	and	b		;item number mod lnmask is the relative pos of
@@ -715,20 +734,8 @@ curs00:	and	b		;item number mod lnmask is the relative pos of
 	add	a,c
 	ld	c,a		;c - rel pos times three
 
-;	ld	a,d		;if base column address is < 50 then this is
-				;reg display
-;	sub	3
-;	ld	h,a
-;	ld	a,c
-;	jr	nz,curs20	;nz - not reg display - must be memory
-;	add	a,a		;so multiply times three again
-;	add	a,c		;times 9 in all for register display
-
 curs20:	add	a,d		;add in base
 	ld	c,a		;c - absolute col number
-;	xor	a		;test if this is reg or memory window display
-;	or	h
-;	jr	z,curs30	;z - this is register display
 	ld	a,(fwndow)
 	cp	68		;14-char symbols in effect?
 	jp	z,curs40
@@ -800,10 +807,6 @@ exam10:	ld	hl,argbc	;byte count to c
 	jr	z,exam00
 	ld	de,(exampt)
 	jr	exam00
-
-hsym:	ret
-usym:	ret
-
 
 bank:	call	iedtbc		;Solicit input
 	jp	p,bank00	;p - input present
@@ -918,13 +921,8 @@ dump80:	ld	a,(hl)		;Start ASCII display
 	ld	de,(bsiz)	;Reinit	block size
 	call	ttyi		;Query user for	more
 	cp	cr
-; Next two lines replaced by inverted test - 27 Dec 88 - jrs - V 3.5.1
-;	call	z,crlf
-;	jr	z,dump30	;not cr	- next block
-;----				(Comment on last line is wrong anyway!)
 	call	nz,crlf		;Not cr - next block
 	jr	nz,dump30
-;----
 	ld	(blkptr),hl
 	ret			;end command
 
@@ -1362,34 +1360,6 @@ obrk20:	call	crlf
 	jp	p,obrk00
 	ret
 
-
-
-kdmp:	call	iedtbc		;let user input address of memory to display
-	ret	m		;no input ends command
-	call	iarg		;evaluate user arg
-	jp	nz,exxx
-	ex	de,hl		;de - save memory address
-	call	iarg		;now get count
-	ld	a,0
-	jr	nz,kdmp20	;error during input - display 00 bytes
-	or	h
-	jp	nz,exxx		;greater than 256 is error
-	ld	a,(maxlen)	;max symbol length
-	ld	b,2		;assume big names
-	cp	15
-	ld	a,18		;number of disassembled lines displayed
-	jr	z,kdmp00
-	ld	b,3		;double number of lines one extra time
-kdmp00:	add	a,a		;times two
-	djnz	kdmp00
-	cp	l
-	jr	c,kdmp20	;if number of bytes specified by user is too
-				;large then use default
-	ld	a,l		;use value specified by user
-kdmp20:	ld	(wnwtab),de
-	ld	(wnwsiz),a
-	ret
-
 ;**************************************************************************
 ;*
 ;*		     begin/resume execution of user program
@@ -1409,7 +1379,6 @@ kdmp20:	ld	(wnwtab),de
 
 go:	call	iedtbc		;query user for	execution address
 
-;	ret	m		;- eg 3.3.3 no input - reprompt
 	jp	p,g001		;+ Skip if argument supplied, else:
 	ld	hl,(pcreg)	;+ Use current PC
 	jr	g002		;+
@@ -1698,405 +1667,6 @@ step50:	ld	a,(bps)		;get current number of bps
 	ex	de,hl
 	jp	g100
 
-;******************************************************************************
-;*
-;*	asmblr:	z80 assembler
-;*
-;******************************************************************************
-
-asmblr:
-	call	ilin
-	jp	nz,exxx
-asm000:	call	crlf
-	ld	(zasmpc),hl	;save here as well
-	call	zasm08		;disassemble first instruction
-
-asm005:
-	ld	hl,(asmbpc)
-asm010:	call	crlf
-	call	outadr		;display current assembly pc
-	ld	c,22		;
-	call	spaces		;leave room for	object code
-	ld	a,3
-	ld	hl,objbuf	;zero scratch object code buffer
-asm015:	ld	(hl),c
-	inc	hl
-	dec	a
-	jp	p,asm015
-	ld	(oprn01),a	;init operand key values to 0ffh
-	ld	(oprn02),a
-	call	iedtbc		;get user input
-	ret	m		;m - no	input ends command
-	call	cret
-	call	prsr		;parse to obtain label
-	ld	a,(hl)		;check last character
-	cp	':'
-	jr	nz,asm040	;no colon found	- must be op code
-	ld	(hl),0		;erase colon
-	ld	a,(de)		;fetch first char of label from	parse buffer
-	cp	'A'
-	jp	c,asmxxl	;error - first character must be alpha
-	cp	'z'+1
-	jp	nc,asmxxl	;label error
-	cp	'a'
-	jr	nc,asm030
-	cp	'Z'+1
-	jp	nc,asmxxl
-asm030:	ld	hl,00
-	ld	(isympt),hl	;clear pointer
-	call	isym		;attempt to insert symbol into symbol table
-	jp	nz,asmxxt	;error - symbol	table full
-	ld	(isympt),hl	;save pointer to symbol	value in symbol	table
-	call	prsr		;extract opcode
-	jp	m,asm005	;m - statement contains	label only
-asm040:	ld	a,(delim)	;check delimeter
-	cp	','		;check for invalid terminator
-	jp	z,asmxxo
-	ld	c,73		;number	of opcodes in table as index
-asm050:	dec	c
-	jp	m,asmxxo	;opcode	not found
-	ld	b,0
-	ld	hl,zopcnm	;table of opcode names
-	add	hl,bc
-	add	hl,bc		;index times four
-	add	hl,bc
-	add	hl,bc
-	ld	de,prsbf	;start of parse	buffer
-	ld	b,4
-asm060:	ld	a,(de)		;character from	parse buffer
-	and	a		;null?
-	jr	nz,asm070
-	ld	a,' '		;for comparison	purposes
-asm070:	call	ixlt		;force upper case for compare
-	cp	(hl)
-	jr	nz,asm050	;mismatch - next opcode	name
-	inc	de
-	inc	hl
-	djnz	asm060		;must match all	four
-	ld	a,(de)		;null following	opcode?
-	and	a
-	jp	nz,asmxxo	;error - opcode	more than 4 characaters
-	ld	hl,ikey		;relative position in table is key value
-	ld	(hl),c		;save opcode key value
-	call	prsr		;extract first operand
-	jp	m,asm085	;m - none
-	call	oprn		;evaluate operand
-	jr	nz,asmxxu	;error - bad first operand
-	ld	de,oprn01
-	call	opnv		;save operand value and	key
-	ld	a,(delim)
-	cp	','
-	jr	nz,asm085	;need comma for	two operands
-	call	prsr		;extract second	operand
-	jp	m,asmxxs	;error - comma with no second operand
-	cp	','
-	jp	z,asmxxs	;illegal line termination
-	call	oprn		;evaluate operand
-	jr	nz,asmxxu	;error - bad second operand
-	ld	de,oprn02
-	call	opnv		;save second operand value and key
-asm085:	xor	a
-	ld	c,a
-asm090:	ld	hl,zopcpt	;opcode	name pointer table
-	ld	b,0
-	add	hl,bc		;index into table
-	ld	a,(ikey)	;fetch opcode key value
-	cp	(hl)		;check for match
-	jr	nz,asm095	;
-	inc	h		;point to first	operand	table
-	ld	de,oprn01	;address of first operand key value
-	call	opnm		;check validity
-	jr	nz,asm095	;no match - next
-	ld	b,a		;save modified key value
-	inc	h		;point to second operand table
-	ld	de,oprn02	;address of second operand key value
-	call	opnm
-	jr	z,ibld		;match - attempt final resolution
-asm095:	inc	c		;bump index
-	jr	nz,asm090	;nz - check more
-asmxxu:	ld	a,'U'		;error
-	jp	asmxxx
-
-
-
-
-ibld:	ld	hl,objbuf	;object	code temp buffer
-	ld	e,a		;save second operand key
-	ld	a,(hl)		;check first byte of object buffer
-	and	a		;null?
-	ld	a,c		;instruction key to accumulator	regardless
-	ld	c,e		;save second operand modified key
-	jr	z,ibld00	;z - not ix or iy instruction
-	inc	hl		;point to byte two of object code
-ibld00:	cp	40h
-	jr	c,ibld55	;c - 8080 instruction
-	cp	0a0h
-	jr	nc,ibld10	;nc - not ed instruction
-	ld	(hl),0edh	;init byte one of object code
-	inc	hl
-	cp	80h		;check which ed	instruction we have
-	jr	c,ibld55	;c - this is exact object byte
-	add	a,20h		;add bias to obtain object byte
-	jr	ibld55
-ibld10:	cp	0e0h
-	jr	nc,ibld20
-	add	a,20h		;8080 type - range 0c0h	to 0ffh
-	jr	ibld55		;object	byte built
-ibld20:	cp	0e8h
-	jr	c,ibld50	;8 bit reg-reg arithmetic or logic
-	cp	0f7h		;check for halt	disguised as ld (hl),(hl)
-	jr	nz,ibld30
-	ld	a,76h		;halt object code
-	jr	ibld55
-ibld30:	cp	0f8h
-	jr	nc,ibld50	;8 bit reg-reg load
-	ld	d,a		;temp save instruction key value
-	ld	a,(objbuf)
-	and	a		;check for previously stored first object byte
-	ld	a,d
-	ld	(hl),0cbh	;init byte regardless
-	inc	hl
-	jr	z,ibld40	;z - not ix or iy instruction
-	inc	hl		;bump object code pointer - this is four byter
-ibld40:	add	a,0a8h		;add bias for comparison purposes
-	cp	98h
-	jr	c,ibld50	;c - shift or rotate instruction
-	rrca
-	rrca
-	and	0c0h		;this is skeleton for bit instuctions
-	jr	ibld55
-ibld50:	add	a,a		;form skeleton
-	add	a,a
-	add	a,a
-	add	a,80h
-ibld55:	ld	(hl),a		;store object byte
-	xor	a
-	or	c		;second	operand	need more processing?
-	ld	de,oprn02
-	call	nz,rslv		;resolve second	operand
-	jp	nz,asmxxv	;error - invalid operand size
-	ld	de,oprn01
-	ld	a,b
-	and	a		;first operand resolvedX
-	call	nz,rslv		;more work to do
-	jp	nz,asmxxv	;error - invalid operand size
-	ld	a,(ikey)
-	sub	67		;org directive?
-	jr	nz,ibld60
-	ld	d,(hl)
-	dec	hl
-	ld	e,(hl)
-	ex	de,hl
-	jp	asm000		;z - org directive
-ibld60:	ld	de,objbuf
-	jr	c,ibld70	;c - instruction  nc - directive
-	ld	b,a		;number	of bytes for defb or defw or ddb
-	inc	de		;point past erroneous assembled	opcode
-	inc	de
-	sub	3		;test for ddb
-	jr	c,ibld75	;c - must be defb or defw
-	dec	a
-	jr	nz,ibld65	;nz - must be ddb
-	ld	d,(hl)		;must be equ
-	dec	hl
-	ld	e,(hl)
-	ld	hl,(isympt)	;fetch pointer to entry	in symbol table
-	ld	a,h
-	or	l
-	jp	z,asmxxu	;error - no label on equ statement
-	ld	(hl),d
-	dec	hl
-	ld	(hl),e		;store value of	symbol in symbol table
-	ld	c,6
-	call	spaces
-	ld	a,d
-	call	othxsp
-	ld	a,e
-	call	othxsp
-	jp	asm005		;ready for next	input
-ibld65:	dec	b		;set count of object bytes to 2
-	ld	c,(hl)		;exchange hi and lo order bytes	for ddb
-	dec	hl
-	ld	a,(hl)
-	ld	(hl),c		;new hi order
-	inc	hl
-	ld	(hl),a		;new hi order replaces old lo order
-	jr	ibld75
-ibld70:	call	zlen00		;compute length	of instruction in bytes
-	ld	b,c		;b - number of bytes of	object code
-ibld75:	ld	hl,(asmbpc)
-	call	outadr		;re-display current location counter
-ibld80:	ld	a,(de)		;move from scratch object buffer
-	ld	(hl),a		;into address pointed to by location counter
-	inc	hl
-	inc	de
-	call	othxsp		;display each object code byte
-	djnz	ibld80
-ibld90:	ld	(asmbpc),hl
-	jp	asm005		;next input from user
-
-
-
-
-opnm:	ld	a,(de)		;key value computed by operand routine
-	xor	(hl)		;compare with table operand table entry
-	ret	z		;true match of operand key values
-	xor	(hl)		;restore
-	add	a,a		;86 all	no operand key values (0ffh)
-	ret	m
-	ld	a,(hl)		;fetch table entry
-	and	7fh		;sans paren flag for comparison	purposes
-	cp	1bh		;check table entry 8 bit - 16 bit - $ rel ?
-	jr	c,opnm00	;c - none of the above
-	ld	a,(de)		;fetch computed	key
-	xor	(hl)		;compare with paren flags
-	ret	m		;error - paren mismatch
-	ld	a,(de)		;fetch key once	more
-	and	7fh		;remove	paren flag
-	cp	17h		;computed as 8 bit - 16	bit - $	rel?
-	jr	z,opnm40	;so far	so good
-	ret			;
-opnm00:	cp	19h		;check for 8 bit reg
-	jr	nc,opnm20	;8 bit register	match
-	cp	18h		;table says must be hl - ix - iy
-	ret	nz		;computed key disagrees
-	ld	a,(de)		;fetch computed	key
-	and	7		;computed as hl	- ix - iy ?
-	ret	nz		;no
-opnm10:	ld	a,(de)		;fetch computed	key
-	xor	(hl)
-	ret	m		;error - paren mismatch	on hl -	ix - iy
-	jr	opnm40
-opnm20:	ld	a,(de)		;fetch computed	key of 8 bit reg
-	and	a		;
-	jr	nz,opnm30	;nz - not (hl)
-	dec	a		;error - 8 bit (hl) missing parens
-	ret
-opnm30:	cp	8		;test user entered valid 8 bit reg
-	jr	c,opnm40	;c - ok
-	and	a		;test if no carry caused by paren flag
-	ret	p		;error - this is not 8 bit reg with parens
-	and	7		;psuedo	8 bit reg: (hl)	(ix) (iy)?
-	ret	nz		;no
-opnm40:	ld	a,(hl)		;fetch table entry
-	and	7fh
-	sub	18h		;make values 18	thru 1f	relative zero
-	cp	a		;zero means match
-	ret
-
-rslv:	dec	a
-	jr	z,rslv00	;z - 8 bit reg (bits 0-2 of object byte)
-	dec	a
-	jr	nz,rslv20	;nz - not 8 bit	reg (bits 3-5 of object	byte)
-	dec	a		;make neg to indicate shift left required
-rslv00:	ld	c,a
-	ld	a,(de)		;fetch computed	operand	key
-	and	07		;lo three bits specify reg
-	xor	6		;create	true object code bits
-	inc	c		;test if bits 0-2 or bits 3-5
-	jr	nz,rslv10	;nz - 0	thru 2
-	add	a,a
-	add	a,a
-	add	a,a
-rslv10:	or	(hl)		;or with skeleton
-	ld	(hl),a		;into scratch object buffer
-	cp	a		;set zero - no error
-	ret
-rslv20:	inc	de		;point to low order of operand value
-	ld	c,(hl)		;c - current skeleton  (if needed)
-	inc	hl		;bump object code buffer pointer
-	dec	a
-	jr	nz,rslv30	;nz - not relative jump
-	ex	de,hl		;save object code pointer in de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a		;hl - operand value computed by	xval
-	ld	a,b
-	ld	bc,(asmbpc)	;current location counter
-	inc	bc
-	inc	bc
-	sbc	hl,bc		;calculate displacement	from current counter
-	ex	de,hl		;de - displacement  hl - object	code pointer
-	ld	b,a		;restore b reg
-	ld	a,e		;lo order displacement
-	inc	d		;test hi order
-	jr	z,rslv25	;must have been	ff (backward displacement)
-	dec	d
-	ret	nz		;error - hi order not zero or ff
-	cpl			;set sign bit for valid	forward	displacement
-rslv25:	xor	80h		;toggle	sign bit
-	ret	m		;error - sign bit disagrees with upper byte
-	ld	(hl),e		;store displacement object byte
-	cp	a		;set zero flag - no errors
-	ret
-rslv30:	dec	a
-	jr	nz,rslv40	;nz - not 8 bit	immediate
-	ld	a,36h		;test for reg indirect - (hl),nn
-	cp	c
-	jr	nz,rslv35
-	ld	a,(objbuf)	;test first object byte
-	cp	c
-	jr	z,rslv35	;z - (hl),nn
-	inc	hl		;must be (ix+index),nn	or  (iy+index),nn
-rslv35:	ld	a,(de)		;move lo order operand value to	object buffer
-	ld	(hl),a
-	inc	de
-	ld	a,(de)		;test hi order
-	and	a		;
-	ret	z		;z - must be 0 thru +255
-	inc	a		;error if not -1 thru -256
-	ret
-rslv40:	dec	a
-	jr	nz,rslv50	;nz - not 16 bit operand
-	ld	a,(de)		;move both bytes of operand to object buffer
-	ld	(hl),a
-	inc	hl
-	inc	de
-	ld	a,(de)		;byte two
-	ld	(hl),a
-	cp	a		;set zero flag - no errors of course
-	ret
-rslv50:	dec	a		;test restart instruction or bit number
-	jr	nz,rslv60	;nz - bit or interrupt mode number
-	ld	a,(de)		;check restart value specified
-	and	0c7h		;betweed 0 and 38h?
-	ret	nz		;error
-	ld	a,(de)		;fetch lo order	operand	value
-	or	0c7h		;or with instruction skeleton
-	dec	hl
-	ld	(hl),a		;rewind	object code pointer
-	inc	de
-	ld	a,(de)		;check hi order	operand	value
-	and	a		;error if not zero
-	ret
-rslv60:	dec	hl		;rewind	object code buffer pointer
-	ld	a,(de)
-	and	0f8h		;ensure	bit number in range 0 -	7
-	ret	nz		;error
-	ld	a,(ikey)	;fetch opcode key value
-	sub	13h		;is this bit number of interrupt mode number?
-	ld	a,(de)		;fetch operand value regardless
-	jr	nz,rslv70	;nz - bit number
-	ld	(hl),46h
-	and	03		;im 0?
-	ret	z
-	ld	(hl),56h
-	dec	a		;im 1?
-	ret	z
-	ld	(hl),5eh
-	dec	a		;error if not im 2
-	ret
-rslv70:	add	a,a		;shift bit number left three
-	add	a,a
-	add	a,a
-	or	(hl)		;or with skeleton
-	ld	(hl),a
-	cp	a		;indicate no error
-	ret
-
-
-
 oprn:	ld	bc,22		;count of reserved operand
 oprn00:	ld	de,prsbf	;buffer	contains operand
 	ld	a,(hl)		;last character	of operand in parse buffer
@@ -2377,72 +1947,10 @@ xval95:	ex	de,hl
 
 
 fsym:
-	ld	hl,(bdosad)	;de - buffer   hl - symbol table
-fsym00:	ld	a,(maxlen)
-	and	l
-	ld	c,a
-	ld	a,b		;temp save
-	ld	b,0
-	ex	de,hl		;de - symbol table ptr	hl - parse buffer
-	sbc	hl,bc		;rewind	parse buffer to	start of symbol
-	ex	de,hl		;de - parse buffer  hl - symbol	table pointer
-	ld	b,a		;restore b reg
-	ld	a,(maxlen)
-	or	l
-	ld	l,a
-	inc	hl		;next block of symbol table
-	ld	a,(hl)		;first character of symbol name
-	dec	a
-	ret	m		;end of	table
-	ld	a,(maxlen)
-	dec	a
-	ld	c,a		;chars per symbol
-fsym10:	ld	a,(de)		;fetch char from buffer
-	call	oprtor
-	jr	nz,fsym20	;nz - not operator or end of line null
-	ld	a,(hl)
-	and	a		;null means end	of symbol name in symbol table
-	jr	nz,fsym00
-	ld	(fndsym),hl	;set symbol found flag nz -
-	ret
-fsym20:	cp	(hl)
-	jr	nz,fsym00
-	inc	hl
-	inc	de
-	dec	c
-	jr	nz,fsym10
-	ld	(fndsym),hl	;set symbol found flag nz -
-fsym30:	ld	a,(de)
-	call	oprtor
-	ret	z
-	inc	de
-	jr	fsym30
-
-
-
-isym:	call	fsym		;search	for symbol in table
-	jr	z,isym00	;z - symbol found
-	ld	a,(hl)		;test for empty	slot in	table
-	and	a
-	ret	nz		;symbol	table full
-	ld	(symflg),a	;indicate non-empty symbol table
-isym00:	ld	a,(maxlen)	;rewind	point to start of table	entry
-	ld	c,a
-	cpl
-	and	l
-	ld	l,a
-	ex	de,hl		;de - pointer to start of symbol
-	ld	hl,prsbf
-	ld	b,0		;move symbol from parse	buffer to table
-	dec	c
-	ldir
-	ld	hl,(asmbpc)	;fetch value of	symbol
-	ex	de,hl		;hl - pointer to address storage
-	ld	(hl),e		;lo order current location into	table
-	inc	hl
-	ld	(hl),d		;upper byte
 	xor	a
 	ret
+
+
 
 ;******************************************************************************
 ;*
@@ -2522,28 +2030,6 @@ prsr60:	ld	de,prsbf	;return	pointing to start of parse buffer
 	ret			;zero flag set - no errors
 
 
-
-asmxxl:	ld	a,'L'
-	jr	asmxxx
-asmxxo:	ld	a,'O'
-	jr	asmxxx
-asmxxp:	ld	a,'P'
-	jr	asmxxx
-asmxxs:	ld	a,'S'
-	jr	asmxxx
-asmxxt:	ld	a,'T'
-	jr	asmxxx
-asmxxv:	ld	a,'V'
-
-asmxxx:	ld	(asmflg),a
-	call	cret
-	ld	hl,(asmbpc)
-	call	outadr
-	ld	de,mxxxx
-	call	print
-	jp	asm010
-
-
 zdlm:	cp	','
 	ret	z
 zdlm00:	and	a
@@ -2559,7 +2045,6 @@ oprtor: cp	'+'
 	ret	z
 	and	a
 	ret
-
 
 
 opnv:	ex	de,hl		;de - operand value  hl	- operand key storage
@@ -2806,8 +2291,6 @@ psw10:	ld	c,(hl)			;fetch index into operand name table
 	call	crlf
 	ld	a,(lcmd)
 
-;	cp	'J'			;- eg 3.3.5a
-;	ret	z			;-
 	cp	'P'			;+ Routine can now be called from
 	ret	nz			;+  elsewhere
 
@@ -2840,44 +2323,6 @@ psw60:	and	0f7h			;turn off on/off flag (bit 4)
 	ld	(hl),a			;now turn on specified bit
 	jr	psw55
 
-;******************************************************************************
-;*
-;*	movb:	move memory
-;*
-;*	call bcde to fetch destination block address and byte count
-;*	call prsr
-;*	check for head to head or tail to tail move
-;*
-;*	exit: to z8e for next command
-;*
-;******************************************************************************
-
-movb:	call	bcde		;bc - byte count  de - destination  hl - source
-	jp	nz,exxx		;input error ends command
-	xor	a
-	sbc	hl,de
-	adc	a,a
-	add	hl,de
-	add	hl,bc
-	dec	hl
-	ex		de,hl		;de - address of last byte of source block
-	sbc	hl,de
-	adc	a,a
-	add	hl,de		;hl - original destination address
-	ex	de,hl
-	cp	3
-	jr	nz,movb00	;head to head
-	ex	de,hl
-	add	hl,bc
-	dec	hl
-	ex	de,hl
-	lddr
-	ret
-movb00:	inc	hl
-	and	a
-	sbc	hl,bc
-	ldir
-	ret
 
 ;******************************************************************************
 ;*
@@ -2904,43 +2349,6 @@ yfil20:	dec	a
 	jr	nz,yfil10
 	jr	yfil00
 
-;
-cuser:	ret
-
-;*******************************************************************
-;
-;	QEVAL - expression evaluator	EG 10 Jan 88
-;
-;	Uses '?' as command
-;
-;*******************************************************************
-qeval: 	call 	iedtbc		; get input
-	ret		m		; none
-	call		iarg		; Z8E does all the real work
-	jp		nz,exxx		; check for valid arg
-	call		crlf
-	ld		a,h		; see if 1 byte
-	or		a
-	jr		nz,qev01	; 2-byte number
-	ld		a,l
-	call		outhex		; hex byte
-	ld		a,l
-	cp		7fh		; see if printable
-	ret		nc
-	cp		' '
-	ret		c
-	ld		c,3
-	call		spaces		; even up with spaces
-	ld		a,27h		; quote
-	call		ttyo
-	ld		a,l		; show char
-	call		ttyo
-	ld		a,27h
-	jp		ttyo
-qev01:	jp 	outadr		; output 2-byte result
-
-
-ifcb:	ret				;(Condensed, improved version - jrs 27 Dec 88)
 
 
 disisr:	push	af
@@ -2956,126 +2364,8 @@ enaisr:	push	af
 	ret
 
 
-lldr:	ret
 writ:	ret
 
-
-;******************************************************************************
-;*
-;*	find:	locate string in memory
-;*
-;*		call iarg - get	starting address of seach
-;*
-;*		call in00 - get	match data concatenating multiple arguments
-;*			    into a single string
-;*
-;*		addresses at which matches found displayed 8 per line.
-;*		search continues until end of memory reached
-;*		user may cancel	search at any time by hitting any key.
-;*
-;*		exit: to z8e for next command
-;*
-;******************************************************************************
-
-find:	call	iedtbc
-	ret	m		;m - no	input
-	call	iarg		;extract starting address of search
-	jp	nz,exxx		;error
-	ex	de,hl		;save starting address of search in de
-find00:	call	in00		;extract search	string concatenating multiple
-				;arguments
-	jp	nz,exxx		;error - output	command	prompt
-	xor	a
-	ld	(lines),a	;clear crlf flag
-	ex	de,hl		;starting address of search - hl
-	ld	de,argbf	;argument stored here
-
-	ld	bc,(fndsym)
-	ld	a,c
-	or	b		;symbol found?
-	jp	z,find40	;no
-
-	ex	de,hl		;hl - argument buffer
-	ld	b,(hl)		;reverse order of the two bytes for symbols
-	inc	hl
-	ld	a,(hl)
-	ld	(hl),b
-	dec	hl
-	ld	(hl),a
-	ex	de,hl
-
-find40:	ld	bc,(argbc)	;number	of bytes to look for
-	call	crlf
-find50:	call	srch		;do the	search
-	jr	nz,find60	;not found
-	call	outadr		;display address where match found
-	ld	a,(lines)
-	dec	a		;carriage return after 8 addresses displayed
-	ld	(lines),a
-	and	7
-	call	z,crlf
-	call	ttyq		;user requesting abort?
-	cp	cr
-	ret	z		;abort - return	to z8e
-find60:	inc	hl		;point to next address at which	to start search
-	add	hl,bc		;ensure	we won't hit end of memory by adding
-				;in string size
-	ret	c		;impending end of memory
-	sbc	hl,bc		;restore pointer
-	jr	find50
-
-srch:	push	bc
-	push	de
-	push	hl
-srch00:	ld	a,(de)
-	cpi
-	jp	nz,srch10	;no match
-	inc	de
-	jp	pe,srch00	;tally not expired - check next
-srch10:	pop	hl
-	pop	de
-	pop	bc
-	ret
-
-;******************************************************************************
-;*
-;*	verify:	verify two blocks of data are identical
-;*
-;*		enter: de - starting address of	block 1
-;*
-;*		call bcde to get address of block 2 and	byte count
-;*
-;*		mismatch:   block 1 address and	byte are displayed
-;*			    block 2 address and	byte are displayed
-;*			    console intrrogated	- any input terminates verify
-;*
-;*		exit:	to z8e for next	command
-;*
-;******************************************************************************
-
-verify:	call	bcde		;get block 2 address and byte count
-	jp	nz,exxx
-	ex	de,hl
-verf00:	ld	a,(de)		;byte from block 1
-	xor	(hl)		;versus	byte from block	two
-	jr	z,verf10	;match - no display
-	call	newlin
-	ld	a,(de)
-	call	othxsp		;display block 1 data
-	call	rspace
-	call	outadr		;display block two address
-	ld	a,(hl)
-	call	outhex		;display results of xor
-	call	ttyq		;check input status
-	cp	cr
-	ret	z
-verf10:	inc	hl		;bump block 1 pointer
-	inc	de		;bump block 2 pointer
-	dec	bc		;dec byte count
-	ld	a,b
-	or	c
-	jr	nz,verf00
-	ret
 
 ;******************************************************************************
 ;*
@@ -3111,7 +2401,6 @@ xreg00:	call	xreg05		;display reg name and contents
 	ret	z		;z - no disassembly required
 	ld	hl,(pcreg)
 	ld	(zasmpc),hl
-;	jp	zasm30		;- eg 3.3.5b
 	call	zasm30		;+
 	jp	pswdsp		;+
 
@@ -3224,12 +2513,6 @@ zasm05:	ld	(zasmct),hl	;save as permanent block count
 	ld	(zasmpc),hl
 zasm06:				;+ eg 3.3.2
 	call	crlf
-; 	LD	A,B		;check command line delimeter
-; 	LD	(DWRITE),A	;save as write to disk flag:
-				;z - no write   nz - write
-; 	AND	A
-; 	CALL	NZ,BLDF		;not end of line - build fcb
-; 	JP	NZ,ESNTX
 	xor	a
 
 zasm08:	ld	de,zasmbf	;start of disassembly buffer
@@ -3598,7 +2881,7 @@ opn046:	cp	';'		;check if user wants to insert comments
 	inc	de
 	ld	(de),a
 	inc	de
-	call	write		;end of buffer - write if required
+	call	zwrite		;end of buffer - write if required
 	ld	b,29
 	ld	a,(maxlin)
 	sub	30
@@ -3651,7 +2934,7 @@ opn060:
 	jp	nc,opn065
 	inc	d
 
-opn065:	call	write		;check if write to disk flag in effect
+opn065:	call	zwrite		;check if write to disk flag in effect
 
 	call	crlf
 	ld	(zasmio),de	;save new buffer pointer
@@ -3693,16 +2976,13 @@ opn095:	ld	a,(dwrite)	;writing to disk?
 	ld	de,zasmbf
 	ret
 
-write:	push	bc
+zwrite:	push	bc
 	push	hl
 	ld	hl,nzasm	;address of end of disassembly buffer
 	and	a
 	sbc	hl,de
 	jr	nz,wrt10	;not end of buffer
 	ld	de,zasmbf	;need to rewind buffer pointer
-; 	LD	A,(DWRITE)	;test write to disk flag
-; 	AND	A
-; 	CALL	NZ,BDWRIT	;nz - writing to disk
 wrt10:	pop	hl
 	pop	bc
 	ret
@@ -3722,13 +3002,7 @@ opn105:	add	hl,bc		;adjust	pc
 	call	fadr
 	call	z,xsym
 	jp	z,opn040	;symbol	found
-;	ld	(hl),'$'	;- eg 3.3.4a
-;	inc	hl		;-
-;	ld	a,c		;-
-;	inc	a		;-
 	ld	b,0
-;	cp	82h		;-
-;	jp	opn610		;- convert displacement to ascii
 	jp	opn316		;+
 
 opn200:	call	zmqf		;check for interactive disassembly
@@ -3845,7 +3119,6 @@ opn605:
 opn606:				;+
 	ld	a,'i'		;+First character
 	and	c		;+Select case
-;	ld	(hl),'i'	;-Set first character
 	ld	(hl),a		;+Set first character
 	inc	hl
 	pop	af		;+Second character
@@ -3933,7 +3206,6 @@ opn830:	call	zhex20		;convert to ascii
 zndx:	ld	hl,(zasmpc)	;fetch current instruction pointer
 	ex	de,hl		;de - instruction pointer   hl - buffer
 	ld	a,(de)
-;	ADD	A,-0FDH		;iy check
 	add	a,$03		;iy check
 	ret	z
 	sub	0ddh-0fdh	;ix check
@@ -4003,7 +3275,6 @@ zasc10:	and	a		;set nz - conversion not done
 zasc20:	ex	de,hl
 	ld	(hl),quote	;defb -	quoted character
 	inc	hl
-; 	OR	80H		;hi bit on - no case conversion for this guy
 	ld	(hl),a
 	inc	hl
 	ld	(hl),quote
@@ -4093,443 +3364,6 @@ bcde:	call	iedtbc
 	ret
 
 
-;******************************************************************************
-;*
-;*			   console i/o routines
-;*
-;*   "physical"	i/o routines: ttyi - keyboard input
-;*			      ttyo - console output
-;*			      ttyq - console status
-;*
-;*   logical input routines:  inchar - input character processing
-;*				       control characters echoed with ^
-;*
-;*   logical output routines: crlf   - output carriage return/line feed
-;*			      cret   - output carriage return only
-;*			     space   - output space
-;*			    spaces   - output number of	spaces in passed in c
-;*			    outhex   - output hex byte in a
-;*			    othxsp   - output hex byte in a followed by	space
-;*			    outadr   - output 16 bit hex value in hl followed
-;*				       by space	- hl preserved
-;*			     print   - output string - address in de
-;*				       string terminated by null
-;*			    printb   - output string - address in hl
-;*						       byte count in c
-;*						       end at first null
-;*
-;******************************************************************************
-; ---------------------------------------------------------------------
-; LX529 VIDEO BOARD:
-; ---------------------------------------------------------------------
-crtbase		equ	$80
-	; RAM0 for ascii chars & semi6. Combined with RAM1 and RAM2 for graphics
-crtram0dat	equ	crtbase		; RAM0 access: PIO0 port A data register
-crtram0cnt	equ	crtbase+2	; RAM0 access: PIO0 port A control register
-	; Printer port
-crtprntdat	equ	crtbase+1	; PRINTER (output): PIO0 port B data register
-crtprntcnt	equ	crtbase+3	; PRINTER (output): PIO0 port B control register
-					; STROBE is generated by hardware
-	; RAM1 for graphics. (pixel index by RAM0+RAM1+RAM2)
-crtram1dat	equ	crtbase+4	; RAM1 access: PIO1 port A data register
-crtram1cnt	equ	crtbase+6	; RAM1 access: PIO1 port A control register
-	; Keyboard port (negated). Bit 7 is for strobe
-crtkeybdat	equ	crtbase+5	; KEYBOARD (input): PIO1 port B data register
-crtkeybcnt	equ	crtbase+7	; KEYBOARD (input): PIO1 port B control register
-keybstrbbit	equ	7		; Strobe bit
-	; RAM2 for graphics. (pixel index by RAM0+RAM1+RAM2)
-crtram2dat	equ	crtbase+8	; RAM2 access: PIO2 port A data register
-crtram2cnt	equ	crtbase+10	; RAM2 access: PIO2 port A control register
-	; Service/User port
-crtservdat	equ	crtbase+9	; Service (i/o): PIO2 port B data register
-crtservcnt	equ	crtbase+11	; Service (i/o): PIO2 port B control register
-prntbusybit	equ	0		; Printer BUSY bit		(in)	1
-crtwidthbit	equ	1		; Set 40/80 chars per line	(out)	0
-pio2bit2	equ	2		; user 1 (input)		(in)	1
-pio2bit3	equ	3		; user 2 (input)		(in)	1
-pio2bit4	equ	4		; user 3 (input)		(in)	1
-clksclk		equ	5		; DS1320 clock line		(out)	0
-clkio		equ	6		; DS1320 I/O line		(i/o)	1
-clkrst		equ	7		; DS1320 RST line		(out)	0
-	; normal set for PIO2 (msb) 01011101 (lsb) that is hex $5D
-					; Other bits available to user
-	; RAM3 control chars/graphics attributes
-crtram3port	equ	crtbase+14	; RAM3 port
-crtblinkbit	equ	0		; Blink
-crtrevrsbit	equ	1		; Reverse
-crtunderbit	equ	2		; Underline
-crthilitbit	equ	3		; Highlight
-crtmodebit	equ	4		; ASCII/GRAPHIC mode
-	; Beeper port
-crtbeepport	equ	crtbase+15	; Beeper port
-	; 6545 CRT controller ports
-crt6545adst	equ	crtbase+12	; Address & Status register
-crt6545data	equ	crtbase+13	; Data register
-
-iocbase:
-	ret			; null entry. start of control routines vector
-
-movlft:
-	call	gcrspos
-	dec	hl
-	ld	de,(curpbuf)
-	xor	a
-	sbc	hl,de
-	cp	h
-	jr	nz,movlft1
-	cp	l
-	ret	z
-movlft1:
-	dec	hl
-	add	hl,de
-	call	scrspos
-	push	hl
-	ld	a,(colbuf)
-	dec	a
-	cp	$ff
-	jr	nz,movlft2
-	ld	a,$4f
-movlft2:
-	ld	(colbuf),a
-	ld	hl,miobyte
-	bit	4,(hl)
-	pop	hl
-	ret	nz
-	ld	a,$20
-; 	JP	DISMVC
-	jp	dispch
-
-movdwn:
-	call	gcrspos
-	dec	hl
-	ld	de,$0050
-	add	hl,de
-	call	scrspos
-	jp	lfeed1
-
-lfeed:
-	xor	a
-	ld	(colbuf),a
-lfeed1:	call	scrtst
-	ret	c
-	ld	hl,miobyte
-	bit	2,(hl)
-	ld	de,$f830
-	call	gcrspos
-	dec	hl
-	jr	z,mdjmp0
-	add	hl,de
-	jp	scrspos
-mdjmp0:	push	hl
-	call	clrlin
-	ld	hl,(curpbuf)
-	ld	de,$0050
-	add	hl,de
-	ld	de,$0820
-	push	hl
-	sbc	hl,de
-	pop	hl
-	jr	c,mdjmp1
-	res	3,h
-mdjmp1:	ld	(curpbuf),hl
-	call	sdpysta
-	pop	hl
-	jr	c,mejp
-	res	3,h
-mejp:	jp	scrspos
-
-clrscr:
-	ld	hl,$0000
-	xor	a
-	ld	(colbuf),a
-	cpl
-	ld	(ram3buf),a
-	ld	(curpbuf),hl
-	call	scrspos
-	call	sdpysta
-	push	hl
-clsnc:	ld	a,$20
-	call	dispch
-	inc	hl
-	ld	a,h
-	cp	$08
-	jr	nz,clsnc
-	pop	hl
-	jp	scrspos
-
-ioccr:
-	ex	de,hl
-	bit	3,(hl)
-	jr	z,ioccr1
-	call	clreol
-ioccr1:	jp	chome
-
-siocesc:
-	ex	de,hl
-	set	7,(hl)
-	ret
-
-dispch:
-	push	af
-dgclp0:	in	a,(crt6545adst)
-	bit	7,a
-	jr	z,dgclp0
-	pop	af
-	out	(crtram0dat),a
-	ld	a,(ram3buf)
-	out	(crtram3port),a
-	xor	a
-	out	(crt6545data),a
-	ret
-
-gcrspos:
-	ld	a,$0e
-	out	(crt6545adst),a
-	in	a,(crt6545data)
-	ld	h,a
-	ld	a,$0f
-	out	(crt6545adst),a
-	in	a,(crt6545data)
-	ld	l,a
-	inc	hl
-	jp	crtprgend
-
-sdpysta:
-	ld	a,$0c
-	out	(crt6545adst),a
-	ld	a,h
-	out	(crt6545data),a
-	ld	a,$0d
-	out	(crt6545adst),a
-	ld	a,l
-	out	(crt6545data),a
-	jp	crtprgend
-
-scrspos:
-	ld	a,$0e
-	out	(crt6545adst),a
-	ld	a,h
-	out	(crt6545data),a
-	ld	a,$0f
-	out	(crt6545adst),a
-	ld	a,l
-	out	(crt6545data),a
-scrspos1:
-	ld	a,$12
-	out	(crt6545adst),a
-	ld	a,h
-	out	(crt6545data),a
-	ld	a,$13
-	out	(crt6545adst),a
-	ld	a,l
-	out	(crt6545data),a
-	jr	crtprgend
-
-scrtst:
-	ld	de,(curpbuf)
-	xor	a
-	sbc	hl,de
-	ld	a,h
-	cp	$07
-	ret	c
-	ld	a,l
-	cp	$cf
-	ret
-
-clrlin:
-	ld	bc,$0050
-clrlin1:
-	ld	a,(ram3buf)
-	push	af
-	ld	a,$ff
-	ld	(ram3buf),a
-clrlp1:	ld	a,$20
-	call	dispch
-	dec	bc
-	ld	a,b
-	or	c
-	jr	nz,clrlp1
-	pop	af
-	ld	(ram3buf),a
-	ret
-
-clreop:
-	xor	a
-	ld	hl,(curpbuf)
-	ld	de,$07d0
-	add	hl,de
-	ex	de,hl
-	call	gcrspos
-	dec	hl
-	ex	de,hl
-	sbc	hl,de
-	push	hl
-	pop	bc
-clrj0:	call	clrlin1
-	ex	de,hl
-	jp	scrspos
-
-clreol:
-	ld	a,(colbuf)
-	ld	b,a
-	ld	a,$50
-	sub	b
-	ld	b,$00
-	ld	c,a
-	call	gcrspos
-	dec	hl
-	ex	de,hl
-	jr	clrj0
-
-chome:
-	ld	hl,colbuf
-	ld	e,(hl)
-	xor	a
-	ld	(hl),a
-	ld	d,a
-	call	gcrspos
-	dec	hl
-	sbc	hl,de
-	call	scrspos
-	ret
-
-crtprgend:
-	ld	a,$1f
-	out	(crt6545adst),a
-	ret
-
-
-iocvec:
-	dw	iocbase			; NUL 0x00 (^@)  no-op
-	dw	iocbase		; SOH 0x01 (^A)  uppercase mode
-	dw	iocbase		; STX 0x02 (^B)  normal case mode
-	dw	iocbase			; ETX 0x00 (^C)  no-op
-	dw	iocbase			; EOT 0x04 (^D)  cursor off
-	dw	iocbase			; ENQ 0x05 (^E)  cursor on
-	dw	iocbase			; ACK 0x06 (^F)  locate cursor at CURPBUF
-	dw	iocbase			; BEL 0x07 (^G)  beep
-	dw	movlft			; BS  0x08 (^H)  cursor left (destr. and non destr.)
-	dw	iocbase			; HT  0x09 (^I)  no-op
-	dw	movdwn			; LF  0x0a (^J)  cursor down one line
-	dw	chome			; VT  0x0b (^K)  cursor @ column 0
-	dw	clrscr			; FF  0x0c (^L)  page down (clear screen)
-	dw	ioccr			; CR  0x0d (^M)  provess CR
-	dw	iocbase			; SO  0x0e (^N)  clear to EOP
-	dw	iocbase			; SI  0x0f (^O)  clear to EOL
-	dw	iocbase			; DLE 0x10 (^P)  no-op
-	dw	iocbase			; DC1 0x11 (^Q)  reset all attributes
-	dw	iocbase			; DC2 0x12 (^R)  no-op
-	dw	iocbase			; DC3 0x13 (^S)  no-op
-	dw	iocbase			; DC4 0x14 (^T)  no-op
-	dw	iocbase			; NAK 0x15 (^U)  no-op
-	dw	iocbase		; SYN 0x16 (^V) scroll off
-	dw	iocbase		; ETB 0x17 (^W) scroll on
-	dw	iocbase			; CAN 0x18 (^X) hard crt reset and clear
-	dw	iocbase			; EM  0x19 (^Y)  no-op
-	dw	iocbase			; SUB 0x1a (^Z)  no-op
-	dw	siocesc			; ESC 0x1b (^[) activate alternate output processing
-	dw	iocbase			; FS  0x1c (^\) no-op
-	dw	iocbase			; GS  0x1d (^]) no-op
-	dw	iocbase			; RS  0x1e (^^) disabled (no-op)
-	dw	iocbase			; US  0x1f (^_)  no-op
-
-miobyte:defb	0
-colbuf:	defb	0
-ram3buf:defb	$ff
-curpbuf:defw	0
-tmpbyte:defb	0
-appbuf:	defw	0
-
-
-zconout:
-	push	af
-	push	bc
-	push	de
-	push	hl
-	; force jump to register restore and exit in stack
-	ld	hl,bcexit
-	push	hl
-	;
-	ld	a,c
-	ld	hl,miobyte
-	bit	7,(hl)			; alternate char processing ?
-	ex	de,hl
-	jr	nz,conou2		; yes: do alternate
-	cp	$20			; no: is less then 0x20 (space) ?
-	jr	nc,cojp1		; no: go further
-	add	a,a			; yes: is a special char
-	ld	h,0
-	ld	l,a
-	ld	bc,iocvec
-	add	hl,bc
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	jp	(hl)			; jump to IOCVEC handler
-cojp1:	ex	de,hl
-	bit	6,(hl)			; auto ctrl chars ??
-	jr	z,cojp2			; no
-	cp	$40			; yes: convert
-	jr	c,cojp2
-	cp	$60
-	jr	nc,cojp2
-	sub	$40
-cojp2:	call	dispch			; display char
-	; move cursor right
-movrgt:
-	call	gcrspos			; update cursor position
-	call	scrspos
-	ld	a,(colbuf)
-	inc	a
-	cp	$50
-	jp	z,lfeed			; go down if needed
-;;
-savcolb:
-	ld	(colbuf),a		; save cursor position
-	ret
-conou2:					; alternate processing....
-	cp	$20			; is a ctrl char ??
-	jr	nc,curadr		; no: will set cursor pos
-	ret				; ignore
-;; cursor addressing service routine
-;; address is ESC + (COL # + 32) + (ROW # + 32) (then need a NUL to terminate...)
-curadr:	ld	hl,tmpbyte
-	bit	0,(hl)
-	jr	nz,setrow
-	cp	$70			; greater then 80 ?
-	ret	nc			; yes: error
-	sub	$20			; no: ok
-	ld	(appbuf),a		; store column
-	set	0,(hl)			; switch row/col flag
-	ret
-setrow:	cp	$39			; greater than 24 ?
-	ret	nc			; yes: error
-	sub	$1f			; no: ok
-	res	0,(hl)			; resets flags
-	ld	hl,miobyte
-	res	7,(hl)			; done reset
-	ld	b,a
-	ld	hl,$ffb0
-	ld	de,$0050
-curofs:	add	hl,de			; calc. new offset
-	djnz	curofs
-	ld	a,(appbuf)
-	ld	(colbuf),a
-	ld	e,a
-	add	hl,de
-	ex	de,hl
-	ld	hl,(curpbuf)
-	add	hl,de
-	jp	scrspos			; update position
-bcexit:
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
-	ret
-
-
 zconst:
 	in	a,($85)
 	cpl
@@ -4576,16 +3410,10 @@ ttyi:
 	ret
 
 ttyo:
-; 	PUSH	AF
 	push	bc
-; 	PUSH	DE
-; 	PUSH	HL
 	ld	c,a
-	call	zconout
-; 	POP	HL
-; 	POP	DE
+	call	bbconout
 	pop	bc
-; 	POP	AF
 	ret
 
 inchar:	call	ttyi
@@ -4614,8 +3442,7 @@ inchar:	call	ttyi
 
 exicpm:
 	ei			; renable interrupts
-; 	CALL	GENAIN		; unlock monitor to enable ints
-	jp	$f000
+	jp	0fc00h
 
 ilcs:	cp	'A'
 	ret	c
@@ -4923,7 +3750,8 @@ byte30:	call	exxx
 ;******************************************************************************
 
 
-iedtbc:	ld	b,inbfsz
+iedtbc:
+	ld	b,inbfsz
 	xor	a
 	ld	c,a
 	ld	(strngf),a
@@ -5043,11 +3871,7 @@ asci:	and	7fh		;Convert contents of accumulator to ascii
 	cp	20h		;	check for control character
 	jp	nc,ttyo		;	no - output as is
 asci00:				;	yes - translate to '.'
-;	if	hazeltine
 	ld	a,'.'		;Non-printables replaced with dot
-;	else
-;	ld	a,tilde		;Non-printables replaced with squiggle
-;	endif
        	jp	ttyo
 
 
@@ -5074,12 +3898,12 @@ bcdx00:	rld
 	ret
 
 nprint:	call	crlf
-print:	ld	a,(de)
+prints:	ld	a,(de)
 	and	a
 	ret	z
 	call	ttyo
 	inc	de
-	jr	print
+	jr	prints
 
 
 printb:	ld	a,(hl)
@@ -5093,7 +3917,7 @@ printb:	ld	a,(hl)
 
 
 
-home:	ld	bc,00
+gohome:	ld	bc,00
 
 
 ;----------------------------------------------------------------------------
@@ -5115,6 +3939,7 @@ xycp:
 	push	bc		;Enter with row in b and column in c
 	push	de
 	push	hl
+	inc	b		; ZDS origin 1,1
 	ld	hl,mxycp
 	ld	a,(row)		;Add in row offset
 	add	a,b
@@ -5144,10 +3969,6 @@ xycp10:
 	pop	de
 	pop	bc
 	ret
-
-	org	xycp+128		;  the object code
-
-nrel:					;end of	relocatable code
 
 
 zopnm:
@@ -5181,8 +4002,6 @@ riy	equ	(siy-zopnm)/2		;		     iy
 
 zopnml	equ	($-zopnm)/2
 
-zopjtb	equ	 $-nrel			;nrel to jump table bias for loader
-
 zoprjt:
 	defw	opn600			;18 - hl/ix/iy test
 	defw	opn400			;19 - register specified in bits 0-2
@@ -5198,9 +4017,6 @@ zasmio:	defw	zasmbf
 zopjtl	equ	($-zoprjt)/2		;length	of operand jump	table
 
 jtcmd:
-	defw	ifcb			; i
-	defw	asmblr			; a
-	defw	usym			; u
 	defw	nprt			; n
 	defw	jdbg			; j
 	defw	zasm			; z
@@ -5208,28 +4024,18 @@ jtcmd:
 	defw	rgst			; r
 	defw	go			; g
 	defw	yfil			; y
-	defw	movb			; m
-	defw	verify			; v
 	defw	pswdsp			; p
 	defw	break			; b
 	defw	cbreak			; c
-	defw	find			; f
-	defw	hsym			; h
 	defw	step			; s
 	defw	obreak			; o
-	defw	lldr			; l
 	defw	dump			; d
 	defw	qprt			; q
 	defw	xreg			; x
 	defw	bank			; k
-	defw	kdmp			; w
-	defw	cuser			; >
-	defw	qeval			; ?
-;	defw	gadr			; #
 cmd:
-;	defb	'#?>WKXQDLOSHFCB'
-	defb	'?>WKXQDLOSHFCB'
-	defb	'PVMYGREZJNUAI'
+	defb	'KXQDOSCB'
+	defb	'PYGREZJN'
 ncmd	equ	$-cmd		;number	of commands
 
 bpemsg:
@@ -5237,8 +4043,6 @@ bpemsg:
 bpmsg:
 	defb	'*BP* @ '
 	defb	0
-; PROMPT:
-; 	DEFB	'#',' ',bs,0
 prompt:
 	defb	'#',0
 
@@ -5256,35 +4060,9 @@ lcmd:	defb	' '
 emxxx:	defb	' ??'
 	defb	0
 
-mldg:
-	defb	'Loading: '
+ment:	defb	cr,lf,'Entry: '
 	defb	0
-
-mfilnf:
-	defb	'File Not Found'
-	defb	cr,lf,00
-
-
-mlodm:
-	defb	'Loaded:  '
-	defb	0
-mlodpg:
-
-	defb	'Pages:   '
-	defb	0
-
-msntx:
-	defb	'Syntax Error'
-	defb	cr,lf,0
-
-mmemxx:	defb	'Out Of Memory'
-	defb	0
-
-mcntu:	defb	' - Continue? '
-	defb	0
-
-mireg:
-	defb	'IR: '
+mbnk:	defb	' @cbnk: '
 	defb	0
 
 
@@ -5353,7 +4131,6 @@ z80f3l	equ	$-z80f3
 ;*
 ;***********************************************************************
 
-	org	($+3) and 0fffch
 zopcpt:
 	defb	022h,01ch,01ch,015h	;nop	ld	ld	inc	00 - 03
 	defb	015h,00ch,01ch,031h	;inc	dec	ld	rlca	04 - 07
@@ -5666,14 +4443,12 @@ bsizlo:	defb	0		;     lo order
 bsizhi:	defb	1		;     hi order
 blkptr:	defw	100h		;dump block address
 
-loadb:	defw    100h		;z8e load bias for lldr command
-loadn:	defw	00		;end of load address
-
 asmbpc:				;next pc location for assembly
 zasmpc:	defw	100h		;next pc location for disassemble
 				;default at load time: start of	tpa
 zasmfl:	defw	00		;first disassembled address on jdbg screen
 
+iniok:	defb	0ffh		;need first call init
 
 from:
 oprn01:
@@ -5729,7 +4504,6 @@ timer:
 first:	defb	0
 regtrm:	defb	0
 trmntr: defb	0
-isympt:	defw	0
 
 jropnd:
 pass2:	defw	0
@@ -5745,9 +4519,7 @@ fwndow:	defb	00
 
 nlmask:	defb	00
 
-case:
-	defb	000h		;flag to indicate case of output
-	defb	0ffh		;flag to indicate case of output
+case:	defb	0ffh		;flag to indicate case of output
 				;nz - lower   z - upper
 
 jstepf:	defb	0ffh		;00 -   screen is intact, if user wants j
@@ -5819,13 +4591,7 @@ argbsz	equ	62
 
 argbf:	defs	argbsz
 
-fcb	equ     argbf+argbsz-36 ;cp/m file control block
-fcbnam	equ	fcb+1		;start of file name in fcb
-fcbtyp	equ	fcbnam+8	;start of file type in fcb
-fcbext	equ	fcbtyp+3	;current extent	number
-nfcb	equ	$		;last byte of fcb plus one
-
-gpbsiz	equ	164		;size of general purpose buffer
+gpbsiz	equ	128		;size of general purpose buffer
 
 symbuf:
 objbuf:				;object	code buffer
@@ -5845,10 +4611,6 @@ nprsbf	equ	lprsbf+1	;	      -	end address plus one
 nzasm	equ	$		;end of disassembly buffer
 zasmbf	equ	nzasm-128	;start of disassembly buffer
 
-filler:
-	defs	fillbegin + $3000 - filler - 1
-fillend:
-	defb	0
+	end
+;;-------- EOF -----------
 
-	end
-	end

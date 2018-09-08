@@ -11,23 +11,6 @@
 ; ---------------------------------------------------------------------
 
 ;;
-;;
-;; OUTSTR print a string using BBCONOUT
-; outstr:
-; 	push	bc
-; oslp0:	ld	c,(hl)
-; 	ld	b,c
-; 	res	7,c
-; 	call	bbconout
-; 	inc	hl
-; 	ld	a,b
-; 	rlca
-; 	jr	nc,oslp0
-; 	pop	bc
-; 	ret
-
-
-;;
 ;; DLIGHT
 ;; fill video ram (2k) with ff's
 ;
@@ -39,17 +22,6 @@
 ; 	CALL	BBCRTFILL
 ; 	RET
 
-
-;;
-;; OUTCRLF - CR/LF through OUTSTR
-;
-
-; outcrlf:
-; 	push	hl			; was 00FAB0 E5
-; ocrlf1:	ld	hl,crlftab
-; 	call	outstr
-; 	pop	hl
-; 	ret
 
 ; ;;
 ; ;; GETLPEN - manage light-pen operations
@@ -95,5 +67,3 @@
 ; 	RES	4,(HL)
 ; 	RET
 
-; crlftab:
-; 	db	$0d,$8a

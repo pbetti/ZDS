@@ -72,6 +72,7 @@ syscom:
 	public	vconst, bbcurset
 	public	bbu0ini, bbu1ini, sconout, sconin
 	public	sconst, bbu1rx, bbu1tx, bbu1st
+	public bbsetcrs, bbgetcrs
 
 	; SYSBIOS2
 	public	bbfwrite, bbflopio, bbfhome, bbfread
@@ -84,7 +85,8 @@ syscom:
 	public	bbcpboot, bbvcpmbt
 
 	public	bbdiv16, bbmul16, bboffcal
-	public	bbsttim, bbrdtime, bbeidck
+	public	bbwrtime, bbrdtime, bbsetdsr, bbgetdsr
+	public	bbeidck
 
 	public	bbhdinit, bbdriveid, bbhdgeo
 	public	bbhdrd, bbhdwr, bbhdboot, bbldpart
@@ -129,6 +131,8 @@ bbinictc:	bbjbnk_1 inictc
 bbresctc:	bbjbnk_1 resctc
 bbscroll:	bbjbnk_1 scroll
 bbconou2:	bbjbnk_1 vconou2
+bbgetcrs:	bbjbnk_1 getcpos
+bbsetcrs:	bbjbnk_1 setcpos
 
 bbpsndblk:	bbjbnk_2 psndblk
 bbuplchr:	bbjbnk_2 uplchr
@@ -140,7 +144,7 @@ bbfread:	bbjbnk_2 fread
 bbfwrite:	bbjbnk_2 fwrite
 bbflopio:	bbjbnk_2 flopio
 bbprnchr:	bbjbnk_2 prnchr
-bbsttim:	bbjbnk_2 sttim
+bbwrtime:	bbjbnk_2 wrtime
 bbrdtime:	bbjbnk_2 rdtime
 bbtrkset:	bbjbnk_2 trkset
 bbsecset:	bbjbnk_2 secset
@@ -162,9 +166,10 @@ bbhdboot:	bbjbnk_2 hdcpm
 bbldpart:	bbjbnk_2 getptable
 bbdprmset:	bbjbnk_2 setdprm
 bbeidck:	bbjbnk_2 eidcheck
+bbsetdsr:	bbjbnk_2 setdsr
+bbgetdsr:	bbjbnk_2 getdsr
 
 bbsysint:	bbjbnk_3 sysint
-; -- new --
 
 ;;
 ;; Switch bank and jump

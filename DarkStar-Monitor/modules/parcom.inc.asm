@@ -101,7 +101,7 @@ prbloo:	call	uplchr			; begin real transfer
 prnak:	ld	a,ppuack		; send negative aknowledge
 	out	(ppcntrp),a
 	ld	c, 1			; rx error
-prbend:	ld	de, 5			; 50 msec wait
+prbend:	ld	de, 5			; 5 msec wait
 	call	delay
 	ld	a, ppuini		; clean handshake
 	out	(ppcntrp), a

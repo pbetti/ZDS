@@ -1,0 +1,204 @@
+
+
+                ;*****************************************************************************
+                ;*
+                ;*
+                ;* THIS IS AN EXAMPLE OF USER CALL CODE SUPPLIED PURELY FOR GUIDANCE OF THE
+                ;* USER TO ENABLE THE MECHANICS OF CALL CODE INSERTION TO BE BETTER UNDERSTOOD.
+                ;*
+                ;* THE CODE IS DESIGNED TO BE A USEFUL EXAMPLE OF CALL, AND IF IMPLEMENTED
+                ;* WILL ALLOW THE COBOL PROGRAMMER TO CREATE 16 BIT BINARY QUANTITIES FROM
+                ;* UP TO 5 ASCII DIGITS, AND VICE VERSA.  THE USE IS EXPLAINED IN MORE DETAIL
+                ;* AT THE HEAD OF EACH ROUTINE.
+                ;*
+                ;* INTEL CORPORATION HAS TAKEN EVERY PRECAUTION TO ENSURE THE ACCURACY OF THESE
+                ;* ROUTINES, BUT CANNOT BE HELD LIABLE IN ANY WAY FOR ANY ERRORS OR
+                ;* OMISSIONS IN THEM.
+                ;*
+                ;*****************************************************************************
+                ;*
+                ;* THE MODULE MUST BE LOCATED AT THE ADDRESS SPECIFIED BY CONFIGURATOR
+                ;* WHEN THE RTS IN WHICH THE CODE IS TO RESIDE WAS CONFIGURED. (SEE OPERATING
+                ;* GUIDE, CHAPTER 4).
+                ;*
+ 4404 =         BASE   EQU     04404H          ;REPLACE 04404H BY THE ADDRESS GIVEN
+                                                ;BY CONFIGURATOR.
+                ;*
+                ;*
+ 4404                   ORG     BASE            ;SET THE BASE ADDRESS
+                ;*
+                ;*****************************************************************************
+                ;* 
+                ;* NOW FOLLOWS THE CALL CODE IDENTIFICATION TABLE. THIS IS A TABLE OF
+                ;* ADDRESSES OF THE ENTRY-POINTS TO THE ROUTINES, PRECEDED BY A BINARY
+                ;* 8 BIT ITEM SPECIFYING THE HIGHEST AVAILABLE ROUTINE NUMBER
+                ;*
+                ;*****************************************************************************
+                ;*
+ 4404 02        CALTOP: DB      MAXNO           ;HIGHEST AVAILABLE CALL ROUTINE.
+ 4405 0000              DW      0               ;CALL "00" (DOES NOT EXIST)
+ 4407 0B44              DW      DECBIN          ;CALL "01" - DECIMAL ASCII TO BINARY
+ 4409 3044              DW      BINDEC          ;CALL "02" - BINARY TO DECIMAL ASCII
+ 0002 =         MAXNO  EQU     ($-CALTOP-3)/2  ;LET THE ASSEMBLER DO THE WORK.
+                ;*
+                ;*****************************************************************************
+                ;*
+                ;* NB. ALTHOUGH THE USE OF CALL "00" IN THE ABOVE EXAMPLE WOULD CAUSE
+                ;* THE RTS TO ISSUE THE FOLLOWING ERROR:-
+                ;*                  164 - CALL CODE DOES NOT EXIST
+                ;* THE USER IS AT LIBERTY TO PROVIDE HIS OWN CODE, BY PLUGGING IN
+                ;* THE APPROPRIATE ROUTINE ADDRESS.
+                ;*
+                ;* SIMILARLY, OTHER ROUTINES MAY BE ADDED BY INCREASING THE NUMBER
+                ;* OF ADDRESSES SPECIFIED.  IF THESE ARE ADDED BEFORE THE MAXNO EQUATE,
+                ;* THEN THE BYTE AT CALTOP WILL ALWAYS BE CORRECT
+                ;*
+                ;*
+                ;*
+                ;*
+                ;
+                ;
+                ;
+                ;
+                ;
+                ;
+                ;
+                ;*****************************************************************************
+                ;*
+                ;*ROUTINE:       DECBIN
+                ;*
+                ;*CALLING SEQUENCE: 
+                ;*               CALL "01" USING PARA1 PARA2 PARA3.
+                ;*
+                ;*FUNCTION:      THIS ROUTINE CONVERTS A STRING OF DECIMAL (ASCII)
+                ;*               DIGITS INTO A 16 BIT BINARY QUANTITY. IT IS VERY LOW LEVEL
+                ;*               IN THAT IT EXPECTS A POSITIVE DECIMAL VALUE
+                ;*
+                ;*PARAMETERS:    PARA1 - ADDRESS OF LENGTH OF DECIMAL STRING
+                ;*                       HELD AS 1 BYTE ASCII DIGIT (NOT CHECKED)
+                ;*                       THIS ADDRESS WILL BE NO. 2 ON STACK
+                ;*
+                ;*               PARA2 - ADDRESS OF DECIMAL STRING
+                ;*                       THIS ADDRESS WILL BE IN B,C ON ENTRY
+                ;*
+                ;*               PARA3 - ADDRESS OF RESULT AREA.
+                ;*                       SPECIFIES A 2 BYTE AREA
+                ;*                       THIS ADDRESS WILL BE IN D,E ON ENTRY
+                ;*
+                ;*VALUES RETURNED:       16 BIT RESULT IN PARA3
+                ;*
+                ;*
+                ;*****************************************************************************
+                ;*
+                DECBIN:
+ 440B E1                POP     H               ;GET RETURN ADDRESS OFF STACK
+ 440C E3                XTHL                    ;GET ADDRESS OF PARA1
+                                                ;PUTTING RETURN ADDRESS BACK.
+                ;*
+ 440D 7E                MOV     A,M             ;PUT IT IN ACCUMULATOR
+ 440E E60F              ANI     0FH             ;CONVERT TO BINARY
+                 
+ 4410 D5                PUSH    D               ;SAVE ADDRESS OF RESULT
+ 4411 C5                PUSH    B               ;MOVE STRING REF
+ 4412 D1                POP     D               ;  INTO D,E
+ 4413 210000            LXI     H,0             ;HL = BINARY ACCUMULATOR
+                DEC10:
+ 4416 F5                PUSH    PSW             ;SAVE THE COUNT
+ 4417 29                DAD     H               ;BINARY ACCUMULATOR *2
+ 4418 44                MOV     B,H             ;  AND MOVE IT INTO B,C
+ 4419 4D                MOV     C,L             ;
+ 441A 29                DAD     H               ;BINARY ACCUMULATOR *4
+ 441B 29                DAD     H               ;                   *8
+ 441C 09                DAD     B               ;         *8 + *2 = *10
+                                                ; (IE. 8X + 2X = 10X)
+                                                ;------------------------
+ 441D 1A                LDAX    D               ;GET THE DECIMAL CHAR
+ 441E 13                INX     D
+ 441F E60F              ANI     0FH             ;CONVERT TO BINARY CHAR
+ 4421 0600              MVI     B,0H
+ 4423 4F                MOV     C,A
+ 4424 09                DAD     B               ;ACC + CHAR
+ 4425 F1                POP     PSW
+ 4426 3D                DCR     A               ;KEEP COUNT
+ 4427 C21644            JNZ     DEC10
+                ;*
+                ;*              NOW STORE RESULT IN USER'S AREA.
+                ;*
+ 442A EB                XCHG                    ;PUT RESULT IN D,E
+ 442B E1                POP     H               ;GET ADDRESS OF RESULT AREA
+ 442C 72                MOV     M,D             ;STORE MS BYTE
+ 442D 23                INX     H
+ 442E 73                MOV     M,E             ;STORE LS BYTE
+ 442F C9                RET
+                        ;
+                ;*****************************************************************************
+                ;*
+                ;*ROUTINE:       BINDEC
+                ;*
+                ;*CALLING SEQUENCE:
+                ;*               CALL "02" USING PARA1 PARA2.
+                ;*
+                ;*FUNCTION:      TAKES THE BINARY QUANTITY ADDRESSED BY PARA1 AND CONVERTS
+                ;*               IT INTO A 5 DIGIT DECIMAL (ASCII) NO. THE RESULT IS PLACED
+                ;*               IN THE AREA SPECIFIED BY PARA2.
+                ;*
+                ;*PARAMETERS:    PARA1 = ADDRESS OF 16 BIT (2 BYTE) QUANTITY.
+                ;*                       WILL BE IN REG B,C ON ENTRY
+                ;*
+                ;*               PARA2 = ADDRESS OF 5 BYTE RESULT AREA.
+                ;*                       WILL BE IN REG D,E ON ENTRY
+                ;*
+                ;*VALUES RETURNED:
+                ;*               5 DIGIT ASCII VALUE IN PARA2.
+                ;*
+                ;*****************************************************************************
+                BINDEC:
+ 4430 C5                PUSH    B               ;GET VALUE ADDR
+ 4431 E1                POP     H               ;  IN H,L
+ 4432 46                MOV     B,M             ;VALUE
+ 4433 23                INX     H               ;  IN
+ 4434 4E                MOV     C,M             ; B,C
+ 4435 210000            LXI     H,0             ;PUSH CONSTANTS
+ 4438 E5                PUSH    H               ;   ON TO
+ 4439 21F6FF            LXI     H,-10           ;   STACK
+ 443C E5                PUSH    H               ;   FOR USE
+ 443D 219CFF            LXI     H,-100          ;   DURING
+                ;*
+ 4440 E5                PUSH    H               ;   BINARY TO DECIMAL CONVERSION.
+ 4441 2118FC            LXI     H,-1000
+ 4444 E5                PUSH    H
+ 4445 21F0D8            LXI     H,-10000
+ 4448 E5                PUSH    H
+                ;*                               ;D,E = ADDRESS OF RESULT FIELD
+                CN25:
+ 4449 3E30              MVI     A,30H           ;SET TALLY TO ASCII ZERO
+                CN30:
+ 444B E1                POP     H               ;GET THE CONSTANT
+ 444C E5                PUSH    H               ;RESTORE IT
+ 444D 09                DAD     B               ;SUBTRACT FROM SOURCE OP
+ 444E D25744            JNC     CN40            ;ITS GONE NEGATIVE
+ 4451 3C                INR     A               ;INC TALLY
+ 4452 E5                PUSH    H               ;REPLACE B,C WITH
+ 4453 C1                POP     B               ;   NEW RESULT
+ 4454 C34B44            JMP     CN30
+                CN40:
+ 4457 E1                POP     H               ;CLEAR CONSTANT OFF STACK
+ 4458 12                STAX    D               ;STORE TALLY IN RESULT FIELD
+ 4459 13                INX     D               ;INC RESULT ADDR POINTER
+ 445A E1                POP     H               ;ANY MORE CONSTANTS ?
+ 445B 7D                MOV     A,L
+ 445C B4                ORA     H
+ 445D CA6444            JZ      CN50            ;NO - FINISH OFF
+ 4460 E5                PUSH    H               ;YES - RESTORE IT
+ 4461 C34944            JMP     CN25
+                CN50:
+ 4464 79                MOV     A,C             ;INSERT UNITS
+ 4465 C630              ADI     30H             ;CONVERT TO ASCII
+ 4467 12                STAX    D
+ 4468 C9                RET                     ;RETURN
+                ;*
+                ;*
+                ;*
+                
+ 4469                   END
+

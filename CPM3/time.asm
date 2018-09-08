@@ -154,7 +154,7 @@ settime:
 	ei
 	ld	hl,timstr
 	di
-	call	bbsttim			; activate and set the clock
+	call	bbwrtime			; activate and set the clock
 	ei
 	pop	de
 	pop	hl

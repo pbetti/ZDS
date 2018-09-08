@@ -261,7 +261,7 @@ pdsids:	defb	"0"
 	call	bn2a16			; convert size to decimal
 	ld	hl,atsize		;
 	call	pldecs			;
-	ld	de,atsize
+	ld	hl,atsize
 	call	print
 	call	inline
 	defb	" bytes, disk size ",0
@@ -272,7 +272,7 @@ pdsids:	defb	"0"
 	call	bn2a32			; convert size to decimal
 	ld	hl,adsize		;
 	call	pldecs			;
-	ld	de,adsize
+	ld	hl,adsize
 	call	print
 	call	inline
 	defb	" bytes.",cr,lf,lf,0
@@ -1320,39 +1320,39 @@ cslen:	defw	0
 
 
 
-;----------------------------------------------------------------
-; Print the string -> by DE. Return with DE pointing past the
-; string end so as to point to the start of the next string.
-;----------------------------------------------------------------
+; ;----------------------------------------------------------------
+; ; Print the string -> by DE. Return with DE pointing past the
+; ; string end so as to point to the start of the next string.
+; ;----------------------------------------------------------------
+; ;
+; print:
+; 	ld	a,(de)
+; 	inc	de
+; 	or	a
+; 	ret	z
+; 	cp	'$'			; END ?
+; 	ret	z
+; 	cp	0			; END ?
+; 	ret	z
+; 	call	coe
+; 	jr	print
 ;
-print:
-	ld	a,(de)
-	inc	de
-	or	a
-	ret	z
-	cp	'$'			; END ?
-	ret	z
-	cp	0			; END ?
-	ret	z
-	call	coe
-	jr	print
-
-;;
-;; Inline print
-;;
-inline:
-	ex	(sp),hl			; get address of string (ret address)
-	push	af
-	push	de
-	ex	de,hl
-inline2:
-	call	print
-inline3:
-	ex	de,hl
-	pop	de
-	pop	af
-	ex	(sp),hl			; load return address after the '$'
-	ret				; back to code immediately after string
+; ;;
+; ;; Inline print
+; ;;
+; inline:
+; 	ex	(sp),hl			; get address of string (ret address)
+; 	push	af
+; 	push	de
+; 	ex	de,hl
+; inline2:
+; 	call	print
+; inline3:
+; 	ex	de,hl
+; 	pop	de
+; 	pop	af
+; 	ex	(sp),hl			; load return address after the '$'
+; 	ret				; back to code immediately after string
 
 
 ; output A to console

@@ -29,6 +29,7 @@
 ;            accepted by different assemblers
 ; 20150714 - Modified to implement serial XON/XOFF and RTS/CTS
 ; 20170331 - Fixed uart1 isr routine
+; 20180831 - v3.8.1 modifing for 4.0.0
 ; ---------------------------------------------------------------------
 
 ; ---------------------------------------------------------------------
@@ -83,10 +84,11 @@ mzmac	equ	1
 ; ... only one at a time can be active (1) ...
 
 ;
-; Monitor version numbers (major.minor)
+; Monitor version numbers (major.minor.subrel)
 ;
 monmaj		equ	'3'
 monmin		equ	'9'
+subrel		equ	'1'
 
 ;
 ; Buffers addresses labels
@@ -165,19 +167,23 @@ cnfbyte		equ	timrcon-1	; config byte
 					;         6: 0 = unused/reserved
 					;         7: 0 = unused/reserved
 fifosto		equ	000fh		; fifo queues storage start
-fifsize		equ	8		; fifo queue lenght
+fifsize		equ	16		; fifo queue lenght
 fifblok		equ	fifsize+3	; fifo queue size
 fifou0		equ	fifosto		; uart 0 queue (alternate console)
 fifoend		equ	fifou0+fifblok	; fifo blocks end
+;
+iedtbuf		equ	0080h		; monitor editor buffer (internal only)
+iedtfil		equ	'-'		; filler char
 ;
 bldoffs		equ	3000h		; place for disk bootloader
 
 ;
 ; Some commodity equs
 ;
-cr		equ	0dh		; ascii CR & LF
+cr		equ	0dh		; ascii cr & lf
 lf		equ	0ah
-ff		equ	0ch		; FORM FEED (clear screen)
+ff		equ	0ch		; form feed (clear screen)
+bs		equ	08h		; backspace
 esc		equ	1bh		; ESCape
 xonc		equ	11h		; Xon
 xofc		equ	13h		; Xoff

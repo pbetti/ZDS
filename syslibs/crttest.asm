@@ -6,117 +6,201 @@ include	Common.inc.asm
 include	darkstar.equ
 
 
-	ORG	TPA
-	JP	BEGIN
+	org	tpa
+	jp	begin
 
 include	zdsvid.lib
 
 
-BEGIN:
-	LD	HL,MS1
-	CALL	DISPWT
-	; AT HOME
-	CALL	ZDHOMNC
-	LD	HL,MS2
-	CALL	DISPWT
-	; AT HOME CLEAR
-	CALL	ZDHOME
-	LD	HL,MS3
-	CALL	DISPWT
-	; PRINT, SCROLL
-; 	LD	B,$30
-; PST:	LD	HL,MS4
-; 	CALL ZDDSPNL
-; 	LD	A,B
-; ; 	CALL	H2AJ2
-; 	DJNZ	PST
-; 	LD	HL,MS5
-; 	CALL	DISPWT
-	; attributes
-	CALL	ZDHOME
-	LD	HL,AMSN
-	CALL	ZDDSP
-	CALL	BLNKON
-	LD	HL,AMSB
-	CALL	ZDDSP
-	CALL	BLNKOF
-	CALL	REVON
-	LD	HL,AMSR
-	CALL	ZDDSP
-	CALL	REVOF
-	CALL	UNDRON
-	LD	HL,AMSU
-	CALL	ZDDSP
-	CALL	UNDROF
-	CALL	HLITON
-	LD	HL,AMSH
-	CALL	ZDDSP
-	CALL	HLITOF
-	CALL	GRPHON
-	LD	HL,AMSG
-	CALL	ZDDSP
-	CALL	GRPHOF
-	CALL	DISPWT
-	; CURSOR OFF
-	CALL	CRSROF
-	LD	HL,MS6
-	CALL	DISPWT
+begin:
+; 	ld	hl,ms1
+; 	call	dispwt
+; 	; at home
+; 	call	zdhomnc
+; 	ld	hl,ms2
+; 	call	dispwt
+; 	; at home clear
+; 	call	zdhome
+; 	ld	hl,ms3
+; 	call	dispwt
+; 	; print, scroll
+; ; 	ld	b,$30
+; ; pst:	ld	hl,ms4
+; ; 	call zddspnl
+; ; 	ld	a,b
+; ; ; 	call	h2aj2
+; ; 	djnz	pst
+; ; 	ld	hl,ms5
+; ; 	call	dispwt
+; 	; attributes
+; 	call	zdhome
+; 	ld	hl,amsn
+; 	call	zddsp
+; 	call	blnkon
+; 	ld	hl,amsb
+; 	call	zddsp
+; 	call	blnkof
+; 	call	revon
+; 	ld	hl,amsr
+; 	call	zddsp
+; 	call	revof
+; 	call	undron
+; 	ld	hl,amsu
+; 	call	zddsp
+; 	call	undrof
+; 	call	hliton
+; 	ld	hl,amsh
+; 	call	zddsp
+; 	call	hlitof
+; 	call	grphon
+; 	ld	hl,amsg
+; 	call	zddsp
+; 	call	grphof
+; 	call	dispwt
+; 	; cursor off
+; 	call	crsrof
+; 	ld	hl,ms6
+; 	call	dispwt
+;
+; 	; cursor on
+; 	call	crsron
+; 	ld	hl,ms7
+; 	call	dispwt
+;
+; 	ld	h,0
+; 	ld	l,0
+; 	call	setcur
+; 	ld	hl,ms0000
+; 	call	zddsp
+;
+; 	ld	h,2
+; 	ld	l,2
+; 	call	setcur
+; 	ld	hl,ms0202
+; 	call	zddsp
 
-	; CURSOR ON
-	CALL	CRSRON
-	LD	HL,MS7
-	CALL	DISPWT
+	ld	h,10
+	ld	l,40
+	call	setcur
+; 	ld	hl,ms1010
+; 	call	zddsp
 
-	LD	H,0
-	LD	L,0
-	CALL	SETCUR
-	LD	HL,MS0000
-	CALL	ZDDSP
+	ld	b,4
+	call	sysedt
 
-	LD	H,2
-	LD	L,2
-	CALL	SETCUR
-	LD	HL,MS0202
-	CALL	ZDDSP
 
-	LD	H,10
-	LD	L,10
-	CALL	SETCUR
-	LD	HL,MS1010
-	CALL	DISPWT
+	call	zddspnl
+	call	gchr
+	call	inline
+	defb	"End.",cr,lf,0
 
-EXIT:
-; 	JP	JBOOT
-	RET
+exit:
+; 	jp	jboot
+	jp	0
 	;;
-	;; ROUTINES
+	;; routines
 	;;
 	;
-	; SHOW MSG, WAIT USER
-DISPWT:	CALL	ZDDSP
-	CALL	ZDDSPNL
-	CALL	GCHR
-	RET
+	; show msg, wait user
+dispwt:	call	zddsp
+	call	zddspnl
+	call	gchr
+	ret
 	;
-SETCUR:
-	PUSH	BC
-	LD	C,ESC
-	CALL	BBCONOUT
-; X address
-	LD	A,L
-	ADD	A,32
-	LD	C,A
-	CALL	BBCONOUT
-; Now the Y value
-	LD	A,H
-	ADD	A,32
-	LD	C,A
-	CALL	BBCONOUT
+
+setcur:
+	push	bc
+	ld	c,esc
+	call	bbconout
+; x address
+	ld	a,l
+	add	a,32
+	ld	c,a
+	call	bbconout
+; now the y value
+	ld	a,h
+	add	a,32
+	ld	c,a
+	call	bbconout
 ; terminate
-	LD	C,0
-	CALL	BBCONOUT
-	POP	BC
-	RET
+	ld	c,0
+	call	bbconout
+	pop	bc
+
+	ret
+
+
+
+
+;;
+;;	sysedt - field/input editor
+;;
+;;	B = buffer length
+;;
+sysedt:
+	call	bbgetcrs		; get position on screen
+	ld	(seiloc),hl		; to buffer (origin)
+	ld	(secloc),hl		; to buffer (current)
+	ld	a,b
+	ld	(sebfl),a		; save len
+	call	sezero			; clear buffer
+		; should check ! > 128
+	call	serfrsh
+
+
+
+; clear buffer
+sezero:
+	ld	hl,iedtbuf
+sezer0:
+	ld	(hl),0
+	inc	hl
+	djnz	sezer0
+	ret
+
+
+; paint field
+serfrsh:
+	ld	hl,(seiloc)		; at begin
+	ld	(secloc),hl		; curr too
+	call	bbsetcrs		; on screen
+	ld	hl,(iedtbuf)		; on buffer
+	ld	de,(secloc)		; de pos on screen
+	ld	a,(sebfl)		; len
+	ld	b,a			; b = cnt
+serfrs0:
+	ld	c,(hl)
+	inc	hl
+	inc	de
+	cp	c
+	jr	nz,serfrs1
+	ld	c,iedtfil		; str end, put filler
+	dec	hl			; lock positions
+	dec	de
+serfrs1:
+	call	bbconout
+	djnz	serfrs0
+	ld	(secloc),de
+	ret
+
+
+
+;-- sysedt buffers --
+seiloc:					; crs position
+seicol:	defb	0			; column
+seirow:	defb	0			; row
+secloc:					; crs position
+seccol:	defb	0			; column
+secrow:	defb	0			; row
+sebfl:	defb	0			;
+
+
+
+
+
+
+
+
 
 	;
 	; msgs...

@@ -117,20 +117,6 @@ noupdstart:
 	ret			; and ret
 
 ;;
-;; GET DISPLAY CURSOR POSITION and return in HL
-;
-gcrspos:
-	ld	a,vr14.curposh
-	out	(crt6545adst),a
-	in	a,(crt6545data)
-	ld	h,a
-	ld	a,vr15.curposl
-	out	(crt6545adst),a
-	in	a,(crt6545data)
-	ld	l,a
-	jr	crtprgend
-
-;;
 ;; SET DISPLAY START ADDRESS
 ;
 sdpysta:
@@ -144,14 +130,47 @@ sdpysta:
 	out	(crt6545data),a
 	ret
 
+
 ;;
-;; Locate cursor @ HL (absolute 0-1919)
+;; GET DISPLAY CURSOR POSITION and return in HL
 ;
-curloca:
-	call	scrtst			; bigger than endvid?
-	jr	c,curloc0		; ok go on
-	ld	hl,endvid		; place at edge
-curloc0:
+getcpos:
+	ld	de,(curpbuf)		; absolute pos.
+	; find row
+	ld	hl,$0000		; init loop
+	ld	bc,$0050
+	xor	a
+	dec	a
+gcrs0:
+	inc	a			; a = row
+	add	hl,bc
+	or	a			; cp hl,de
+	sbc	hl,de			;
+	add	hl,de			; -------
+	jr	c,gcrs0
+	; find col
+	sbc	hl,bc			; @ 0
+	ld	c,a			; move row
+	ld	a,e
+	sub	l			; a = col
+	ld	h,c			; in hl row,col
+	ld	l,a
+	ret
+
+;;
+;; Locate cursor @ HL
+;
+setcpos:
+	ld	b,h
+	ld	c,l
+	ld	hl,$ffb0
+	ld	de,$0050
+	inc	b
+scrs0:
+	add	hl,de			; calc row
+	djnz	scrs0
+	ld	e,c
+	add	hl,de			; add col = abs. position
 	ld	(curpbuf),hl		; update buf
 	jp	updvidp
 
@@ -310,7 +329,6 @@ movdwn:
 	ld	hl,(curpbuf)		; current
 	ld	de,80			; 80 to add
 	add	hl,de			; move down
-; 	jp	eostest
 	call	scrtst			; end of screen ?
 	jp	c,cout00		; no
 	ld	de,0ffb0h		;
@@ -402,11 +420,11 @@ sndbeep:
 	out	(crtbeepport),a
 	ret
 ;;
-;; CHOME - move cursor at col 0
+;; CHOME - move cursor at 0,0
 ;
 chome:
 	ld	hl,0
-	jp	curloc0
+	jp	cout00
 
 ;;
 ;; clear to end of page
@@ -620,7 +638,7 @@ iocvec:
 	dw	bakspc			; BS  0x08 (^H)  cursor left (destr. and non destr.)
 	dw	iocnull			; HT  0x09 (^I)  no-op
 	dw	movdwn			; LF  0x0a (^J)  cursor down one line
-	dw	chome			; VT  0x0b (^K)  cursor @ column 0
+	dw	chome			; VT  0x0b (^K)  cursor @ 0,0
 	dw	clrscr			; FF  0x0c (^L)  page down (clear screen)
 	dw	ioccr			; CR  0x0d (^M)  provess CR
 	dw	clreop			; SO  0x0e (^N)  clear to EOP

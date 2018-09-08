@@ -79,23 +79,23 @@
 ; Common equates for BIOS/Monitor
 
 include Common.inc.asm
+include services.inc.asm
 
 ;-------------------------------------
 ; External symbols
 	extern	bbconout, bbconin, bbconst
-	extern	bbcrtcini, bbcrtfill, bbcurset
+	extern	bbcrtcini, bbcrtfill, bbcurset, bbsetcrs
 	extern	bbfread, bbfhome, bbcpboot
 	extern	bbhdinit, bbdriveid, bbu0ini, bbu1ini
 	extern	bbuplchr, bbpsndblk, bbprcvblk
 	extern	bbprnchr, bbrdvdsk, bbvcpmbt
- 	extern	bbhdboot
+ 	extern	bbhdboot, bbsetdsr, bbgetdsr
  	extern	bbeidck, bbldpart, bbsysint
 
  	extern	bbdsksel, bbdmaset, bbtrkset, bbsecset, bbhdrd
 
 	extern	delay, mmpmap, mmgetp
 	extern	intren, print, inline
-	;extern	bbscroll
 
 ;-------------------------------------
 
@@ -107,6 +107,8 @@ zdsmntr	equ	$		; start of monitor code
 
 bmstack	equ	(bbpag << 12) - 1
 hdidbuf	equ	(trnpag << 12)
+
+inicol	equ	23			; column for init test
 
 boot:
 	if not bbdebug
@@ -204,7 +206,6 @@ bnktohpag:
 	out	(c),a
 
 	ld	a,d			; save size
-; 	LD	A,$7F
 	ld	(hmempag),a
 	;
 	ld	hl,bmstack
@@ -274,15 +275,19 @@ onshadow:
 		;
 	call	bbcurset		; and cursor shape
 	;
-	ld	c,1			; display logo
+	ld	c,SI_LOGO		; display logo
 	call	bbsysint
 	;
- 	ld	hl,msysres		; tell user whats going on from now
+	; tell user whats going on from now
+	ld	hl,msetsha		; on shadow
+	call	print
+ 	ld	hl,msysres		; initialising
  	call	print
  	call	bbnksiz			; tell how many memory
 	;
-	ld	hl,mhd			; about IDE
-	call	print
+	ld	h,11
+	ld	l,inicol
+	call	bbsetcrs
  	call	bbhdinit		; IDE init
 	or	a
 	jr	nz,ideinok
@@ -301,35 +306,42 @@ onshadow:
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
 	;
-	ld	a,' '+$80
+; 	ld	a,' '+$80
 	ld	hl,hdidbuf + 54		; drive id string is @ BLDOFFS + 54
 	ld	b,10                    ; and 20 bytes long
 	call	hdbufprn
 	call	print
-	call	outcrlf
 	pop	af			; remove scratch
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
-
 ; 	call	bbldpart		; load partition table
 	jr	ideiok
 ideinok:
 	ld	hl,mnot
 	call	print
 ideiok:
+	ld	h,12
+	ld	l,inicol
+	call	bbsetcrs
 	ld	a,u0defspeed		; uart 0 init
 	ld	(uart0br),a
 	call	bbu0ini
-	ld	c,'0'
 	call	dsustat
+	call	inline
+	defb	"16x550 0",0
+	ld	h,13
+	ld	l,inicol
+	call	bbsetcrs
 	ld	a,u1defspeed		; uart 1 init
 	ld	(uart1br),a
 	call	bbu1ini
-	ld	c,'1'
 	call	dsustat
+	call	inline
+	defb	"16x550 1",0
 	;
-	ld	hl,meepr		; eeprom type
-	call	print
+	ld	h,14
+	ld	l,inicol
+	call	bbsetcrs
 	call	bbeidck
 	ld	b,a			; temp save
 	and	$0f			; mask result
@@ -355,7 +367,24 @@ gotetype:
 	jr	isprog
 islckd:	ld	hl,mprof
 isprog:	call	print
-	call	outcrlf
+	; rtc
+	ld	h,15
+	ld	l,inicol
+	call	bbsetcrs
+	ld	d,55			; set test value
+	ld	e,DSR_SCRATCH
+	call	bbsetdsr
+	ld	e,DSR_SCRATCH		; get test value
+	call	bbgetdsr
+	ld	a,d
+	cp	55			; ?
+	jr	nz,nokrtc
+	ld	hl,mrdy
+	jr	okrtc
+nokrtc:	ld	hl,mnot
+okrtc:	call	print
+	call	inline
+	defb	cr,lf,lf,0
 	;
 	ld	a,ctc0tchi		; chan 0 prescaler
 	ld	(ctc0tc),a
@@ -363,6 +392,15 @@ isprog:	call	print
 	ld	(ctc1tc),a
 	;
 	call	intren			; enable interrupts
+	;
+	ld	c,SI_EFFECT
+	ld	e,EF_REVON
+	call	bbsysint
+	call	inline
+	defb " READY ",0
+	ld	c,SI_EFFECT
+	ld	e,EF_REVOFF
+	call	bbsysint
 	; finally print bios greetings
 	jp	ugreet
 ;;
@@ -460,13 +498,6 @@ fifinl:	ld	(hl),a			; actual buffer
 ;; UART init result
 ;;
 dsustat:
-	push	af
-	ld	hl,muart
-	call	print
-	call	bbconout
-	ld	c,' '
-	call	bbconout
-	pop	af
 	or	a
 	jr	z,dsuok
 	ld	hl,mnot
@@ -474,7 +505,6 @@ dsustat:
 	ret
 dsuok:	ld	hl,mrdy
 	call	print
-	call	outcrlf
 	ret
 
 ;;
@@ -505,141 +535,35 @@ bbnksiz:
 bbnksiz1:
 	add	hl,de
 	djnz	bbnksiz1
-	call	asciihl
-	ld	hl,mmbsize
-	call	print
-	ret
-
-
-;;
-;; Output HL converted to ascii decimal (max 9999)
-;;
-asciia:
-	push	bc
-	push	de
-	ld	h,0
-	ld	l,a
-	ld	e,4
-	call	asciihl0
-	pop	de
-	pop	bc
-	ret
-
-asciihl:
-	push	bc
-	push	de
-	ld	e,1
-	call	asciihl0
-	pop	de
-	pop	bc
-	ret
-
-asciihl0:
-	ld	bc,-10000
-	call	asciihl1
-	ld	bc,-1000
-	call	asciihl1
-	ld	bc,-100
-	call	asciihl1
-	ld	c,-10
-	call	asciihl1
-	ld	c,-1
-asciihl1:
-	ld	a,'0'-1
-asciihl2:
-	inc	a
-	add	hl,bc
-	jr	c,asciihl2
-	sbc	hl,bc
-	ld	c,a
-	dec	e
-	ret	nz
-	inc	e
-	call	bbconout
-	ret
-
-;;
-;; GETHNUM - get an hexadecimal string
-;;
-get1hnum:
-	ld	b,$01
-	ld	hl,$0000
-	jr	gentr
-
-hehex:	jr	nz,ucprompt
-pop1prm:
-	dec	b
-	ret	z
-gethnum:
-	ld	hl,$0000
-gnxtc:	call	dogetchr
-gentr:	ld	c,a
-	call	chkhex
-	jr	c,hnhex			; if not hex digit
-	add	hl,hl
-	add	hl,hl
-	add	hl,hl
-	add	hl,hl
-	or	l
-	ld	l,a
-	jr	gnxtc
-hnhex:	ex	(sp),hl
 	push	hl
-	ld	a,c
-	call	chkctr
-	jr	nc,hehex
-	djnz	ucprompt
+	ld	h,9
+	ld	l,inicol
+	call	bbsetcrs
+	pop	hl
+	ld	c,SI_B2D
+	ld	e,BD_NOZERO
+	call	bbsysint
+	call	inline
+	defb	'k',0
+	ld	h,10			; rom (fake)
+	ld	l,inicol
+	call	bbsetcrs
+	call	inline
+	defb	"256k",0
 	ret
 
-;;
-;; Get a decimal string
-;;
-;; B < input len (in # of chars) HL > user input
 
-idhl:
-	push	bc		; save
-	push	de
-	ld	hl,0
-idhl2:
-	call	bbconin		; Get a character
-	cp	esc
-	jr	z,idhle
-	cp	cr
-	jr	z,idhlok
-	ld	c,a
-	push	af
-	call	bbconout
-	pop	af
-	sub	'0'
-	jr	c,idhl3		; Error since a non number
-	cp	9 + 1		; Check if greater than 9
-	jr	nc,idhl3	; as above
-	ld	d,h		; copy HL -> DE
-	ld	e,l
-	add	hl,hl		; * 2
-	add	hl,hl		; * 4
-	add	hl,de		; * 5
-	add	hl,hl		; * 10 total now
-	ld	e,a		; Now add in the digit from the buffer
-	ld	d,0
-	add	hl,de		; all done now
-	djnz	idhl2		; do next character from buffer
-	jr	idhlok
-idhl3:	ld	a,$ff
-	jr	idhle
-idhlok:	xor	a		; ok
-idhle:	pop	de
-	pop	bc
-	ret
 
 ;;
 ;; USRCMD - display prompt and process user commands
 ;;
-ugreet:	call	outcrlf
+ugreet:
+	call	outcrlf
 	ld	hl,mverstr
 	call	print
-welcom:	ld	hl,mbwcom
-	call	print
+welcom:
+; 	ld	hl,mbwcom
+; 	call	print
 	jr	usrcmd
 ucprompt:
 	ld	hl,urestr		; reject string
@@ -700,13 +624,14 @@ pdnload:
 	call	outcrlf
 	ld	hl, sdlpr
 	call	print
-	ld	b, 2			; get params (offset, size)
-	call	gethnum
-	pop	bc			; size
+	call	askfrom
+	ex	de,hl
+	call	asksize
+	ld	c,l
+	ld	b,h
 	call	outcrlf
 	ld	hl, strwait
 	call	print
-	pop	de			; offset
 	call	bbpsndblk		; send data
 	ld	d,c			; save result
 	ld	hl,mtx
@@ -714,13 +639,13 @@ pdnload:
 	ld	d,a
 	or	a
 	jr	z,pdnlok
-	ld	hl, mnok		; error
+	ld	hl, mnot		; error
 	call	print
-	ret
+	jp	usrcmd
 pdnlok:
-	ld	hl,mok			; success
+	ld	hl,mrdy			; success
 	call	print
-	ret
+	jp	usrcmd
 
 ;;
 ;; pupload data through parallel link
@@ -741,11 +666,18 @@ pupload:
 	ld	b,a
 	call	bbuplchr		; in lo byte of data size
 	ld	c,a
-	ex	de,hl			; put offset in DE
-	call	outcrlf
+
+	push	bc
+	push	hl
 	ld	hl, strload
 	call	print
+	pop	hl
+	call	h2a
+	call	inline
+	defb	cr,lf,lf,0
+	pop	bc
 
+	ex	de,hl			; put offset in DE
 	call	bbprcvblk		; upload data block
 	push	bc			; save result
 	ld	hl,mrx
@@ -754,53 +686,83 @@ pupload:
 	ld	a,c
 	or	a
 	jr	z,puplok
-	ld	hl, mnok		; error
+	ld	hl, mnot		; error
 	call	print
-	ret
+	jp	usrcmd
 puplok:
-	ld	hl,mok			; success
+	ld	hl,mrdy			; success
 	call	print
-	ret
+	jp	usrcmd
 
 ;;
 ;; FILLMEM - fill memory with a given values
 ;
 fillmem:
-	call	pop3num           ; was 00F730 CD 33 F9
-flme1:	ld	(hl),c
-	call	chkeor
-	jr	nc,flme1
-	pop	de
+	call	askfrom
+	push	hl
+	call	askto
+	ex	de,hl
+	call	askdata
+	ld	c,l
+	pop	hl
+	dec	hl
+flme1:
+	inc	hl
+	ld	(hl),c
+	call	cphlde
+	jr	c,flme1
 	jp	usrcmd
 ;;
 ;; MEMCOMP - compare two ram regions
 memcomp:
-	call	pop3num           ; was 00F73C CD 33 F9
-mconx:	ld	a,(bc)
-	push	bc
-	ld	b,(hl)
-	cp	b
-	jr	z,mco1
-	push	af
-	call	hl2ascb
+	call	askfrom
+	push	hl
+	call	askto
+	ex	de,hl
+	call	asksize
+	ld	c,l
+	ld	b,h
+	pop	hl
+memcp0:
 	ld	a,b
-	call	h2aj3
+	or	c
+	ret	z
+	ld	a,(de)
+	inc	de
+	cpi
+	jr	z,memcp0
+
+	dec	hl
+	dec	de
+
+	push	bc
+	push	hl
+	push	af
+	call	crlfh2ab
+	ld	a,(hl)
+	call	h2aslsh
 	pop	af
-	call	h2aj1
-mco1:	pop	bc
-	call	iptrckbd
-	jr	mconx
+	call	h2anib
+	pop	hl
+	pop	bc
+	jr	memcp0
+
 ;;
 ;; MEMDUMP - prompt user and dump memory area
 ;
 memdump:
-	call	pop2prm
-mdp6:	call	hl2ascb
+	call	askfrom
+	push	hl
+	call	askto
+	ex	de,hl
+	pop	hl
+	;
+mdp6:	call	crlfh2ab
 	ld	a,l
 	call	dmpalib
 	push	hl
 mdp2:	ld	a,(hl)
-	call	h2aj1
+	call	h2anib
 	call	chkeor
 	jr	c,mdp1
 	call	spacer
@@ -848,67 +810,89 @@ dmpalia:
 alibn:	call	spacer
 	djnz	alibn
 	ret
+
 ;;
 ;; GOEXEC - execute from user address
 ;
 goexec:
-	call	pop1prm
-	pop	hl
+	call	askto
 	jp	(hl)
+
 ;;
 ;; PORTIN - input a byte from given port (display it in binary)
 ;
 portin:
-	call	pop1prm
-	pop	bc
+	call	askport
+	call	outcrlf
+	ld	c,l
 	in	e,(c)
 	call	bindisp
-	jp	usrcmd
+	ret
+
 ;;
 ;; PORTOUT - output a byte to a give port
 portout:
-	call	gethnum
-	pop	de
+	call	askport
+	ld	c,l
+	push	bc
+	call	askdata
+	call	outcrlf
 	pop	bc
+	ld	e,l
 	out	(c),e
- 	jp	usrcmd
+	ret
+
 ;;
 ;; MEMMOVE - move data in memory
 ;
 memmove:
-	call	pop3num
-mmnxt:	ld	a,(hl)
-	ld	(bc),a
-	call	iptrckbd
-	jr	mmnxt
+	call	askfrom
+	push	hl
+	call	askto
+	ex	de,hl
+	call	asksize
+	ld	c,l
+	ld	b,h
+	pop	hl
+	;
+	call	cphlde
+	ret	z			; nothing to do
+	jr	c,mmback
+	ldir
+	ret
+mmback:
+	add	hl,bc
+	dec	hl
+	ex	de,hl
+	add	hl,bc
+	dec	hl
+	ex	de,hl
+	lddr
+	ret
+
+
 ;;
 ;; RWMEM - lets user alter memory content
 ;
 rwmem:
-	call	pop1prm
-	pop	hl
-rwm3:	ld	a,(hl)
-	call	h2aj3
-	call	valgetchr
-	ret	c
-	jr	z,rwm1
-	cp	$0a
-	jr	z,rwm2
+	call	askfrom
+rwm01:
+	call	outcrlf
+	ld	e,8
+rwm00:
+	ld	a,(hl)
 	push	hl
-	call	get1hnum
-	pop	de
+	call	h2aseco
+	call	get2hex
+	ld	d,l
 	pop	hl
-	ld	(hl),e
-	ld	a,c
-	cp	$0d
-	ret	z
-rwm1:	inc	hl
+	ld	(hl),d
 	inc	hl
-rwm2:	dec	hl
-	ld	a,l
-	and	$07
-	call	z,hl2ascb
-	jr	rwm3
+	ld	c,','
+	call	bbconout
+	dec	e
+	jr	z,rwm01
+	jr	rwm00
 
 ouradd	equ	$9000
 
@@ -955,11 +939,11 @@ mterr:
 	exx
 	ld	a,e
 	exx
-	call	h2aj1
+	call	h2anib
 	call	spacer
 	exx
 	ld	e,a
-	call	hl2ascb
+	call	crlfh2ab
 	call	bindisp
 	jr	etexi
 etpage:
@@ -992,14 +976,15 @@ etprpg:
 etprpg1:
 	add	hl,de
 	djnz	etprpg1
-	call	asciihl
+	ld	c,SI_B2D
+	ld	e,BD_ZERO
+	call	bbsysint
 	ld	c,cr
 	call	bbconout
 	pop	hl
 	pop	de
 	pop	bc
 	ret
-
 
 ;;
 ;; BINDISP - display E in binary form
@@ -1023,22 +1008,23 @@ doprompt:
 	call	mprompt
 ;; get a char in uppercase, and display too...
 dogetchr:
-	call	coiupc
+	call	getcup
 coutch:	push	bc
 	ld	c,a
 	call	bbconout
 	ld	a,c
 	pop	bc
 	ret
-;
-pop3num:
-	inc	b
-	call	gethnum
-	pop	bc
-	pop	de
-	call	outcrlf
-	pop	hl
-	ret
+
+;; test user break
+chkbrk:
+	call	chkeor
+	jp	c,usrcmd
+	call	bbconst
+	or	a
+	ret	z
+	jp	usrcmd
+
 ;;
 ;; inc HL and do a 16 bit compare between HL and DE
 chkeor:
@@ -1052,59 +1038,11 @@ chkeor:
 	ld	a,d
 	sbc	a,h
 	ret
-;;
-cbkend:	pop	de
-	ret
-;;
-;; inc pointer BC and check kbd
-iptrckbd:
-	inc	bc
-;;
-chkbrk:
-	call	chkeor
-	jr	c,cbkend
-	call	bbconst
-	or	a
-	ret	z
-	call	coiupc
-	cp	$13
-	jr	nz,cbkend
-	jp	coiupc
-;;
-;; CHKHEX - check for hex ascii char in A
-;
-chkhex:
-	sub	$30
-	ret	c
-	cp	$17
-	ccf
-	ret	c
-	cp	$0a
-	ccf
-	ret	nc
-	sub	$07
-	cp	$0a
-	ret
-;; get chr and validate
-valgetchr:
-	call	dogetchr
-;;
-;; CHKCTR: check for valid char in string (space,comma,<CR>)
-;
-chkctr:
-	cp	$20
-	ret	z
-	cp	$2c
-	ret	z
-	cp	$0d
-	scf
-	ret	z
-	ccf
-	ret
+
 ;
 ;; User command reject string
 urestr:
-	db	'*',0
+	db	"**",0
 ;
 ;; TOGGLEIO - toggle i/o on video/serial
 toggleio:
@@ -1120,58 +1058,99 @@ togju:	jp	ugreet
 ;; MATHHLDE - perform 16 bit add & sub between HL and DE
 ;
 mathhlde:
-	call	pop2prm
+	call	inline
+	defb	" HL: ",0
+	call	get4hex
+	push	hl
+	call	inline
+	defb	" DE: ",0
+	call	get4hex
+	ex	de,hl
+	call	inline
+	defb	" = ",0
+	call	inline
+	defb	"HL+DE: ",0
+	pop	hl
 	push	hl
 	add	hl,de
-	call	hl2ascb
+	call	h2a
+	call	inline
+	defb	" HL-DE: ",0
 	pop	hl
 	or	a
 	sbc	hl,de
-	jr	h2aen1
+	call	h2a
+	jp	outcrlf
+
+selrom:
+	ld	c,SI_ROMSEL
+	call	bbsysint
+	ret
+
 ;;
-;; HL2ASC - convert & display HL 2 ascii
-hl2asc:
+;; cp HL,DE
+cphlde:
+	or	a
+	sbc	hl,de
+	add	hl,de
+	ret
+
+;;
+;; HL2ASC - convert & display HL 2 hex ascii
+crlfh2a:
 	call	outcrlf
-h2aen1:	ld	a,h
-	call	h2aj1
+h2a:	ld	a,h
+	call	h2anib
 	ld	a,l
-h2aj1:	push	af
+h2anib:	push	af
 	rrca
 	rrca
 	rrca
 	rrca
-	call	h2aj2
+	call	h2a00
 	pop	af
-h2aj2:	call	nib2asc
+h2a00:	call	nib2asc
 	call	bbconout
 	ret
 
-h2aj3:	call	h2aj1           ; entry point to display HEX and a "-"
+; entry point to display HEX and a ":"
+h2aseco:
+	call	h2anib
+	ld	c,':'
+	jr	prsign
+
+; entry point to display HEX and a "-"
+h2aslsh:
+	call	h2anib
+	ld	c,'-'
+	jr	prsign
+
 mprompt:
-	ld	c,$2d
+	ld	c,'-'
+prsign:
 	call	bbconout
 	ret
-
-
 
 ;;
 ;; HL2ASCB - convert & display HL 2 ascii leave a blank after
-hl2ascb:
-	call	hl2asc           ; was 00FA63 CD 46 FA
+crlfh2ab:
+	call	crlfh2a
 spacer:	ld	c,$20
 	call	bbconout
 	ret
+
 ;;
 ;;
 ;; COIUPC- convert reg A uppercase
-coiupc:
+getcup:
 	call	bbconin
 	cp	$60
-	jp	m,coire
+	jp	m,getcup0
 	cp	$7b
-	jp	p,coire
+	jp	p,getcup0
 	res	5,a
-coire:	ret
+getcup0:
+	ret
 
 ;;
 ;; NIB2ASC convert lower nibble in reg A to ascii in reg C
@@ -1186,281 +1165,74 @@ nib2asc:
 	ret
 
 ;;
-;; Get 2 (hex) params from stack
-;;
-pop2prm:
-	call	gethnum			; was 00FAAB CD DE F6
-	pop	de
-	pop	hl
-	jp	outcrlf
-
-;;
-;; Convert ascii buffer to binary
-;;
-;; (DE) < buffer, B < len, HL > converted
-hexcnv:
-	ld	hl,$0000
-hnxth:	ld	a,(de)
-; 	LD	C,A
-	call	chkhex
-	jr	c,cnhx			; if not hex digit
-	add	hl,hl
-	add	hl,hl
-	add	hl,hl
-	add	hl,hl
-	or	l
-	ld	l,a
-	inc	de
-	djnz	hnxth
-
-cnhx:	xor	a
-	cp	b			; ok if B = 0
-	ret				; else ret NZ
-
-;;
-;; Get block
-;;
-;; B < block num - IY > blok address
-rgetblk:
-	push	hl
-	push	de
-	inc	b
-	ld	de,tblblk
-	ld	hl,ramtbl-tblblk
-rgetbl1:
-	add	hl,de
-	djnz	rgetbl1
-	push	hl		; ex HL,IY
-	pop	iy
-	pop	de
-	pop	hl
-	ret
-
-;;
-;; Print a string of B length pointed by HL
-;;
-nprint:
-	push	bc
-nprin1:
-	ld	c,(hl)
-	call	bbconout
-	inc	hl
-	djnz	nprin1
-	pop	bc
-	ret
-
-;;
-;; emit CR,LF sequence
+;; emit cr,lf sequence
 ;;
 outcrlf:
 	call	inline
 	defb	$0d,$0a,0
 	ret
-
-
-inamep	equ	2
-ipagep	equ	2+tnamelen+2
-iaddrp	equ	2+tnamelen+2+tpagelen+2
-isizep	equ	2+tnamelen+2+tpagelen+2+tiaddrlen+2
-idescp	equ	2+tnamelen+2+tpagelen+2+tiaddrlen+2+tsizelen+2
-
 ;;
-;; Show image header
-;;
-dspblkid:
+;; get 2 hex digit
+get2hex:
 	push	de
-	push	iy			; name
-	pop	hl
-	ld	de,inamep
-	add	hl,de
-	ld	b,tnamelen
-	call	nprint
-	ld	hl,misep2
-	call	print
-	push	iy			; description
-	pop	hl
-	ld	de,idescp
-	add	hl,de
-	ld	b,tdesclen
-	call	nprint
-	ld	hl,misep3
-	call	print
-	push	iy			; address
-	pop	hl
-	ld	de,iaddrp
-	add	hl,de
-	ld	b,tiaddrlen
-	call	nprint
-	pop	de
-	ret
-
+	ld	d,2
+	jr	get4he0
 ;;
-;; Convert tbl field to binary
-;;
-imgt2bin:
-	push	iy			; size
-	pop	hl
-	add	hl,de
-	ex	de,hl
-	call	hexcnv
-	ret
-
-mrnrdy:
-	defb	"Image in place, any key to run or <ESC> to exit",CR,LF,0
-michoi:
-	defb	"Select an image number or <ESC> to exit:",' ',0
-mislct:
-	defb	" Available images:",CR,LF,0
-misep1:
-	defb	":",' ',0
-misep2:
-	defb	" -",' ',0
-misep3:
-	defb	" @",' ',0
-
-pagbuf:	defb	0
-rombuf:	defs	6
-;;
-;; Select a EEPROM image and run it
-;;
-romrun:
-	ld	b,trnpag		; copy table in ram
-	call	mmgetp
-	ld	(pagbuf),a		; save current
-	;
-	ld	a,imtpag		; in eeprom table
-	ld	b,trnpag		; transient page
-	call	mmpmap			; mount it
-	;
-	ld	hl,trnpag << 12
-	ld	de,ramtbl		; our copy
-	ld	bc,imtsiz
-	ldir				; do copy
-	;
-	ld	a,(pagbuf)		; restore
-	ld	b,trnpag		; transient page
-	call	mmpmap			; mount it
-	; now we a copy of the table
-romr1:	ld	c,ff			; draw page
-	call	bbconout
-	ld	hl,mislct
-	call	print
-	;
-	ld	d,maxblk-1
-	ld	e,1			; sysbios image is not selectable
-rnblk:
-	ld	b,5
-	ld	c,' '
-dspspc:	call	bbconout
-	djnz	dspspc
-	ld	a,e			; image number
-	call	asciia
-	ld	hl,misep1
-	call	print
-	ld	b,e
-	call	rgetblk
-	ld	a,(iy+2)		; is a valid block ?
-	or	a
-	jr	z,tonblk
-	call	dspblkid		; yes, show it
-tonblk:	call	outcrlf
-	inc	e
-	dec	d
-	jr	nz,rnblk
-
-	ld	hl,michoi		; prompt user
-	call	print
-	ld	b,2			; 0 ~ 99
-	call	idhl
-	push	af
-	call	outcrlf
-	pop	af
-	cp	esc			; user abort ?
-	jr	nz,romr2
-	jp	welcom
-romr2:	or	a
-	jr	nz,romr1
-	ld	a,l			; check selection
-	cp	maxblk
-	jr	nc,romr1		; too big. ask again
-	or	a
-	jr	z,romr1			; zero, ask again
-	ld	b,l
-	call	rgetblk			; point to block, extract image data
-
-	ld	de,ipagep
-	call	imgt2bin
-	ld	h,0
-	ld	(rombuf),hl		; uses ROMBUF as temporary buffer
-
-	ld	de,iaddrp
-	call	imgt2bin
-	ld	(rombuf+1),hl
-	ld	(rombuf+5),hl		; two copy, we need it later
-
-	ld	de,isizep
-	call	imgt2bin
-	ld	(rombuf+3),hl
-
-multi:
-	ld	hl,(rombuf+3)		; image size
-	ld	de,4096
-	or	a			; clear carry
-	sbc	hl,de			; lesser than one page ?
-	jr	c,single		; yes
-	ld	hl,4096			; no
-	jr	cp4k
-single:
-	ld	hl,(rombuf+3)		; reload image size
-cp4k:	push	hl			; ex HL,BC
-	pop	bc			; BC size
-	ld	a,(rombuf)		; A source (base) page in eeprom
-	ld	de,(rombuf+1)		; image location in ram
-
-	call	placepage		; write page
-
-	ld	hl,(rombuf+3)		; reload image size
-	ld	de,4096			; page size
-	or	a			; clear carry
-	sbc	hl,de			; subtract to get remaining size
-	jr	c,runrdy
-	jr	z,runrdy
-	ld	(rombuf+3),hl		; left bytes
-	ld	a,(rombuf)		; write another page...
-	inc	a
-	ld	(rombuf),a		; next page
-	ld	hl,(rombuf+1)
-	ld	de,4096
-	add	hl,de
-	ld	(rombuf+1),hl
-	jr	multi
-runrdy:
-	ld	hl,mrnrdy		; all ready
-	call	print
-	call	bbconin
-	cp	esc			; abort ?
-	jp	z,welcom
-	ld	hl,(rombuf+5)
-	jp	(hl)
-placepage:
+;; get 4 hex digit
+get4hex:
+	push	de
+	ld	d,4
+get4he0:
 	push	bc
-	push	af
-	ld	b,trnpag		; place image in ram
-	call	mmgetp
-	ld	(pagbuf),a		; save current
-	;
-	pop	af
-	ld	b,trnpag		; transient page
-	call	mmpmap			; mount it
+	ld	c,SI_EDIT
+	ld	e,SE_HEX
+	call	bbsysint
 	pop	bc
-	;
-	ld	hl,trnpag << 12
-	ldir				; do copy
-	;
-	ld	a,(pagbuf)		; restore
-	ld	b,trnpag		; transient page
-	call	mmpmap			; mount it
+	pop	de
+	or	a
+	jp	nz,usrcmd
 	ret
+
+;;
+;; ask for port
+askport:
+	call	inline
+	defb	" Port: ",0
+	call	get2hex
+	ret
+
+;;
+;; ask for data
+askdata:
+	call	inline
+	defb	" Data: ",0
+	call	get2hex
+	ret
+
+;;
+;; ask for data
+asksize:
+	call	inline
+	defb	" Size: ",0
+	call	get4hex
+	ret
+
+;;
+;; ask from
+askfrom:
+	call	inline
+	defb	" From: ",0
+	call	get4hex
+	ret
+
+;;
+;;ask to
+askto:
+	call	inline
+	defb	" To: ",0
+	call	get4hex
+	ret
+
 
 ;-----------------------------------------------------------------------
 
@@ -1482,7 +1254,7 @@ ucmdtab:
 	defw	portout		; (O) output to a port
 	defw	ucprompt	; (P) n/a
 	defw	ucprompt	; (Q) n/a
-	defw	romrun		; (R) select rom image
+	defw	selrom		; (R) select rom image
 	defw	rwmem		; (S) alter memory
 	defw	memtest		; (T) test ram region
 	defw	pupload		; (U) parallel Upload
@@ -1494,88 +1266,88 @@ ucmdtab:
 ;;
 
 mhelp:	defb	cr,lf,lf
-	defb	"A - Alternate console",CR,LF
-	defb	"B - Boot menu",CR,LF
-	defb	"C - HL/DE sum, subtract",CR,LF
-	defb	"D - Dump memory",CR,LF
-	defb	"E - Echo test",CR,LF
-	defb	"F - Fill memory",CR,LF
-	defb	"G - Go to execute address",CR,LF
-	defb	"H - This help",CR,LF
-	defb	"I - Input from port",CR,LF
-	defb	"K - Reinit system",CR,LF
-	defb	"M - Move memory",CR,LF
-	defb	"O - Output to port",CR,LF
-	defb	"R - Select ROM image",CR,LF
-	defb	"S - Alter memory",CR,LF
-	defb	"T - Test ram",CR,LF
-	defb	"U - Upload from parallel",CR,LF
-	defb	"V - Compare memory",CR,LF
+	defb	"A - Alternate console",cr,lf
+	defb	"B - Boot menu",cr,lf
+	defb	"C - HL/DE sum, subtract",cr,lf
+	defb	"D - Dump memory",cr,lf
+	defb	"E - Echo test",cr,lf
+	defb	"F - Fill memory",cr,lf
+	defb	"G - Go to execute address",cr,lf
+	defb	"H - This help",cr,lf
+	defb	"I - Input from port",cr,lf
+	defb	"K - Reinit system",cr,lf
+	defb	"M - Move memory",cr,lf
+	defb	"O - Output to port",cr,lf
+	defb	"R - Select ROM image",cr,lf
+	defb	"S - Alter memory",cr,lf
+	defb	"T - Test ram",cr,lf
+	defb	"U - Upload from parallel",cr,lf
+	defb	"V - Compare memory",cr,lf
 	defb	"W - Download to parallel"
 	defb	cr,lf,0
 ;;
 sdlpr:	defb	"Download",':',0
 strwait:
-	defb	"Waiting for remote...",CR,LF,0
+	defb	"Waiting host...  ",0
 strload:
-	defb	"Loading",CR,LF,0
+	defb	"loading at: ",0
 ;
 mverstr:
 	if not bbdebug
-	defb	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN,CR,LF,0
+	defb	"Z80 DarkStar",cr,lf
+	defb	"Banked monitor  v",monmaj,'.',monmin,'.',subrel,cr,lf,0
 	else
-	defb	"Z80 DarkStar - Banked Monitor - REL ",MONMAJ,'.',MONMIN," [DEBUG]",CR,LF,0
+	defb	"Z80 DarkStar",cr,lf
+	defb	"Banked monitor  v",monmaj,'.',monmin,'.',subrel," [experimental]",cr,lf,0
 	endif
 	; Boot messages
-msysres:
- 	defb	"SYSTEM INIT...",CR,LF,LF,0
-mmbsize:
-	defb	"k ram, 256k eeprom",CR,LF,0
 msetsha:
-	defb	"Shadowing BIOS images:",CR,LF,0
-mok:	defb	"Successful",CR,LF,0
-mnok:	defb	"Error",CR,LF,0
+	defb	"BIOS image shadowed.",cr,lf,0
 mtx:	defb	"Tx",' ',0
 mrx:	defb	"Rx",' ',0
 mfol:	defb	':',' ',0
-mnot:	defb	"not ready",CR,LF,0
-mrdy:	defb	"ready",' ',0
-mhd:	defb	"IDE Drive",' ',0
-muart:	defb	"UART 16C550",' ',0
-meepr:	defb	"EEPROM is a",' ',0
-mpron:	defb	"unlocked",CR,LF,0
-mprof:	defb	"locked",CR,LF,0
+mnot:	defb	"fail",0
+mrdy:	defb	"ok",' ',0
+mpron:	defb	"un"
+mprof:	defb	"locked",0
 mepee:	defb	"29EE020",' ',0
 mepxe:	defb	"29xE020",' ',0
 mepc:	defb	"29C020",' ',0
-mepuns:	defb	"UNSUPPORTED",' ',0
+mepuns:	defb	"Unsupported",' ',0
+msysres:
+ 	defb	"Initializing...",cr,lf,lf
+	defb	"Ram .................: ",cr,lf
+	defb	"Rom .................: ",cr,lf
+	defb	"IDE disk ............: ",cr,lf
+	defb	"Serial console ......: ",cr,lf
+	defb	"Serial aux ..........: ",cr,lf
+	defb	"Eeprom type .........: ",cr,lf
+	defb	"Real Time Clock......: ",cr,lf
+	defb	0
 
 mbmenu:	defb	cr,lf
-	defb	"BOOT from:",CR,LF,LF
-	defb	" A-B = Floppy",CR,LF
-	defb	" C-N = IDE Volume",CR,LF
-	defb	" O-P = Virtual on parallel",CR,LF
-	defb	"<RET> = Monitor prompt",CR,LF,LF
+; 	defb	"BOOT from:",cr,lf,lf
+; 	defb	" A-B = Floppy",cr,lf
+; 	defb	" C-N = IDE Volume",cr,lf
+; 	defb	" O-P = Virtual on parallel",cr,lf
+; 	defb	"<RET> = Monitor prompt",cr,lf,lf
 	defb	'-','>',0
-mbwcom:	defb	cr,lf
-	defb	"Enter command: [B]oot Menu, [H]elp"
-	defb	cr,lf,0
 mhderr:	defb	"No Volume, "
-mbterr:	defb	"Boot error!",CR,LF,0
-mbtnbl:	defb	"No bootloader!",CR,LF,0
+mbterr:	defb	"Boot error!",cr,lf,0
+mbtnbl:	defb	"No bootloader!",cr,lf,0
 
 ;-------------------------------------
 ; Needed modules
 
-include modules/crtcutils.lib.asm	; 6545 crtc utils
 
+;-------------------------------------
 bmfillo:
 	defs	zdsmntr + $0bff - bmfillo
-bmfilhi:
-	defb	$00
-
-; end of code - this will fill with zeroes to the end of
-; the non-resident image
+; bmfilhi:
+; 	defb	$00
+;
+; ; end of code - this will fill with zeroes to the end of
+; ; the non-resident image
 
 if	mzmac
 wsym bootmonitor.sym

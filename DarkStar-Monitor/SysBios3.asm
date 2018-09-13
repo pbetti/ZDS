@@ -162,6 +162,7 @@ seicll0:
 	push	de
 	call	bbgetcrs		; get position on screen
 	pop	de
+
 	ld	(seiloc),hl		; to scr buffer (origin)
 	ld	(secloc),hl		; to scr buffer (current)
 	ld	hl,iedtbuf
@@ -196,6 +197,8 @@ sysed00:
 	cp	esc			; exit on user req
 	jr	z,seexff
 	cp	bs			; backspace
+	jp	z,seback
+	cp	7fh			; backspace/canc
 	jp	z,seback
 	push	de
 	call	seval			; validate upon mode

@@ -123,7 +123,7 @@ miobyte		equ	kbdbyte-1	; byte:
 					;         3: 0 = accept lowercase	1 = convert to uppercase
 					;         4: 0 = destr. bkspace		1 = non destr. bkspace
 					;         5: 0 = console out		1 = serial out
-					;         6: unused
+					;         6: 0 = floppy home on err	1 = no home on err
 					;         7: 0 = ctrl chr set 1		1 = ctrl chr set 2
 tmpbyte		equ	miobyte-1	; byte: transients flags
 					; - bits: 0: 0 = high in cursor addressing
@@ -132,7 +132,7 @@ tmpbyte		equ	miobyte-1	; byte: transients flags
 					;         3: 0 = Two byte code ESC seq. from serial
 					;         4: 0 = Plain serial i/o (disable ANSI driver)
 					;         5: 0 = store interrupt status (on/off)
-					;         6: 0 = floppy no home on err	1 = no home on err
+					;         6: 0 = high in ansi query
 					;         7: 0 = unlock LBA free addressing (unpartitioned)
 cursshp		equ	tmpbyte-1	; cursor shape
 curpbuf		equ	cursshp-2	; word: cursor position
@@ -184,6 +184,10 @@ cr		equ	0dh		; ascii cr & lf
 lf		equ	0ah
 ff		equ	0ch		; form feed (clear screen)
 bs		equ	08h		; backspace
+ceol		equ	0fh		; clear to EOL
+ceop		equ	0eh		; clear to EOp
+cron		equ	05h		; cursor on
+crof		equ	04h		; cursor off
 esc		equ	1bh		; ESCape
 xonc		equ	11h		; Xon
 xofc		equ	13h		; Xoff

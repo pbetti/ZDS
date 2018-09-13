@@ -275,6 +275,8 @@ onshadow:
 		;
 	call	bbcurset		; and cursor shape
 	;
+	ld	c,ff			; if on serial
+	call	bbconout
 	ld	c,SI_LOGO		; display logo
 	call	bbsysint
 	;
@@ -291,7 +293,6 @@ onshadow:
  	call	bbhdinit		; IDE init
 	or	a
 	jr	nz,ideinok
-; 	call	bbldpart
  	call	bbdriveid
 	or	a
 	jr	nz,ideinok
@@ -306,15 +307,12 @@ onshadow:
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
 	;
-; 	ld	a,' '+$80
 	ld	hl,hdidbuf + 54		; drive id string is @ BLDOFFS + 54
-	ld	b,10                    ; and 20 bytes long
+	ld	b,10			; and 20 bytes long
 	call	hdbufprn
-	call	print
 	pop	af			; remove scratch
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
-; 	call	bbldpart		; load partition table
 	jr	ideiok
 ideinok:
 	ld	hl,mnot
@@ -393,16 +391,12 @@ okrtc:	call	print
 	;
 	call	intren			; enable interrupts
 	;
-	ld	c,SI_EFFECT
-	ld	e,EF_REVON
-	call	bbsysint
+	call	revon
 	call	inline
 	defb " READY ",0
-	ld	c,SI_EFFECT
-	ld	e,EF_REVOFF
-	call	bbsysint
-	; finally print bios greetings
-	jp	ugreet
+	call	revoff
+	; finally start
+	jp	autobot
 ;;
 ;; New code for direct access to bootloaders
 ;;
@@ -418,9 +412,11 @@ bootm:
 bmpro:
 	call	bbhdinit
 	call	bbldpart		; load partition table
-	ld	hl,mbmenu		; display the menu
-	call	print
-	call	dogetchr		; get user choice
+; 	ld	hl,mbmenu		; display the menu
+; 	call	print
+	call	inline
+	defb	"boot:",0
+	call	dogetcmd		; get user choice
 	push	af
 	call	outcrlf
 	pop	af
@@ -519,8 +515,7 @@ hdbufprn:
 	call	bbconout
 	inc	hl
 	inc	hl
-	dec	b
-	jp	nz,hdbufprn
+	djnz	hdbufprn
 	ret
 
 ;;
@@ -558,12 +553,17 @@ bbnksiz1:
 ;; USRCMD - display prompt and process user commands
 ;;
 ugreet:
+	ld	c,ff
+	call	bbconout
+	ld	c,cron
+	call	bbconout
 	call	outcrlf
 	ld	hl,mverstr
 	call	print
+	call	inline
+	defb	"Press <H> for help",0
 welcom:
-; 	ld	hl,mbwcom
-; 	call	print
+; 	call	outcrlf
 	jr	usrcmd
 ucprompt:
 	ld	hl,urestr		; reject string
@@ -595,25 +595,87 @@ usrcmd:
 	jp	(hl)
 
 ;;
+;; Auto boot
+;;
+autobot:
+	call	pfunlin			; prepare menu
+
+	ld	e,DSR_VALID		; valid configuration ?
+	call	bbgetdsr
+	cp	0aah
+	jr	z,doab			; yes
+	ld	h,21			; no, wait for user
+	ld	l,0
+	call	bbsetcrs
+	call	inline
+	defb	"Invalid setup, waiting your action",0
+ab00:
+	call	getcup
+	cp	'M'			; monitor
+	jp	z,ugreet
+	cp	'S'			; call setup
+	jp	z,ugreet
+	cp	'B'			; boot options
+	jp	z,ugreet
+	jr	ab00			; bad sel.
+doab:
+	ret
+
+;;
+;; paint function select line
+;;
+pfunlin:
+	ld	c,crof
+	call	bbconout
+	ld	h,24
+	ld	l,0
+	call	bbsetcrs
+	ld	c,ceol
+	call	bbconout
+	ld	c,' '
+	ld	b,24
+	call	rpch
+	call	revon
+	call	inline
+	defb	" M ",0
+	call	revoff
+	call	inline
+	defb	" Monitor  ",0
+	call	revon
+	call	inline
+	defb	" S ",0
+	call	revoff
+	call	inline
+	defb	" Setup  ",0
+	call	revon
+	call	inline
+	defb	" B ",0
+	call	revoff
+	call	inline
+	defb	" Boot",0
+	ret
+
+;.......................................
+
+;;
 ;; Echo input
 ;;
 kecho:
 	call	bbconin
 	cp	3			; ^C stop test
 	jp	z,welcom
+	push	af
+	call	h2anib
+	ld	c,'h'
+	call	bbconout
+	call	spacer
+	pop	af
+	cp	' '
+	jr	c,kecho
 	ld	c,a
-; 	CP	$20
-; 	JR	NC,KDOE
-; 	CP	$08
-; 	JR	Z,KDOE
-; 	PUSH	AF
-; 	CALL	SPACER
-; 	POP	AF
-; 	CALL	H2AJ1
-; 	LD	C,'-'
-; 	CALL	BBCONOUT
-; 	JR	KECHO
 kdoe:	call	bbconout
+	ld	c,'|'
+	call	bbconout
 	jr	kecho
 
 ;;
@@ -1007,7 +1069,7 @@ bdnxt:	ld	a,e
 doprompt:
 	call	mprompt
 ;; get a char in uppercase, and display too...
-dogetchr:
+dogetcmd:
 	call	getcup
 coutch:	push	bc
 	ld	c,a
@@ -1086,6 +1148,7 @@ mathhlde:
 ;; Select rom image and run immediately
 ;;
 selrom:
+	ret
 	ld	c,SI_ROMSEL
 	call	bbsysint
 	ld	e,l
@@ -1239,7 +1302,36 @@ askto:
 	call	get4hex
 	ret
 
+;;
+;; repeat chr C, B times
+;;
+rpch:
+	call	bbconout
+	djnz	rpch
+	ret
 
+;;
+;; revon shortcut
+;;
+revon:
+	ld	c,SI_EFFECT
+	ld	e,EF_REVON
+	call	bbsysint
+	ret
+
+;;
+;; revoff shortcut
+;;
+revoff:
+	ld	c,SI_EFFECT
+	ld	e,EF_REVOFF
+	call	bbsysint
+	ret
+
+
+
+godebug:
+	jp	9000h
 ;-----------------------------------------------------------------------
 
 ucmdtab:
@@ -1266,7 +1358,7 @@ ucmdtab:
 	defw	pupload		; (U) parallel Upload
 	defw	memcomp		; (V) compare mem blocks
 	defw	pdnload		; (W) parallel DoWnload
-	defw	ucprompt	; (X) n/a
+	defw	godebug		; (X) n/a
 	defw	ucprompt	; (Y) n/a
 	defw	ucprompt	; (Z) n/a
 ;;
@@ -1299,13 +1391,12 @@ strload:
 	defb	"loading at: ",0
 ;
 mverstr:
-	if not bbdebug
 	defb	"Z80 DarkStar",cr,lf
-	defb	"Banked monitor  v",monmaj,'.',monmin,'.',subrel,cr,lf,0
-	else
-	defb	"Z80 DarkStar",cr,lf
-	defb	"Banked monitor  v",monmaj,'.',monmin,'.',subrel," [experimental]",cr,lf,0
+	defb	"Banked monitor  v",monmaj,'.',monmin,'.',subrel
+	if bbdebug
+	defb	" [experimental]"
 	endif
+	defb	cr,lf,0
 	; Boot messages
 msetsha:
 	defb	"BIOS image shadowed.",cr,lf,0
@@ -1331,13 +1422,6 @@ msysres:
 	defb	"Real Time Clock......: ",cr,lf
 	defb	0
 
-mbmenu:	defb	cr,lf
-; 	defb	"BOOT from:",cr,lf,lf
-; 	defb	" A-B = Floppy",cr,lf
-; 	defb	" C-N = IDE Volume",cr,lf
-; 	defb	" O-P = Virtual on parallel",cr,lf
-; 	defb	"<RET> = Monitor prompt",cr,lf,lf
-	defb	'-','>',0
 mhderr:	defb	"No Volume, "
 mbterr:	defb	"Boot error!",cr,lf,0
 mbtnbl:	defb	"No bootloader!",cr,lf,0
@@ -1348,7 +1432,7 @@ mbtnbl:	defb	"No bootloader!",cr,lf,0
 
 ;-------------------------------------
 bmfillo:
-	defs	zdsmntr + $0bff - bmfillo
+	defs	zdsmntr + $0bff - bmfillo + 1
 ; bmfilhi:
 ; 	defb	$00
 ;

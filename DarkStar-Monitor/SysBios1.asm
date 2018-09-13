@@ -23,6 +23,9 @@
 ;   o I/O rewrite for MODE 2 interrupts
 ;   Minor goals:
 ;   o Full code clean-up & reorganization
+;
+; 20180910 - Minor change for unified console management
+;
 ; ---------------------------------------------------------------------
 
 ; Common equates for BIOS/Monitor
@@ -47,7 +50,7 @@ sysbid1:
 ;-------------------------------------
 ; Needed modules
 
-include modules/crtc.inc.asm		; 6545 crtc
+include modules/consoleio.inc.asm	; 6545 crtc and console io
 include modules/genio.inc.asm		; z80 pio on lx529
 include modules/kbd.inc.asm		; keyboard
 include modules/uartctc.inc.asm		; 16c550 and Z80CTC

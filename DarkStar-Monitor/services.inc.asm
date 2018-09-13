@@ -43,8 +43,14 @@ SE_EXTSTR	equ	10000000b
 DS_READ		equ	0
 DS_WRITE	equ	1
 
-DSR_SCRATCH	equ	30
+DSR_BOOTTYP	equ	0
+DSR_DRIVE	equ	1
+DSR_OS		equ	3
+DSR_HDPART	equ	4
+DSR_ROMIMG	equ	5
+DSR_DELAY	equ	6
 DSR_VALID	equ	29
+DSR_SCRATCH	equ	30
 
 ; --- binary to decimal -------------------------
 BD_ZERO		equ	0

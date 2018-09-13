@@ -78,7 +78,7 @@ fhome:
 	out	(fdccmdstatr),a		; exec. command
 	call	waitfd			; wait until end command
 	ld	c,a			; save status
-	
+
 	call	gtrkbuf			; proceed
 	in	a,(fdctrakreg)
 	ld	(hl),a
@@ -99,7 +99,7 @@ fseek:
 	call	gtrkbuf
 	ld	a,(hl)
 	out	(fdctrakreg),a
-fretr1:	
+fretr1:
 	ld	a,(fsecbuf)
 	out	(fdcsectreg),a
 	ld	a,(ftrkbuf)
@@ -111,11 +111,11 @@ fretr1:
 	ld	b,c			; restore retry count
 	and	00011001b
 	jr	z,fskend		; ok
-	
+
 	call	fhome			; seek error
 	jr	nz,fskend
 	djnz	fretr1			; retry
-fskend:	
+fskend:
 	in	a,(fdctrakreg)
 	ld	(hl),a
 	pop	de
@@ -142,7 +142,7 @@ flopio:
 	ld	ix,csptr
 	ld	(miobyte),a
 	ld	b,rtrycnt		; # retries
-frwnxt:	
+frwnxt:
 	call	fseek			; go to trk/sec
 	jr	nz,fioend
 
@@ -150,36 +150,36 @@ frwnxt:
 	ld	hl,(frdpbuf)
 	ld	e,(ix+2)		; need to know buffer size on r/w
 	ld	d,(ix+3)
-	
+
 	ld	a,(miobyte)
 	bit	0,a			; read or write?
 	jr	z,frwwro		; go to write
-	
+
 	ld	a,fdcreadc		; read command
 	out	(fdccmdstatr),a		; exec. command
 	call	fdcdly
 	jr	frrdy
-frbsy:	
+frbsy:
 	rrca				; busy bit to carry flag
 	jr	nc,fwend		; if busy 0 end read
-frrdy:	
+frrdy:
 	in	a,(fdccmdstatr)
 	bit	1,a			; data request active ?
 	jr	z,frbsy			; no: check busy bit
-	
+
 	in	a,(fdcdatareg)		; get data
 	ld	(hl),a
 	inc	hl
 	jr	frrdy
-frwwro:	
+frwwro:
 	ld	a,fdcwritc		; write command
 	out	(fdccmdstatr),a		; exec. command
 	call	fdcdly
 	jr	fwrdy
-frwbsy:	
+frwbsy:
 	rrca				; busy bit to carry flag
 	jr	nc,fwend		; if busy 0 end read
-fwrdy:	
+fwrdy:
 	in	a,(fdccmdstatr)
 	bit	1,a
 	jr	z,frwbsy
@@ -190,15 +190,15 @@ fwrdy:
 	ld	a,d		; 4 c.
 	or	e		; 4 c.
 	jr	nz,fwrdy	; 7/12 c.
-fwend:	
+fwend:
 	ei				; end of critical operations
 	ld	c,b			; save retry count
 	call	waitfd
 	ld	b,c			; restore retry count
 	and	01011100b		; mask wrt-prtc,rnf,crc,lst-dat error
 	jr	z,fioend		; ok
-	
-	ld	a,(tmpbyte)		; nok
+
+	ld	a,(miobyte)		; nok
 	bit	6,a			; seek to home in error?
 	jr	nz,fiotry		; no
 
@@ -210,7 +210,7 @@ fioend:
 	push	af
 	xor	a
 	out	(fdcdrvrcnt),a		; shut down
-	
+
 	pop	af
 	pop	de
 	ret
@@ -219,14 +219,14 @@ fioend:
 ;; SIDSET - set current side bit on DSELBF
 ;;          selected side on C
 ;;
-sidset:	
+sidset:
 	ld	hl,dselbf		; loads drive interf. buffer
 	ld	a,c			; which side ?
 	cp	0			;
 	jr	nz,sidone		; side 1
 	res	5,(hl)			; side 0
 	ret				;
-sidone:	
+sidone:
 	set	5,(hl)			;
 	ret
 

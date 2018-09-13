@@ -99,7 +99,7 @@ syscom:
 	public	bbconin, bbconout, rldrom
 	public	dispch, movrgt, eostest, cout00
 	public	scrtst, updvidp, scrspos
-	public	bbscroll, print, inline
+	public	bbscroll, print, inline, tx0
 
 	; Interrupts vector table & mngmt
 	public	sintvec, intren, intrdi, fstat

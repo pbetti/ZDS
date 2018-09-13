@@ -28,7 +28,6 @@
 ;=======================================================================;
 
 ; link to DarkStar Monitor symbols...
-; link to DarkStar Monitor symbols...
 include darkstar.equ
 include syshw.inc
 
@@ -139,7 +138,7 @@ SET1:	CALL	SKIP		; Point to Time String
 	LD	(TIMSTR+5),A
 	LD	HL,TIMSTR
 	DI
-	CALL	BBSTTIM		;  Activate and Set the Clock
+	CALL	BBWRTIME	;  Activate and Set the Clock
 	EI
 	RET			; ..and Quit
 
@@ -510,7 +509,7 @@ SR0:	POP	DE
 	LD	A,(HL)		;      Seconds
 	LD	(DE),A
 	EX	DE,HL		; HL = TIMSTR
-	CALL	BBSTTIM		; Activate and Set the Clock
+	CALL	BBWRTIME	; Activate and Set the Clock
 	CALL	DTIME		; Display Time
 	RET			; ..and Quit
 

@@ -55,9 +55,10 @@ c_bios.rel: c_bios.z80
 	$(CAS) $(CAS_FLAGS) c_bios.z80
 
 darkstar.inc: darkstar.mac
+	@rm -f darkstar.inc
 	@sed -e "s/EQU/.equ/" darkstar.mac > darkstar.tmp
 	sed -e "s/\\$$/0x/" darkstar.tmp > darkstar.inc
 	@rm -f darkstar.tmp
 
 clean:
-	rm -f *.lst *.ihx *.bin *.hex *.o *.rel
+	rm -f *.lst *.ihx *.bin *.hex *.o *.rel darkstar.inc

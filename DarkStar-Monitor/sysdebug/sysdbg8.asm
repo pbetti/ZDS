@@ -20,7 +20,6 @@ lf	equ	0ah		;	line feed
 formf	equ	0ch		;	form feed
 cr	equ	0dh		;	carriage return
 esc	equ	1bh		;       escape
-; CTLX	EQU	'X' and	1fh	;	control	x - delete line
 ctlx	equ	$7f		;	control	x - delete line
 ctlc	equ	'C' and	1fh	;	control	c - warm boot
 eof	equ	'Z' and	1fh	;	control	z - logical eof
@@ -32,16 +31,17 @@ inop	equ	000		;Z80 instructions
 ijp	equ	0c3h
 irt	equ	0c9h
 rst38	equ	0cfh		; uses RST 8
-; RST38	EQU	0FFH		; uses RST 38
-rstvec	equ	08h	;Default (but patchable) breakpoint vector
-; RSTVEC	EQU	38H		;Default (but patchable) breakpoint vector
+rstvec	equ	08h		;Default (but patchable) breakpoint vector
 iobuf	equ	80h		;Disk read buffer for symbol loading
 z8eorg	equ	$9000
 z8esp	equ	z8eorg - 2
+cbank	equ	000ch		; byte: current bank
+hmemp	equ	000bh		; byte: highest ram page
+
 ;---------------------------------------------------------
 
 	org	z8eorg
-fillbegin:
+; fillbegin:
 	ld	(hlreg),hl	;save user hl
 	pop	hl		;pop our call from stack
 	ld	(spreg),sp	;save user sp
@@ -77,8 +77,8 @@ fillbegin:
 
 mbannr:	defb	$0c
 	defb	cr,lf
-	defb	'Z80DARKSTAR (Z80NE) MONITOR DEBUGGER.',CR,LF
-	defb	'Copyright (c) 2008 Piergiorgio Betti <pbetti@lpconsul.eu>'
+	defb	'Z80Darkstar (Z80NE) Monitor Debugger.',cr,lf
+	defb	'(c) 2018 Piergiorgio Betti v.6.0.0'
 	defb	cr,lf,lf
 	defb	0
 
@@ -87,6 +87,13 @@ begin:
 
 	ld	de,mbannr	;Dispense with formalities
 	call	print
+	ld	de,mbnk
+	call	print
+	ld	a,(cbank)
+	sub	0bbh
+	call	outhex
+	call	crlf
+
 
 ; Do config based on max length of symbol names
 
@@ -149,12 +156,6 @@ z8e:
 	ld	sp,z8esp
 
 z8ecmd:
-; 	DI			; lock interrupts and enable local RST38
-; 	LD	A,(INTRDI)	; check for syscommon presence
-; 	CP	$F3		; SHOULD be...
-; 	JR	NZ,NOSYSBIOS
-; 	CALL	INTRDI		; global ints disable
-; NOSYSBIOS:
 	ld 	a,ijp
 	ld	(rstvec),a
 	ld	hl,z8e
@@ -488,9 +489,7 @@ jdbg08:	ld	(pcreg),hl	;save address at which to start	tracing
 jdbg10:	ld	(timer),a
 	ld	a,formf
 	call	ttyo
-; 	LD	B,24		;xmit crlf's to clear screen
-jdbg15:	;CALL	CRLF		;clear screen
-; 	DJNZ	JDBG15
+jdbg15:
 	call	rgdisp		;display current user regs
 	call	zwnw		;display disassembled window
 	ld	a,(wnwsiz)
@@ -541,12 +540,6 @@ jdbg35:	ld	a,(de)		;compare old vs new
 	cp	(hl)
 	jr	z,jdbg45	;z - hi and lo bytes the same so try next reg
 jdbg40:
-;	ld	a,4		;col position of reg pair is (rel pos * 9) + 3
-;	and	b
-;	jr	z,jdbg42
-;	ld	a,3
-;	and	b		;- 9 bytes deleted here
-;	inc	a
 	push	bc		;+save register number
 	ld	c,b		;+move it to c while we build line number
 	ld	b,0		;+assume first line for now
@@ -568,10 +561,6 @@ jdbg42:
 	ld	c,a		;+
 	call	xycp		;+
 	pop	bc		;+ added 29 bytes
-
-;	add	a,3		;- deleted another 5 bytes here
-;	call	curs		;- nett cost = 14 bytes for new code
-;				;- but we save 19 bytes in 'curs:' routine
 
 	ld	a,(hl)		;display upper byte of reg contents
 	call	outhex
@@ -842,19 +831,22 @@ bank:	call	iedtbc		;Solicit input
 bank00:	call	iarg		;Read in next arg (starting address)
 	jp	nz,exxx		;Invalid starting address
 	ex	de,hl		;DE - physycal page
-	call	iarg		;Next arg
-	jr	z,bank15	;Z - no	errors
-	jp	exxx
-bank15:	ld	b,l		; logical page
-	ld	a,$10
-	cp	b
-	jp	c,exxx		; invalid logical
-	sla	b
-	sla	b
-	sla	b
-	sla	b
-	ld	c,$20		; MMU port
-	out	(c),e
+	ld	a,e
+	push	af
+	or	a		; 0 -> 4
+	jr	nz,bank01
+	ld	e,4
+bank01:
+; 	cp	1
+; 	jp	c,exxx
+	cp	5
+	jp	nc,exxx
+	ld	b,0f0h
+	ld	a,(hmemp)		; calculate destination bank
+	sub	a,e			; A phisical bank
+	ld	c,20h			; MMU port
+	out	(c),a			; bank switch
+
 	ret
 
 
@@ -5177,7 +5169,7 @@ xycp10:
 	pop	bc
 	ret
 
-	org	xycp+128		;  the object code
+; 	org	xycp+128		;  the object code
 
 nrel:					;end of	relocatable code
 
@@ -5257,9 +5249,7 @@ jtcmd:
 	defw	kdmp			; w
 	defw	cuser			; >
 	defw	qeval			; ?
-;	defw	gadr			; #
 cmd:
-;	defb	'#?>WKXQDLOSHFCB'
 	defb	'?>WKXQDLOSHFCB'
 	defb	'PVMYGREZJNUAI'
 ncmd	equ	$-cmd		;number	of commands
@@ -5288,22 +5278,9 @@ lcmd:	defb	' '
 emxxx:	defb	' ??'
 	defb	0
 
-mldg:
-	defb	'Loading: '
+mbnk:	defb	' sysbios cbnk: '
 	defb	0
 
-mfilnf:
-	defb	'File Not Found'
-	defb	cr,lf,00
-
-
-mlodm:
-	defb	'Loaded:  '
-	defb	0
-mlodpg:
-
-	defb	'Pages:   '
-	defb	0
 
 msntx:
 	defb	'Syntax Error'
@@ -5385,7 +5362,7 @@ z80f3l	equ	$-z80f3
 ;*
 ;***********************************************************************
 
-	org	($+3) and 0fffch
+; 	org	($+3) and 0fffch
 zopcpt:
 	defb	022h,01ch,01ch,015h	;nop	ld	ld	inc	00 - 03
 	defb	015h,00ch,01ch,031h	;inc	dec	ld	rlca	04 - 07
@@ -5878,10 +5855,10 @@ nprsbf	equ	lprsbf+1	;	      -	end address plus one
 nzasm	equ	$		;end of disassembly buffer
 zasmbf	equ	nzasm-128	;start of disassembly buffer
 
-filler:
-	defs	fillbegin + $3000 - filler - 1
-fillend:
-	defb	0
+; filler:
+; 	defs	fillbegin + $3000 - filler - 1
+; fillend:
+; 	defb	0
 
 	end
 

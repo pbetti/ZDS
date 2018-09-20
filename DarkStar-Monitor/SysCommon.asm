@@ -72,7 +72,7 @@ syscom:
 	public	vconst, bbcurset
 	public	bbu0ini, bbu1ini, sconout, sconin
 	public	sconst, bbu1rx, bbu1tx, bbu1st
-	public bbsetcrs, bbgetcrs
+	public bbsetcrs, bbgetcrs, bbdbox
 
 	; SYSBIOS2
 	public	bbfwrite, bbflopio, bbfhome, bbfread
@@ -82,14 +82,14 @@ syscom:
 	public	bbprcvblk, bbprnchr
 
 	public	bbtrkset, bbsecset, bbdmaset, bbdsksel
-	public	bbcpboot, bbvcpmbt
+	public	bbcpmboot, bbuziboot, bbbooter
 
 	public	bbdiv16, bbmul16, bboffcal
 	public	bbwrtime, bbrdtime, bbsetdsr, bbgetdsr
 	public	bbeidck
 
-	public	bbhdinit, bbdriveid, bbhdgeo
-	public	bbhdrd, bbhdwr, bbhdboot, bbldpart
+	public	bbhdinit, bbdriveid, bbhdgeo, bbmvpart
+	public	bbhdrd, bbhdwr, bbldpart
 
 	; SYSBIOS3
 	public	bbsysint
@@ -100,6 +100,7 @@ syscom:
 	public	dispch, movrgt, eostest, cout00
 	public	scrtst, updvidp, scrspos
 	public	bbscroll, print, inline, tx0
+	public	rpch
 
 	; Interrupts vector table & mngmt
 	public	sintvec, intren, intrdi, fstat
@@ -133,6 +134,7 @@ bbscroll:	bbjbnk_1 scroll
 bbconou2:	bbjbnk_1 vconou2
 bbgetcrs:	bbjbnk_1 getcpos
 bbsetcrs:	bbjbnk_1 setcpos
+bbdbox:		bbjbnk_1 dbox
 
 bbpsndblk:	bbjbnk_2 psndblk
 bbuplchr:	bbjbnk_2 uplchr
@@ -150,8 +152,9 @@ bbtrkset:	bbjbnk_2 trkset
 bbsecset:	bbjbnk_2 secset
 bbdmaset:	bbjbnk_2 dmaset
 bbdsksel:	bbjbnk_2 dsksel
-bbcpboot:	bbjbnk_2 cpmboot
-bbvcpmbt:	bbjbnk_2 vcpmbt
+bbcpmboot:	bbjbnk_2 cpmboot
+bbuziboot:	bbjbnk_2 uziboot
+bbbooter:	bbjbnk_2 booter
 bbsidset:	bbjbnk_2 sidset
 bbfdrvsel:	bbjbnk_2 fdrvsel
 bbdiv16:	bbjbnk_2 div16
@@ -162,12 +165,12 @@ bbdriveid:	bbjbnk_2 driveid
 bbhdwr:		bbjbnk_2 writesector
 bbhdrd:		bbjbnk_2 readsector
 bbhdgeo:	bbjbnk_2 gethdgeo
-bbhdboot:	bbjbnk_2 hdcpm
 bbldpart:	bbjbnk_2 getptable
 bbdprmset:	bbjbnk_2 setdprm
 bbeidck:	bbjbnk_2 eidcheck
 bbsetdsr:	bbjbnk_2 setdsr
 bbgetdsr:	bbjbnk_2 getdsr
+bbmvpart:	bbjbnk_2 moveptable
 
 bbsysint:	bbjbnk_3 sysint
 
@@ -480,6 +483,13 @@ inline:
 	ex	(sp),hl			; load return address after terminator
 	ret				; back to code immediately after string
 
+;;
+;; repeat chr C, B times
+;;
+rpch:
+	call	bbconout
+	djnz	rpch
+	ret
 
 ;************************************************************************
 ;    FIFO BUFFERS FOR CP/M BIOS

@@ -29,7 +29,7 @@
 ;            accepted by different assemblers
 ; 20150714 - Modified to implement serial XON/XOFF and RTS/CTS
 ; 20170331 - Fixed uart1 isr routine
-; 20180831 - v3.8.1 modifing for 4.0.0
+; 20180831 - v3.8.1 modifying for 4.0.0
 ; ---------------------------------------------------------------------
 
 ; ---------------------------------------------------------------------
@@ -88,7 +88,7 @@ mzmac	equ	1
 ;
 monmaj		equ	'3'
 monmin		equ	'9'
-subrel		equ	'3'
+subrel		equ	'7'
 
 ;
 ; Buffers addresses labels
@@ -118,7 +118,7 @@ dselbf		equ	colbuf-1	; byte: floppy drive select status
 kbdbyte		equ	dselbf-1	; byte: store keyboard input
 miobyte		equ	kbdbyte-1	; byte:
 					; - bits: 0: 0 = floppy write		1 = floppy read
-					;         1: 0 = no ctrl on keypress	1 = ctrl on keypress
+					;         1: 0 = autorepeat on		1 = autorepeat off
 					;         2: 0 = scroll			1 = no scroll
 					;         3: 0 = accept lowercase	1 = convert to uppercase
 					;         4: 0 = destr. bkspace		1 = non destr. bkspace
@@ -189,11 +189,13 @@ ceop		equ	0eh		; clear to EOp
 cron		equ	05h		; cursor on
 crof		equ	04h		; cursor off
 esc		equ	1bh		; ESCape
+beep		equ	07h		; beep
 xonc		equ	11h		; Xon
 xofc		equ	13h		; Xoff
 true		equ	-1
 false		equ	0
 tpa		equ	0100h		; TPA base address (for CP/M)
+mondelay	equ	20		; seconds to auto monitor
 
 ;
 ; Modules equs

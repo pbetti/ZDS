@@ -43,7 +43,6 @@ fwait01:
 	in	a,(fdccmdstatr)		; input to fdd status
 	bit	0,a			; test busy bit
 	ret	z			; exit if no command is in progress
-; 	jr	z,fwait02		; jump if no command is in progress
 	dec	de			;
 	ld	a,d			; timer down
 	or	e			;

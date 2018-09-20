@@ -253,11 +253,12 @@ gcrse:
 ;
 setcpos:
 	push	af
+	push	bc
+	push	de
 	; we must coop. to serial console output...
 	ld	a,(miobyte)		; conf. location
 	bit	5,a
 	jp	nz,scrs1		; for serial console
-	pop	af
 	ld	b,h
 	ld	c,l
 	ld	hl,$ffb0
@@ -269,7 +270,8 @@ scrs0:
 	ld	e,c
 	add	hl,de			; add col = abs. position
 	ld	(curpbuf),hl		; update buf
-	jp	updvidp
+	call	updvidp
+	jr	scrse
 scrs1:
 	ld	c,esc
 	call	txchar0
@@ -286,7 +288,9 @@ scrs1:
 
 	ld	c,0
 	call	txchar0
-
+scrse:
+	pop	de
+	pop	bc
 	pop	af
 	ret
 
@@ -738,6 +742,81 @@ hl.gt.0:
 	dec	a		;
 	add	hl,bc		;
 	ret
+
+;;
+;; Draw a box
+;;
+;; HL = top left row/col, BC = # rows/cols E = single/double 0/1
+;;
+dbox:
+	push	ix
+	dec	e
+	jr	z,dboxd
+	ld	ix,sboxt
+	jr	dbodr
+dboxd:
+	ld	ix,dboxt
+dbodr:
+	ld	d,b
+	ld	e,c
+	; top
+	push	hl
+	call	setcpos
+	pop	hl
+	ld	c,(ix+0)		; top left
+	call	safpcr
+	ld	c,(ix+4)		; h line
+	ld	b,e
+	call	srpch
+	ld	c,(ix+1)		; top right
+	call	safpcr
+	; body
+dboxb1:
+	inc	h
+	push	hl
+	call	setcpos
+	pop	hl
+	ld	c,(ix+5)		; body left
+	call	safpcr
+	ld	c,' '			; blank
+	ld	b,e
+	call	srpch
+	ld	c,(ix+5)		; body right
+	call	safpcr
+	dec	d
+	jr	nz,dboxb1
+dboend:
+	; bottom
+	inc	h
+	call	setcpos
+	ld	c,(ix+2)		; top left
+	call	safpcr
+	ld	c,(ix+4)		; h line
+	ld	b,e
+dbox2:
+	call	srpch
+	ld	c,(ix+3)		; top right
+	call	safpcr
+	pop	ix
+	ret
+
+;	     0tl, 1tr, 2bl, 3br,  4hl, 5vl
+sboxt:
+	defb 0c9h,0cah,0c7h,0c8h,0c1h,0c0h
+dboxt:
+	defb 0d4h,0d5h,0d2h,0d3h,0cch,0cbh
+
+safpcr:
+	ld	a,(miobyte)		; conf. location
+	bit	5,a
+	jp	z,vconout		; video
+	jp	txchar0			; serial
+	ret
+srpch:
+	call	safpcr
+	djnz	srpch
+	ret
+
 
 ;; This table define the offsets to jump to control routines
 ;; for primary (non-escaped) mode

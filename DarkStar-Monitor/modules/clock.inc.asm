@@ -191,53 +191,71 @@ stti0:
 ;-------------------------------------------------------------------------
 ; Dallas DS-1302 RAM Interface
 ;
-;  Read the RAM to a buffer area in local memory.  31 bytes are read or
-;  written
+;  Read or write the RAM (31 bytes)
+;
+
 
 ;;
-;; read from DS1302 to buffer
+;; bios read interface
 ;;
+;; D = data (output), E = index (0-30)
+;;
+getdsr:
+	push	af
+	push	de
+	push	hl
+	ld	a,e			; check range
+	cp	31
+	jr	nc,wrrame		; over, jump to WRITE exit
+	sla	e			; adj ptr
+	ld	a,e
+	or	11000000b		; mask bits to ram
+	ld	e,a
+	set	0,e			; impose read
 
-rdram:	call	copen			; Set Clock to Read, returning BC->DRA Port
-	ld	d,31			; 31 Bytes to Read
+	call	copen			; open device
+	ld	a,e			; ptr to ram
+	call	wr1302			; send it
 
-; Command the DS-1302 for RAM Burst Read
-
-	ld	a,11111111b		; Load the Burst Read Command
-	call	wr1302			; and Send it
-	ld	hl,dsramb		; init ptr
-
-; Read the RAM.
-
-rdram0:
-	push	hl			; Save Ptr
-	ld	e,8			; Gather 8 bit for a byte
+	ld	e,8			; gather 8 bit for a byte
 rdram1:
-	call	cllosclk		; Clock LO
+	call	cllosclk		; clock lo
 	nop				; (settle)
-	in	a,(crtservdat)		; Read Bit to LSB
+	in	a,(crtservdat)		; read bit to LSB
 	rlca				; shift left to
 	rlca				; move bit 6 to carry
-	rr	l			; to MSB of L
-	call	clupsclk		; Clock HI
-	dec	e			; Byte Done?
-	jr	nz,rdram1		; ..jump if Not
-	ld	e,l			; Else Get Byte
-	pop	hl			; Restore Ptr to Dest
-	ld	(hl),e			; Save value in output string
-	inc	hl			; back down to previous byte in output
-	dec	d			; decrement counter
-	jr	nz,rdram0		; ..get another byte if not done
-	call	cclose			; Else Deselect Clock
-	ld	a,$01			; Set Good Exit
+	rr	d			; to MSB of d
+	call	clupsclk		; clock hi
+	dec	e			; byte done?
+	jr	nz,rdram1		; ..jump if not
+
+	call	cclose
+	pop	hl
+	ld	a,d
+	pop	de
+	ld	d,a
+	pop	af
 	ret
 
 ;;
-;; write from buffer to DS1302
+;; bios write interface
 ;;
+;; D = data, E = index (0-30)
+;;
+setdsr:
+	push	af
+	push	de
+	push	hl
+	ld	a,e			; check range
+	cp	31
+	jr	nc,wrrame		; over
+	sla	e			; adj ptr
+	ld	a,e
+	or	11000000b		; mask bits
+	ld	e,a
+	res	0,e			; impose write
 
-wrram:
-	ld	hl,dsramb
+	exx
 	call	copen			; Open the chip
 	ld	a,10001110b		; select write to control register (8E)
 	call	wr1302
@@ -245,64 +263,16 @@ wrram:
 	call	wr1302
 	call	cclosw
 	call	copen
-	ld	a,11111110b		; Burst Write (FE)
-	ld	b,31			; 31 bytes
+	exx
+	ld	a,e			; point to ram loc.
 	call	wr1302
-wrram0:	ld	a,(hl)
-	call	wr1302
-	inc	hl
-	djnz	wrram0
-	call	cclosw
-	ret
-
-;;
-;; bios write interface
-;;
-;; D = data, E = index (0-31)
-;;
-setdsr:
-	push	hl
-	push	af
-	push	bc
-	ld	a,e			; check range
-	cp	31
-	ret	nc			; over
 	ld	a,d
-	ld	hl,dsramb		; point to ram
-	ld	d,0
-	add	hl,de
-	ld	(hl),a			; write
-	call	wrram			; on chip
-	pop	bc
-	pop	af
+	call	wr1302			; write
+	call	cclosw
+wrrame:
 	pop	hl
-	ret
-
-;;
-;; bios read interface
-;;
-;; D = data (output), E = index (0-31)
-;;
-getdsr:
-	push	hl
-	push	af
-	push	bc
-	push	de
-	call	rdram			; from chip
 	pop	de
-	ld	a,e			; check range
-	cp	31
-	ret	nc			; over
-	ld	hl,dsramb		; point to ram
-	ld	d,0
-	add	hl,de
-	ld	d,(hl)			; read
-	pop	bc
 	pop	af
-	pop	hl
 	ret
-
-;----------------------------
-dsramb:	ds	31
 
 ; --- EOF ---

@@ -283,9 +283,9 @@ getot07:
 	djnz	getot07
 getot05:
 	ld	bc,entrysize
-	ld	a,(hl)
-	cp	'Y'			; is active ?
-	jr	nz,getot03
+; 	ld	a,(hl)
+; 	cp	'Y'			; is active ?
+; 	jr	nz,getot03
 	ldir
 	exx
 	dec	b
@@ -559,6 +559,14 @@ donedrq:
 	or	a			; clear carry
 	ret
 
+;;
+;; Copy partition table at offset DE
+;;
+moveptable:
+	ld	hl,partbl
+	ld	bc,16*8
+	ldir
+	ret
 
 ;------------------------------------------------------------------
 ; Low Level 8 bit R/W to the drive controller. These are the routines

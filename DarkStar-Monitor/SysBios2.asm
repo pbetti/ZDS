@@ -28,6 +28,8 @@
 ; Common equates for BIOS/Monitor
 
 include Common.inc.asm
+include services.inc.asm
+
 
 	extern	delay, mmpmap, mmgetp, rldrom
 
@@ -60,6 +62,7 @@ include modules/floppy.inc.asm		; fd1771
 include modules/parcom.inc.asm		; parallel link
 include modules/clock.inc.asm		; ds1302
 include modules/cpmsupp.inc.asm		; CP/M support routines
+include modules/uzisupp.inc.asm		; UZI/FUZIX support routines
 include modules/math.inc.asm		; math support
 include modules/ide.inc.asm		; 8255 ide i/f
 include modules/eeprom.inc.asm		; eeprom

@@ -85,17 +85,17 @@ include services.inc.asm
 ; External symbols
 	extern	bbconout, bbconin, bbconst
 	extern	bbcrtcini, bbcrtfill, bbcurset, bbsetcrs
-	extern	bbfread, bbfhome, bbcpboot
+	extern	bbfread, bbfhome, bbcpmboot
 	extern	bbhdinit, bbdriveid, bbu0ini, bbu1ini
 	extern	bbuplchr, bbpsndblk, bbprcvblk
-	extern	bbprnchr, bbrdvdsk, bbvcpmbt
- 	extern	bbhdboot, bbsetdsr, bbgetdsr
+	extern	bbprnchr, bbrdvdsk, bbuziboot
+ 	extern	bbsetdsr, bbgetdsr, bbbooter
  	extern	bbeidck, bbldpart, bbsysint
 
  	extern	bbdsksel, bbdmaset, bbtrkset, bbsecset, bbhdrd
 
-	extern	delay, mmpmap, mmgetp
-	extern	intren, print, inline
+	extern	delay, mmpmap, mmgetp, bbgetcrs
+	extern	intren, print, inline, rpch
 
 ;-------------------------------------
 
@@ -173,7 +173,9 @@ mmursend:
 	ld	hl,boot
 	ld	($0067),hl
 	ld	a,$c9
-; 	ld	($0008),a
+	if not bbdebug
+	ld	($0008),a
+	endif
 	ld	($0038),a
 	ld	hl,cnfbyte		; enable XON protocol by default (UART0)
 	set	1,(hl)
@@ -275,6 +277,7 @@ onshadow:
 		;
 	call	bbcurset		; and cursor shape
 	;
+tosercns:
 	ld	c,ff			; if on serial
 	call	bbconout
 	ld	c,SI_LOGO		; display logo
@@ -369,13 +372,13 @@ isprog:	call	print
 	ld	h,15
 	ld	l,inicol
 	call	bbsetcrs
-	ld	d,55			; set test value
+	ld	d,055h			; set test value
 	ld	e,DSR_SCRATCH
 	call	bbsetdsr
 	ld	e,DSR_SCRATCH		; get test value
 	call	bbgetdsr
 	ld	a,d
-	cp	55			; ?
+	cp	055h			; ?
 	jr	nz,nokrtc
 	ld	hl,mrdy
 	jr	okrtc
@@ -395,68 +398,231 @@ okrtc:	call	print
 	call	inline
 	defb " READY ",0
 	call	revoff
+	; serial console by preference?
+	ld	a,(miobyte)
+	bit	5,a			; console type ?
+	jr	nz,jtoab		; serial already active
+	ld	e,DSR_CONSOLE		; get console setup
+	call	bbgetdsr
+	ld	a,d			; setup
+	cp	'S'			; serial wanted ?
+	jp	nz,jtoab		; no
+	call	inline
+	defb	cr,lf,lf,"On serial console",0
+	ld	hl,miobyte
+	set	5,(hl)			; switch serial
+	jp	tosercns
 	; finally start
+jtoab:
 	jp	autobot
 ;;
 ;; New code for direct access to bootloaders
 ;;
 bootm:
+	call	outcrlf
+	call	bbgetcrs		; save position
+	push	hl
+	ld	h,24			; and clear func line
+	ld	l,0
+	call	bbsetcrs
+	ld	c,ceol
+	call	bbconout
+	pop	hl
+	call	bbsetcrs
+	ld	de, 1000		; 1 sec.
+	call	delay
+	call	enautor
+dbootm:
 	ld	hl,(btpasiz)		; The same as USRCMD
 	ld	sp,hl
 	ld	hl,usrcmd
 	push	hl
-	ld	($0001),hl
-	ld	a,$c3
-	ld	($0000),a
 	;
-bmpro:
-	call	bbhdinit
-	call	bbldpart		; load partition table
-; 	ld	hl,mbmenu		; display the menu
-; 	call	print
-	call	inline
-	defb	"boot:",0
-	call	dogetcmd		; get user choice
-	push	af
-	call	outcrlf
-	pop	af
-	cp	cr			; go to monitor ?
-	jp	z,welcom		; yes
-	cp	'A'			; is  a valid drive ?
-	jp	m,bmpro			; no < A
-	cp	'Q'
-	jp	p,bmpro			; no > P
-	sub	'A'			; makes a number
-	ld	(fdrvbuf),a		; is valid: store in monitor buffer
-	ld	(cdisk),a		; and in CP/M buf
-	cp	'C'-'A'			; is floppy ?
-	jp	m,bbcpboot		; yes
-	cp	'O'-'A'			; is hard disk ?
-	jp	m,hdboot		; yes
+	call	bbbooter
+	jp	ucprompt
 
-	; ... fall through
-dovcpmb:
-	call	bbvcpmbt
-	jp	z,bldoffs+2
-	jr	blerr
+;;
+;; Auto boot
+;;
+autobot:
+	call	pfunlin			; prepare menu
+	call	disautor		; no autorepeat
 
-docpmb:
-	call	bbcpboot
-	jr	blerr
-hdboot:
-	call	bbhdboot
+	ld	e,DSR_VALID		; valid configuration ?
+	call	bbgetdsr
 	ld	a,d
+	cp	0aah
+	jr	z,doab			; yes
+ab01:
+	ld	h,21			; no, wait for user
+	ld	l,0
+	call	bbsetcrs
+	call	inline
+	defb	"Invalid setup, jump to monitor in ",0
+	ld	b,mondelay		; auto jump
+ab00:
+	ld	h,21			; no, wait for user
+	ld	l,34
+	call	bbsetcrs
+	ld	h,0
+	ld	l,b
+	ld	c,SI_B2D
+	ld	e,BD_ZERO+BD_2DIGIT
+	call	bbsysint
+
+	call	bbconst			; console status
+	jr	z,abdly			; no key, wait
+	ld	c,beep
+	call	bbconout
+	call	getcup
+	cp	'S'			; call setup
+	jp	z,csetup
+	cp	'B'			; boot options
+	jp	z,bootm
+	jp	ugreet			; default (like 'M')
+abdly:
+	ld	de, 1000		; 1 sec.
+	call	delay
+	djnz	ab00
+	jp	ugreet
+doab:
+	call	bbhdinit		; bring up, ide
+	call	bbldpart
+
+	ld	h,21			; autoboot
+	ld	l,0
+	call	bbsetcrs
+	call	inline
+	defb	"Boot ",0
+
+	ld	e,DSR_BOOTTYP
+	call	bbgetdsr
+	ld	a,d			; from ROM ?
+	cp	'R'
+	jr	z,brom
+
+	ld	e,DSR_OS
+	call	bbgetdsr
+	ld	a,d			; os type ?
+	cp	'U'
+	jr	z,bpart
+
+	call	inline
+	defb	"CP/M drive ",0		; boot drive
+	ld	e,DSR_DRIVE
+	call	bbgetdsr
+	ld	c,d
+	push	de
+	call	bbconout
+	call	bdelay
+	pop	de
+	ld	a,d
+	call	bbcpmboot
+	jp	ab01
+
+bpart:
+	call	inline
+	defb	"UZI partition ",0		; boot drive
+	ld	e,DSR_HDPART
+	call	bbgetdsr
+	ld	l,d
+	ld	h,0
+	ld	c,SI_B2D
+	ld	e,BD_ZERO+BD_2DIGIT
+	call	bbsysint
+	call	bdelay
+	call	bbuziboot
+	jp	ab01
+
+brom:
+	ld	c,SI_ROMBOOT
+	call	bbsysint
+	jp	ab01
+
+csetup:
+	ld	c,cron
+	call	bbconout
+	ld	de, 1000		; 1 sec.
+	call	delay
+	call	enautor			; reenable autorepeat
+	ld	c,SI_SETUP
+	call	bbsysint
+	ld	c,2
+	call	bbconout		; restore normal input
 	or	a
-	jr	nz,nobler
-	ld	hl,mhderr
-	jr	pberr
-blerr:
-	ld	hl,mbterr
-	jr	pberr
-nobler:
-	ld	hl,mbtnbl
-pberr:	call	print
-	jr	bootm
+	jp	z,boot			; reboot
+	jp	ugreet			; setup aborted
+
+;;
+;; boot delayer
+;;
+bdelay:
+	call	inline
+	defb	" in ",0
+	call	bbgetcrs
+	ld	(0100h),hl
+	ld	e,DSR_DELAY		; how long?
+	call	bbgetdsr
+	ld	b,d
+btdly:
+	ld	hl,(0100h)
+	call	bbsetcrs
+	ld	h,0
+	ld	l,b
+	ld	c,SI_B2D
+	ld	e,BD_ZERO+BD_2DIGIT
+	call	bbsysint
+
+	call	bbconst			; console status
+	jr	z,btdly0		; user start
+	ld	c,beep
+	call	bbconout
+	call	getcup
+	pop	de
+	cp	'S'			; call setup
+	jp	z,csetup
+	cp	'B'			; boot options
+	jp	z,bootm
+	jp	ugreet			; otherwise...
+btdly0:
+	ld	de, 1000		; 1 sec.
+	call	delay
+	djnz	btdly
+	ret
+
+;;
+;; paint function select line
+;;
+pfunlin:
+	ld	c,crof
+	call	bbconout
+	ld	h,24
+	ld	l,0
+	call	bbsetcrs
+	ld	c,ceol
+	call	bbconout
+	ld	c,' '
+	ld	b,22
+	call	rpch
+	call	revon
+	call	inline
+	defb	" M ",0
+	call	revoff
+	call	inline
+	defb	" Monitor  ",0
+	call	revon
+	call	inline
+	defb	" S ",0
+	call	revoff
+	call	inline
+	defb	" Setup  ",0
+	call	revon
+	call	inline
+	defb	" B ",0
+	call	revoff
+	call	inline
+	defb	" Boot",0
+	ret
 
 ;;
 ;; Display command help
@@ -504,7 +670,7 @@ dsuok:	ld	hl,mrdy
 	ret
 
 ;;
-;; Print string fro IDE buffer
+;; Print string from IDE buffer
 ;;
 hdbufprn:
 	inc	hl		;Text is low byte high byte format
@@ -547,8 +713,6 @@ bbnksiz1:
 	defb	"256k",0
 	ret
 
-
-
 ;;
 ;; USRCMD - display prompt and process user commands
 ;;
@@ -562,8 +726,10 @@ ugreet:
 	call	print
 	call	inline
 	defb	"Press <H> for help",0
+	ld	de, 1000		; 1 sec.
+	call	delay
+	call	enautor			; reenable autorepeat
 welcom:
-; 	call	outcrlf
 	jr	usrcmd
 ucprompt:
 	ld	hl,urestr		; reject string
@@ -594,68 +760,8 @@ usrcmd:
 	ld	l,a
 	jp	(hl)
 
-;;
-;; Auto boot
-;;
-autobot:
-	call	pfunlin			; prepare menu
-
-	ld	e,DSR_VALID		; valid configuration ?
-	call	bbgetdsr
-	cp	0aah
-	jr	z,doab			; yes
-	ld	h,21			; no, wait for user
-	ld	l,0
-	call	bbsetcrs
-	call	inline
-	defb	"Invalid setup, waiting your action",0
-ab00:
-	call	getcup
-	cp	'M'			; monitor
-	jp	z,ugreet
-	cp	'S'			; call setup
-	jp	z,ugreet
-	cp	'B'			; boot options
-	jp	z,ugreet
-	jr	ab00			; bad sel.
-doab:
-	ret
-
-;;
-;; paint function select line
-;;
-pfunlin:
-	ld	c,crof
-	call	bbconout
-	ld	h,24
-	ld	l,0
-	call	bbsetcrs
-	ld	c,ceol
-	call	bbconout
-	ld	c,' '
-	ld	b,24
-	call	rpch
-	call	revon
-	call	inline
-	defb	" M ",0
-	call	revoff
-	call	inline
-	defb	" Monitor  ",0
-	call	revon
-	call	inline
-	defb	" S ",0
-	call	revoff
-	call	inline
-	defb	" Setup  ",0
-	call	revon
-	call	inline
-	defb	" B ",0
-	call	revoff
-	call	inline
-	defb	" Boot",0
-	ret
-
 ;.......................................
+
 
 ;;
 ;; Echo input
@@ -857,6 +963,7 @@ mdp4:	call	bbconout
 mdp1:	sub	e
 	call	dmpalib
 	jr	mdp7
+
 ;;
 ;; DMPALIB - beginning align (spacing) for a memdump
 dmpalib:
@@ -956,98 +1063,13 @@ rwm00:
 	jr	z,rwm01
 	jr	rwm00
 
-ouradd	equ	$9000
-
 ;;
-;; MEMTEST - test ram region
+;; MEMTCHK - test ram available
 ;;
-memtest:
-	pop	hl			; Identify our page
-	push	hl
-	ld	a,h
-	and	$f0			; logical page
-	ld	b,a			; on B
-	rrc	b			; move on low nibble
-	rrc	b
-	rrc	b
-	rrc	b
-	call	mmgetp			; physical page in A
-	ld	(ouradd),a
-
-	call	outcrlf
-	ld	e,0			; page count
-	ld	c,mmuport
-	ld	b,$80			; test page
-etloop:
-	out	(c),e
-	push	de
-	ld	hl,$8000
-	ld	de,$8fff
-mtnxt:	ld	a,(hl)
-	push	af
-	cpl
-	ld	(hl),a
-	xor	(hl)
-	call	nz,mterr
-	pop	af
-	ld	(hl),a
-	call	chkeor
-	jr	c,etpage
-	jr	mtnxt
-mterr:
-	pop	de
-	exx
-	call	outcrlf
-	exx
-	ld	a,e
-	exx
-	call	h2anib
-	call	spacer
-	exx
-	ld	e,a
-	call	crlfh2ab
-	call	bindisp
-	jr	etexi
-etpage:
-	pop	de
-etpag1:	inc	e
-	ld	a,e
-	call	etprpg
-	ld	a,(ouradd)
-	cp	e
-	jr	z,etpag1
-	ld	a,(hmempag)
-	cp	e
-	jr	nz,etloop
-	call	outcrlf
-
-etexi:	ld	e,$08		; reset page
-	ld	c,mmuport
-	ld	b,$80
-	out	(c),e
-	ret
-
-etprpg:
-	push	bc
-	push	de
-	push	hl
-	ld	hl,$0000
-	ld	de,$0004
-	inc	a
-	ld	b,a
-etprpg1:
-	add	hl,de
-	djnz	etprpg1
-	ld	c,SI_B2D
-	ld	e,BD_ZERO
+memchk:
+	ld	c,SI_MEMTEST
 	call	bbsysint
-	ld	c,cr
-	call	bbconout
-	pop	hl
-	pop	de
-	pop	bc
 	ret
-
 ;;
 ;; BINDISP - display E in binary form
 ;
@@ -1104,7 +1126,7 @@ chkeor:
 ;
 ;; User command reject string
 urestr:
-	db	" **",0
+	db	" **",02h,0
 ;
 ;; TOGGLEIO - toggle i/o on video/serial
 toggleio:
@@ -1148,9 +1170,10 @@ mathhlde:
 ;; Select rom image and run immediately
 ;;
 selrom:
-	ret
 	ld	c,SI_ROMSEL
 	call	bbsysint
+	or	a
+	ret	nz
 	ld	e,l
 	ld	c,SI_ROMRUN
 	call	bbsysint
@@ -1303,14 +1326,6 @@ askto:
 	ret
 
 ;;
-;; repeat chr C, B times
-;;
-rpch:
-	call	bbconout
-	djnz	rpch
-	ret
-
-;;
 ;; revon shortcut
 ;;
 revon:
@@ -1328,15 +1343,48 @@ revoff:
 	call	bbsysint
 	ret
 
-
-
+;;
+;; Call debugger (hide)
+;;
 godebug:
+	ld	a,(9000h)
+	cp	22h
+	ret	nz
 	jp	9000h
+
+;;
+;; clear screen
+;;
+cls:
+	ld	c,ff
+	call	bbconout
+	ret
+
+;;
+;; disable keyboard autorepeat
+;;
+disautor:
+	push	hl
+	ld	hl,miobyte
+	set	1,(hl)
+	pop	hl
+	ret
+
+;;
+;; enable keyboard autorepeat
+;;
+enautor:
+	push	hl
+	ld	hl,miobyte
+	res	1,(hl)
+	pop	hl
+	ret
+
 ;-----------------------------------------------------------------------
 
 ucmdtab:
 	defw	toggleio	; (A) alternate serial/video i/o
-	defw	bootm		; (B) boot menu
+	defw	dbootm		; (B) boot menu
 	defw	mathhlde	; (C) sum & subtract HL, DE
 	defw	memdump		; (D) dump memory
 	defw	kecho		; (E) keyboard echo
@@ -1346,7 +1394,7 @@ ucmdtab:
 	defw	portin		; (I) port input
 	defw	ucprompt	; (J) n/a
 	defw	boot		; (K) restart system
-	defw	ucprompt	; (L) n/a
+	defw	cls		; (L) n/a
 	defw	memmove		; (M) move memory block
 	defw	ucprompt	; (N) n/a
 	defw	portout		; (O) output to a port
@@ -1354,16 +1402,16 @@ ucmdtab:
 	defw	ucprompt	; (Q) n/a
 	defw	selrom		; (R) select rom image
 	defw	rwmem		; (S) alter memory
-	defw	memtest		; (T) test ram region
-	defw	pupload		; (U) parallel Upload
+	defw	memchk		; (T) test ram region
+	defw	pupload		; (U) parallel upload
 	defw	memcomp		; (V) compare mem blocks
-	defw	pdnload		; (W) parallel DoWnload
-	defw	godebug		; (X) n/a
+	defw	pdnload		; (W) parallel Download
+	defw	godebug		; (X) go debugger (hide)
 	defw	ucprompt	; (Y) n/a
-	defw	ucprompt	; (Z) n/a
+	defw	csetup		; (Z) n/a
 ;;
 
-mhelp:	defb	cr,lf,lf
+mhelp:	defb	cr,lf
 	defb	"A - Alternate console",cr,lf
 	defb	"B - Boot menu",cr,lf
 	defb	"C - HL/DE sum, subtract",cr,lf
@@ -1373,7 +1421,8 @@ mhelp:	defb	cr,lf,lf
 	defb	"G - Go to execute address",cr,lf
 	defb	"H - This help",cr,lf
 	defb	"I - Input from port",cr,lf
-	defb	"K - Reinit system",cr,lf
+	defb	"K - Soft reset",cr,lf
+	defb	"L - Clear screen",cr,lf
 	defb	"M - Move memory",cr,lf
 	defb	"O - Output to port",cr,lf
 	defb	"R - Select ROM image",cr,lf
@@ -1381,7 +1430,8 @@ mhelp:	defb	cr,lf,lf
 	defb	"T - Test ram",cr,lf
 	defb	"U - Upload from parallel",cr,lf
 	defb	"V - Compare memory",cr,lf
-	defb	"W - Download to parallel"
+	defb	"W - Download to parallel",cr,lf
+	defb	"Z - Setup"
 	defb	cr,lf,0
 ;;
 sdlpr:	defb	"Download",':',0
@@ -1422,13 +1472,8 @@ msysres:
 	defb	"Real Time Clock......: ",cr,lf
 	defb	0
 
-mhderr:	defb	"No Volume, "
-mbterr:	defb	"Boot error!",cr,lf,0
-mbtnbl:	defb	"No bootloader!",cr,lf,0
-
 ;-------------------------------------
 ; Needed modules
-
 
 ;-------------------------------------
 bmfillo:

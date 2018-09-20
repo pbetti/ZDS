@@ -16,6 +16,8 @@ include	services.inc.asm
 	extern	bbconin, bbconout, rldrom
 	extern	inline, print
 	extern	bbsetcrs, bbgetcrs
+	extern	bbgetdsr, bbsetdsr
+	extern	rpch, bbdbox, bbldpart, bbmvpart
 
 	dseg
 
@@ -33,11 +35,13 @@ sysbid3:
 srvtab:
 	defw	logo		; 1 See called service for description...
 	defw	veffect		; 2
-	defw	voidsrv		; 3
+	defw	memtest		; 3
 	defw	sysedt		; 4
 	defw	romsel		; 5
 	defw	romrun		; 6
 	defw	bin2dec		; 7
+	defw	zsetup		; 8
+	defw	romboot		; 9
 
 srvtbe	equ	$
 srvtlen	equ	(srvtbe-srvtab)/2
@@ -248,6 +252,8 @@ sysede:
 	ld	hl,0			; in non str mode return on hl
 	ld	de,iedtbuf		; from buffer
 	ld	a,(secnt)
+	or	a
+	jr	z,seex00		; null input
 	ld	b,a
 	cp	4
 	jr	c,sysede0
@@ -389,6 +395,7 @@ serfrs1:
 	inc	hl
 	inc	de
 	djnz	serfrs0
+	ld	(sebloc),hl
 	jr	serfrs3
 serfrs4:
 	ld	(sebloc),hl
@@ -516,6 +523,19 @@ romask:
 	;
 romexi:
 	ld	(hlsav),hl
+	; copy rom name at 0200h for setup utiity
+	push	hl
+	push	iy			; iy -> hl
+	pop	hl
+	ld	b,0
+	ld	c,(hl)			; bc = fld length
+	inc	hl			; name start
+	inc	hl
+	ld	de,0200h		; destination
+	ldir				; go
+	ld	(hl),0
+	pop	hl
+	;
 	call	rrestp
 	ret
 	;
@@ -711,6 +731,10 @@ bin2dec:
 	ld	hl,(hlsav)
 	call	asciihl			; convert to buffer
 	ld	de,(desav)
+	exx
+	ld	de,(desav)		; de also on alternate
+	exx
+	res	7,e			; strip 2 digit option
 	inc	e
 	dec	e
 	jr	z,prdhlz
@@ -749,10 +773,19 @@ prdhlnz:
 	xor	a
 	dec	a
 prdhl0:
+	exx
+	bit	7,e			; two digit active ?
+	exx
+	jr	z,prdhl3
+	ld	hl,hl2dbuf+3
+	ld	b,1
+	jr	prdhl4
+prdhl3:
 	ld	hl,hl2dbuf
+	ld	b,4
+prdhl4:
 	or	a
 	jr	z,prdhl1
-	ld	b,4
 prdhl2:
 	ld	a,(hl)
 	cp	'0'
@@ -763,6 +796,602 @@ prdhl1:
 	call	print
 	ret
 
+msyset:
+	defb	" System Setup ",0
+eoma	equ	$
+dsrcpy	equ	0100h			; dsr copy space
+stpcol	equ	11			; cursor column
+
+zsdraw:	defb	0			; >0 = draw only
+zsrepa:	defb	0			; >0 = repaint whole screen
+
+;;
+;; System setup
+;;
+zsetup:
+	ld	c,ff
+	call	bbconout		; clear screen
+	ld	c,01h			; force uppercase input
+	call	bbconout
+	ld	h,1
+	ld	l,(80-(eoma-msyset))/2	; paint head
+	call	bbsetcrs
+	ld	e,EF_REVON
+	call	iveff
+	ld	hl,msyset
+	call	print
+	ld	e,EF_REVOFF
+	call	iveff
+	call	crlf
+	call	crlf
+
+	ld	e,EF_UNDRON		; General
+	call	iveff
+	call	inline
+	defb	" General ",0
+	ld	e,EF_UNDROFF
+	call	iveff
+	call	inline
+	defb	cr,lf,lf
+	defb	"Boot Type:     <D>rive <R>om"
+	defb	cr,lf,lf
+	defb	"Console  :     <C>rt <S>erial"
+	defb	cr,lf,lf
+	defb	"Delay    :     <0-99> seconds"
+	defb	cr,lf,lf,0
+
+	ld	e,EF_UNDRON		; Volume, if boot = Drive
+	call	iveff
+	call	inline
+	defb	" Drive boot ",0
+	ld	e,EF_UNDROFF
+	call	iveff
+	call	inline
+	defb	cr,lf,lf
+	defb	"OS Type  :     <C>pm like <U>zi like"
+	defb	cr,lf,lf
+	defb	"Drive    :     <A-B> floppy <C-N> HD <O-P> virtual"
+	defb	cr,lf,lf
+	defb	"Partition:"
+	defb	cr,lf,lf,0
+
+	ld	e,EF_UNDRON		; ROM image, if boot = ROM
+	call	iveff
+	call	inline
+	defb	" ROM boot ",0
+	ld	e,EF_UNDROFF
+	call	iveff
+	call	inline
+	defb	cr,lf,lf
+	defb	"ROM Id   :     any key to select",0fh
+	defb	0
+
+	; setup data
+	ld	a,(zsrepa)		; in repaint?
+	or	a
+	jr	nz,zsdata
+
+	call	lddsr			; copy dsr to buf
+
+	ld	a,(dsrcpy+DSR_VALID)	; check for valid setup
+	cp	0aah
+	call	nz,zsclr		; no, clear buf
+zsdata:
+	xor	a			; unact. action string
+	call	zspro
+
+	xor	a			; display setup
+	dec	a
+	ld	(zsdraw),a
+	call	aboo			; call itself
+	xor	a
+	ld	(zsdraw),a		; done
+
+	ld	a,(zsrepa)		; in repaint?
+	or	a
+	ret	nz			; yes, ret
+
+aboo:					; boot type
+	ld	h,5			; in place
+	ld	l,stpcol
+	call	bbsetcrs
+	ld	hl,dsrcpy+DSR_BOOTTYP
+	ld	a,(zsdraw)		; draw only ?
+	or	a
+	call	nz,zspch		; display
+	jr	nz,acon			; and skip
+	ld	d,1
+	ld	e,SE_STR+SE_EXTSTR
+	call	zsedt
+	ld	a,(iedtbuf)
+	cp	'R'
+	jr	z,aboox
+	cp	'D'
+	jr	z,aboox
+	call	seign
+	jr	aboo
+aboox:
+	ld	(dsrcpy+DSR_BOOTTYP),a	; exit status
+acon:					; console type
+	ld	h,7			; in place
+	ld	l,stpcol
+	call	bbsetcrs
+	ld	hl,dsrcpy+DSR_CONSOLE
+	ld	a,(zsdraw)		; draw only ?
+	or	a
+	call	nz,zspch		; display
+	jr	nz,adel			; and skip
+	ld	d,1
+	ld	e,SE_STR+SE_EXTSTR
+	call	zsedt
+	ld	a,(iedtbuf)
+	cp	'C'
+	jr	z,aconx
+	cp	'S'
+	jr	z,aconx
+	call	seign
+	jr	acon
+aconx:
+	ld	(dsrcpy+DSR_CONSOLE),a	; exit status
+
+adel:					; boot delay
+	ld	h,9			; in place
+	ld	l,stpcol
+	call	bbsetcrs
+	ld	hl,dsrcpy+DSR_DELAY
+	ld	a,(zsdraw)		; draw only ?
+	or	a
+	jr	z,adele			; no continue
+	ld	a,(hl)
+	call	dispa
+	jr	adelx
+adele:
+	ld	d,2
+	ld	e,SE_DEC+SE_EXTSTR
+	call	zsdedt
+	ld	a,l
+	ld	(dsrcpy+DSR_DELAY),a	; exit status
+
+adelx:
+	ld	a,(dsrcpy+DSR_BOOTTYP)	; reload boot type
+	cp	'R'
+	jp	z,arom			; skip drive if rom boot
+
+aost:					; OS type
+	ld	h,13			; in place
+	ld	l,stpcol
+	call	bbsetcrs
+	ld	hl,dsrcpy+DSR_OS
+	ld	a,(zsdraw)		; draw only ?
+	or	a
+	call	nz,zspch		; display
+	jr	nz,adrv			; and skip
+	ld	d,1
+	ld	e,SE_STR+SE_EXTSTR
+	call	zsedt
+	ld	a,(iedtbuf)
+	cp	'C'
+	jr	z,aostx
+	cp	'U'
+	jr	z,aostx
+	call	seign
+	jr	aost
+aostx:
+	ld	(dsrcpy+DSR_OS),a	; exit status
+
+adrv:					; boot drive
+	ld	h,15			; in place
+	ld	l,stpcol
+	call	bbsetcrs
+	ld	hl,dsrcpy+DSR_DRIVE
+	ld	a,(zsdraw)		; draw only ?
+	or	a
+	call	nz,zspch		; display
+	jr	nz,apar			; and skip
+	ld	d,1
+	ld	e,SE_STR+SE_EXTSTR
+	call	zsedt
+	ld	a,(iedtbuf)
+	cp	'A'
+	jr	c,adrv0
+	cp	'U'
+	jr	nc,adrv0
+	jr	adrvx
+adrv0:
+	call	seign
+	jr	adrv
+adrvx:
+	ld	(dsrcpy+DSR_DRIVE),a	; exit status
+
+apar:
+	ld	h,3			; draw part. box
+	ld	l,54
+	ld	b,17
+	ld	c,20
+	ld	e,1
+	call	bbdbox
+	ld	h,3
+	ld	l,55
+	call	bbsetcrs
+	call	inline
+	defb	" HD Partitions ",0
+	call	bbldpart		; load partition table
+	ld	de,0200h
+	call	bbmvpart		; move where readable
+
+	ld	h,4
+	ld	l,56
+	call	bbsetcrs
+	call	inline
+	defb	"#  Active ID  Type",0
+	ld	e,16			; # partitions
+	ld	d,1
+	ld	h,5
+	ld	l,56
+	push	ix
+	ld	ix,0200h
+ppar:
+	push	hl
+	call	bbsetcrs
+	ld	a,d
+	call	dispa
+	inc	d
+	push	de
+	ld	c,' '
+	ld	b,3
+	call	rpch
+	ld	a,(ix+0)		; active
+	cp	'Y'
+	jr	nz,ppar0
+	call	inline
+	defb	"Yes",0
+	jr	ppar1
+ppar0:
+	call	inline
+	defb	"No ",0
+ppar1:
+	ld	c,' '
+	ld	b,3
+	call	rpch
+	ld	a,(ix+1)		; volid
+	or	a
+	jr	nz,ppar2
+	ld	a,' '
+ppar2:
+	ld	c,a
+	call	bbconout
+	ld	c,' '
+	ld	b,2
+	call	rpch
+	ld	a,(ix+2)		; type
+	call	zshdtyp
+	call	print
+	ld	de,8
+	add	ix,de
+	pop	de
+	pop	hl
+	inc	h
+	dec	e
+	jr	nz,ppar
+	pop	ix
+
+	ld	h,17			; in place
+	ld	l,stpcol
+	call	bbsetcrs
+	ld	hl,dsrcpy+DSR_HDPART
+	ld	a,(zsdraw)		; draw only ?
+	or	a
+	jr	z,apare			; no continue
+	ld	a,(hl)
+	call	dispa
+	jr	zsconf
+apare:
+	ld	d,2
+	ld	e,SE_DEC+SE_EXTSTR
+	call	zsedt
+	ld	a,l
+aparx:
+	ld	(dsrcpy+DSR_HDPART),a	; exit status
+	jr	zsconf			; yes
+
+arom:
+	ld	h,21			; in place
+	ld	l,stpcol
+	call	bbsetcrs
+	ld	hl,dsrcpy+DSR_ROMIMG
+	ld	a,(hl)
+	call	dispa
+	ld	a,(zsdraw)		; draw only ?
+	or	a
+	jr	nz,zsconf		; yes skip
+
+	call	bbconin
+	call	romsel
+
+	push	hl			; do screen
+	xor	a			; high a
+	dec	a
+	ld	(zsrepa),a		; call for repaint
+	call	zsetup
+	xor	a			; low a
+	ld	(zsrepa),a		; reset repaint
+	ld	h,21			; in place
+	ld	l,stpcol		; restore cursor
+	call	bbsetcrs
+	pop	hl
+
+	ld	a,l
+	ld	(dsrcpy+DSR_ROMIMG),a	; exit status
+
+	call	dispa
+	call	inline
+	defb	0fh, " - ",0		; clr to eol
+	ld	hl,0200h
+	call	print
+
+zsconf:
+	ld	a,(zsdraw)		; draw only ?
+	or	a
+	ret	nz			; yes, return
+
+	xor	a
+	dec	a
+	call	zspro			; save?
+
+zscfr:
+	call	bbconin
+	cp	'N'
+	jp	z,zsdata
+	cp	'Y'
+	jp	z,wrdsr
+	cp	'E'
+	jr	z,zsbye
+	call	seign			; wrong input
+	jr	zscfr
+zsbye:
+	xor	a
+	dec	a
+zsret:
+	ld	(asav),a
+
+	ret
+;
+; display data in draw mode
+zspch:
+	push	af
+	ld	c,(hl)
+	call	bbconout
+	pop	af
+	ret
+;
+; decode part. type
+zshdtyp:
+	ld	hl,mtcpm
+	cp	'2'
+	ret	z
+	cp	'3'
+	ret	z
+	cp	'C'
+	ret	z
+	cp	'T'
+	ret	z
+	ld	hl,mtuzi
+	cp	'U'
+	ret	z
+	ld	hl,mtdos
+	cp	'N'
+	ret	z
+	ld	hl,mtoth
+	cp	'O'
+	ret	z
+	ld	hl,mtnan
+	ret
+	;
+mtcpm:	defb	"CP/M",0
+mtuzi:	defb	"UZI",0
+mtdos:	defb	"NDOS",0
+mtoth:	defb	"OTHR",0
+mtnan:	defb	"N/A",0
+;
+; call editor, check for abort
+zsedt:
+	ld	a,(hl)
+	ld	(iedtbuf),a
+	call	isysed
+	or	a
+	ret	z			; ok
+	pop	de			; abort, delete our call
+	jr	zsbye
+;
+; call decimal editor, check for abort
+zsdedt:
+	push	de
+	ld	l,(hl)
+	ld	h,0
+	call	asciihl
+	ld	a,(hl2dbuf+3)
+	ld	(iedtbuf),a
+	ld	a,(hl2dbuf+4)
+	ld	(iedtbuf+1),a
+	pop	de
+	call	isysed
+	or	a
+	ret	z			; ok
+	pop	de			; abort, delete our call
+	jr	zsbye
+; setup exit prompt
+;
+zspro:
+	push	af
+	ld	h,23
+	ld	l,0
+	call	bbsetcrs
+	ld	c,$c1
+	ld	b,80
+	call	rpch
+	pop	af
+	or	a			; active ?
+	jr	z,zspro0		; no
+	ld	e,EF_REVON		; yes, reverse
+	call	iveff
+zspro0:
+	ld	h,23
+	ld	l,2
+	call	bbsetcrs
+	call	inline
+	defb	" Save? ",0
+	ld	e,EF_REVOFF		; clear effect
+	call	iveff
+	call	inline
+	defb	" <Y>es <N>o <E>xit ",0
+	ret
+;
+; load dsr copy
+lddsr:
+	ld	hl,dsrcpy		; temp buffer
+	ld	e,0			; index
+	ld	b,31			; 31 regs
+lddsr0:
+	call	bbgetdsr
+	ld	(hl),d
+	inc	hl
+	inc	e
+	djnz	lddsr0
+	ret
+;
+; write dsr copy and exit
+wrdsr:
+	ld	a,0aah			; validate config
+	ld	(dsrcpy+DSR_VALID),a
+
+	ld	hl,dsrcpy		; temp buffer
+	ld	e,0			; index
+	ld	b,31			; 31 regs
+wrdsr0:
+	ld	d,(hl)
+	call	bbsetdsr
+	inc	hl
+	inc	e
+	djnz	wrdsr0
+	xor	a
+	jp	zsret
+	;
+; clear dsr buffer
+zsclr:
+	ld	hl,dsrcpy		; temp buffer
+	xor	a			; index
+	ld	b,31			; 31 regs
+zsclr0:
+	ld	(hl),0
+	inc	hl
+	djnz	zsclr0
+	ret
+
+ouradd	equ	$9000
+
+
+;;
+;; MEMTEST - test ram region
+;;
+memtest:
+	pop	hl			; Identify our page
+	push	hl
+	ld	a,h
+	and	$f0			; logical page
+	ld	b,a			; on B
+	rrc	b			; move on low nibble
+	rrc	b
+	rrc	b
+	rrc	b
+	call	mmgetp			; physical page in A
+	ld	(ouradd),a
+
+	call	crlf
+	ld	e,0			; page count
+	ld	c,mmuport
+	ld	b,$80			; test page
+etloop:
+	out	(c),e
+	push	de
+	ld	hl,$8000
+	ld	de,$8fff
+mtnxt:	ld	a,(hl)
+	push	af
+	cpl
+	ld	(hl),a
+	xor	(hl)
+	call	nz,mterr
+	pop	af
+	ld	(hl),a
+; 	call	chkeor
+; 	jr	c,etpage
+	or	a
+	sbc	hl,de
+	add	hl,de
+	jr	nc,etpage
+	jr	mtnxt
+mterr:
+	pop	de
+	exx
+	call	crlf
+	exx
+	ld	a,e
+	exx
+	ld	e,BD_ZERO
+	call	bin2dec
+; 	call	h2anib
+; 	call	spacer
+	exx
+; 	ld	e,a
+; 	call	crlfh2ab
+; 	call	bindisp
+	jr	etexi
+etpage:
+	pop	de
+etpag1:	inc	e
+	ld	a,e
+	call	etprpg
+	ld	a,(ouradd)
+	cp	e
+	jr	z,etpag1
+	ld	a,(hmempag)
+	cp	e
+	jr	nz,etloop
+	call	crlf
+
+etexi:	ld	e,$08		; reset page
+	ld	c,mmuport
+	ld	b,$80
+	out	(c),e
+	ret
+
+etprpg:
+	push	bc
+	push	de
+	push	hl
+	ld	hl,$0000
+	ld	de,$0004
+	inc	a
+	ld	b,a
+etprpg1:
+	add	hl,de
+	djnz	etprpg1
+; 	ld	c,SI_B2D
+	ld	e,BD_ZERO
+; 	call	bbsysint
+	call	bin2dec
+	ld	c,cr
+	call	bbconout
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+;;
+;; boot from ROM
+;;
+romboot:
+	ret
 
 ;-------------------------------------
 ; Needed modules

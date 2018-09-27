@@ -28,7 +28,7 @@ SRCS="systran \
 		rm -rf $ut.lst
 	done
 
-	/bin/bash -c "cd ../MultiF-Board/IDE/fdisk; make"
-	cp -f ../MultiF-Board/IDE/fdisk/fdisk.bin fdisk.com
+	/bin/bash -c "cd fdisk; make"
+	cp -f fdisk/fdisk.com .
 
 #

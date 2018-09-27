@@ -1,70 +1,21 @@
-EESchema Schematic File Version 2
-LIBS:MultiF-Board-rescue
-LIBS:power
-LIBS:device
-LIBS:transistors
-LIBS:conn
-LIBS:linear
-LIBS:regul
-LIBS:74xx
-LIBS:cmos4000
-LIBS:adc-dac
-LIBS:memory
-LIBS:xilinx
-LIBS:microcontrollers
-LIBS:dsp
-LIBS:microchip
-LIBS:analog_switches
-LIBS:motorola
-LIBS:texas
-LIBS:intel
-LIBS:audio
-LIBS:interface
-LIBS:digital-audio
-LIBS:philips
-LIBS:display
-LIBS:cypress
-LIBS:siliconi
-LIBS:opto
-LIBS:atmel
-LIBS:contrib
-LIBS:valves
-LIBS:00N8VEM
-LIBS:national
-LIBS:national-2
-LIBS:o_intel
-LIBS:oldchips
-LIBS:o_memory
-LIBS:opendous
-LIBS:o_ttl
-LIBS:o_zilog
-LIBS:29le010
-LIBS:crystal
-LIBS:pinhead
-LIBS:74ls-sergey
-LIBS:controllers-sergey
-LIBS:dallas-rtc
-LIBS:devices-sergey
-LIBS:intel-8xxx
-LIBS:memory-sergey
-LIBS:mmu_gal
+EESchema Schematic File Version 4
 LIBS:MultiF-Board-cache
-EELAYER 25 0
+EELAYER 26 0
 EELAYER END
 $Descr A3 16535 11693
 encoding utf-8
 Sheet 1 1
 Title "MultiF-Board"
-Date "22 sep 2014"
-Rev "2.0"
+Date "2018-09-26"
+Rev "2.1"
 Comp ""
 Comment1 "pbetti@lpconsul.net"
-Comment2 "by Piergiorgio Betti - 2014"
+Comment2 "by Piergiorgio Betti - 2014-2018"
 Comment3 "Extended RAM/ROM, IDE and Serial Interface"
 Comment4 ""
 $EndDescr
 $Comp
-L PINHD-1X24 JPB1
+L MultiF-Board-rescue:PINHD-1X24 JPB1
 U 1 1 535944CA
 P 750 5000
 F 0 "JPB1" H 500 6225 50  0000 L BNN
@@ -75,7 +26,7 @@ F 3 "" H 750 5000 60  0000 C CNN
 	-1   0    0    -1  
 $EndComp
 $Comp
-L PINHD-1X24 JPA1
+L MultiF-Board-rescue:PINHD-1X24 JPA1
 U 1 1 5359460E
 P 750 1850
 F 0 "JPA1" H 500 3075 50  0000 L BNN
@@ -102,7 +53,7 @@ D1
 Text GLabel 1150 6200 2    60   BiDi ~ 0
 D0
 $Comp
-L 74LS244 U5
+L MultiF-Board-rescue:74LS244 U5
 U 1 1 535A6855
 P 2600 5550
 F 0 "U5" H 2650 5350 60  0000 C CNN
@@ -113,7 +64,7 @@ F 3 "~" H 2600 5550 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 74LS244 U4
+L MultiF-Board-rescue:74LS244 U4
 U 1 1 535A687E
 P 2600 4000
 F 0 "U4" H 2650 3800 60  0000 C CNN
@@ -124,7 +75,7 @@ F 3 "~" H 2600 4000 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR01
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR01
 U 1 1 535A69D6
 P 1900 6300
 F 0 "#PWR01" H 1900 6300 30  0001 C CNN
@@ -135,7 +86,7 @@ F 3 "" H 1900 6300 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR02
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR02
 U 1 1 535A69E5
 P 1900 4650
 F 0 "#PWR02" H 1900 4650 30  0001 C CNN
@@ -181,7 +132,7 @@ NoConn ~ 1200 750
 NoConn ~ 1200 850 
 NoConn ~ 1200 950 
 $Comp
-L -12V #PWR5
+L MultiF-Board-rescue:-12V #PWR5
 U 1 1 535A7B8F
 P 1450 2350
 F 0 "#PWR5" H 1450 2480 20  0001 C CNN
@@ -192,7 +143,7 @@ F 3 "" H 1450 2350 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L +5V #PWR03
+L MultiF-Board-rescue:+5V #PWR03
 U 1 1 535A7BFD
 P 1300 1950
 F 0 "#PWR03" H 1300 2040 20  0001 C CNN
@@ -203,7 +154,7 @@ F 3 "" H 1300 1950 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR04
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR04
 U 1 1 535A7C0C
 P 1300 2100
 F 0 "#PWR04" H 1300 2100 30  0001 C CNN
@@ -214,7 +165,7 @@ F 3 "" H 1300 2100 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 74LS244 U3
+L MultiF-Board-rescue:74LS244 U3
 U 1 1 535A7C2A
 P 2600 2750
 F 0 "U3" H 2650 2550 60  0000 C CNN
@@ -225,7 +176,7 @@ F 3 "~" H 2600 2750 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR05
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR05
 U 1 1 535A7C39
 P 1900 3350
 F 0 "#PWR05" H 1900 3350 30  0001 C CNN
@@ -236,7 +187,7 @@ F 3 "" H 1900 3350 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L +12V #PWR06
+L MultiF-Board-rescue:+12V #PWR06
 U 1 1 535A8003
 P 1400 2250
 F 0 "#PWR06" H 1400 2200 20  0001 C CNN
@@ -271,7 +222,7 @@ NoConn ~ 1200 1650
 Text Notes 1200 1700 0    60   ~ 0
 /BUSAK
 $Comp
-L VCC #PWR07
+L MultiF-Board-rescue:VCC #PWR07
 U 1 1 535A94C5
 P 1450 1950
 F 0 "#PWR07" H 1450 2050 30  0001 C CNN
@@ -282,7 +233,7 @@ F 3 "" H 1450 1950 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L MMU_GAL U10
+L MultiF-Board-rescue:MMU_GAL U10
 U 1 1 535A9722
 P 5100 5350
 F 0 "U10" H 4950 5800 60  0000 C CNN
@@ -323,7 +274,7 @@ A6
 Text Label 5450 5050 0    60   ~ 0
 +5V
 $Comp
-L 7489 U12
+L MultiF-Board-rescue:7489 U12
 U 1 1 535A9EB9
 P 6600 6150
 F 0 "U12" H 6650 5650 60  0000 C CNN
@@ -334,7 +285,7 @@ F 3 "" H 6300 6400 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 7489 U11
+L MultiF-Board-rescue:7489 U11
 U 1 1 535A9EC8
 P 6600 4950
 F 0 "U11" H 6650 4450 60  0000 C CNN
@@ -387,7 +338,7 @@ D6
 Text Label 7150 6500 0    60   ~ 0
 D7
 $Comp
-L 74LS240 U16
+L MultiF-Board-rescue:74LS240 U16
 U 1 1 535AA4B4
 P 8450 5500
 F 0 "U16" H 8500 5300 60  0000 C CNN
@@ -398,7 +349,7 @@ F 3 "~" H 8450 5500 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR08
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR08
 U 1 1 535AAAA8
 P 7750 6200
 F 0 "#PWR08" H 7750 6200 30  0001 C CNN
@@ -425,7 +376,7 @@ MA13
 Text Label 9700 5000 0    60   ~ 0
 MA12
 $Comp
-L 74LS244 U15
+L MultiF-Board-rescue:74LS244 U15
 U 1 1 535AB231
 P 8300 4100
 F 0 "U15" H 8350 3900 60  0000 C CNN
@@ -456,7 +407,7 @@ D6
 Text Label 7600 3600 2    60   ~ 0
 D7
 $Comp
-L 29EE020 U25
+L MultiF-Board-rescue:29EE020 U25
 U 1 1 535BB815
 P 12450 1950
 F 0 "U25" H 12450 2050 60  0000 C CNN
@@ -635,7 +586,7 @@ Text Label 8050 2850 2    60   ~ 0
 Text Label 8050 2950 2    60   ~ 0
 /MWE
 $Comp
-L SRAM_512K U18
+L MultiF-Board-rescue:SRAM_512K U18
 U 1 1 535BB7EB
 P 8750 1950
 F 0 "U18" H 8750 2050 60  0000 C CNN
@@ -674,7 +625,7 @@ D4
 Text Label 4400 4000 2    60   ~ 0
 D5
 $Comp
-L 74LS245 U9
+L MultiF-Board-rescue:74LS245 U9
 U 1 1 535E59A0
 P 5100 4000
 F 0 "U9" H 5200 4575 60  0000 L BNN
@@ -709,7 +660,7 @@ MD6
 Text Label 5800 4200 0    60   ~ 0
 MD7
 $Comp
-L MEM_GAL U23
+L MultiF-Board-rescue:MEM_GAL U23
 U 1 1 535E53B7
 P 11350 4600
 F 0 "U23" H 11200 5050 60  0000 C CNN
@@ -788,7 +739,7 @@ PA1
 Text Label 3000 7750 2    60   ~ 0
 PA0
 $Comp
-L 8255 U2
+L MultiF-Board-rescue:8255 U2
 U 1 1 535E6E03
 P 1900 9000
 F 0 "U2" H 1900 9050 60  0000 C CNN
@@ -801,7 +752,7 @@ $EndComp
 Text Label 4800 8150 2    60   ~ 0
 PA7
 $Comp
-L R-RESCUE-MultiF-Board R3
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R3
 U 1 1 535E6E0A
 P 4150 8150
 F 0 "R3" V 4230 8150 50  0000 C CNN
@@ -812,7 +763,7 @@ F 3 "" H 4150 8150 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L 74LS14 U1
+L MultiF-Board-rescue:74LS14 U1
 U 4 1 535E6E10
 P 4000 9850
 F 0 "U1" H 3950 9700 60  0000 C CNN
@@ -823,7 +774,7 @@ F 3 "" H 4000 9850 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L VCC #PWR09
+L MultiF-Board-rescue:VCC #PWR09
 U 1 1 535E6E16
 P 3800 7850
 F 0 "#PWR09" H 3800 7950 30  0001 C CNN
@@ -834,7 +785,7 @@ F 3 "" H 3800 7850 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 74LS14 U1
+L MultiF-Board-rescue:74LS14 U1
 U 6 1 535E6E1C
 P 4000 10650
 F 0 "U1" H 3950 10500 60  0000 C CNN
@@ -845,7 +796,7 @@ F 3 "" H 4000 10650 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 74LS14 U1
+L MultiF-Board-rescue:74LS14 U1
 U 2 1 535E6E22
 P 4000 9050
 F 0 "U1" H 3950 8900 60  0000 C CNN
@@ -856,7 +807,7 @@ F 3 "" H 4000 9050 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L R-RESCUE-MultiF-Board R7
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R7
 U 1 1 535E6E28
 P 5400 8550
 F 0 "R7" V 5480 8550 50  0000 C CNN
@@ -867,7 +818,7 @@ F 3 "" H 5400 8550 60  0001 C CNN
 	0    1    1    0   
 $EndComp
 $Comp
-L CONN_2 P4
+L MultiF-Board-rescue:CONN_2 P4
 U 1 1 535E6E2E
 P 6700 8450
 F 0 "P4" V 6650 8450 40  0000 C CNN
@@ -878,7 +829,7 @@ F 3 "" H 6700 8450 60  0001 C CNN
 	1    0    0    1   
 $EndComp
 $Comp
-L R-RESCUE-MultiF-Board R4
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R4
 U 1 1 535E6E34
 P 4150 8350
 F 0 "R4" V 4230 8350 50  0000 C CNN
@@ -889,7 +840,7 @@ F 3 "" H 4150 8350 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L VCC #PWR010
+L MultiF-Board-rescue:VCC #PWR010
 U 1 1 535E6E3A
 P 5050 7750
 F 0 "#PWR010" H 5050 7850 30  0001 C CNN
@@ -899,25 +850,12 @@ F 3 "" H 5050 7750 60  0001 C CNN
 	1    5050 7750
 	1    0    0    -1  
 $EndComp
-Text Label 6750 7850 2    60   ~ 0
-IDE_VCC
-$Comp
-L JUMPER JP3
-U 1 1 535E6E41
-P 5450 7850
-F 0 "JP3" H 5450 8000 60  0000 C CNN
-F 1 "IDE_VCC" H 5450 7770 40  0000 C CNN
-F 2 "Pin_Headers:Pin_Header_Straight_1x02" H 5450 7850 60  0001 C CNN
-F 3 "" H 5450 7850 60  0001 C CNN
-	1    5450 7850
-	1    0    0    -1  
-$EndComp
 NoConn ~ 6750 10350
 NoConn ~ 6750 10450
 NoConn ~ 5150 10350
 NoConn ~ 5150 10150
 $Comp
-L 74LS14 U1
+L MultiF-Board-rescue:74LS14 U1
 U 3 1 535E6E51
 P 4000 9450
 F 0 "U1" H 3950 9300 60  0000 C CNN
@@ -928,7 +866,7 @@ F 3 "" H 4000 9450 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 74LS14 U1
+L MultiF-Board-rescue:74LS14 U1
 U 5 1 535E6E57
 P 4000 10250
 F 0 "U1" H 3950 10100 60  0000 C CNN
@@ -939,7 +877,7 @@ F 3 "" H 4000 10250 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L LED-RESCUE-MultiF-Board D1
+L MultiF-Board-rescue:LED-RESCUE-MultiF-Board D1
 U 1 1 535E6E5E
 P 5950 8150
 F 0 "D1" H 5950 8250 50  0000 C CNN
@@ -952,7 +890,7 @@ $EndComp
 Text Label 6750 8150 2    60   ~ 0
 ~ACTIVE
 $Comp
-L R-RESCUE-MultiF-Board R6
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R6
 U 1 1 535E6E65
 P 5400 8150
 F 0 "R6" V 5480 8150 50  0000 C CNN
@@ -1043,7 +981,7 @@ PA7
 Text Label 5150 8850 0    60   ~ 0
 ~PC7
 $Comp
-L GND-RESCUE-MultiF-Board #PWR011
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR011
 U 1 1 535E6E93
 P 3800 8650
 F 0 "#PWR011" H 3800 8650 30  0001 C CNN
@@ -1056,7 +994,7 @@ $EndComp
 Text Label 4800 7950 2    60   ~ 0
 ~DMACK
 $Comp
-L R-RESCUE-MultiF-Board R2
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R2
 U 1 1 535E6E9A
 P 4150 7950
 F 0 "R2" V 4230 7950 50  0000 C CNN
@@ -1069,7 +1007,7 @@ $EndComp
 Text Label 4800 8550 2    60   ~ 0
 DMARQ
 $Comp
-L R-RESCUE-MultiF-Board R5
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R5
 U 1 1 535E6EA1
 P 4150 8550
 F 0 "R5" V 4230 8550 50  0000 C CNN
@@ -1082,7 +1020,7 @@ $EndComp
 Text Label 4800 8350 2    60   ~ 0
 CSEL
 $Comp
-L CONN_20X2 P3
+L MultiF-Board-rescue:CONN_20X2 P3
 U 1 1 535E6EA8
 P 5950 9800
 F 0 "P3" H 5950 10900 60  0000 C CNN
@@ -1099,7 +1037,7 @@ CTS1
 Text Label 3850 750  0    60   ~ 0
 RX1
 $Comp
-L GND-RESCUE-MultiF-Board #PWR012
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR012
 U 1 1 535E78EF
 P 4000 1150
 F 0 "#PWR012" H 4000 1150 30  0001 C CNN
@@ -1113,7 +1051,7 @@ NoConn ~ 4800 1050
 NoConn ~ 4800 950 
 NoConn ~ 4000 650 
 $Comp
-L CONN_5X2 P1
+L MultiF-Board-rescue:CONN_5X2 P1
 U 1 1 535E78FC
 P 4400 850
 F 0 "P1" H 4400 1150 60  0000 C CNN
@@ -1128,7 +1066,7 @@ RTS1
 Text Label 1200 1350 0    60   ~ 0
 /INT
 $Comp
-L 74LS90 U14
+L MultiF-Board-rescue:74LS90 U14
 U 1 1 535EA335
 P 8050 10650
 F 0 "U14" H 8150 10650 60  0000 C CNN
@@ -1141,7 +1079,7 @@ $EndComp
 NoConn ~ 7300 10450
 NoConn ~ 7300 10550
 $Comp
-L GND-RESCUE-MultiF-Board #PWR013
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR013
 U 1 1 535EA982
 P 8750 11100
 F 0 "#PWR013" H 8750 11100 30  0001 C CNN
@@ -1152,7 +1090,7 @@ F 3 "" H 8750 11100 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L OSC QG1
+L MultiF-Board-rescue:OSC QG1
 U 1 1 535EAB24
 P 9800 10600
 F 0 "QG1" H 9600 10950 60  0000 C CNN
@@ -1197,7 +1135,7 @@ A1
 Text Label 1000 9150 2    60   ~ 0
 /E_IDE
 $Comp
-L 74LS14 U1
+L MultiF-Board-rescue:74LS14 U1
 U 1 1 535EB95A
 P 1650 10700
 F 0 "U1" H 1800 10800 40  0000 C CNN
@@ -1224,271 +1162,271 @@ C0H
 Text Notes 11100 6950 0    60   ~ 0
 E0H\n
 $Comp
-L C-RESCUE-MultiF-Board C12
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C12
 U 1 1 535ED49F
 P 15450 1300
 F 0 "C12" H 15450 1400 40  0000 L CNN
 F 1 "0.1" H 15456 1215 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 1150 30  0000 C CNN
+F 2 "" H 15488 1150 30  0000 C CNN
 F 3 "~" H 15450 1300 60  0000 C CNN
 	1    15450 1300
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C13
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C13
 U 1 1 535ED4A5
 P 15450 1500
 F 0 "C13" H 15450 1600 40  0000 L CNN
 F 1 "0.1" H 15456 1415 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 1350 30  0000 C CNN
+F 2 "" H 15488 1350 30  0000 C CNN
 F 3 "~" H 15450 1500 60  0000 C CNN
 	1    15450 1500
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C14
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C14
 U 1 1 535ED4AB
 P 15450 1700
 F 0 "C14" H 15450 1800 40  0000 L CNN
 F 1 "0.1" H 15456 1615 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 1550 30  0000 C CNN
+F 2 "" H 15488 1550 30  0000 C CNN
 F 3 "~" H 15450 1700 60  0000 C CNN
 	1    15450 1700
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C15
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C15
 U 1 1 535ED4C5
 P 15450 1900
 F 0 "C15" H 15450 2000 40  0000 L CNN
 F 1 "0.1" H 15456 1815 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 1750 30  0000 C CNN
+F 2 "" H 15488 1750 30  0000 C CNN
 F 3 "~" H 15450 1900 60  0000 C CNN
 	1    15450 1900
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C16
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C16
 U 1 1 535ED4CB
 P 15450 2100
 F 0 "C16" H 15450 2200 40  0000 L CNN
 F 1 "0.1" H 15456 2015 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 1950 30  0000 C CNN
+F 2 "" H 15488 1950 30  0000 C CNN
 F 3 "~" H 15450 2100 60  0000 C CNN
 	1    15450 2100
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C17
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C17
 U 1 1 535ED4D1
 P 15450 2300
 F 0 "C17" H 15450 2400 40  0000 L CNN
 F 1 "0.1" H 15456 2215 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 2150 30  0000 C CNN
+F 2 "" H 15488 2150 30  0000 C CNN
 F 3 "~" H 15450 2300 60  0000 C CNN
 	1    15450 2300
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C18
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C18
 U 1 1 535ED4D7
 P 15450 2500
 F 0 "C18" H 15450 2600 40  0000 L CNN
 F 1 "0.1" H 15456 2415 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 2350 30  0000 C CNN
+F 2 "" H 15488 2350 30  0000 C CNN
 F 3 "~" H 15450 2500 60  0000 C CNN
 	1    15450 2500
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C19
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C19
 U 1 1 535ED505
 P 15450 2700
 F 0 "C19" H 15450 2800 40  0000 L CNN
 F 1 "0.1" H 15456 2615 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 2550 30  0000 C CNN
+F 2 "" H 15488 2550 30  0000 C CNN
 F 3 "~" H 15450 2700 60  0000 C CNN
 	1    15450 2700
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C20
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C20
 U 1 1 535ED50B
 P 15450 2900
 F 0 "C20" H 15450 3000 40  0000 L CNN
 F 1 "0.1" H 15456 2815 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 2750 30  0000 C CNN
+F 2 "" H 15488 2750 30  0000 C CNN
 F 3 "~" H 15450 2900 60  0000 C CNN
 	1    15450 2900
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C21
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C21
 U 1 1 535ED511
 P 15450 3100
 F 0 "C21" H 15450 3200 40  0000 L CNN
 F 1 "0.1" H 15456 3015 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 2950 30  0000 C CNN
+F 2 "" H 15488 2950 30  0000 C CNN
 F 3 "~" H 15450 3100 60  0000 C CNN
 	1    15450 3100
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C22
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C22
 U 1 1 535ED517
 P 15450 3300
 F 0 "C22" H 15450 3400 40  0000 L CNN
 F 1 "0.1" H 15456 3215 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 3150 30  0000 C CNN
+F 2 "" H 15488 3150 30  0000 C CNN
 F 3 "~" H 15450 3300 60  0000 C CNN
 	1    15450 3300
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C23
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C23
 U 1 1 535ED51D
 P 15450 3500
 F 0 "C23" H 15450 3600 40  0000 L CNN
 F 1 "0.1" H 15456 3415 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 3350 30  0000 C CNN
+F 2 "" H 15488 3350 30  0000 C CNN
 F 3 "~" H 15450 3500 60  0000 C CNN
 	1    15450 3500
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C24
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C24
 U 1 1 535ED523
 P 15450 3700
 F 0 "C24" H 15450 3800 40  0000 L CNN
 F 1 "0.1" H 15456 3615 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 3550 30  0000 C CNN
+F 2 "" H 15488 3550 30  0000 C CNN
 F 3 "~" H 15450 3700 60  0000 C CNN
 	1    15450 3700
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C25
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C25
 U 1 1 535ED529
 P 15450 3900
 F 0 "C25" H 15450 4000 40  0000 L CNN
 F 1 "0.1" H 15456 3815 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 3750 30  0000 C CNN
+F 2 "" H 15488 3750 30  0000 C CNN
 F 3 "~" H 15450 3900 60  0000 C CNN
 	1    15450 3900
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C26
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C26
 U 1 1 535ED52F
 P 15450 4100
 F 0 "C26" H 15450 4200 40  0000 L CNN
 F 1 "0.1" H 15456 4015 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 3950 30  0000 C CNN
+F 2 "" H 15488 3950 30  0000 C CNN
 F 3 "~" H 15450 4100 60  0000 C CNN
 	1    15450 4100
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C27
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C27
 U 1 1 535ED535
 P 15450 4300
 F 0 "C27" H 15450 4400 40  0000 L CNN
 F 1 "0.1" H 15456 4215 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 4150 30  0000 C CNN
+F 2 "" H 15488 4150 30  0000 C CNN
 F 3 "~" H 15450 4300 60  0000 C CNN
 	1    15450 4300
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C28
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C28
 U 1 1 535ED53B
 P 15450 4500
 F 0 "C28" H 15450 4600 40  0000 L CNN
 F 1 "0.1" H 15456 4415 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 4350 30  0000 C CNN
+F 2 "" H 15488 4350 30  0000 C CNN
 F 3 "~" H 15450 4500 60  0000 C CNN
 	1    15450 4500
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C29
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C29
 U 1 1 535ED541
 P 15450 4700
 F 0 "C29" H 15450 4800 40  0000 L CNN
 F 1 "0.1" H 15456 4615 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 4550 30  0000 C CNN
+F 2 "" H 15488 4550 30  0000 C CNN
 F 3 "~" H 15450 4700 60  0000 C CNN
 	1    15450 4700
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C30
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C30
 U 1 1 535ED547
 P 15450 4900
 F 0 "C30" H 15450 5000 40  0000 L CNN
 F 1 "0.1" H 15456 4815 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 4750 30  0000 C CNN
+F 2 "" H 15488 4750 30  0000 C CNN
 F 3 "~" H 15450 4900 60  0000 C CNN
 	1    15450 4900
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C31
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C31
 U 1 1 535ED54D
 P 15450 5100
 F 0 "C31" H 15450 5200 40  0000 L CNN
 F 1 "0.1" H 15456 5015 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 4950 30  0000 C CNN
+F 2 "" H 15488 4950 30  0000 C CNN
 F 3 "~" H 15450 5100 60  0000 C CNN
 	1    15450 5100
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C32
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C32
 U 1 1 535ED553
 P 15450 5300
 F 0 "C32" H 15450 5400 40  0000 L CNN
 F 1 "0.1" H 15456 5215 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 5150 30  0000 C CNN
+F 2 "" H 15488 5150 30  0000 C CNN
 F 3 "~" H 15450 5300 60  0000 C CNN
 	1    15450 5300
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C33
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C33
 U 1 1 535ED559
 P 15450 5500
 F 0 "C33" H 15450 5600 40  0000 L CNN
 F 1 "0.1" H 15456 5415 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 5350 30  0000 C CNN
+F 2 "" H 15488 5350 30  0000 C CNN
 F 3 "~" H 15450 5500 60  0000 C CNN
 	1    15450 5500
 	0    -1   -1   0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C34
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C34
 U 1 1 535ED55F
 P 15450 5700
 F 0 "C34" H 15450 5800 40  0000 L CNN
 F 1 "0.1" H 15456 5615 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 5550 30  0000 C CNN
+F 2 "" H 15488 5550 30  0000 C CNN
 F 3 "~" H 15450 5700 60  0000 C CNN
 	1    15450 5700
 	0    -1   -1   0   
 $EndComp
 $Comp
-L CP1-RESCUE-MultiF-Board C11
+L MultiF-Board-rescue:CP1-RESCUE-MultiF-Board C11
 U 1 1 535ED567
 P 15450 1050
 F 0 "C11" H 15500 1150 50  0000 L CNN
 F 1 "10 uF" H 15500 950 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D6.3_L11.2_P2.5" H 15450 1050 60  0000 C CNN
+F 2 "" H 15450 1050 60  0000 C CNN
 F 3 "~" H 15450 1050 60  0000 C CNN
 	1    15450 1050
 	0    -1   -1   0   
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR014
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR014
 U 1 1 535EFD16
 P 15900 1150
 F 0 "#PWR014" H 15900 1150 30  0001 C CNN
@@ -1499,7 +1437,7 @@ F 3 "" H 15900 1150 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L VCC #PWR015
+L MultiF-Board-rescue:VCC #PWR015
 U 1 1 535F2729
 P 15000 950
 F 0 "#PWR015" H 15000 1050 30  0001 C CNN
@@ -1522,7 +1460,7 @@ NoConn ~ 10700 6550
 NoConn ~ 10700 6650
 NoConn ~ 10700 6750
 $Comp
-L GND-RESCUE-MultiF-Board #PWR016
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR016
 U 1 1 535F7A43
 P 8300 11150
 F 0 "#PWR016" H 8300 11150 30  0001 C CNN
@@ -1535,7 +1473,7 @@ $EndComp
 Text Label 7300 10650 2    60   ~ 0
 SER_CLK
 $Comp
-L TI16550 U17
+L MultiF-Board-rescue:TI16550 U17
 U 1 1 5367CCE5
 P 8500 8750
 F 0 "U17" H 8600 10000 60  0000 C CNN
@@ -1546,7 +1484,7 @@ F 3 "" H 8600 9950 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L MAX-232 U20
+L MultiF-Board-rescue:MAX-232 U20
 U 1 1 5367CDBC
 P 10350 9200
 F 0 "U20" H 10200 9250 70  0000 C CNN
@@ -1581,7 +1519,7 @@ A2
 Text Label 7700 9000 2    60   ~ 0
 VCC
 $Comp
-L GND-RESCUE-MultiF-Board #PWR017
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR017
 U 1 1 5367D8E9
 P 7400 9950
 F 0 "#PWR017" H 7400 9950 30  0001 C CNN
@@ -1610,45 +1548,45 @@ NoConn ~ 9050 9900
 Text Label 9050 9800 0    60   ~ 0
 IRQ1
 $Comp
-L CP-RESCUE-MultiF-Board C1
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C1
 U 1 1 5367DC2E
 P 9550 8700
 F 0 "C1" H 9600 8800 40  0000 L CNN
 F 1 "1.0 uF" H 9600 8600 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 9650 8550 30  0000 C CNN
+F 2 "Cap2.5" H 9650 8550 30  0000 C CNN
 F 3 "~" H 9550 8700 300 0000 C CNN
 	1    9550 8700
 	1    0    0    -1  
 $EndComp
 $Comp
-L CP-RESCUE-MultiF-Board C2
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C2
 U 1 1 5367DC3D
 P 9550 9200
 F 0 "C2" H 9600 9300 40  0000 L CNN
 F 1 "1.0 uF" H 9600 9100 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 9650 9050 30  0000 C CNN
+F 2 "Cap2.5" H 9650 9050 30  0000 C CNN
 F 3 "~" H 9550 9200 300 0000 C CNN
 	1    9550 9200
 	1    0    0    -1  
 $EndComp
 $Comp
-L CP-RESCUE-MultiF-Board C3
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C3
 U 1 1 5367DC5D
 P 10850 8700
 F 0 "C3" H 10900 8800 40  0000 L CNN
 F 1 "1.0 uF" H 10900 8600 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 10950 8550 30  0000 C CNN
+F 2 "Cap2.5" H 10950 8550 30  0000 C CNN
 F 3 "~" H 10850 8700 300 0000 C CNN
 	1    10850 8700
 	1    0    0    -1  
 $EndComp
 $Comp
-L CP-RESCUE-MultiF-Board C4
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C4
 U 1 1 5367DC6C
 P 11150 8700
 F 0 "C4" H 11200 8800 40  0000 L CNN
 F 1 "1.0 uF" H 11200 8600 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 11250 8550 30  0000 C CNN
+F 2 "Cap2.5" H 11250 8550 30  0000 C CNN
 F 3 "~" H 11150 8700 300 0000 C CNN
 	1    11150 8700
 	1    0    0    -1  
@@ -1662,18 +1600,18 @@ CTS1
 Text Label 10850 9900 0    60   ~ 0
 RX1
 $Comp
-L CP-RESCUE-MultiF-Board C5
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C5
 U 1 1 5367DC7C
 P 11150 9200
 F 0 "C5" H 11200 9300 40  0000 L CNN
 F 1 "1.0 uF" H 11200 9100 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 11250 9050 30  0000 C CNN
+F 2 "Cap2.5" H 11250 9050 30  0000 C CNN
 F 3 "~" H 11150 9200 300 0000 C CNN
 	1    11150 9200
 	1    0    0    -1  
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR018
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR018
 U 1 1 5367E165
 P 10850 9250
 F 0 "#PWR018" H 10850 9250 30  0001 C CNN
@@ -1684,7 +1622,7 @@ F 3 "" H 10850 9250 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L VCC #PWR019
+L MultiF-Board-rescue:VCC #PWR019
 U 1 1 5367E4B7
 P 10850 8350
 F 0 "#PWR019" H 10850 8450 30  0001 C CNN
@@ -1695,7 +1633,7 @@ F 3 "" H 10850 8350 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L TI16550 U26
+L MultiF-Board-rescue:TI16550 U26
 U 1 1 5367F778
 P 12700 8700
 F 0 "U26" H 12800 9950 60  0000 C CNN
@@ -1706,7 +1644,7 @@ F 3 "" H 12800 9900 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L MAX-232 U29
+L MultiF-Board-rescue:MAX-232 U29
 U 1 1 5367F77E
 P 14550 9150
 F 0 "U29" H 14400 9200 70  0000 C CNN
@@ -1741,7 +1679,7 @@ A2
 Text Label 11900 8950 2    60   ~ 0
 VCC
 $Comp
-L GND-RESCUE-MultiF-Board #PWR020
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR020
 U 1 1 5367F796
 P 11600 9900
 F 0 "#PWR020" H 11600 9900 30  0001 C CNN
@@ -1770,45 +1708,45 @@ NoConn ~ 13250 9850
 Text Label 13250 9750 0    60   ~ 0
 IRQ2
 $Comp
-L CP-RESCUE-MultiF-Board C6
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C6
 U 1 1 5367F7AE
 P 13750 8650
 F 0 "C6" H 13800 8750 40  0000 L CNN
 F 1 "1.0 uF" H 13800 8550 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 13850 8500 30  0000 C CNN
+F 2 "Cap2.5" H 13850 8500 30  0000 C CNN
 F 3 "~" H 13750 8650 300 0000 C CNN
 	1    13750 8650
 	1    0    0    -1  
 $EndComp
 $Comp
-L CP-RESCUE-MultiF-Board C7
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C7
 U 1 1 5367F7B4
 P 13750 9150
 F 0 "C7" H 13800 9250 40  0000 L CNN
 F 1 "1.0 uF" H 13800 9050 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 13850 9000 30  0000 C CNN
+F 2 "Cap2.5" H 13850 9000 30  0000 C CNN
 F 3 "~" H 13750 9150 300 0000 C CNN
 	1    13750 9150
 	1    0    0    -1  
 $EndComp
 $Comp
-L CP-RESCUE-MultiF-Board C8
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C8
 U 1 1 5367F7BA
 P 15050 8650
 F 0 "C8" H 15100 8750 40  0000 L CNN
 F 1 "1.0 uF" H 15100 8550 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 15150 8500 30  0000 C CNN
+F 2 "Cap2.5" H 15150 8500 30  0000 C CNN
 F 3 "~" H 15050 8650 300 0000 C CNN
 	1    15050 8650
 	1    0    0    -1  
 $EndComp
 $Comp
-L CP-RESCUE-MultiF-Board C9
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C9
 U 1 1 5367F7C0
 P 15350 8650
 F 0 "C9" H 15400 8750 40  0000 L CNN
 F 1 "1.0 uF" H 15400 8550 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 15450 8500 30  0000 C CNN
+F 2 "Cap2.5" H 15450 8500 30  0000 C CNN
 F 3 "~" H 15350 8650 300 0000 C CNN
 	1    15350 8650
 	1    0    0    -1  
@@ -1822,18 +1760,18 @@ CTS2
 Text Label 15050 9850 0    60   ~ 0
 RX2
 $Comp
-L CP-RESCUE-MultiF-Board C10
+L MultiF-Board-rescue:CP-RESCUE-MultiF-Board C10
 U 1 1 5367F7CA
 P 15350 9150
 F 0 "C10" H 15400 9250 40  0000 L CNN
 F 1 "1.0 uF" H 15400 9050 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L6_P2.5" H 15450 9000 30  0000 C CNN
+F 2 "Cap2.5" H 15450 9000 30  0000 C CNN
 F 3 "~" H 15350 9150 300 0000 C CNN
 	1    15350 9150
 	1    0    0    -1  
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR021
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR021
 U 1 1 5367F7D5
 P 15050 9200
 F 0 "#PWR021" H 15050 9200 30  0001 C CNN
@@ -1844,7 +1782,7 @@ F 3 "" H 15050 9200 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L VCC #PWR022
+L MultiF-Board-rescue:VCC #PWR022
 U 1 1 5367F7DD
 P 15050 8300
 F 0 "#PWR022" H 15050 8400 30  0001 C CNN
@@ -1861,7 +1799,7 @@ CTS2
 Text Label 5300 750  0    60   ~ 0
 RX2
 $Comp
-L GND-RESCUE-MultiF-Board #PWR023
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR023
 U 1 1 5367FB79
 P 5450 1150
 F 0 "#PWR023" H 5450 1150 30  0001 C CNN
@@ -1875,7 +1813,7 @@ NoConn ~ 6250 1050
 NoConn ~ 6250 950 
 NoConn ~ 5450 650 
 $Comp
-L CONN_5X2 P2
+L MultiF-Board-rescue:CONN_5X2 P2
 U 1 1 5367FB82
 P 5850 850
 F 0 "P2" H 5850 1150 60  0000 C CNN
@@ -1890,7 +1828,7 @@ RTS2
 NoConn ~ 6250 850 
 NoConn ~ 6250 750 
 $Comp
-L 74LS138 U19
+L MultiF-Board-rescue:74LS138 U19
 U 1 1 535EC2EF
 P 10100 6600
 F 0 "U19" H 10100 6650 60  0000 C CNN
@@ -1903,7 +1841,7 @@ $EndComp
 Text Label 7800 7050 2    60   ~ 0
 /E_SER
 $Comp
-L 74LS32 U7
+L MultiF-Board-rescue:74LS32 U7
 U 4 1 536802A5
 P 8400 7150
 F 0 "U7" H 8400 7200 60  0000 C CNN
@@ -1913,14 +1851,8 @@ F 3 "~" H 8400 7150 60  0000 C CNN
 	4    8400 7150
 	1    0    0    -1  
 $EndComp
-Text Label 7800 6500 2    60   ~ 0
-/E_SER
-Text Label 7800 6700 2    60   ~ 0
-A3
-Text Label 9000 6600 0    60   ~ 0
-/ESR1
 $Comp
-L 74LS14 U6
+L MultiF-Board-rescue:74LS14 U6
 U 2 1 536802E2
 P 7100 7250
 F 0 "U6" H 7250 7350 40  0000 C CNN
@@ -1935,7 +1867,7 @@ A3
 Text Label 9000 7150 0    60   ~ 0
 /ESR2
 $Comp
-L Z80-CTC U28
+L MultiF-Board-rescue:Z80-CTC U28
 U 1 1 5368081E
 P 14000 6150
 F 0 "U28" H 14000 7250 60  0000 C CNN
@@ -1946,7 +1878,7 @@ F 3 "" H 14000 6150 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 74LS245 U13
+L MultiF-Board-rescue:74LS245 U13
 U 1 1 536812D1
 P 6650 2700
 F 0 "U13" H 6750 3275 60  0000 L BNN
@@ -1989,7 +1921,7 @@ C_D6
 Text Label 7350 2900 0    60   ~ 0
 C_D7
 $Comp
-L 74LS244 U27
+L MultiF-Board-rescue:74LS244 U27
 U 1 1 5368167A
 P 14000 3150
 F 0 "U27" H 14050 2950 60  0000 C CNN
@@ -2000,7 +1932,7 @@ F 3 "~" H 14000 3150 60  0000 C CNN
 	-1   0    0    -1  
 $EndComp
 $Comp
-L 74LS11 U8
+L MultiF-Board-rescue:74LS11 U8
 U 1 1 536882E4
 P 4850 3050
 F 0 "U8" H 4850 3100 60  0000 C CNN
@@ -2017,7 +1949,7 @@ Text Label 4250 3050 2    60   ~ 0
 Text Label 4250 3200 2    60   ~ 0
 /E_CTC
 $Comp
-L PINHD-1X3 JP2
+L MultiF-Board-rescue:PINHD-1X3 JP2
 U 1 1 536884C8
 P 3000 1850
 F 0 "JP2" H 2750 2075 50  0000 L BNN
@@ -2028,7 +1960,7 @@ F 3 "" H 3000 1850 60  0000 C CNN
 	0    -1   1    0   
 $EndComp
 $Comp
-L PINHD-1X3 JP1
+L MultiF-Board-rescue:PINHD-1X3 JP1
 U 1 1 536884E0
 P 2200 1850
 F 0 "JP1" H 1950 2075 50  0000 L BNN
@@ -2039,7 +1971,7 @@ F 3 "" H 2200 1850 60  0000 C CNN
 	0    -1   1    0   
 $EndComp
 $Comp
-L R-RESCUE-MultiF-Board R1
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R1
 U 1 1 53688E14
 P 2300 900
 F 0 "R1" V 2380 900 40  0000 C CNN
@@ -2070,29 +2002,10 @@ Text Label 14900 5300 0    60   ~ 0
 T0
 Text Label 14900 5400 0    60   ~ 0
 Z0
-$Comp
-L PINHD-2X4 JP5
-U 1 1 53689EC3
-P 15500 7800
-F 0 "JP5" H 15250 8125 50  0000 L BNN
-F 1 "PINHD-2X4" H 15250 7500 50  0000 L BNN
-F 2 "Pin_Headers:Pin_Header_Straight_2x04" H 15500 7950 50  0001 C CNN
-F 3 "" H 15500 7800 60  0000 C CNN
-	1    15500 7800
-	1    0    0    -1  
-$EndComp
-Text Label 15150 7600 2    60   ~ 0
-T0
-Text Label 15150 7700 2    60   ~ 0
-Z0
-Text Label 15150 7800 2    60   ~ 0
-T1
-Text Label 15150 7900 2    60   ~ 0
-Z1
 Text GLabel 3400 2850 2    60   Input ~ 0
 CLK
 $Comp
-L 74LS06 U24
+L MultiF-Board-rescue:74LS06 U24
 U 3 1 5368B36E
 P 12200 7000
 F 0 "U24" H 12395 7115 60  0000 C CNN
@@ -2103,7 +2016,7 @@ F 3 "~" H 12200 7000 60  0000 C CNN
 	-1   0    0    -1  
 $EndComp
 $Comp
-L 74LS06 U24
+L MultiF-Board-rescue:74LS06 U24
 U 2 1 5368B37D
 P 12200 6600
 F 0 "U24" H 12395 6715 60  0000 C CNN
@@ -2114,7 +2027,7 @@ F 3 "~" H 12200 6600 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L R-RESCUE-MultiF-Board R9
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R9
 U 1 1 5368B39B
 P 11550 6750
 F 0 "R9" V 11630 6750 40  0000 C CNN
@@ -2143,7 +2056,7 @@ Text Label 10700 6950 0    60   ~ 0
 Text Label 4750 7150 2    60   ~ 0
 /IDECTC
 $Comp
-L 74LS32 U7
+L MultiF-Board-rescue:74LS32 U7
 U 2 1 5368BB4E
 P 5350 7250
 F 0 "U7" H 5350 7300 60  0000 C CNN
@@ -2154,7 +2067,7 @@ F 3 "~" H 5350 7250 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 74LS14 U6
+L MultiF-Board-rescue:74LS14 U6
 U 1 1 5368BB54
 P 4050 7350
 F 0 "U6" H 4200 7450 40  0000 C CNN
@@ -2169,7 +2082,7 @@ A3
 Text Label 5950 7250 0    60   ~ 0
 /E_CTC
 $Comp
-L 74LS32 U7
+L MultiF-Board-rescue:74LS32 U7
 U 1 1 5368BB65
 P 4700 6650
 F 0 "U7" H 4700 6700 60  0000 C CNN
@@ -2185,7 +2098,7 @@ Text Label 5300 6750 0    60   ~ 0
 A3
 Text Label 4100 6650 2    60   ~ 0
 /E_IDE
-Text Notes 9200 6750 2    60   ~ 0
+Text Notes 10000 7900 2    60   ~ 0
 C0H
 Text Notes 9100 7300 0    60   ~ 0
 C8H
@@ -2216,7 +2129,7 @@ C_D1
 Text Label 13100 5200 2    60   ~ 0
 C_D0
 $Comp
-L 74LS06 U24
+L MultiF-Board-rescue:74LS06 U24
 U 1 1 5368BF73
 P 12200 6250
 F 0 "U24" H 12395 6365 60  0000 C CNN
@@ -2227,7 +2140,7 @@ F 3 "~" H 12200 6250 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L R-RESCUE-MultiF-Board R8
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R8
 U 1 1 5368C16A
 P 11550 6050
 F 0 "R8" V 11630 6050 40  0000 C CNN
@@ -2274,7 +2187,7 @@ D6
 Text Label 13300 3350 2    60   ~ 0
 D7
 $Comp
-L 74LS32 U22
+L MultiF-Board-rescue:74LS32 U22
 U 3 1 5368C929
 P 14050 4700
 F 0 "U22" H 14050 4750 60  0000 C CNN
@@ -2285,7 +2198,7 @@ F 3 "~" H 14050 4700 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 74LS32 U22
+L MultiF-Board-rescue:74LS32 U22
 U 2 1 5368C938
 P 14050 4100
 F 0 "U22" H 14050 4150 60  0000 C CNN
@@ -2302,73 +2215,73 @@ Text Label 13450 4600 2    60   ~ 0
 Text Label 13450 4000 2    60   ~ 0
 /ISR
 $Comp
-L C-RESCUE-MultiF-Board C35
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C35
 U 1 1 5368D306
 P 15450 5900
 F 0 "C35" H 15450 6000 40  0000 L CNN
 F 1 "0.1" H 15456 5815 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 5750 30  0000 C CNN
+F 2 "" H 15488 5750 30  0000 C CNN
 F 3 "~" H 15450 5900 60  0000 C CNN
 	1    15450 5900
 	0    -1   1    0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C36
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C36
 U 1 1 5368D318
 P 15450 6100
 F 0 "C36" H 15450 6200 40  0000 L CNN
 F 1 "0.1" H 15456 6015 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 5950 30  0000 C CNN
+F 2 "" H 15488 5950 30  0000 C CNN
 F 3 "~" H 15450 6100 60  0000 C CNN
 	1    15450 6100
 	0    -1   1    0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C37
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C37
 U 1 1 5368D31E
 P 15450 6300
 F 0 "C37" H 15450 6400 40  0000 L CNN
 F 1 "0.1" H 15456 6215 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 6150 30  0000 C CNN
+F 2 "" H 15488 6150 30  0000 C CNN
 F 3 "~" H 15450 6300 60  0000 C CNN
 	1    15450 6300
 	0    -1   1    0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C38
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C38
 U 1 1 5368D324
 P 15450 6500
 F 0 "C38" H 15450 6600 40  0000 L CNN
 F 1 "0.1" H 15456 6415 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 6350 30  0000 C CNN
+F 2 "" H 15488 6350 30  0000 C CNN
 F 3 "~" H 15450 6500 60  0000 C CNN
 	1    15450 6500
 	0    -1   1    0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C39
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C39
 U 1 1 5368D32A
 P 15450 6700
 F 0 "C39" H 15450 6800 40  0000 L CNN
 F 1 "0.1" H 15456 6615 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 6550 30  0000 C CNN
+F 2 "" H 15488 6550 30  0000 C CNN
 F 3 "~" H 15450 6700 60  0000 C CNN
 	1    15450 6700
 	0    -1   1    0   
 $EndComp
 $Comp
-L C-RESCUE-MultiF-Board C40
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C40
 U 1 1 5368D330
 P 15450 6900
 F 0 "C40" H 15450 7000 40  0000 L CNN
 F 1 "0.1" H 15456 6815 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 15488 6750 30  0000 C CNN
+F 2 "" H 15488 6750 30  0000 C CNN
 F 3 "~" H 15450 6900 60  0000 C CNN
 	1    15450 6900
 	0    -1   1    0   
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR024
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR024
 U 1 1 5368F133
 P 10600 3400
 F 0 "#PWR024" H 10600 3400 30  0001 C CNN
@@ -2379,7 +2292,7 @@ F 3 "" H 10600 3400 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L 74LS11 U8
+L MultiF-Board-rescue:74LS11 U8
 U 2 1 538ACE27
 P 2250 6900
 F 0 "U8" H 2250 6950 60  0000 C CNN
@@ -2402,7 +2315,7 @@ Text Label 1350 7050 0    60   ~ 0
 Text Label 1350 6750 0    60   ~ 0
 /MWR
 $Comp
-L R-RESCUE-MultiF-Board R10
+L MultiF-Board-rescue:R-RESCUE-MultiF-Board R10
 U 1 1 53E1C167
 P 7200 950
 F 0 "R10" V 7280 950 40  0000 C CNN
@@ -2415,18 +2328,18 @@ $EndComp
 Text Label 7000 700  0    60   ~ 0
 VCC
 $Comp
-L C-RESCUE-MultiF-Board C41
+L MultiF-Board-rescue:C-RESCUE-MultiF-Board C41
 U 1 1 53E1C37D
 P 6900 1400
 F 0 "C41" H 6900 1500 40  0000 L CNN
 F 1 "0.047" H 6906 1315 40  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Rect_L7_W2.5_P5" H 6938 1250 30  0000 C CNN
+F 2 "" H 6938 1250 30  0000 C CNN
 F 3 "~" H 6900 1400 60  0000 C CNN
 	1    6900 1400
 	1    0    0    -1  
 $EndComp
 $Comp
-L GND-RESCUE-MultiF-Board #PWR025
+L MultiF-Board-rescue:GND-RESCUE-MultiF-Board #PWR025
 U 1 1 53E1C7A7
 P 6900 1750
 F 0 "#PWR025" H 6900 1750 30  0001 C CNN
@@ -2439,7 +2352,7 @@ $EndComp
 Text Label 7500 1200 2    60   ~ 0
 MPUP
 $Comp
-L SRAM_256K U21
+L MultiF-Board-rescue:SRAM_256K U21
 U 1 1 535BB804
 P 10600 1950
 F 0 "U21" H 10600 2050 60  0000 C CNN
@@ -2520,10 +2433,10 @@ Wire Wire Line
 Wire Wire Line
 	1800 5050 1900 5050
 Wire Wire Line
-	1900 4400 1900 4650
+	1900 4400 1900 4500
 Connection ~ 1900 4500
 Wire Wire Line
-	1900 5950 1900 6300
+	1900 5950 1900 6050
 Connection ~ 1900 6050
 Wire Wire Line
 	850  4600 1800 4600
@@ -2616,7 +2529,7 @@ Wire Wire Line
 Wire Wire Line
 	850  1150 2100 1150
 Wire Wire Line
-	850  2050 1300 2050
+	850  2050 1200 2050
 Wire Wire Line
 	850  2150 1200 2150
 Wire Wire Line
@@ -2629,12 +2542,12 @@ Wire Wire Line
 Wire Wire Line
 	1200 1850 1200 1950
 Wire Wire Line
-	850  1950 1450 1950
+	850  1950 1200 1950
 Connection ~ 1200 1950
 Wire Wire Line
 	850  2350 1450 2350
 Wire Wire Line
-	1900 3150 1900 3350
+	1900 3150 1900 3250
 Connection ~ 1900 3250
 Wire Wire Line
 	850  3050 1850 3050
@@ -2708,7 +2621,7 @@ Wire Wire Line
 Wire Wire Line
 	5700 5050 6000 5050
 Wire Wire Line
-	5700 5050 5700 6250
+	5700 5050 5700 5450
 Wire Wire Line
 	5700 6250 6000 6250
 Connection ~ 5700 5450
@@ -2761,26 +2674,26 @@ Wire Wire Line
 Wire Wire Line
 	7450 5400 7750 5400
 Wire Wire Line
-	7750 5900 7750 6200
+	7750 5900 7750 6000
 Connection ~ 7750 6000
 Wire Wire Line
-	9700 5000 9150 5000
+	9700 5000 9200 5000
 Wire Wire Line
-	9700 5100 9150 5100
+	9700 5100 9250 5100
 Wire Wire Line
-	9700 5200 9150 5200
+	9700 5200 9300 5200
 Wire Wire Line
-	9700 5300 9150 5300
+	9700 5300 9350 5300
 Wire Wire Line
-	9700 5400 9150 5400
+	9700 5400 9400 5400
 Wire Wire Line
-	9700 5500 9150 5500
+	9700 5500 9450 5500
 Wire Wire Line
-	9150 5600 10000 5600
+	9150 5600 9500 5600
 Wire Wire Line
-	9150 5700 10050 5700
+	9150 5700 9550 5700
 Wire Wire Line
-	9000 4500 9000 4800
+	9000 4500 9000 4600
 Wire Wire Line
 	9000 4800 8900 4800
 Connection ~ 9000 4600
@@ -2854,9 +2767,6 @@ Wire Wire Line
 	12750 4500 12750 3300
 Wire Wire Line
 	12750 3300 8050 3300
-Connection ~ 5050 7850
-Wire Wire Line
-	5050 7750 5050 8550
 Wire Wire Line
 	3800 7850 3800 7950
 Wire Wire Line
@@ -2868,8 +2778,6 @@ Wire Wire Line
 	6250 8150 6250 8350
 Wire Wire Line
 	6250 8350 6350 8350
-Wire Wire Line
-	5750 7850 6750 7850
 Wire Wire Line
 	3800 8550 3900 8550
 Wire Wire Line
@@ -2959,7 +2867,7 @@ Wire Wire Line
 Wire Wire Line
 	6350 10750 6750 10750
 Wire Wire Line
-	6150 8150 6750 8150
+	6150 8150 6250 8150
 Wire Wire Line
 	5150 8150 5050 8150
 Wire Wire Line
@@ -2968,14 +2876,12 @@ Connection ~ 3800 8550
 Wire Wire Line
 	3900 8350 3800 8350
 Wire Wire Line
-	5050 7850 5150 7850
-Wire Wire Line
 	5050 8550 5150 8550
 Connection ~ 5050 8150
 Wire Wire Line
 	4400 8150 4800 8150
 Wire Wire Line
-	3800 8150 3800 8650
+	3800 8150 3800 8350
 Connection ~ 3800 8350
 Wire Wire Line
 	4000 750  3800 750 
@@ -2996,7 +2902,7 @@ Wire Wire Line
 Wire Wire Line
 	8950 10450 8750 10450
 Wire Wire Line
-	8750 10600 8750 11100
+	8750 10600 8750 10700
 Connection ~ 8750 10700
 Connection ~ 8750 10850
 Connection ~ 8750 10950
@@ -3009,11 +2915,11 @@ Wire Wire Line
 Wire Wire Line
 	600  9050 600  10700
 Wire Wire Line
-	600  10700 1200 10700
+	600  10700 800  10700
 Wire Wire Line
 	9500 6750 9400 6750
 Wire Wire Line
-	15650 1050 15650 7150
+	15650 1050 15650 1300
 Connection ~ 15650 5300
 Connection ~ 15650 5500
 Connection ~ 15650 4900
@@ -3041,7 +2947,7 @@ Wire Wire Line
 Wire Wire Line
 	15900 1050 15900 1150
 Wire Wire Line
-	15250 1050 15250 7150
+	15250 1050 15250 1300
 Connection ~ 15250 5500
 Connection ~ 15250 5300
 Connection ~ 15250 5100
@@ -3153,7 +3059,7 @@ Wire Wire Line
 Wire Wire Line
 	7700 8800 7400 8800
 Wire Wire Line
-	7400 8800 7400 9950
+	7400 8800 7400 9500
 Connection ~ 7400 9500
 Wire Wire Line
 	7700 9000 7700 9100
@@ -3199,7 +3105,7 @@ Wire Wire Line
 Wire Wire Line
 	11900 8750 11600 8750
 Wire Wire Line
-	11600 8750 11600 9900
+	11600 8750 11600 9450
 Connection ~ 11600 9450
 Wire Wire Line
 	11900 8950 11900 9050
@@ -3251,7 +3157,7 @@ Wire Wire Line
 Wire Wire Line
 	7550 7250 7800 7250
 Wire Wire Line
-	2100 1150 2100 2050
+	2100 1150 2100 1750
 Wire Wire Line
 	2300 1150 2300 1750
 Wire Wire Line
@@ -3272,25 +3178,13 @@ Wire Wire Line
 Wire Wire Line
 	2900 1500 3150 1500
 Wire Wire Line
-	15150 7600 15700 7600
-Connection ~ 15400 7600
-Wire Wire Line
-	15150 7700 15700 7700
-Connection ~ 15400 7700
-Wire Wire Line
-	15150 7800 15700 7800
-Connection ~ 15400 7800
-Wire Wire Line
-	15150 7900 15700 7900
-Connection ~ 15400 7900
-Wire Wire Line
 	3300 2850 3400 2850
 Wire Wire Line
 	13100 7000 12650 7000
 Wire Wire Line
 	11750 7000 11550 7000
 Wire Wire Line
-	11750 6250 11750 7000
+	11750 6250 11750 6600
 Wire Wire Line
 	4500 7350 4750 7350
 Connection ~ 11750 6600
@@ -3301,7 +3195,7 @@ Wire Wire Line
 Wire Wire Line
 	11550 5800 12650 5800
 Wire Wire Line
-	12650 5700 12650 6250
+	12650 5700 12650 5800
 Connection ~ 12650 5800
 Wire Wire Line
 	13450 4200 13450 4400
@@ -3312,7 +3206,7 @@ Wire Wire Line
 Wire Wire Line
 	14700 3550 14800 3550
 Wire Wire Line
-	14800 3550 14800 4100
+	14800 3550 14800 3650
 Wire Wire Line
 	14800 4100 14650 4100
 Wire Wire Line
@@ -3343,7 +3237,7 @@ Wire Wire Line
 Wire Wire Line
 	7200 700  7000 700 
 Wire Wire Line
-	6900 1200 7500 1200
+	6900 1200 7200 1200
 Connection ~ 7200 1200
 Wire Wire Line
 	6900 1750 6900 1600
@@ -3364,12 +3258,12 @@ Wire Wire Line
 Wire Wire Line
 	9400 9000 9050 9000
 $Comp
-L CP1-RESCUE-MultiF-Board C42
+L MultiF-Board-rescue:CP1-RESCUE-MultiF-Board C42
 U 1 1 5412FB9C
 P 15450 7150
 F 0 "C42" H 15500 7250 50  0000 L CNN
 F 1 "10 uF" H 15500 7050 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D6.3_L11.2_P2.5" H 15450 7150 60  0000 C CNN
+F 2 "" H 15450 7150 60  0000 C CNN
 F 3 "~" H 15450 7150 60  0000 C CNN
 	1    15450 7150
 	0    -1   1    0   
@@ -3389,12 +3283,269 @@ Text Label 7700 9900 2    60   ~ 0
 RST
 Text Label 11900 9850 2    60   ~ 0
 RST
-Text Label 9500 6850 2    60   ~ 0
-A4
-Text Label 9500 6950 2    60   ~ 0
-/IORQ
+Wire Wire Line
+	5450 2700 5450 3050
+Wire Wire Line
+	5150 2400 5550 2400
+Wire Wire Line
+	5550 2400 5550 3100
+Wire Wire Line
+	5550 3100 5950 3100
+Text Label 14800 4100 3    60   ~ 0
+/INTACK
+Wire Wire Line
+	5300 1750 5700 1750
+Wire Wire Line
+	5700 1750 5700 3200
+Wire Wire Line
+	5700 3200 5950 3200
+Text Label 4700 1750 2    60   ~ 0
+/INTACK
+Text Label 5700 1750 1    60   ~ 0
+INTACK
+Text Label 4250 2300 2    60   ~ 0
+/RD
+Wire Wire Line
+	1900 4500 1900 4650
+Wire Wire Line
+	1900 6050 1900 6300
+Wire Wire Line
+	1200 2050 1300 2050
+Wire Wire Line
+	1200 1950 1300 1950
+Wire Wire Line
+	1900 3250 1900 3350
+Wire Wire Line
+	1300 1950 1450 1950
+Wire Wire Line
+	5700 5450 5700 6250
+Wire Wire Line
+	7750 6000 7750 6200
+Wire Wire Line
+	9000 4600 9000 4800
+Wire Wire Line
+	9200 5000 9150 5000
+Wire Wire Line
+	9250 5100 9150 5100
+Wire Wire Line
+	9300 5200 9150 5200
+Wire Wire Line
+	9350 5300 9150 5300
+Wire Wire Line
+	9400 5400 9150 5400
+Wire Wire Line
+	9450 5500 9150 5500
+Wire Wire Line
+	9500 5600 10000 5600
+Wire Wire Line
+	9550 5700 10050 5700
+Wire Wire Line
+	6250 8150 6750 8150
+Wire Wire Line
+	3800 8550 3800 8650
+Wire Wire Line
+	5050 8150 5050 8550
+Wire Wire Line
+	3800 8350 3800 8550
+Wire Wire Line
+	8750 10700 8750 10850
+Wire Wire Line
+	8750 10850 8750 10950
+Wire Wire Line
+	8750 10950 8750 11100
+Wire Wire Line
+	15650 5300 15650 5500
+Wire Wire Line
+	15650 5500 15650 5700
+Wire Wire Line
+	15650 4900 15650 5100
+Wire Wire Line
+	15650 5100 15650 5300
+Wire Wire Line
+	15650 4500 15650 4700
+Wire Wire Line
+	15650 4700 15650 4900
+Wire Wire Line
+	15650 4300 15650 4500
+Wire Wire Line
+	15650 4100 15650 4300
+Wire Wire Line
+	15650 3900 15650 4100
+Wire Wire Line
+	15650 3700 15650 3900
+Wire Wire Line
+	15650 3500 15650 3700
+Wire Wire Line
+	15650 3300 15650 3500
+Wire Wire Line
+	15650 3100 15650 3300
+Wire Wire Line
+	15650 2900 15650 3100
+Wire Wire Line
+	15650 2700 15650 2900
+Wire Wire Line
+	15650 2500 15650 2700
+Wire Wire Line
+	15650 2300 15650 2500
+Wire Wire Line
+	15650 2100 15650 2300
+Wire Wire Line
+	15650 1900 15650 2100
+Wire Wire Line
+	15650 1700 15650 1900
+Wire Wire Line
+	15650 1500 15650 1700
+Wire Wire Line
+	15650 1300 15650 1500
+Wire Wire Line
+	15250 5500 15250 5700
+Wire Wire Line
+	15250 5300 15250 5500
+Wire Wire Line
+	15250 5100 15250 5300
+Wire Wire Line
+	15250 4900 15250 5100
+Wire Wire Line
+	15250 4700 15250 4900
+Wire Wire Line
+	15250 4500 15250 4700
+Wire Wire Line
+	15250 4300 15250 4500
+Wire Wire Line
+	15250 4100 15250 4300
+Wire Wire Line
+	15250 3900 15250 4100
+Wire Wire Line
+	15250 3700 15250 3900
+Wire Wire Line
+	15250 3500 15250 3700
+Wire Wire Line
+	15250 3300 15250 3500
+Wire Wire Line
+	15250 3100 15250 3300
+Wire Wire Line
+	15250 2900 15250 3100
+Wire Wire Line
+	15250 2700 15250 2900
+Wire Wire Line
+	15250 2500 15250 2700
+Wire Wire Line
+	15250 2300 15250 2500
+Wire Wire Line
+	15250 2100 15250 2300
+Wire Wire Line
+	15250 1900 15250 2100
+Wire Wire Line
+	15250 1700 15250 1900
+Wire Wire Line
+	15250 1500 15250 1700
+Wire Wire Line
+	15250 1300 15250 1500
+Wire Wire Line
+	7400 9500 7400 9700
+Wire Wire Line
+	7400 9700 7400 9950
+Wire Wire Line
+	11600 9450 11600 9650
+Wire Wire Line
+	11600 9650 11600 9900
+Wire Wire Line
+	2100 1750 2100 2050
+Wire Wire Line
+	11750 6600 11750 7000
+Wire Wire Line
+	12650 5800 12650 6250
+Wire Wire Line
+	14800 3650 14800 4100
+Wire Wire Line
+	15250 5700 15250 5900
+Wire Wire Line
+	15250 5900 15250 6100
+Wire Wire Line
+	15250 6100 15250 6300
+Wire Wire Line
+	15250 6300 15250 6500
+Wire Wire Line
+	15250 6500 15250 6700
+Wire Wire Line
+	15250 6700 15250 6900
+Wire Wire Line
+	15650 5700 15650 5900
+Wire Wire Line
+	15650 5900 15650 6100
+Wire Wire Line
+	15650 6100 15650 6300
+Wire Wire Line
+	15650 6300 15650 6500
+Wire Wire Line
+	15650 6500 15650 6700
+Wire Wire Line
+	15650 6700 15650 6900
+Wire Wire Line
+	7200 1200 7500 1200
+Wire Wire Line
+	15250 6900 15250 7150
+Wire Wire Line
+	15650 6900 15650 7150
+Wire Wire Line
+	800  10700 1200 10700
 $Comp
-L 74LS32 U7
+L 74xx:74LS32 U22
+U 1 1 5BBB275E
+P 10350 7750
+F 0 "U22" H 10350 7433 50  0000 C CNN
+F 1 "74LS32" H 10350 7524 50  0000 C CNN
+F 2 "" H 10350 7750 50  0001 C CNN
+F 3 "http://www.ti.com/lit/gpn/sn74LS32" H 10350 7750 50  0001 C CNN
+	1    10350 7750
+	-1   0    0    1   
+$EndComp
+Wire Wire Line
+	9850 7750 10050 7750
+Text Label 9850 7750 0    50   ~ 0
+/ESR1
+Wire Wire Line
+	10800 7850 10650 7850
+Text Label 10800 7850 0    50   ~ 0
+/E_SER
+Wire Wire Line
+	10800 7650 10650 7650
+Text Label 10800 7650 0    50   ~ 0
+A3
+$Comp
+L 74xx:74LS32 U22
+U 4 1 5BD9039C
+P 4850 2400
+F 0 "U22" H 4850 2725 50  0000 C CNN
+F 1 "74LS32" H 4850 2634 50  0000 C CNN
+F 2 "" H 4850 2400 50  0001 C CNN
+F 3 "http://www.ti.com/lit/gpn/sn74LS32" H 4850 2400 50  0001 C CNN
+	4    4850 2400
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	4550 2300 4250 2300
+Wire Wire Line
+	4550 2700 5450 2700
+Wire Wire Line
+	4550 2500 4550 2700
+$Comp
+L 74xx:74LS14 U6
+U 4 1 5BFF61F4
+P 5000 1750
+F 0 "U6" H 5000 2067 50  0000 C CNN
+F 1 "74LS14" H 5000 1976 50  0000 C CNN
+F 2 "" H 5000 1750 50  0001 C CNN
+F 3 "http://www.ti.com/lit/gpn/sn74LS14" H 5000 1750 50  0001 C CNN
+	4    5000 1750
+	1    0    0    -1  
+$EndComp
+Text Label 7800 6700 2    60   ~ 0
+/IORQ
+Text Label 7800 6500 2    60   ~ 0
+A4
+$Comp
+L MultiF-Board-rescue:74LS32 U7
 U 3 1 541FCFBB
 P 8400 6600
 F 0 "U7" H 8400 6650 60  0000 C CNN
@@ -3404,52 +3555,17 @@ F 3 "~" H 8400 6600 60  0000 C CNN
 	3    8400 6600
 	1    0    0    -1  
 $EndComp
-$Comp
-L 74LS32 U22
-U 1 1 541FD073
-P 4850 2400
-F 0 "U22" H 4850 2450 60  0000 C CNN
-F 1 "74LS32" H 4850 2350 60  0000 C CNN
-F 2 "" H 4850 2400 60  0000 C CNN
-F 3 "~" H 4850 2400 60  0000 C CNN
-	1    4850 2400
-	1    0    0    -1  
-$EndComp
 Wire Wire Line
-	4250 2500 4250 2700
+	9000 6600 9000 6950
 Wire Wire Line
-	4250 2700 5450 2700
+	9000 6950 9500 6950
 Wire Wire Line
-	5450 2700 5450 3050
+	9500 6850 9500 6950
+Connection ~ 9500 6950
 Wire Wire Line
-	5450 2400 5550 2400
+	5050 7750 5050 8150
 Wire Wire Line
-	5550 2400 5550 3100
-Wire Wire Line
-	5550 3100 5950 3100
-Text Label 14800 4100 3    60   ~ 0
-/INTACK
-$Comp
-L 74LS14 U6
-U 3 1 541FD4A0
-P 5000 1750
-F 0 "U6" H 5150 1850 40  0000 C CNN
-F 1 "74LS14" H 5200 1650 40  0000 C CNN
-F 2 "" H 5000 1750 60  0000 C CNN
-F 3 "~" H 5000 1750 60  0000 C CNN
-	3    5000 1750
-	1    0    0    -1  
-$EndComp
-Wire Wire Line
-	5450 1750 5700 1750
-Wire Wire Line
-	5700 1750 5700 3200
-Wire Wire Line
-	5700 3200 5950 3200
-Text Label 4550 1750 2    60   ~ 0
-/INTACK
-Text Label 5700 1750 1    60   ~ 0
-INTACK
-Text Label 4250 2300 2    60   ~ 0
-/RD
+	14900 5400 14900 5800
+Connection ~ 11750 7000
+Connection ~ 11550 6300
 $EndSCHEMATC

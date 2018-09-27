@@ -10,6 +10,7 @@
  * #  HISTORY:
  * #  -[Date]- -[Who]------------- -[What]---------------------------------------
  * #  25.08.14 Piergiorgio Betti   Creation date
+ * #  27.09.18 Piergiorgio Betti   Fixed gets, some minor change
  * #--
  * #
  */
@@ -97,7 +98,7 @@ main()
 	cls_();
 
 	printf("\nZ80 Darkstar NEZ80 Partition Manager\n");
-	printf("P. Betti - 2014, rev 1.0\n\n");
+	printf("P. Betti, 2014-2018, rev 1.1\n\n");
 
 	// get HD data
 	readTable();
@@ -157,6 +158,7 @@ main()
 				}
 				writeTable();
 				modified = false;
+				printf("Saved.\n");
 				break;
 
 			case 'E':
@@ -351,7 +353,7 @@ void editPartition()
 	// drive letter
 	prm = partition.table[pnum].letter;
 
-	upromptc("Drive letter [A-P]", &prm, "ABCDEFGHIJKLMNOP");
+	upromptc("Drive id [A-P,0-9]", &prm, "ABCDEFGHIJKLMNOP0123456789");
 	partition.table[pnum].letter = prm;
 
 	// drive letter
@@ -360,7 +362,7 @@ void editPartition()
 	upromptc("2=CP/M2\n\
 3=CP/M3\n\
 N=NEDOS\n\
-U=UZI\n\
+U=UZI/Fuzix\n\
 T=TurboDOS\n\
 C=CPM/ng / CP/M4\n\
 O=Others\n\
@@ -384,8 +386,7 @@ void doExit()
 void exitPrompt()
 {
 	/* prompt to terminate */
-	printf("Press any key to return to monitor...\n");
-	getchar();
+	printf("Terminating...\n");
 }
 
 void readTable()
@@ -437,7 +438,7 @@ void displayTable()
 	else
 		printf("\n");
 
-	printf("Id A L Type Start End   Size\n");
+	printf("No A L Type Start End   Size\n");
 	printf("-- - - ---- ----- ----- --------\n");
 
 	// half list if cview view is acative
@@ -593,14 +594,41 @@ void doHelp()
 	");
 }
 
-char * gets(char * buf)
+char * gets (register char *s)
 {
-	register int c;
-	register char *s;
-	for (s = buf; (c = getchar()) != '\n';)
-		*s++ = c;
-	*s = 0;
-	return (buf);
+	register char c;
+	unsigned int count = 0;
+
+	while (1)
+	{
+		c = getchar ();
+		switch(c)
+		{
+			case '\b': /* backspace */
+				if (count)
+				{
+					putchar ('\b');
+					putchar (' ');
+					putchar ('\b');
+					--s;
+					--count;
+				}
+				break;
+
+			case '\n':
+			case '\r': /* CR or LF */
+// 				putchar ('\r');
+				putchar ('\n');
+				*s = 0;
+				return s;
+
+			default:
+				*s++ = c;
+				++count;
+				putchar (c);
+				break;
+		}
+	}
 }
 
 

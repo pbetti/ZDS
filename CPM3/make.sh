@@ -211,6 +211,7 @@ makbldr() {
 
 maksyst() {
 
+	bash -c "cd ../syslibs; make"
 	bash -c "cd ../zds; ./make.sh"
 
 }

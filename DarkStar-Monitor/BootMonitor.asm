@@ -438,6 +438,9 @@ dbootm:
 	ld	hl,usrcmd
 	push	hl
 	;
+	ld	c,cron
+	call	bbconout
+	call	outcrlf
 	call	bbbooter
 	jp	ucprompt
 

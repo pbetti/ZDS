@@ -4,8 +4,6 @@
 ; 20140824
 ;--------------------------------------------------------------------------
 
-.include "darkstar.inc"
-
 	.module crt0
 	.globl  _main
 
@@ -38,33 +36,6 @@ init:
 
 	.area	_CODE
 
-			; Fundamental routines for console i/o on sdcc
-_putchar::
-_putchar_rr_s::
-	ld	hl,#2
-	add	hl,sp
-
-	ld	c,(hl)
-	ld	a,c
-	cp	#0x0a
-	jr	nz,_putchar_00
-	ld	c,#0x0d
-	call	BBCONOUT
-	ld	c,#0x0a
-_putchar_00:
-	call	BBCONOUT
-	ret
-
-_putchar_rr_dbs::
-
-	ld	c,e
-	call	BBCONOUT
-	ret
-
-_getchar::
-	call	BBCONIN
-	ld	l,a
-	ret
 
 __clock::
 	ret

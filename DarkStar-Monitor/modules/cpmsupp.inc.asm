@@ -226,7 +226,7 @@ bminv:
 
 bmcpm:
 	call	inline
-	defb	cr,lf,"Enter drive (<A-B> floppy <C-N> HD <O-P> virtual): ",0
+	defb	cr,lf,"Enter drive (<A-B> floppy, <C-N> HD, <O-P> virtual): ",0
 	ld	c,SI_EDIT
 	ld	e,SE_STR
 	ld	d,1

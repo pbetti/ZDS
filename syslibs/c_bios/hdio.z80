@@ -1,0 +1,136 @@
+;;
+;;  '########'########::'######:::'##::: ##'########'########:'#######:::'#####:::
+;;  ..... ##: ##.... ##'##... ##:: ###:: ## ##.....:..... ##:'##.... ##:'##.. ##::
+;;  :::: ##:: ##:::: ## ##:::..::: ####: ## ##:::::::::: ##:: ##:::: ##'##:::: ##:
+;;  ::: ##::: ##:::: ##. ######::: ## ## ## ######::::: ##:::: #######: ##:::: ##:
+;;  :: ##:::: ##:::: ##:..... ##:: ##. #### ##...::::: ##::::'##.... ## ##:::: ##:
+;;  : ##::::: ##:::: ##'##::: ##:: ##:. ### ##::::::: ##::::: ##:::: ##. ##:: ##::
+;;   ######## ########:. ######::: ##::. ## ######## ########. #######::. #####:::
+;;  ........:........:::......::::..::::..:........:........::.......::::.....::::
+;;
+;;  Sysbios C interface library
+;;  P.Betti  <pbetti@lpconsul.eu>
+;;
+;;  Module:
+;;
+;;  HISTORY:
+;;  -[Date]- -[Who]------------- -[What]---------------------------------------
+;;  27.09.18 Piergiorgio Betti   Creation date
+;;--
+;;
+
+.include "darkstar.inc"
+
+	.module hdio
+
+	.area _CODE
+
+	;
+	; Read HD sector
+	;
+_hdRead_::
+	ld	hl,#2
+	add	hl,sp
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	; set DMA address (from BC)
+	call	BBDMASET
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	; set track #
+	call	BBTRKSET
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+; 	inc	hl
+	; set track #
+	call	BBSECSET
+
+	; now read it
+	call	BBHDRD
+	ld	l,a
+
+	; return value
+	ld	h,#0x00
+	ret
+
+	;
+	; Read HD sector
+	;
+_hdWrite_::
+	ld	hl,#2
+	add	hl,sp
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	; set DMA address (from BC)
+	call	BBDMASET
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	; set track #
+	call	BBTRKSET
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+; 	inc	hl
+	; set track #
+	call	BBSECSET
+
+	; now read it
+	call	BBHDWR
+	ld	l,a
+
+	; return value
+	ld	h,#0x00
+	ret
+
+		;
+	; Get HD geometry
+	;
+_getHDgeo_::
+
+	; buffer address in DE
+	pop	bc
+	pop	de
+	push	de
+	push	bc
+	;
+	push	ix
+	; get data
+	call	BBHDGEO
+	push	hl
+	pop	bc			; sectors in BC
+	;
+	ex	de,hl			; buf addr now in HL
+	push	ix
+	pop	de
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	;
+	push	iy
+	pop	de
+	ld	(hl),e
+	inc	hl
+	;
+	push	bc
+	pop	de
+	ld	(hl),e
+
+	pop	ix
+	; return value
+	ld	hl,#0x0000
+	ret
+

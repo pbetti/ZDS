@@ -18,29 +18,33 @@
 //  27.09.18 Piergiorgio Betti   Creation date
 //
 
+
 #include <cpm.h>
+/*
+ *	_flsbuf for Zios stdio
+ */
 
-int open(char * name, int mode)
+int _flsbuf(uint8_t c, register FILE * f)
 {
-	register struct fcb *	fc;
-	uint8_t			luid;
-
-	if (mode+1 > U_RDWR)
-		mode = U_RDWR;
-	if(!(fc = getfcb()))
-		return -1;
-	if(!setfcb(fc, name)) {
-		if(mode == U_READ && bdos(CPMVERS, 0) >= 0x30)
-			fc->name[5] |= 0x80;	/* read-only mode */
-		luid = getuid();
-		setuid(fc->uid);
-		if(bdos(CPMOPN, (uint16_t)fc) != 0) {
-			putfcb(fc);
-			setuid(luid);
-			return -1;
+	if(f->_flag & _IOWRT) {
+		if(f->_base == (char *)NULL) {
+			f->_cnt = 0;
+			if(write(fileno(f), &c, 1) == 1)
+				return(c);
+			f->_flag |= _IOERR;
+			return(EOF);
 		}
-		setuid(luid);
-		fc->use = mode;
+		if(write(fileno(f), f->_base, BUFSIZ) != BUFSIZ)
+			f->_flag |= _IOERR;
+		f->_cnt = BUFSIZ-1;
+		*f->_base = c;
+		f->_ptr = f->_base+1;
+	} else {
+		f->_flag |= _IOERR;
+		f->_cnt = 0;
 	}
-	return fc - _fcb;
+	if(f->_flag & _IOERR)
+		return(EOF);
+	return(c);
 }
+

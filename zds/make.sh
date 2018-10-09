@@ -31,4 +31,7 @@ SRCS="systran \
 	/bin/bash -c "cd fdisk; make"
 	cp -f fdisk/fdisk.com .
 
+	/bin/bash -c "cd launchers; ./mklaunchers.sh"
+	cp -f launchers/*.com .
+
 #

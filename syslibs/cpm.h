@@ -32,19 +32,19 @@ extern	struct	_iobuf {
 	int		_cnt;
 	char *		_base;
 	uint8_t		_flag;
-	char		_file;
+	signed char	_file;
 } _iob[_NFILE];
 
 
-#define	_IOREAD		01
-#define	_IOWRT		02
-#define	_IORW		03
-#define	_IONBF		04
-#define	_IOMYBUF	010
-#define	_IOEOF		020
-#define	_IOERR		040
-#define	_IOSTRG		0100
-#define	_IOBINARY	0200
+#define	_IOREAD		0b00000001
+#define	_IOWRT		0b00000010
+#define	_IORW		0b00000011
+#define	_IONBF		0b00000100
+#define	_IOMYBUF	0b00001000
+#define	_IOEOF		0b00010000
+#define	_IOERR		0b00100000
+#define	_IOSTRG		0b01000000
+#define	_IOBINARY	0b10000000
 
 #define	FILE		struct _iobuf
 #define	EOF		(-1)
@@ -60,13 +60,6 @@ extern	struct	_iobuf {
 #define	feof(p)		(((p)->_flag&_IOEOF)!=0)
 #define	ferror(p)	(((p)->_flag&_IOERR)!=0)
 #define	fileno(p)	((uint8_t)p->_file)
-
-// FILE *		fopen();
-// FILE *		freopen();
-// FILE *		fdopen();
-// long		ftell();
-// char *		fgets();
-// char *		_bufallo();
 
 #define	MAXFILE		8	/* max number of files open */
 #define	SECSIZE		128	/* no. of bytes per sector */
@@ -134,9 +127,10 @@ struct tm {
 
 struct tod
 {
-	int	day;
-	int	hoursmin;
-	char	sec;
+	int	day;		/* since 1 Jan 1978 */
+	char	hour;		/* 2 digit BCD!! */
+	char	min;		/* ditto */
+	char	sec;		/* ditto */
 };
 
 
@@ -145,11 +139,11 @@ extern int	time_zone;		/* minutes WESTWARD of Greenwich */
 					operating systems like MS-DOS there is
 					no time zone information available */
 
-extern time_t	time(time_t *);		/* seconds since 00:00:00 Jan 1 1970 */
-extern char *	asctime(struct tm *);	/* converts struct tm to ascii time */
-extern char *	ctime();		/* current local time in ascii form */
-extern struct tm *	gmtime();	/* Universal time */
-extern struct tm *	localtime();	/* local time */
+extern time_t		time(time_t *);		/* seconds since 00:00:00 Jan 1 1970 */
+extern char *		asctime(struct tm *);	/* converts struct tm to ascii time */
+extern char *		ctime(time_t *);	/* current local time in ascii form */
+extern struct tm *	gmtime(time_t *);	/* Universal time */
+extern struct tm *	localtime(time_t *);	/* local time */
 
 /* Flag bits in st_mode */
 
@@ -163,8 +157,37 @@ extern struct tm *	localtime();	/* local time */
 #define	S_SYSTEM	0x2000	/* file is marked system */
 #define	S_ARCHIVE	0x4000	/* file has been written to */
 
-
 extern int	stat(char *, struct stat *);
+
+/*	format print */
+
+#define	FL_LJUST	0x0001		/* left-justify field */
+#define	FL_SIGN		0x0002		/* sign in signed conversions */
+#define	FL_SPACE	0x0004		/* space in signed conversions */
+#define	FL_ALT		0x0008		/* alternate form */
+#define	FL_ZEROFILL	0x0010		/* fill with zero's */
+#define	FL_SHORT	0x0020		/* optional h */
+#define	FL_LONG		0x0040		/* optional l */
+#define	FL_LONGDOUBLE	0x0080		/* optional L */
+#define	FL_WIDTHSPEC	0x0100		/* field width is specified */
+#define	FL_PRECSPEC	0x0200		/* precision is specified */
+#define FL_SIGNEDCONV	0x0400		/* may contain a sign */
+#define	FL_NOASSIGN	0x0800		/* do not assign (in scanf) */
+#define	FL_NOMORE	0x1000		/* all flags collected */
+
+#define	FL_LJUST	0x0001		/* left-justify field */
+#define	FL_SIGN		0x0002		/* sign in signed conversions */
+#define	FL_SPACE	0x0004		/* space in signed conversions */
+#define	FL_ALT		0x0008		/* alternate form */
+#define	FL_ZEROFILL	0x0010		/* fill with zero's */
+#define	FL_SHORT	0x0020		/* optional h */
+#define	FL_LONG		0x0040		/* optional l */
+#define	FL_LONGDOUBLE	0x0080		/* optional L */
+#define	FL_WIDTHSPEC	0x0100		/* field width is specified */
+#define	FL_PRECSPEC	0x0200		/* precision is specified */
+#define FL_SIGNEDCONV	0x0400		/* may contain a sign */
+#define	FL_NOASSIGN	0x0800		/* do not assign (in scanf) */
+#define	FL_NOMORE	0x1000	/* all flags collected */
 
 /*	 bdos calls etc. */
 
@@ -203,24 +226,12 @@ extern int	stat(char *, struct stat *);
 #define	CPMDSEG	51		/* set DMA segment */
 
 
-#define	_IOREAD		01
-#define	_IOWRT		02
-#define	_IORW		03
-#define	_IONBF		04
-#define	_IOMYBUF	010
-#define	_IOEOF		020
-#define	_IOERR		040
-#define	_IOSTRG		0100
-#define	_IOBINARY	0200
-
 #define	FILE		struct _iobuf
 #define	EOF		(-1)
 
 #define	stdin		(&_iob[0])
 #define	stdout		(&_iob[1])
 #define	stderr		(&_iob[2])
-#define	getchar()	getc(stdin)
-#define	putchar(x)	putc(x,stdout)
 
 extern struct	fcb {
 	uint8_t	dr;		/* drive code */
@@ -251,7 +262,8 @@ extern void 		putch(char c);
 extern void 		ungetch(char c);
 extern char 		getche(void);
 extern char * 		fcbname(short);
-extern	int 		dup(uint8_t);
+extern long		_fsize(uint8_t);
+extern int 		dup(uint8_t);
 extern int		open(char *, int);
 extern int		close(uint8_t);
 extern int		creat(char *);
@@ -267,34 +279,42 @@ extern void		_cpm_clean();
 extern void		_putrno(uint8_t *, int32_t);
 extern int		frmbcd(uint8_t);
 extern time_t		convtime(struct tod *);
-
+extern int		execl(char *, char *, char *, ...);
+extern int		execv(char *, char **);
 
 #define	feof(p)		(((p)->_flag&_IOEOF)!=0)
 #define	ferror(p)	(((p)->_flag&_IOERR)!=0)
 #define	fileno(p)	((uint8_t)p->_file)
 #define	clrerr(p)	p->_flag &= ~_IOERR
 #define	clreof(p)	p->_flag &= ~_IOEOF
+#define	printf		cpm_printf
+#define	sprintf		cpm_sprintf
+#define	snprintf	cpm_snprintf
 
 #define	L_tmpnam	34		/* max length of temporary names */
 
+extern int	_filbuf(FILE *);
 extern int	fclose(FILE *);
 extern int	fflush(FILE *);
 extern int	fgetc(FILE *);
 extern int	ungetc(int, FILE *);
-extern int	fputc(int, FILE *);
+extern int	fputc(char, FILE *);
 extern int	getw(FILE *);
 extern int	putw(int, FILE *);
 extern char *	gets(char *);
-extern int	puts(char *);
-extern int	fputs(char *, FILE *);
-extern int	fread(void *, unsigned, unsigned, FILE *);
-extern int	fwrite(void *, unsigned, unsigned, FILE *);
+extern char *	cgets(char *);
+extern void	puts(char *);
+extern void	cputs(char *);
+extern void	fputs(char *, FILE *);
+extern int	fread(void *, uint8_t, uint8_t, FILE *);
+extern int	fwrite(void *, uint8_t, uint8_t, FILE *);
 extern int	fseek(FILE *, long, int);
 extern int	rewind(FILE *);
-extern int	setbuf(FILE *, char *);
-extern int	printf(char *, ...);
-extern int	fprintf(FILE *, char *, ...);
-extern int	sprintf(char *, char *, ...);
+extern void	setbuf(FILE *, char *);
+extern int	cpm_printf(const char *, ...);
+extern int	fprintf(FILE *, const char *, ...);
+extern int	cpm_sprintf(char *, const char *, ...);
+extern int	cpm_snprintf(char *, size_t, const char *, ...);
 extern int	scanf(char *, ...);
 extern int	fscanf(FILE *, char *, ...);
 extern int	sscanf(char *, char *, ...);
@@ -304,7 +324,9 @@ extern FILE *	freopen(char *, char *, FILE *);
 extern FILE *	fdopen(int, char *);
 extern long	ftell(FILE *);
 extern char *	fgets(char *, int, FILE *);
+extern void	perror(char *);
 extern char *	_bufallo(void);
+extern void	_buffree(char *);
 extern void     exit(int);
 
 

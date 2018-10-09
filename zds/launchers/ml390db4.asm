@@ -18,18 +18,18 @@ include ../../Common.inc.asm
 include ../../darkstar.equ
 
 
-DBSIZE	equ	12288		; 12288
-DBSTART	equ	imgarea		; eprom image
-DBDEST	equ	09000h		; where to place
 EPSIZE	equ	4096		; 12288
-EPSTART	equ	imgarea+DBSIZE	; eprom image
+EPSTART	equ	imgarea		; eprom image
 EPDEST	equ	0f000h		; where to place
+DBSIZE	equ	12288		; 12288
+DBSTART	equ	imgarea+EPSIZE	; eprom image
+DBDEST	equ	09000h		; where to place
 
 
 		org 0100h
 
 begin:
-	call	inline
+	call	sinline
 	defb	"Will load NE eprom LX390 4k dual boot version",cr,lf
 	defb	"by Elettro Design.",cr,lf,cr,lf
 	defb	"Sysdbg included and available at 9000h.",cr,lf,cr,lf
@@ -41,7 +41,7 @@ begin:
 	cp	'Y'
 	jr	z,reloc
 
-	call	inline
+	call	sinline
 	defb	cr,lf,"Ok. Exiting...",cr,lf,0
 
 	jp	0		; return to prompt
@@ -69,11 +69,9 @@ reloc:
 ;----------------------------------------------------------------
 ; Print the string -> by DE. Return with DE pointing past the
 ; string end so as to point to the start of the next string.
-; NOTE that this routine updates the CURX screen address. This is
-; vital for all printing functions.
 ;----------------------------------------------------------------
 ;
-print:
+sprint:
 	ld	a,(de)
 	inc	de
 	or	a
@@ -83,19 +81,17 @@ print:
 	cp	0			; END ?
 	ret	z
 	call	coe
-	jr	print
+	jr	sprint
 
 ;;
-;; Inline print
+;; Inline sprint
 ;;
-inline:
+sinline:
 	ex	(sp),hl			; get address of string (ret address)
 	push	af
 	push	de
 	ex	de,hl
-inline2:
-	call	print
-inline3:
+	call	sprint
 	ex	de,hl
 	pop	de
 	pop	af

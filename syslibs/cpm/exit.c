@@ -20,27 +20,37 @@
 
 #include <cpm.h>
 
-int open(char * name, int mode)
+void exit(int v)
 {
-	register struct fcb *	fc;
-	uint8_t			luid;
+	int   i;
+	register struct _iobuf * ip;
 
-	if (mode+1 > U_RDWR)
-		mode = U_RDWR;
-	if(!(fc = getfcb()))
-		return -1;
-	if(!setfcb(fc, name)) {
-		if(mode == U_READ && bdos(CPMVERS, 0) >= 0x30)
-			fc->name[5] |= 0x80;	/* read-only mode */
-		luid = getuid();
-		setuid(fc->uid);
-		if(bdos(CPMOPN, (uint16_t)fc) != 0) {
-			putfcb(fc);
-			setuid(luid);
-			return -1;
-		}
-		setuid(luid);
-		fc->use = mode;
-	}
-	return fc - _fcb;
+	v;	// keep compiler peace of mind
+
+	i = _NFILE;
+	ip = _iob;
+	do {
+		fclose(ip);
+		ip++;
+	} while(--i);
+
+	_cpm_clean();
+
+	__asm
+
+	ld	hl,#2
+	add	hl,sp
+
+
+	ld	e,(hl)	; Arg base
+	inc	hl
+	ld	d,(hl)	; return value in de
+	ex	de,hl
+
+	ld	(#0x80), hl
+
+	__endasm;
+
+	return;
+
 }

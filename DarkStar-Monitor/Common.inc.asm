@@ -195,7 +195,7 @@ xofc		equ	13h		; Xoff
 true		equ	-1
 false		equ	0
 tpa		equ	0100h		; TPA base address (for CP/M)
-mondelay	equ	20		; seconds to auto monitor
+mondelay	equ	10		; seconds to auto monitor
 
 ;
 ; Modules equs

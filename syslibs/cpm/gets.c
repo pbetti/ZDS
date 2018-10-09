@@ -20,27 +20,27 @@
 
 #include <cpm.h>
 
-int open(char * name, int mode)
-{
-	register struct fcb *	fc;
-	uint8_t			luid;
+/*
+ *	gets and fgets for Zios stdio
+ */
 
-	if (mode+1 > U_RDWR)
-		mode = U_RDWR;
-	if(!(fc = getfcb()))
-		return -1;
-	if(!setfcb(fc, name)) {
-		if(mode == U_READ && bdos(CPMVERS, 0) >= 0x30)
-			fc->name[5] |= 0x80;	/* read-only mode */
-		luid = getuid();
-		setuid(fc->uid);
-		if(bdos(CPMOPN, (uint16_t)fc) != 0) {
-			putfcb(fc);
-			setuid(luid);
-			return -1;
-		}
-		setuid(luid);
-		fc->use = mode;
-	}
-	return fc - _fcb;
+char * fgets(char * s, int n, register FILE *f)
+{
+	char *	s1 = s;
+	int	c;
+
+	while(n-- && (c = getc(f)) != EOF && (*s++ = c) != '\n')
+		/* VOID */;
+	*s = 0;
+	if(s == s1)
+		return((char *)NULL);
+	return(s1);
+}
+
+char * gets(char * s)
+{
+	if((s = fgets(s, -1, stdin)) == (char *)NULL)
+		return((char *)NULL);
+	s[strlen(s)-1] = 0;
+	return(s);
 }

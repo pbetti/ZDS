@@ -18,29 +18,24 @@
 //  27.09.18 Piergiorgio Betti   Creation date
 //
 
+
 #include <cpm.h>
 
-int open(char * name, int mode)
-{
-	register struct fcb *	fc;
-	uint8_t			luid;
+/*
+ *	fflush for Zios stdio
+ */
 
-	if (mode+1 > U_RDWR)
-		mode = U_RDWR;
-	if(!(fc = getfcb()))
-		return -1;
-	if(!setfcb(fc, name)) {
-		if(mode == U_READ && bdos(CPMVERS, 0) >= 0x30)
-			fc->name[5] |= 0x80;	/* read-only mode */
-		luid = getuid();
-		setuid(fc->uid);
-		if(bdos(CPMOPN, (uint16_t)fc) != 0) {
-			putfcb(fc);
-			setuid(luid);
-			return -1;
-		}
-		setuid(luid);
-		fc->use = mode;
-	}
-	return fc - _fcb;
+int fflush(register FILE * f)
+{
+	unsigned	cnt;
+
+	if(!(f->_flag & _IOWRT) || f->_base == (char *)NULL || (cnt = BUFSIZ - f->_cnt) == 0)
+		return 0;
+	if(write(fileno(f), f->_base, cnt) != cnt)
+		f->_flag |= _IOERR;
+	f->_cnt = BUFSIZ;
+	f->_ptr = f->_base;
+	if(f->_flag & _IOERR)
+		return(EOF);
+	return 0;
 }

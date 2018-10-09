@@ -30,13 +30,6 @@
 				   adjustment since CP/M numbers days from
 				   1 and Unix numbers them from 0 */
 
-// struct tod
-// {
-// 	int	days;		/* since 1 Jan 1978 */
-// 	char	hour;		/* 2 digit BCD!! */
-// 	char	min;		/* ditto */
-// 	char	sec;		/* ditto */
-// };
 
 int frmbcd(uint8_t c)
 {
@@ -48,11 +41,11 @@ time_t convtime(struct tod * tod)
 	time_t	t;
 
 	t = tod->day+EPOCH;
-	t *= 24;					/* now have hours */
-	t += frmbcd((tod->hoursmin >> 8) & 0xff);	/* add in hours from the time */
-	t *= 60;					/* now minutes */
-	t += frmbcd(tod->hoursmin & 0xff);		/* add minutes */
-	t *= 60;					/* Seconds! */
+	t *= 24;				/* now have hours */
+	t += frmbcd(tod->hour);			/* add in hours from the time */
+	t *= 60;				/* now minutes */
+	t += frmbcd(tod->min);			/* add minutes */
+	t *= 60;				/* Seconds! */
 	t += frmbcd(tod->sec);
 	return t;
 }

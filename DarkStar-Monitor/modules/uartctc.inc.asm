@@ -310,7 +310,6 @@ ctcunlck:
 ;; Resets CTC
 ;;
 resctc:
-	call	ctcunlck
 	ld	a,00000011b		; 7 6 5 4 3 2 1 0
 					;               +---- 1 = command flag
 					;             +------ 1 = channel reset
@@ -319,6 +318,7 @@ resctc:
 	out	(ctcchan1),a
 	out	(ctcchan2),a
 	out	(ctcchan3),a
+	call	ctcunlck
 	ret
 ; -----------
 

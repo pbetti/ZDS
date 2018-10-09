@@ -54,7 +54,7 @@ int read(uint8_t fd, char * buf, uint16_t nbytes)
 			buffer[cnt+2] = '\n';
 			cnt++;
 		}
-		memmove(&buffer[2], buf, cnt);
+		memmove(buf, &buffer[2], cnt);
 		return cnt;
 
 	case U_READ:
@@ -76,7 +76,7 @@ int read(uint8_t fd, char * buf, uint16_t nbytes)
 				bdos(CPMSDMA, (uint16_t)buffer);
 				if(bdos(CPMRRAN, (uint16_t)fc))
 					break;
-				memmove(buffer+offs, buf, size);
+				memmove(buf, buffer+offs, size);
 			}
 			buf += size;
 			fc->rwp += size;

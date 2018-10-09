@@ -68,9 +68,9 @@ int write(uint8_t fd, char * buf, uint16_t nbytes)
 			} else {
 				bdos(CPMSDMA, (uint16_t)buffer);
 				buffer[0] = CPMETX;
-				memmove(buffer, buffer+1, SECSIZE-1);
+				memmove(buffer+1, buffer, SECSIZE-1);
 				bdos(CPMRRAN, (uint16_t)fc);
-				memmove(buf, buffer+offs, size);
+				memmove(buffer+offs, buf, size);
 			}
 			if(bdos(CPMWRAN, (uint16_t)fc))
 				break;

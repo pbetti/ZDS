@@ -20,27 +20,42 @@
 
 #include <cpm.h>
 
-int open(char * name, int mode)
-{
-	register struct fcb *	fc;
-	uint8_t			luid;
 
-	if (mode+1 > U_RDWR)
-		mode = U_RDWR;
-	if(!(fc = getfcb()))
-		return -1;
-	if(!setfcb(fc, name)) {
-		if(mode == U_READ && bdos(CPMVERS, 0) >= 0x30)
-			fc->name[5] |= 0x80;	/* read-only mode */
-		luid = getuid();
-		setuid(fc->uid);
-		if(bdos(CPMOPN, (uint16_t)fc) != 0) {
-			putfcb(fc);
-			setuid(luid);
-			return -1;
+#define	ENVFILE	"ENVIRON"
+
+char ** environ;
+
+char * getenv(char * s)
+{
+	register char **	xp;
+	register char *		cp;
+	short			i;
+	static char		setup;
+
+	if(!setup) {
+		FILE *	fp;
+		char *	avec[40];
+		char	abuf[128];
+
+		i = 0;
+		if(fp = fopen(ENVFILE, "r")) {
+			while(i < sizeof avec/sizeof avec[0] && fgets(abuf, sizeof abuf, fp)) {
+				cp = malloc(strlen(abuf)+1);
+				strcpy(cp, abuf);
+				cp[strlen(cp)-1] = 0;
+				avec[i++] = cp;
+			}
+			fclose(fp);
 		}
-		setuid(luid);
-		fc->use = mode;
+		avec[i] = 0;
+		xp = (char **)malloc(i * sizeof avec[0]);
+		memcpy(xp, avec, i * sizeof avec[0]);
+		environ = xp;
+		setup = 1;
 	}
-	return fc - _fcb;
+	i = strlen(s);
+	for(xp = environ ; *xp ; xp++)
+		if(strncmp(*xp, s, i) == 0 && (*xp)[i] == '=')
+			return *xp + i+1;
+	return (char *)0;
 }

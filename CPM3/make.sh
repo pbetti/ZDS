@@ -262,8 +262,8 @@ makdisk() {
 	cpmcp -f $1 $2 ../zds/reboot.com 0:
 	cpmcp -f $1 $2 ../zds/fdisk.com 1:
 	cpmcp -f $1 $2 ../zds/dsktran.com 1:
-	cpmcp -f $1 $2 ../EPROMS/launchers/ml390db4.com 1:
-	cpmcp -f $1 $2 ../EPROMS/launchers/ml683son.com 1:
+	cpmcp -f $1 $2 ../zds/ml390db4.com 1:
+	cpmcp -f $1 $2 ../zds/ml683son.com 1:
 
 
 	for d in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15

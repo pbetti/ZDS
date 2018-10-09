@@ -28,19 +28,19 @@
  *	access time and file size.
  */
 
-// struct tod
-// {
-// 	int	days;
-// 	int	hoursmins;
-// 	char	secs;
-// };
+struct stod
+{
+	int	days;
+	int	hoursmins;
+	char	secs;
+};
 
 
 int stat(register char * s, register struct stat * b)
 {
 	short		c;
 	struct fcb	fc;
-	struct tod	td;
+	struct stod	td;
 
 	c = getuid();
 	if(setfcb(&fc, s))
@@ -57,17 +57,17 @@ int stat(register char * s, register struct stat * b)
 			b->st_mode |= S_SYSTEM;
 		if(fc.ft[2] & 0x80)
 			b->st_mode |= S_ARCHIVE;
-		td.sec = 0;
-		td.day = td.hoursmin = 0;
-// 		if(!bdos(0x66, (uint16_t)&fc)) {
-// 			td.day = ((int *)&fc)[24/sizeof(int)];
-// 			td.hoursmin = ((int *)&fc)[26/sizeof(int)];
-// 			b->st_atime = convtime(&td);
-// 			td.sec = 0;
-// 			td.day = ((int *)&fc)[28/sizeof(int)];
-// 			td.hoursmin = ((int *)&fc)[30/sizeof(int)];
-// 			b->st_mtime = convtime(&td);
-// 		}
+		td.secs = 0;
+		td.days = td.hoursmins = 0;
+		if(!bdos(0x66, (uint16_t)&fc)) {
+			td.days = ((int *)&fc)[24/sizeof(int)];
+			td.hoursmins = ((int *)&fc)[26/sizeof(int)];
+			b->st_atime = convtime((struct tod *)&td);
+			td.secs = 0;
+			td.days = ((int *)&fc)[28/sizeof(int)];
+			td.hoursmins = ((int *)&fc)[30/sizeof(int)];
+			b->st_mtime = convtime((struct tod *)&td);
+		}
 		setuid(c);
 		return 0;
 	}

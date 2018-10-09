@@ -18,29 +18,46 @@
 //  27.09.18 Piergiorgio Betti   Creation date
 //
 
+
 #include <cpm.h>
+/*
+ *	Formatted number printing for Z80 printf and debugger
+ */
+#define	NDIG	30		/* max number of digits to be printed */
+#define	putch(x)	(*pputch)(x)
 
-int open(char * name, int mode)
+unsigned char _pnum(unsigned long i, char f, char w, unsigned char s, unsigned char base, void (*pputch)(char))
 {
-	register struct fcb *	fc;
-	uint8_t			luid;
+	register char * cp;
+	unsigned char fw;
+	char buf[NDIG+1];
 
-	if (mode+1 > U_RDWR)
-		mode = U_RDWR;
-	if(!(fc = getfcb()))
-		return -1;
-	if(!setfcb(fc, name)) {
-		if(mode == U_READ && bdos(CPMVERS, 0) >= 0x30)
-			fc->name[5] |= 0x80;	/* read-only mode */
-		luid = getuid();
-		setuid(fc->uid);
-		if(bdos(CPMOPN, (uint16_t)fc) != 0) {
-			putfcb(fc);
-			setuid(luid);
-			return -1;
-		}
-		setuid(luid);
-		fc->use = mode;
+	if(f > NDIG)
+		f = NDIG;
+
+	if(s && (long)i < 0)
+		i = -i;
+	else
+		s = 0;
+	if(f == 0 && i == 0)
+		f++;
+
+	cp = &buf[NDIG];
+	while(i || f > 0) {
+		*--cp = "0123456789ABCDEF"[i%base];
+		i /= base;
+		f--;
 	}
-	return fc - _fcb;
+	fw = f = (&buf[NDIG] - cp) + s;
+	if(fw < w)
+		fw = w;
+	while(w-- > f)
+		putch(' ');
+	if(s) {
+		putch('-');
+		f--;
+	}
+	while(f--)
+		putch(*cp++);
+	return fw;
 }

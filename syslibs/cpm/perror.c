@@ -20,27 +20,24 @@
 
 #include <cpm.h>
 
-int open(char * name, int mode)
-{
-	register struct fcb *	fc;
-	uint8_t			luid;
+extern	int	errno;
+extern	char *	sys_err[];
+extern	int	sys_ner;
 
-	if (mode+1 > U_RDWR)
-		mode = U_RDWR;
-	if(!(fc = getfcb()))
-		return -1;
-	if(!setfcb(fc, name)) {
-		if(mode == U_READ && bdos(CPMVERS, 0) >= 0x30)
-			fc->name[5] |= 0x80;	/* read-only mode */
-		luid = getuid();
-		setuid(fc->uid);
-		if(bdos(CPMOPN, (uint16_t)fc) != 0) {
-			putfcb(fc);
-			setuid(luid);
-			return -1;
-		}
-		setuid(luid);
-		fc->use = mode;
-	}
-	return fc - _fcb;
+static void ps(char * s)
+{
+	while(*s)
+		putc(*s++, stderr);
+}
+
+void perror(char * s)
+{
+	ps(s);
+	putc(':', stderr);
+	if(errno < sys_ner)
+		ps(sys_err[errno]);
+	else
+		ps("Unknown error");
+	putc('\r', stderr);
+	putc('\n', stderr);
 }

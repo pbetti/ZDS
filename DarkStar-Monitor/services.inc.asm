@@ -50,9 +50,15 @@ DSR_OS		equ	3
 DSR_HDPART	equ	4
 DSR_ROMIMG	equ	5
 DSR_DELAY	equ	6
+DSR_LOGO	equ	7
 DSR_CONSOLE	equ	28
 DSR_VALID	equ	29
 DSR_SCRATCH	equ	30
+
+; --- logo display ------------------------------
+DL_LARGE	equ	0
+DL_SMALL	equ	1
+DL_NONE		equ	2
 
 ; --- binary to decimal -------------------------
 BD_ZERO		equ	0

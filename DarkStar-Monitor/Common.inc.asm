@@ -86,9 +86,9 @@ mzmac	equ	1
 ;
 ; Monitor version numbers (major.minor.subrel)
 ;
-monmaj		equ	'3'
-monmin		equ	'9'
-subrel		equ	'7'
+monmaj		equ	'4'
+monmin		equ	'0'
+subrel		equ	'0'
 
 ;
 ; Buffers addresses labels
@@ -283,7 +283,7 @@ blifastblok	equ	60h		; Blink, fast, block
 blifastline	equ	6ah		; Blink, fast, line
 cursoroff	equ	20h		; Off
 fixblock	equ	00h		; Fixed, block
-cursoron	equ	0ah		; On
+cursoron	equ	6ah		; On
 	; 6545 register index
 vr0.hrtot	equ	0		; Total horizontal chars
 vr1.hrdis	equ	1		; Total horizontal displayed ch.
@@ -374,17 +374,17 @@ eepage0		equ	0c0h		; page 0 of eeprom
 eepsta		equ	0f000h		; eeprom location after MMU reset
 mmtpapag	equ	(eepsta>>8)-1	; TPA top page (256 bytes pages)
 imtpag		equ	0ffh		; eeprom page with image table
-imtsiz		equ	1024		; size
+imtsiz		equ	2048		; size
 ramtbl		equ	0e000h		; ram table location
-tblblk		equ	48		; block size
-maxblk		equ	20		; max images
+tblblk		equ	40		; block size
+maxblk		equ	40		; max images
 rtbsiz		equ	tblblk * maxblk	; real table size
 					; A table block is:
-tnamelen	equ	8		;	name		: 8 bytes
-tpagelen	equ	2		;	page offset	: 2 bytes
-tiaddrlen	equ	4		;	image address	: 4 bytes
-tsizelen	equ	4		;	image size	: 4 bytes
-tdesclen	equ	20		;	description	: 20 bytes
+tnamelen	equ	9		;	name		: 8 bytes
+tpagelen	equ	3		;	page offset	: 2 bytes
+tiaddrlen	equ	5		;	image address	: 4 bytes
+tsizelen	equ	2		;	image size	: 2 bytes (integer)
+tdesclen	equ	21		;	description	: 20 bytes
 ; -- IDE --
 ideporta	equ	0e0h		; lower 8 bits of IDE interface
 ideportb	equ	0e1h		; upper 8 bits of IDE interface
@@ -517,7 +517,7 @@ eerineprom	equ	80h		; tried to program eeprom running inside it
 
 ;*************************************
 ; Production / Testing
-bbdebug		equ	true
+bbdebug		equ	false
 ;*************************************
 
 ;-------------------------------------

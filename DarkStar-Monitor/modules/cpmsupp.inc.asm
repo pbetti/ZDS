@@ -233,6 +233,8 @@ bmcpm:
 	call	bbsysint
 	or	a
 	jr	nz,bminv
+	call	inline
+	defb	cr,lf,"Boot..",cr,lf,0
 	ld	a,(iedtbuf)
 	call	cpmboot
 	ret

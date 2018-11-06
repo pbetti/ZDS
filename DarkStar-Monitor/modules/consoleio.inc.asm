@@ -101,7 +101,7 @@ inicrt:
 	out	(crtram1cnt),a
 	out	(crtram2cnt),a
 	; initialize sy6545
-	ld	hl,crttab		; now read from eprom
+	ld	hl,crttab		; now read from table
 	ld	b,$00
 	ld	a,b
 ictlp0:	out    (crt6545adst),a		; 6545 init loop
@@ -882,8 +882,8 @@ iocvec2:
 	dw	iocnull			; DC4 0x14 (^T)  no-op
 	dw	iocnull			; NAK 0x15 (^U)  no-op
 	dw	iocnull			; SYN 0x16 (^V)  no-op
-	dw	sascfltr		; ETB 0x17 (^W)  set ascii filter
-	dw	rascfltr		; CAN 0x18 (^X)  reset ascii filter
+	dw	sascfltr		; ETB 0x17 (^W)  set bit 6 miobyte
+	dw	rascfltr		; CAN 0x18 (^X)  reset bit 6 miobyte
 	dw	ndbksp			; EM  0x19 (^Y)  set non destructive BS
 	dw	dbksp			; SUB 0x1a (^Z)  set destructive BS
 	dw	revon			; ESC 0x1b (^[)  REVERSE ON
@@ -1610,7 +1610,7 @@ ansikeys:	; on keyboard input
 	defb	$1b,'L'		; ... F12
 	defb	3,"24~"
 
-	; This table definex (possible) equivalence from NEZ80 character ROMs
+	; This table define (possible) equivalence from NEZ80 character ROMs
 	; and Code Page 437.
 	; Note that final rendering on remote is really dependent from IT'S font usage
 	; 1) we consider only chars from $C0 to $FF

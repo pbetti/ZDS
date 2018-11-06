@@ -174,16 +174,17 @@ int _doprnt(register const char *fmt, va_list ap, FILE *stream)
 	int		nrchars=0;
 	const char	*oldfmt;
 	char		*s1;
-	char		buf[1025];
+	// char		buf[1025];
+	char		buf[257];
 
 	while (c = *fmt++) {
 		if (c != '%') {
 			if (c == '\n') {
-				if (putc('\r', stream) == EOF)
+				if (fputc('\r', stream) == EOF)
 					return nrchars ? -nrchars : -1;
 				nrchars++;
 			}
-			if (putc(c, stream) == EOF)
+			if (fputc(c, stream) == EOF)
 				return nrchars ? -nrchars : -1;
 			nrchars++;
 			continue;
@@ -232,11 +233,11 @@ int _doprnt(register const char *fmt, va_list ap, FILE *stream)
 		switch (c = *fmt++) {
 			default:
 				if (c == '\n') {
-					if (putc('\r', stream) == EOF)
+					if (fputc('\r', stream) == EOF)
 						return nrchars ? -nrchars : -1;
 					nrchars++;
 				}
-				if (putc(c, stream) == EOF)
+				if (fputc(c, stream) == EOF)
 					return nrchars ? -nrchars : -1;
 				nrchars++;
 				continue;
@@ -330,30 +331,30 @@ int _doprnt(register const char *fmt, va_list ap, FILE *stream)
 				if (between_fill) {
 					if (flags & FL_SIGNEDCONV) {
 						j--; nrchars++;
-						if (putc(*s1++, stream) == EOF)
+						if (fputc(*s1++, stream) == EOF)
 							return nrchars ? -nrchars : -1;
 					} else {
 						j -= 2; nrchars += 2;
-						if ((putc(*s1++, stream) == EOF)
-							|| (putc(*s1++, stream) == EOF))
+						if ((fputc(*s1++, stream) == EOF)
+							|| (fputc(*s1++, stream) == EOF))
 							return nrchars ? -nrchars : -1;
 					}
 				}
 				do {
-					if (putc(zfill, stream) == EOF)
+					if (fputc(zfill, stream) == EOF)
 						return nrchars ? -nrchars : -1;
 				} while (--i);
 			}
 
 			nrchars += j;
 			while (--j >= 0) {
-				if (putc(*s1++, stream) == EOF)
+				if (fputc(*s1++, stream) == EOF)
 					return nrchars ? -nrchars : -1;
 			}
 
 			if (i > 0) nrchars += i;
 			while (--i >= 0)
-				if (putc(zfill, stream) == EOF)
+				if (fputc(zfill, stream) == EOF)
 					return nrchars ? -nrchars : -1;
 	}
 	return nrchars;

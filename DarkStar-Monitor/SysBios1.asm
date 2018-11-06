@@ -66,9 +66,9 @@ sysb1hi:
 
 ;-------------------------------------
 
-if	mzmac
-wsym sysbios1.sym
-endif
+; if	mzmac
+; wsym sysbios1.sym
+; endif
 ;
 ;
 	end

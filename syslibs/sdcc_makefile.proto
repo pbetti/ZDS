@@ -1,0 +1,79 @@
+VPATH = ./:../uip/:../apps/httpd/
+CC = sdcc
+#VERBOSE = -V
+CPPFLAGS = -I./ -I ../uip -I ../apps/httpd -DFS_STATISTICS=1
+#-DUIP_LOGGING=1
+#CFLAGS = $(VERBOSE) $(CPPFLAGS) -mmcs51 --debug --stack-after-data
+--model-large
+#LFLAGS = $(VERBOSE)  -mmcs51 --debug --stack-after-data --model-large
+-L../uip -L../apps/httpd
+#LFLAGS = $(VERBOSE)  -mmcs51 --debug --model-large -L../uip -L../apps/httpd
+CFLAGS = $(VERBOSE) $(CPPFLAGS) -mmcs51 --debug --model-large
+LFLAGS = $(VERBOSE)  -mmcs51 --debug --model-large -L./
+
+TST_SRC = sdcc_test.c sys_tic.c serial.c rs232dev.c
+APP_SRC = $(TST_SRC) uip_arch.c
+SOURCES = $(APP_SRC) uip.c httpd.c fs.c cgi.c
+#SOURCES = $(APP_SRC) ../uip/uip.c
+
+APP_OBJ = $(patsubst %.c,%.rel,$(APP_SRC))
+TST_OBJ = $(patsubst %.c,%.rel,$(TST_SRC))
+OBJECTS =  $(APP_OBJ) uip.rel httpd.rel fs.rel cgi.rel
+#OBJECTS =  $(APP_OBJ) uip.rel
+
+
+all: depend libs uip
+
+uip: $(OBJECTS) depend
+    $(CC) --verbose $(LFLAGS) -l libuip.lib -l libhttpd.lib $(APP_OBJ)
+#    $(CC) $(LFLAGS) -l libuip.lib $(APP_OBJ)
+    packihx sdcc_test.ihx > sdcc_test.txt
+    unix2dos -n -q sdcc_test.txt sdcc_test.hex
+
+test: $(TST_OBJ) depend
+    $(CC) $(LFLAGS) $(TST_OBJ)
+    cp sdcc_test.ihx test.ihx
+    packihx test.ihx > test.txt
+    unix2dos -n -q test.txt test.hex
+
+VPATH=../uip:../apps/httpd
+
+tunslip: tunslip.c
+    gcc -o tunslip tunslip.c
+
+clean:
+    rm -f *.rel *~ *core *.s *.asm *.cdb *.lst *.sym *.rst *.asm *.cdb
+*.rel \
+          *.lst *.sym *.rst *.lib *~ *.asm *.adb *.rel *.lst *.sym *.rst
+*.lib *~
+
+distclean: clean
+    rm -f *.ihx *.hex *.map *.txt *.lnk *.dep
+
+%.rel: %.c
+#    @echo $(CC) -c $(CFLAGS) $<
+    $(CC) -c $(CFLAGS) $<
+
+libs:
+    echo uip > libuip.lib
+    echo httpd > libhttpd.lib
+    echo fs >> libhttpd.lib
+    echo cgi >> libhttpd.lib
+#    echo uip > ../uip/libuip.lib
+#    echo httpd > ../apps/httpd/libhttpd.lib
+#    echo fs >> ../apps/httpd/libhttpd.lib
+#    echo cgi >> ../apps/httpd/libhttpd.lib
+
+# Creating dependencies
+# ---------------------
+depend: Makefile.dep
+
+Makefile.dep: $(SOURCES)
+    rm -f Makefile.dep
+    for i in $(SOURCES); do \
+      $(CC) -M $(CPPFLAGS) $$i >$${i}.dep; \
+      cat $${i}.dep >>Makefile.dep; \
+      rm $${i}.dep; \
+    done
+
+include Makefile.dep

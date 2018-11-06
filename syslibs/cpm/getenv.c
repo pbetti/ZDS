@@ -40,7 +40,7 @@ char * getenv(char * s)
 		i = 0;
 		if(fp = fopen(ENVFILE, "r")) {
 			while(i < sizeof avec/sizeof avec[0] && fgets(abuf, sizeof abuf, fp)) {
-				cp = malloc(strlen(abuf)+1);
+				cp = cpm_malloc(strlen(abuf)+1);
 				strcpy(cp, abuf);
 				cp[strlen(cp)-1] = 0;
 				avec[i++] = cp;
@@ -48,7 +48,7 @@ char * getenv(char * s)
 			fclose(fp);
 		}
 		avec[i] = 0;
-		xp = (char **)malloc(i * sizeof avec[0]);
+		xp = (char **)cpm_malloc(i * sizeof avec[0]);
 		memcpy(xp, avec, i * sizeof avec[0]);
 		environ = xp;
 		setup = 1;

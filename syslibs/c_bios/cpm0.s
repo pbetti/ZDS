@@ -15,6 +15,7 @@ cdio	.equ	0x6	; direct console i/o
 	.globl	l__INITIALIZER
 	.globl	s__INITIALIZED
 	.globl	s__INITIALIZER
+	.globl	s__HEAP_END
 
 	.area _HEADER (ABS)
 
@@ -34,14 +35,18 @@ init:
 
 
 	;; Ordering of segments for the linker.
+;
 	.area	_HOME
 	.area	_CODE
-	.area	_GSINIT
-	.area	_GSFINAL
-
+	.area	_INITIALIZED
+	.area   _GSINIT
+	.area   _GSFINAL
 	.area	_DATA
-	.area	_BSS
-	.area	_HEAP
+	.area	_INITIALIZER
+	.area	_BSEG
+	.area   _BSS
+	.area   _HEAP
+
 
 	.area	_CODE
 
@@ -68,7 +73,8 @@ _getchar::
 	call	bdos
 	ret
 
-__clock::
+_heapend::
+	ld	hl, #s__HEAP_END
 	ret
 
 _exit::
@@ -89,6 +95,10 @@ gsinit_next:
 
 	.area   _GSFINAL
 	ret
+
+        .area   _HEAP_END
+__cpm_sdcc_heap_end::
+        .ds     1
 
 ;;;;;;;;;;;;;;;;
 ; eof - cpm0.s ;

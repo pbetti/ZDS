@@ -18,14 +18,15 @@
 //  28.09.18 Piergiorgio Betti   Creation date
 //
 
+#ifndef		_CPM_H
+#define		_CPM_H
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define	BUFSIZ		512
 #define	_NFILE		8
-
-// #define	uint8_t	unsigned char
 
 extern	struct	_iobuf {
 	char *		_ptr;
@@ -54,9 +55,7 @@ extern	struct	_iobuf {
 #define	stdout		(&_iob[1])
 #define	stderr		(&_iob[2])
 #define	getc(p)		fgetc(p)
-#define	getchar()	getc(stdin)
 #define	putc(x,p)	fputc(x,p)
-#define	putchar(x)	putc(x,stdout)
 #define	feof(p)		(((p)->_flag&_IOEOF)!=0)
 #define	ferror(p)	(((p)->_flag&_IOERR)!=0)
 #define	fileno(p)	((uint8_t)p->_file)
@@ -92,12 +91,13 @@ extern	struct	_iobuf {
 
 /*	 signals */
 
-// #define	SIGINT	1		/* control-C */
+#define	SIGINT	1		/* control-C */
 
-// #define	SIG_DFL	((void (*)(int))0)	/* default action is to exit */
-// #define	SIG_IGN	((void (*)(int))1)	/* ignore them */
+#define	SIG_DFL	((void (*)(int))0)	/* default action is to exit */
+#define	SIG_IGN	((void (*)(int))1)	/* ignore them */
 
-// extern void (*	signal(int, void (*)(int)))();
+extern void * signal(int, void (*)(int));
+
 extern void _sigchk();
 
 /*	 stat */
@@ -159,6 +159,19 @@ extern struct tm *	localtime(time_t *);	/* local time */
 
 extern int	stat(char *, struct stat *);
 
+/*	 mem alloc */
+extern	uint16_t	heapend();
+extern	void		_init_heap();
+extern	void * 		cpm_malloc(size_t);
+extern	void * 		cpm_calloc (size_t, size_t);
+extern	void *		cpm_realloc(void *, size_t);
+extern	void		cpm_free(void *ptr);
+
+#define	malloc		cpm_malloc
+#define	calloc		cpm_calloc
+#define	realloc		cpm_realloc
+#define	free		cpm_free
+
 /*	format print */
 
 #define	FL_LJUST	0x0001		/* left-justify field */
@@ -175,19 +188,34 @@ extern int	stat(char *, struct stat *);
 #define	FL_NOASSIGN	0x0800		/* do not assign (in scanf) */
 #define	FL_NOMORE	0x1000		/* all flags collected */
 
-#define	FL_LJUST	0x0001		/* left-justify field */
-#define	FL_SIGN		0x0002		/* sign in signed conversions */
-#define	FL_SPACE	0x0004		/* space in signed conversions */
-#define	FL_ALT		0x0008		/* alternate form */
-#define	FL_ZEROFILL	0x0010		/* fill with zero's */
-#define	FL_SHORT	0x0020		/* optional h */
-#define	FL_LONG		0x0040		/* optional l */
-#define	FL_LONGDOUBLE	0x0080		/* optional L */
-#define	FL_WIDTHSPEC	0x0100		/* field width is specified */
-#define	FL_PRECSPEC	0x0200		/* precision is specified */
-#define FL_SIGNEDCONV	0x0400		/* may contain a sign */
-#define	FL_NOASSIGN	0x0800		/* do not assign (in scanf) */
-#define	FL_NOMORE	0x1000	/* all flags collected */
+/*	   function keys */
+
+#define	K_DEL		200
+#define	K_INS		201
+#define	K_HOME		202
+#define	K_END		203
+#define	K_PGUP		204
+#define	K_PGDN		205
+#define	K_UP		206
+#define	K_DOWN		207
+#define	K_LEFT		208
+#define	K_RIGHT		209
+#define	K_F1		210
+#define	K_F2		211
+#define	K_F3		212
+#define	K_F4		213
+#define	K_F5		214
+#define	K_F6		215
+#define	K_F7		216
+#define	K_F8		217
+#define	K_F9		218
+#define	K_F10		219
+#define	K_F11		220
+#define	K_F12		221
+#define	K_ENTER		0x0d		// usefuls
+#define	K_ESC		0x1b
+#define	K_TAB		0x09
+#define	K_BKSP		0x08
 
 /*	 bdos calls etc. */
 
@@ -306,8 +334,8 @@ extern char *	cgets(char *);
 extern void	puts(char *);
 extern void	cputs(char *);
 extern void	fputs(char *, FILE *);
-extern int	fread(void *, uint8_t, uint8_t, FILE *);
-extern int	fwrite(void *, uint8_t, uint8_t, FILE *);
+extern int	fread(void *, uint16_t, uint16_t, FILE *);
+extern int	fwrite(void *, uint16_t, uint16_t, FILE *);
 extern int	fseek(FILE *, long, int);
 extern int	rewind(FILE *);
 extern void	setbuf(FILE *, char *);
@@ -328,6 +356,10 @@ extern void	perror(char *);
 extern char *	_bufallo(void);
 extern void	_buffree(char *);
 extern void     exit(int);
+extern void	delay(uint16_t);
+extern char *	strdup(const char *);
+
+#endif		// _CPM_H
 
 
 // EOF

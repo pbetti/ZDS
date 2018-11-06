@@ -26,12 +26,12 @@ int close(uint8_t fd)
 	register struct fcb *	fc;
 	uint8_t		luid;
 
-	if(fd >= MAXFILE)
+	if (fd >= MAXFILE)
 		return -1;
 	fc = &_fcb[fd];
 	luid = getuid();
 	setuid(fc->uid);
-	if(fc->use == U_WRITE || fc->use == U_RDWR || bdoshl(CPMVERS,0)&(MPM|CCPM) && fc->use == U_READ)
+	if (fc->use == U_WRITE || fc->use == U_RDWR || bdoshl(CPMVERS,0)&(MPM|CCPM) && fc->use == U_READ)
 		bdos(CPMCLS, (uint16_t)fc);
 	fc->use = 0;
 	setuid(luid);

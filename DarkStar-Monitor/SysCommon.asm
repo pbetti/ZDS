@@ -42,8 +42,8 @@ bbjbnk_1 macro	raddr
 endm
 
 bbjbnk_2 macro	raddr
-call	bbexec2
-defw	raddr
+	call	bbexec2
+	defw	raddr
 endm
 
 bbjbnk_3 macro	raddr
@@ -72,7 +72,7 @@ syscom:
 	public	vconst, bbcurset
 	public	bbu0ini, bbu1ini, sconout, sconin
 	public	sconst, bbu1rx, bbu1tx, bbu1st
-	public bbsetcrs, bbgetcrs, bbdbox
+	public	bbsetcrs, bbgetcrs, bbdbox
 
 	; SYSBIOS2
 	public	bbfwrite, bbflopio, bbfhome, bbfread
@@ -735,9 +735,9 @@ sintvec:				; interrupts vector table (8 entries)
 	vi7:	defw	voidisr			; unused
 
 
-if	mzmac
-wsym syscommon.sym
-endif
+; if	mzmac
+; wsym syscommon.sym
+; endif
 ;
 ;
 	end

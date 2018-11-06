@@ -25,7 +25,7 @@
  *	fwrite
  */
 
-fwrite(void * buf, uint8_t size, uint8_t nitems, register FILE *stream)
+fwrite(void * buf, uint16_t size, uint16_t nitems, register FILE *stream)
 {
 	register unsigned	count;
 	register char *		ptr;

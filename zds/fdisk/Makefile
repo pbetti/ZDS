@@ -15,52 +15,48 @@
 #--
 #
 
+TARGET = fdisk
+LIBS = c_bios.a cpm.a
+
 # SDCC commands
-CCC = sdcc
-CAS = sdasz80
-# ZCC commands
-# CCC = zcc
-# CAS = z80asm
-
-
-INCLUDE_DIR = -I. -I../../syslibs
-LIB_DIR = -L../../syslibs
+CC = sdcc
+AS = sdasz80
+AR = sdar
 
 # Compilation / Assembly / Linking flags
-#SDCC
-CCC_FLAGS = -mz80 -c
-CAS_FLAGS = -plo
-CLD_FLAGS = -mz80 --no-std-crt0 --code-loc 0x120 --data-loc 0
-#ZCC
-# CCC_FLAGS = +zds
-# CAS_FLAGS =
-# CLD_FLAGS =
+CCFLAGS = -mz80 -c
+ASFLAGS = -plo -y
+LDFLAGS = -mz80 --no-std-crt0 --code-loc 0x120 --data-loc 0
+ARFLAGS = -rc
 
 
-# all:
-# 	$(CCC) $(CCC_FLAGS) $(INCLUDE_DIR) -o fdisk.bin fdisk.c
-# 	@rm -f *.asm *.lk *.map *.mem *.noi *.rst *.sym
+SYSLIB_PATH = ../../syslibs
+SYS_INCLUDE_PATH = ../../syslibs
 
-all: fdisk.com
+INCLUDE_DIR = -I. -I$(SYS_INCLUDE_PATH)
+LIB_DIR = -L. -L$(SYSLIB_PATH)
+PROLOGUE = $(SYSLIB_PATH)/cpm0.rel
+LIB_LINK = $(patsubst %,-l%,$(LIBS))
+LIB_DEP = $(patsubst %,$(SYSLIB_PATH)/%,$(LIBS))
 
-fdisk.com: darkstar.inc zds0.rel fdisk.c
-	$(CCC) $(CCC_FLAGS) $(INCLUDE_DIR) fdisk.c
-	$(CCC) $(CLD_FLAGS) $(LIB_DIR) -o fdisk.ihx zds0.rel fdisk.rel -lc_bios.a
-	hex2bin -p 00 fdisk.ihx
-	@mv -f fdisk.bin fdisk.com
+
+all: $(TARGET).com
+
+$(TARGET).com: darkstar.inc $(PROLOGUE) $(TARGET).c $(LIB_DEP)
+	$(CC) $(CCFLAGS) $(INCLUDE_DIR) $(TARGET).c
+	$(CC) $(LDFLAGS) $(LIB_DIR) -o $(TARGET).ihx $(PROLOGUE) $(TARGET).rel $(LIB_LINK)
+	hex2bin -p 00 $(TARGET).ihx
+	@mv -f $(TARGET).bin $(TARGET).com
 	@rm -f *.asm *.lk *.map *.mem *.noi *.rst *.sym
 
-zds0.rel: zds0.s
-	$(CAS) $(CAS_FLAGS) zds0.s
-
-# c_bios.rel: c_bios.z80 darkstar.inc
-# 	$(CAS) $(CAS_FLAGS) c_bios.z80
+$(PROLOGUE):
+	@sh -c "cd $(SYSLIB_PATH); make"
 
 darkstar.inc: darkstar.mac
 	@rm -f darkstar.inc
 	@sed -e "s/EQU/.equ/" darkstar.mac > darkstar.tmp
-	sed -e "s/\\$$/0x/" darkstar.tmp > darkstar.inc
+	@sed -e "s/\\$$/0x/" darkstar.tmp > darkstar.inc
 	@rm -f darkstar.tmp
 
 clean:
-	rm -f *.lst *.ihx *.bin *.hex *.o *.rel darkstar.inc
+	rm -f *.lst *.ihx *.bin *.hex *.o *.rel darkstar.inc *.lk *.map *.mem *.noi *.rst *.sym

@@ -15,12 +15,12 @@
  * #
  */
 
-#include <stdio.h>
+// #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
-
 #include <c_bios.h>
+#include <cpm.h>
 
 #define	SIGNSIZE		8
 #define	SIGNSTRING		"AUAUUAUA"
@@ -28,7 +28,7 @@
 #define	true			1
 #define false			0
 
-static const unsigned int TMPBYTE = 0x004B;	// TMPBYTE in page 0
+// static const unsigned int TMPBYTE = 0x004b;	// TMPBYTE in page 0
 
 typedef struct {
 	unsigned char active;			// active/inactive partition
@@ -95,7 +95,7 @@ main()
 	unlockHDAccess();		// enable unpartitioned access to hd
 
 	/* hello user ! */
-	cls_();
+	cls();
 
 	printf("\nZ80 Darkstar NEZ80 Partition Manager\n");
 	printf("P. Betti, 2014-2018, rev 1.1\n\n");
@@ -112,9 +112,9 @@ main()
 	while (loop) {
 
 		printf("\nEnter command (h = help): ");
-		cmd = getchar();
+		cmd = getch();
 		cmd = toupper(cmd);
-		putchar('\n');
+		putch('\n');
 
 		switch (cmd) {
 			case 'H':
@@ -138,7 +138,7 @@ main()
 				if (modified) {
 					printf("Changes pending for save! Reload will discard them.\n");
 					printf("Are you shure to proceed ? \n");
-					answ = getchar();
+					answ = getch();
 					answ = toupper(answ);
 					if (answ != 'Y')
 						break;
@@ -243,7 +243,7 @@ void doFormat()
 			printf("Trk: %d, sec: %d     \r",
 			       trk - partition.table[pnum].startcyl,
 			       sec);
-			if ( hdWrite_(hdbuf, trk, sec) ) {
+			if ( hdWrite(hdbuf, trk, sec) ) {
 				printf("\nFormat error!\n");
 				return;
 			}
@@ -393,7 +393,7 @@ void readTable()
 {
 	unsigned long tsectors;
 
-	getHDgeo_(&geometry);
+	getHDgeo(&geometry);
 
 	printf("Disk is %d cylinders, %d heads, %d sectors.\n",
 		geometry.cylinders,
@@ -416,7 +416,7 @@ void readTable()
 
 	// partition table is stored on first track of disk, sector 1
 
-	if ( hdRead_(hdbuf, 0, 1) ) {
+	if ( hdRead(hdbuf, 0, 1) ) {
 		printf("Error reading table!\n");
 		doExit();
 	}
@@ -496,19 +496,19 @@ int checkAndInit()
 	return 1;
 }
 
-void unlockHDAccess()
-{
-	unsigned char * tmpbyte = (unsigned char *)TMPBYTE;
+// void unlockHDAccess()
+// {
+// 	unsigned char * tmpbyte = (unsigned char *)TMPBYTE;
 
-	*tmpbyte |= 1 << 7;
-}
+// 	*tmpbyte |= 1 << 7;
+// }
 
-void lockHDAccess()
-{
-	unsigned char * tmpbyte = (unsigned char *)TMPBYTE;
+// void lockHDAccess()
+// {
+// 	unsigned char * tmpbyte = (unsigned char *)TMPBYTE;
 
-	*tmpbyte &= ~(1 << 7);
-}
+// 	*tmpbyte &= ~(1 << 7);
+// }
 
 void tab2Buf()
 {
@@ -526,7 +526,7 @@ void buf2Tab()
 void writeTable()
 {
 	tab2Buf();
-	if ( hdWrite_(hdbuf, 0, 1) ) {
+	if ( hdWrite(hdbuf, 0, 1) ) {
 		printf("Error writing table!\n");
 		doExit();
 	}
@@ -557,11 +557,11 @@ void upromptc(const char * msg, char * c, const char * validate)
 
 	do {
 		printf("%s (%c) : ", msg, *c);
-		usrch = getchar();
-		putchar(usrch);
+		usrch = getch();
+		putch(usrch);
 
 		if (usrch == 0x0d) {
-			putchar('\n');
+			putch('\n');
 			return;
 		}
 		usrch = toupper(usrch);
@@ -570,7 +570,7 @@ void upromptc(const char * msg, char * c, const char * validate)
 			if (usrch == validate[i])
 				inloop = false;
 
-		putchar('\n');
+		putch('\n');
 
 	} while (inloop);
 
@@ -601,15 +601,15 @@ char * gets (register char *s)
 
 	while (1)
 	{
-		c = getchar ();
+		c = getch ();
 		switch(c)
 		{
 			case '\b': /* backspace */
 				if (count)
 				{
-					putchar ('\b');
-					putchar (' ');
-					putchar ('\b');
+					putch ('\b');
+					putch (' ');
+					putch ('\b');
 					--s;
 					--count;
 				}
@@ -617,15 +617,15 @@ char * gets (register char *s)
 
 			case '\n':
 			case '\r': /* CR or LF */
-// 				putchar ('\r');
-				putchar ('\n');
+// 				putch ('\r');
+				putch ('\n');
 				*s = 0;
 				return s;
 
 			default:
 				*s++ = c;
 				++count;
-				putchar (c);
+				putch (c);
 				break;
 		}
 	}

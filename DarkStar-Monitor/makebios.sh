@@ -9,6 +9,7 @@ COMADDR=FC00
 # Compile genequs
 gcc -O3 -g -o genequs genequs.c
 
+mzmac romlder.asm
 echo "Doing SysBios1"
 mzmac --rel -m SysBios1.asm
 echo "Doing SysBios2"
@@ -24,6 +25,7 @@ mzmac --rel -m BootMonitor.asm
 # We do the trick with genequs that extract entries from .lst files
 # and generate final addresses BEFORE linkage... ;-)
 
+#cp ./zout/* .
 genequs -o $MODADDR -e -s -O sysbios.equ SysBios1.lst SysBios2.lst SysBios3.lst BootMonitor.lst
 
 echo "Doing SysCommon"

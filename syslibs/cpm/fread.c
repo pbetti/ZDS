@@ -24,7 +24,7 @@
  *	fread for Zios
  */
 
-int fread(void * buf, uint8_t size, uint8_t nitems, FILE * stream)
+int fread(void * buf, uint16_t size, uint16_t nitems, FILE * stream)
 {
 	register char *		ptr;
 	register unsigned	count;
@@ -32,12 +32,13 @@ int fread(void * buf, uint8_t size, uint8_t nitems, FILE * stream)
 
 	count = size * nitems;
 	ptr = buf;
-	while(count)
-		if((c = getc(stream)) == EOF)
+	while (count)
+		if ((c = fgetc(stream)) == EOF)
 			break;
 		else {
 			--count;
 			*ptr++ = c;
 		}
-	return(nitems - (count+size-1)/size);
+
+	return (nitems - (count+size-1)/size);
 }

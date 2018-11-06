@@ -280,6 +280,16 @@ onshadow:
 tosercns:
 	ld	c,ff			; if on serial
 	call	bbconout
+
+	ld	e,DSR_LOGO		; get test value (IF ds3102 available)
+	call	bbgetdsr
+	ld	a,d
+	ld	e,DL_NONE
+	cp	'N'			; none
+	jr	z, shlogo
+	ld	e,DL_SMALL		; default
+
+shlogo:
 	ld	c,SI_LOGO		; display logo
 	call	bbsysint
 	;
@@ -422,11 +432,7 @@ bootm:
 	call	outcrlf
 	call	bbgetcrs		; save position
 	push	hl
-	ld	h,24			; and clear func line
-	ld	l,0
-	call	bbsetcrs
-	ld	c,ceol
-	call	bbconout
+	call	dfunlin
 	pop	hl
 	call	bbsetcrs
 	ld	de, 1000		; 1 sec.
@@ -448,7 +454,6 @@ dbootm:
 ;; Auto boot
 ;;
 autobot:
-	call	pfunlin			; prepare menu
 	call	disautor		; no autorepeat
 
 	ld	e,DSR_VALID		; valid configuration ?
@@ -457,6 +462,7 @@ autobot:
 	cp	0aah
 	jr	z,doab			; yes
 ab01:
+	call	pfunlin			; prepare menu
 	ld	h,21			; no, wait for user
 	ld	l,0
 	call	bbsetcrs
@@ -492,6 +498,18 @@ doab:
 	call	bbhdinit		; bring up, ide
 	call	bbldpart
 
+	ld	e,DSR_DELAY		; how long?
+	call	bbgetdsr
+	xor	a
+	cp	d			; 0 = disabled
+	jr	nz,doab1
+	call	dfunlin
+	ld	h,19			; prepare for prompt
+	ld	l,0
+	call	bbsetcrs
+	jp	ugreetnc
+doab1:
+	call	pfunlin			; prepare menu
 	ld	h,21			; autoboot
 	ld	l,0
 	call	bbsetcrs
@@ -519,6 +537,10 @@ doab:
 	call	bbconout
 	call	bdelay
 	pop	de
+	call	dfunlin
+	ld	c,cron
+	call	bbconout
+	call	enautor
 	ld	a,d
 	call	bbcpmboot
 	jp	ab01
@@ -534,12 +556,30 @@ bpart:
 	ld	e,BD_ZERO+BD_2DIGIT
 	call	bbsysint
 	call	bdelay
+	call	dfunlin
+	ld	c,cron
+	call	bbconout
+	call	enautor
 	call	bbuziboot
 	jp	ab01
 
 brom:
+	ld	e,DSR_ROMIMG
+	call	bbgetdsr
+	ld	e,d
+	push	de
 	ld	c,SI_ROMBOOT
 	call	bbsysint
+
+	call	bdelay
+	call	dfunlin
+	ld	c,cron
+	call	bbconout
+	call	enautor
+	pop	de
+	ld	c,SI_ROMRUN
+	call	bbsysint
+
 	jp	ab01
 
 csetup:
@@ -567,14 +607,17 @@ bdelay:
 	ld	e,DSR_DELAY		; how long?
 	call	bbgetdsr
 	ld	b,d
+	inc	b
 btdly:
 	ld	hl,(0100h)
 	call	bbsetcrs
 	ld	h,0
+	dec	b
 	ld	l,b
 	ld	c,SI_B2D
 	ld	e,BD_ZERO+BD_2DIGIT
 	call	bbsysint
+	inc	b
 
 	call	bbconst			; console status
 	jr	z,btdly0		; user start
@@ -625,6 +668,16 @@ pfunlin:
 	call	revoff
 	call	inline
 	defb	" Boot",0
+	ret
+;;
+;; delete function select line
+;;
+dfunlin:
+	ld	h,24			; and clear func line
+	ld	l,0
+	call	bbsetcrs
+	ld	c,ceol
+	call	bbconout
 	ret
 
 ;;
@@ -722,6 +775,7 @@ bbnksiz1:
 ugreet:
 	ld	c,ff
 	call	bbconout
+ugreetnc:
 	ld	c,cron
 	call	bbconout
 	call	outcrlf
@@ -1487,9 +1541,9 @@ bmfillo:
 ; ; end of code - this will fill with zeroes to the end of
 ; ; the non-resident image
 
-if	mzmac
-wsym bootmonitor.sym
-endif
+; if	mzmac
+; wsym bootmonitor.sym
+; endif
 ;
 ;
 	end

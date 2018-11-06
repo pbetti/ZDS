@@ -14,7 +14,7 @@
 	title	sysdbg loader
 
 
-include ../../Common.inc.asm
+include ../../DarkStar-Monitor/Common.inc.asm
 include ../../darkstar.equ
 
 

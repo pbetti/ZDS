@@ -57,18 +57,15 @@ int cpm_vsnprintf(char *s, size_t n, const char *format, va_list arg)
 {
 	FILE tmp_stream;
 
-	tmp_stream._flag  = _IOWRT|_IOBINARY|_IOSTRG;
-	tmp_stream._base    = (unsigned char *) s;
-	tmp_stream._ptr    = (unsigned char *) s;
+	tmp_stream._flag = _IOWRT|_IOBINARY|_IOSTRG;
+	tmp_stream._base = (unsigned char *) s;
+	tmp_stream._ptr  = (unsigned char *) s;
 	tmp_stream._cnt  = n-1;
+	tmp_stream._file = 0;
 
 	_doprnt(format, arg, &tmp_stream);
-	tmp_stream._ptr  = 0;
+	*tmp_stream._ptr  = 0;
 
 	return tmp_stream._ptr - s;
 }
 
-// int cpm_vsprintf(char *s, const char *format, va_list arg)
-// {
-// 	return cpm_vsnprintf(s, INT_MAX, format, arg);
-// }

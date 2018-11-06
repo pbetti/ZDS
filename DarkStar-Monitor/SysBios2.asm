@@ -82,9 +82,9 @@ sysb2hi:
 
 ;-------------------------------------
 
-if	mzmac
-wsym sysbios2.sym
-endif
+; if	mzmac
+; wsym sysbios2.sym
+; endif
 ;
 ;
 	end

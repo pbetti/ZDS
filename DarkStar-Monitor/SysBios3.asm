@@ -110,7 +110,13 @@ regrst:
 ;; Print out logo
 ;;
 logo:
+	ld	hl,nologotxt
+	ld	a,e
+	cp	DL_NONE
+	jr	z,disp_logo
+
 	ld	hl,logotxt
+disp_logo:
 	call	print
 	ret
 
@@ -450,11 +456,11 @@ semode:	defb	0			; mode
 seicll:	defb	0
 
 ;----- rom map equates -----
-inamep	equ	2
-ipagep	equ	2+tnamelen+2
-iaddrp	equ	2+tnamelen+2+tpagelen+2
-isizep	equ	2+tnamelen+2+tpagelen+2+tiaddrlen+2
-idescp	equ	2+tnamelen+2+tpagelen+2+tiaddrlen+2+tsizelen+2
+inamep	equ	0
+ipagep	equ	0+tnamelen
+iaddrp	equ	0+tnamelen+tpagelen
+isizep	equ	0+tnamelen+tpagelen+tiaddrlen
+idescp	equ	0+tnamelen+tpagelen+tiaddrlen+tsizelen
 
 ;;
 ;; Select a EEPROM image
@@ -478,6 +484,19 @@ romsel:
 	ld	b,maxblk-1
 	ld	e,1			; sysbios image is not selectable
 rnblk:
+	push	bc
+	ld	a,e			; to second col?
+	cp	21
+	jr	c,rnblk1
+
+	push	de
+	call	bbgetcrs
+	ld	de,40			; yes, second col
+	add	hl,de
+	call	bbsetcrs
+	pop	de
+
+rnblk1:
 	ld	a,e			; image number
 	call	dispa
 	call	inline
@@ -485,15 +504,26 @@ rnblk:
 	ld	c,e
 	call	toblk
 	ld	e,c
-	ld	a,(iy+2)		; is a valid block ?
-	or	a
+	ld	a,(iy)			; is a valid block ?
+	or	a	
 	jr	z,tonblk
 	call	dspblkid		; yes, show it
 tonblk:
 	call	crlf
 	inc	e
+
+	ld	a,e			; to second col?
+	cp	21
+	jr	nz,tonblk1
+
+	ld	l,0
+	ld	h,3
+	call	bbsetcrs
+
+tonblk1:
+	pop	bc
 	djnz	rnblk
-	;
+	
 romask:
 	ld	h,24
 	ld	l,0
@@ -504,9 +534,10 @@ romask:
 	ld	d,2
 	ld	e,SE_DEC
 	call	isysed
+	ld	(hlsav),hl
 	ld	(asav),a		; exit status
 	or	a
-	jr	nz,romexi		; abort
+	jr	nz,romabrt		; abort
 	ld	a,l
 	or	a
 	cp	maxblk
@@ -514,29 +545,22 @@ romask:
 	or	a
 	jr	z,rombep		; zero, ask again
 	ld	c,a
-	push	hl
 	call	toblk
-	pop	hl
-	ld	a,(iy+2)		; is a valid block ?
+	ld	a,(iy)		; is a valid block ?
 	or	a
 	jr	z,rombep		; nok
 	;
 romexi:
-	ld	(hlsav),hl
 	; copy rom name at 0200h for setup utiity
-	push	hl
 	push	iy			; iy -> hl
 	pop	hl
-	ld	b,0
-	ld	c,(hl)			; bc = fld length
-	inc	hl			; name start
-	inc	hl
+	ld	bc,tnamelen
 	ld	de,0200h		; destination
 	ldir				; go
-	ld	(hl),0
-	pop	hl
 	;
+romabrt:
 	call	rrestp
+	ld	hl,(hlsav)
 	ret
 	;
 rombep:
@@ -561,6 +585,10 @@ rrestp:
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
 	ret
+
+romlder	equ	$7000
+rombuf	equ	(romlder - 7)	
+
 ;;
 ;; Get an EEPROM image on ram
 ;;
@@ -586,14 +614,27 @@ romrun:
 	ld	(rombuf+1),hl
 	ld	(rombuf+5),hl		; two copy, we need it later
 
-	ld	de,isizep
-	ld	b,4
-	call	imgt2bin
-	ld	(rombuf+3),hl
+	ld	e,(iy+isizep)
+	ld	d,(iy+isizep+1)
+	ld	(rombuf+3),de
 
 	call	rrestp
+
+	; move loader in place and jump to it
+	ld	hl,lder_start
+	ld	de,romlder
+	ld	bc,lder_end - lder_start
+	ldir
+
+	jp	romlder
+
+lder_start	equ $
+
+	phase	romlder
+
 	; start interbank copy
 multi:
+	ld	sp,rombuf
 	ld	hl,(rombuf+3)		; image size
 	ld	de,4096
 	or	a			; clear carry
@@ -626,27 +667,93 @@ cp4k:	ld	c,l
 	ld	(rombuf+1),hl
 	jr	multi
 runrdy:
-	call	inline			; what to do ?
-	defb	cr,lf,"Image in place, any key to run or <ESC> to exit",cr,lf,0
-	call	bbconin
-	cp	esc			; abort ?
-	ret	z
+	; call	inline			; what to do ?
+	; defb	cr,lf,"Image in place, any key to run or <ESC> to exit",cr,lf,0
+	; call	bbconin
+	; cp	esc			; abort ?
+	; ret	z
 	ld	hl,(rombuf+5)		; jump to
 	jp	(hl)
-placepage:
+
+placepage	equ	$ + $1000
+; placepage:
 	push	bc
 	push	af
-	call	rsavtp			; save transient
+	call	lrsavtp			; save transient
 	;
 	pop	af
-	call	rmnttp			; mount and
+	call	lrmnttp			; mount and
 	pop	bc
 	ld	hl,trnpag << 12
 	ldir				; do copy 4k
 	;
-	call	rrestp			; reset mmu
+	call	lrrestp			; reset mmu
 	ret
-	;
+
+; get/save transient page
+lrsavtp		equ	$ + $1000
+; lrsavtp:
+	ld	b,trnpag		; ask mmu page
+	call	lmmgetp
+	ld	(pagsav),a		; save current
+	ret
+; mount on transient
+lrmnttp		equ	$ + $1000
+; lrmnttp:
+	ld	b,trnpag		; transient page
+	call	lmmpmap			; mount it
+	ret
+; restore transient
+lrrestp		equ	$ + $1000
+; lrrestp:
+	ld	a,(pagsav)		; restore
+	ld	b,trnpag		; transient page
+	call	lmmpmap			; mount it
+	ret
+
+pagsav	equ	$ + $1000
+	defb 	0
+
+;;
+;; Map page into logical space
+;;
+;; A - physical page (0-ff)
+;; B - logical page (0-f)
+;; Use C
+;;
+lmmpmap		equ	$ + $1000
+; lmmpmap:
+	sla	b
+	sla	b
+	sla	b
+	sla	b
+	ld	c,mmuport
+	out	(c),a
+	ret
+
+;;
+;; Get physical page address
+;;
+;; B - logical page (0-f)
+;; A - return page number
+;; Use C
+;;
+lmmgetp		equ	$ + $1000
+; lmmgetp:
+	sla	b
+	sla	b
+	sla	b
+	sla	b
+	ld	c,mmuport
+	in	a,(c)
+	ret
+
+
+	dephase
+
+lder_end	equ $
+
+;
 ; Convert A to ascii
 dispa:
 	push	bc
@@ -674,29 +781,33 @@ toblk0:
 	pop	bc
 	ret
 	;
-; print rom image field
-pblkfld:
-	push	iy
-	pop	hl			; mov addr to hl
-	add	hl,bc
-	ld	b,(hl)			; fld length
-pblkf0:
-	inc	hl
-	ld	c,(hl)
-	call	bbconout
-	djnz	pblkf0
-	ret
-	;
 ; display header
 dspblkid:
+	push	hl
 	push	bc
-	ld	bc,inamep-1		; name
-	call	pblkfld
+	push	de
+
+	push	iy
+	pop	hl			; hl = inamep = blk
+	call	print
+
+	call	bbgetcrs
+	ld	de, tnamelen
+	add	hl,de
+	call	bbsetcrs
 	call	inline
 	defb	" - ",0
-	ld	bc,idescp-1		; description
-	call	pblkfld
+	
+	push	iy
+	pop	de			; de = blk
+
+	ld	hl, idescp
+	add	hl, de			; hl = idescp
+	call	print
+
+	pop	de
 	pop	bc
+	pop	hl	
 	ret
 ;
 ; Convert tbl field to binary
@@ -710,7 +821,6 @@ imgt2bin:
 	ret
 	;
 pagbuf:	defb	0
-rombuf:	defs	6
 
 ;;
 ;; emit cr,lf sequence
@@ -834,9 +944,11 @@ zsetup:
 	call	inline
 	defb	cr,lf,lf
 	defb	"Boot Type:     <D>rive <R>om"
-	defb	cr,lf,lf
+	defb	cr,lf
 	defb	"Console  :     <C>rt <S>erial"
 	defb	cr,lf,lf
+	defb	"Boot Logo:     <L>arge <S>mall <N>one"
+	defb	cr,lf
 	defb	"Delay    :     <0-99> seconds"
 	defb	cr,lf,lf,0
 
@@ -863,7 +975,7 @@ zsetup:
 	call	iveff
 	call	inline
 	defb	cr,lf,lf
-	defb	"ROM Id   :     any key to select",0fh
+	defb	"ROM Id   :",0fh
 	defb	0
 
 	; setup data
@@ -913,14 +1025,14 @@ aboo:					; boot type
 aboox:
 	ld	(dsrcpy+DSR_BOOTTYP),a	; exit status
 acon:					; console type
-	ld	h,7			; in place
+	ld	h,6			; in place
 	ld	l,stpcol
 	call	bbsetcrs
 	ld	hl,dsrcpy+DSR_CONSOLE
 	ld	a,(zsdraw)		; draw only ?
 	or	a
 	call	nz,zspch		; display
-	jr	nz,adel			; and skip
+	jr	nz,alog			; and skip
 	ld	d,1
 	ld	e,SE_STR+SE_EXTSTR
 	call	zsedt
@@ -933,6 +1045,31 @@ acon:					; console type
 	jr	acon
 aconx:
 	ld	(dsrcpy+DSR_CONSOLE),a	; exit status
+
+
+alog:					; console type
+	ld	h,8			; in place
+	ld	l,stpcol
+	call	bbsetcrs
+	ld	hl,dsrcpy+DSR_LOGO
+	ld	a,(zsdraw)		; draw only ?
+	or	a
+	call	nz,zspch		; display
+	jr	nz,adel			; and skip
+	ld	d,1
+	ld	e,SE_STR+SE_EXTSTR
+	call	zsedt
+	ld	a,(iedtbuf)
+	cp	'L'
+	jr	z,alogx
+	cp	'S'
+	jr	z,alogx
+	cp	'N'
+	jr	z,alogx
+	call	seign
+	jr	alog
+alogx:
+	ld	(dsrcpy+DSR_LOGO),a	; exit status
 
 adel:					; boot delay
 	ld	h,9			; in place
@@ -1098,9 +1235,9 @@ arom:
 	ld	h,21			; in place
 	ld	l,stpcol
 	call	bbsetcrs
-	ld	hl,dsrcpy+DSR_ROMIMG
-	ld	a,(hl)
-	call	dispa
+	call	romprint
+	ld	hl,aksel
+	call	print
 	ld	a,(zsdraw)		; draw only ?
 	or	a
 	jr	nz,zsconf		; yes skip
@@ -1119,15 +1256,6 @@ arom:
 	ld	l,stpcol		; restore cursor
 	call	bbsetcrs
 	pop	hl
-
-	ld	a,l
-	ld	(dsrcpy+DSR_ROMIMG),a	; exit status
-
-	call	dispa
-	call	inline
-	defb	0fh, " - ",0		; clr to eol
-	ld	hl,0200h
-	call	print
 
 zsconf:
 	ld	a,(zsdraw)		; draw only ?
@@ -1192,7 +1320,7 @@ mtuzi:	defb	"UZI",0
 mtdos:	defb	"NDOS",0
 mtoth:	defb	"OTHR",0
 mtnan:	defb	"N/A",0
-;
+
 ; call editor, check for abort
 zsedt:
 	ld	a,(hl)
@@ -1218,7 +1346,7 @@ zsdedt:
 	or	a
 	ret	z			; ok
 	pop	de			; abort, delete our call
-	jr	zsbye
+	jp	zsbye
 ; setup exit prompt
 ;
 zspro:
@@ -1387,11 +1515,58 @@ etprpg1:
 	pop	bc
 	ret
 
+rbm1:	defb	0fh, " : ",0
+rbm2:	defb	0fh," - ",0
+aksel:	defb	" <any key> to select",0
+
 ;;
 ;; boot from ROM
 ;;
 romboot:
+	push	de
+	call	inline
+	defb	"rom image ",0
+	pop	de
+	jr	romboot1
+
+romprint:
+	ld	a,(dsrcpy+DSR_ROMIMG)
+	ld	l,a
+	ld	h,0
+	ld	(hlsav),hl
+	ld	e,BD_NOZERO+BD_2DIGIT
+	ld	(desav),de
+	call	bin2dec
+	ld	hl,rbm1
+	call	print
+
+	ld	a,(dsrcpy+DSR_ROMIMG)
+	ld	e,a
+	or	a
+	ret	z
+romboot1:
+	call	rsavtp			; save current t. page
+	;
+	ld	a,imtpag		; in eeprom map
+	call	rmnttp
+
+	ld	c,e
+	call	toblk
+	push	iy
+	pop	de			; de = blk
+	ld	hl, inamep
+	add	hl, de			; hl = idescp
+	call	print
+	ld	hl,rbm2
+	call	print
+	push	iy
+	pop	de			; de = blk
+	ld	hl, idescp
+	add	hl, de			; hl = idescp
+	call	print
+	call	rrestp
 	ret
+
 
 ;-------------------------------------
 ; Needed modules
@@ -1413,21 +1588,24 @@ asav:	dw	0			; a i/o
 
 logotxt:
 	defb	cr,lf
-	defb	$20,$1b,$1b,$0d,$d4,$cc,$d5,$d4,$d0,$d5,$d4,$cc
+	defb	$20,$d4,$cc,$d5,$d4,$d0,$d5,$d4,$cc
 	defb	$d5,$20,$20,$d4,$d5,$d4,$d4,$cc,$d5,$d4,$cc,$d5
-	defb	$d4,$cc,$d5,$d4,$cc,$d5,$1b,$1c,$0d,$20,cr,lf
-	defb	$20,$1b,$1b,$0d,$d4,$cc,$d3,$20,$cb,$cb,$d2,$cc
+	defb	$d4,$cc,$d5,$d4,$cc,$d5,$20,cr,lf
+	defb	$20,$d4,$cc,$d3,$20,$cb,$cb,$d2,$cc
 	defb	$d5,$20,$20,$cb,$cb,$cb,$cb,$cf,$20,$d4,$cc,$d3
-	defb	$ce,$cc,$cf,$cb,$20,$cb,$1b,$1c,$0d,$20,cr,lf
-	defb	$20,$1b,$1b,$0d,$d2,$cc,$cc,$cc,$d1,$d3,$d2,$cc
+	defb	$ce,$cc,$cf,$cb,$20,$cb,$20,cr,lf
+	defb	$20,$d2,$cc,$cc,$cc,$d1,$d3,$d2,$cc
 	defb	$d3,$20,$20,$d3,$d2,$d3,$d2,$cc,$d3,$d2,$cc,$d3
-	defb	$d2,$cc,$d3,$d2,$cc,$d3,$1b,$1c,$0d,$20,cr,lf
+	defb	$d2,$cc,$d3,$d2,$cc,$d3,$20,cr,lf
 	defb	$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1
 	defb	$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1,$c1
 	defb	$c1,$c1,$c1,$c1,cr,lf
+
 	defb	cr,lf
 	defb	0
 
+nologotxt:
+	defb	lf,lf,"-----   Z80 Darkstar System   -----",cr,lf,lf,lf,lf,0 
 
 ;-------------------------------------
 sysb3lo:
@@ -1440,9 +1618,9 @@ sysb3hi:
 
 ;-------------------------------------
 
-if	mzmac
-wsym sysbios3.sym
-endif
+; if	mzmac
+; wsym sysbios3.sym
+; endif
 ;
 ;
 	end

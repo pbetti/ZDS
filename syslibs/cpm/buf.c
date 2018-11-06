@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <cpm.h>
 
+#undef free
+
 static union stdbuf
 {
 	char		bufarea[BUFSIZ];
@@ -34,7 +36,7 @@ char * _bufallo()
 	if(pp = freep)
 		freep = pp->link;
 	else
-		pp = (union stdbuf *)malloc(BUFSIZ);
+		pp = (union stdbuf *)cpm_malloc(BUFSIZ);
 	return pp->bufarea;
 }
 

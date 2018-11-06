@@ -21,30 +21,29 @@
 
 #include <cpm.h>
 
-// static void (*	where)(int);
-//
-// void (*signal(int sig, void (*	action)(int)))()
-// {
-// 	void (*	prev)(int);
-//
-// 	if(sig != SIGINT)
-// 		return (void (*)())-1;
-// 	prev = where;
-// 	where = action;
-// 	return prev;
-// }
+static void (* where)(int);
+static void (* prev)(int);
+
+void * signal(int sig, void (* action)(int))
+{
+
+	if(sig != SIGINT)
+		return (void (*)())-1;
+	prev = where;
+	where = action;
+	return prev;
+}
 
 void _sigchk()
 {
 	char	c;
 
-	if(/*where == SIG_IGN ||*/ bdos(CPMICON, 0) == 0)
+	if(where == SIG_IGN || bdos(CPMICON, 0) == 0)
 		return;
 	c = bdos(CPMRCON, 0);
 	if(c != CPMRBT)
 		return;
-// 	if(where == SIG_DFL)
+	if(where == SIG_DFL)
 		exit(0);
-// 	(*where)();
+	(*where)(0);
 }
-

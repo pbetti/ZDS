@@ -262,6 +262,9 @@ int main( int argc, char *argv[] )
 					if (onlyentries && etype == 'q')
 						continue;
 
+					if (nvalue == 0)
+						continue;
+
 					if (offset) {
 						nvalue = (nvalue + offset) & 0xffff;
 					}

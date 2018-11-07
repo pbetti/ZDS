@@ -947,8 +947,8 @@ int8_t do_image_load(char *filename, ROM_INDEX_BLK * block)
 		}
 
 		zwscrs(runlog_col, ++lrow);
-		printf("Flashing page");
-		eeprogram(offset, (uint16_t)rom_io_buffer);
+		printf("Flashing page, %X", offset+page_count);
+		eeprogram(offset+page_count, (uint16_t)rom_io_buffer);
 
 		--lrow;
 		++page_count;

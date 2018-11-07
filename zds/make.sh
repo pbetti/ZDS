@@ -28,8 +28,13 @@ SRCS="systran \
 		rm -rf $ut.lst
 	done
 
+	/bin/bash -c "cd ../syslibs; make"
+
 	/bin/bash -c "cd fdisk; make"
 	cp -f fdisk/fdisk.com .
+
+	/bin/bash -c "cd flasher; make"
+	cp -f flasher/flasher.com .
 
 	/bin/bash -c "cd launchers; ./mklaunchers.sh"
 	cp -f launchers/*.com .

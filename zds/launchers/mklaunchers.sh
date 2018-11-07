@@ -14,7 +14,8 @@ mzmac ml390db4.asm
 mv ml390db4.bin ml390db4.com
 cat ep390-2532.bin >> ml390db4.com
 cat sysdbg8.bin >> ml390db4.com
-rm -f *.lst ep390-2532.bin sysdbg8.bin
+#rm -f *.lst ep390-2532.bin sysdbg8.bin
+rm -f *.lst sysdbg8.bin
 
 echo "Done ml390db4.com -> EPROM LX390 4k Dual Boot"
 

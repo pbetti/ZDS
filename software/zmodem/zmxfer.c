@@ -68,14 +68,14 @@ extern int rlabel(void);
 extern int ovmain(char);
 extern int sendout(int);
 extern int bringin(int);
-extern int endstat(int, int );
+extern void endstat(int, int );
 extern int protocol(int);
 extern int updcrc(unsigned, unsigned );
 extern long updc32(int, long);
 extern int asciisend(char *);
-extern int checkpath(char *);
-extern int xmchout(char);
-extern int testrxc(short);
+extern void checkpath(char *);
+extern void xmchout(char);
+extern void testrxc(short);
 
 /* ../zzm2.c */
 extern int zrbhdr(char *);
@@ -109,10 +109,12 @@ extern int readline(int);
 extern int allocerror ( char * );
 extern int openerror ( int, char *, int );
 
+extern char * grabmem();
+
 
 jmp_buf jb_stop;
 
-ovmain ( char a )
+int ovmain ( char a )
 {
 	Sending = QuitFlag = StopFlag = FALSE;
 
@@ -120,6 +122,8 @@ ovmain ( char a )
 		sendout ( 0 );
 	else
 		bringin ( 0 );
+	
+	return 0;
 }
 
 
@@ -170,7 +174,7 @@ int sendout ( int prot )
 			case 'Z':
 				Zmodem = TRUE;
 				Xmodem = FALSE;
-				XonXoffOk = XonXoff;	/* maybe allow xon-xoff */
+				XonXoffOk = XonXoff;			/* maybe allow xon-xoff */
 				result = wcsend ( count, Pathlist );
 				break;
 
@@ -180,7 +184,7 @@ int sendout ( int prot )
 				break;
 
 			default:
-				result = !OK;
+				result = NOK;
 				break;
 		}
 	}
@@ -189,8 +193,7 @@ int sendout ( int prot )
 	return result;
 }
 
-bringin ( prot )
-int prot;
+int bringin ( int prot )
 {
 	static int kbdata, count, result;
 
@@ -225,7 +228,7 @@ int prot;
 
 			Zmodem = FALSE;
 			Nozmodem = Xmodem = TRUE;
-			result = wcreceive ( Pathlist[0] );   /* just one file */
+			result = wcreceive ( Pathlist[0] );   		/* just one file */
 			break;
 
 		case 'Y':
@@ -265,18 +268,16 @@ int prot;
 }
 
 /* Clean up at end and report */
-endstat ( result, count )
-int result, count;
+void endstat ( int result, int count )
 {
-	XonXoffOk = FALSE;	/* disable xon-xoff */
+	XonXoffOk = FALSE;				/* disable xon-xoff */
 	freepath ( count );
 	LOCATE ( BR + 2, 1 );
 	printf ( "\nTransfer %s\n", result == OK ? "Successful" : "Aborted" );
 	flush();
 }
 
-protocol ( for_send )
-int for_send;        /* select block size in transmit only */
+int protocol (int  for_send )				/* select block size in transmit only */				
 {
 	static int c;
 	static char *buffer;
@@ -367,8 +368,7 @@ static unsigned crctab[256] = {
  * Omen Technology.
  */
 
-updcrc ( cp, crc )
-unsigned cp, crc;
+int updcrc ( unsigned int cp, unsigned int crc )
 {
 	return ( crctab[ ( ( crc >> 8 ) & 255 )] ^ ( crc << 8 ) ^ cp );
 }
@@ -446,20 +446,15 @@ static long cr3tab[] = { /* CRC polynomial 0xedb88320 */
 	0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 };
 
-long
-updc32 ( b, c )
-int b;
-long c;
+long updc32 ( int b, long c )
 {
 	return ( cr3tab[ ( ( int ) c ^ b ) & 0xff] ^ ( ( c >> 8 ) & 0x00FFFFFF ) );
 }
 
 
 
-asciisend ( file ) /* send ascii file with xon/xoff protocol */
-char *file;
+int asciisend ( char * file ) 					/* send ascii file with xon/xoff protocol */
 {
-	char *grabmem();
 	static int fd, status, bytes, c;
 	static char *inbuf;
 	static unsigned j, bufsize;
@@ -470,14 +465,9 @@ char *file;
 	if ( allocerror ( inbuf ) )
 		return NERROR;
 
-	/*#ifdef AZTEC_C
-		fd = fopen(file,"rb");
-		if (openerror(fd,file,BUFIOT)) {
-	#else*/
 	fd = open ( file, 0 );
 
 	if ( openerror ( fd, file, UBIOT ) ) {
-		/*#endif*/
 
 		free ( inbuf );
 		return NERROR;
@@ -491,11 +481,7 @@ char *file;
 	putlabel ( Buf );
 	j = 0;
 
-	/*#ifdef AZTEC_C
-		while ((bytes = fread(inbuf,1,bufsize,fd)) > 0) {
-	#else*/
 	while ( ( bytes = read ( fd, inbuf, bufsize ) ) > 0 ) {
-		/*#endif*/
 
 		c = inbuf[0];
 
@@ -503,8 +489,8 @@ char *file;
 			xmchout ( c );
 			opabort();
 
-			if ( QuitFlag || StopFlag ) /* xmchout tests for xoff */
-				goto cleanup;	/* abort */
+			if ( QuitFlag || StopFlag ) 		/* xmchout tests for xoff */
+				goto cleanup;			/* abort */
 
 			putchar ( c );
 
@@ -525,30 +511,21 @@ char *file;
 
 cleanup:
 
-#ifdef AZTEC_C
-	fclose ( fd );
-#else
 	close ( fd );
-#endif
 
 	free ( inbuf );
 	return status;
 }
 
-checkpath ( name ) /* eliminate bad paths in receive */
-char *name;
+void checkpath ( char * name ) 					/* eliminate bad paths in receive */
 {
 	char *p, c, *index();
 	short i;
-	static char badchar[] = ",;:_[]=<>/";	/* disallowed f/n characters */
+	static char badchar[] = ",;:_[]=<>/";			/* disallowed f/n characters */
 
-	for ( p = name; *p; p++ ) {         /* dump strange characters */
+	for ( p = name; *p; p++ ) {         			/* dump strange characters */
 
-		/*#ifdef AZTEC_C
-				if (!isalpha(*p) && !isdigit(*p) && (*p != '.')) {
-		#else*/
 		if ( ! ( ( ( c = *p ) > '!' ) && ( c < 0x7f ) && !index ( badchar, c ) ) ) {
-			/*#endif*/
 
 			*p = '\0';
 			strcat ( name, p + 1 );
@@ -568,18 +545,18 @@ char *name;
 }
 
 /* output a character to the modem and test the receive channel */
-xmchout ( char c )
+void xmchout ( char c )
 {
-	testrxc ( 200 );	/* test receive channel */
-	mcharout ( c );	/* then send it */
+	testrxc ( 200 );					/* test receive channel */
+	mcharout ( c );						/* then send it */
 }
 
 /* Test receive channel for xon/xoff and interrupt while sending */
-testrxc ( short timeout ) /* timeout in seconds */
+void testrxc ( short timeout ) 					/* timeout in seconds */
 {
 	static char c;
 
-	c = minprdy() ? mcharinp() : '\0';	/* get a character if any */
+	c = minprdy() ? mcharinp() : '\0';			/* get a character if any */
 
 	if ( c ) {
 		if ( XonXoffOk && ( c == CTRLS ) ) {
@@ -592,7 +569,7 @@ testrxc ( short timeout ) /* timeout in seconds */
 		StopFlag = ( ( c == CTRLC ) || ( c == CTRLX ) || ( c == '*' ) );
 
 		if ( StopFlag && Zmodem && Sending )
-			longjmp ( jb_stop, c );	/* zmodem transmit interrupt */
+			longjmp ( jb_stop, c );			/* zmodem transmit interrupt */
 	}
 }
 

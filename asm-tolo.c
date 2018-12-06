@@ -9,12 +9,16 @@ FILE * inasm, * outasm;
 void wline(char * wbuf)
 {
 	char * p = wbuf;
+	int susp = 0;
 
 	while(*p) {
-		if (*p == ';' || *p == 0x27 || *p == 0x22)
+		if (*p == ';')
 			break;
+		if (*p == 0x27 || *p == 0x22)
+			susp = !susp;
 		if (isalnum(*p))
-			*p = tolower(*p);
+			if (!susp)
+				*p = tolower(*p);
 		++p;
 	}
 	
@@ -47,36 +51,6 @@ main(int argc, char **argv)
 	while (!feof(inasm)) {
 		fgets(buf, 2048, inasm);
 
-// 		p = buf;
-// 		if (*p != '\t') {
-// 			wline(buf);
-// 			continue;
-// 		}
-// 		++p;
-// 		if (!isalnum(*p)) {
-// 			wline(buf);
-// 			continue;
-// 		}
-// 		if (*p == ';') {
-// 			wline(buf);
-// 			continue;
-// 		}
-// 		while (*p != ' ' && *p != '\t' && *p)
-// 			++p;
-// 		if (*p == '\t') {
-// 			wline(buf);
-// 			continue;
-// 		}
-// 		if (*p == ' ') {
-// 			*p = '\0';
-// 			wline(buf);
-// 			wline("\t");
-// 			++p;
-// 			while (*p == ' ' && *p)
-// 				++p;
-// 			wline(p);
-// 			continue;
-// 		}
 		wline(buf);
 	}
 

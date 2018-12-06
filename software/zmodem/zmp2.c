@@ -18,32 +18,31 @@ extern int index ( char *, char );
 extern int max ( int, int );
 
 /* ../zmp.c */
-extern int main ( void );
 extern char *grabmem ( unsigned * );
 extern int getpathname ( char * );
 extern int linetolist ( void );
-extern int freepath ( int );
-extern int reset ( unsigned, int );
-extern int addu ( char *, int, int );
-extern int deldrive ( char * );
+extern void freepath ( int );
+extern void reset ( unsigned, int );
+extern void addu ( char *, int, int );
+extern void deldrive ( char * );
 extern int dio ( void );
 extern int chrin ( void );
 extern int getch ( void );
-extern int flush ( void );
-extern int purgeline ( void );
+extern void flush ( void );
+extern void purgeline ( void );
 extern int openerror ( int, char *, int );
-extern int wrerror ( char * );
+extern void wrerror ( char * );
 extern char *alloc ( int );
 extern int allocerror ( char * );
-extern int perror ( char * );
+extern void perror ( char * );
 extern int kbwait ( unsigned );
 extern int readstr ( char *, int );
 extern int isin ( char *, char * );
-extern int report ( int, char * );
-extern int mstrout ( char *, int );
+extern void report ( int, char * );
+extern void mstrout ( char *, int );
 
 /* ../zmp2.c */
-extern int fstat ( char *, struct stat * );
+extern void fstat ( char *, struct stat * );
 extern unsigned filelength ( struct zfcb * );
 extern int roundup ( int, int );
 extern int getfirst ( char * );
@@ -53,20 +52,21 @@ extern int ctr ( char * );
 extern int opabort ( void );
 extern int readock ( int, int );
 extern int readline ( int );
-extern int putlabel ( char[] );
-extern int killlabel ( void );
+extern void putlabel ( char * );
+extern void killlabel ( void );
 extern int mgetchar ( int );
 extern int dummylong ( void );
-extern int box ( void );
-extern int clrbox ( void );
+extern void box ( void );
+extern void clrbox ( void );
 extern int mread ( char *, int, int );
 extern int mcharinp ( void );
-extern int mcharout ( char );
+extern void mcharout ( char );
 extern int minprdy ( void );
+extern int mrd ( void );
+extern int mirdy ( void );
+extern int mchin ( void );
 
-fstat ( fname, status )
-char *fname;
-struct stat *status;
+void fstat ( char * fname, struct stat * status )
 {
 	unsigned filelength();
 
@@ -76,9 +76,7 @@ struct stat *status;
 	fcbinit ( "????????.???", ( struct fcb * ) &Thefcb );
 }
 
-unsigned
-filelength ( fcbp )
-struct zfcb *fcbp;
+unsigned int filelength ( struct zfcb * fcbp )
 {
 	int olduser;
 
@@ -90,42 +88,24 @@ struct zfcb *fcbp;
 	return fcbp->ranrec;
 }
 
-roundup ( dividend, divisor )
-int dividend, divisor;
+int roundup ( int dividend, int divisor )
 {
 	return ( dividend / divisor + ( ( dividend % divisor ) ? 1 : 0 ) );
 }
 
-getfirst ( aname )   /* ambiguous file name */
-char *aname;
+int getfirst ( char * aname )   /* ambiguous file name */
 {
 	bdos ( SETDMA, CPMBUF );     /* set dma address */
 	fcbinit ( aname, ( struct fcb * ) &Thefcb );
 	return bdos ( SFF, ( struct fcb * ) &Thefcb ) & 0xff;
 }
 
-getnext()
+int getnext()
 {
 	bdos ( SETDMA, CPMBUF );     /* set dma address */
 	return bdos ( SFN, NULL ) & 0xff;
 }
-/*
-memcpy(dest,source,count)
-char *dest, *source;
-int count;
-{
-   while (count--)
-      *dest++ = *source++;
-}
 
-memset(dest,byte,count)
-char *dest, byte;
-int count;
-{
-   while (count--)
-      *dest++ = byte;
-}
-*/
 /* command: expand wild cards in the command line.  (7/25/83)
  * usage: command(&argc, &argv) modifies argc and argv as necessary
  * uses sbrk to create the new arg list
@@ -139,7 +119,7 @@ int count;
 int vcount,*loc_vector,in_count,*ext_vector;
 char *curfname,*fnptr;
 */
-static expand();
+static int expand();
 int vcount, in_count;
 char * curfname;
 char ** loc_vector;
@@ -208,7 +188,7 @@ static int expand()		/* Returns FALSE if error */
 	olduser = getuid();			/* save original user area */
 	fcbinit ( curfname, &cur_fcb );
 
-	if ( cur_fcb.dr == -1 )
+	if ( cur_fcb.dr < 'A' || cur_fcb.dr > 'P' )
 		cur_fcb.dr = '?';		/* Check for all users */
 
 	for ( i = flg = 1; i <= 11; ++i ) {	/* Expand *'s */
@@ -266,13 +246,12 @@ static int expand()		/* Returns FALSE if error */
 	return TRUE;
 }
 
-ctr ( p )
-char *p;
+int ctr ( char * p )
 {
 	return max ( ( 80 - strlen ( p ) ) / 2, 0 );
 }
 
-opabort()
+int opabort()
 {
 	Lastkey = getch() & 0xff;
 
@@ -298,8 +277,7 @@ opabort()
  * timeout is in tenths of seconds
  */
 
-readock ( timeout, count )
-int timeout, count;
+int readock ( int timeout, int count )
 {
 	static int c;
 	static char byt[5];
@@ -319,14 +297,12 @@ int timeout, count;
 	return CAN;
 }
 
-readline ( n )
-int n;
+int readline ( int n )
 {
 	return ( readock ( n, 1 ) );
 }
 
-putlabel ( string )
-char string[];
+void putlabel ( char * string )
 {
 	cls();
 	locate ( 0, ctr ( string ) - 1 );	/* Centre on top line */
@@ -335,13 +311,12 @@ char string[];
 	stndend();			/* Inverse off */
 }
 
-killlabel() /*disable 25th line*/
+void killlabel() /*disable 25th line*/
 {
 	cls();			/* just clear screen */
 }
 
-mgetchar ( seconds )      /* allows input from modem or operator */
-int seconds;
+int mgetchar ( int seconds )      /* allows input from modem or operator */
 {
 	static int c, tenths;
 
@@ -356,17 +331,8 @@ int seconds;
 	return TIMEOUT;
 }
 
-#ifdef AZTEC_C
-/* Dummy routine to allow long arithmetic in overlays */
-dummylong()
-{
-	long a = 1L;
 
-	a = a * 2L;
-}
-#endif
-
-box()          /* put box on screen for file transfer */
+void box()          /* put box on screen for file transfer */
 {
 	register int i;
 	static char *headings[] = { "", "Protocol:", "File Name:", "File Size:",
@@ -409,7 +375,7 @@ box()          /* put box on screen for file transfer */
 	}
 }
 
-clrbox()
+void clrbox()
 {
 	register int i;
 
@@ -419,9 +385,7 @@ clrbox()
 	}
 }
 
-mread ( buffer, count, timeout )	/* time in tenths of secs */
-char *buffer;
-int count, timeout;
+int mread ( char * buffer, int count, int timeout )	/* time in tenths of secs */
 {
 	int i, c;
 
@@ -435,7 +399,7 @@ int count, timeout;
 	return i;
 }
 
-mcharinp()
+int mcharinp()
 {
 	static unsigned c;
 
@@ -449,16 +413,15 @@ mcharinp()
 	return c;
 }
 
-mcharout ( c )
-char c;
+void mcharout ( char c )
 {
-	while ( !moutrdy() )
-		opabort();	/* Test for operator abort while we wait */
-
+	/*while ( !moutrdy() )
+		opabort();*/	/* Test for operator abort while we wait */
+		
 	mchout ( c );		/* Then send it */
 }
 
-minprdy()
+int minprdy()
 {
 	return mirdy() || Stopped;
 }

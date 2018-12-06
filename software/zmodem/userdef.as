@@ -9,9 +9,9 @@
 	global	_screenpr,_mrd,_mchin,_mchout,_moutrdy,_mirdy
 	global	_sendbrk,_locate,_cls,_stndout,_getvarsr
 	global	_stndend,_hidecurs,_showcurs,_savecurs,_restcurs
-	global	_minterru,_initvect,_deinitve,_mdmerror,_dtron
+	global	_minterru,_initv,_deinitv,_mdmerror,_dtron
 	global	_dtroff,_initace,_wait,_mswait,_userin,_userout
-	global	_getvars,_setport
+	global	_getvars,_setport,_udbg
 
 ;General equates:
 bdos	equ	5
@@ -55,9 +55,9 @@ _restcurs:
 	jp	abort
 _minterru:
 	jp	abort
-_initvect:
+_initv:
 	jp	abort
-_deinitve:
+_deinitv:
 	jp	abort
 _mdmerror:
 	jp	abort
@@ -79,9 +79,9 @@ _getvars:
 	jp	abort
 _setport:
 	jp	abort
-
-;Spares
+_udbg:
 	jp	abort
+;Spares
 	jp	abort
 	jp	abort
 	jp	abort

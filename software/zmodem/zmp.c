@@ -72,29 +72,29 @@ extern int main ( void );
 extern char *grabmem ( unsigned * );
 extern int getpathname ( char * );
 extern int linetolist ( void );
-extern int freepath ( int );
-extern int reset ( unsigned, int );
-extern int addu ( char *, int, int );
-extern int deldrive ( char * );
+extern void freepath ( int );
+extern void reset ( unsigned, int );
+extern void addu ( char *, int, int );
+extern void deldrive ( char * );
 extern int dio ( void );
 extern int chrin ( void );
 extern int getch ( void );
-extern int flush ( void );
-extern int purgeline ( void );
+extern void flush ( void );
+extern void purgeline ( void );
 extern int openerror ( int, char *, int );
-extern int wrerror ( char * );
+extern void wrerror ( char * );
 extern char *alloc ( int );
 extern int allocerror ( char * );
-extern int perror ( char * );
+extern void perror ( char * );
 extern int kbwait ( unsigned );
 extern int readstr ( char *, int );
 extern int isin ( char *, char * );
-extern int report ( int, char * );
-extern int mstrout ( char *, int );
+extern void report ( int, char * );
+extern void mstrout ( char *, int );
 
 /* ../zmp2.c */
-extern int fstat ( char *, struct stat * );
-extern unsigned filelength ( struct fcb * );
+extern void fstat ( char *, struct stat * );
+extern unsigned filelength ( struct zfcb * );
 extern int roundup ( int, int );
 extern int getfirst ( char * );
 extern int getnext ( void );
@@ -103,32 +103,36 @@ extern int ctr ( char * );
 extern int opabort ( void );
 extern int readock ( int, int );
 extern int readline ( int );
-extern int putlabel ( char[] );
-extern int killlabel ( void );
+extern void putlabel ( char * );
+extern void killlabel ( void );
 extern int mgetchar ( int );
 extern int dummylong ( void );
-extern int box ( void );
-extern int clrbox ( void );
+extern void box ( void );
+extern void clrbox ( void );
 extern int mread ( char *, int, int );
 extern int mcharinp ( void );
-extern int mcharout ( int );
+extern void mcharout ( char );
 extern int minprdy ( void );
 
-char *alloc();
+extern int mrd ( void );
+extern int * getvars( void );
+extern char * malloc (int);
+
+extern char * alloc();
 
 /*char ** Pathlist;*/
 
 main()
 {
 	static int termcmd;
-	short *p, *getvars(), i;
+	short *p, i;
 	char *q;
 
 
 	Invokdrive = bdos ( GETCUR, NULL ) + 'A';
 	Invokuser = getuid();
 
-	p = getvars();
+	p = (short *)getvars();
 
 	Overdrive = *p++;		/* get du: for overlays etc */
 	Overuser = *p++;
@@ -145,11 +149,11 @@ main()
 
 	/************** the main loop ************************/
 
-	while ( TRUE ) {
+	for (;;) {
 		printf ( "\nWait..." );
 		strcpy ( Pathname, Termovly );
 		addu ( Pathname, Overdrive, Overuser );
-		termcmd = ovloader ( Pathname, 0 );	/* Load the TERM overlay */
+		termcmd = ovloader ( Pathname, 0 );			/* Load the TERM overlay */
 		printf ( "\nLoading overlay...\n" );
 
 		switch ( termcmd ) {
@@ -159,7 +163,7 @@ main()
 				strcpy ( Pathname, Xferovly );
 				addu ( Pathname, Overdrive, Overuser );
 				ovloader ( Pathname, termcmd );
-				putchar ( '\007' );	/* tell user it's finished */
+				putchar ( '\007' );			/* tell user it's finished */
 				mswait ( 300 );
 				putchar ( '\007' );
 				break;
@@ -167,10 +171,10 @@ main()
 #ifdef HOSTON
 
 			case HOST:
-				keep ( Lastlog );	/* This will need modifying */
+				keep ( Lastlog );			/* This will need modifying */
 				QuitFlag = FALSE;
-				Inhost = TRUE;	/* if host mode is enabled */
-
+				Inhost = TRUE;				/* if host mode is enabled */
+	
 				while ( !QuitFlag )
 					dohost();
 
@@ -189,13 +193,13 @@ main()
 
 			case USER:
 				for ( i = 0, q = Userover; *q; i++ ) {
-					if ( i == Userid ) {		/* if it's the one, */
+					if ( i == Userid ) {			/* if it's the one, */
 						strcpy ( Pathname, q );
 						addu ( Pathname, Overdrive, Overuser );
 						ovloader ( Pathname, 0 );	/* execute it */
 						break;
 					} else
-						while ( *q++ );	/* find the end of this one */
+						while ( *q++ );			/* find the end of this one */
 				}
 
 				if ( ! ( *q ) )
@@ -212,22 +216,20 @@ main()
 }	/* end of main */
 
 
-char *
-grabmem ( sizep )      /* grab all available memory */
-unsigned *sizep;       /* place to store how much we got */
+char * grabmem ( unsigned int * sizep )      		/* grab all available memory */
 {
 	static char *p, *q;
 	static unsigned size;
 
 #ifdef HI_TECH_C
-	q = alloc ( BUFSIZ + 10 );	/* Make sure we have enough for disk i/o */
+	q = alloc ( BUFSIZ + 10 );			/* Make sure we have enough for disk i/o */
 #endif
 
 #ifdef AZTEC_C
-	q = alloc ( BUFSIZ );		/* Ditto */
+	q = alloc ( BUFSIZ );				/* Ditto */
 #endif
 
-	size = BUFSTART + 10;		/* allow some overrun */
+	size = BUFSTART + 10;				/* allow some overrun */
 
 	while ( ( p = alloc ( size ) ) == ( char * ) MEMORY_FULL ) {
 		size -= 1024;
@@ -242,13 +244,12 @@ unsigned *sizep;       /* place to store how much we got */
 	printf ( "\ngrabmem = %x %d\n", p, size );
 #endif
 
-	*sizep = size - 10;		/* don't mention the overrun */
-	free ( q );			/* Free disk i/o space */
+	*sizep = size - 10;				/* don't mention the overrun */
+	free ( q );					/* Free disk i/o space */
 	return p;
 }
 
-getpathname ( string )
-char *string;
+int getpathname ( char * string )
 {
 	static char *buffer;
 
@@ -264,7 +265,7 @@ char *string;
 	return linetolist();
 }
 
-linetolist()   /* expand and put Pathnames in Pathlist, return count */
+int linetolist()   					/* expand and put Pathnames in Pathlist, return count */
 {
 	static char *p;
 	static int count;
@@ -286,11 +287,11 @@ linetolist()   /* expand and put Pathnames in Pathlist, return count */
 	count = 0;
 	Pathlist[count++] = Pathname;
 
-	for ( p = Pathname; *p; p++ ) {     /* break up into substrings */
+	for ( p = Pathname; *p; p++ ) {     		/* break up into substrings */
 		if ( *p == ' ' ) {
 			*p = '\0';
 
-			while ( *++p == ' ' );       /* dump extra spaces */
+			while ( *++p == ' ' );		/* dump extra spaces */
 
 			Pathlist[count++] = p;
 		}
@@ -318,8 +319,7 @@ linetolist()   /* expand and put Pathnames in Pathlist, return count */
 	return count;
 }
 
-freepath ( n )
-int n;
+void freepath ( int n )
 {
 	if ( n ) {
 		while ( n )
@@ -329,9 +329,7 @@ int n;
 	}
 }
 
-reset ( drive, user )
-unsigned drive;
-int user;
+void reset ( unsigned int drive, int user )
 {
 	drive = toupper ( drive );
 
@@ -344,7 +342,7 @@ int user;
 	}
 }
 
-addu ( char * filename, int drive, int user )
+void addu ( char * filename, int drive, int user )
 {
 	/*
 	if ( !isin ( filename, ":" ) && user >= 0 && user <= 15 ) {
@@ -357,8 +355,7 @@ addu ( char * filename, int drive, int user )
 	return;
 }
 
-deldrive ( filename )
-char *filename;
+void deldrive ( char * filename )
 {
 	char *i, *index();
 
@@ -366,38 +363,36 @@ char *filename;
 		strcpy ( filename, i + 1 );
 }
 
-dio()          /* direct console port inp when bdos is too slow */
+int dio()	/* direct console port inp when bdos is too slow */
 {
 	return bios ( 2 + 1 );
 }
 
-chrin()		/* Direct console input which repeats character */
+int chrin()	/* Direct console input which repeats character */
 {
 	return bdos ( CONIN );
 }
 
-getch()
+int getch()
 {
 	return bdos ( DIRCTIO, INPUT );
 }
 
-flush()
+void flush()
 {
-	while ( bdos ( GCS, NULL ) )   /*clear type-ahead buffer*/
+	while ( bdos ( GCS, NULL ) )   				/*clear type-ahead buffer*/
 		bdos ( CONIN, NULL );
 
 	getch();           /*and anything else*/
 }
 
-purgeline()
+void purgeline()
 {
-	while ( minprdy() )            /*while there are characters...*/
-		mcharinp();             /*gobble them*/
+	while ( minprdy() )					/*while there are characters...*/
+		mcharinp();					/*gobble them*/
 }
 
-openerror ( chan, fname, test )
-int chan, test;
-char *fname;
+int openerror ( int chan, char * fname, int test )
 {
 	int result;
 
@@ -409,26 +404,19 @@ char *fname;
 	return result;
 }
 
-wrerror ( fname )
-char *fname;
+void wrerror ( char * fname )
 {
 	printf ( "\n\nERROR - Cannot write to %s\n\n", fname );
 	wait ( 3 );
 }
 
-#ifdef HI_TECH_C
 
-char *alloc ( cnt )
-int cnt;
+char * alloc ( int cnt )
 {
-	char *malloc();
-
 	return malloc ( cnt );
 }
-#endif
 
-allocerror ( p )
-char *p;
+int allocerror ( char * p )
 {
 	static int status;
 
@@ -438,16 +426,14 @@ char *p;
 	return status;
 }
 
-perror ( string )
-char *string;
+void perror ( char * string )
 {
 	printf ( "\007\nERROR - %s\n\n", string );
 	wait ( 3 );
 }
 
 
-kbwait ( seconds )
-unsigned seconds;
+kbwait ( unsigned int seconds )
 {
 	static unsigned t;
 	static int c;
@@ -460,13 +446,11 @@ unsigned seconds;
 	return ( ( c & 0xff ) == ESC );
 }
 
-readstr ( p, t )
-char *p;
-int t;
+int readstr ( char * p, int t )
 {
 	static int c;
 
-	t *= 10;                /* convert to tenths */
+	t *= 10;                				/* convert to tenths */
 	flush();
 
 	while ( ( ( c = readline ( t ) ) != CR ) && ( c != TIMEOUT ) ) {
@@ -478,28 +462,23 @@ int t;
 	return c;
 }
 
-isin ( received, expected )
-char *received, *expected;
+int isin ( char * received, char * expected )
 {
 	return ( stindex ( received, expected ) != -1 );
 }
 
-report ( row, string )
-int row;
-char *string;
+void report ( int row, char * string )
 {
 	LOCATE ( row, RPTPOS );
 	printf ( string );
 }
 
-mstrout ( string, echo )
-char *string;
-int echo;             /* echo flag means send to screen also */
+void mstrout ( char * string, int echo )  		/* echo flag means send to screen also */
 {
 	static char c;
 
 	while ( c = *string++ ) {
-		if ( ( c == RET ) || ( c == '\n' ) ) { /* RET is a ! */
+		if ( ( c == RET ) || ( c == '\n' ) ) { 	/* RET is a ! */
 			mcharout ( CR );
 			mcharout ( LF );
 			c = '\n';
@@ -512,7 +491,7 @@ int echo;             /* echo flag means send to screen also */
 			putchar ( c );
 	}
 
-	MSWAIT ( 100 );   /* wait 100 ms */
+	MSWAIT ( 100 );   				/* wait 100 ms */
 	purgeline();
 }
 

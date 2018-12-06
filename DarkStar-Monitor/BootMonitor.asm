@@ -175,8 +175,8 @@ mmursend:
 	ld	a,$c9
 	if not bbdebug
 	ld	($0008),a
-	endif
 	ld	($0038),a
+	endif
 	ld	hl,cnfbyte		; enable XON protocol by default (UART0)
 	set	1,(hl)
 

@@ -15,14 +15,14 @@
 
 
 /* ../zmterm2.c */
-extern int keydisp(void);
+extern void keydisp(void);
 extern void keep(char *, short);
-extern int startcapture(void);
-extern int docmd(void);
-extern int capturetog(char *);
-extern int comlabel(void);
-extern int scplabel(void);
-extern int diskstuff(void);
+extern void startcapture(void);
+extern void docmd(void);
+extern void capturetog(char *);
+extern void comlabel(void);
+extern void scplabel(void);
+extern void diskstuff(void);
 extern int possdirectory(char *);
 extern int help(void);
 extern void viewfile(char *);
@@ -45,16 +45,16 @@ extern int waitakey(void);
 /* ../zmterm.c */
 extern int ovmain(void);
 extern void prtchr(char);
-extern int tobuffer(int);
+extern void tobuffer(int);
 extern void prompt(short);
-extern int toprinter(int);
-extern int toggleprt(void);
+extern void toprinter(int);
+extern void toggleprt(void);
 extern int getprtbuf(void);
-extern int doexit(void);
+extern void doexit(void);
 extern int prtservice(void);
 extern int pready(void);
-extern int adjustprthead(void);
-extern int setace(int);
+extern void adjustprthead(void);
+extern void setace(int);
 extern int dial(void);
 extern int shownos(void);
 extern int loadnos(void);
@@ -70,8 +70,12 @@ extern int cntbits(int);
 extern int chrin(void);
 extern int openerror ( int, char *, int );
 
+extern int mcharinp ( void );
+extern int mcharout ( char );
+extern int minprdy ( void );
+
 /* Display current keyboard macros */
-keydisp()
+void keydisp()
 {
 	short i;
 
@@ -126,7 +130,7 @@ cleanup:
 	free ( MainBuffer );
 }
 
-startcapture()     /* allocate capture buffer */
+void startcapture()     /* allocate capture buffer */
 {
 	char *grabmem();
 
@@ -144,7 +148,7 @@ startcapture()     /* allocate capture buffer */
 }
 
 /* Allow user to change things */
-docmd()
+void docmd()
 {
 	char c, parity, databits, stopbits;
 	int i, oldfdx, oldremecho, oldbaud;
@@ -253,14 +257,14 @@ start:
 
 			do {
 				printf ( "\nEnter number of data bits (7,8): " );
-				databits = toupper ( bdos ( CONIN ) );
+				databits = bdos ( CONIN );
 			} while ( ( databits != '7' ) && ( databits != '8' ) );
 
 			Current.cdatabits = databits - '0';
 
 			do {
 				printf ( "\nEnter number of stop bits (1,2): " );
-				stopbits = toupper ( bdos ( CONIN ) );
+				stopbits = bdos ( CONIN );
 			} while ( ( stopbits != '1' ) && ( stopbits != '2' ) );
 
 			Current.cstopbits = stopbits - '0';
@@ -280,8 +284,7 @@ start:
 	goto start;	/* Loop till esc or Z */
 }
 
-capturetog ( filename )
-char *filename;
+void capturetog ( char * filename )
 {
 	if ( !BFlag ) {
 		BFlag = TRUE;
@@ -306,7 +309,7 @@ char *filename;
 	}
 }
 
-comlabel() /*print level 2 labels*/
+void comlabel() /*print level 2 labels*/
 {
 	/*					** Removed for now
 	   killlabel();
@@ -320,14 +323,14 @@ comlabel() /*print level 2 labels*/
 	*/
 }
 
-scplabel()
+void scplabel()
 {
 	/*		removed
 		putlabel("READING THE SCREEN -> Please wait...");
 	*/
 }
 
-diskstuff()
+void diskstuff()
 {
 	static int c, drive, user;
 	char newname[20];
@@ -345,7 +348,7 @@ diskstuff()
 		printf ( "\tF - Change default name of capture file (currently %s)\n",
 			 Logfile );
 		printf ( "\tL - Log into new du: (currently %c%d:)\n", Currdrive, Curruser );
-		printf ( "\tP - Print a file on default drive\n" );
+		/*printf ( "\tP - Print a file on default drive\n" );*/
 		printf ( "\tR - Rename a file on default drive\n" );
 		printf ( "\tV - View a file on default drive\n" );
 		printf ( "\tZ - Exit\n" );
@@ -402,27 +405,29 @@ diskstuff()
 				user = Curruser;
 				j = Pathname;
 
-				if ( isalpha ( q = toupper ( j[0] ) ) ) {
+				if ( isalpha ( q = toupper ( *j ) ) ) {
 					drive = q;
 					j++;
 				}
 
-				if ( isdigit ( q = j[0] ) )
+				if ( isdigit ( q = *j ) )
 					user = q - '0';
 
-				if ( isdigit ( q = j[1] ) )
+				if ( isdigit ( q = *++j ) )
 					user = user * 10 + q - '0';
-
+				
 				reset ( drive, user );
+				Currdrive = drive;
+				Curruser = user;
 				break;
 
-			case 'P':
+/*			case 'P':
 				if ( !possdirectory ( "Print" ) )
 					break;
 
 				addu ( Pathname, Currdrive, Curruser );
 				printfile ( Pathname );
-				break;
+				break;*/
 
 			case 'R':
 				if ( !possdirectory ( "Rename" ) )
@@ -458,8 +463,7 @@ diskstuff()
 }
 
 /* Prompt user and possibly give directory */
-possdirectory ( prompt )
-char *prompt;
+int possdirectory ( char * prompt )
 {
 	short x;
 
@@ -476,7 +480,7 @@ char *prompt;
 	return TRUE;
 }
 
-help()
+int help()
 {
 	int c;
 

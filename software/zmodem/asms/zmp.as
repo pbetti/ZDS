@@ -232,81 +232,25 @@ defb	33
 defb	0,0,0,0,0,0,0,0,0,0
 global	_Modem
 _Modem:
-defb	65
-defb	84
-defb	69
-defb	48
-defb	86
-defb	49
-defb	88
-defb	52
-defb	83
-defb	48
-defb	61
-defb	48
-defb	33
 defb	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-defb	0,0,0,0,0,0,0,0,0,0,0,0
-defb	65
-defb	84
-defb	68
-defb	0,0,0,0,0,0
-defb	33
-defb	0,0,0,0,0,0,0,0
-defb	67
-defb	79
-defb	78
-defb	78
-defb	69
-defb	67
-defb	84
-defb	0,0,0,0,0,0,0,0,0,0,0,0,0,0
-defb	66
-defb	85
-defb	83
-defb	89
 defb	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-defb	0
-defb	78
-defb	79
-defb	32
-defb	67
-defb	65
-defb	82
-defb	82
-defb	73
-defb	69
-defb	82
-defb	0,0,0,0,0,0,0,0,0,0,0
-defb	78
-defb	79
-defb	32
-defb	65
-defb	78
-defb	83
-defb	87
-defb	69
-defb	82
-defb	0,0,0,0,0,0,0,0,0,0,0,0
-defb	69
-defb	82
-defb	82
-defb	79
-defb	82
+defb	0,0,0,0,0,0,0,0,0
+defb	0,0,0,0,0,0,0,0,0
+defb	0,0,0,0,0,0,0,0,0
 defb	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-defb	126
-defb	43
-defb	43
-defb	43
-defb	126
-defb	65
-defb	84
-defb	72
-defb	48
-defb	33
-defb	0,0,0,0,0,0,0,0,0,0,0
-defw	40
-defw	8
+defb	0,0,0,0,0
+defb	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+defb	0,0,0,0,0
+defb	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+defb	0,0,0,0,0
+defb	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+defb	0,0,0,0,0
+defb	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+defb	0,0,0,0,0
+defb	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+defb	0,0,0,0,0
+defw	0
+defw	0
 global	_Line
 _Line:
 defw	5
@@ -429,7 +373,7 @@ global	_mswait
 global	_Userid
 global	_exit
 psect	bss
-F534:
+F540:
 defs	2
 psect	text
 _main:
@@ -508,10 +452,7 @@ push	hl
 call	_ovloader
 pop	bc
 pop	bc
-l17:
-ld	a,1
-or	a
-jp	z,cret
+l14:
 ld	hl,19f
 push	hl
 call	_printf
@@ -536,12 +477,12 @@ ld	hl,_Pathname
 push	hl
 call	_ovloader
 pop	bc
-ld	(F534),hl
+ld	(F540),hl
 ld	hl,29f
 ex	(sp),hl
 call	_printf
 pop	bc
-ld	hl,(F534)
+ld	hl,(F540)
 ld	a,h
 or	a
 jp	nz,l33
@@ -566,7 +507,7 @@ ex	(sp),hl
 call	_exit
 L5:
 pop	bc
-jp	l17
+jp	l14
 l20:
 ld	hl,_Xferovly
 push	hl
@@ -583,7 +524,7 @@ push	hl
 call	_addu
 pop	bc
 pop	bc
-ld	hl,(F534)
+ld	hl,(F540)
 ex	(sp),hl
 ld	hl,_Pathname
 push	hl
@@ -643,7 +584,7 @@ or	a
 sbc	hl,de
 ld	l,(ix+-6)
 ld	h,(ix+-5)
-jp	nz,L4
+jp	nz,L2
 push	hl
 ld	hl,_Pathname
 push	hl
@@ -669,7 +610,7 @@ jp	l24
 l29:
 ld	l,(ix+-6)
 ld	h,(ix+-5)
-L4:
+L2:
 ld	a,(hl)
 inc	hl
 ld	(ix+-6),l
@@ -692,7 +633,7 @@ ld	l,(ix+-6)
 ld	h,(ix+-5)
 ld	a,(hl)
 or	a
-jp	nz,l17
+jp	nz,l14
 ld	hl,(_Userid)
 push	hl
 ld	hl,39f
@@ -704,11 +645,11 @@ global	_alloc
 global	wrelop
 global	_free
 psect	bss
-F544:
+F550:
 defs	2
-F545:
+F551:
 defs	2
-F546:
+F552:
 defs	2
 psect	text
 _grabmem:
@@ -718,20 +659,20 @@ ld	hl,522
 push	hl
 call	_alloc
 pop	bc
-ld	(F545),hl
+ld	(F551),hl
 ld	hl,16394
-ld	(F546),hl
+ld	(F552),hl
 l38:
-ld	hl,(F546)
+ld	hl,(F552)
 push	hl
 call	_alloc
 pop	bc
-ld	(F544),hl
+ld	(F550),hl
 ld	a,l
 or	h
 jp	z,l36
 l37:
-ld	de,(F546)
+ld	de,(F552)
 ld	hl,-10
 add	hl,de
 ex	de,hl
@@ -740,17 +681,17 @@ ld	h,(ix+7)
 ld	(hl),e
 inc	hl
 ld	(hl),d
-ld	hl,(F545)
+ld	hl,(F551)
 push	hl
 call	_free
 pop	bc
-ld	hl,(F544)
+ld	hl,(F550)
 jp	cret
 l36:
 ld	de,-1024
-ld	hl,(F546)
+ld	hl,(F552)
 add	hl,de
-ld	(F546),hl
+ld	(F552),hl
 ex	de,hl
 ld	hl,-10
 add	hl,de
@@ -758,7 +699,7 @@ ld	de,2048
 call	wrelop
 jp	nc,l38
 ld	hl,0
-ld	(F546),hl
+ld	(F552),hl
 jp	l37
 global	_getpathname
 global	_sprintf
@@ -766,25 +707,25 @@ global	_getline
 global	_strlen
 global	_linetolist
 psect	bss
-F550:
+F556:
 defs	2
 psect	text
 _getpathname:
 global csv
 call csv
 ld	hl,_Pathname
-ld	(F550),hl
+ld	(F556),hl
 ld	l,(ix+6)
 ld	h,(ix+7)
 push	hl
 ld	hl,59f
 push	hl
-ld	hl,(F550)
+ld	hl,(F556)
 push	hl
 call	_sprintf
 pop	bc
 pop	bc
-ld	hl,(F550)
+ld	hl,(F556)
 ex	(sp),hl
 call	_printf
 ld	hl,257
@@ -809,11 +750,11 @@ global	_Pathlist
 global	_allocerror
 global	_process_flist
 psect	bss
-F551:
+F557:
 defs	2
-F552:
+F558:
 defs	2
-F553:
+F559:
 defs	2
 psect	text
 _linetolist:
@@ -821,8 +762,8 @@ ld	hl,510
 push	hl
 call	_alloc
 ld	(_Pathlist),hl
-ld	(F553),hl
-ld	hl,(F553)
+ld	(F559),hl
+ld	hl,(F559)
 ex	(sp),hl
 call	_allocerror
 pop	bc
@@ -830,11 +771,11 @@ ld	a,l
 or	h
 ld	hl,0
 ret	nz
-ld	(F552),hl
+ld	(F558),hl
 ld	de,(_Pathlist)
-ld	hl,(F552)
+ld	hl,(F558)
 inc	hl
-ld	(F552),hl
+ld	(F558),hl
 dec	hl
 add	hl,hl
 add	hl,de
@@ -844,29 +785,29 @@ inc	hl
 ld	(hl),d
 ld	l,e
 ld	h,d
-ld	(F551),hl
+ld	(F557),hl
 jp	l46
 l43:
-ld	hl,(F551)
+ld	hl,(F557)
 ld	a,(hl)
 cp	32
 jp	nz,L8
 ld	(hl),0
 l49:
-ld	hl,(F551)
+ld	hl,(F557)
 inc	hl
-ld	(F551),hl
+ld	(F557),hl
 ld	a,(hl)
 cp	32
 jp	z,l49
 ld	de,(_Pathlist)
-ld	hl,(F552)
+ld	hl,(F558)
 inc	hl
-ld	(F552),hl
+ld	(F558),hl
 dec	hl
 add	hl,hl
 add	hl,de
-ld	de,(F551)
+ld	de,(F557)
 ld	(hl),e
 inc	hl
 ld	(hl),d
@@ -874,21 +815,21 @@ ld	l,e
 ld	h,d
 L8:
 inc	hl
-ld	(F551),hl
+ld	(F557),hl
 l46:
-ld	hl,(F551)
+ld	hl,(F557)
 ld	a,(hl)
 or	a
 jp	nz,l43
-ld	hl,(F552)
+ld	hl,(F558)
 push	hl
 call	_process_flist
-ld	(F552),hl
-ld	hl,(F553)
+ld	(F558),hl
+ld	hl,(F559)
 ex	(sp),hl
 call	_free
 pop	bc
-ld	hl,(F552)
+ld	hl,(F558)
 ret	
 global	_freepath
 _freepath:
@@ -1141,7 +1082,7 @@ pop	bc
 jp	cret
 global	_perror
 psect	bss
-F579:
+F584:
 defs	2
 psect	text
 _allocerror:
@@ -1153,7 +1094,7 @@ ld	hl,1
 jp	z,L10
 dec	hl
 L10:
-ld	(F579),hl
+ld	(F584),hl
 ld	a,l
 or	h
 jp	z,l77
@@ -1162,7 +1103,7 @@ push	hl
 call	_perror
 pop	bc
 l77:
-ld	hl,(F579)
+ld	hl,(F584)
 jp	cret
 _perror:
 global csv
@@ -1181,9 +1122,9 @@ jp	cret
 global	_kbwait
 global	lmul
 psect	bss
-F583:
+F588:
 defs	2
-F584:
+F589:
 defs	2
 psect	text
 _kbwait:
@@ -1193,7 +1134,7 @@ ld	de,10
 ld	l,(ix+6)
 ld	h,(ix+7)
 call	lmul
-ld	(F583),hl
+ld	(F588),hl
 jp	l80
 l81:
 ld	hl,100
@@ -1202,20 +1143,20 @@ call	_mswait
 pop	bc
 l80:
 call	_getch
-ld	(F584),hl
+ld	(F589),hl
 ld	a,l
 or	h
 jp	nz,l82
-ld	hl,(F583)
+ld	hl,(F588)
 dec	hl
-ld	(F583),hl
+ld	(F588),hl
 inc	hl
 ld	a,l
 or	h
 jp	nz,l81
 l82:
 ld	de,27
-ld	hl,(F584)
+ld	hl,(F589)
 xor	a
 ld	h,a
 or	a
@@ -1228,7 +1169,7 @@ global	_readstr
 global	asamul
 global	_readline
 psect	bss
-F587:
+F592:
 defs	2
 psect	text
 _readstr:
@@ -1244,11 +1185,11 @@ call	_flush
 jp	l84
 l85:
 ld	de,10
-ld	hl,(F587)
+ld	hl,(F592)
 or	a
 sbc	hl,de
 jp	z,l84
-ld	a,(F587)
+ld	a,(F592)
 ld	l,(ix+6)
 ld	h,(ix+7)
 inc	hl
@@ -1262,13 +1203,13 @@ ld	h,(ix+9)
 push	hl
 call	_readline
 pop	bc
-ld	(F587),hl
+ld	(F592),hl
 ld	de,13
 or	a
 sbc	hl,de
 jp	z,l86
 ld	de,-2
-ld	hl,(F587)
+ld	hl,(F592)
 or	a
 sbc	hl,de
 jp	nz,l85
@@ -1276,7 +1217,7 @@ l86:
 ld	l,(ix+6)
 ld	h,(ix+7)
 ld	(hl),0
-ld	hl,(F587)
+ld	hl,(F592)
 jp	cret
 global	_isin
 global	_stindex
@@ -1319,7 +1260,7 @@ jp	cret
 global	_mstrout
 global	_mcharout
 psect	bss
-F595:
+F600:
 defs	1
 psect	text
 _mstrout:
@@ -1327,24 +1268,24 @@ global csv
 call csv
 jp	l91
 l92:
-ld	a,(F595)
+ld	a,(F600)
 cp	33
 jp	z,L17
 cp	10
 jp	nz,l94
 L17:
-ld	hl,13
+ld	l,13
 push	hl
 call	_mcharout
-ld	hl,10
+ld	l,10
 ex	(sp),hl
 call	_mcharout
 pop	bc
 ld	a,10
-ld	(F595),a
+ld	(F600),a
 jp	l95
 l94:
-ld	a,(F595)
+ld	a,(F600)
 cp	126
 jp	nz,l96
 ld	hl,1
@@ -1353,12 +1294,9 @@ call	_wait
 pop	bc
 jp	l95
 l96:
-ld	a,(F595)
-ld	l,a
-rla
-sbc	a,a
-ld	h,a
-push	hl
+ld	a,(F600)
+ld	c,a
+push	bc
 call	_mcharout
 pop	bc
 l95:
@@ -1367,7 +1305,7 @@ or	(ix+9)
 jp	z,l91
 ld	hl,__iob+8
 push	hl
-ld	a,(F595)
+ld	a,(F600)
 ld	l,a
 rla
 sbc	a,a
@@ -1383,7 +1321,7 @@ ld	a,(hl)
 inc	hl
 ld	(ix+6),l
 ld	(ix+7),h
-ld	(F595),a
+ld	(F600),a
 or	a
 jp	nz,l92
 ld	hl,100
@@ -1487,9 +1425,4 @@ _Prtbottom:
 defs	2
 global	_Lastlog
 _Lastlog:
-defs	20
-global	_Thefcb
-_Thefcb:
-defs	36
-global	_Current
-_Cu
+de

@@ -51,10 +51,10 @@
 ; function. Do NOT pass 'GO'. Do NOT collect $200.
 ;    Apart from defining modem functions, this file also defines terminal
 ; characteristics. Examples provided are for ADM-3A (with a few of my own
-; additions). Modify to suit your own terminal. An inline print routine
+; additions). Modify to suit your own terminal. An inline zprint routine
 ; is provided for printing strings in the usual way: usage is
 ;
-;	call	print
+;	call	zprint
 ;	db	'required string',0
 ;
 ;-----------------------------------------------------------------------------
@@ -154,14 +154,14 @@ jump_tab:
 	jp	userout		; user-defined exit routine
 	jp	getvars		; get system variables
 	jp	setport		; set port (0 or 1)
+	jp	udbg		; spare for later use
 
 ; Spare jumps for compatibility with future versions
 	jp	spare		; spare for later use
 	jp	spare		; spare for later use
 	jp	spare		; spare for later use
 	jp	spare		; spare for later use
-	jp	spare		; spare for later use
-	jp	spare		; spare for later use
+; 	jp	spare		; spare for later use
 
 ;
 ; Main code starts here
@@ -169,22 +169,22 @@ jump_tab:
 ;Screen print function
 scrnpr:
 				; <== Insert your own code here
-	call	print
+	call	zprint
 	db	'Function not supported.',cr,lf,0
 				; <== End of your own code
 spare:
 	ret
 
 ; User-defined entry routine: leave empty if not needed
+udbg:
+	ret
+
+	; User-defined entry routine: leave empty if not needed
 userin:
-	call	attach_1_legacy		; init
-	ld	a,ufifo8
-	call	set_fifo1
 	ret
 
 ; User-defined exit routine: leave empty if not needed
 userout:
-	call	detach_1_legacy		; deinit
 	ret
 
 
@@ -209,7 +209,7 @@ mchout:
 	ld	a,(hl)
 				; <== Insert your own code here
 	push	bc
-	ld	a,c
+	ld	c,a
 	call	srlout1
 	pop	bc
 				; <== End of your own code
@@ -218,8 +218,8 @@ mchout:
 ;Test for output ready: return TRUE (1) in HL if ok
 mordy:
 				; <== Insert your own code here
-	xor	a
-				; <== End of your own code
+	
+	ld	hl,1		; <== End of your own code
 
 	ld	a,l		; set/clear Z
 	or	a
@@ -315,7 +315,7 @@ init:
 stop:	dw	1		; stop bits
 parity:	dw	'N'		; parity
 data:	dw	8		; data bits
-brate:	dw	7		; baud rate:
+brate:	dw	8		; baud rate:
 
 ;--------------------------------------------------------------------------
 ;Values of brate for each baud rate
@@ -392,11 +392,11 @@ cursadd:
 	ld	a,esc
 	call	cout
 	ld	a,(col)
-	inc	a
+	;inc	a
 	add	a,' '
 	call	cout
 	ld	a,(row)
-	inc	a
+	;inc	a
 	add	a,' '
 	call	cout
 				; <== end of your own code
@@ -414,14 +414,14 @@ cls:
 
 ;Inverse video on:
 invon:
-	call	print
-	db	esc,1bh,0dh
+	call	zprint
+	db	esc,1bh,0dh,0
 	ret
 
 ;Inverse video off:
 invoff:
-	call	print
-	db	esc,1ch,0dh
+	call	zprint
+	db	esc,1ch,0dh,0
 	ret
 
 ;Turn off cursor:
@@ -438,11 +438,17 @@ show:
 
 ;Save cursor position:
 savecu:
+	call	bbgetcrs
+	ld	(svcrsp),hl
 	ret
 
 ;Restore cursor position:
 rescu:
+	ld	hl,(svcrsp)
+	call	bbsetcrs
 	ret
+	
+svcrsp:	dw	0
 
 ;****************************************************************************
 
@@ -452,11 +458,16 @@ mint:
 
 ;Initialise interrupt vectors:
 invec:
-	ret			; ditto
+	call	attach_1_legacy		; init
+; 	ld	a,ufifo8
+; 	call	set_fifo1
+
+	ret
 
 ;De-initialise interrupt vectors:
 dinvec:
-	ret			; ditto
+	call	detach_1_legacy		; deinit
+	ret
 
 ;****************** End of user-defined code ********************************
 ;		Do not change anything below here.
@@ -482,7 +493,7 @@ mrd2:
 
 ; Inline print routine: destroys A and HL
 
-print:
+zprint:
 	ex	(sp),hl		; get address of string
 ploop:
 	ld	a,(hl)		; get next

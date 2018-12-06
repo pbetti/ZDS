@@ -11,17 +11,17 @@ defb	110
 defb	32
 defb	49
 defb	46
-defb	54
+defb	55
 defb	32
 defb	45
 defb	45
 defb	32
-defb	54
+defb	49
+defb	53
 defb	32
-defb	83
-defb	101
-defb	112
-defb	116
+defb	78
+defb	111
+defb	118
 defb	101
 defb	109
 defb	98
@@ -31,13 +31,14 @@ defb	32
 defb	50
 defb	48
 defb	49
-defb	55
+defb	56
 defb	0,0,0,0,0,0,0,0,0,0
 global	_ovmain
 global	ncsv, cret, indir
 global	_userin
 global	_title
 global	_getconfig
+global	_initv
 global	_Mspeed
 global	wrelop
 global	_initializemodem
@@ -57,6 +58,7 @@ push hl
 call	_userin
 call	_title
 call	_getconfig
+call	_initv
 ld	hl,(_Mspeed)
 ld	l,(hl)
 ld	h,0
@@ -104,7 +106,7 @@ pop	bc
 call	_showcurs
 jp	cret
 psect	data
-F445:
+F446:
 defb	90
 defb	77
 defb	80
@@ -137,7 +139,7 @@ defb	80
 defb	47
 defb	77
 defb	0
-F446:
+F447:
 defb	98
 defb	121
 defb	32
@@ -152,7 +154,7 @@ defb	114
 defb	97
 defb	121
 defb	0
-F447:
+F448:
 defb	112
 defb	111
 defb	114
@@ -166,14 +168,15 @@ defb	32
 defb	90
 defb	56
 defb	48
-defb	78
-defb	69
 defb	32
-defb	40
-defb	90
 defb	68
-defb	83
-defb	41
+defb	97
+defb	114
+defb	107
+defb	115
+defb	116
+defb	97
+defb	114
 defb	32
 defb	98
 defb	121
@@ -205,7 +208,7 @@ global	_flush
 psect	text
 _title:
 call	_cls
-ld	hl,F445
+ld	hl,F446
 push	hl
 call	_ctr
 ex	(sp),hl
@@ -213,7 +216,7 @@ ld	hl,7
 push	hl
 call	_locate
 pop	bc
-ld	hl,F445
+ld	hl,F446
 ex	(sp),hl
 call	_printf
 ld	hl,_Version
@@ -227,7 +230,7 @@ pop	bc
 ld	hl,_Version
 ex	(sp),hl
 call	_printf
-ld	hl,F446
+ld	hl,F447
 ex	(sp),hl
 call	_ctr
 ex	(sp),hl
@@ -235,10 +238,10 @@ ld	hl,10
 push	hl
 call	_locate
 pop	bc
-ld	hl,F446
+ld	hl,F447
 ex	(sp),hl
 call	_printf
-ld	hl,F447
+ld	hl,F448
 ex	(sp),hl
 call	_ctr
 ex	(sp),hl
@@ -246,7 +249,7 @@ ld	hl,11
 push	hl
 call	_locate
 pop	bc
-ld	hl,F447
+ld	hl,F448
 ex	(sp),hl
 call	_printf
 ld	hl,0
@@ -712,4 +715,9 @@ defb	37,100,32,37,100,32,37,99,32,37,100,32,37,100,0
 psect	text
 ent+5),hl
 ld	hl,(_Line)
-ld	(_
+ld	(_Current),hl
+ld	hl,(_Current+5)
+push	hl
+ld	hl,(_Current+3)
+push	hl
+ld	hl,_Current+2

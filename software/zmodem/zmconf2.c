@@ -19,22 +19,17 @@
 #include <stdlib.h>
 
 /* ../zmconf2.c */
-extern int setparity(void);
-extern int setdatabits(void);
-extern int setstopbits(void);
-extern int sethost(void);
-extern int phonedit(void);
-extern int cshownos(void);
-extern int cloadnos(void);
-extern int ldedit(void);
-extern int edit(void);
-extern int savephone(void);
-extern int saveconfig(void);
-extern int setbaud(void);
+extern void setparity(void);
+extern void setdatabits(void);
+extern void setstopbits(void);
+extern void sethost(void);
+extern void edit(void);
+extern void saveconfig(void);
+extern void setbaud(void);
 extern int goodbaud(int);
 
 
-setparity()
+void setparity()
 {
 	int c;
 
@@ -49,7 +44,7 @@ setparity()
 		Line.parity = c;
 }
 
-setdatabits()
+void setdatabits()
 {
 	int c;
 
@@ -63,7 +58,7 @@ setdatabits()
 		Line.databits = c;
 }
 
-setstopbits()
+void setstopbits()
 {
 	int c;
 
@@ -80,249 +75,65 @@ setstopbits()
 
 #ifdef HOSTON
 
-sethost()
+void sethost()
 {
 	int c;
 
-start:
-	cls();
-	printf ( "\r\t\t\t" );
-	stndout();
-	printf ( " HOST MODE PARAMETERS " );
-	stndend();
-	printf ( "\n\n\tA - Welcome string.....%s\n", Host.welcome );
-	printf ( "\tB - Autoanswer string..%s\n", Host.autoanswer );
-	printf ( "\tC - Password...........%s\n", Host.password );
-	printf ( "\tD - Connection type....%s\n", Host.modemconnection ?
-		 "MODEM" : "DIRECT" );
-	printf ( "\tZ - Exit\n\n" );
-	printf ( "   Select:  " );
-	c = toupper ( bdos ( CONIN ) );
-	cls();
-
-	switch ( c ) {
-		case 'A':
-			gnewstr ( "welcome string", Host.welcome, 20 );
-			break;
-
-		case 'B':
-			gnewstr ( "autoanswer string", Host.autoanswer, 20 );
-			break;
-
-		case 'C':
-			gnewstr ( "password", Host.password, 20 );
-			break;
-
-		case 'D':
-			printf ( "(M)odem or (D)irect connection? <M> :  " );
-
-			if ( toupper ( bdos ( CONIN ) ) == 'D' )
-				Host.modemconnection = FALSE;
-			else
-				Host.modemconnection = TRUE;
-
-			break;
-
-		case ESC:
-		case 'Z':
-			return;
-			break;
-
-		default:
-			printf ( "\007\nInvalid Entry\n" );
-			wait ( 1 );
-			break;
-	}
-
-	goto start;
-}
-
-#endif		/* HOSTON */
-
-phonedit()
-{
-	int i, c, change;
-	char *answer;
-
-	cloadnos();
-	answer = Pathname;
-
-	while ( TRUE ) {
-		flush();
-		cshownos();
-		printf ( "\nEnter letter of phone number to change/enter,\n" );
-		printf ( "or anything else to EXIT:  " );
-		c = toupper ( bdos ( CONIN ) ) - 'A';
-
-		if ( c < 0 || c > 20 )
-			break;
-
-		change = TRUE;
-		flush();
-		printf ( "\n          Name:  %s\nEnter new name:  ",
-			 PBook[c].name );
-
-		getline ( answer, 18 );
-		if ( answer[0] ) {
-			while ( strlen ( answer ) < 17 )
-				strcat ( answer, " " ); /* Pad with spaces */
-
-			strcpy ( PBook[c].name, answer );
-		}
-
-		printf ( "\n          Number:  %s\nEnter new number:  ",
-			 PBook[c].number );
-
-		getline ( answer, 18 );
-		if ( answer[0] )
-			strcpy ( PBook[c].number, answer );
-
-		printf ( "\n          Bit rate:  %u\nEnter new bit rate:  ",
-			 Baudtable[PBook[c].pbaudindex] );
-
-		getline ( answer, 18 );
-		if ( answer[0] ) {
-			for ( i = 0; i < 13; i++ ) {
-				if ( atoi ( answer ) == Baudtable[i] ) {
-					PBook[c].pbaudindex = i;
-					break;
-				}
-			}
-		}
-
-		printf ( "\n          Parity:  %c\nEnter new parity:  ",
-			 PBook[c].pparity );
-
-		getline ( answer, 18 );
-		if ( answer[0] )
-			PBook[c].pparity = toupper ( answer[0] );
-
-		printf ( "\n    Nr data bits:  %d\nEnter new number:  ",
-			 PBook[c].pdatabits );
-
-		getline ( answer, 18 );
-		if ( answer[0] )
-			PBook[c].pdatabits = atoi ( answer );
-
-		printf ( "\n    Nr stop bits:  %d\nEnter new number:  ",
-			 PBook[c].pstopbits );
-
-		getline ( answer, 18 );
-		if ( answer[0] )
-			PBook[c].pstopbits = atoi ( answer );
-
-		printf ( "\n                Duplex:  %s\nEnter (H)alf or (F)ull:  ",
-			 PBook[c].echo ? "Half" : "Full" );
-
-		getline ( answer, 18 );
-		if ( answer[0] )
-			PBook[c].echo = ( toupper ( answer[0] ) == 'H' );
-	}
-
-	flush();
-	cls();
-}
-
-cshownos()
-{
-	int i, j;
-
-	cls();
-	stndout();
-	printf ( "         NAME                NUMBER          B   P D S E" );
-	stndend();
-
-	for ( i = 0, j = 1; i < 20; i++, j++ ) {
-		LOCATE ( i + 1, 0 );
-		printf ( "%c - %s", i + 'A', PBook[i].name );
-		printf ( " %s", PBook[i].number );
-		LOCATE ( i + 1, 44 );
-		printf ( "%4d %c", Baudtable[PBook[i].pbaudindex],
-			 PBook[i].pparity );
-		printf ( " %d %d %c\n", PBook[i].pdatabits, PBook[i].pstopbits,
-			 PBook[i].echo ? 'H' : 'F' );
-	}
-}
-
-cloadnos()
-{
-	int i, result;
-	char dummy;
-	FILE *fd;
-
-	result = NERROR;
-	strcpy ( Pathname, Phonefile );
-	addu ( Pathname, Overdrive, Overuser );
-	fd = fopen ( Pathname, "r" );
-
-	if ( fd ) {
-		for ( i = 0; i < 20; i++ ) {
-			fgets ( PBook[i].name, 17, fd );
-			fscanf ( fd, "%c %s %d %c %d %d %d",
-				 &dummy,
-				 PBook[i].number,
-				 &PBook[i].pbaudindex,
-				 &PBook[i].pparity,
-				 &PBook[i].pdatabits,
-				 &PBook[i].pstopbits,
-				 &PBook[i].echo );
-			fgetc ( fd );	/* remove LF */
-		}
-
-		fclose ( fd );
-		result = OK;
-	}
-
-	return result;
-}
-
-ldedit()
-{
-	char *p, *answer;
-	int c;
-
-	answer = Pathname;
-
-	while (TRUE) {
-
+	for (;;) {
 		cls();
 		printf ( "\r\t\t\t" );
 		stndout();
-		printf ( " LONG DISTANCE ACCESS CODE " );
+		printf ( " HOST MODE PARAMETERS " );
 		stndend();
-		printf ( "\n\nEnter access code to edit:\n\n" );
-		printf ( "  + (currently '%s')\n  - (currently '%s')\n\tor Z to exit: ",
-			Sprint, Mci );
+		printf ( "\n\n\tA - Welcome string.....%s\n", Host.welcome );
+		printf ( "\tB - Autoanswer string..%s\n", Host.autoanswer );
+		printf ( "\tC - Password...........%s\n", Host.password );
+		printf ( "\tD - Connection type....%s\n", Host.modemconnection ?
+			"MODEM" : "DIRECT" );
+		printf ( "\tZ - Exit\n\n" );
+		printf ( "   Select:  " );
 		c = toupper ( bdos ( CONIN ) );
+		cls();
 
 		switch ( c ) {
-
-			case '+':
-				p = Sprint;
+			case 'A':
+				gnewstr ( "welcome string", Host.welcome, 20 );
 				break;
 
-			case '-':
-				p = Mci;
+			case 'B':
+				gnewstr ( "autoanswer string", Host.autoanswer, 20 );
+				break;
+
+			case 'C':
+				gnewstr ( "password", Host.password, 20 );
+				break;
+
+			case 'D':
+				printf ( "(M)odem or (D)irect connection? <M> :  " );
+
+				if ( toupper ( bdos ( CONIN ) ) == 'D' )
+					Host.modemconnection = FALSE;
+				else
+					Host.modemconnection = TRUE;
+
 				break;
 
 			case ESC:
 			case 'Z':
 				return;
-
+		
 			default:
-				continue;
+				printf ( "\007\nInvalid Entry\n" );
+				wait ( 1 );
 		}
-
-		printf ( "\nEnter new code: " );
-
-		getline ( answer, 20 );
-		if ( answer[0] )
-			strcpy ( p, answer );
 
 	}
 }
 
-edit()
+#endif		/* HOSTON */
+
+
+void edit()
 {
 	static int i;
 	static char *buffer;
@@ -331,7 +142,7 @@ edit()
 
 	buffer = Pathname;
 
-	while ( TRUE ) {
+	for (;;) {
 		cls();
 		flush();
 		printf ( "\r\t\t" );
@@ -382,35 +193,8 @@ edit()
 	flush();
 }
 
-savephone()
-{
-	int i;
-	FILE *fd;
 
-	strcpy ( Pathname, Phonefile );
-	addu ( Pathname, Overdrive, Overuser );
-	fd = fopen ( Pathname, "w" );
-
-	if ( fd ) {
-		printf ( "\nSaving Phone numbers..." );
-
-		for ( i = 0; i < 20; i++ ) {
-			fprintf ( fd, "%s %s %d %c %d %d %d\n",
-				  PBook[i].name,
-				  PBook[i].number,
-				  PBook[i].pbaudindex,
-				  PBook[i].pparity,
-				  PBook[i].pdatabits,
-				  PBook[i].pstopbits,
-				  PBook[i].echo );
-		}
-
-		fclose ( fd );
-		printf ( "Successful.\n" );
-	} else wrerror ( Phonefile );
-}
-
-saveconfig()
+void saveconfig()
 {
 	int i;
 	FILE *fd;
@@ -444,7 +228,7 @@ saveconfig()
 	} else wrerror ( Cfgfile );
 }
 
-setbaud()
+void setbaud()
 {
 	int baud;
 	char *buffer;
@@ -463,8 +247,7 @@ setbaud()
 	} while ( !goodbaud ( baud ) );
 }
 
-goodbaud ( value )
-int value;
+int goodbaud ( int value )
 {
 	int i;
 

@@ -16,18 +16,18 @@
 #define autolen 6		/* length of ZRQINIT required for auto rx */
 
 /* ../zmterm2.c */
-extern int keydisp(void);
-extern int keep(char *, int);
-extern int startcapture(void);
-extern int docmd(void);
-extern int capturetog(char *);
-extern int comlabel(void);
-extern int scplabel(void);
-extern int diskstuff(void);
+extern void keydisp(void);
+extern void keep(char *, short);
+extern void startcapture(void);
+extern void docmd(void);
+extern void capturetog(char *);
+extern void comlabel(void);
+extern void scplabel(void);
+extern void diskstuff(void);
 extern int possdirectory(char *);
 extern int help(void);
-extern int viewfile(char *);
-extern int printfile(char *);
+extern void viewfile(char *);
+extern void printfile(char *);
 
 /* ../zmterm3.c */
 extern int directory(void);
@@ -46,16 +46,16 @@ extern int waitakey(void);
 /* ../zmterm.c */
 extern int ovmain(void);
 extern void prtchr(char);
-extern int tobuffer(int);
+extern void tobuffer(int);
 extern void prompt(short);
-extern int toprinter(int);
-extern int toggleprt(void);
+extern void toprinter(int);
+extern void toggleprt(void);
 extern int getprtbuf(void);
-extern int doexit(void);
+extern void doexit(void);
 extern int prtservice(void);
 extern int pready(void);
-extern int adjustprthead(void);
-extern int setace(int);
+extern void adjustprthead(void);
+extern void setace(int);
 extern int dial(void);
 extern int shownos(void);
 extern int loadnos(void);
@@ -67,10 +67,15 @@ extern int readline(int);
 extern int readstr(char *, int);
 extern int isin(char *, char *);
 extern int kbwait(unsigned);
+
+extern int mcharinp ( void );
+extern int mcharout ( char );
+extern int minprdy ( void );
+extern int deinitv( void );
 char *alloc(), *index();
 static short Chpos;
 
-ovmain()
+int ovmain()
 {
 
 	static short i, mdmdata, dolabel, keycount, keypoint;
@@ -79,39 +84,40 @@ ovmain()
 	static char kbdata;
 
 	if ( FirsTerm ) {
-		locate ( 0, 0 );		/* print header if first time*/
-		prompt ( FALSE );		/* but don't clear screen */
-		locate ( 15, 0 );		/* then put cursor near bottom */
-		printf ( "Ready.     \n" );	/* overwrite 'wait' */
-		Chpos = 0;		/* clear character position */
-		FirsTerm = FALSE;	/* don't come here again */
+		locate ( 0, 0 );				/* print header if first time*/
+		prompt ( FALSE );				/* but don't clear screen */
+		locate ( 15, 0 );				/* then put cursor near bottom */
+		printf ( "Ready!     \n" );			/* overwrite 'wait' */
+		Chpos = 0;			
+		/* clear character position */
+		FirsTerm = FALSE;				/* don't come here again */
 	} else
 		prompt ( TRUE );
 
 	startcapture();
-	autopos = keycount = 0;	/* no remote xfer, no keys in buffer */
-	Zmodem = FALSE;			/* ensure we don't auto zmodem */
-	purgeline();			/* get rid of any junk */
+	autopos = keycount = 0;					/* no remote xfer, no keys in buffer */
+	Zmodem = FALSE;						/* ensure we don't auto zmodem */
+	purgeline();						/* get rid of any junk */
 
 	/* Main loop: */
 
-	while ( TRUE ) {
-		if ( keycount ) {		/* get any buffered keys */
+	for (;;) {
+		if ( keycount ) {				/* get any buffered keys */
 			kbdata = keybuf[keypoint++];
 			keycount--;
 
-			if ( kbdata == RET ) {	/* Translate ! to CR/LF */
+			if ( kbdata == RET ) {			/* Translate ! to CR/LF */
 				kbdata = CR;
 				keybuf[--keypoint] = LF;
-				keycount++;	/* get LF next time */
+				keycount++;			/* get LF next time */
 			}
 
-			if ( kbdata == WAITASEC ) {	/* handle pause */
+			if ( kbdata == WAITASEC ) {		/* handle pause */
 				wait ( 1 );
-				kbdata = '\0';	/* that's it for this loop */
+				kbdata = '\0';			/* that's it for this loop */
 			}
 		} else
-			kbdata = getch();	/* if none, any at keyboard */
+			kbdata = getch();			/* if none, any at keyboard */
 
 		if ( kbdata )  {
 			if ( lastkey == ESC ) {
@@ -149,14 +155,14 @@ ovmain()
 						dolabel = FALSE;
 						break;
 
-					case PRTSCRN:
 						/*
+					case PRTSCRN:
 						screenprint();
 						dolabel = FALSE;
 						Chpos = 0;
-						*/
 						break;
-
+						*/
+						
 					case HANGUP:
 						hangup();
 						dolabel = FALSE;
@@ -167,14 +173,14 @@ ovmain()
 						docmd();
 						break;
 
-					case DIAL:
+					/*case DIAL:
 						keep ( Lastlog, FALSE );
 						dial();
 						dolabel = FALSE;
 						Chpos = 0;
 						purgeline();
 						startcapture();
-						break;
+						break;*/
 
 #ifdef HOSTON
 
@@ -193,11 +199,11 @@ ovmain()
 						break;
 #endif
 
-					case TOGPRT:
+					/*case TOGPRT:
 						toggleprt();
 						dolabel = FALSE;
 						Chpos = 0;
-						break;
+						break;*/
 
 					case DISK:
 						diskstuff();
@@ -244,103 +250,90 @@ ovmain()
 							keycount = strlen ( keybuf );
 							keypoint = 0;
 						} else
-							mcharout ( kbdata ); /* send it if not anything else */
+							mcharout ( kbdata ); 	/* send it if not anything else */
 
 						break;
 
 				}		/* end of switch*/
 
 				if ( dolabel )
-					prompt ( TRUE );	/* print header */
+					prompt ( TRUE );			/* print header */
 
-			}			/* end of if lastkey == ESC */
+			}							/* end of if lastkey == ESC */
 
 			else if ( ( lastkey = kbdata ) != ESC ) {
-				mcharout ( kbdata );	/* Not a function key */
-ilfloop:
+				
+				mcharout ( kbdata );				/* Not a function key */
 
-				if ( !FDx ) {
-					prtchr ( kbdata );
-
-					if ( kbdata == CR ) {
-						kbdata = LF;
-
-						if ( RemEcho )
-							mcharout ( kbdata );
-
-						goto ilfloop;
-					}
-				}
 			}
-		}                    /*  end of if char at kbd  */
+		}                    						/*  end of if char at kbd  */
 
 		if ( minprdy() ) {
-			mdmdata = mcharinp();	/* Character at modem */
 
-			if ( mdmdata == autoseq[autopos++] ) {	/* ZRQINIT? */
+			mdmdata = mcharinp();					/* Character at modem */
+
+			if ( mdmdata == autoseq[autopos++] ) {			/* ZRQINIT? */
 				if ( autopos == autolen ) {
 					printf ( "\nZmodem receive.\n" );
-					Zmodem = TRUE;	/* yes, do auto.. */
-					return RECEIVE;	/* ..zmodem receive */
+					Zmodem = TRUE;				/* yes, do auto.. */
+					return RECEIVE;				/* ..zmodem receive */
 				}
-			} else	/* no, reset ZRQINIT sequence test */
+			} else							/* no, reset ZRQINIT sequence test */
 				autopos = ( mdmdata == '*' ) ? 1 : 0;
 
-			if ( ParityMask )			/* if flag on, */
-				mdmdata &= 0x7f;	/* remove parity */
+			if ( ParityMask )					/* if flag on, */
+				mdmdata &= 0x7f;				/* remove parity */
 
 			if ( Filter && ( mdmdata > '\r' ) && ( mdmdata < ' ' ) )
-				goto endloop;	/* filter control chars */
+				;						/* filter control chars */
+			else {
 
-olfloop:
-			prtchr ( mdmdata );	/* print the character */
-			tobuffer ( mdmdata );
-			toprinter ( mdmdata );
+				prtchr ( mdmdata );				/* print the character */
+				tobuffer ( mdmdata );
+				toprinter ( mdmdata );
 
-			if ( RemEcho ) {
-				mcharout ( mdmdata );
+				if ( RemEcho ) {
+					mcharout ( mdmdata );
 
-				if ( mdmdata == CR ) {
-					mdmdata = LF;
-					goto olfloop;
+					if ( mdmdata == CR ) {
+						mcharout ( LF );
+					}
 				}
 			}
 		}
 
-endloop:
-		prtservice();     /* service printer at the end of each loop */
-	}    /* end of while */
-}/* end of main */
+		prtservice();    						 /* service printer at the end of each loop */
+	}    /* end of while */				
+} /* end of main */
 
 
 /* print character, handling tabs (can't use bdos 2 as it reacts to ctl-s) */
 void prtchr ( char c )
 {
-	if ( c == '\t' ) {			/* process tabs */
-		bdos ( DIRCTIO, ' ' );		/* do at least one */
+	if ( c == '\t' ) {						/* process tabs */
+		bdos ( DIRCTIO, ' ' );					/* do at least one */
 
 		while ( ++Chpos % 8 )
-			bdos ( DIRCTIO, ' ' ); 	/* pad with space */
-	} else {
-		bdos ( DIRCTIO, c );		/* just print it */
+			bdos ( DIRCTIO, ' ' ); 				/* pad with space */
+	} else {						
+		bdos ( DIRCTIO, c );					/* just print it */
 
-		if ( c >= ' ' )			/* if printable, */
-			Chpos++;	/* bump character position */
-		else if ( c == '\r' )		/* cr resets  it */
+		if ( c >= ' ' )						/* if printable, */
+			Chpos++;					/* bump character position */
+		else if ( c == '\r' )					/* cr resets  it */
 			Chpos = 0;
 	}
 }
 
-tobuffer ( c )
-int c;
+void tobuffer ( int c )
 {
 	if ( BFlag ) {
 		MainBuffer[TxtPtr++] = ( char ) c;
 
 		if ( TxtPtr > Buftop ) {
-			keep ( Lastlog, TRUE );	/* must be true since remote */
-			startcapture();		/* is probably still going */
-		}
+			keep ( Lastlog, TRUE );				/* must be true since remote */
+			startcapture();					/* is probably still going */
+		}		
 	}
 }
 
@@ -353,23 +346,22 @@ void prompt ( short clear )
 	printf ( "\rTerminal Mode: ESC H for help.\t\t" );
 	printf ( "Drive %c%d:   %u baud\n", Currdrive, Curruser,
 		 Baudtable[Current.cbaudindex] );
-	Chpos = 0;			/* reset character position */
+	Chpos = 0;							/* reset character position */
 }
 
-toprinter ( i )
-int i;
+void toprinter ( int i )
 {
 	char c;
 
 	c = ( char ) i;
 
-	if ( PFlag && ( c != '\f' ) ) {	/* don't print form feeds */
+	if ( PFlag && ( c != '\f' ) ) {					/* don't print form feeds */
 		*Prthead++ = c;
 		adjustprthead();
 	}
 }
 
-toggleprt()
+void toggleprt()
 {
 	PFlag = !PFlag;
 
@@ -379,18 +371,18 @@ toggleprt()
 		else printf ( "\nPrinter ON\n" );
 	} else {
 		while ( prtservice() )
-			;	/* Empty the buffer */
+			;				/* Empty the buffer */
 
-		bdos ( 5, '\r' );	/* do final cr/lf */
+		bdos ( 5, '\r' );			/* do final cr/lf */
 		bdos ( 5, '\n' );
 		free ( Prtbuf );
 		printf ( "\nPrinter OFF\n" );
 	}
 }
 
-getprtbuf()
+int getprtbuf()
 {
-	keep ( Lastlog, TRUE );	/* need to steal some of the buffer */
+	keep ( Lastlog, TRUE );						/* need to steal some of the buffer */
 	Prtbuf = alloc ( Pbufsiz );
 
 	if ( allocerror ( Prtbuf ) )
@@ -408,7 +400,7 @@ getprtbuf()
 }
 
 /* Quit. */
-doexit()
+void doexit()
 {
 	static char c;
 
@@ -420,44 +412,43 @@ doexit()
 
 	keep ( Lastlog, FALSE );
 	reset ( Invokdrive, Invokuser );
-	/*	deinitvector();     //restore interrupt vector*/
+	deinitv();    						 	/* restore interrupt vector*/
 	cls();
-/* 	userout();	 user-defined exit routine */
-	exit ( 0 );		/* and quit */
+ 	userout();	 						/* user-defined exit routine */
+	exit ( 0 );							/* and quit */
 
 }
 
-prtservice()    /*printer service routine*/
+int prtservice()    /*printer service routine*/
 {
 
 	if ( PFlag ) {
 		if ( pready() ) {
 			if ( Prthead != Prttail ) {
-				bdos ( 5, *Prttail++ );    /* write list byte */
+				bdos ( 5, *Prttail++ );   		 /* write list byte */
 
 				if ( Prttail > Prttop )
 					Prttail = Prtbottom;
 			}
 
-			return ( Prthead != Prttail );	/* Return true if buffer full */
-		}
+			return ( Prthead != Prttail );			/* Return true if buffer full */
+		}		
 	}
 }
 
-pready()   /*get printer status using bios call*/
+int pready() 		/*get printer status using bios call*/
 {
 	return ( bios ( 14 + 1 ) );
 
 }
 
-adjustprthead()
+void adjustprthead()
 {
 	if ( Prthead > Prttop )
 		Prthead = Prtbottom;
 }
 
-setace ( n ) /* for a particular phone call */
-int n;
+void setace ( int n ) 		/* for a particular phone call */
 {
 	Current.cbaudindex = Book[n].pbaudindex;
 	Current.cparity = Book[n].pparity;
@@ -466,136 +457,8 @@ int n;
 	updateace();
 }
 
-dial()
-{
-	static char *number;      /* buffer for number to be sent to modem */
-	static char *result;      /* buffer for responses from modem */
-	static char *instr;       /* buffer for numbers entered at keyboard */
-	static int connect;
-	static int status, i, j, n, nocnt, action, c;
-	static char *p;
 
-	if ( allocerror ( number = alloc ( 128 ) ) )
-		return;
-
-	if ( allocerror ( result = alloc ( 128 ) ) )
-		return;
-
-	if ( allocerror ( instr = alloc ( 128 ) ) )
-		return;
-
-	status = shownos();
-	printf ( "\nEnter letters and/or numbers, separated by commas..\n: " );
-	QuitFlag = connect = FALSE;
-	Dialing = TRUE;
-
-	if ( j = getline ( instr, 80 ) ) {
-		putlabel ( "Automatic Redial:  Press ESC to stop" );
-
-		for ( i = 0, nocnt = 1; instr[i]; i++ )
-			if  ( instr[i] == ',' ) {
-				instr[i] = 0;
-				nocnt++;
-			}
-
-		i = nocnt;
-
-		while ( TRUE ) {
-			p = instr;
-			nocnt = i;
-
-			while ( nocnt-- ) {
-				n = -1;
-				strcpy ( number, Modem.dialcmd );
-
-				if ( *p == '+' ) {
-					strcat ( number, Sprint );
-					p++;
-				} else if ( *p == '-' ) {
-					strcat ( number, Mci );
-					p++;
-				}
-
-				if ( ( status == OK ) && ( j = strlen ( p ) ) == 1 ) {
-					if ( isalpha ( n = *p ) ) {
-						n = toupper ( n ) - 'A';
-						setace ( n );
-						strcat ( number, Book[n].number );
-						strcat ( number, Modem.dialsuffix );
-						mstrout ( number, FALSE );
-						printf ( "\nDialing %s...",
-							 Book[n].name );
-					} else {
-						printf ( "\nInvalid Number\n" );
-						goto abort;
-					}
-				} else {
-					strcat ( number, p );
-					strcat ( number, Modem.dialsuffix );
-					mstrout ( number, FALSE );
-					printf ( "\nDialing %s...", p );
-				}
-
-				/*flush modem input*/
-				while ( readline ( 10 ) != TIMEOUT );
-
-				do {
-					action = readstr ( result, Modem.timeout );
-
-					if ( action == TIMEOUT )
-						goto abort;
-
-					printf ( "%s\n", result );
-				} while ( ! ( c = isin ( result, Modem.connect ) )
-					  && !isin ( result, Modem.busy1 )
-					  && !isin ( result, Modem.busy2 )
-					  && !isin ( result, Modem.busy3 )
-					  && !isin ( result, Modem.busy4 ) );
-
-				if ( c ) {    /* got connect string */
-					printf ( "\007\nOn Line to %s\n",
-						 n >= 0 ? Book[n].name : p );
-
-					if ( n >= 0 )
-						FDx = !Book[n].echo;
-
-					connect = TRUE;
-					goto done;
-				}
-
-				mcharout ( CR );
-
-				/* wait for modem */
-				while ( readline ( 10 ) != TIMEOUT );
-
-				p += j + 1;
-			}
-
-			if ( kbwait ( Modem.pause ) )
-				goto abort;
-		}
-	}
-
-abort:
-	printf ( "Call Aborted.\n" );
-	mcharout ( CR );
-	readstr ( result, 1 );  /*gobble last result*/
-	resetace();
-
-done:
-	flush();
-
-	if ( Book != ( struct phonebook * ) MEMORY_FULL )
-		free ( Book );
-
-	free ( instr );
-	free ( result );
-	free ( number );
-	Dialing = FALSE;
-	return connect;
-}
-
-shownos()
+int shownos()
 {
 	static int i, j, status;
 
@@ -622,7 +485,7 @@ shownos()
 	return status;
 }
 
-loadnos()
+int loadnos()
 {
 	static unsigned amount;
 	char dummy;
@@ -650,7 +513,7 @@ loadnos()
 					 &Book[i].pdatabits,
 					 &Book[i].pstopbits,
 					 &Book[i].echo );
-				fgetc ( fd );		/* remove LF */
+				fgetc ( fd );					/* remove LF */
 			}
 
 			fclose ( fd );

@@ -19,12 +19,21 @@ SRCS="systran \
 	dsktran \
 	sysinit"
 
+SRCSN="zrbasic"
+
 
 	for ut in $SRCS
 	do
 		echo -e "\t$ut"
 		mzmac -m $ut.asm
 		mv -f $ut.bin $ut.com
+		rm -rf $ut.lst
+	done
+
+	for ut in $SRCSN
+	do
+		echo -e "\t$ut"
+		mzmac -m $ut.asm
 		rm -rf $ut.lst
 	done
 

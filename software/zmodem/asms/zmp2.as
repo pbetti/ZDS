@@ -346,25 +346,27 @@ jp	nz,l33
 ld	l,(ix+6)
 ld	h,(ix+7)
 jp	cret
+global	brelop
+global	wrelop
 global	wrelop
 global	wrelop
 global	_printf
 global	shal
 global	_index
 psect	bss
-F560:
-defs	2
-F561:
-defs	2
-F562:
-defs	1
 F563:
 defs	2
 F564:
 defs	2
 F565:
 defs	2
-F559:
+F566:
+defs	1
+F567:
+defs	2
+F568:
+defs	2
+F569:
 defs	2
 psect	text
 _expand:
@@ -372,7 +374,7 @@ call ncsv
 defw -42
 call	_getuid
 ld	h,0
-ld	(F565),hl
+ld	(F569),hl
 ld	hl,(_curfname)
 push	hl
 push	ix
@@ -383,30 +385,34 @@ push	hl
 call	_setfcb
 pop	bc
 pop	bc
-ld	de,-1
-ld	l,(ix+-42)
-ld	h,0
-or	a
-sbc	hl,de
-jp	nz,l36
+ld	b,65
+ld	a,(ix+-42)
+call	brelop
+jp	c,L5
+ld	e,(ix+-42)
+ld	d,0
+ld	hl,80
+call	wrelop
+jp	nc,l36
+L5:
 ld	(ix+-42),63
 l36:
 ld	hl,1
-ld	(F564),hl
-ld	(F563),hl
+ld	(F568),hl
+ld	(F567),hl
 jp	l40
 l37:
 ld	de,9
-ld	hl,(F563)
+ld	hl,(F567)
 or	a
 sbc	hl,de
 jp	nz,l41
 ld	hl,1
-ld	(F564),hl
+ld	(F568),hl
 l41:
 push	ix
 pop	de
-ld	hl,(F563)
+ld	hl,(F567)
 add	hl,de
 ld	de,-42
 add	hl,de
@@ -414,25 +420,25 @@ ld	a,(hl)
 cp	42
 jp	nz,l42
 ld	hl,0
-ld	(F564),hl
+ld	(F568),hl
 l42:
-ld	hl,(F564)
+ld	hl,(F568)
 ld	a,l
 or	h
 jp	nz,l39
 push	ix
 pop	de
-ld	hl,(F563)
+ld	hl,(F567)
 add	hl,de
 ld	de,-42
 add	hl,de
 ld	(hl),63
 l39:
-ld	hl,(F563)
+ld	hl,(F567)
 inc	hl
-ld	(F563),hl
+ld	(F567),hl
 l40:
-ld	de,(F563)
+ld	de,(F567)
 ld	hl,11
 call	wrelop
 jp	p,l37
@@ -441,7 +447,7 @@ ld	h,0
 push	hl
 call	_setuid
 ld	hl,17
-ld	(F564),hl
+ld	(F568),hl
 ld	hl,128
 ex	(sp),hl
 ld	hl,26
@@ -456,7 +462,7 @@ push	hl
 call	_alloc
 pop	bc
 ex	de,hl
-ld	(F560),de
+ld	(F564),de
 push	de
 ld	de,(_loc_vector)
 ld	hl,(_vcount)
@@ -476,7 +482,7 @@ jp	m,l47
 ld	hl,29f
 push	hl
 call	_printf
-ld	hl,(F565)
+ld	hl,(F569)
 ex	(sp),hl
 call	_setuid
 pop	bc
@@ -485,10 +491,10 @@ jp	cret
 l47:
 ld	de,129
 ld	b,5
-ld	hl,(F563)
+ld	hl,(F567)
 call	shal
 add	hl,de
-ld	(F559),hl
+ld	(F563),hl
 ld	l,58
 push	hl
 ld	hl,(_curfname)
@@ -503,59 +509,59 @@ ld	hl,(_curfname)
 ld	a,(hl)
 cp	63
 jp	z,l48
-ld	(F561),hl
+ld	(F565),hl
 l51:
-ld	hl,(F561)
+ld	hl,(F565)
 ld	a,(hl)
 inc	hl
-ld	(F561),hl
-ld	(F562),a
-ld	hl,(F560)
+ld	(F565),hl
+ld	(F566),a
+ld	hl,(F564)
 inc	hl
-ld	(F560),hl
+ld	(F564),hl
 dec	hl
 ld	(hl),a
 cp	58
 jp	nz,l51
 l48:
 ld	hl,12
-ld	(F563),hl
+ld	(F567),hl
 jp	l55
 l52:
 ld	de,3
-ld	hl,(F563)
+ld	hl,(F567)
 or	a
 sbc	hl,de
 jp	nz,l56
-ld	hl,(F560)
+ld	hl,(F564)
 inc	hl
-ld	(F560),hl
+ld	(F564),hl
 dec	hl
 ld	(hl),46
 l56:
-ld	hl,(F559)
+ld	hl,(F563)
 ld	a,(hl)
 inc	hl
-ld	(F559),hl
+ld	(F563),hl
 and	127
 add	a,32
-ld	hl,(F560)
+ld	hl,(F564)
 ld	(hl),a
 cp	32
 jp	z,l55
 inc	hl
-ld	(F560),hl
+ld	(F564),hl
 l55:
-ld	hl,(F563)
+ld	hl,(F567)
 dec	hl
-ld	(F563),hl
+ld	(F567),hl
 ld	a,l
 or	h
 jp	nz,l52
-ld	hl,(F560)
+ld	hl,(F564)
 ld	(hl),0
 ld	hl,18
-ld	(F564),hl
+ld	(F568),hl
 l44:
 push	ix
 pop	de
@@ -568,7 +574,7 @@ ld	sp,hl
 ex	de,hl
 ld	bc,42
 ldir
-ld	hl,(F564)
+ld	hl,(F568)
 push	hl
 call	_bdos
 exx
@@ -580,14 +586,14 @@ ld	a,l
 rla
 sbc	a,a
 ld	h,a
-ld	(F563),hl
+ld	(F567),hl
 xor	a
 ld	h,a
 ld	de,255
 or	a
 sbc	hl,de
 jp	nz,l45
-ld	hl,(F565)
+ld	hl,(F569)
 push	hl
 call	_setuid
 pop	bc
@@ -660,9 +666,9 @@ global	_readock
 global	_mread
 global	wrelop
 psect	bss
-F570:
+F574:
 defs	2
-F571:
+F575:
 defs	5
 psect	text
 _readock:
@@ -674,13 +680,13 @@ push	hl
 ld	l,(ix+8)
 ld	h,(ix+9)
 push	hl
-ld	hl,F571
+ld	hl,F575
 push	hl
 call	_mread
 pop	bc
 pop	bc
 pop	bc
-ld	(F570),hl
+ld	(F574),hl
 ld	de,1
 call	wrelop
 jp	p,l63
@@ -688,21 +694,21 @@ ld	hl,-2
 jp	cret
 l63:
 ld	de,1
-ld	hl,(F570)
+ld	hl,(F574)
 or	a
 sbc	hl,de
 jp	nz,l66
-ld	a,(F571)
+ld	a,(F575)
 ld	l,a
 rla
 xor	a
 ld	h,a
 jp	cret
 l67:
-ld	de,F571
-ld	hl,(F570)
+ld	de,F575
+ld	hl,(F574)
 dec	hl
-ld	(F570),hl
+ld	(F574),hl
 add	hl,de
 ld	a,(hl)
 cp	24
@@ -710,7 +716,7 @@ jp	z,l66
 ld	hl,-1
 jp	cret
 l66:
-ld	hl,(F570)
+ld	hl,(F574)
 ld	a,l
 or	h
 jp	nz,l67
@@ -767,9 +773,9 @@ jp	_cls
 global	_mgetchar
 global	amul
 psect	bss
-F580:
+F583:
 defs	2
-F579:
+F584:
 defs	2
 psect	text
 _mgetchar:
@@ -781,16 +787,16 @@ ld	de,10
 ld	l,(ix+6)
 ld	h,(ix+7)
 call	amul
-ld	(F580),hl
+ld	(F584),hl
 push	hl
 call	_readline
 pop	bc
-ld	(F579),hl
+ld	(F583),hl
 ld	de,-2
 or	a
 sbc	hl,de
 jp	z,l74
-ld	hl,(F579)
+ld	hl,(F583)
 xor	a
 ld	h,a
 jp	cret
@@ -805,7 +811,7 @@ jp	z,l76
 jp	cret
 global	_box
 psect	data
-F582:
+F586:
 defw	59f
 defw	69f
 defw	79f
@@ -817,7 +823,7 @@ defw	129f
 defw	139f
 defw	149f
 defw	159f
-F583:
+F587:
 defw	0
 defw	32
 defw	31
@@ -857,7 +863,7 @@ pop	bc
 ld	(ix+-2),1
 ld	(ix+-1),0
 jp	l81
-L5:
+L7:
 ld	hl,45
 push	hl
 call	_fputc
@@ -875,7 +881,7 @@ ld	h,(ix+-1)
 call	wrelop
 ld	hl,__iob+8
 push	hl
-jp	m,L5
+jp	m,L7
 ld	hl,43
 push	hl
 call	_fputc
@@ -896,7 +902,7 @@ pop	bc
 ld	(ix+-2),1
 ld	(ix+-1),0
 jp	l85
-L6:
+L8:
 ld	hl,45
 push	hl
 call	_fputc
@@ -914,7 +920,7 @@ ld	h,(ix+-1)
 call	wrelop
 ld	hl,__iob+8
 push	hl
-jp	m,L6
+jp	m,L8
 ld	hl,43
 push	hl
 call	_fputc
@@ -972,7 +978,7 @@ ld	(ix+-2),1
 ld	(ix+-1),0
 jp	l93
 l90:
-ld	de,F583
+ld	de,F587
 ld	l,(ix+-2)
 ld	h,(ix+-1)
 add	hl,hl
@@ -989,7 +995,7 @@ push	hl
 call	_locate
 pop	bc
 pop	bc
-ld	de,F582
+ld	de,F586
 ld	l,(ix+-2)
 ld	h,(ix+-1)
 add	hl,hl
@@ -1097,12 +1103,12 @@ global	_mchin
 global	_Stopped
 global	_mchout
 psect	bss
-F591:
+F594:
 defs	2
 psect	text
 _mcharinp:
 call	_mchin
-ld	(F591),hl
+ld	(F594),hl
 ld	hl,(_Stopped)
 ld	a,l
 or	h
@@ -1114,21 +1120,12 @@ pop	bc
 ld	hl,0
 ld	(_Stopped),hl
 l105:
-ld	hl,(F591)
+ld	hl,(F594)
 ret	
 global	_mcharout
-global	_moutrdy
 _mcharout:
 global csv
 call csv
-jp	l107
-l108:
-call	_opabort
-l107:
-call	_moutrdy
-ld	a,l
-or	h
-jp	z,l108
 ld	a,(ix+6)
 ld	l,a
 rla
@@ -1143,15 +1140,15 @@ _minprdy:
 call	_mirdy
 ld	a,l
 or	h
-jp	nz,L13
+jp	nz,L15
 ld	hl,(_Stopped)
 ld	a,l
 or	h
-jp	z,L12
-L13:
+jp	z,L14
+L15:
 ld	hl,1
 ret	
-L12:
+L14:
 ld	hl,0
 ret	
 psect	data
@@ -1210,4 +1207,5 @@ defs	2
 psect	text
 58,0
 139:
-defb	83,101,99,116,111,114,115,32,105,110,32,70,10
+defb	83,101,99,116,111,114,115,32,105,110,32,70,105,108,101,58
+defb

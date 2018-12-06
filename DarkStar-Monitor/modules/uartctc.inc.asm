@@ -252,7 +252,7 @@ inictc:
 					; +------------------ 1 = enable interrupts
 	out	(ctcchan3),a
 	ld	a,1			; time constant set to 1. At first interrupt request
-					; form the UART will route it to the CPU
+					; from the UART will route it to the CPU
 	out	(ctcchan3),a
 
 	; Channel 2 - UART 1 interrupt handler

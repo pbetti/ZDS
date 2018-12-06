@@ -127,6 +127,8 @@ extern long Lastsync;		      /* Last offset to which we got a ZRPOS */
 extern int Beenhereb4;		   /* How many times we've been ZRPOS'd same place */
 extern int Incnt;              /* count for chars not read from the Cpmbuf */
 
+extern int minprdy ( void );
+
 /*
  * Get the receiver's init parameters
  */

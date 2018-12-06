@@ -25,19 +25,19 @@ ovmain()
 {
 	unsigned u;
 
-	userin();	/* perform user-defined entry routine */
+	userin();						/* perform user-defined entry routine */
 	title();
 	getconfig();
-	/*	initvector();                 // set up interrupt vector */
+	initv();                				 /* set up interrupt vector */
 	u = ( unsigned ) * Mspeed;
 
 	if ( !u || u > 13 )
-		initializemodem();	/* initialise uart as well */
+		initializemodem();				/* initialise uart as well */
 	else {
 		Current.cbaudindex = ( int ) ( *Mspeed );
-		Current.cparity = Line.parity;		/* Only update */
-		Current.cdatabits = Line.databits;	/*  internal   */
-		Current.cstopbits = Line.stopbits;	/*  variables  */
+		Current.cparity = Line.parity;			/* Only update */
+		Current.cdatabits = Line.databits;		/*  internal   */
+		Current.cstopbits = Line.stopbits;		/*  variables  */
 	}
 
 	Currdrive = Invokdrive;
@@ -51,7 +51,7 @@ title()
 {
 	static char line1[] = "ZMP - A ZMODEM Program for CP/M";
 	static char line3[] = "by Ron Murray";
-	static char line4[] = "ported to Z80NE (ZDS) by Piergiorgio Betti";
+	static char line4[] = "ported to Z80 Darkstar by Piergiorgio Betti";
 
 	cls();
 	LOCATE ( 7, ctr ( line1 ) );

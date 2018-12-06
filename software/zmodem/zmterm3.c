@@ -26,32 +26,32 @@ extern void viewfile(char *);
 extern void printfile(char *);
 
 /* ../zmterm3.c */
-extern int directory(void);
-extern int sorted_dir(char *, unsigned);
-extern int unsort_dir(void);
+extern void directory(void);
+extern void sorted_dir(char *, unsigned);
+extern void unsort_dir(void);
 extern int printsep(short);
 extern int domore(void);
 extern int dirsort(char *, char *);
 extern int cntbits(char);
-extern int resetace(void);
-extern int updateace(void);
-extern int hangup(void);
-extern int tlabel(void);
+extern void resetace(void);
+extern void updateace(void);
+extern void hangup(void);
+extern void tlabel(void);
 extern int waitakey(void);
 
 /* ../zmterm.c */
 extern int ovmain(void);
 extern void prtchr(char);
-extern int tobuffer(int);
+extern void tobuffer(int);
 extern void prompt(short);
-extern int toprinter(int);
-extern int toggleprt(void);
+extern void toprinter(int);
+extern void toggleprt(void);
 extern int getprtbuf(void);
-extern int doexit(void);
+extern void doexit(void);
 extern int prtservice(void);
 extern int pready(void);
-extern int adjustprthead(void);
-extern int setace(int);
+extern void adjustprthead(void);
+extern void setace(int);
 extern int dial(void);
 extern int shownos(void);
 extern int loadnos(void);
@@ -59,10 +59,11 @@ extern int loadnos(void);
 extern int getfirst(char *);
 extern int getnext ( void );
 extern int dio ( void );
+extern int dirsort ( char * , char *  );
 
 static short Lines, Entries;
 
-directory()
+void directory()
 {
 	short factor, cpm3;
 	long *lp = ( long * ) CPMBUF;
@@ -73,23 +74,23 @@ directory()
 	cls();
 	sprintf ( Buf, "Directory for Drive %c%d:", Currdrive, Curruser );
 	putlabel ( Buf );
-	bdos ( SETDMA, CPMBUF );     /* set dma address */
-	cpm3 = ( bdoshl ( 12 ) >= 0x30 );	/* get cp/m version (BCD) */
+	bdos ( SETDMA, CPMBUF );     					/* set dma address */
+	cpm3 = ( bdoshl ( 12 ) >= 0x30 );				/* get cp/m version (BCD) */
 	dirbuf = grabmem ( &dirbufsize );
-
-	if ( dirbuf != ( char * ) MEMORY_FULL )
+	
+	if ( dirbuf != ( char * ) MEMORY_FULL ) 
 		sorted_dir ( dirbuf, dirbufsize );
-	else			/* not enough room */
-		unsort_dir();	/* do unsorted directory */
-
+	else								/* not enough room */
+		unsort_dir();						/* do unsorted directory */
+	
 	/* Now print free space on disk */
-	if ( cpm3 ) {	/* cp/m 3 */
+	if ( cpm3 ) {							/* cp/m 3 */
 		bdos ( 46, Currdrive - 'A' );
 		p = ( char * ) ( CPMBUF + 3 );
-		*p = 0;	/* clear hi byte for long */
+		*p = 0;							/* clear hi byte for long */
 		remaining = ( short ) ( *lp / 8L );
-	} else {		/* cp/m 2.2 */
-		thedpb = ( struct dpb * ) bdoshl ( GETDPB, NULL ); /* fill dpb */
+	} else {							/* cp/m 2.2 */
+		thedpb = ( struct dpb * ) bdoshl ( GETDPB, NULL ); 	/* fill dpb */
 		alloca = ( char * ) bdoshl ( GETALL, NULL );
 		bls = 0x0001;
 		bls <<= thedpb->bsh + 7;
@@ -117,39 +118,39 @@ directory()
 }
 
 /* Do sorted directory with filesizes */
-sorted_dir ( char * dirbuf, unsigned int dirbufsize )
+void sorted_dir ( char * dirbuf, unsigned int dirbufsize )
 {
-	short count, limit, dirsort(), dircode, ksize, i;
+	short count, limit, dircode, ksize, i;
 	unsigned size;
 	char filename[15];
 	char *p, *q;
 	struct sortentry *se;
-	struct fcb srcfcb;
-
+	
 	q = dirbuf;
 	Lines = 2;
-	memset ( srcfcb.name, '?', 14 );		/* all filenames, all extents */
-	limit = dirbufsize / sizeof ( struct sortentry ); /* how many */
-	dircode = bdos ( SFF, &srcfcb );		/* search first */
+		
+	limit = dirbufsize / sizeof ( struct sortentry ); 		/* how many */
 
-	for ( count = 0; dircode != -1; count++ ) {
+	dircode = getfirst ( "????????.???" );
+	
+	for ( count = 0; dircode != 0xff; count++ ) {
 		p = ( ( char * ) CPMBUF + dircode * 32 );
 
 		for ( i = 0; i < 16; i++ )
 			*q++ = *p++ & ( ( i > 0 && i < 12 )
 					? 0x7f : 0xff );
-
-		if ( count == limit ) { 		/* can't fit them in */
+		
+		if ( count == limit ) { 				/* can't fit them in */
 			free ( dirbuf );
-			unsort_dir();			/* do unsorted directory */
+			unsort_dir();					/* do unsorted directory */
 			return;
 		}
 
-		dircode = bdos ( SFN, &srcfcb );	/* search next */
+		dircode = getnext();
 	}
 
-	qsort ( dirbuf, count, 16, dirsort );	/* sort in alpha order */
-
+	qsort ( dirbuf, count, 16, dirsort );				/* sort in alpha order */
+	
 	/* ok, now print them all */
 	se = ( struct sortentry * ) dirbuf;
 
@@ -180,11 +181,11 @@ sorted_dir ( char * dirbuf, unsigned int dirbufsize )
 }
 
 /* Do unsorted directory */
-unsort_dir()
+void unsort_dir()
 {
 	short dircode, i;
 	struct direntry *dp;
-
+	
 	Lines = 2;
 	dircode = getfirst ( "????????.???" );
 
@@ -212,7 +213,7 @@ unsort_dir()
 
 /* Print separator between directory entries. Do [more] if page full */
 /* Return TRUE if end of page and ctl-c or ctl-k typed */
-printsep ( short count )
+int printsep ( short count )
 {
 	if ( ( Entries % count ) == count - 1 ) {
 		printf ( "\n" );
@@ -228,7 +229,7 @@ printsep ( short count )
 }
 
 /* Print [more] and wait for a key. Return TRUE if user hit ctl-c or ctl-k */
-domore()
+int domore()
 {
 	char c;
 
@@ -246,8 +247,7 @@ domore()
 }
 
 /* Function for qsort to compare two directory entries */
-dirsort ( p1, p2 )
-char *p1, *p2;
+int dirsort ( char * p1, char * p2 )
 {
 	short j;
 
@@ -273,7 +273,7 @@ int cntbits ( char byte )
 	return count;
 }
 
-resetace()  /* to default values */
+void resetace()  /* to default values */
 {
 	Current.cbaudindex = Line.baudindex;
 	Current.cparity = Line.parity;
@@ -282,13 +282,13 @@ resetace()  /* to default values */
 	updateace();
 }
 
-updateace()
+void updateace()
 {
 	initace ( Current.cbaudindex, Current.cparity,
 		  Current.cdatabits, Current.cstopbits );
 }
 
-hangup()
+void hangup()
 {
 	stndout();
 	printf ( "\n ZMP: Disconnect (Y/N) <N>? \007" );
@@ -307,7 +307,7 @@ hangup()
 	resetace();
 }
 
-tlabel() /*print level 1 labels on the 25th line*/
+void tlabel() /*print level 1 labels on the 25th line*/
 {
 	/*					Removed for now
 	   killlabel();
@@ -323,7 +323,7 @@ tlabel() /*print level 1 labels on the 25th line*/
 }
 
 /* Prompt user and get any key */
-waitakey()
+int waitakey()
 {
 	char c;
 

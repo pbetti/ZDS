@@ -108,6 +108,7 @@
 
 #define        BUFSTART        16384   /*16k text buffer starting size*/
 #define        OK              0
+#define        NOK             1
 #define        NERROR         (-1)
 #define        ERROR           0
 #define        KEYHIT          0
@@ -306,6 +307,19 @@ EXTERN struct modemparms {
 } Modem
 #ifdef   MAIN
 = {
+	"",
+	"",
+	"",
+	"",
+	"",
+	"",
+	"",
+	"",
+	"",
+	0, 0
+}
+/*
+= {
 	"ATE0V1X4S0=0!",
 	"ATD",
 	"!",
@@ -316,7 +330,8 @@ EXTERN struct modemparms {
 	"ERROR",
 	"~+++~ATH0!",
 	40, 8
-}
+}*/
+
 #endif
 ;
 
@@ -332,7 +347,8 @@ EXTERN struct hostparms {
 #ifdef MAIN
 = {
 	"Welcome to HModem Host!",
-	"ATS0=2!",
+	/*"ATS0=2!,"*/
+	"",
 	"PASSWORD",
 	"null",
 	TRUE
@@ -384,7 +400,7 @@ EXTERN int Inhost
 	  ;
 #ifdef INIT
 char Version[41]
-	=  "Version 1.6 -- 6 September 2017"	/* version number for ZMP */
+	=  "Version 1.7 -- 15 November 2018"	/* version number for ZMP */
 	   /*  ^_____________________________________^    Maximum length! */
 #endif
 	   ;

@@ -44,22 +44,16 @@ extern int ovmain(void);
 extern void prtchr(char);
 extern void tobuffer(int);
 extern void prompt(short);
-extern void toprinter(int);
-extern void toggleprt(void);
-extern int getprtbuf(void);
 extern void doexit(void);
-extern int prtservice(void);
-extern int pready(void);
-extern void adjustprthead(void);
 extern void setace(int);
-extern int dial(void);
-extern int shownos(void);
-extern int loadnos(void);
 
 extern int getfirst(char *);
 extern int getnext ( void );
 extern int dio ( void );
 extern int dirsort ( char * , char *  );
+extern void cpm_free(void *);
+extern char *grabmem ( unsigned * );
+
 
 static short Lines, Entries;
 
@@ -68,8 +62,8 @@ void directory()
 	short factor, cpm3;
 	long *lp = ( long * ) CPMBUF;
 	unsigned i, dtotal, atotal, allen, remaining, bls, dirbufsize;
-	char *grabmem(), *alloca, *p, *dirbuf;
-	struct dpb *thedpb;
+	char * alloca, * p, * dirbuf;
+	struct dpb * thedpb;
 
 	cls();
 	sprintf ( Buf, "Directory for Drive %c%d:", Currdrive, Curruser );
@@ -141,7 +135,7 @@ void sorted_dir ( char * dirbuf, unsigned int dirbufsize )
 					? 0x7f : 0xff );
 		
 		if ( count == limit ) { 				/* can't fit them in */
-			free ( dirbuf );
+			cpm_free ( dirbuf );
 			unsort_dir();					/* do unsorted directory */
 			return;
 		}
@@ -174,7 +168,7 @@ void sorted_dir ( char * dirbuf, unsigned int dirbufsize )
 		se++;
 	}
 
-	free ( dirbuf );
+	cpm_free ( dirbuf );
 
 	if ( Entries % SORTCOLS )
 		printf ( "\n" );
@@ -185,21 +179,22 @@ void unsort_dir()
 {
 	short dircode, i;
 	struct direntry *dp;
+	char filename[30];
 	
 	Lines = 2;
 	dircode = getfirst ( "????????.???" );
 
 	for ( Entries = 0; dircode != 0xff; Entries++ ) {
 		dp = ( struct direntry * ) ( CPMBUF + dircode * 32 );
-		memcpy ( Pathname, dp->flname, 8 );
-		Pathname[8] = '.';
-		memcpy ( Pathname + 9, dp->ftype, 3 );
-		Pathname[12] = '\0';
+		memcpy ( filename, dp->flname, 8 );
+		filename[8] = '.';
+		memcpy ( filename + 9, dp->ftype, 3 );
+		filename[12] = '\0';
 
 		for ( i = 0; i < 11; i++ )	/* remove attributes */
-			Pathname[i] = Pathname[i] & 0x7f;
+			filename[i] = filename[i] & 0x7f;
 
-		printf ( "%s", Pathname );
+		printf ( "%s", filename );
 
 		if ( printsep ( UNSORTCOLS ) )
 			break;

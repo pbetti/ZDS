@@ -12,120 +12,32 @@
 #include <setjmp.h>
 #include <string.h>
 
-/* ../zmxfer2.c */
-extern int wcsend(int, char *[]);
-extern int wcs(char *);
-extern int wctxpn(char *);
-extern char *itoa(short, char *);
-extern char *ltoa(long, char[]);
-extern int getnak(void);
-extern int wctx(long);
-extern int wcputsec(char *, int, int);
-extern int filbuf(char *, int);
-extern int newload(char *, int);
-
-/* ../zmxfer3.c */
-extern int getzrxinit(void);
-extern int sendzsinit(void);
-extern int zsendfile(char *, int);
-extern int zsndfdata(void);
-extern int getinsync(int);
-extern int saybibi(void);
-extern char *ttime(long);
-extern int tfclose(void);
-extern int uneof(FILE *);
-extern int slabel(void);
-
-/* ../zmxfer4.c */
-extern int wcreceive(char *);
-extern int wcrxpn(char *);
-extern int wcrx(void);
-extern int wcgetsec(char *, int);
-extern int procheader(char *);
-extern char *substr(char *, char *);
-extern int canit(void);
-extern int clrreports(void);
-
-/* ../zmxfer5.c */
-extern int zperr(char *, int);
-extern int dreport(int, int );
-extern int lreport(int, long);
-extern int sreport(int, long);
-extern int clrline(int);
-extern int tryz(void);
-extern int rzmfile(void);
-extern int rzfile(void);
-extern int statrep(long);
-extern int crcrept(int);
-extern int putsec(int, int );
-extern int zmputs(char *);
-extern int testexist(char *);
-extern int closeit(void);
-extern int ackbibi(void);
-extern long atol(char *);
-extern int rlabel(void);
-
-/* ../zmxfer.c */
-extern int ovmain(char);
-extern int sendout(int);
-extern int bringin(int);
-extern int endstat(int, int );
-extern int protocol(int);
-extern int updcrc(unsigned, unsigned );
-extern long updc32(int, long);
-extern int asciisend(char *);
-extern int checkpath(char *);
-extern int xmchout(char);
-extern int testrxc(short);
-
-/* ../zzm2.c */
-extern int zrbhdr(char *);
-extern int zrb32hdr(char *);
-extern int zrhhdr(char *);
-extern int zputhex(int);
-extern int zsendline(int);
-extern int zgethex(void);
-extern int zgeth1(void);
-extern int zdlread(void);
-extern int noxrd7(void);
-extern int stohdr(long);
-extern long rclhdr(char *);
-
-/* ../zzm.c */
-extern int zsbhdr(int , char *);
-extern int zsbh32(char *, int );
-extern int zshhdr(int , char *);
-extern int zsdata(char *, int, int );
-extern int zsda32(char *, int, int );
-extern int zrdata(char *, int );
-extern int zrdat32(char *, int );
-extern int zgethdr(char *, int);
-extern int prhex(int);
+#include "zmxfer.h"
 
 extern int opabort ( void );
 extern int readline(int);
 
-extern jmp_buf jb_stop;		/* buffer for longjmp */
+extern jmp_buf jb_stop;				/* buffer for longjmp */
 
 extern char *ltoa();
 extern char Myattn[];
 
-extern unsigned Txwindow;	/* Control the size of the transmitted window */
-extern unsigned Txwspac;	      /* Spacing between zcrcq requests */
-extern unsigned Txwcnt;	      /* Counter used to space ack requests */
+extern unsigned Txwindow;			/* Control the size of the transmitted window */
+extern unsigned Txwspac;	      		/* Spacing between zcrcq requests */
+extern unsigned Txwcnt;	      			/* Counter used to space ack requests */
 extern int Noeofseen;
-extern int Totsecs;		      /* total number of sectors this file */
+extern int Totsecs;		      		/* total number of sectors this file */
 extern char *Txbuf;
-extern int Filcnt; 		      /* count of number of files opened */
-extern unsigned Rxbuflen;	/* Receiver's max buffer length */
+extern int Filcnt; 		      		/* count of number of files opened */
+extern unsigned Rxbuflen;			/* Receiver's max buffer length */
 extern int Rxflags;
 extern long Bytcnt;
-extern long Lastread;		      /* Beginning offset of last buffer read */
-extern int Lastn;		         /* Count of last buffer read or -1 */
-extern int Dontread;		      /* Don't read the buffer, it's still there */
-extern long Lastsync;		      /* Last offset to which we got a ZRPOS */
-extern int Beenhereb4;		   /* How many times we've been ZRPOS'd same place */
-extern int Incnt;              /* count for chars not read from the Cpmbuf */
+extern long Lastread;		      		/* Beginning offset of last buffer read */
+extern int Lastn;		         	/* Count of last buffer read or -1 */
+extern int Dontread;		      		/* Don't read the buffer, it's still there */
+extern long Lastsync;		      		/* Last offset to which we got a ZRPOS */
+extern int Beenhereb4;		   		/* How many times we've been ZRPOS'd same place */
+extern int Incnt;              			/* count for chars not read from the Cpmbuf */
 
 extern int minprdy ( void );
 
@@ -133,7 +45,7 @@ extern int minprdy ( void );
  * Get the receiver's init parameters
  */
 
-getzrxinit()
+int getzrxinit()
 {
 	static int n;
 
@@ -178,18 +90,18 @@ getzrxinit()
 
 /* Send send-init information */
 
-sendzsinit()
+int sendzsinit()
 {
 	int tries;
 
-	stohdr ( 0L );		/* All flags are undefined */
-	strcpy ( Txbuf, Myattn );	/* Copy Attn string */
+	stohdr ( 0L );						/* All flags are undefined */
+	strcpy ( Txbuf, Myattn );				/* Copy Attn string */
 
 	for ( tries = 0; tries < 20; tries++ ) {
 		if ( opabort() )
 			return NERROR;
 
-		zsbhdr ( ZSINIT, Txhdr );	/* Send binary header */
+		zsbhdr ( ZSINIT, Txhdr );			/* Send binary header */
 		zsdata ( Txbuf, strlen ( Txbuf ) + 1, ZCRCW );	/* Send string */
 
 		if ( zgethdr ( Rxhdr, 0 ) == ZACK )
@@ -203,9 +115,7 @@ sendzsinit()
 
 /* Send file name and related info */
 
-zsendfile ( buf, blen )
-char *buf;
-int blen;
+int zsendfile ( char * buf, int blen )
 {
 	static int c;
 
@@ -249,11 +159,7 @@ again:
 				 */
 				Lastsync = ( Bytcnt = Txpos = Rxpos ) - 1L;
 
-#ifdef AZTEC_C
-				fseek ( Fd, Rxpos, 0 ); /* absolute offset */
-#else
 				lseek ( Fd, Rxpos, 0 ); /* absolute offset */
-#endif
 
 				clrline ( KBYTES );
 				Incnt = 0;
@@ -267,12 +173,12 @@ again:
 
 /* Send the data in the file */
 
-zsndfdata()
+int zsndfdata()
 {
 	static int c, e, n;
 	static int newcnt;
 	static long tcount;
-	static int junkcount;      /* Counts garbage chars received by TX */
+	static int junkcount;      		/* Counts garbage chars received by TX */
 
 	tcount = 0L;
 	Blklen = 128;
@@ -349,7 +255,7 @@ rxint:
 		}
 	}
 
-	if ( setjmp ( jb_stop ) ) {	/* rx interrupt */
+	if ( setjmp ( jb_stop ) ) {			/* rx interrupt */
 		c = getinsync ( 1 );
 
 		if ( c == ZACK )
@@ -397,7 +303,7 @@ rxint:
 		zsdata ( Txbuf, n, e );
 		Txpos += ( long ) n;
 		Bytcnt = Txpos;
-		crcrept ( Crc32t );	/* praps report crc mode */
+		crcrept ( Crc32t );			/* praps report crc mode */
 		lreport ( KBYTES, Bytcnt );
 
 		if ( e == ZCRCW )
@@ -490,8 +396,7 @@ gotanother:
  * Respond to receiver's complaint, get back in sync with receiver
  */
 
-getinsync ( flag )   /* flag means that there was an error */
-int flag;
+int getinsync ( int flag )   /* flag means that there was an error */
 {
 	static int c;
 	unsigned u;
@@ -524,15 +429,7 @@ int flag;
 					Dontread = TRUE;
 				} else {
 
-#ifdef AZTEC_C
-					u = fseek ( Fd, Rxpos, 0 ); /* absolute offset */
-
-					if ( u != EOF )
-						uneof ( Fd );	/* Reset EOF flag */
-
-#else
 					u = lseek ( Fd, Rxpos, 0 ); /* absolute offset */
-#endif
 
 					clrline ( KBYTES );
 					Incnt = 0;
@@ -571,7 +468,7 @@ int flag;
 
 /* Say "bibi" to the receiver, try to do it cleanly */
 
-saybibi()
+void saybibi()
 {
 	for ( ;; ) {
 		stohdr ( 0L );		/* CAF Was zsbhdr - minor change */
@@ -589,9 +486,7 @@ saybibi()
 	}
 }
 
-char *
-ttime ( fsize )
-long fsize;
+char * ttime ( long fsize )
 {
 	static int efficiency, cps, seconds;
 	static char buffer[10];
@@ -603,33 +498,17 @@ long fsize;
 	return buffer;
 }
 
-tfclose()          /* close file if still open */
+void tfclose()          /* close file if still open */
 {
-#ifdef AZTEC_C
-
-	if ( Fd )
-		fclose ( Fd );
-
-	Fd = 0;
-#else
 
 	if ( Fd >= 0 )
 		close ( Fd );
 
 	Fd = -1;
-#endif
 }
 
-#ifdef AZTEC_C
-/* Reset EOF flag on a stream (yes, I know this is a kludge! Blame Manx) */
-uneof ( fp )
-register FILE *fp;
-{
-	fp->_flags &= ~_EOF;
-}
-#endif
 
-slabel() /*print send mode labels on the 25th line*/
+void slabel() /*print send mode labels on the 25th line*/
 {
 	sprintf ( Buf, "SEND FILE Mode:  Press ESC to Abort..." );
 	putlabel ( Buf );

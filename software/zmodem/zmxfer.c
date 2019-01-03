@@ -2,117 +2,33 @@
 
 #include "zmp.h"
 
-#ifdef   AZTEC_C
-#include "libc.h"
-#else
 #include <stdio.h>
-#endif
 
 #include <setjmp.h>
 #include <ctype.h>
+#include <string.h>
 
-/* ../zmxfer2.c */
-extern int wcsend(int, char *[]);
-extern int wcs(char *);
-extern int wctxpn(char *);
-extern char *itoa(int, char[]);
-extern char *ltoa(long, char[]);
-extern int getnak(void);
-extern int wctx(long);
-extern int wcputsec(char *, int, int);
-extern int filbuf(char *, int);
-extern int newload(char *, int);
+#include "zmxfer.h"
 
-/* ../zmxfer3.c */
-extern int getzrxinit(void);
-extern int sendzsinit(void);
-extern int zsendfile(char *, int);
-extern int zsndfdata(void);
-extern int getinsync(int);
-extern int saybibi(void);
-extern char *ttime(long);
-extern int tfclose(void);
-extern int uneof(FILE *);
-extern int slabel(void);
+#define fcbinit(a,b)	setfcb(b,a)
 
-/* ../zmxfer4.c */
-extern int wcreceive(char *);
-extern int wcrxpn(char *);
-extern int wcrx(void);
-extern int wcgetsec(char *, int);
-extern int procheader(char *);
-extern char *substr(char *, char *);
-extern int canit(void);
-extern int clrreports(void);
 
-/* ../zmxfer5.c */
-extern int zperr(char *, int);
-extern int dreport(int, int );
-extern int lreport(int, long);
-extern int sreport(int, long);
-extern int clrline(int);
-extern int tryz(void);
-extern int rzmfile(void);
-extern int rzfile(void);
-extern int statrep(long);
-extern int crcrept(int);
-extern int putsec(int, int );
-extern int zmputs(char *);
-extern int testexist(char *);
-extern int closeit(void);
-extern int ackbibi(void);
-extern long atol(char *);
-extern int rlabel(void);
-
-/* ../zmxfer.c */
-extern int ovmain(char);
-extern int sendout(int);
-extern int bringin(int);
-extern void endstat(int, int );
-extern int protocol(int);
-extern int updcrc(unsigned, unsigned );
-extern long updc32(int, long);
-extern int asciisend(char *);
-extern void checkpath(char *);
-extern void xmchout(char);
-extern void testrxc(short);
-
-/* ../zzm2.c */
-extern int zrbhdr(char *);
-extern int zrb32hdr(char *);
-extern int zrhhdr(char *);
-extern int zputhex(int);
-extern int zsendline(int);
-extern int zgethex(void);
-extern int zgeth1(void);
-extern int zdlread(void);
-extern int noxrd7(void);
-extern int stohdr(long);
-extern long rclhdr(char *);
-
-/* ../zzm.c */
-extern int zsbhdr(int , char *);
-extern int zsbh32(char *, int );
-extern int zshhdr(int , char *);
-extern int zsdata(char *, int, int );
-extern int zsda32(char *, int, int );
-extern int zrdata(char *, int );
-extern int zrdat32(char *, int );
-extern int zgethdr(char *, int);
-extern int prhex(int);
-
-extern int getpathname(char *);
 extern int chrin(void);
 extern int mcharinp ( void );
 extern int minprdy(void);
 extern int readline(int);
 extern int allocerror ( char * );
 extern int openerror ( int, char *, int );
-
+extern void * cpm_malloc ( size_t );
+extern void cpm_free(void *);
+extern int index ( char *, char );
 extern char * grabmem();
 
 
 jmp_buf jb_stop;
+
+static char * Pathlist[257];
+static char gbuffer[257];
 
 int ovmain ( char a )
 {
@@ -143,12 +59,12 @@ int sendout ( int prot )
 #ifdef HOSTON
 
 	if ( Inhost ) {
-		if ( count = getpathname ( "(s) for Download" ) )
+		if ( count = getpathname ( "(s) for Download", Pathlist ) )
 			mstrout ( "\nBegin your Download procedure...", TRUE );
 	} else
 #endif
 
-		count = getpathname ( "(s) for Transmit" );
+		count = getpathname ( "(s) for Transmit", Pathlist );
 
 	if ( count ) {
 		switch ( kbdata ) {
@@ -180,6 +96,8 @@ int sendout ( int prot )
 
 			case 'A':
 				XonXoffOk = XonXoff;
+				printf("name: %s\n", Pathlist[0]);
+				getchar();
 				result = asciisend ( Pathlist[0] );
 				break;
 
@@ -215,13 +133,13 @@ int bringin ( int prot )
 		case 'X':
 #ifdef HOSTON
 			if ( Inhost ) {
-				if ( count = getpathname ( " to Upload" ) )
+				if ( count = getpathname ( " to Upload", Pathlist ) )
 					mstrout ( "\nBegin your Upload ",
 						  "procedure...", TRUE );
 			} else
 #endif
 
-				count = getpathname ( " to Receive" );
+				count = getpathname ( " to Receive", Pathlist );
 
 			if ( !count )
 				break;
@@ -271,7 +189,7 @@ int bringin ( int prot )
 void endstat ( int result, int count )
 {
 	XonXoffOk = FALSE;				/* disable xon-xoff */
-	freepath ( count );
+	freepath ( count, Pathlist );
 	LOCATE ( BR + 2, 1 );
 	printf ( "\nTransfer %s\n", result == OK ? "Successful" : "Aborted" );
 	flush();
@@ -280,9 +198,9 @@ void endstat ( int result, int count )
 int protocol (int  for_send )				/* select block size in transmit only */				
 {
 	static int c;
-	static char *buffer;
+	char * buffer;
 
-	buffer = Pathname;
+	buffer = gbuffer;
 	sprintf ( buffer, "\n%sXmodem, %sYmodem, or Zmodem? (%sX,%sY,Z) <Z>  ",
 		  for_send ? "ASCII, " : "",
 		  for_send ? "Xmodem-1k, " : "",
@@ -469,7 +387,7 @@ int asciisend ( char * file ) 					/* send ascii file with xon/xoff protocol */
 
 	if ( openerror ( fd, file, UBIOT ) ) {
 
-		free ( inbuf );
+		cpm_free ( inbuf );
 		return NERROR;
 	}
 
@@ -513,13 +431,13 @@ cleanup:
 
 	close ( fd );
 
-	free ( inbuf );
+	cpm_free ( inbuf );
 	return status;
 }
 
 void checkpath ( char * name ) 					/* eliminate bad paths in receive */
 {
-	char *p, c, *index();
+	char *p, c;
 	short i;
 	static char badchar[] = ",;:_[]=<>/";			/* disallowed f/n characters */
 
@@ -532,12 +450,15 @@ void checkpath ( char * name ) 					/* eliminate bad paths in receive */
 		}
 	}
 
-	if ( ( i = index ( name, '.' ) - name ) > 8 ) {
-		p = name + i;
-		name[8] = '.';
-		name[9] = '\0';
-		p[3] = '\0';
-		strcat ( name, p );
+	if ( i = index ( name, '.' ) ) {
+		printf("i=%d\n",i); getch();
+		if ( /*( i = index ( name, '.' ) - name )*/ i > 8 ) {
+			p = name + i;
+			name[8] = '.';
+			name[9] = '\0';
+			p[3] = '\0';
+			strcat ( name, p );
+		}
 	}
 
 	name[12] = '\0';
@@ -572,5 +493,211 @@ void testrxc ( short timeout ) 					/* timeout in seconds */
 			longjmp ( jb_stop, c );			/* zmodem transmit interrupt */
 	}
 }
+
+int getpathname ( char * string, char ** Pathlist )
+{
+	static char * buffer;
+	
+	buffer = gbuffer;
+	sprintf ( buffer, "\nPlease enter file name%s:  ", string );
+	printf ( buffer );
+	
+	getline ( gbuffer, PATHLEN );
+	
+	if ( !strlen ( gbuffer ) )
+		return 0;
+	
+	return linetolist(Pathlist);
+}
+
+int linetolist(char ** Pathlist)  			/* expand and put Pathnames in Pathlist, return count */
+{
+	static char *p;
+	static int count;
+	
+#ifdef DEBUG
+	static int i;
+#endif
+	
+	/*tempalloc = Pathlist = ( char ** ) alloc ( 510 );
+	 * 
+	 *	if ( allocerror ( ( char * ) tempalloc ) )
+	 *		return 0;*/
+	
+	count = 0;
+	Pathlist[count++] = gbuffer;
+	
+	for ( p = gbuffer; *p; p++ ) {     		/* break up into substrings */
+		if ( *p == ' ' ) {
+			*p = '\0';
+			
+			while ( *++p == ' ' );		/* dump extra spaces */
+				
+				Pathlist[count++] = p;
+		}
+	}
+	
+#ifdef   DEBUG
+	printf ( "\nbefore command\n" );
+	
+	for ( i = 0; i < count; i++ )
+		printf ( "%d %s\n", i, Pathlist[i] );
+	
+#endif
+	
+	count = process_flist ( count, Pathlist );
+	
+#ifdef   DEBUG
+	printf ( "\nafter command\n" );
+	
+	for ( i = 0; i < count; i++ )
+		printf ( "%d %s\n", i, Pathlist[i] );
+	
+#endif
+		
+	return count;
+}
+
+void freepath ( int n, char ** Pathlist )
+{
+	if ( n ) {
+		while ( n )
+			cpm_free ( Pathlist[--n] );
+	}
+}
+
+/* command: expand wild cards in the command line.  (7/25/83)
+ * usage: command(&argc, &argv) modifies argc and argv as necessary
+ * uses sbrk to create the new arg list
+ * NOTE: requires fcbinit() and bdos() from file stdlib.c.  When used
+ *	with a linker and stdlib.rel, remove the #include stdlib.c.
+ *
+ * Written by Dr. Jim Gillogly; Modified for CP/M by Walt Bilofsky.
+ * Modified by HM to just get ambiguous fn for zmodem, ymodem.
+ */
+/*
+ * int vcount,*loc_vector,in_count,*ext_vector;
+ * char *curfname,*fnptr;
+ */
+static int expand(void);
+int vcount;
+char * curfname;
+char * loc_vector[MAXFILES];
+
+int process_flist ( int argcp, char ** Pathlist )
+{
+	int i, c;
+	char * fnptr;
+
+	vcount = i = c = 0;
+	
+	for ( curfname = Pathlist[i]; argcp--; i++ ) {
+		
+#ifdef   DEBUG
+		printf ( "\nDoing %s", curfname );
+#endif
+		c = 0;
+		
+		for ( fnptr = curfname; *fnptr; fnptr++ ) {	/* Need expansion ? */
+			if ( *fnptr == '?' || *fnptr == '*' ) {
+				c = 1;				/* yes */
+			}
+		}
+		
+		if ( c ) {				/* do expansion */
+			c = 0;
+			if ( !expand() ) {		/* Too many */
+				return 0;
+			}
+			
+			continue; 			/* expand each name at most once */
+		}
+		
+		loc_vector[vcount] = cpm_malloc ( FNSIZE );
+		
+		strcpy ( loc_vector[vcount++], curfname );	/* no expansion */
+		
+	}
+	
+	argcp = vcount;
+	loc_vector[vcount] = ( char * ) 0;
+	
+	vcount = 0;
+	while ( loc_vector[vcount] )
+		Pathlist[vcount] = loc_vector[vcount++];
+	
+	return argcp;
+}
+
+static int expand()		/* Returns FALSE if error */
+{
+	struct fcb cur_fcb;
+	static char *p, *q, *r, c;
+	static int i, flg, olduser;
+	
+#ifdef   DEBUG
+	printf ( "\nExpanding %s", curfname );
+#endif
+	olduser = getuid();			/* save original user area */
+	fcbinit ( curfname, &cur_fcb );
+	
+	if ( cur_fcb.dr < 'A' || cur_fcb.dr > 'P' )
+		cur_fcb.dr = '?';		/* Check for all users */
+		
+		for ( i = flg = 1; i <= 11; ++i ) {	/* Expand *'s */
+			if ( i == 9 )
+				flg = 1;
+			
+			if ( cur_fcb.name[i - 1] == '*' )
+				flg = 0;
+			
+			if ( flg == 0 )
+				cur_fcb.name[i - 1] = '?';
+		}
+		
+		/*setuid(cur_fcb[13]);			 go to specified user area */
+		setuid ( cur_fcb.uid );			/* go to specified user area */
+		flg = CPMFFST;
+		bdos ( CPMSDMA, 0x80 );			/* Make sure DMA address OK */
+		
+		while ( ( ( i = bdos ( flg, cur_fcb ) ) & 0xff ) != 0xff ) {
+			
+			loc_vector[vcount++] = q = cpm_malloc ( FNSIZE );
+			
+			if ( vcount >= MAXFILES - 1 ) {
+				printf ( "Too many file names.\n" );
+				setuid ( olduser );
+				return FALSE;
+			}
+			
+			p = ( char * ) ( 0x81 + i * 32 );		/* Where to find dir. record */
+			
+			/* transfer du: first */
+			if ( ( index ( curfname, ':' ) ) && curfname[0] != '?' ) {
+				r = curfname;
+				
+				do
+					*q++ = c = *r++;
+				
+				while ( c != ':' );
+			}
+			
+			/* Now transfer filename */
+			for ( i = 12; --i; ) {
+				if ( i == 3 )
+					*q++ = '.';
+				
+				if ( ( *q = tolower ( *p++ & 0177 ) ) != ' ' )
+					++q;
+			}
+			
+			*q = 0;
+			flg = CPMFNXT;
+		}
+		
+		setuid ( olduser );
+		return TRUE;
+}
+
 
 /*		End of Transfer Overlay File #1 */

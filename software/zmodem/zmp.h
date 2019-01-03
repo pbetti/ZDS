@@ -32,12 +32,8 @@
 
 /* Make allowances for the vagaries of different C compilers (sigh!) */
 
-#ifdef         C80
-#define        MEMORY_FULL -1		/* Error return from alloc() */
-#else
 #define        MEMORY_FULL 0
 #define        NBDOS	bdoshl
-#endif
 
 #ifndef        RZMP			/* Things we don't need in RZMP */
 
@@ -85,12 +81,12 @@
 #define        WD              41
 #define	       RC         LC+WD-1
 #define        BR         TR+HT-1
-#define        HORIZ          '-'
-#define        VERT           '|'
-#define        UL             '+'
-#define        UR             '+'
-#define        LL             '+'
-#define        LR             '+'
+#define        HORIZ          0xc1
+#define        VERT           0xc0
+#define        UL             0xc9
+#define        UR             0xca
+#define        LL             0xc7
+#define        LR             0xc8
 
 /***************** line numbers for report function *************************/
 
@@ -572,7 +568,7 @@ EXTERN unsigned Bufsize
 #endif
 	  ;
 
-EXTERN char Pathname[128];
+/*EXTERN char Pathname[128];*/
 EXTERN char Buf[128];                /* general purpose buffer */
 EXTERN char *MainBuffer;
 EXTERN unsigned TxtPtr
@@ -655,8 +651,6 @@ struct dpb {
 	unsigned cks;
 	unsigned off;
 };
-
-EXTERN char **Pathlist;
 
 
 extern int getline ( char[], int );

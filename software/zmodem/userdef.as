@@ -11,7 +11,7 @@
 	global	_stndend,_hidecurs,_showcurs,_savecurs,_restcurs
 	global	_minterru,_initv,_deinitv,_mdmerror,_dtron
 	global	_dtroff,_initace,_wait,_mswait,_userin,_userout
-	global	_getvars,_setport,_udbg
+	global	_getvars,_setport,_udbg,_putc8
 
 ;General equates:
 bdos	equ	5
@@ -81,8 +81,9 @@ _setport:
 	jp	abort
 _udbg:
 	jp	abort
-;Spares
+_putc8:
 	jp	abort
+;Spares
 	jp	abort
 	jp	abort
 	jp	abort

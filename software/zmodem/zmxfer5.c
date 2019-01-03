@@ -3,104 +3,12 @@
 #include "zmp.h"
 #include "zmodem.h"
 
-#ifdef   AZTEC_C
-#include "libc.h"
-#else
 #include <stdio.h>
-#endif
 
 #include <string.h>
 #include <ctype.h>
 
-/* ../zmxfer2.c */
-extern int wcsend(int, char *[]);
-extern int wcs(char *);
-extern int wctxpn(char *);
-extern char *itoa(short, char *);
-extern char *ltoa(long, char[]);
-extern int getnak(void);
-extern int wctx(long);
-extern int wcputsec(char *, int, int);
-extern int filbuf(char *, int);
-extern int newload(char *, int);
-
-/* ../zmxfer3.c */
-extern int getzrxinit(void);
-extern int sendzsinit(void);
-extern int zsendfile(char *, int);
-extern int zsndfdata(void);
-extern int getinsync(int);
-extern int saybibi(void);
-extern char *ttime(long);
-extern int tfclose(void);
-extern int uneof(FILE *);
-extern int slabel(void);
-
-/* ../zmxfer4.c */
-extern int wcreceive(char *);
-extern int wcrxpn(char *);
-extern int wcrx(void);
-extern int wcgetsec(char *, int);
-extern int procheader(char *);
-extern char *substr(char *, char *);
-extern int canit(void);
-extern int clrreports(void);
-
-/* ../zmxfer5.c */
-extern int zperr(char *, int);
-extern int dreport(int, int );
-extern int lreport(int, long);
-extern int sreport(int, long);
-extern int clrline(int);
-extern int tryz(void);
-extern int rzmfile(void);
-extern int rzfile(void);
-extern int statrep(long);
-extern int crcrept(int);
-extern int putsec(int, int );
-extern int zmputs(char *);
-extern int testexist(char *);
-extern int closeit(void);
-extern int ackbibi(void);
-extern long atol(char *);
-extern int rlabel(void);
-
-/* ../zmxfer.c */
-extern int ovmain(char);
-extern int sendout(int);
-extern int bringin(int);
-extern int endstat(int, int );
-extern int protocol(int);
-extern int updcrc(unsigned, unsigned );
-extern long updc32(int, long);
-extern int asciisend(char *);
-extern int checkpath(char *);
-extern int xmchout(char);
-extern int testrxc(short);
-
-/* ../zzm2.c */
-extern int zrbhdr(char *);
-extern int zrb32hdr(char *);
-extern int zrhhdr(char *);
-extern int zputhex(int);
-extern int zsendline(int);
-extern int zgethex(void);
-extern int zgeth1(void);
-extern int zdlread(void);
-extern int noxrd7(void);
-extern int stohdr(long);
-extern long rclhdr(char *);
-
-/* ../zzm.c */
-extern int zsbhdr(int , char *);
-extern int zsbh32(char *, int );
-extern int zshhdr(int , char *);
-extern int zsdata(char *, int, int );
-extern int zsda32(char *, int, int );
-extern int zrdata(char *, int );
-extern int zrdat32(char *, int );
-extern int zgethdr(char *, int);
-extern int prhex(int);
+#include "zmxfer.h"
 
 extern int opabort ( void );
 extern int readline(int);
@@ -109,9 +17,7 @@ extern int roundup ( int, int );
 extern int Tryzhdrtype;	   /* Header type to send corresponding to Last rx close */
 extern char *Rxptr;		/* Pointer to main Rx buffer */
 
-zperr ( string, incrflag )
-char *string;
-int incrflag;
+void zperr ( char * string, int incrflag )
 {
 	clrline ( MESSAGE );
 	report ( MESSAGE, string );
@@ -120,33 +26,27 @@ int incrflag;
 		dreport ( ERRORS, ++Errors );
 }
 
-dreport ( row, value )
-int row, value;
+void dreport ( int row, int value )
 {
 	static char buf[7];
 
 	report ( row, itoa ( value, buf ) );
 }
 
-lreport ( row, value )
-int row;
-long value;
+void lreport ( int row, long value )
 {
 	static char buf[20];
 
 	report ( row, ltoa ( value, buf ) );
 }
 
-sreport ( sct, bytes )
-int sct;
-long bytes;
+void sreport ( int sct, long bytes )
 {
 	dreport ( BLOCKS, sct );
 	lreport ( KBYTES, bytes );
 }
 
-clrline ( line )
-int line;
+void clrline ( int line )
 {
 	report ( line, "                " );
 }
@@ -157,7 +57,7 @@ int line;
  *  Return ZFILE if Zmodem filename received, -1 on error,
  *   ZCOMPL if transaction finished,  else 0
  */
-tryz()
+int tryz()
 {
 	static int c, n, *ip;
 	static int cmdzack1flg;
@@ -268,7 +168,7 @@ again:
  * Receive 1 or more files with ZMODEM protocol
  */
 
-rzmfile()
+int rzmfile()
 {
 	static int c;
 
@@ -305,7 +205,7 @@ rzmfile()
  * Receive a file with ZMODEM protocol
  *  Assumes file name frame is in Secbuf
  */
-rzfile()
+int rzfile()
 {
 	static int c, n;
 	static unsigned bufleft;
@@ -466,16 +366,14 @@ moredata:
 
 /* Status report: don't do unless after error or ZCRCW since characters */
 /*	will be lost unless rx has interrupt-driven I/O			*/
-statrep ( rxbytes )
-long rxbytes;
+void statrep ( long rxbytes )
 {
 	lreport ( KBYTES, rxbytes );
 	crcrept ( Crc32 );
 }
 
 /* Report CRC mode in use, but only if first sector */
-crcrept ( flag )
-int flag;
+void crcrept ( int flag )
 {
 	if ( Firstsec )
 		report ( BLKCHECK, flag ? "CRC-32" : "CRC-16" );
@@ -485,8 +383,7 @@ int flag;
 
 /* Add a block to the main buffer pointer and write to disk if full */
 /* or if flag set */
-putsec ( count, flag )
-int count, flag;
+int putsec ( int count, int flag )
 {
 	short status;
 	unsigned size;
@@ -498,16 +395,9 @@ int count, flag;
 	if ( ( Cpindex >= Cpbufsize ) || flag ) {
 		size = ( Cpindex > Cpbufsize ) ? Cpbufsize : Cpindex;
 
-#ifdef AZTEC_C
-		status = fwrite ( Cpmbuf, 1, size, Fd );
-
-		if ( status <= 0 )
-#else
 		status = write ( Fd, Cpmbuf, size );
 
 		if ( status != size )
-#endif
-
 		{
 			zperr ( "Disk write error", TRUE );
 			status = NERROR;
@@ -524,8 +414,7 @@ int count, flag;
  * Send a string to the modem, processing for \336 (sleep 1 sec)
  *   and \335 (break signal)
  */
-zmputs ( s )
-char *s;
+int zmputs ( char * s )
 {
 	static int c;
 
@@ -549,8 +438,7 @@ char *s;
 }
 
 /* Test if file exists, rename to .BAK if so */
-testexist ( filename )
-char *filename;
+void testexist ( char * filename )
 {
 	int fd;
 	char *p, newfile[20], *index();
@@ -571,7 +459,7 @@ char *filename;
 /*
  * Close the receive dataset, return OK or NERROR
  */
-closeit()
+int closeit()
 {
 	static int status;
 	int length;
@@ -581,11 +469,7 @@ closeit()
 	if ( Cpindex ) {
 		length = 128 * roundup ( Cpindex, 128 );
 
-#ifdef AZTEC_C
-		status = fwrite ( Cpmbuf, length, 1, Fd ) ? OK : NERROR;
-#else
 		status = ( ( write ( Fd, Cpmbuf, length ) == length ) ? OK : NERROR );
-#endif
 
 		Cpindex = 0;
 		Rxptr = Cpmbuf;
@@ -594,13 +478,8 @@ closeit()
 	if ( status == NERROR )
 		zperr ( "Disk write error", TRUE );
 
-	/*#ifdef AZTEC_C
-		if (fclose(Fd)==NERROR) {
-			Fd = 0;
-	#else*/
 	if ( close ( Fd ) == NERROR ) {
 		Fd = -1;
-		/*#endif*/
 
 		zperr ( "File close error", TRUE );
 		return NERROR;
@@ -613,7 +492,7 @@ closeit()
  * Ack a ZFIN packet, let byegones be byegones
  */
 
-ackbibi()
+void ackbibi()
 {
 	static int n;
 
@@ -638,9 +517,7 @@ ackbibi()
 	}
 }
 
-long
-atol ( string )
-char *string;
+long atol ( char * string )
 {
 	static long value, lv;
 	static char *p;
@@ -657,7 +534,7 @@ char *string;
 	return value;
 }
 
-rlabel() /*print receive mode labels on the 25th line*/
+void rlabel() /*print receive mode labels on the 25th line*/
 {
 	putlabel ( "RECEIVE FILE Mode:  Press ESC to Abort..." );
 }

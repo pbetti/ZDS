@@ -275,9 +275,9 @@ void setsys()
 
 void gnewint ( char * prompt, int * intp )
 {
-	static char *temp;
+	/*static*/ char temp[20];
 
-	temp = Pathname;
+	temp[0] = '\0';
 	printf ( "\n\nEnter new %s:  ", prompt );
 	getline ( temp, 20 );
 
@@ -287,9 +287,9 @@ void gnewint ( char * prompt, int * intp )
 
 void gnewstr ( char * prompt, char * mstring, short length )
 {
-	char *temp;
+	char temp[40];
 
-	temp = Pathname;
+	temp[0] = '\0';
 	printf ( "\n\nEnter new %s:  ", prompt );
 	getline ( temp, length );
 

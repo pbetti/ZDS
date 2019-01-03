@@ -1,4 +1,4 @@
-/*			TERM module File #1				*/
+	/*			TERM module File #1				*/
 
 #include "zmp.h"
 
@@ -48,17 +48,8 @@ extern int ovmain(void);
 extern void prtchr(char);
 extern void tobuffer(int);
 extern void prompt(short);
-extern void toprinter(int);
-extern void toggleprt(void);
-extern int getprtbuf(void);
 extern void doexit(void);
-extern int prtservice(void);
-extern int pready(void);
-extern void adjustprthead(void);
 extern void setace(int);
-extern int dial(void);
-extern int shownos(void);
-extern int loadnos(void);
 
 extern int allocerror ( char * );
 extern int dio ( void );
@@ -67,13 +58,19 @@ extern int readline(int);
 extern int readstr(char *, int);
 extern int isin(char *, char *);
 extern int kbwait(unsigned);
+extern int getchi ( void );
+
 
 extern int mcharinp ( void );
 extern int mcharout ( char );
 extern int minprdy ( void );
 extern int deinitv( void );
-char *alloc(), *index();
+extern void * cpm_malloc ( size_t );
+extern void cpm_free(void *);
+
+
 static short Chpos;
+
 
 int ovmain()
 {
@@ -117,7 +114,7 @@ int ovmain()
 				kbdata = '\0';			/* that's it for this loop */
 			}
 		} else
-			kbdata = getch();			/* if none, any at keyboard */
+			kbdata = getchi();			/* if none, any at keyboard */
 
 		if ( kbdata )  {
 			if ( lastkey == ESC ) {
@@ -155,14 +152,6 @@ int ovmain()
 						dolabel = FALSE;
 						break;
 
-						/*
-					case PRTSCRN:
-						screenprint();
-						dolabel = FALSE;
-						Chpos = 0;
-						break;
-						*/
-						
 					case HANGUP:
 						hangup();
 						dolabel = FALSE;
@@ -172,16 +161,6 @@ int ovmain()
 					case COMMAND:
 						docmd();
 						break;
-
-					/*case DIAL:
-						keep ( Lastlog, FALSE );
-						dial();
-						dolabel = FALSE;
-						Chpos = 0;
-						purgeline();
-						startcapture();
-						break;*/
-
 #ifdef HOSTON
 
 					case HOST:
@@ -198,13 +177,6 @@ int ovmain()
 						startcapture();
 						break;
 #endif
-
-					/*case TOGPRT:
-						toggleprt();
-						dolabel = FALSE;
-						Chpos = 0;
-						break;*/
-
 					case DISK:
 						diskstuff();
 						Chpos = 0;
@@ -290,7 +262,6 @@ int ovmain()
 
 				prtchr ( mdmdata );				/* print the character */
 				tobuffer ( mdmdata );
-				toprinter ( mdmdata );
 
 				if ( RemEcho ) {
 					mcharout ( mdmdata );
@@ -301,8 +272,6 @@ int ovmain()
 				}
 			}
 		}
-
-		prtservice();    						 /* service printer at the end of each loop */
 	}    /* end of while */				
 } /* end of main */
 
@@ -349,55 +318,6 @@ void prompt ( short clear )
 	Chpos = 0;							/* reset character position */
 }
 
-void toprinter ( int i )
-{
-	char c;
-
-	c = ( char ) i;
-
-	if ( PFlag && ( c != '\f' ) ) {					/* don't print form feeds */
-		*Prthead++ = c;
-		adjustprthead();
-	}
-}
-
-void toggleprt()
-{
-	PFlag = !PFlag;
-
-	if ( PFlag ) {
-		if ( getprtbuf() != OK )
-			PFlag = FALSE;
-		else printf ( "\nPrinter ON\n" );
-	} else {
-		while ( prtservice() )
-			;				/* Empty the buffer */
-
-		bdos ( 5, '\r' );			/* do final cr/lf */
-		bdos ( 5, '\n' );
-		free ( Prtbuf );
-		printf ( "\nPrinter OFF\n" );
-	}
-}
-
-int getprtbuf()
-{
-	keep ( Lastlog, TRUE );						/* need to steal some of the buffer */
-	Prtbuf = alloc ( Pbufsiz );
-
-	if ( allocerror ( Prtbuf ) )
-		return NERROR;
-
-	Prthead = Prttail = Prtbottom = Prtbuf;
-	Prttop = Prtbuf + Pbufsiz - 1;
-	startcapture();
-
-#ifdef DEBUG
-	printf ( "\nPrtbuf = %x\n", Prtbuf );
-#endif
-
-	return OK;
-}
 
 /* Quit. */
 void doexit()
@@ -419,34 +339,6 @@ void doexit()
 
 }
 
-int prtservice()    /*printer service routine*/
-{
-
-	if ( PFlag ) {
-		if ( pready() ) {
-			if ( Prthead != Prttail ) {
-				bdos ( 5, *Prttail++ );   		 /* write list byte */
-
-				if ( Prttail > Prttop )
-					Prttail = Prtbottom;
-			}
-
-			return ( Prthead != Prttail );			/* Return true if buffer full */
-		}		
-	}
-}
-
-int pready() 		/*get printer status using bios call*/
-{
-	return ( bios ( 14 + 1 ) );
-
-}
-
-void adjustprthead()
-{
-	if ( Prthead > Prttop )
-		Prthead = Prtbottom;
-}
 
 void setace ( int n ) 		/* for a particular phone call */
 {
@@ -457,70 +349,4 @@ void setace ( int n ) 		/* for a particular phone call */
 	updateace();
 }
 
-
-int shownos()
-{
-	static int i, j, status;
-
-	cls();
-
-	if ( ( status = loadnos() ) == OK ) {
-		stndout();
-		printf ( "         NAME                NUMBER          B   P D S E" );
-		stndend();
-
-		for ( i = 0, j = 1; i < 20; i++, j++ ) {
-			LOCATE ( i + 1, 0 );
-			printf ( "%c - %s", i + 'A', Book[i].name );
-			LOCATE ( i + 1, 41 - strlen ( Book[i].number ) );
-			printf ( Book[i].number );
-			LOCATE ( i + 1, 44 );
-			printf ( "%4d %c", Baudtable[Book[i].pbaudindex],
-				 Book[i].pparity );
-			printf ( " %d %d %c\n", Book[i].pdatabits,
-				 Book[i].pstopbits, Book[i].echo ? 'H' : 'F' );
-		}
-	}
-
-	return status;
-}
-
-int loadnos()
-{
-	static unsigned amount;
-	char dummy;
-	int i, result;
-	FILE *fd;
-
-	result = NERROR;
-	amount = 21 * sizeof ( struct phonebook );
-	Book = ( struct phonebook * ) alloc ( amount );
-
-	if ( !allocerror ( (char *)Book ) ) {
-		strcpy ( Pathname, Phonefile );
-		addu ( Pathname, Overdrive, Overuser );
-		fd = fopen ( Pathname, "r" );
-
-		if ( fd ) {
-			for ( i = 0; i < 20; i++ ) {
-				fgets ( Book[i].name, 17, fd );
-				fscanf ( fd, "%c %s %d %c",
-					 &dummy,
-					 Book[i].number,
-					 &Book[i].pbaudindex,
-					 &Book[i].pparity );
-				fscanf ( fd, "%d %d %d",
-					 &Book[i].pdatabits,
-					 &Book[i].pstopbits,
-					 &Book[i].echo );
-				fgetc ( fd );					/* remove LF */
-			}
-
-			fclose ( fd );
-			result = OK;
-		}
-	}
-
-	return result;
-}
 /*			End of TERM module File 1			*/

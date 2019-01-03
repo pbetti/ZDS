@@ -363,7 +363,6 @@ global	_Overdrive
 global	_Overuser
 global	_Userover
 global	_strcpy
-global	_Pathname
 global	_addu
 global	_ovloader
 global	_printf
@@ -373,12 +372,12 @@ global	_mswait
 global	_Userid
 global	_exit
 psect	bss
-F540:
+F543:
 defs	2
 psect	text
 _main:
 call ncsv
-defw -6
+defw -26
 ld	hl,0
 push	hl
 ld	hl,25
@@ -432,7 +431,10 @@ ld	(_Overuser),hl
 l13:
 ld	hl,_Initovly
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_strcpy
 pop	bc
@@ -440,14 +442,20 @@ ld	hl,(_Overuser)
 ex	(sp),hl
 ld	hl,(_Overdrive)
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_addu
 pop	bc
 pop	bc
 ld	hl,0
 ex	(sp),hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_ovloader
 pop	bc
@@ -458,7 +466,10 @@ push	hl
 call	_printf
 ld	hl,_Termovly
 ex	(sp),hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_strcpy
 pop	bc
@@ -466,23 +477,29 @@ ld	hl,(_Overuser)
 ex	(sp),hl
 ld	hl,(_Overdrive)
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_addu
 pop	bc
 pop	bc
 ld	hl,0
 ex	(sp),hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_ovloader
 pop	bc
-ld	(F540),hl
+ld	(F543),hl
 ld	hl,29f
 ex	(sp),hl
 call	_printf
 pop	bc
-ld	hl,(F540)
+ld	hl,(F543)
 ld	a,h
 or	a
 jp	nz,l33
@@ -511,7 +528,10 @@ jp	l14
 l20:
 ld	hl,_Xferovly
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_strcpy
 pop	bc
@@ -519,14 +539,20 @@ ld	hl,(_Overuser)
 ex	(sp),hl
 ld	hl,(_Overdrive)
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_addu
 pop	bc
 pop	bc
-ld	hl,(F540)
+ld	hl,(F543)
 ex	(sp),hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_ovloader
 pop	bc
@@ -550,7 +576,10 @@ jp	L5
 l21:
 ld	hl,_Configovly
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_strcpy
 pop	bc
@@ -558,14 +587,20 @@ ld	hl,(_Overuser)
 ex	(sp),hl
 ld	hl,(_Overdrive)
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_addu
 pop	bc
 pop	bc
 ld	hl,0
 ex	(sp),hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_ovloader
 jp	L6
@@ -586,7 +621,10 @@ ld	l,(ix+-6)
 ld	h,(ix+-5)
 jp	nz,L2
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_strcpy
 pop	bc
@@ -594,14 +632,20 @@ ld	hl,(_Overuser)
 ex	(sp),hl
 ld	hl,(_Overdrive)
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_addu
 pop	bc
 pop	bc
 ld	hl,0
 ex	(sp),hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-26
+add	hl,de
 push	hl
 call	_ovloader
 pop	bc
@@ -641,15 +685,15 @@ push	hl
 call	_printf
 jp	L6
 global	_grabmem
-global	_alloc
+global	_cpm_malloc
 global	wrelop
-global	_free
+global	_cpm_free
 psect	bss
-F550:
+F554:
 defs	2
-F551:
+F555:
 defs	2
-F552:
+F556:
 defs	2
 psect	text
 _grabmem:
@@ -657,22 +701,22 @@ global csv
 call csv
 ld	hl,522
 push	hl
-call	_alloc
+call	_cpm_malloc
 pop	bc
-ld	(F551),hl
+ld	(F555),hl
 ld	hl,16394
-ld	(F552),hl
+ld	(F556),hl
 l38:
-ld	hl,(F552)
+ld	hl,(F556)
 push	hl
-call	_alloc
+call	_cpm_malloc
 pop	bc
-ld	(F550),hl
+ld	(F554),hl
 ld	a,l
 or	h
 jp	z,l36
 l37:
-ld	de,(F552)
+ld	de,(F556)
 ld	hl,-10
 add	hl,de
 ex	de,hl
@@ -681,187 +725,32 @@ ld	h,(ix+7)
 ld	(hl),e
 inc	hl
 ld	(hl),d
-ld	hl,(F551)
+ld	hl,(F555)
 push	hl
-call	_free
+call	_cpm_free
 pop	bc
-ld	hl,(F550)
+ld	hl,(F554)
 jp	cret
 l36:
 ld	de,-1024
-ld	hl,(F552)
+ld	hl,(F556)
 add	hl,de
-ld	(F552),hl
-ex	de,hl
+ld	(F556),hl
+push	hl
+ld	hl,59f
+push	hl
+call	_printf
+pop	bc
+pop	bc
+ld	de,(F556)
 ld	hl,-10
 add	hl,de
 ld	de,2048
 call	wrelop
 jp	nc,l38
 ld	hl,0
-ld	(F552),hl
-jp	l37
-global	_getpathname
-global	_sprintf
-global	_getline
-global	_strlen
-global	_linetolist
-psect	bss
-F556:
-defs	2
-psect	text
-_getpathname:
-global csv
-call csv
-ld	hl,_Pathname
 ld	(F556),hl
-ld	l,(ix+6)
-ld	h,(ix+7)
-push	hl
-ld	hl,59f
-push	hl
-ld	hl,(F556)
-push	hl
-call	_sprintf
-pop	bc
-pop	bc
-ld	hl,(F556)
-ex	(sp),hl
-call	_printf
-ld	hl,257
-ex	(sp),hl
-ld	hl,_Pathname
-push	hl
-call	_getline
-pop	bc
-ld	hl,_Pathname
-ex	(sp),hl
-call	_strlen
-pop	bc
-ld	a,l
-or	h
-jp	nz,l40
-ld	hl,0
-jp	cret
-l40:
-call	_linetolist
-jp	cret
-global	_Pathlist
-global	_allocerror
-global	_process_flist
-psect	bss
-F557:
-defs	2
-F558:
-defs	2
-F559:
-defs	2
-psect	text
-_linetolist:
-ld	hl,510
-push	hl
-call	_alloc
-ld	(_Pathlist),hl
-ld	(F559),hl
-ld	hl,(F559)
-ex	(sp),hl
-call	_allocerror
-pop	bc
-ld	a,l
-or	h
-ld	hl,0
-ret	nz
-ld	(F558),hl
-ld	de,(_Pathlist)
-ld	hl,(F558)
-inc	hl
-ld	(F558),hl
-dec	hl
-add	hl,hl
-add	hl,de
-ld	de,_Pathname
-ld	(hl),e
-inc	hl
-ld	(hl),d
-ld	l,e
-ld	h,d
-ld	(F557),hl
-jp	l46
-l43:
-ld	hl,(F557)
-ld	a,(hl)
-cp	32
-jp	nz,L8
-ld	(hl),0
-l49:
-ld	hl,(F557)
-inc	hl
-ld	(F557),hl
-ld	a,(hl)
-cp	32
-jp	z,l49
-ld	de,(_Pathlist)
-ld	hl,(F558)
-inc	hl
-ld	(F558),hl
-dec	hl
-add	hl,hl
-add	hl,de
-ld	de,(F557)
-ld	(hl),e
-inc	hl
-ld	(hl),d
-ld	l,e
-ld	h,d
-L8:
-inc	hl
-ld	(F557),hl
-l46:
-ld	hl,(F557)
-ld	a,(hl)
-or	a
-jp	nz,l43
-ld	hl,(F558)
-push	hl
-call	_process_flist
-ld	(F558),hl
-ld	hl,(F559)
-ex	(sp),hl
-call	_free
-pop	bc
-ld	hl,(F558)
-ret	
-global	_freepath
-_freepath:
-global csv
-call csv
-ld	a,(ix+6)
-or	(ix+7)
-jp	z,cret
-jp	l53
-l54:
-ld	de,(_Pathlist)
-ld	l,(ix+6)
-ld	h,(ix+7)
-dec	hl
-ld	(ix+6),l
-ld	(ix+7),h
-add	hl,hl
-add	hl,de
-ld	c,(hl)
-inc	hl
-ld	b,(hl)
-push	bc
-call	_free
-pop	bc
-l53:
-ld	a,(ix+6)
-or	(ix+7)
-jp	nz,l54
-ld	hl,(_Pathlist)
-push	hl
-call	_free
-jp	cret
+jp	l37
 global	_reset
 global	__ctype_
 global	wrelop
@@ -969,8 +858,8 @@ rla
 sbc	a,a
 ld	h,a
 ret	
-global	_getch
-_getch:
+global	_getchi
+_getchi:
 ld	hl,255
 push	hl
 ld	hl,6
@@ -985,8 +874,8 @@ ld	h,a
 ret	
 global	_flush
 _flush:
-jp	l65
-l66:
+jp	l48
+l49:
 ld	hl,0
 push	hl
 ld	hl,1
@@ -994,7 +883,7 @@ push	hl
 call	_bdos
 pop	bc
 pop	bc
-l65:
+l48:
 ld	hl,0
 push	hl
 ld	hl,11
@@ -1004,20 +893,20 @@ pop	bc
 pop	bc
 ld	a,l
 or	a
-jp	nz,l66
-jp	_getch
+jp	nz,l49
+jp	_getchi
 global	_purgeline
 global	_mcharinp
 global	_minprdy
 _purgeline:
-jp	l69
-l70:
+jp	l52
+l53:
 call	_mcharinp
-l69:
+l52:
 call	_minprdy
 ld	a,l
 or	h
-jp	nz,l70
+jp	nz,l53
 ret	
 global	_openerror
 global	_wait
@@ -1032,14 +921,14 @@ ld	h,(ix+7)
 or	a
 sbc	hl,de
 ld	hl,1
-jp	z,L9
+jp	z,L7
 dec	hl
-L9:
+L7:
 ld	(ix+-2),l
 ld	(ix+-1),h
 ld	a,l
 or	h
-jp	z,l73
+jp	z,l56
 ld	l,(ix+8)
 ld	h,(ix+9)
 push	hl
@@ -1051,7 +940,7 @@ ld	hl,3
 ex	(sp),hl
 call	_wait
 pop	bc
-l73:
+l56:
 ld	l,(ix+-2)
 ld	h,(ix+-1)
 jp	cret
@@ -1070,19 +959,10 @@ ld	hl,3
 ex	(sp),hl
 call	_wait
 jp	cret
-global	_malloc
-_alloc:
-global csv
-call csv
-ld	l,(ix+6)
-ld	h,(ix+7)
-push	hl
-call	_malloc
-pop	bc
-jp	cret
+global	_allocerror
 global	_perror
 psect	bss
-F584:
+F578:
 defs	2
 psect	text
 _allocerror:
@@ -1091,19 +971,19 @@ call csv
 ld	a,(ix+6)
 or	(ix+7)
 ld	hl,1
-jp	z,L10
+jp	z,L8
 dec	hl
-L10:
-ld	(F584),hl
+L8:
+ld	(F578),hl
 ld	a,l
 or	h
-jp	z,l77
+jp	z,l59
 ld	hl,89f
 push	hl
 call	_perror
 pop	bc
-l77:
-ld	hl,(F584)
+l59:
+ld	hl,(F578)
 jp	cret
 _perror:
 global csv
@@ -1122,9 +1002,9 @@ jp	cret
 global	_kbwait
 global	lmul
 psect	bss
-F588:
+F582:
 defs	2
-F589:
+F583:
 defs	2
 psect	text
 _kbwait:
@@ -1134,29 +1014,29 @@ ld	de,10
 ld	l,(ix+6)
 ld	h,(ix+7)
 call	lmul
-ld	(F588),hl
-jp	l80
-l81:
+ld	(F582),hl
+jp	l62
+l63:
 ld	hl,100
 push	hl
 call	_mswait
 pop	bc
-l80:
-call	_getch
-ld	(F589),hl
+l62:
+call	_getchi
+ld	(F583),hl
 ld	a,l
 or	h
-jp	nz,l82
-ld	hl,(F588)
+jp	nz,l64
+ld	hl,(F582)
 dec	hl
-ld	(F588),hl
+ld	(F582),hl
 inc	hl
 ld	a,l
 or	h
-jp	nz,l81
-l82:
+jp	nz,l63
+l64:
 ld	de,27
-ld	hl,(F589)
+ld	hl,(F583)
 xor	a
 ld	h,a
 or	a
@@ -1169,7 +1049,7 @@ global	_readstr
 global	asamul
 global	_readline
 psect	bss
-F592:
+F586:
 defs	2
 psect	text
 _readstr:
@@ -1182,14 +1062,14 @@ add	hl,de
 ld	de,10
 call	asamul
 call	_flush
-jp	l84
-l85:
+jp	l66
+l67:
 ld	de,10
-ld	hl,(F592)
+ld	hl,(F586)
 or	a
 sbc	hl,de
-jp	z,l84
-ld	a,(F592)
+jp	z,l66
+ld	a,(F586)
 ld	l,(ix+6)
 ld	h,(ix+7)
 inc	hl
@@ -1197,27 +1077,27 @@ ld	(ix+6),l
 ld	(ix+7),h
 dec	hl
 ld	(hl),a
-l84:
+l66:
 ld	l,(ix+8)
 ld	h,(ix+9)
 push	hl
 call	_readline
 pop	bc
-ld	(F592),hl
+ld	(F586),hl
 ld	de,13
 or	a
 sbc	hl,de
-jp	z,l86
+jp	z,l68
 ld	de,-2
-ld	hl,(F592)
+ld	hl,(F586)
 or	a
 sbc	hl,de
-jp	nz,l85
-l86:
+jp	nz,l67
+l68:
 ld	l,(ix+6)
 ld	h,(ix+7)
 ld	(hl),0
-ld	hl,(F592)
+ld	hl,(F586)
 jp	cret
 global	_isin
 global	_stindex
@@ -1260,20 +1140,20 @@ jp	cret
 global	_mstrout
 global	_mcharout
 psect	bss
-F600:
+F594:
 defs	1
 psect	text
 _mstrout:
 global csv
 call csv
-jp	l91
-l92:
-ld	a,(F600)
+jp	l73
+l74:
+ld	a,(F594)
 cp	33
-jp	z,L17
+jp	z,L15
 cp	10
-jp	nz,l94
-L17:
+jp	nz,l76
+L15:
 ld	l,13
 push	hl
 call	_mcharout
@@ -1282,30 +1162,30 @@ ex	(sp),hl
 call	_mcharout
 pop	bc
 ld	a,10
-ld	(F600),a
-jp	l95
-l94:
-ld	a,(F600)
+ld	(F594),a
+jp	l77
+l76:
+ld	a,(F594)
 cp	126
-jp	nz,l96
+jp	nz,l78
 ld	hl,1
 push	hl
 call	_wait
 pop	bc
-jp	l95
-l96:
-ld	a,(F600)
+jp	l77
+l78:
+ld	a,(F594)
 ld	c,a
 push	bc
 call	_mcharout
 pop	bc
-l95:
+l77:
 ld	a,(ix+8)
 or	(ix+9)
-jp	z,l91
+jp	z,l73
 ld	hl,__iob+8
 push	hl
-ld	a,(F600)
+ld	a,(F594)
 ld	l,a
 rla
 sbc	a,a
@@ -1314,16 +1194,16 @@ push	hl
 call	_fputc
 pop	bc
 pop	bc
-l91:
+l73:
 ld	l,(ix+6)
 ld	h,(ix+7)
 ld	a,(hl)
 inc	hl
 ld	(ix+6),l
 ld	(ix+7),h
-ld	(F600),a
+ld	(F594),a
 or	a
-jp	nz,l92
+jp	nz,l74
 ld	hl,100
 push	hl
 call	_mswait
@@ -1343,8 +1223,7 @@ defb	101,102,105,110,101,100,46,10,0
 defb	70,97,116,97,108,32,101,114,114,111,114,32,105,110,32,37
 defb	115,46,79,86,82,10,0
 59:
-defb	10,80,108,101,97,115,101,32,101,110,116,101,114,32,102,105
-defb	108,101,32,110,97,109,101,37,115,58,32,32,0
+defb	32,37,100,32,0
 69:
 defb	10,10,69,82,82,79,82,32,45,32,67,97,110,110,111,116
 defb	32,111,112,101,110,32,37,115,10,10,0
@@ -1359,8 +1238,6 @@ defb	7,10,69,82,82,79,82,32,45,32,37,115,10,10,0
 global	_Prtbuf
 psect	bss
 _Prtbuf:
-defs	2
-_Pathlist:
 defs	2
 global	_Dialing
 _Dialing:
@@ -1392,8 +1269,6 @@ _Buf:
 defs	128
 _Currdrive:
 defs	2
-_Pathname:
-defs	128
 global	_Buftop
 _Buftop:
 defs	2
@@ -1420,9 +1295,8 @@ defs	2
 _Invokuser:
 defs	2
 psect	text
-tom
+defs	2
+global	_Prtbottom
 _Prtbottom:
 defs	2
 global	_Lastlog
-_Lastlog:
-de

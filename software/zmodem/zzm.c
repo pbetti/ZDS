@@ -20,101 +20,8 @@
 #include "zmp.h"
 #include "zmodem.h"
 
-#ifdef   AZTEC_C
-#include "libc.h"
-#else
 #include <stdio.h>
-#endif
-
-/* ../zmxfer2.c */
-extern int wcsend(int, char *[]);
-extern int wcs(char *);
-extern int wctxpn(char *);
-extern char *itoa(short, char *);
-extern char *ltoa(long, char[]);
-extern int getnak(void);
-extern int wctx(long);
-extern int wcputsec(char *, int, int);
-extern int filbuf(char *, int);
-extern int newload(char *, int);
-
-/* ../zmxfer3.c */
-extern int getzrxinit(void);
-extern int sendzsinit(void);
-extern int zsendfile(char *, int);
-extern int zsndfdata(void);
-extern int getinsync(int);
-extern int saybibi(void);
-extern char *ttime(long);
-extern int tfclose(void);
-extern int uneof(FILE *);
-extern int slabel(void);
-
-/* ../zmxfer4.c */
-extern int wcreceive(char *);
-extern int wcrxpn(char *);
-extern int wcrx(void);
-extern int wcgetsec(char *, int);
-extern int procheader(char *);
-extern char *substr(char *, char *);
-extern int canit(void);
-extern int clrreports(void);
-
-/* ../zmxfer5.c */
-extern int zperr(char *, int);
-extern int dreport(int, int );
-extern int lreport(int, long);
-extern int sreport(int, long);
-extern int clrline(int);
-extern int tryz(void);
-extern int rzmfile(void);
-extern int rzfile(void);
-extern int statrep(long);
-extern int crcrept(int);
-extern int putsec(int, int );
-extern int zmputs(char *);
-extern int testexist(char *);
-extern int closeit(void);
-extern int ackbibi(void);
-extern long atol(char *);
-extern int rlabel(void);
-
-/* ../zmxfer.c */
-extern int ovmain(char);
-extern int sendout(int);
-extern int bringin(int);
-extern int endstat(int, int );
-extern int protocol(int);
-extern int updcrc(unsigned, unsigned );
-extern long updc32(int, long);
-extern int asciisend(char *);
-extern int checkpath(char *);
-extern int xmchout(char);
-extern int testrxc(short);
-
-/* ../zzm2.c */
-extern int zrbhdr(char *);
-extern int zrb32hdr(char *);
-extern int zrhhdr(char *);
-extern int zputhex(int);
-extern int zsendline(int);
-extern int zgethex(void);
-extern int zgeth1(void);
-extern int zdlread(void);
-extern int noxrd7(void);
-extern int stohdr(long);
-extern long rclhdr(char *);
-
-/* ../zzm.c */
-extern int zsbhdr(int , char *);
-extern int zsbh32(char *, int );
-extern int zshhdr(int , char *);
-extern int zsdata(char *, int, int );
-extern int zsda32(char *, int, int );
-extern int zrdata(char *, int );
-extern int zrdat32(char *, int );
-extern int zgethdr(char *, int);
-extern int prhex(int);
+#include "zmxfer.h"
 
 extern int readline(int);
 
@@ -123,8 +30,7 @@ long updc32();
 
 
 /* Send ZMODEM binary header hdr of type type */
-zsbhdr ( type, hdr )
-char *hdr;
+void zsbhdr ( int type, char * hdr )
 {
 	static int n;
 	static unsigned crc;
@@ -169,8 +75,7 @@ char *hdr;
 
 /* Send ZMODEM binary header hdr of type type */
 
-zsbh32 ( hdr, type )
-char *hdr;
+void zsbh32 ( char * hdr, int type )
 {
 	static int n;
 	static long crc;
@@ -195,8 +100,7 @@ char *hdr;
 
 /* Send ZMODEM HEX header hdr of type type */
 
-zshhdr ( type, hdr )
-char *hdr;
+void zshhdr ( int type, char * hdr )
 {
 	static int n;
 	static unsigned crc;
@@ -244,9 +148,7 @@ char *hdr;
 /*
  * Send binary array buf of length length, with ending ZDLE sequence frameend
  */
-zsdata ( buf, length, frameend )
-int length, frameend;
-char *buf;
+void zsdata ( char * buf, int length, int frameend )
 {
 	static unsigned crc;
 
@@ -275,9 +177,7 @@ char *buf;
 	}
 }
 
-zsda32 ( buf, length, frameend )
-char *buf;
-int length, frameend;
+void zsda32 ( char * buf, int length, int frameend )
 {
 	static long crc;
 
@@ -305,8 +205,7 @@ int length, frameend;
  *  and CRC.  Returns the ending character or error code.
  *  NB: On errors may store length+1 bytes!
  */
-zrdata ( buf, length )
-char *buf;
+int zrdata ( char * buf, int length )
 {
 	static int c;
 	static unsigned crc;
@@ -375,8 +274,7 @@ crcfoo:
 	return NERROR;
 }
 
-zrdat32 ( buf, length )
-char *buf;
+int zrdat32 ( char * buf, int length )
 {
 	static int c, d;
 	static long crc;
@@ -464,9 +362,7 @@ crcfoo:
  *   Otherwise return negative on error.
  *   Return NERROR instantly if ZCRCW sequence, for fast error recovery.
  */
-zgethdr ( hdr, eflag )
-char *hdr;
-int eflag;
+int zgethdr ( char * hdr, int eflag )
 {
 	static int c, n, cancount;
 
@@ -606,9 +502,7 @@ fifi:
 
 /* Print a byte in hex on the console */
 
-prhex ( byte )
-char byte;
-
+void prhex ( char byte )
 {
 	static char digits[] = "0123456789abcdef";
 	char hi, lo;

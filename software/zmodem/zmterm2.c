@@ -21,7 +21,6 @@ extern void startcapture(void);
 extern void docmd(void);
 extern void capturetog(char *);
 extern void comlabel(void);
-extern void scplabel(void);
 extern void diskstuff(void);
 extern int possdirectory(char *);
 extern int help(void);
@@ -47,17 +46,8 @@ extern int ovmain(void);
 extern void prtchr(char);
 extern void tobuffer(int);
 extern void prompt(short);
-extern void toprinter(int);
-extern void toggleprt(void);
-extern int getprtbuf(void);
 extern void doexit(void);
-extern int prtservice(void);
-extern int pready(void);
-extern void adjustprthead(void);
 extern void setace(int);
-extern int dial(void);
-extern int shownos(void);
-extern int loadnos(void);
 
 extern int allocerror ( char * );
 extern int dio ( void );
@@ -69,10 +59,14 @@ extern int kbwait(unsigned);
 extern int cntbits(int);
 extern int chrin(void);
 extern int openerror ( int, char *, int );
+extern char *grabmem ( unsigned * );
 
 extern int mcharinp ( void );
 extern int mcharout ( char );
 extern int minprdy ( void );
+extern void cpm_free(void *);
+
+char mtpath[20];
 
 /* Display current keyboard macros */
 void keydisp()
@@ -92,9 +86,10 @@ void keydisp()
 }
 
 /* Save a buffer to a file. If flag set, send ctl-s/ctl-q to stop remote */
-void keep ( char *filename, short flag )
+void keep ( char * filename, short flag )
 {
 	short fl;
+	char fname[20];
 
 	if ( !BFlag )
 		return;
@@ -108,12 +103,12 @@ void keep ( char *filename, short flag )
 	while ( TxtPtr % 128 )
 		MainBuffer[TxtPtr++] = 0;
 
-	strcpy ( Pathname, filename );
-	addu ( Pathname, Invokdrive, Invokuser );
+	strcpy ( fname, filename );
+	addu ( fname, Invokdrive, Invokuser );
 
-	if ( ( fl = open ( Pathname, 1 ) ) == UBIOT )
-		if ( ( fl = creat ( Pathname, 0 ) ) == UBIOT )
-			openerror ( (int) fl, Pathname, UBIOT );
+	if ( ( fl = open ( fname, 1 ) ) == UBIOT )
+		if ( ( fl = creat ( fname, 0 ) ) == UBIOT )
+			openerror ( (int) fl, fname, UBIOT );
 
 	if ( fl != UBIOT ) {
 		lseek ( fl, 0L, 2 );
@@ -127,12 +122,11 @@ void keep ( char *filename, short flag )
 	TxtPtr = 0;
 
 cleanup:
-	free ( MainBuffer );
+	cpm_free ( MainBuffer );
 }
 
 void startcapture()     /* allocate capture buffer */
 {
-	char *grabmem();
 
 	if ( !BFlag )
 		return;
@@ -323,13 +317,6 @@ void comlabel() /*print level 2 labels*/
 	*/
 }
 
-void scplabel()
-{
-	/*		removed
-		putlabel("READING THE SCREEN -> Please wait...");
-	*/
-}
-
 void diskstuff()
 {
 	static int c, drive, user;
@@ -379,7 +366,7 @@ void diskstuff()
 				c = toupper ( chrin() );
 
 				if ( c == 'Y' )
-					unlink ( Pathname );
+					unlink ( mtpath );
 
 				break;
 
@@ -398,12 +385,12 @@ void diskstuff()
 				printf ( "\nEnter the new default du:  " );
 				flush();
 
-				if ( !getline ( Pathname, 10 ) )
+				if ( !getline ( mtpath, 10 ) )
 					break;
 
 				drive = Currdrive;
 				user = Curruser;
-				j = Pathname;
+				j = mtpath;
 
 				if ( isalpha ( q = toupper ( *j ) ) ) {
 					drive = q;
@@ -421,34 +408,26 @@ void diskstuff()
 				Curruser = user;
 				break;
 
-/*			case 'P':
-				if ( !possdirectory ( "Print" ) )
-					break;
-
-				addu ( Pathname, Currdrive, Curruser );
-				printfile ( Pathname );
-				break;*/
-
 			case 'R':
 				if ( !possdirectory ( "Rename" ) )
 					break;
 
 				flush();
-				printf ( "New name for %s: ", Pathname );
+				printf ( "New name for %s: ", mtpath );
 
 				if ( !getline ( newname, 16 ) )
 					break;
 
-				rename ( Pathname, newname );
+				rename ( mtpath, newname );
 				break;
 
 			case 'V':
 				if ( !possdirectory ( "View" ) )
 					break;
 
-				addu ( Pathname, Currdrive, Curruser );
+				addu ( mtpath, Currdrive, Curruser );
 				cls();
-				viewfile ( Pathname );
+				viewfile ( mtpath );
 				waitakey();
 				break;
 
@@ -470,10 +449,10 @@ int possdirectory ( char * prompt )
 	do {
 		printf ( "\n%s which file (CR = quit, ? = directory)? ", prompt );
 
-		if ( !getline ( Pathname, 16 ) )
+		if ( !getline ( mtpath, 16 ) )
 			return FALSE;
 
-		if ( x = ( Pathname[0] == '?' ) )
+		if ( x = ( mtpath[0] == '?' ) )
 			directory();
 	} while ( x );
 
@@ -489,14 +468,14 @@ int help()
 	stndout();
 	printf ( " ZMP HELP \n\n" );
 	stndend();
-	strcpy ( Pathname, "ZMP.HLP" );
-	addu ( Pathname, Overdrive, Overuser );
-	viewfile ( Pathname );
+	strcpy ( mtpath, "ZMP.HLP" );
+	addu ( mtpath, Overdrive, Overuser );
+	viewfile ( mtpath );
 	printf ( "\nEnter function (cr to abort): " );
 	return ( ( c = dio() ) == CR ? 0 : c );
 }
 
-/* View a file set up in Pathname */
+/* View a file set up in mtpath */
 void viewfile(char * fname)
 {
 	int i = 0;

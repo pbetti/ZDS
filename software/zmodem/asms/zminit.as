@@ -106,7 +106,7 @@ pop	bc
 call	_showcurs
 jp	cret
 psect	data
-F446:
+F444:
 defb	90
 defb	77
 defb	80
@@ -139,7 +139,7 @@ defb	80
 defb	47
 defb	77
 defb	0
-F447:
+F445:
 defb	98
 defb	121
 defb	32
@@ -154,7 +154,7 @@ defb	114
 defb	97
 defb	121
 defb	0
-F448:
+F446:
 defb	112
 defb	111
 defb	114
@@ -208,7 +208,7 @@ global	_flush
 psect	text
 _title:
 call	_cls
-ld	hl,F446
+ld	hl,F444
 push	hl
 call	_ctr
 ex	(sp),hl
@@ -216,7 +216,7 @@ ld	hl,7
 push	hl
 call	_locate
 pop	bc
-ld	hl,F446
+ld	hl,F444
 ex	(sp),hl
 call	_printf
 ld	hl,_Version
@@ -230,7 +230,7 @@ pop	bc
 ld	hl,_Version
 ex	(sp),hl
 call	_printf
-ld	hl,F447
+ld	hl,F445
 ex	(sp),hl
 call	_ctr
 ex	(sp),hl
@@ -238,10 +238,10 @@ ld	hl,10
 push	hl
 call	_locate
 pop	bc
-ld	hl,F447
+ld	hl,F445
 ex	(sp),hl
 call	_printf
-ld	hl,F448
+ld	hl,F446
 ex	(sp),hl
 call	_ctr
 ex	(sp),hl
@@ -249,7 +249,7 @@ ld	hl,11
 push	hl
 call	_locate
 pop	bc
-ld	hl,F448
+ld	hl,F446
 ex	(sp),hl
 call	_printf
 ld	hl,0
@@ -291,7 +291,6 @@ sbc	hl,de
 jp	nz,l18
 ret	
 global	_strcpy
-global	_Pathname
 global	_Cfgfile
 global	_addu
 global	_Overdrive
@@ -316,13 +315,14 @@ global	_Chardelay
 global	_Linedelay
 global	_fclose
 _getconfig:
-global csv
-call csv
-push hl
-push hl
+call ncsv
+defw -24
 ld	hl,_Cfgfile
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-24
+add	hl,de
 push	hl
 call	_strcpy
 pop	bc
@@ -330,14 +330,20 @@ ld	hl,(_Overuser)
 ex	(sp),hl
 ld	hl,(_Overdrive)
 push	hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-24
+add	hl,de
 push	hl
 call	_addu
 pop	bc
 pop	bc
 ld	hl,29f
 ex	(sp),hl
-ld	hl,_Pathname
+push	ix
+pop	de
+ld	hl,-24
+add	hl,de
 push	hl
 call	_fopen
 pop	bc
@@ -718,6 +724,4 @@ ld	hl,(_Line)
 ld	(_Current),hl
 ld	hl,(_Current+5)
 push	hl
-ld	hl,(_Current+3)
-push	hl
-ld	hl,_Current+2
+ld	hl,(_Current+

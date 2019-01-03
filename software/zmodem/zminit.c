@@ -83,10 +83,11 @@ getconfig()
 {
 	int i;
 	FILE *fd;
+	char filename[20];
 
-	strcpy ( Pathname, Cfgfile );
-	addu ( Pathname, Overdrive, Overuser );
-	fd = fopen ( Pathname, "rb" );
+	strcpy ( filename, Cfgfile );
+	addu ( filename, Overdrive, Overuser );
+	fd = fopen ( filename, "rb" );
 
 	if ( fd ) {
 		fscanf ( fd, "%d %d %d %d %d", &Crcflag, &Wantfcs32, &XonXoff,

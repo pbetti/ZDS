@@ -1181,7 +1181,7 @@ fcerr:  ld      e,fc            ; ?FC Error
 ; Converts ASCII number to DE integer binary
 ; Used to process Line Numbers from BASIC text
 ;------------------------------------------------------------------------------
-as2hx:   dec     hl              ; ASCII number to DE binary
+as2hx:  dec     hl              ; ASCII number to DE binary
 getln:  ld      de,0            ; Get number to DE
 gtlnlp: call    getchr          ; Get next character
         ret     nc              ; Exit if not a digit
@@ -1270,7 +1270,7 @@ runlin: push    bc              ; Save return address
 ;------------------------------------------------------------------------------
 ; GOTO
 ;------------------------------------------------------------------------------
-goto:   call    as2hx            ; ASCII number to DE binary
+goto:   call    as2hx           ; ASCII number to DE binary
         call    rem             ; Get end of line
         push    hl              ; Save end of line
         ld      hl,(lineat)     ; Get current line
@@ -1306,12 +1306,12 @@ return: ret     nz              ; Return if not just RETURN
         jp      nz,popnok       ; Yes - Go to command mode
 retlin: ld      hl,runcnt       ; Execution driver loop
         ex      (sp),hl         ; Into stack - Code string out
-        defb     3eh             ; Skip "POP HL"
+        defb     3eh            ; Skip "POP HL"
 nxtdta: pop     hl              ; Restore code string address
 ;------------------------------------------------------------------------------
 ; DATA/REM
 ;------------------------------------------------------------------------------
-data:   defb   $01,$3a         ; ":" End of statement
+data:   defb    $01,$3a         ; ":" End of statement
 rem:    ld      c,0             ; 00  End of statement
         ld      b,0
 nxtstl: ld      a,c             ; Statement and byte
@@ -1331,7 +1331,7 @@ nxtstt: ld      a,(hl)          ; Get byte
 ;------------------------------------------------------------------------------
 let:    call    getvar          ; Get variable name
         call    chksyn          ; Make sure "=" follows
-        defb   zequal          ; "=" token
+        defb    zequal          ; "=" token
         push    de              ; Save address of variable
         ld      a,(type)        ; Get data type
         push    af              ; Save type
@@ -1360,7 +1360,7 @@ letstr: push    hl              ; Save address of string var
         ld      hl,tmpstr       ; Temporary string pool
         call    cphlde          ; Is string in temporary pool?
         jr      nc,mvstpt       ; No - Set up pointer
-        defb   $3e             ; Skip "POP DE"
+        defb    $3e             ; Skip "POP DE"
 crestr: pop     de              ; Restore address of string
         call    baktmp          ; Back to last tmp-str entry
         ex      de,hl           ; Address of string entry
@@ -1398,14 +1398,14 @@ ongolp: dec     c               ; Count branches
 ;------------------------------------------------------------------------------
 ; IF/THEN
 ;------------------------------------------------------------------------------
-ift:     call    eval            ; Evaluate expression
+ift:    call    eval            ; Evaluate expression
         ld      a,(hl)          ; Get token
         cp      zgoto           ; "GOTO" token?
-        jr      z,iftgo          ; Yes - Get line
+        jr      z,iftgo         ; Yes - Get line
         call    chksyn          ; Make sure it's "THEN"
-        defb   zthen           ; "THEN" token
+        defb    zthen           ; "THEN" token
         dec     hl              ; Cancel increment
-iftgo:   call    tstnum          ; Make sure it's numeric
+iftgo:  call    tstnum          ; Make sure it's numeric
         call    tstsgn          ; Test state of expression
         jp      z,rem           ; False - Drop through
         call    getchr          ; Get next character
@@ -1416,7 +1416,7 @@ iftgo:   call    tstnum          ; Make sure it's numeric
 ;------------------------------------------------------------------------------
 mrprnt: dec     hl              ; DEC 'cos GETCHR INCs
         call    getchr          ; Get next character
-prints:  jp      z,prntcr        ; CRLF if just PRINT
+prints: jp      z,prntcr        ; CRLF if just PRINT
 prntlp: ret     z               ; End of list - Exit
         cp      ztab            ; "TAB(" token?
         jp      z,dotab         ; Yes - Do TAB routine
@@ -1500,7 +1500,7 @@ zonelp: sub     5               ; Next zone of 5 characters
 dotab:  push    af              ; Save token
         call    fndnum          ; Evaluate expression
         call    chksyn          ; Make sure ")" follows
-        defb   ")"
+        defb    ")"
         dec     hl              ; Back space on to ")"
         pop     af              ; Restore token
         sub     zspc            ; Was it "SPC(" ?
@@ -1533,7 +1533,7 @@ input:  call    idtest          ; Test for illegal direct
         defb	$3b		; SEMI COLON
         push    hl              ; Save code string address
         call    prs1            ; Output prompt string
-        defb   $3e             ; Skip "PUSH HL"
+        defb    $3e             ; Skip "PUSH HL"
 nopmpt: push    hl              ; Save code string address
         call    prompt          ; Get input with "? " prompt
         pop     bc              ; Restore code string address
@@ -1549,23 +1549,23 @@ nopmpt: push    hl              ; Save code string address
 ;------------------------------------------------------------------------------
 ; LREAD data
 ;------------------------------------------------------------------------------
-lread:   push    hl              ; Save code string address
+lread:  push    hl              ; Save code string address
         ld      hl,(nxtdat)     ; Next DATA statement
-        defb   $f6             ; Flag "LREAD"
+        defb    $f6             ; Flag "LREAD"
 nxtitm: xor     a               ; Flag "INPUT"
-        ld      (lreadfg),a      ; Save "LREAD"/"INPUT" flag
+        ld      (lreadfg),a     ; Save "LREAD"/"INPUT" flag
         ex      (sp),hl         ; Get code str' , Save pointer
         jr      gtvlus          ; Get values
 
 nedmor: call    chksyn          ; Check for comma between items
-        defb   ','
+        defb    ','
 gtvlus: call    getvar          ; Get variable name
         ex      (sp),hl         ; Save code str" , Get pointer
         push    de              ; Save variable address
         ld      a,(hl)          ; Get next "INPUT"/"DATA" byte
         cp      ','             ; Comma?
         jr      z,antvlu        ; Yes - Get another value
-        ld      a,(lreadfg)      ; Is it LREAD?
+        ld      a,(lreadfg)     ; Is it LREAD?
         or      a
         jp      nz,fdtlp        ; Yes - Find next DATA stmt
         ld      a,'?'           ; More INPUT needed
@@ -1589,7 +1589,7 @@ antvlu: ld      a,(type)        ; Check data type
         ld      b,a             ; Again
         cp      $22             ; Start of literal sting?
         jr      z,strent        ; Yes - Create string entry
-        ld      a,(lreadfg)      ; "LREAD" or "INPUT" ?
+        ld      a,(lreadfg)     ; "LREAD" or "INPUT" ?
         or      a
         ld      d,a             ; Save 00 if "INPUT"
         jr      z,itmsep        ; "INPUT" - End with 00
@@ -1618,7 +1618,7 @@ mordt:  ex      (sp),hl         ; Get code string address
         call    getchr          ; Get next character
         jr      nz,nedmor       ; More needed - Get it
         pop     de              ; Restore DATA pointer
-        ld      a,(lreadfg)      ; "LREAD" or "INPUT" ?
+        ld      a,(lreadfg)     ; "LREAD" or "INPUT" ?
         or      a
         ex      de,hl           ; DATA pointer to HL
         jp      nz,updata       ; Update DATA pointer if "LREAD"
@@ -1649,7 +1649,7 @@ fandt:  call    getchr          ; Get next character
         jr      nz,fdtlp        ; No "DATA" - Keep looking
         jr      antvlu          ; Found - Convert input
 
-badinp: ld      a,(lreadfg)      ; LREAD or INPUT?
+badinp: ld      a,(lreadfg)     ; LREAD or INPUT?
         or      a
         jp      nz,datsnr       ; LREAD - ? Data Syntax Error
         pop     bc              ; Throw away code string addr
@@ -1702,7 +1702,7 @@ kilfor: ld      sp,hl           ; Remove "FOR" block
 ; Evaluate and Process variable/math functions
 ;------------------------------------------------------------------------------
 getnum: call    eval            ; Get a numeric expression
-tstnum: defb   $f6             ; Clear carry (numeric)
+tstnum: defb    $f6             ; Clear carry (numeric)
 tststr: scf                     ; Set carry (string)
 chktyp: ld      a,(type)        ; Check types match
         adc     a,a             ; Expected + actual
@@ -1888,7 +1888,7 @@ sgnexp: dec     d               ; Dee to flag negative exponent
 ;------------------------------------------------------------------------------
 ; AND / OR integer FPREG < FPREG (AND/OR) last
 ;------------------------------------------------------------------------------
-por:    defb   $f6             ; Flag "OR"
+por:    defb    $f6             ; Flag "OR"
 pand:   xor     a               ; Flag "AND"
         push    af              ; Save "AND" / "OR" flag
         call    tstnum          ; Make sure it's a number
@@ -1930,7 +1930,7 @@ tstred  ld      hl,cmplog       ; Logical compare routine
         ret     nc              ; Eval if last was rel' or log'
         jp      stkths          ; Stack this one and get next
 
-cmplog  defw   cmplg1          ; Compare two values / strings
+cmplog  defw    cmplg1          ; Compare two values / strings
 cmplg1  ld      a,c             ; Get data type
         or      a
         rra
@@ -2008,10 +2008,10 @@ dimret  dec     hl              ; DEC 'cos GETCHR INCs
         call    getchr          ; Get next character
         ret     z               ; End of DIM statement
         call    chksyn          ; Make sure "," follows
-        defb   ','
+        defb    ','
 dim     ld      bc,dimret       ; Return to "DIMRET"
         push    bc              ; Save on stack
-        defb     0f6h            ; Flag "Create" variable
+        defb    0f6h            ; Flag "Create" variable
 getvar  xor     a               ; Find variable address,to DE
         ld      (lcrflg),a      ; Set locate / create flag
         ld      b,(hl)          ; Get First byte of name
@@ -2134,18 +2134,18 @@ scptlp  push    de              ; Save number of dimensions
         cp      ','             ; Comma (more to come)?
         jr      z,scptlp        ; Yes - More subscripts
         call    chksyn          ; Make sure ")" follows
-        defb   ')'
+        defb    ')'
         ld      (nxtopr),hl     ; Save code string address
         pop     hl              ; Get LCRFLG and TYPE
         ld      (lcrflg),hl     ; Restore Locate/create & type
         ld      e,0             ; Flag not SAVE* or LOAD*
         push    de              ; Save number of dimensions (D)
-        defb   $11             ; Skip "PUSH HL" and "PUSH AF'
+        defb    $11             ; Skip "PUSH HL" and "PUSH AF'
 
 arldsv  push    hl              ; Save code string address
         push    af              ; A = 00 , Flags set = Z,N
         ld      hl,(varend)     ; Start of arrays
-        defb   $3e             ; Skip "ADD HL,DE"
+        defb    $3e             ; Skip "ADD HL,DE"
 fndary  add     hl,de           ; Move to next array start
         ex      de,hl
         ld      hl,(arrend)     ; End of arrays
@@ -2244,7 +2244,7 @@ findel  ld      b,a             ; Find array element
         ld      c,a
         ld      a,(hl)          ; Number of dimensions
         inc     hl
-        defb     16h             ; Skip "POP HL"
+        defb    16h             ; Skip "POP HL"
 fndelp  pop     hl              ; Address of next dim' size
         ld      e,(hl)          ; Get LSB of dim'n size
         inc     hl
@@ -2391,7 +2391,10 @@ idtest  push    hl              ; Save code string address
         jp      error
 
 chekfn  call    chksyn          ; Make sure FN follows
-        defb     zfn             ; "FN" token
+        defb    
+        
+        
+        zfn             ; "FN" token
         ld      a,80h
         ld      (forflg),a      ; Flag FN name to find
         or      (hl)            ; FN name has bit 7 set
@@ -2488,7 +2491,7 @@ prslp   dec     e               ; Count characters
         jr      prslp           ; More characters to output
 ;------------------------------------------------------------------------------
 testr   or      a               ; Test if enough room (string length=A)
-        defb   $0e             ; No garbage collection done
+        defb    $0e             ; No garbage collection done
 grbdon  pop     af              ; Garbage collection done
         push    af              ; Save status
         ld      hl,(strspc)     ; Bottom of string space in use
@@ -2762,7 +2765,7 @@ mid1:   push    hl              ; Save string block address
         cp      b               ; Compare with number given
         jr      c,allfol        ; All following bytes required
         ld      a,b             ; Get new length
-        defb     11h             ; Skip "LD C,0"
+        defb    11h             ; Skip "LD C,0"
 allfol: ld      c,0             ; First byte of string
         push    bc              ; Save position in string
         call    testr           ; See if enough string space
@@ -2879,7 +2882,7 @@ wait:   call    setio           ; Set up port number
         call    getchr          ; Get next character
         jr      z,noxor         ; No XOR byte given
         call    chksyn          ; Make sure "," follows
-        defb   ','
+        defb  	 ','
         call    getint          ; Get integer 0-255 to XOR with
 noxor:  pop     bc              ; Restore AND mask
 waitlp: call    inpsub          ; Get input
@@ -2894,7 +2897,7 @@ setio:  call    getint          ; Get integer 0-255
         ld      (inport),a      ; Set input port
         ld      (otport),a      ; Set output port
         call    chksyn          ; Make sure "," follows
-        defb   ','
+        defb    ','
         jp      getint          ; Get integer 0-255 and return
 
 fndnum: call    getchr          ; Get next character
@@ -3013,7 +3016,7 @@ addphl: call    loadfp          ; Load FP at (HL) to BCDE
         jr      fpadd           ; Add BCDE to FPREG
 
 subphl: call    loadfp          ; FPREG = -FPREG + number at HL
-        defb     21h             ; Skip "POP BC" and "POP DE"
+        defb    21h             ; Skip "POP BC" and "POP DE"
 psub:   pop     bc              ; Get FP number from stack
         pop     de
 subcde: call    invsgn          ; Negate FPREG
@@ -3195,7 +3198,7 @@ shrt1:  rra                     ; Shift it right
         ld      b,a             ; Re-save underflow
         jr      shrlp           ; More bits to do
 
-unity	  defb   $00,$00,$00,$81 ; 1.00000
+unity	defb   $00,$00,$00,$81 ; 1.00000
 
 logtab  defb   3               ; TABLE USED BY LOG
         defb   $aa,$56,$19,$80 ; 0.59898
@@ -3337,7 +3340,7 @@ divlp:  push    hl              ; Save divisor
         pop     af              ; Scrap divisor
         pop     af
         scf                     ; Set carry to
-        defb     0d2h            ; Skip "POP BC" and "POP HL"
+        defb    0d2h            ; Skip "POP BC" and "POP HL"
 
 resdiv: pop     bc              ; Restore divisor
         pop     hl
@@ -3879,7 +3882,7 @@ powers	defb	$a0,$86,$01	; 100000
 	defb	$0a,$00,$00	;     10
 	defb	$01,$00,$00	;      1
 ;------------------------------------------------------------------------------	
-negaft: ld  hl,invsgn           ; Negate result
+negaft: ld      hl,invsgn       ; Negate result
         ex      (sp),hl         ; To be done after caller
         jp      (hl)            ; Return to caller
 ;------------------------------------------------------------------------------
@@ -3960,15 +3963,15 @@ exp:    call    stakfp          ; Put value on stack
         ld      c,d             ; Zero MSB
         jp      fpmult          ; Scale result to correct value
 
-exptab: defb     8                   ; Table used by EXP
-        defb     $40,$2e,$94,$74     ; -1/7! (-1/5040)
-        defb     $70,$4f,$2e,$77     ;  1/6! ( 1/720)
-        defb     $6e,$02,$88,$7a     ; -1/5! (-1/120)
-        defb     $e6,$a0,$2a,$7c     ;  1/4! ( 1/24)
-        defb     $50,$aa,$aa,$7e     ; -1/3! (-1/6)
-        defb     $ff,$ff,$7f,$7f     ;  1/2! ( 1/2)
-        defb     $00,$00,$80,$81     ; -1/1! (-1/1)
-        defb     $00,$00,$00,$81     ;  1/0! ( 1/1)
+exptab: defb    8                   ; Table used by EXP
+        defb    $40,$2e,$94,$74     ; -1/7! (-1/5040)
+        defb    $70,$4f,$2e,$77     ;  1/6! ( 1/720)
+        defb    $6e,$02,$88,$7a     ; -1/5! (-1/120)
+        defb    $e6,$a0,$2a,$7c     ;  1/4! ( 1/24)
+        defb    $50,$aa,$aa,$7e     ; -1/3! (-1/6)
+        defb    $ff,$ff,$7f,$7f     ;  1/2! ( 1/2)
+        defb    $00,$00,$80,$81     ; -1/1! (-1/1)
+        defb    $00,$00,$00,$81     ;  1/0! ( 1/1)
 
 sumser: call    stakfp          ; Put FPREG on stack
         ld      de,mult         ; Multiply by "X"
@@ -4061,9 +4064,9 @@ reseed: ld      (hl),a          ; Re-seed random numbers
         ld      (hl),a
         jr      rnd1            ; Return RND seed
 
-rndtab: defb     068h,0b1h,046h,068h     ; Table used by RND
-        defb     099h,0e9h,092h,069h
-        defb     010h,0d1h,075h,068h
+rndtab: defb    068h,0b1h,046h,068h     ; Table used by RND
+        defb    099h,0e9h,092h,069h
+        defb    010h,0d1h,075h,068h
 ;------------------------------------------------------------------------------
 ; COS, SIN
 ;------------------------------------------------------------------------------
@@ -4098,16 +4101,16 @@ sin1:   push    af              ; Save sign
         ld      hl,sintab       ; Coefficient table
         jp      sumser          ; Evaluate sum of series
 
-halfpi: defb     0dbh,00fh,049h,081h     ; 1.5708 (PI/2)
+halfpi: defb    0dbh,00fh,049h,081h     ; 1.5708 (PI/2)
 
-quartr: defb     000h,000h,000h,07fh     ; 0.25
+quartr: defb    000h,000h,000h,07fh     ; 0.25
 
-sintab: defb     5                       ; Table used by SIN
-        defb     0bah,0d7h,01eh,086h     ; 39.711
-        defb     064h,026h,099h,087h     ;-76.575
-        defb     058h,034h,023h,087h     ; 81.602
-        defb     0e0h,05dh,0a5h,086h     ;-41.342
-        defb     0dah,00fh,049h,083h     ;  6.2832
+sintab: defb    5                       ; Table used by SIN
+        defb    0bah,0d7h,01eh,086h     ; 39.711
+        defb    064h,026h,099h,087h     ;-76.575
+        defb    058h,034h,023h,087h     ; 81.602
+        defb    0e0h,05dh,0a5h,086h     ;-41.342
+        defb    0dah,00fh,049h,083h     ;  6.2832
 ;------------------------------------------------------------------------------
 ; TANgent
 ;------------------------------------------------------------------------------
@@ -4140,16 +4143,16 @@ atn1:   ld      hl,atntab       ; Coefficient table
         ld      hl,halfpi       ; PI/2 - angle in case > 1
         ret                     ; Number > 1 - Sub from PI/2
 
-atntab: defb     9                       ; Table used by ATN
-        defb     04ah,0d7h,03bh,078h     ; 1/17
-        defb     002h,06eh,084h,07bh     ;-1/15
-        defb     0feh,0c1h,02fh,07ch     ; 1/13
-        defb     074h,031h,09ah,07dh     ;-1/11
-        defb     084h,03dh,05ah,07dh     ; 1/9
-        defb     0c8h,07fh,091h,07eh     ;-1/7
-        defb     0e4h,0bbh,04ch,07eh     ; 1/5
-        defb     06ch,0aah,0aah,07fh     ;-1/3
-        defb     000h,000h,000h,081h     ; 1/1
+atntab: defb    9                       ; Table used by ATN
+        defb    04ah,0d7h,03bh,078h     ; 1/17
+        defb    002h,06eh,084h,07bh     ;-1/15
+        defb    0feh,0c1h,02fh,07ch     ; 1/13
+        defb    074h,031h,09ah,07dh     ;-1/11
+        defb    084h,03dh,05ah,07dh     ; 1/9
+        defb    0c8h,07fh,091h,07eh     ;-1/7
+        defb    0e4h,0bbh,04ch,07eh     ; 1/5
+        defb    06ch,0aah,0aah,07fh     ;-1/3
+        defb    000h,000h,000h,081h     ; 1/1
 ;------------------------------------------------------------------------------
 ;  End of F L O A T I N G    P O I N T   M A T H
 ;------------------------------------------------------------------------------        

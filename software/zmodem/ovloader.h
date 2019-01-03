@@ -3,11 +3,9 @@ extern FILE *fd;
 #if !(defined(AZTEC_C))
 close(fd);
 #endif
-char *alloc();
-#if defined(HI_TECH_C)
-char *alloc(cnt)int cnt;
-#endif
-char *alloc(),*index();
+extern void * cpm_malloc ( size_t );
+extern void cpm_free(void *)
+
 ovloader(ovname,args)char *ovname;
 extern char *ovstart;
 extern unsigned ovsize;

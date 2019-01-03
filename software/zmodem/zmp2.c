@@ -19,20 +19,18 @@ extern int max ( int, int );
 
 /* ../zmp.c */
 extern char *grabmem ( unsigned * );
-extern int getpathname ( char * );
-extern int linetolist ( void );
-extern void freepath ( int );
 extern void reset ( unsigned, int );
 extern void addu ( char *, int, int );
 extern void deldrive ( char * );
 extern int dio ( void );
 extern int chrin ( void );
-extern int getch ( void );
+extern int getchi ( void );
 extern void flush ( void );
 extern void purgeline ( void );
 extern int openerror ( int, char *, int );
 extern void wrerror ( char * );
-extern char *alloc ( int );
+extern void * cpm_malloc ( size_t );
+extern void cpm_free(void *);
 extern int allocerror ( char * );
 extern void perror ( char * );
 extern int kbwait ( unsigned );
@@ -47,7 +45,6 @@ extern unsigned filelength ( struct zfcb * );
 extern int roundup ( int, int );
 extern int getfirst ( char * );
 extern int getnext ( void );
-extern int process_flist ( int );
 extern int ctr ( char * );
 extern int opabort ( void );
 extern int readock ( int, int );
@@ -65,6 +62,8 @@ extern int minprdy ( void );
 extern int mrd ( void );
 extern int mirdy ( void );
 extern int mchin ( void );
+extern void putc8 ( unsigned char );
+
 
 void fstat ( char * fname, struct stat * status )
 {
@@ -106,145 +105,6 @@ int getnext()
 	return bdos ( SFN, NULL ) & 0xff;
 }
 
-/* command: expand wild cards in the command line.  (7/25/83)
- * usage: command(&argc, &argv) modifies argc and argv as necessary
- * uses sbrk to create the new arg list
- * NOTE: requires fcbinit() and bdos() from file stdlib.c.  When used
- *	with a linker and stdlib.rel, remove the #include stdlib.c.
- *
- * Written by Dr. Jim Gillogly; Modified for CP/M by Walt Bilofsky.
- * Modified by HM to just get ambiguous fn for zmodem, ymodem.
- */
-/*
-int vcount,*loc_vector,in_count,*ext_vector;
-char *curfname,*fnptr;
-*/
-static int expand();
-int vcount, in_count;
-char * curfname;
-char ** loc_vector;
-char ** ext_vector;
-char * fnptr;
-
-int process_flist ( int argcp )
-{
-	char * p, c;
-	char * f_alloc[MAXFILES];
-
-	loc_vector = f_alloc;
-	in_count = argcp;
-	ext_vector = Pathlist;
-	vcount = 0;
-
-	for ( curfname = *ext_vector; in_count--; curfname = * ( ++ext_vector ) ) {
-
-#ifdef   DEBUG
-		printf ( "\nDoing %s", curfname );
-#endif
-		c = 0;
-
-		for ( fnptr = curfname; *fnptr; fnptr++ ) {	/* Need expansion ? */
-			if ( *fnptr == '?' || *fnptr == '*' ) {
-				c = 1;				/* yes */
-			}
-		}
-
-		if ( c ) {				/* do expansion */
-			if ( !expand() ) {		/* Too many */
-				return 0;
-			}
-
-			continue; 			/* expand each name at most once */
-		}
-
-		loc_vector[vcount] = alloc ( FNSIZE );
-		p = curfname;
-
-		while ( c = *p )				/* Convert to lower case */
-			*p++ = tolower ( c );
-
-		strcpy ( loc_vector[vcount++], curfname );	/* no expansion */
-	}
-
-	argcp = vcount;
-	loc_vector[vcount++] = ( char * ) - 1;
-	ext_vector = ( char ** ) alloc ( sizeof ( char * ) * vcount );
-
-	while ( vcount-- )
-		ext_vector[vcount] = loc_vector[vcount];
-
-	return argcp;
-}
-
-static int expand()		/* Returns FALSE if error */
-{
-	struct fcb cur_fcb;
-	static char *p, *q, *r, c;
-	static int i, flg, olduser;
-
-#ifdef   DEBUG
-	printf ( "\nExpanding %s", curfname );
-#endif
-	olduser = getuid();			/* save original user area */
-	fcbinit ( curfname, &cur_fcb );
-
-	if ( cur_fcb.dr < 'A' || cur_fcb.dr > 'P' )
-		cur_fcb.dr = '?';		/* Check for all users */
-
-	for ( i = flg = 1; i <= 11; ++i ) {	/* Expand *'s */
-		if ( i == 9 )
-			flg = 1;
-
-		if ( cur_fcb.name[i - 1] == '*' )
-			flg = 0;
-
-		if ( flg == 0 )
-			cur_fcb.name[i - 1] = '?';
-	}
-
-	/*setuid(cur_fcb[13]);			 go to specified user area */
-	setuid ( cur_fcb.uid );			/* go to specified user area */
-	flg = CPMFFST;
-	bdos ( CPMSDMA, 0x80 );			/* Make sure DMA address OK */
-
-	while ( ( ( i = bdos ( flg, cur_fcb ) ) & 0xff ) != 0xff ) {
-
-		loc_vector[vcount++] = q = alloc ( FNSIZE );
-
-		if ( vcount >= MAXFILES - 1 ) {
-			printf ( "Too many file names.\n" );
-			setuid ( olduser );
-			return FALSE;
-		}
-
-		p = ( char * ) ( 0x81 + i * 32 );		/* Where to find dir. record */
-
-		/* transfer du: first */
-		if ( ( index ( curfname, ':' ) ) && curfname[0] != '?' ) {
-			r = curfname;
-
-			do
-				*q++ = c = *r++;
-
-			while ( c != ':' );
-		}
-
-		/* Now transfer filename */
-		for ( i = 12; --i; ) {
-			if ( i == 3 )
-				*q++ = '.';
-
-			if ( ( *q = tolower ( *p++ & 0177 ) ) != ' ' )
-				++q;
-		}
-
-		*q = 0;
-		flg = CPMFNXT;
-	}
-
-	setuid ( olduser );
-	return TRUE;
-}
 
 int ctr ( char * p )
 {
@@ -253,7 +113,7 @@ int ctr ( char * p )
 
 int opabort()
 {
-	Lastkey = getch() & 0xff;
+	Lastkey = getchi() & 0xff;
 
 	if ( Lastkey == ESC ) {
 		flush();
@@ -346,25 +206,25 @@ void box()          /* put box on screen for file transfer */
 			     };
 
 	LOCATE ( TR, LC );
-	putchar ( UL );
+	putc8 ( UL );
 
 	for ( i = 1; i < WD - 1; i++ )
-		putchar ( HORIZ );
+		putc8 ( HORIZ );
 
-	putchar ( UR );
+	putc8 ( UR );
 	LOCATE ( BR, LC );
-	putchar ( LL );
+	putc8 ( LL );
 
 	for ( i = 1; i < WD - 1; i++ )
-		putchar ( HORIZ );
+		putc8 ( HORIZ );
 
-	putchar ( LR );
+	putc8 ( LR );
 
 	for ( i = 1; i < HT - 1; i++ ) {
 		LOCATE ( TR + i, LC );
-		putchar ( VERT );
+		putc8 ( VERT );
 		LOCATE ( TR + i, RC );
-		putchar ( VERT );
+		putc8 ( VERT );
 	}
 
 	clrbox();

@@ -6,107 +6,19 @@
 #include "zmp.h"
 #include "zmodem.h"
 
-#ifdef   AZTEC_C
-#include "libc.h"
-#else
 #include <stdio.h>
-#endif
 
 #include <string.h>
 
-/* ../zmxfer2.c */
-extern int wcsend(int, char *[]);
-extern int wcs(char *);
-extern int wctxpn(char *);
-extern char *itoa(short, char *);
-extern char *ltoa(long, char[]);
-extern int getnak(void);
-extern int wctx(long);
-extern int wcputsec(char *, int, int);
-extern int filbuf(char *, int);
-extern int newload(char *, int);
-
-/* ../zmxfer3.c */
-extern int getzrxinit(void);
-extern int sendzsinit(void);
-extern int zsendfile(char *, int);
-extern int zsndfdata(void);
-extern int getinsync(int);
-extern int saybibi(void);
-extern char *ttime(long);
-extern int tfclose(void);
-extern int uneof(FILE *);
-extern int slabel(void);
-
-/* ../zmxfer4.c */
-extern int wcreceive(char *);
-extern int wcrxpn(char *);
-extern int wcrx(void);
-extern int wcgetsec(char *, int);
-extern int procheader(char *);
-extern char *substr(char *, char *);
-extern int canit(void);
-extern int clrreports(void);
-
-/* ../zmxfer5.c */
-extern int zperr(char *, int);
-extern int dreport(int, int );
-extern int lreport(int, long);
-extern int sreport(int, long);
-extern int clrline(int);
-extern int tryz(void);
-extern int rzmfile(void);
-extern int rzfile(void);
-extern int statrep(long);
-extern int crcrept(int);
-extern int putsec(int, int );
-extern int zmputs(char *);
-extern int testexist(char *);
-extern int closeit(void);
-extern int ackbibi(void);
-extern long atol(char *);
-extern int rlabel(void);
-
-/* ../zmxfer.c */
-extern int ovmain(char);
-extern int sendout(int);
-extern int bringin(int);
-extern int endstat(int, int );
-extern int protocol(int);
-extern int updcrc(unsigned, unsigned );
-extern long updc32(int, long);
-extern int asciisend(char *);
-extern int checkpath(char *);
-extern int xmchout(char);
-extern int testrxc(short);
-
-/* ../zzm2.c */
-extern int zrbhdr(char *);
-extern int zrb32hdr(char *);
-extern int zrhhdr(char *);
-extern int zputhex(int);
-extern int zsendline(int);
-extern int zgethex(void);
-extern int zgeth1(void);
-extern int zdlread(void);
-extern int noxrd7(void);
-extern int stohdr(long);
-extern long rclhdr(char *);
-
-/* ../zzm.c */
-extern int zsbhdr(int , char *);
-extern int zsbh32(char *, int );
-extern int zshhdr(int , char *);
-extern int zsdata(char *, int, int );
-extern int zsda32(char *, int, int );
-extern int zrdata(char *, int );
-extern int zrdat32(char *, int );
-extern int zgethdr(char *, int);
-extern int prhex(int);
+#include "zmxfer.h"
 
 extern int allocerror ( char * );
 extern int opabort ( void );
 extern int readock ( int, int );
+extern void * cpm_malloc ( size_t );
+extern void cpm_free(void *);
+extern char *grabmem ( unsigned * );
+
 
 /*
  * Attention string to be executed by receiver to interrupt streaming data
@@ -116,29 +28,27 @@ extern int readock ( int, int );
 
 #define SLEEP 0336
 
-char *ltoa(), *alloc(), *grabmem();
+char *ltoa();
 char Myattn[] = { CTRLC, SLEEP, 0 };
 
-unsigned Txwindow = 0;	/* Control the size of the transmitted window */
-unsigned Txwspac;	      /* Spacing between zcrcq requests */
-unsigned Txwcnt;	      /* Counter used to space ack requests */
+unsigned Txwindow = 0;			/* Control the size of the transmitted window */
+unsigned Txwspac;	      		/* Spacing between zcrcq requests */
+unsigned Txwcnt;	     		/* Counter used to space ack requests */
 int Noeofseen;
-int Totsecs;		      /* total number of sectors this file */
+int Totsecs;		      		/* total number of sectors this file */
 char *Txbuf;
-int Filcnt; 		      /* count of number of files opened */
-unsigned Rxbuflen = 16384;	/* Receiver's max buffer length */
+int Filcnt; 		      		/* count of number of files opened */
+unsigned Rxbuflen = 16384;		/* Receiver's max buffer length */
 int Rxflags = 0;
 long Bytcnt;
-long Lastread;		      /* Beginning offset of last buffer read */
-int Lastn;		         /* Count of last buffer read or -1 */
-int Dontread;		      /* Don't read the buffer, it's still there */
-long Lastsync;		      /* Last offset to which we got a ZRPOS */
-int Beenhereb4;		   /* How many times we've been ZRPOS'd same place */
-int Incnt;              /* count for chars not read from the Cpmbuf */
+long Lastread;		      		/* Beginning offset of last buffer read */
+int Lastn;		         	/* Count of last buffer read or -1 */
+int Dontread;		      		/* Don't read the buffer, it's still there */
+long Lastsync;		      		/* Last offset to which we got a ZRPOS */
+int Beenhereb4;		   		/* How many times we've been ZRPOS'd same place */
+int Incnt;              		/* count for chars not read from the Cpmbuf */
 
-wcsend ( argc, argp )
-int argc;                     /* nr of files to send */
-char *argp[];                 /* list of file names */
+int wcsend ( int argc, char ** argp )
 {
 	int n, status;
 
@@ -148,13 +58,9 @@ char *argp[];                 /* list of file names */
 	Baudrate = Baudtable[Current.cbaudindex];
 	Filcnt = Errors = 0;
 
-#ifdef AZTEC_C
-	Fd = 0;
-#else
 	Fd = -1;
-#endif
 
-	Txbuf = alloc ( KSIZE );
+	Txbuf = cpm_malloc ( KSIZE );
 
 	if ( allocerror ( Txbuf ) )
 		return NERROR;
@@ -210,8 +116,8 @@ char *argp[];                 /* list of file names */
 	status = OK;
 
 badreturn:
-	free ( Cpmbuf );
-	free ( Txbuf );
+	cpm_free ( Cpmbuf );
+	cpm_free ( Txbuf );
 	showcurs();
 	restcurs();
 
@@ -221,21 +127,16 @@ badreturn:
 	return status;
 }
 
-wcs ( oname )
-char *oname;
+int wcs ( char * oname )
 {
 	unsigned length;
 	long flen;
 
-	/*#ifdef AZTEC_C
-		if ((Fd=fopen(oname,"rb"))==BUFIOT) {
-	#else*/
 	if ( ( Fd = open ( oname, 0 ) ) == UBIOT ) {
-		/*#endif*/
 
 		zperr ( "Can't open file", TRUE );
 		wait ( 2 );
-		return OK;	/* pass over it, there may be others */
+		return OK;					/* pass over it, there may be others */
 	}
 
 	++Noeofseen;
@@ -245,10 +146,10 @@ char *oname;
 	++Filcnt;
 	fstat ( oname, &Fs );
 
-	switch ( wctxpn ( oname ) ) { /* transmit path name */
+	switch ( wctxpn ( oname ) ) { 				/* transmit path name */
 		case NERROR:
 			if ( Zmodem )
-				canit();	/* Send CAN */
+				canit();			/* Send CAN */
 
 			return NERROR;
 
@@ -272,8 +173,7 @@ char *oname;
  *  in octal.
  *  N.B.: modifies the passed name, may extend it!
  */
-wctxpn ( name )
-char *name;
+int wctxpn ( char * name )
 {
 	static char *p;
 	char buf[20];
@@ -343,9 +243,7 @@ char * itoa ( short n, char * s )
 }
 
 /* ltoa - convert n to characters in s. */
-char *ltoa ( n, s )
-char s[];
-long n;
+char *ltoa ( long n, char * s )
 {
 	static long c, k;
 	static char *p, *q;
@@ -373,7 +271,7 @@ long n;
 	return ( s );
 }
 
-getnak()
+int getnak()
 {
 	static int firstch;
 
@@ -414,8 +312,7 @@ getnak()
 	/*report ( BLKCHECK, Crcflag ? "CRC" : "Checksum" );*/
 }
 
-wctx ( flen )
-long flen;
+int wctx ( long flen )
 {
 	static int thisblklen, i;
 	static unsigned sectnum, attempts, firstch;
@@ -480,16 +377,13 @@ long flen;
 	if ( attempts == RETRYMAX ) {
 		zperr ( "No ACK on EOT", TRUE );
 		return NERROR;
-	} else if ( QuitFlag ) /* from opabort */
+	} else if ( QuitFlag ) 						/* from opabort */
 		return NERROR;
 	else
 		return OK;
 }
 
-wcputsec ( buf, sectnum, cseclen )
-char *buf;
-int sectnum;
-int cseclen;	/* data length of this sector to send */
+int wcputsec ( char * buf, int sectnum, int cseclen )
 {
 	static unsigned checksum;
 	static char *cp;
@@ -498,8 +392,8 @@ int cseclen;	/* data length of this sector to send */
 	static int firstch;
 	static int attempts;
 
-	firstch = 0;	/* part of logic to detect CAN CAN */
-
+	firstch = 0;							/* part of logic to detect CAN CAN */
+		
 	dreport ( ERRORS, 0 );
 
 	for ( attempts = 0; attempts <= RETRYMAX; attempts++ ) {
@@ -592,9 +486,7 @@ cancan:
 
 /* fill buf with count chars padding with ^Z for CPM */
 
-filbuf ( buf, count )
-char *buf;
-int count;
+int filbuf ( char * buf, int count )
 {
 	static int c, m;
 
@@ -609,9 +501,7 @@ int count;
 	return c;
 }
 
-newload ( buf, count )
-int count;
-char *buf;
+int newload ( char * buf, int count )
 {
 	static int j;
 
@@ -620,11 +510,7 @@ char *buf;
 	while ( count-- ) {
 		if ( Incnt <= 0 ) {
 
-#ifdef AZTEC_C
-			Incnt = fread ( Cpmbuf, 1, Cpbufsize, Fd );
-#else
 			Incnt = read ( Fd, Cpmbuf, Cpbufsize );
-#endif
 
 			Cpindex = 0;
 

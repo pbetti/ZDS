@@ -5,132 +5,47 @@
 #include "zmp.h"
 #include "zmodem.h"
 
-#ifdef   AZTEC_C
-#include "libc.h"
-#else
 #include <stdio.h>
-#endif
 
 #include <string.h>
 
-/* ../zmxfer2.c */
-extern int wcsend(int, char *[]);
-extern int wcs(char *);
-extern int wctxpn(char *);
-extern char *itoa(short, char *);
-extern char *ltoa(long, char[]);
-extern int getnak(void);
-extern int wctx(long);
-extern int wcputsec(char *, int, int);
-extern int filbuf(char *, int);
-extern int newload(char *, int);
+#include "zmxfer.h"
 
-/* ../zmxfer3.c */
-extern int getzrxinit(void);
-extern int sendzsinit(void);
-extern int zsendfile(char *, int);
-extern int zsndfdata(void);
-extern int getinsync(int);
-extern int saybibi(void);
-extern char *ttime(long);
-extern int tfclose(void);
-extern int uneof(FILE *);
-extern int slabel(void);
-
-/* ../zmxfer4.c */
-extern int wcreceive(char *);
-extern int wcrxpn(char *);
-extern int wcrx(void);
-extern int wcgetsec(char *, int);
-extern int procheader(char *);
-extern char *substr(char *, char *);
-extern int canit(void);
-extern int clrreports(void);
-
-/* ../zmxfer5.c */
-extern int zperr(char *, int);
-extern int dreport(int, int );
-extern int lreport(int, long);
-extern int sreport(int, long);
-extern int clrline(int);
-extern int tryz(void);
-extern int rzmfile(void);
-extern int rzfile(void);
-extern int statrep(long);
-extern int crcrept(int);
-extern int putsec(int, int );
-extern int zmputs(char *);
-extern int testexist(char *);
-extern int closeit(void);
-extern int ackbibi(void);
-extern long atol(char *);
-extern int rlabel(void);
-
-/* ../zmxfer.c */
-extern int ovmain(char);
-extern int sendout(int);
-extern int bringin(int);
-extern int endstat(int, int );
-extern int protocol(int);
-extern int updcrc(unsigned, unsigned );
-extern long updc32(int, long);
-extern int asciisend(char *);
-extern int checkpath(char *);
-extern int xmchout(char);
-extern int testrxc(short);
-
-/* ../zzm2.c */
-extern int zrbhdr(char *);
-extern int zrb32hdr(char *);
-extern int zrhhdr(char *);
-extern int zputhex(int);
-extern int zsendline(int);
-extern int zgethex(void);
-extern int zgeth1(void);
-extern int zdlread(void);
-extern int noxrd7(void);
-extern int stohdr(long);
-extern long rclhdr(char *);
-
-/* ../zzm.c */
-extern int zsbhdr(int , char *);
-extern int zsbh32(char *, int );
-extern int zshhdr(int , char *);
-extern int zsdata(char *, int, int );
-extern int zsda32(char *, int, int );
-extern int zrdata(char *, int );
-extern int zrdat32(char *, int );
-extern int zgethdr(char *, int);
-extern int prhex(int);
-
+extern void * cpm_malloc ( size_t );
+extern void cpm_free(void *);
 extern int allocerror ( char * );
 extern int opabort ( void );
 extern int readline(int);
 extern int openerror ( int, char *, int );
+extern char *grabmem ( unsigned * );
 
 int Tryzhdrtype;	   /* Header type to send corresponding to Last rx close */
 char *Rxptr;
 
-wcreceive ( filename )
-char *filename;
+int wcreceive ( char * filename )
 {
-	char *grabmem(), *alloc();
 	static int c;
+	char fname[20];
 
-	rlabel();
+	rlabel(); getch();
 	QuitFlag = FALSE;
 	Zctlesc = 0;
 	Baudrate = Baudtable[Current.cbaudindex];
 	Tryzhdrtype = ZRINIT;
-	Secbuf = alloc ( KSIZE + 1 );
+	fname[0] = '\0';
+	
+	
+	Secbuf = cpm_malloc ( KSIZE + 1 );
 
-	if ( allocerror ( Secbuf ) )
+	if ( allocerror ( Secbuf ) ) {
 		return NERROR;
+	}
 
 	Cpmbuf = grabmem ( &Cpbufsize );
 
-	if ( allocerror ( Cpmbuf ) )
+	if ( allocerror ( Cpmbuf ) ) {
 		return NERROR;
+	}
 
 	Cpindex = 0;				/* just in case */
 	Rxptr = Cpmbuf;				/* ditto */
@@ -185,21 +100,14 @@ char *filename;
 		}
 	} else {
 		report ( PROTOCOL, "XMODEM Receive" );
-		strcpy ( Pathname, filename );
-		checkpath ( Pathname );
+		strcpy ( fname, filename );
+		checkpath ( fname );
 
-#ifdef AZTEC_C
+		testexist ( fname );
 
-		Fd = fopen ( Pathname, "wb" );
+		Fd = creat ( fname, 0 );
 
-		if ( openerror ( Fd, Pathname, BUFIOT ) )
-#else
-		testexist ( Pathname );
-
-		Fd = creat ( Pathname, 0 );
-
-		if ( openerror ( Fd, Pathname, UBIOT ) )
-#endif
+		if ( openerror ( Fd, fname, UBIOT ) )
 
 			goto fubar1;
 
@@ -208,8 +116,8 @@ char *filename;
 	}
 
 good:
-	free ( Cpmbuf );
-	free ( Secbuf );
+	cpm_free ( Cpmbuf );
+	cpm_free ( Secbuf );
 	showcurs();
 	restcurs();
 	return OK;
@@ -217,18 +125,14 @@ good:
 fubar:
 	canit();
 
-#ifdef AZTEC_C
-
-	if ( Fd )
-#else
-	if ( Fd >= 0 )
-#endif
-
-		unlink ( Pathname );	/* File incomplete: erase it */
-
+	if ( Fd >= 0 && fname[0] != 0) {
+		close(Fd);
+		unlink ( fname );	/* File incomplete: erase it */
+	}
+		
 fubar1:
-	free ( Cpmbuf );
-	free ( Secbuf );
+	cpm_free ( Cpmbuf );
+	cpm_free ( Secbuf );
 	showcurs();
 	restcurs();
 	return NERROR;
@@ -240,8 +144,7 @@ fubar1:
  * A null string represents no more files (YMODEM)
  */
 
-wcrxpn ( rpn )
-char *rpn;	/* receive a pathname */
+int wcrxpn ( char * rpn )
 {
 	static int c;
 
@@ -274,7 +177,7 @@ et_tu:
  * Jack M. Wierda and Roderick W. Hart
  */
 
-wcrx()
+int wcrx()
 {
 	static int sectnum, sectcurr;
 	static char sendchar;
@@ -332,9 +235,7 @@ wcrx()
  *    (Caller must do that when he is good and ready to get next sector)
  */
 
-wcgetsec ( rxbuf, maxtime )
-char *rxbuf;
-int maxtime;
+int wcgetsec ( char * rxbuf, int maxtime )
 {
 	static int checksum, wcj, firstch;
 	static unsigned oldcrc;
@@ -440,11 +341,11 @@ humbug:
 /*
  * Process incoming file information header
  */
-procheader ( name )
-char *name;
+int procheader ( char * name )
 {
 	long atol();
 	static char *p, *ap, c;
+	char filename[20];
 
 	/*
 	 *  Process YMODEM,ZMODEM remote file management requests
@@ -467,20 +368,14 @@ char *name;
 		report ( SENDTIME, ttime ( atol ( ap ) ) );
 	}
 
-	strcpy ( Pathname, name );
-	checkpath ( Pathname );
+	strcpy ( filename, name );
+	checkpath ( filename );
 
-#ifdef AZTEC_C
-	Fd = fopen ( Pathname, "wb" );
+	testexist ( filename );
 
-	if ( openerror ( Fd, Pathname, BUFIOT ) )
-#else
-	testexist ( Pathname );
+	Fd = creat ( filename, 0 );
 
-	Fd = creat ( Pathname, 0 );
-
-	if ( openerror ( Fd, Pathname, UBIOT ) )
-#endif
+	if ( openerror ( Fd, filename, UBIOT ) )
 
 		return NERROR;
 
@@ -491,9 +386,7 @@ char *name;
  * substr(string, token) searches for token in string s
  * returns pointer to token within string if found, NULL otherwise
  */
-char *
-substr ( s, t )
-char *s, *t;
+char * substr ( char * s, char * t )
 {
 	static int i;
 
@@ -504,7 +397,7 @@ char *s, *t;
 }
 
 /* send cancel string to get the other end to shut up */
-canit()
+void canit()
 {
 	static char canistr[] = {
 		24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 0
@@ -514,7 +407,7 @@ canit()
 	purgeline();
 }
 
-clrreports()
+void clrreports()
 {
 	static int i;
 

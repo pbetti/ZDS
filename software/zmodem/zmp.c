@@ -51,16 +51,9 @@
 #define  MAIN	1
 
 #include "zmp.h"
-
-#ifdef   AZTEC_C
-#include "libc.h"
-#else
 #include <stdio.h>
-#endif
 
-#ifdef HI_TECH_C
 #include <signal.h>
-#endif
 
 #include <ctype.h>
 #include <string.h>
@@ -70,20 +63,21 @@ extern int bios ( int );
 /* ../zmp.c */
 extern int main ( void );
 extern char *grabmem ( unsigned * );
-extern int getpathname ( char * );
-extern int linetolist ( void );
-extern void freepath ( int );
+extern int getpathname ( char *, char ** );
+extern int linetolist ( char ** );
+extern void freepath ( int, char ** );
 extern void reset ( unsigned, int );
 extern void addu ( char *, int, int );
 extern void deldrive ( char * );
 extern int dio ( void );
 extern int chrin ( void );
-extern int getch ( void );
+extern int getchi ( void );
 extern void flush ( void );
 extern void purgeline ( void );
 extern int openerror ( int, char *, int );
 extern void wrerror ( char * );
-extern char *alloc ( int );
+extern void * cpm_malloc ( size_t );
+extern void cpm_free(void *);
 extern int allocerror ( char * );
 extern void perror ( char * );
 extern int kbwait ( unsigned );
@@ -98,7 +92,7 @@ extern unsigned filelength ( struct zfcb * );
 extern int roundup ( int, int );
 extern int getfirst ( char * );
 extern int getnext ( void );
-extern int process_flist ( int );
+extern int process_flist ( int, char ** );
 extern int ctr ( char * );
 extern int opabort ( void );
 extern int readock ( int, int );
@@ -112,21 +106,19 @@ extern void clrbox ( void );
 extern int mread ( char *, int, int );
 extern int mcharinp ( void );
 extern void mcharout ( char );
+extern void putc8 ( unsigned char );
 extern int minprdy ( void );
 
 extern int mrd ( void );
 extern int * getvars( void );
-extern char * malloc (int);
 
-extern char * alloc();
-
-/*char ** Pathlist;*/
 
 main()
 {
 	static int termcmd;
 	short *p, i;
 	char *q;
+	char filename[20];
 
 
 	Invokdrive = bdos ( GETCUR, NULL ) + 'A';
@@ -143,26 +135,26 @@ main()
 		Overuser = Invokuser;
 	}
 
-	strcpy ( Pathname, Initovly );
-	addu ( Pathname, Overdrive, Overuser );
-	ovloader ( Pathname, 0 );	/* Do initialisation */
+	strcpy ( filename, Initovly );
+	addu ( filename, Overdrive, Overuser );
+	ovloader ( filename, 0 );	/* Do initialisation */
 
 	/************** the main loop ************************/
 
 	for (;;) {
 		printf ( "\nWait..." );
-		strcpy ( Pathname, Termovly );
-		addu ( Pathname, Overdrive, Overuser );
-		termcmd = ovloader ( Pathname, 0 );			/* Load the TERM overlay */
+		strcpy ( filename, Termovly );
+		addu ( filename, Overdrive, Overuser );
+		termcmd = ovloader ( filename, 0 );			/* Load the TERM overlay */
 		printf ( "\nLoading overlay...\n" );
 
 		switch ( termcmd ) {
 
 			case RECEIVE:
 			case SEND:
-				strcpy ( Pathname, Xferovly );
-				addu ( Pathname, Overdrive, Overuser );
-				ovloader ( Pathname, termcmd );
+				strcpy ( filename, Xferovly );
+				addu ( filename, Overdrive, Overuser );
+				ovloader ( filename, termcmd );
 				putchar ( '\007' );			/* tell user it's finished */
 				mswait ( 300 );
 				putchar ( '\007' );
@@ -186,17 +178,17 @@ main()
 #endif
 
 			case CONFIG:
-				strcpy ( Pathname, Configovly );
-				addu ( Pathname, Overdrive, Overuser );
-				ovloader ( Pathname, 0 );
+				strcpy ( filename, Configovly );
+				addu ( filename, Overdrive, Overuser );
+				ovloader ( filename, 0 );
 				break;
 
 			case USER:
 				for ( i = 0, q = Userover; *q; i++ ) {
 					if ( i == Userid ) {			/* if it's the one, */
-						strcpy ( Pathname, q );
-						addu ( Pathname, Overdrive, Overuser );
-						ovloader ( Pathname, 0 );	/* execute it */
+						strcpy ( filename, q );
+						addu ( filename, Overdrive, Overuser );
+						ovloader ( filename, 0 );	/* execute it */
 						break;
 					} else
 						while ( *q++ );			/* find the end of this one */
@@ -221,18 +213,14 @@ char * grabmem ( unsigned int * sizep )      		/* grab all available memory */
 	static char *p, *q;
 	static unsigned size;
 
-#ifdef HI_TECH_C
-	q = alloc ( BUFSIZ + 10 );			/* Make sure we have enough for disk i/o */
-#endif
+	q = cpm_malloc ( BUFSIZ + 10 );			/* Make sure we have enough for disk i/o */
 
-#ifdef AZTEC_C
-	q = alloc ( BUFSIZ );				/* Ditto */
-#endif
 
 	size = BUFSTART + 10;				/* allow some overrun */
 
-	while ( ( p = alloc ( size ) ) == ( char * ) MEMORY_FULL ) {
+	while ( ( p = cpm_malloc ( size ) ) == ( char * ) MEMORY_FULL ) {
 		size -= 1024;
+		printf(" %d ", size);
 
 		if ( ( size - 10 ) < 2048 ) {
 			size = 0;
@@ -240,94 +228,15 @@ char * grabmem ( unsigned int * sizep )      		/* grab all available memory */
 		}
 	}
 
-#ifdef DEBUG
-	printf ( "\ngrabmem = %x %d\n", p, size );
-#endif
+	
+	/*printf ( "\ngrabmem = %x %d\n", p, size ); getch();*/
 
 	*sizep = size - 10;				/* don't mention the overrun */
-	free ( q );					/* Free disk i/o space */
+	cpm_free ( q );					/* Free disk i/o space */
 	return p;
 }
 
-int getpathname ( char * string )
-{
-	static char *buffer;
 
-	buffer = Pathname;
-	sprintf ( buffer, "\nPlease enter file name%s:  ", string );
-	printf ( buffer );
-
-	getline ( Pathname, PATHLEN );
-
-	if ( !strlen ( Pathname ) )
-		return 0;
-
-	return linetolist();
-}
-
-int linetolist()   					/* expand and put Pathnames in Pathlist, return count */
-{
-	static char *p;
-	static int count;
-	static char **tempalloc;
-
-#ifdef DEBUG
-	static int i;
-#endif
-
-	tempalloc = Pathlist = ( char ** ) alloc ( 510 );
-
-	if ( allocerror ( ( char * ) tempalloc ) )
-		return 0;
-
-#ifdef   DEBUG
-	printf ( "Pathlist = %x\n", Pathlist );
-#endif
-
-	count = 0;
-	Pathlist[count++] = Pathname;
-
-	for ( p = Pathname; *p; p++ ) {     		/* break up into substrings */
-		if ( *p == ' ' ) {
-			*p = '\0';
-
-			while ( *++p == ' ' );		/* dump extra spaces */
-
-			Pathlist[count++] = p;
-		}
-	}
-
-#ifdef   DEBUG
-	printf ( "\nbefore command\n" );
-
-	for ( i = 0; i < count; i++ )
-		printf ( "%d %s\n", i, Pathlist[i] );
-
-#endif
-
-	count = process_flist ( count );
-
-#ifdef   DEBUG
-	printf ( "\nafter command\n" );
-
-	for ( i = 0; i < count; i++ )
-		printf ( "%d %s\n", i, Pathlist[i] );
-
-#endif
-
-	free ( tempalloc );
-	return count;
-}
-
-void freepath ( int n )
-{
-	if ( n ) {
-		while ( n )
-			free ( Pathlist[--n] );
-
-		free ( Pathlist );
-	}
-}
 
 void reset ( unsigned int drive, int user )
 {
@@ -344,15 +253,15 @@ void reset ( unsigned int drive, int user )
 
 void addu ( char * filename, int drive, int user )
 {
-	/*
-	if ( !isin ( filename, ":" ) && user >= 0 && user <= 15 ) {
+	
+	/*if ( !isin ( filename, ":" ) && user >= 0 && user <= 15 ) {
 		strcpy ( Buf, filename );
 		filename[0] = ( char ) drive;
 		sprintf ( filename + 1, "%d", user );
 		sprintf ( ( user < 10 ) ? filename + 2 : filename + 3, ":%s", Buf );
 	}
-	*/
-	return;
+	
+	return;*/
 }
 
 void deldrive ( char * filename )
@@ -373,7 +282,7 @@ int chrin()	/* Direct console input which repeats character */
 	return bdos ( CONIN );
 }
 
-int getch()
+int getchi()
 {
 	return bdos ( DIRCTIO, INPUT );
 }
@@ -383,7 +292,7 @@ void flush()
 	while ( bdos ( GCS, NULL ) )   				/*clear type-ahead buffer*/
 		bdos ( CONIN, NULL );
 
-	getch();           /*and anything else*/
+	getchi();           /*and anything else*/
 }
 
 void purgeline()
@@ -411,11 +320,6 @@ void wrerror ( char * fname )
 }
 
 
-char * alloc ( int cnt )
-{
-	return malloc ( cnt );
-}
-
 int allocerror ( char * p )
 {
 	static int status;
@@ -440,7 +344,7 @@ kbwait ( unsigned int seconds )
 
 	t = seconds * 10;
 
-	while ( ! ( c = getch() ) && ( t-- ) )
+	while ( ! ( c = getchi() ) && ( t-- ) )
 		MSWAIT ( 100 );
 
 	return ( ( c & 0xff ) == ESC );

@@ -136,11 +136,11 @@ void sethost()
 void edit()
 {
 	static int i;
-	static char *buffer;
+	char buffer[40];
 	static char keypad[] = "0123456789";
 	static char keybuf[2];
 
-	buffer = Pathname;
+	buffer[0] = '\0';
 
 	for (;;) {
 		cls();
@@ -198,10 +198,11 @@ void saveconfig()
 {
 	int i;
 	FILE *fd;
+	char filename[20];
 
-	strcpy ( Pathname, Cfgfile );
-	addu ( Pathname, Overdrive, Overuser );
-	fd = fopen ( Pathname, "w" );
+	strcpy ( filename, Cfgfile );
+	addu ( filename, Overdrive, Overuser );
+	fd = fopen ( filename, "w" );
 
 	if ( fd ) {
 		printf ( "\n\nSaving Configuration..." );
@@ -231,9 +232,9 @@ void saveconfig()
 void setbaud()
 {
 	int baud;
-	char *buffer;
+	char buffer[20];
 
-	buffer = Pathname;
+	buffer[0] = '\0';
 
 	do {
 		printf ( "\nEnter default modem bit rate:  " );

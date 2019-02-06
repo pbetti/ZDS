@@ -78,10 +78,10 @@ bconst:
 	ld	(kbdbyte),a		; clear AR buffer...
 	ex	af,af'
 	jr	nz,bconsp
-	xor	a
+	xor	a			; no data
 	ret
 bconsp:
-	ld	a,$ff
+	ld	a,$ff			; ok get data
 	ret
 
 

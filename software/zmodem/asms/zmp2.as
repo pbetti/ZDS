@@ -193,14 +193,19 @@ pop	bc
 jp	cret
 global	_opabort
 global	_Lastkey
-global	_getchi
+global	_hwio
 global	_flush
 global	_Inhost
 global	_Dialing
 global	_report
 global	_QuitFlag
 _opabort:
-call	_getchi
+ld	hl,0
+push	hl
+push	hl
+call	_hwio
+pop	bc
+pop	bc
 xor	a
 ld	h,a
 ld	(_Lastkey),hl
@@ -234,9 +239,9 @@ global	_readock
 global	_mread
 global	wrelop
 psect	bss
-F545:
+F548:
 defs	2
-F546:
+F549:
 defs	5
 psect	text
 _readock:
@@ -248,13 +253,13 @@ push	hl
 ld	l,(ix+8)
 ld	h,(ix+9)
 push	hl
-ld	hl,F546
+ld	hl,F549
 push	hl
 call	_mread
 pop	bc
 pop	bc
 pop	bc
-ld	(F545),hl
+ld	(F548),hl
 ld	de,1
 call	wrelop
 jp	p,l22
@@ -262,21 +267,21 @@ ld	hl,-2
 jp	cret
 l22:
 ld	de,1
-ld	hl,(F545)
+ld	hl,(F548)
 or	a
 sbc	hl,de
 jp	nz,l25
-ld	a,(F546)
+ld	a,(F549)
 ld	l,a
 rla
 xor	a
 ld	h,a
 jp	cret
 l26:
-ld	de,F546
-ld	hl,(F545)
+ld	de,F549
+ld	hl,(F548)
 dec	hl
-ld	(F545),hl
+ld	(F548),hl
 add	hl,de
 ld	a,(hl)
 cp	24
@@ -284,7 +289,7 @@ jp	z,l25
 ld	hl,-1
 jp	cret
 l25:
-ld	hl,(F545)
+ld	hl,(F548)
 ld	a,l
 or	h
 jp	nz,l26
@@ -342,9 +347,9 @@ jp	_cls
 global	_mgetchar
 global	amul
 psect	bss
-F554:
+F557:
 defs	2
-F555:
+F558:
 defs	2
 psect	text
 _mgetchar:
@@ -356,16 +361,16 @@ ld	de,10
 ld	l,(ix+6)
 ld	h,(ix+7)
 call	amul
-ld	(F555),hl
+ld	(F558),hl
 push	hl
 call	_readline
 pop	bc
-ld	(F554),hl
+ld	(F557),hl
 ld	de,-2
 or	a
 sbc	hl,de
 jp	z,l33
-ld	hl,(F554)
+ld	hl,(F557)
 xor	a
 ld	h,a
 jp	cret
@@ -380,7 +385,7 @@ jp	z,l35
 jp	cret
 global	_box
 psect	data
-F557:
+F560:
 defw	49f
 defw	59f
 defw	69f
@@ -392,7 +397,7 @@ defw	119f
 defw	129f
 defw	139f
 defw	149f
-F558:
+F561:
 defw	0
 defw	32
 defw	31
@@ -526,7 +531,7 @@ ld	(ix+-2),1
 ld	(ix+-1),0
 jp	l52
 l49:
-ld	de,F558
+ld	de,F561
 ld	l,(ix+-2)
 ld	h,(ix+-1)
 add	hl,hl
@@ -543,7 +548,7 @@ push	hl
 call	_locate
 pop	bc
 pop	bc
-ld	de,F557
+ld	de,F560
 ld	l,(ix+-2)
 ld	h,(ix+-1)
 add	hl,hl
@@ -648,29 +653,16 @@ ld	l,(ix+-2)
 ld	h,(ix+-1)
 jp	cret
 global	_mchin
-global	_Stopped
-global	_mchout
 psect	bss
-F565:
+F568:
 defs	2
 psect	text
 _mcharinp:
 call	_mchin
-ld	(F565),hl
-ld	hl,(_Stopped)
-ld	a,l
-or	h
-jp	z,l64
-ld	hl,17
-push	hl
-call	_mchout
-pop	bc
-ld	hl,0
-ld	(_Stopped),hl
-l64:
-ld	hl,(F565)
+ld	(F568),hl
 ret	
 global	_mcharout
+global	_mchout
 _mcharout:
 global csv
 call csv
@@ -684,6 +676,7 @@ call	_mchout
 jp	cret
 global	_minprdy
 global	_mirdy
+global	_Stopped
 _minprdy:
 call	_mirdy
 ld	a,l
@@ -738,6 +731,3 @@ defb	32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32
 defb	32,32,32,32,32,32,32,0
 psect	text
 7,110,115,102,101,114,114,101
-defb	100,58,0
-119:
-defb	66,108,111,

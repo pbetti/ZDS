@@ -13,6 +13,7 @@
 extern int opabort ( void );
 extern int readline(int);
 extern int roundup ( int, int );
+extern void putlabel(char *);
 
 extern int Tryzhdrtype;	   /* Header type to send corresponding to Last rx close */
 extern char *Rxptr;		/* Pointer to main Rx buffer */
@@ -534,9 +535,9 @@ long atol ( char * string )
 	return value;
 }
 
-void rlabel() /*print receive mode labels on the 25th line*/
+/*void rlabel() /*print receive mode labels on the 25th line
 {
 	putlabel ( "RECEIVE FILE Mode:  Press ESC to Abort..." );
-}
+}*/
 
 /************************** END OF MODULE 5 *********************************/

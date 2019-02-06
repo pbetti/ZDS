@@ -154,7 +154,7 @@ jump_tab:
 	jp	userout		; user-defined exit routine
 	jp	getvars		; get system variables
 	jp	setport		; set port (0 or 1)
-	jp	udbg		; spare for later use
+	jp	hwio		; spare for later use
 	jp	putc8		; spare for later use
 
 ; Spare jumps for compatibility with future versions
@@ -176,14 +176,38 @@ spare:
 	ret
 
 ; User-defined entry routine: leave empty if not needed
-udbg:
+hwio:
+	ld	hl,2		; get parameters
+	add	hl,sp
+	ex	de,hl
+	call	getparm		; in HL
+	ld 	a,l		; in/out
+	cp	2
+	jr	z,hwioo		; ..out
+	ld	e,a
+hwiow:
+	call	BBCONST
+	bit	0,e
+	jr	z,hwionb	; blocking?
+	or	a		; yes
+	jr	z,hwiow		; wait for key
+hwionb:				; non blocking
+	or	a
+	call	nz,BBCONIN
+	ld	l,a
+	ld	h,0
 	ret
+	
+hwioo:	
+	call	getparm		; in HL
+	ld	a,l
+	jr	putc81
 
 putc8:
 	ld	hl,2		; get the character
 	add	hl,sp
 	ld	a,(hl)
-
+putc81:
 	push	bc
 	ld	c,a
 	call	BBCONOUT
@@ -240,7 +264,7 @@ mordy:
 ;Test for character at modem: return TRUE (1) in HL if so
 mirdy:
 				; <== Insert your own code here
-	ld	hl,0
+	ld	l,0
 	call	srchk1
 	jr	z,mirdy01
 	inc 	l
@@ -634,4 +658,3 @@ toobig:	jp	errval		; Overlay too large!
 	 endif
 
 	end
-

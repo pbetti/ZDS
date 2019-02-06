@@ -63,6 +63,7 @@ extern int mrd ( void );
 extern int mirdy ( void );
 extern int mchin ( void );
 extern void putc8 ( unsigned char );
+extern int hwio(int, int);
 
 
 void fstat ( char * fname, struct stat * status )
@@ -79,11 +80,11 @@ unsigned int filelength ( struct zfcb * fcbp )
 {
 	int olduser;
 
-	bdos ( SETDMA, CPMBUF );     /* set dma address */
-	olduser = getuid();		/* save this user number */
+	bdos ( SETDMA, CPMBUF );		/* set dma address */
+	olduser = getuid();			/* save this user number */
 	setuid ( fcbp->freserved & 0x0f );	/* go to file's user no. */
 	bdos ( 35, fcbp );
-	setuid ( olduser );		/* restore original */
+	setuid ( olduser );			/* restore original */
 	return fcbp->ranrec;
 }
 
@@ -92,16 +93,16 @@ int roundup ( int dividend, int divisor )
 	return ( dividend / divisor + ( ( dividend % divisor ) ? 1 : 0 ) );
 }
 
-int getfirst ( char * aname )   /* ambiguous file name */
+int getfirst ( char * aname )   		/* ambiguous file name */
 {
-	bdos ( SETDMA, CPMBUF );     /* set dma address */
+	bdos ( SETDMA, CPMBUF );     		/* set dma address */
 	fcbinit ( aname, ( struct fcb * ) &Thefcb );
 	return bdos ( SFF, ( struct fcb * ) &Thefcb ) & 0xff;
 }
 
 int getnext()
 {
-	bdos ( SETDMA, CPMBUF );     /* set dma address */
+	bdos ( SETDMA, CPMBUF );     		/* set dma address */
 	return bdos ( SFN, NULL ) & 0xff;
 }
 
@@ -113,7 +114,7 @@ int ctr ( char * p )
 
 int opabort()
 {
-	Lastkey = getchi() & 0xff;
+	Lastkey = hwio(0, 0) & 0xff;
 
 	if ( Lastkey == ESC ) {
 		flush();
@@ -166,17 +167,17 @@ void putlabel ( char * string )
 {
 	cls();
 	locate ( 0, ctr ( string ) - 1 );	/* Centre on top line */
-	stndout();			/* Inverse video */
-	printf ( " %s \n\n", string );	/* Print the string */
-	stndend();			/* Inverse off */
+	stndout();				/* Inverse video */
+	printf ( " %s \n\n", string );		/* Print the string */
+	stndend();				/* Inverse off */
 }
 
 void killlabel() /*disable 25th line*/
 {
-	cls();			/* just clear screen */
+	cls();					/* just clear screen */
 }
 
-int mgetchar ( int seconds )      /* allows input from modem or operator */
+int mgetchar ( int seconds )     		 /* allows input from modem or operator */
 {
 	static int c, tenths;
 
@@ -265,20 +266,17 @@ int mcharinp()
 
 	c = mchin();
 
-	if ( Stopped ) {
+	/*if ( Stopped && !mirdy()) {
 		mchout ( CTRLQ );
 		Stopped = FALSE;
-	}
+	}*/
 
 	return c;
 }
 
 void mcharout ( char c )
 {
-	/*while ( !moutrdy() )
-		opabort();*/	/* Test for operator abort while we wait */
-		
-	mchout ( c );		/* Then send it */
+	mchout ( c );				/* Then send it */
 }
 
 int minprdy()

@@ -22,12 +22,13 @@ extern char *grabmem ( unsigned * );
 int Tryzhdrtype;	   /* Header type to send corresponding to Last rx close */
 char *Rxptr;
 
+
 int wcreceive ( char * filename )
 {
 	static int c;
 	char fname[20];
 
-	rlabel(); getch();
+	putlabel ( "RECEIVE FILE Mode:  Press ESC to Abort..." ); 
 	QuitFlag = FALSE;
 	Zctlesc = 0;
 	Baudrate = Baudtable[Current.cbaudindex];
@@ -190,11 +191,14 @@ int wcrx()
 	Eofseen = FALSE;
 	sendchar = Crcflag ? WANTCRC : NAK;
 	report ( BLKCHECK, Crcflag ? "CRC" : "Checksum" );
+	Wcsmask = 0xff;
 
 	for ( ;; ) {
 		if ( opabort() )
 			return NERROR;
 
+		printf("sendchar=%d %x\n",sendchar,sendchar);
+		
 		mcharout ( sendchar );	         /* send it now, we're ready! */
 		sectcurr = wcgetsec ( Rxptr, Firstsec || ( sectnum & 0177 ) ? 50 : 130 );
 
@@ -202,22 +206,30 @@ int wcrx()
 			charsgot += Blklen;
 			sreport ( ++sectnum, charsgot );
 			cblklen = Blklen;
-
-			if ( putsec ( cblklen, FALSE ) == NERROR )
+			printf("sectcurr=%d charsgot=%d cblklen=%d\n",sectcurr,charsgot,cblklen);
+			
+			if ( putsec ( cblklen, FALSE ) == NERROR ) {
+				printf("putsec bad\n");
+				
 				return NERROR;
+			}
 
 			sendchar = ACK;
 		} else if ( sectcurr == ( sectnum & Wcsmask ) ) {
 			zperr ( "Duplicate Sector", TRUE );
 			sendchar = ACK;
 		} else if ( sectcurr == WCEOT ) {
+			printf("EOT\n");
+			
 			if ( closeit() )
 				return NERROR;
 
 			mcharout ( ACK );
 			return OK;
-		} else if ( sectcurr == NERROR )
+		} else if ( sectcurr == NERROR ) {
+			printf("NERROR\n");
 			return NERROR;
+		}
 		else {
 			zperr ( "Sync Error", TRUE );
 			return NERROR;
@@ -246,22 +258,23 @@ int wcgetsec ( char * rxbuf, int maxtime )
 		if ( opabort() )
 			return NERROR;
 
-		if ( ( firstch = readline ( maxtime ) ) == STX ) {
-			Blklen = KSIZE;
-			goto get2;
-		}
+		firstch = readline ( maxtime );
+		
+		if ( firstch == STX || firstch == SOH) {
 
-		if ( firstch == SOH ) {
-			Blklen = SECSIZ;
-get2:
-			sectcurr = readline ( INTRATIME );
-
-			if ( ( sectcurr + ( oldcrc = readline ( INTRATIME ) ) ) == Wcsmask ) {
+			Blklen = (firstch == STX) ? KSIZE : SECSIZ;
+			sectcurr = readline ( INTRATIME );			
+			oldcrc = readline ( INTRATIME );
+			
+			if ( ( sectcurr + oldcrc ) == Wcsmask ) {
+				printf("sectcurr = %x %x %x\n", firstch, sectcurr, oldcrc);
 				oldcrc = checksum = 0;
 
 				for ( p = rxbuf, wcj = Blklen; --wcj >= 0; ) {
-					if ( ( firstch = readline ( INTRATIME ) ) < 0 )
+					if ( ( firstch = readline ( INTRATIME ) ) < 0 ) {
+						printf("firstch 1 = %d\n", firstch);
 						goto bilge;
+					}
 
 					oldcrc = updcrc ( firstch, oldcrc );
 					checksum += ( *p++ = firstch );
@@ -273,18 +286,22 @@ get2:
 				if ( Crcflag ) {
 					oldcrc = updcrc ( firstch, oldcrc );
 
-					if ( ( firstch = readline ( INTRATIME ) ) < 0 )
+					if ( ( firstch = readline ( INTRATIME ) ) < 0 ) {
+						printf("firstch 2 = %d\n", firstch);
 						goto bilge;
-
+					}
+					
 					oldcrc = updcrc ( firstch, oldcrc );
 
 					if ( oldcrc & 0xFFFF )
 						zperr ( "CRC Error", TRUE );
 					else {
 						Firstsec = FALSE;
+						printf("first false\n");
 						return sectcurr;
 					}
 				} else if ( ( ( checksum - firstch ) &Wcsmask ) == 0 ) {
+					printf("checksum ret\n");
 					Firstsec = FALSE;
 					return sectcurr;
 				} else
@@ -293,9 +310,12 @@ get2:
 				zperr ( "Block nr garbled", TRUE );
 		}
 		/* make sure eot really is eot and not just mixmash */
-		else if ( firstch == EOT && readline ( 10 ) == TIMEOUT )
+		else if ( firstch == EOT && readline ( 10 ) == TIMEOUT ) {
+			printf("eot\n");
 			return WCEOT;
+		}
 		else if ( firstch == CAN ) {
+			printf("firstch 3 = %d\n", firstch);
 			if ( Lastrx == CAN ) {
 				zperr ( "Sender CANcelled", TRUE );
 				return NERROR;

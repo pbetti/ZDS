@@ -31,6 +31,7 @@
 ; 20150714 - Changed to have timeouts on floppy operations that could
 ;            produce system locks. (I.e. in absence of floppy in drive)
 ; 20150714 - Modified to implement serial XON/XOFF and RTS/CTS
+; 20180216 - New 32kB monitor (8 * 4kB pages)
 ; ---------------------------------------------------------------------
 
 ; ---------------------------------------------------------------------
@@ -46,10 +47,10 @@
 ;	+-----------------+
 ;	+    SysCommon    +   <-- Resident portion. Common to all images
 ;	+   FC00 - FFFF   +
-;	+-----------------+
-;	+-----------------+   +-----------------+   +-----------------+
-;	+     SysBios     +   +   BootMonitor   +   +     [Other]     +
-;	+   F000 - FBFF   +   +   F000 - FBFF   +   +   F000 - FBFF   +
+;	+-----------------+                           +-----------------+
+;	+-----------------+   +-----------------+   +-+     [Other]     +
+;	+     SysBios     +   +   BootMonitor   +   + +   F000 - FBFF   +
+;	+   F000 - FBFF   +   +   F000 - FBFF   +   + +-----------------+
 ;	+-----------------+   +-----------------+   +-----------------+
 ;
 ;	         ^                     ^                     ^
@@ -85,12 +86,12 @@ include services.inc.asm
 ; External symbols
 	extern	bbconout, bbconin, bbconst
 	extern	bbcrtcini, bbcrtfill, bbcurset, bbsetcrs
-	extern	bbfread, bbfhome, bbcpmboot
+	extern	bbfread, bbfhome
 	extern	bbhdinit, bbdriveid, bbu0ini, bbu1ini
 	extern	bbuplchr, bbpsndblk, bbprcvblk
-	extern	bbprnchr, bbrdvdsk, bbuziboot
- 	extern	bbsetdsr, bbgetdsr, bbbooter
- 	extern	bbeidck, bbldpart, bbsysint
+	extern	bbprnchr, bbrdvdsk
+ 	extern	bbsetdsr, bbgetdsr
+ 	extern	bbeidck, bbldpart, bbsysint, bbsysmon
 
  	extern	bbdsksel, bbdmaset, bbtrkset, bbsecset, bbhdrd
 
@@ -217,7 +218,7 @@ bnktohpag:
  	; NOW prior to go on we must place BIOS images in ram
 
 	ld	a,(hmempag)		; highest ram page
-	ld	e,4			; # of pages
+	ld	e,bbnpages		; # of pages
 	sub	e
 	ld	d,bbimgp		; base sysbios page
 shdwpag:
@@ -240,7 +241,7 @@ shdwpag:
 shdwdone:
 	ld	b,bbpag << 4		; put bootmonitor to final place
 	ld	a,(hmempag)		; highest ram page
-	sub	4
+	sub	bbnpages
 	out	(c),a
 	jp	onshadow		; jump to shadow
 
@@ -300,12 +301,11 @@ shlogo:
  	call	print
  	call	bbnksiz			; tell how many memory
 	;
-	ld	h,11
-	ld	l,inicol
+	ld	hl,(11<<8)+inicol
 	call	bbsetcrs
  	call	bbhdinit		; IDE init
 	or	a
-	jr	nz,ideinok
+	jr	nz,ideinok		; error or none
  	call	bbdriveid
 	or	a
 	jr	nz,ideinok
@@ -328,11 +328,14 @@ shlogo:
 	call	mmpmap			; mount it
 	jr	ideiok
 ideinok:
+	ld	hl,mndrv
+	cp	idenone			; drive present?
+	jr	z,ideinokp
 	ld	hl,mnot
+ideinokp:
 	call	print
 ideiok:
-	ld	h,12
-	ld	l,inicol
+	ld	hl,(12<<8)+inicol
 	call	bbsetcrs
 	ld	a,u0defspeed		; uart 0 init
 	ld	(uart0br),a
@@ -340,8 +343,7 @@ ideiok:
 	call	dsustat
 	call	inline
 	defb	"16x550 0",0
-	ld	h,13
-	ld	l,inicol
+	ld	hl,(13<<8)+inicol
 	call	bbsetcrs
 	ld	a,u1defspeed		; uart 1 init
 	ld	(uart1br),a
@@ -350,8 +352,7 @@ ideiok:
 	call	inline
 	defb	"16x550 1",0
 	;
-	ld	h,14
-	ld	l,inicol
+	ld	hl,(14<<8)+inicol
 	call	bbsetcrs
 	call	bbeidck
 	ld	b,a			; temp save
@@ -379,8 +380,7 @@ gotetype:
 islckd:	ld	hl,mprof
 isprog:	call	print
 	; rtc
-	ld	h,15
-	ld	l,inicol
+	ld	hl,(15<<8)+inicol
 	call	bbsetcrs
 	ld	d,055h			; set test value
 	ld	e,DSR_SCRATCH
@@ -447,7 +447,8 @@ dbootm:
 	ld	c,cron
 	call	bbconout
 	call	outcrlf
-	call	bbbooter
+	ld	c,SM_USERBOOT
+	call	bbsysmon
 	jp	ucprompt
 
 ;;
@@ -463,15 +464,13 @@ autobot:
 	jr	z,doab			; yes
 ab01:
 	call	pfunlin			; prepare menu
-	ld	h,21			; no, wait for user
-	ld	l,0
+	ld	hl,(21<<8)+0		; no, wait for user
 	call	bbsetcrs
 	call	inline
 	defb	"Invalid setup, jump to monitor in ",0
 	ld	b,mondelay		; auto jump
 ab00:
-	ld	h,21			; no, wait for user
-	ld	l,34
+	ld	hl,(21<<8)+34		; no, wait for user
 	call	bbsetcrs
 	ld	h,0
 	ld	l,b
@@ -504,14 +503,12 @@ doab:
 	cp	d			; 0 = disabled
 	jr	nz,doab1
 	call	dfunlin
-	ld	h,19			; prepare for prompt
-	ld	l,0
+	ld	hl,(19<<8)+0		; prepare for prompt
 	call	bbsetcrs
 	jp	ugreetnc
 doab1:
 	call	pfunlin			; prepare menu
-	ld	h,21			; autoboot
-	ld	l,0
+	ld	hl,(21<<8)+0		; autoboot
 	call	bbsetcrs
 	call	inline
 	defb	"Boot ",0
@@ -542,7 +539,8 @@ doab1:
 	call	bbconout
 	call	enautor
 	ld	a,d
-	call	bbcpmboot
+	ld	c,SM_CPMBOOT
+	call	bbsysmon
 	jp	ab01
 
 bpart:
@@ -560,7 +558,8 @@ bpart:
 	ld	c,cron
 	call	bbconout
 	call	enautor
-	call	bbuziboot
+	ld	c,SM_UZIBOOT
+	call	bbsysmon
 	jp	ab01
 
 brom:
@@ -642,8 +641,7 @@ btdly0:
 pfunlin:
 	ld	c,crof
 	call	bbconout
-	ld	h,24
-	ld	l,0
+	ld	hl,(24<<8)+0
 	call	bbsetcrs
 	ld	c,ceol
 	call	bbconout
@@ -673,8 +671,7 @@ pfunlin:
 ;; delete function select line
 ;;
 dfunlin:
-	ld	h,24			; and clear func line
-	ld	l,0
+	ld	hl,(24<<8)+0		; and clear func line
 	call	bbsetcrs
 	ld	c,ceol
 	call	bbconout
@@ -753,8 +750,7 @@ bbnksiz1:
 	add	hl,de
 	djnz	bbnksiz1
 	push	hl
-	ld	h,9
-	ld	l,inicol
+	ld	hl,(9<<8)+inicol
 	call	bbsetcrs
 	pop	hl
 	ld	c,SI_B2D
@@ -762,8 +758,7 @@ bbnksiz1:
 	call	bbsysint
 	call	inline
 	defb	'k',0
-	ld	h,10			; rom (fake)
-	ld	l,inicol
+	ld	hl,(10<<8)+inicol	; rom (fake)
 	call	bbsetcrs
 	call	inline
 	defb	"256k",0
@@ -1140,6 +1135,7 @@ bdnxt:	ld	a,e
 	ld	c,a
 	call	bbconout
 	djnz	bdnxt
+	call	bbconin
 	pop	de
 	ret
 ;;
@@ -1511,11 +1507,12 @@ mtx:	defb	"Tx",' ',0
 mrx:	defb	"Rx",' ',0
 mfol:	defb	':',' ',0
 mnot:	defb	"fail",0
+mndrv:	defb	"none",0
 mrdy:	defb	"ok",' ',0
 mpron:	defb	"un"
 mprof:	defb	"locked",0
 mepee:	defb	"29EE020",' ',0
-mepxe:	defb	"29xE020",' ',0
+mepxe:	defb	"29XE020",' ',0
 mepc:	defb	"29C020",' ',0
 mepuns:	defb	"Unsupported",' ',0
 msysres:

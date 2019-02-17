@@ -51,6 +51,26 @@ bbjbnk_3 macro	raddr
 	defw	raddr
 endm
 
+bbjbnk_4 macro	raddr
+	call	bbexec4
+	defw	raddr
+endm
+
+bbjbnk_5 macro	raddr
+	call	bbexec5
+	defw	raddr
+endm
+
+bbjbnk_6 macro	raddr
+	call	bbexec6
+	defw	raddr
+endm
+
+bbjbnk_7 macro	raddr
+	call	bbexec7
+	defw	raddr
+endm
+
 ;-------------------------------------
 
 	cseg
@@ -73,19 +93,19 @@ syscom:
 	public	bbu0ini, bbu1ini, sconout, sconin
 	public	sconst, bbu1rx, bbu1tx, bbu1st
 	public	bbsetcrs, bbgetcrs, bbdbox
+	public	bbwrtime, bbrdtime, bbsetdsr, bbgetdsr
 
 	; SYSBIOS2
 	public	bbfwrite, bbflopio, bbfhome, bbfread
-	public	bbsidset, bbfdrvsel, bbdprmset
+	public	bbsidset, bbdprmset
 
 	public	bbwrvdsk, bbuplchr, bbrdvdsk, bbpsndblk
 	public	bbprcvblk, bbprnchr
 
 	public	bbtrkset, bbsecset, bbdmaset, bbdsksel
-	public	bbcpmboot, bbuziboot, bbbooter
+	public	bbfdrvsel
 
 	public	bbdiv16, bbmul16, bboffcal
-	public	bbwrtime, bbrdtime, bbsetdsr, bbgetdsr
 	public	bbeidck
 
 	public	bbhdinit, bbdriveid, bbhdgeo, bbmvpart
@@ -93,6 +113,8 @@ syscom:
 
 	; SYSBIOS3
 	public	bbsysint
+	; SYSBIOS4
+	public	bbsysmon
 
 	; Resident routines
 	public	delay, mmpmap, mmgetp, bbconst
@@ -135,7 +157,6 @@ bbconou2:	bbjbnk_1 vconou2
 bbgetcrs:	bbjbnk_1 getcpos
 bbsetcrs:	bbjbnk_1 setcpos
 bbdbox:		bbjbnk_1 dbox
-
 bbpsndblk:	bbjbnk_2 psndblk
 bbuplchr:	bbjbnk_2 uplchr
 bbprcvblk:	bbjbnk_2 prcvblk
@@ -146,15 +167,12 @@ bbfread:	bbjbnk_2 fread
 bbfwrite:	bbjbnk_2 fwrite
 bbflopio:	bbjbnk_2 flopio
 bbprnchr:	bbjbnk_2 prnchr
-bbwrtime:	bbjbnk_2 wrtime
-bbrdtime:	bbjbnk_2 rdtime
+bbwrtime:	bbjbnk_1 wrtime
+bbrdtime:	bbjbnk_1 rdtime
 bbtrkset:	bbjbnk_2 trkset
 bbsecset:	bbjbnk_2 secset
 bbdmaset:	bbjbnk_2 dmaset
 bbdsksel:	bbjbnk_2 dsksel
-bbcpmboot:	bbjbnk_2 cpmboot
-bbuziboot:	bbjbnk_2 uziboot
-bbbooter:	bbjbnk_2 booter
 bbsidset:	bbjbnk_2 sidset
 bbfdrvsel:	bbjbnk_2 fdrvsel
 bbdiv16:	bbjbnk_2 div16
@@ -168,16 +186,35 @@ bbhdgeo:	bbjbnk_2 gethdgeo
 bbldpart:	bbjbnk_2 getptable
 bbdprmset:	bbjbnk_2 setdprm
 bbeidck:	bbjbnk_2 eidcheck
-bbsetdsr:	bbjbnk_2 setdsr
-bbgetdsr:	bbjbnk_2 getdsr
+bbsetdsr:	bbjbnk_1 setdsr
+bbgetdsr:	bbjbnk_1 getdsr
 bbmvpart:	bbjbnk_2 moveptable
-
 bbsysint:	bbjbnk_3 sysint
+bbsysmon:	bbjbnk_4 sysmon
+bbsysext:	bbjbnk_5 sysext
+bbsysfn1:	bbjbnk_6 sysfn1
+bbsysfn2:	bbjbnk_7 sysfn2
 
 ;;
 ;; Switch bank and jump
 ;;
 
+bbexec7:
+	ex	af,af'			; save af
+	ld	a,7			; bank 7
+	jr	bbexec
+bbexec6:
+	ex	af,af'			; save af
+	ld	a,6			; bank 6
+	jr	bbexec
+bbexec5:
+	ex	af,af'			; save af
+	ld	a,5			; bank 5
+	jr	bbexec
+bbexec4:
+	ex	af,af'			; save af
+	ld	a,4			; bank 4
+	jr	bbexec
 bbexec3:
 	ex	af,af'			; save af
 	ld	a,3			; bank 3

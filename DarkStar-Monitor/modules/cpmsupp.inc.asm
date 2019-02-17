@@ -15,53 +15,31 @@
 
 	extern	bbhdinit, bbldpart, bbsysint
 	extern	bbuziboot, bbconin, bbconout
-
-;;
-;; FDRVSEL - select drive for r/w ops
-;
-fdrvsel:
-	push	af			; save regs
-	push	bc
-
-	ld	a,(fdrvbuf)		; load drive #
-	ld	b,a
-	inc 	b			; on b (+1 for loop)
-	xor	a
-	scf
-fdrvs0:
-	rla				; rotate to get
-	djnz	fdrvs0			; drive id
-
-	ld	b,a			; save on b
-	ld	a,(dselbf)		; current select
-	and	11110000b		; reset current id
-	or	b			; and replace with new
-	ld	(dselbf),a		; update current
-	out	(fdcdrvrcnt),a		; activate selection
-
-	pop	bc
-	pop	af
-	ret
+	extern	bbdprmset, bbtrkset, bbdsksel
+	extern	bbfdrvsel, bbfhome, bbdmaset
+	extern	bbsecset, bbfread, bbrdvdsk
+	extern	bbhdrd, bbhdrd, bbhdinit
+	extern	bbldpart
 
 ;;
 ;; CPMBOOT - boostrap cp/m
 ;
 flpboot:
 	ld	de,512
-	call	setdprm
+	call	bbdprmset
 	ld	bc,$00
-	call	trkset
+	call	bbtrkset
 	ld	a,(cdisk)		; get logged drive
 	ld	c,a
-	call	dsksel
-	call	fdrvsel
-	call	fhome
+	call	bbdsksel
+	call	bbfdrvsel
+	call	bbfhome
 	ret	nz
 	ld	bc,bldoffs		; read in loader
-	call	dmaset
+	call	bbdmaset
 	ld	bc,$01
-	call	secset
-	call	fread
+	call	bbsecset
+	call	bbfread
 	ret	nz
 	jp	bldoffs+2		; jump to the loader if all ok
 
@@ -72,27 +50,27 @@ flpboot:
 ;
 vcpmbt:
 	ld	bc, bldoffs          	; base transfer address
-	call	dmaset
+	call	bbdmaset
 	ld	a,(cdisk)		; get logged drive
 	ld	c, a			; make active
-	call	dsksel
+	call	bbdsksel
 	ld	bc, 0			; START TRACK
-	call	trkset
+	call	bbtrkset
 	ld	bc, 1			; start sector
-	call	secset
+	call	bbsecset
 	ld	de,128
-	call	setdprm
-	call	vdskrd			; perform i/o 128
+	call	bbdprmset
+	call	bbrdvdsk		; perform i/o 128
 	or	a
 	jr	z,vbgo
 	ld	de,256
-	call	setdprm
-	call	vdskrd			; perform i/o 256
+	call	bbdprmset
+	call	bbrdvdsk		; perform i/o 256
 	or	a
 	jr	z,vbgo
 	ld	de,512
-	call	setdprm
-	call	vdskrd			; perform i/o 512
+	call	bbdprmset
+	call	bbrdvdsk		; perform i/o 512
 	or	a
 	jr	z,vbgo
 	ret				; bad
@@ -105,14 +83,14 @@ vbgo:
 hdcpm:
 	ld	a,(cdisk)		; get logged drive
 	ld	c,a
-	call	dsksel
+	call	bbdsksel
 	ld	bc,bldoffs		; read in loader @ BLDOFFS
-	call	dmaset
+	call	bbdmaset
 	ld	bc,$00
-	call	trkset
+	call	bbtrkset
 	ld	bc,$00
-	call	secset
-	call	readsector
+	call	bbsecset
+	call	bbhdrd
 	ld	d,0			; error type (no volume)
 	ret	nz
 	ld	de,(hdbsig)		; check for a valid bootloader
@@ -127,19 +105,6 @@ hdcpm:
 hdbsig:	defb	$55,$aa
 
 
-trkset:
-	ld	(ftrkbuf),bc
-	ret
-secset:
-	ld	(fsecbuf),bc
-	ret
-dmaset:
-	ld	(frdpbuf),bc
-	ret
-dsksel:
-	ld	a,c
-	ld	(fdrvbuf),a
-	ret
 
 ;;
 ;; Handle CP/M type bootstrap
@@ -148,11 +113,11 @@ dsksel:
 ;;
 
 cpmboot:
-	push	af
 	ld	c,02h			; reset input case
 	call	bbconout
-	pop	af
+	ld	a,(asav)
 
+cpmdboot:
 	cp	'A'			; is  a valid drive ?
 	jp	m,drvidw		; no < A
 	cp	'Q'
@@ -204,8 +169,8 @@ drvidw:
 ;; Handle manual bootstrap
 ;;
 booter:
-	call	hdinit
-	call	getptable		; load partition table
+	call	bbhdinit
+	call	bbldpart		; load partition table
 	call	inline
 	defb	01h,"CP/M or UZI boot (C/U) ? ",0
 	ld	c,SI_EDIT
@@ -236,7 +201,7 @@ bmcpm:
 	call	inline
 	defb	cr,lf,"Boot..",cr,lf,0
 	ld	a,(iedtbuf)
-	call	cpmboot
+	call	cpmdboot
 	ret
 
 bmuzi:
@@ -248,7 +213,7 @@ bmuzi:
 	call	bbsysint
 	or	a
 	jp	nz,bminv
-	call	uziboot
+	call	uzidboot
 	ret
 
 

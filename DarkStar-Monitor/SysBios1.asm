@@ -54,6 +54,7 @@ include modules/consoleio.inc.asm	; 6545 crtc and console io
 include modules/genio.inc.asm		; z80 pio on lx529
 include modules/kbd.inc.asm		; keyboard
 include modules/uartctc.inc.asm		; 16c550 and Z80CTC
+include modules/clock.inc.asm		; ds1302
 
 
 sysb1lo:

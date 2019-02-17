@@ -15,6 +15,7 @@
 ;; Handle UZI type bootstrap
 ;;
 uziboot:
+uzidboot:
 	ld	c,02h			; reset input case
 	call	bbconout
 	call	inline

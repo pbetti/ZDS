@@ -1451,8 +1451,6 @@ mtnxt:	ld	a,(hl)
 	call	nz,mterr
 	pop	af
 	ld	(hl),a
-; 	call	chkeor
-; 	jr	c,etpage
 	or	a
 	sbc	hl,de
 	add	hl,de
@@ -1467,12 +1465,7 @@ mterr:
 	exx
 	ld	e,BD_ZERO
 	call	bin2dec
-; 	call	h2anib
-; 	call	spacer
 	exx
-; 	ld	e,a
-; 	call	crlfh2ab
-; 	call	bindisp
 	jr	etexi
 etpage:
 	pop	de
@@ -1504,9 +1497,7 @@ etprpg:
 etprpg1:
 	add	hl,de
 	djnz	etprpg1
-; 	ld	c,SI_B2D
 	ld	e,BD_ZERO
-; 	call	bbsysint
 	call	bin2dec
 	ld	c,cr
 	call	bbconout

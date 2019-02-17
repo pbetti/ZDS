@@ -30,6 +30,7 @@
 ; 20150714 - Modified to implement serial XON/XOFF and RTS/CTS
 ; 20170331 - Fixed uart1 isr routine
 ; 20180831 - v3.8.1 modifying for 4.0.0
+; 20190213 - v4.0.1 dual ide support
 ; ---------------------------------------------------------------------
 
 ; ---------------------------------------------------------------------
@@ -86,7 +87,7 @@ mzmac	equ	1
 ;
 ; Monitor version numbers (major.minor.subrel)
 ;
-monmaj		equ	'4'
+monmaj		equ	'5'
 monmin		equ	'0'
 subrel		equ	'0'
 
@@ -164,8 +165,8 @@ cnfbyte		equ	timrcon-1	; config byte
 					;         3: 0 = unused/reserved
 					;         4: 0 = unused/reserved
 					;         5: 0 = unused/reserved
-					;         6: 0 = unused/reserved
-					;         7: 0 = unused/reserved
+					;         6: 1 = IDE slave failure
+					;         7: 0 = single IDE		1 = Dual IDE 
 fifosto		equ	000fh		; fifo queues storage start
 fifsize		equ	16		; fifo queue lenght
 fifblok		equ	fifsize+3	; fifo queue size
@@ -422,6 +423,10 @@ cmdinit		equ	091h
 cmdid		equ	0ech
 cmdspindown	equ	0e0h
 cmdspinup	equ	0e1h
+;IDE init status (hdinit)
+idemserror	equ	0ffh
+ideready	equ	000h
+idenone		equ	002h
 ; -- 16C550 UARTS --
 uart0base	equ	0c0h		; Port base address for 0
 uart1base	equ	0c8h		; Port base address for 1
@@ -510,14 +515,13 @@ eerineprom	equ	80h		; tried to program eeprom running inside it
 ; Memory is organized as follow:
 ;
 ;	Slot 1	-> RAM	  -> 512k from 00000h to 7ffffh (mandatory)
-;	Slot 2	-> RAM	  -> 128k from 80000h to 9ffffh (option 1)
-;	Slot 2	-> RAM    -> 256k from 80000h to bffffh (option 2)
+;	Slot 2	-> RAM    -> 256k from 80000h to bffffh (option)
 ;	Slot 3	-> EEPROM -> 256k from c0000h to fffffh (mandatory)
 ;
 
 ;*************************************
 ; Production / Testing
-bbdebug		equ	false
+bbdebug		equ	true
 ;*************************************
 
 ;-------------------------------------
@@ -538,10 +542,8 @@ bbpag		equ	0fh		; Base page location
 endif
 
 trnpag		equ	0dh		; Page used for transient MMU ops
-bbbase		equ	bbpag << 12	; non resident base address
-bbcomn		equ	bbbase + 0c00h	; resident portion address
-
-; sysbase 	equ	bbbase		; use this to have 60K TPA
-; sysbase 	equ	bbcomn		; use this to have 63K TPA
+bbbase		equ	bbpag << 12	; non resident base address (60K tpa)
+bbcomn		equ	bbbase + 0c00h	; resident portion address  (63K tpa)
+bbnpages	equ	8		; 8 4kB pages. 32kB monitor size
 
 ;-------------------------------------

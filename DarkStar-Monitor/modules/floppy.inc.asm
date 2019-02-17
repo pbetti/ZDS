@@ -228,5 +228,52 @@ sidset:
 sidone:
 	set	5,(hl)			;
 	ret
+;;
+;; common disk i/o follow
+;;
+
+;;
+;; FDRVSEL - select drive for r/w ops
+;
+fdrvsel:
+	push	af			; save regs
+	push	bc
+
+	ld	a,(fdrvbuf)		; load drive #
+	ld	b,a
+	inc 	b			; on b (+1 for loop)
+	xor	a
+	scf
+fdrvs0:
+	rla				; rotate to get
+	djnz	fdrvs0			; drive id
+
+	ld	b,a			; save on b
+	ld	a,(dselbf)		; current select
+	and	11110000b		; reset current id
+	or	b			; and replace with new
+	ld	(dselbf),a		; update current
+	out	(fdcdrvrcnt),a		; activate selection
+
+	pop	bc
+	pop	af
+	ret
+
+trkset:
+	ld	(ftrkbuf),bc
+	ret
+secset:
+	ld	(fsecbuf),bc
+	ret
+dmaset:
+	ld	(frdpbuf),bc
+	ret
+dsksel:
+	ld	a,c
+	ld	(fdrvbuf),a
+	ret
+
+;; -- EOF
+
 
 

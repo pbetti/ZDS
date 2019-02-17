@@ -7,6 +7,11 @@
 ;
 ; IDE Interface on Multif-Board (8255)
 ; ---------------------------------------------------------------------
+; ---------------------------------------------------------------------
+;
+; 20190211 - Dual drive support, some minor fixes
+;
+;......................................................................
 
 ;
 ;
@@ -21,14 +26,21 @@
 ;  bit 0: ERR	1=error occured
 ;
 
+IS_BSY		equ	7
+IS_RDY		equ	6
+IS_DF		equ	5
+IS_DSC		equ	4
+IS_DRQ		equ	3
+IS_COR		equ	2
+IS_IDX		equ	1
+IS_ERR		equ	0
+
 idbufr		equ	trnpag << 12
 hretries	equ	5
 signsize	equ	8
 entrysize	equ	8
 ptblsize	equ	15
 
-	; TODO: All routines here are written for a single drive system,
-	;       had to be revised...
 
 parrcrd	macro				; partition table record format
 	defb	0			; active
@@ -69,11 +81,36 @@ partbl:					; local copy of the partition table
 		parrcrd			; ... entry 15
 signstring:	defb	"AUAUUAUA"	; signature string
 
+; 
 
+;;
+;; M/S select
+;;
+
+sel_master:
+	ld	d,11100000b		; data for IDE SDH reg (512 bytes, LBA mode, master drive, head 0)
+sel_ms:
+	ld	e,regshd
+	call	idewr8d
+	ret
+
+sel_slave:
+	ld	d,11110000b		; data for IDE SDH reg (512 bytes, LBA mode, slave drive, head 0)
+	jr	sel_ms
+	
 ;;
 ;; Initialize interface
 ;;
 hdinit:
+	call	sel_master
+	ld	e,regstatus		; get status after initilization
+	call	iderd8d			; check status
+	ld	a,d
+	and	11100000b
+	cp	11100000b		; nothing connected
+	ld	a,2			; signal no drive and ret
+	ret	z
+	
 	ld	a,readcfg8255		; 10010010b
 	out	(ideportctrl),a		; config 8255 chip, READ mode
 
@@ -81,25 +118,24 @@ hdinit:
 	out	(ideportc),a		; hard reset the disk drive
 
 	ld	b,$20			; tunable
-hdresdly:
+hdresdly0:
 	dec	b
-	jr	nz,hdresdly		; delay (reset pulse width)
+	jr	nz,hdresdly0		; delay (reset pulse width)
 
 	xor	a
 	out	(ideportc),a		; no IDE control lines asserted
-	ld	de,32
+
+	ld	de,32			; wait drive normal init
 	call	delay			; pause 32 ms.
 
-	ld	d,11100000b		; data for IDE SDH reg (512 bytes, LBA mode, single drive, head 0)
-	ld	e,regshd
-	call	idewr8d
-
 	ld	b,$ff			; tunable
-hdwaitini:
+hdwaitini0:
+	call	sel_master		; wait longer (disc speed up)
 	ld	e,regstatus		; get status after initilization
 	call	iderd8d			; check status
-	bit	7,d
-	jp	z,doneinit		; return if ready bit is zero
+	bit	IS_BSY,d
+	jr	z, hdinitslave		; master ok, try for slave
+
 
 	;Delay to allow drive to get up to speed
 	push	bc			; (the 0FFH above)
@@ -112,13 +148,62 @@ delay1:	dec	d			; to speed
 	or	b
 	jp	nz,delay2
 	pop	bc
-	djnz	hdwaitini
+	djnz	hdwaitini0
 	xor	a			; flag error on return
 	dec	a
 	ret
-doneinit:
+
+hdinitslave:
+	call	sel_slave
+	ld	e,regstatus		; get status after initilization
+	call	iderd8d			; check status
+	ret	z			; got "00000000" if not present
+	
+; 	ld	a,readcfg8255		; 10010010b
+; 	out	(ideportctrl),a		; config 8255 chip, READ mode
+; 
+; 	ld	a,iderstline
+; 	out	(ideportc),a		; hard reset the disk drive
+; 
+; 	ld	b,$20			; tunable
+; hdresdly1:
+; 	dec	b
+; 	jr	nz,hdresdly1		; delay (reset pulse width)
+; 
+; 	xor	a
+; 	out	(ideportc),a		; no IDE control lines asserted
+
+	ld	de,32			; wait drive normal init
+	call	delay			; pause 32 ms.
+
+	ld	b,$ff			; tunable
+hdwaitini1:
+	call	sel_slave		; wait longer (disc speed up)
+	ld	e,regstatus		; get status after initilization
+	call	iderd8d			; check status
+	bit	IS_BSY,d
+	jr	nz,hddelay1		; return if ready bit is zero
+	ld	hl,cnfbyte
+	set	7,(hl)			; signal 2nd drive
 	ret
 
+	;Delay to allow drive to get up to speed
+hddelay1:
+	push	bc			; (the 0FFH above)
+	ld	bc,$ffff
+delay21:ld	d,2			; may need to adjust delay time to allow cold drive to
+delay11:dec	d			; to speed
+	jp	nz,delay11
+	dec	bc
+	ld	a,c
+	or	b
+	jp	nz,delay21
+	pop	bc
+	djnz	hdwaitini1
+	ld	hl,cnfbyte
+	set	7,(hl)			; signal 2nd drive
+	set	6,(hl)			; signal 2nd drive failure
+	ret
 
 ;;
 ;; Get drive identification block

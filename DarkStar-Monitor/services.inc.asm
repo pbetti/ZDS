@@ -8,12 +8,13 @@
 ; ---------------------------------------------------------------------
 ; Revisions:
 ; 20180831 - Created
+; 20190217 - multi service routines
 ; ---------------------------------------------------------------------
 ;
-; This include specifiy service ids for sysint routine on bank 3
+; This include specifiy service ids for sysxxx routine on bank > 2
 ;
 ;
-; --- service list ------------------------------
+; --- sysint service list -----------------------
 SI_LOGO		equ	1
 SI_EFFECT	equ	2
 SI_MEMTEST	equ	3
@@ -23,6 +24,11 @@ SI_ROMRUN	equ	6
 SI_B2D		equ	7
 SI_SETUP	equ	8
 SI_ROMBOOT	equ	9
+
+; --- sysmon service list -----------------------
+SM_CPMBOOT	equ	1
+SM_UZIBOOT	equ	2
+SM_USERBOOT	equ	3
 
 ; --- effect list -------------------------------
 EF_BLNKON	equ	0

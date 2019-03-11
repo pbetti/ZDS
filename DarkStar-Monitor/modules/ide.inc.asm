@@ -55,14 +55,35 @@ parrcrd	macro				; partition table record format
 dsk0cyls:	defw	0		; For IDE disk 0 or master
 dsk0heads:	defw	0
 dsk0sectors:	defw	0
+dsk1cyls:	defw	0		; For IDE disk 1 or slave
+dsk1heads:	defw	0
+dsk1sectors:	defw	0
 ptstart:	defw	0
 ptend:		defw	0
 idtsav:		defb	0		; page # save
 inretry:	defb	0		; retry on r/w errors
+hdrvlog:	defb	0		; selected drive for operations
 	; This are partition management
 hdlog:		defb	$ff		; logged drive
 tbloaded:	defb	0		; flag partition loaded
-partbl:					; local copy of the partition table
+partbl0:				; local copy of the partition table drive 0
+		parrcrd			; entry 0 ...
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd
+		parrcrd			; ... entry 15
+partbl1:				; local copy of the partition table drive 1
 		parrcrd			; entry 0 ...
 		parrcrd
 		parrcrd
@@ -97,6 +118,19 @@ sel_ms:
 sel_slave:
 	ld	d,11110000b		; data for IDE SDH reg (512 bytes, LBA mode, slave drive, head 0)
 	jr	sel_ms
+
+loghdrv:
+	push	hl
+	ld	hl,hdrvlog
+	ld	(hl),d
+	pop	hl
+	ret
+	
+sel_logged_drive:
+	ld	a,(hdrvlog)
+	or	a
+	jr	z,sel_master
+	jr	sel_slave
 	
 ;;
 ;; Initialize interface
@@ -157,24 +191,10 @@ hdinitslave:
 	call	sel_slave
 	ld	e,regstatus		; get status after initilization
 	call	iderd8d			; check status
-	ret	z			; got "00000000" if not present
+	ld	a,d
+	or	a
+; 	ret	z			; got "00000000" if not present
 	
-; 	ld	a,readcfg8255		; 10010010b
-; 	out	(ideportctrl),a		; config 8255 chip, READ mode
-; 
-; 	ld	a,iderstline
-; 	out	(ideportc),a		; hard reset the disk drive
-; 
-; 	ld	b,$20			; tunable
-; hdresdly1:
-; 	dec	b
-; 	jr	nz,hdresdly1		; delay (reset pulse width)
-; 
-; 	xor	a
-; 	out	(ideportc),a		; no IDE control lines asserted
-
-	ld	de,32			; wait drive normal init
-	call	delay			; pause 32 ms.
 
 	ld	b,$ff			; tunable
 hdwaitini1:
@@ -221,6 +241,7 @@ driveid:
 	call	idewaitnotbusy
 	jr	c,idrnok
 
+	call	sel_logged_drive
 	ld	d,cmdid
 	ld	e,regcommand
 	call	idewr8d			; issue the command
@@ -241,6 +262,7 @@ driveid:
 	ld	b,3			; # of retrys
 idretry:
 	push	bc
+	call	sel_logged_drive
 	call	idewaitnotbusy
 	jr	c,idrnok
 
@@ -285,22 +307,37 @@ rsidbuf:
 ;; Save disk geometry
 ;;
 savegeo:
+	push	iy
+	push	af
+	ld	a,(hdrvlog)
+	or	a
+	jr	nz,geo1
 	; TODO: should work also for slave
+	ld	iy,dsk0cyls	
+	jr	ggeo
+geo1:	
+	ld	iy,dsk1cyls	
+ggeo:
+	pop	af
 	ld	hl,idbufr + 2		; cyls
 	ld	c,(hl)
 	inc	hl
 	ld	b,(hl)
-	ld	(dsk0cyls), bc
+	ld	(iy+0), c
+	ld	(iy+1), b
 	ld	hl,idbufr + 6		; heads
 	ld	c,(hl)
 	inc	hl
 	ld	b,(hl)
-	ld	(dsk0heads), bc
+	ld	(iy+2), c
+	ld	(iy+3), b
 	ld	hl,idbufr + 12		; sectors
 	ld	c,(hl)
 	inc	hl
 	ld	b,(hl)
-	ld	(dsk0sectors), bc
+	ld	(iy+4), c
+	ld	(iy+5), b
+	pop	iy
 	ret
 
 ;;
@@ -308,18 +345,48 @@ savegeo:
 ;;
 ;; IX < cylinders, IY < heads, HL < sectors
 gethdgeo:
+	ld	a,(hdrvlog)
+	or	a
+	jr	nz,ggeo1
 	ld	ix,(dsk0cyls)
 	ld	iy,(dsk0heads)
 	ld	hl,(dsk0sectors)
 	ret
-
+ggeo1:
+	ld	ix,(dsk1cyls)
+	ld	iy,(dsk1heads)
+	ld	hl,(dsk1sectors)
+	ret
+	
+	
 ;;
 ;; Get partition table
 ;;
 getptable:
+	ld	a,(hdrvlog)		; current drive, save it
+	push	af
+	ld	d,0			; drive 0
+	call	loghdrv
+	call	dogetptable
+	ld	hl,cnfbyte
+	bit	7,(hl)			; drive 1 present?
+	jr	z,gotptab
+	ld	d,1			; drive 1
+	call	loghdrv
+	call	dogetptable
+gotptab:
+	pop	af
+	ld	(hdrvlog),a
+	ret
+dogetptable:
 	ld	hl,tmpbyte		; enable unpartitioned addressing
 	set	7,(hl)
 	ld	bc,(dsk0sectors)	; verify we know disk geometry
+	ld	a,(hdrvlog)		; m/s?
+	or	a
+	jr	z,gptable0
+	ld	bc,(dsk1sectors)
+gptable0:
 	ld	a,c
 	or	b
 	jr	nz,getot00
@@ -360,7 +427,11 @@ getot02:
 	ld	b,ptblsize		; count on table entries
 	exx
 	ld	hl,idbufr+signsize-entrysize
-	ld	de,partbl
+	ld	de,partbl0
+	ld	a,(hdrvlog)
+	or	a			; drive 0/1
+	jr	z,getot04
+	ld	de,partbl1
 getot04:
 	ld	b,entrysize
 getot07:
@@ -402,6 +473,7 @@ getpexi:
 ;; Read sector (512 bytes) from IDE
 ;;
 readsector:
+	call	sel_logged_drive	; m/s
 	call	wrlba			; tell which sector we want to read from.
 	ret	nz			; LBA error
 	call	idewaitnotbusy
@@ -466,6 +538,7 @@ unrecov:
 ;; Write a sector, specified by the 3 bytes in LBA
 ;;
 writesector:
+	call	sel_logged_drive	; m/s
 	call	wrlba			; set LBA sector
 	ret	nz			; LBA error
 	call	idewaitnotbusy		; make sure drive is ready
@@ -532,7 +605,11 @@ trkoff:
 	inc	b
 	add	a,'A'			; transform in letter
 	ld	c,a			; save on C
-	ld	iy,partbl-entrysize	; point to table, back one slot
+	ld	iy,partbl0-entrysize	; point to table 0, back one slot
+	ld	a,(hdrvlog)
+	or	a			; drive 0/1
+	jr	z,tonext
+	ld	iy,partbl1-entrysize	; point to table 0, back one slot
 tonext:	add	iy,de			; point to next
 	dec	b
 	jr	z,toferr		; not found !
@@ -607,6 +684,7 @@ idewaitnotbusy:				; drive ready if 01000000
 	ld	b,$ff
 	ld	c,$ff			; delay, must be above 80H for 4MHz Z80
 morewait:
+	call	sel_logged_drive	; m/s
 	ld	e,regstatus		; wait for RDY bit to be set
 	call	iderd8d
 	ld	a,d
@@ -629,6 +707,7 @@ idewaitdrq:
 	ld	b,$ff
 	ld	c,$ff
 moredrq:
+	call	sel_logged_drive
 	ld	e,regstatus		; wait for DRQ bit to be set
 	call	iderd8d
 	ld	a,d
@@ -648,9 +727,16 @@ donedrq:
 ;; Copy partition table at offset DE
 ;;
 moveptable:
-	ld	hl,partbl
+	push	af
+	ld	hl,partbl0
+	ld	a,(hdrvlog)
+	or	a			; drive 0/1
+	jr	z,dopmove
+	ld	hl,partbl1
+dopmove:
 	ld	bc,16*8
 	ldir
+	pop	af
 	ret
 
 ;------------------------------------------------------------------
@@ -707,4 +793,3 @@ idewr8d:
 	ret
 
 ;------------------------------------------------------------------------
-

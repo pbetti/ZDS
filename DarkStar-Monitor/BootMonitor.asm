@@ -87,7 +87,7 @@ include services.inc.asm
 	extern	bbconout, bbconin, bbconst
 	extern	bbcrtcini, bbcrtfill, bbcurset, bbsetcrs
 	extern	bbfread, bbfhome
-	extern	bbhdinit, bbdriveid, bbu0ini, bbu1ini
+	extern	bbhdinit, bbdriveid, bbu0ini, bbu1ini, bbloghdrv
 	extern	bbuplchr, bbpsndblk, bbprcvblk
 	extern	bbprnchr, bbrdvdsk
  	extern	bbsetdsr, bbgetdsr
@@ -304,29 +304,50 @@ shlogo:
 	ld	hl,(11<<8)+inicol
 	call	bbsetcrs
  	call	bbhdinit		; IDE init
+; 	or	a
+; 	jr	nz,ideinok		; error or none
+;  	call	bbdriveid
+; 	or	a
+; 	jr	nz,ideinok
+; 	ld	hl,mrdy
+; 	call	print
+; 	; get hd params from scratch
+; 	ld	b, trnpag
+; 	call	mmgetp
+; 	push	af			; save current
+; 	;
+; 	ld	a,(hmempag)		; bios scratch page (phy)
+; 	ld	b,trnpag		; transient page
+; 	call	mmpmap			; mount it
+; 	;
+; 	ld	hl,hdidbuf + 54		; drive id string is @ BLDOFFS + 54
+; 	ld	b,10			; and 20 bytes long
+; 	call	hdbufprn
+; 	pop	af			; remove scratch
+; 	ld	b,trnpag		; transient page
+; 	call	mmpmap			; mount it
+; 	jr	ideiok
+; ideinok:
+; 	ld	hl,mndrv
+; 	cp	idenone			; drive present?
+; 	jr	z,ideinokp
+; 	ld	hl,mnot
+; ideinokp:
+; 	call	print
+; ideiok:
 	or	a
 	jr	nz,ideinok		; error or none
- 	call	bbdriveid
+	; identify drv 0
+	ld	d,0			; drive 0
+	call	bbloghdrv
+ 	call	bbdriveid		; get id for master 	
 	or	a
 	jr	nz,ideinok
-	ld	hl,mrdy
+	
+	ld	hl,mrdy			; drv 0 OK
 	call	print
-	; get hd params from scratch
-	ld	b, trnpag
-	call	mmgetp
-	push	af			; save current
-	;
-	ld	a,(hmempag)		; bios scratch page (phy)
-	ld	b,trnpag		; transient page
-	call	mmpmap			; mount it
-	;
-	ld	hl,hdidbuf + 54		; drive id string is @ BLDOFFS + 54
-	ld	b,10			; and 20 bytes long
-	call	hdbufprn
-	pop	af			; remove scratch
-	ld	b,trnpag		; transient page
-	call	mmpmap			; mount it
-	jr	ideiok
+	call	printhdid		; drive model
+	jr	ideslave
 ideinok:
 	ld	hl,mndrv
 	cp	idenone			; drive present?
@@ -334,8 +355,36 @@ ideinok:
 	ld	hl,mnot
 ideinokp:
 	call	print
-ideiok:
+ideslave:
 	ld	hl,(12<<8)+inicol
+	call	bbsetcrs
+	ld	hl,cnfbyte
+	bit	7,(hl)			; drive 1 present?
+	jr	z,ide1nod		; no
+	bit	6,(hl)			; drive 1 failure?
+	jr	nz,ide1fail		; yes
+
+	ld	d,1			; drive 1
+	call	bbloghdrv
+ 	call	bbdriveid		; get id for slave 	
+	or	a
+	jr	nz,ide1fail
+	
+	ld	hl,mrdy			; drv 1 OK
+	call	print
+	call	printhdid		; drive model
+	jr	ideiok
+ide1nod:
+	ld	hl,mndrv
+	jr	ide1nokp
+ide1fail:
+	ld	hl,mnot
+ide1nokp:
+	call	print
+ideiok:
+	ld	d,0			; drive 0 by default
+	call	bbloghdrv
+	ld	hl,(13<<8)+inicol
 	call	bbsetcrs
 	ld	a,u0defspeed		; uart 0 init
 	ld	(uart0br),a
@@ -343,7 +392,7 @@ ideiok:
 	call	dsustat
 	call	inline
 	defb	"16x550 0",0
-	ld	hl,(13<<8)+inicol
+	ld	hl,(14<<8)+inicol
 	call	bbsetcrs
 	ld	a,u1defspeed		; uart 1 init
 	ld	(uart1br),a
@@ -352,7 +401,7 @@ ideiok:
 	call	inline
 	defb	"16x550 1",0
 	;
-	ld	hl,(14<<8)+inicol
+	ld	hl,(15<<8)+inicol
 	call	bbsetcrs
 	call	bbeidck
 	ld	b,a			; temp save
@@ -380,7 +429,7 @@ gotetype:
 islckd:	ld	hl,mprof
 isprog:	call	print
 	; rtc
-	ld	hl,(15<<8)+inicol
+	ld	hl,(16<<8)+inicol
 	call	bbsetcrs
 	ld	d,055h			; set test value
 	ld	e,DSR_SCRATCH
@@ -678,13 +727,34 @@ dfunlin:
 	ret
 
 ;;
-;; Display command help
+;; Display command line help
 ;;
 cmdhelp:
-	ld	hl,mhelp
-	call	print
+	ld	c,SM_HELP
+	call	bbsysmon
 	jp	usrcmd
 
+;;
+;; Display IDE drive id string
+;;
+printhdid:
+	; get hd params from scratch
+	ld	b, trnpag
+	call	mmgetp
+	push	af			; save current
+	;
+	ld	a,(hmempag)		; bios scratch page (phy)
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
+	;
+	ld	hl,hdidbuf + 54		; drive id string is @ BLDOFFS + 54
+	ld	b,10			; and 20 bytes long
+	call	hdbufprn
+	pop	af			; remove scratch
+	ld	b,trnpag		; transient page
+	call	mmpmap			; mount it
+	ret
+	
 ;;
 ;; initialize fifo queue
 ;;
@@ -1464,29 +1534,6 @@ ucmdtab:
 	defw	csetup		; (Z) n/a
 ;;
 
-mhelp:	defb	cr,lf
-	defb	"A - Alternate console",cr,lf
-	defb	"B - Boot menu",cr,lf
-	defb	"C - HL/DE sum, subtract",cr,lf
-	defb	"D - Dump memory",cr,lf
-	defb	"E - Echo test",cr,lf
-	defb	"F - Fill memory",cr,lf
-	defb	"G - Go to execute address",cr,lf
-	defb	"H - This help",cr,lf
-	defb	"I - Input from port",cr,lf
-	defb	"K - Soft reset",cr,lf
-	defb	"L - Clear screen",cr,lf
-	defb	"M - Move memory",cr,lf
-	defb	"O - Output to port",cr,lf
-	defb	"R - Select ROM image",cr,lf
-	defb	"S - Alter memory",cr,lf
-	defb	"T - Test ram",cr,lf
-	defb	"U - Upload from parallel",cr,lf
-	defb	"V - Compare memory",cr,lf
-	defb	"W - Download to parallel",cr,lf
-	defb	"Z - Setup"
-	defb	cr,lf,0
-;;
 sdlpr:	defb	"Download",':',0
 strwait:
 	defb	"Waiting host...  ",0
@@ -1519,7 +1566,8 @@ msysres:
  	defb	"Initializing...",cr,lf,lf
 	defb	"Ram .................: ",cr,lf
 	defb	"Rom .................: ",cr,lf
-	defb	"IDE disk ............: ",cr,lf
+	defb	"IDE disk 0 ..........: ",cr,lf
+	defb	"IDE disk 1 ..........: ",cr,lf
 	defb	"Serial console ......: ",cr,lf
 	defb	"Serial aux ..........: ",cr,lf
 	defb	"Eeprom type .........: ",cr,lf

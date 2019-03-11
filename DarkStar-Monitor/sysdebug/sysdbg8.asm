@@ -833,13 +833,13 @@ bank00:	call	iarg		;Read in next arg (starting address)
 	ex	de,hl		;DE - physycal page
 	ld	a,e
 	push	af
-	or	a		; 0 -> 4
+	or	a		; 0 -> 7
 	jr	nz,bank01
-	ld	e,4
+	ld	e,8
 bank01:
 ; 	cp	1
 ; 	jp	c,exxx
-	cp	5
+	cp	9
 	jp	nc,exxx
 	ld	b,0f0h
 	ld	a,(hmemp)		; calculate destination bank

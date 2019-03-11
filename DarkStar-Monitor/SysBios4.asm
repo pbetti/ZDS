@@ -34,6 +34,7 @@ include Common.inc.asm
 include	services.inc.asm
 
 	extern	rldrom, inline
+	extern	print
 
 	dseg
 
@@ -52,6 +53,7 @@ montab:
  	defw	cpmboot		; 1 See called service for description...
  	defw	uziboot		; 2
  	defw	booter		; 3
+ 	defw	clihelp		; 4
 
 montbe	equ	$
 montlen	equ	(montbe-montab)/2
@@ -116,8 +118,38 @@ regrst:
 	ld	bc,(bcsav)
 	ret
 
+;;
+;; Display command help
+;;
+clihelp:
+	ld	hl,mhelp
+	call	print
+	ret
 	
+mhelp:	defb	cr,lf
+	defb	"A - Alternate Serial/CRT console",cr,lf
+	defb	"B - Boot menu",cr,lf
+	defb	"C - HL/DE sum, subtract",cr,lf
+	defb	"D - Dump memory",cr,lf
+	defb	"E - Echo test",cr,lf
+	defb	"F - Fill memory",cr,lf
+	defb	"G - Go to execute address",cr,lf
+	defb	"H - This help",cr,lf
+	defb	"I - Input from port",cr,lf
+	defb	"K - Soft reset",cr,lf
+	defb	"L - Clear screen",cr,lf
+	defb	"M - Move memory",cr,lf
+	defb	"O - Output to port",cr,lf
+	defb	"R - Select ROM image",cr,lf
+	defb	"S - Alter memory",cr,lf
+	defb	"T - Test ram",cr,lf
+	defb	"U - Upload from parallel",cr,lf
+	defb	"V - Compare memory",cr,lf
+	defb	"W - Download to parallel",cr,lf
+	defb	"Z - ZDS setup"
+	defb	cr,lf,0
 
+	
 ;-------------------------------------
 ; Needed modules
 ;include modules/consoleio.inc.asm	; 6545 crtc and console io

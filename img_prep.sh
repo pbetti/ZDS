@@ -1,6 +1,7 @@
 #!/bin/sh
 
 DDIR=$1
+shift
 
 
 if [ -z "$DDIR" ]; then
@@ -24,11 +25,19 @@ echo "Using format $DFMT ..."
 
 mkfs.cpm -f $DFMT /tmp/$DNAME
 
+
 if [ -d "$DDIR" ]; then
-	for f in $DDIR/*
-	do
-		cpmcp -f $DFMT /tmp/$DNAME $f 0:
-	done
+	if [ -z "$*" ]; then
+		for f in $DDIR/*
+		do
+			cpmcp -f $DFMT /tmp/$DNAME $f 0:
+		done
+	else
+		for f in "$*"
+		do
+			cpmcp -f $DFMT /tmp/$DNAME $DDIR/$f 0:
+		done
+	fi
 fi
 
 mv -f /tmp/$DNAME $HOME/elettronica/Z80-CPM/hardware/Z80DarkStar/diskimgs

@@ -29,6 +29,7 @@ SI_ROMBOOT	equ	9
 SM_CPMBOOT	equ	1
 SM_UZIBOOT	equ	2
 SM_USERBOOT	equ	3
+SM_HELP		equ	4
 
 ; --- effect list -------------------------------
 EF_BLNKON	equ	0

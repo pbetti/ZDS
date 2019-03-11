@@ -15,7 +15,7 @@ Comment3 ""
 Comment4 ""
 $EndDescr
 $Comp
-L PropIO-V2-rescue:C C?
+L PropVGA-rescue:C-PropIO-V2-rescue C?
 U 1 1 4B29B5C7
 P 9000 10000
 AR Path="/23D9D84B29B5C7" Ref="C?"  Part="1" 
@@ -53,7 +53,7 @@ $EndComp
 Text Notes 14650 4350 0    60   ~ 0
 SPARES
 $Comp
-L PropIO-V2-rescue:GND #PWR?
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR?
 U 1 1 4B296446
 P 4050 8650
 AR Path="/23D9B04B296446" Ref="#PWR?"  Part="1" 
@@ -113,7 +113,7 @@ NoConn ~ 11200 8850
 NoConn ~ 11200 8650
 NoConn ~ 11200 8450
 $Comp
-L PropIO-V2-rescue:CP U?
+L PropVGA-rescue:CP-PropIO-V2-rescue U?
 U 1 1 4B28688C
 P 8300 10000
 AR Path="/6FF405304B28688C" Ref="U?"  Part="0" 
@@ -161,7 +161,7 @@ F 3 "" H 8300 10000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR?
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR?
 U 1 1 4B286858
 P 7900 10250
 AR Path="/69698AFC4B286858" Ref="#PWR?"  Part="1" 
@@ -211,7 +211,7 @@ $EndComp
 Text Label 10200 9800 0    60   ~ 0
 VDD
 $Comp
-L PropIO-V2-rescue:LM7805 U?
+L PropVGA-rescue:LM7805-PropIO-V2-rescue U?
 U 1 1 4B2867EB
 P 7900 9850
 AR Path="/69698AFC4B2867EB" Ref="U?"  Part="1" 
@@ -263,7 +263,7 @@ A0
 Text Label 4450 4750 0    60   ~ 0
 A1
 $Comp
-L PropIO-V2-rescue:C C?
+L PropVGA-rescue:C-PropIO-V2-rescue C?
 U 1 1 4B285DBF
 P 8650 10000
 AR Path="/23D9D84B285DBF" Ref="C?"  Part="1" 
@@ -383,7 +383,7 @@ B_/IORQ
 Text Label 8850 8250 0    60   ~ 0
 B_/MREQ
 $Comp
-L PropIO-V2-rescue:74LS241 U?
+L PropVGA-rescue:74LS241-PropIO-V2-rescue U?
 U 1 1 48EAC36F
 P 10050 8750
 AR Path="/5AD7153D48EAC36F" Ref="U?"  Part="1" 
@@ -458,7 +458,7 @@ B_A1
 Text Label 11450 8250 0    60   ~ 0
 B_A0
 $Comp
-L PropIO-V2-rescue:74LS241 U?
+L PropVGA-rescue:74LS241-PropIO-V2-rescue U?
 U 1 1 48EAC36E
 P 12400 8750
 AR Path="/5AD7153D48EAC36E" Ref="U?"  Part="1" 
@@ -500,7 +500,7 @@ F 3 "" H 12400 8750 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS245 U?
+L PropVGA-rescue:74LS245-PropIO-V2-rescue U?
 U 1 1 48EAC369
 P 7650 8750
 AR Path="/5AD7153D48EAC369" Ref="U?"  Part="1" 
@@ -543,7 +543,7 @@ F 3 "" H 7650 8750 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:CP C?
+L PropVGA-rescue:CP-PropIO-V2-rescue C?
 U 1 1 48EAC367
 P 4800 10000
 AR Path="/5AD7153D48EAC367" Ref="C?"  Part="1" 
@@ -585,7 +585,7 @@ F 3 "" H 4800 10000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:C C?
+L PropVGA-rescue:C-PropIO-V2-rescue C?
 U 1 1 48EAC360
 P 5700 10000
 AR Path="/5AD7153D48EAC360" Ref="C?"  Part="1" 
@@ -626,7 +626,7 @@ F 3 "" H 5700 10000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:C C?
+L PropVGA-rescue:C-PropIO-V2-rescue C?
 U 1 1 48EAC35F
 P 5400 10000
 AR Path="/5AD7153D48EAC35F" Ref="C?"  Part="1" 
@@ -668,7 +668,7 @@ F 4 "U1 Bypass" H 5400 10000 60  0001 C CNN "Notes"
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:C C?
+L PropVGA-rescue:C-PropIO-V2-rescue C?
 U 1 1 48EAC35E
 P 6900 10000
 AR Path="/5AD7153D48EAC35E" Ref="C?"  Part="1" 
@@ -711,7 +711,7 @@ F 3 "" H 6900 10000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:C C?
+L PropVGA-rescue:C-PropIO-V2-rescue C?
 U 1 1 48EAC35D
 P 6600 10000
 AR Path="/5AD7153D48EAC35D" Ref="C?"  Part="1" 
@@ -753,7 +753,7 @@ F 3 "" H 6600 10000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:C C?
+L PropVGA-rescue:C-PropIO-V2-rescue C?
 U 1 1 48EAC35C
 P 6300 10000
 AR Path="/5AD7153D48EAC35C" Ref="C?"  Part="1" 
@@ -796,7 +796,7 @@ F 3 "" H 6300 10000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:C C?
+L PropVGA-rescue:C-PropIO-V2-rescue C?
 U 1 1 48EAC35B
 P 6000 10000
 AR Path="/5AD7153D48EAC35B" Ref="C?"  Part="1" 
@@ -856,7 +856,7 @@ F 3 "" H 8500 6300 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS04 U5
+L PropVGA-rescue:74LS04-PropIO-V2-rescue U5
 U 1 1 524DA604
 P 7450 7150
 F 0 "U5" H 7645 7265 60  0000 C CNN
@@ -891,7 +891,7 @@ Text Label 4450 3950 0    60   ~ 0
 D7
 NoConn ~ 15450 7150
 $Comp
-L PropIO-V2-rescue:74LS74 U9
+L PropVGA-rescue:74LS74-PropIO-V2-rescue U9
 U 2 1 524DA5FE
 P 14850 6950
 F 0 "U9" H 15000 7250 60  0000 C CNN
@@ -911,7 +911,7 @@ NoConn ~ 14250 6750
 Text Label 4900 7650 0    60   ~ 0
 A2
 $Comp
-L PropIO-V2-rescue:CONN_6X2 P2
+L PropVGA-rescue:CONN_6X2-PropIO-V2-rescue P2
 U 1 1 52563030
 P 4450 8250
 F 0 "P2" H 4450 8600 60  0000 C CNN
@@ -922,7 +922,7 @@ F 3 "" H 4450 8250 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR010
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR010
 U 1 1 5256351F
 P 5050 8800
 F 0 "#PWR010" H 5050 8800 30  0001 C CNN
@@ -946,7 +946,7 @@ F 3 "" H 8300 9800 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS04 U5
+L PropVGA-rescue:74LS04-PropIO-V2-rescue U5
 U 3 1 5256CDEC
 P 14250 4750
 F 0 "U5" H 14445 4865 60  0000 C CNN
@@ -957,7 +957,7 @@ F 3 "" H 14250 4750 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS04 U5
+L PropVGA-rescue:74LS04-PropIO-V2-rescue U5
 U 4 1 5256CDF4
 P 14250 5150
 F 0 "U5" H 14445 5265 60  0000 C CNN
@@ -968,7 +968,7 @@ F 3 "" H 14250 5150 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS04 U5
+L PropVGA-rescue:74LS04-PropIO-V2-rescue U5
 U 5 1 5256CDFD
 P 14250 5550
 F 0 "U5" H 14445 5665 60  0000 C CNN
@@ -979,7 +979,7 @@ F 3 "" H 14250 5550 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS04 U5
+L PropVGA-rescue:74LS04-PropIO-V2-rescue U5
 U 6 1 5256CE08
 P 14250 5950
 F 0 "U5" H 14445 6065 60  0000 C CNN
@@ -990,7 +990,7 @@ F 3 "" H 14250 5950 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS06 U1
+L PropVGA-rescue:74LS06-PropIO-V2-rescue U1
 U 4 1 5256CEBF
 P 15350 5150
 F 0 "U1" H 15545 5265 60  0000 C CNN
@@ -1001,7 +1001,7 @@ F 3 "" H 15350 5150 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS06 U1
+L PropVGA-rescue:74LS06-PropIO-V2-rescue U1
 U 5 1 5256CEC6
 P 15350 5550
 F 0 "U1" H 15545 5665 60  0000 C CNN
@@ -1012,7 +1012,7 @@ F 3 "" H 15350 5550 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS06 U1
+L PropVGA-rescue:74LS06-PropIO-V2-rescue U1
 U 6 1 5256CECC
 P 15350 5950
 F 0 "U1" H 15545 6065 60  0000 C CNN
@@ -1041,7 +1041,7 @@ VSS
 Text Label 7350 7700 0    60   ~ 0
 CLR
 $Comp
-L PropIO-V2-rescue:74LS06 U1
+L PropVGA-rescue:74LS06-PropIO-V2-rescue U1
 U 3 1 5256FDC4
 P 9550 6950
 F 0 "U1" H 9745 7065 60  0000 C CNN
@@ -1063,7 +1063,7 @@ F 3 "" H 9150 9250 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR025
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR025
 U 1 1 52581067
 P 9250 9300
 F 0 "#PWR025" H 9250 9300 30  0001 C CNN
@@ -1085,7 +1085,7 @@ F 3 "" H 11500 9250 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR034
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR034
 U 1 1 5258121D
 P 11600 9300
 F 0 "#PWR034" H 11600 9300 30  0001 C CNN
@@ -1096,7 +1096,7 @@ F 3 "" H 11600 9300 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS74 U9
+L PropVGA-rescue:74LS74-PropIO-V2-rescue U9
 U 1 1 524D95AB
 P 8500 7150
 F 0 "U9" H 8650 7450 60  0000 C CNN
@@ -1107,7 +1107,7 @@ F 3 "" H 8500 7150 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS04 U5
+L PropVGA-rescue:74LS04-PropIO-V2-rescue U5
 U 2 1 525B7EBC
 P 8050 7700
 F 0 "U5" H 8245 7815 60  0000 C CNN
@@ -1118,7 +1118,7 @@ F 3 "~" H 8050 7700 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R17
+L PropVGA-rescue:R-PropIO-V2-rescue R17
 U 1 1 525CD905
 P 11500 4950
 F 0 "R17" V 11580 4950 50  0000 C CNN
@@ -1129,7 +1129,7 @@ F 3 "" H 11500 4950 60  0001 C CNN
 	-1   0    0    1   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R16
+L PropVGA-rescue:R-PropIO-V2-rescue R16
 U 1 1 525CD90B
 P 11300 4950
 F 0 "R16" V 11380 4950 50  0000 C CNN
@@ -1140,7 +1140,7 @@ F 3 "" H 11300 4950 60  0001 C CNN
 	-1   0    0    1   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R15
+L PropVGA-rescue:R-PropIO-V2-rescue R15
 U 1 1 525CD911
 P 11100 4950
 F 0 "R15" V 11180 4950 50  0000 C CNN
@@ -1153,7 +1153,7 @@ $EndComp
 Text Label 11300 6100 0    60   ~ 0
 KBD_VCC
 $Comp
-L PropIO-V2-rescue:CP1 C22
+L PropVGA-rescue:CP1-PropIO-V2-rescue C22
 U 1 1 525CD918
 P 11900 1400
 F 0 "C22" H 11950 1500 50  0000 L CNN
@@ -1164,7 +1164,7 @@ F 3 "" H 11900 1400 60  0001 C CNN
 	0    1    1    0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:CP1 C21
+L PropVGA-rescue:CP1-PropIO-V2-rescue C21
 U 1 1 525CD91E
 P 11900 1100
 F 0 "C21" H 11950 1200 50  0000 L CNN
@@ -1175,7 +1175,7 @@ F 3 "" H 11900 1100 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:CP1 C19
+L PropVGA-rescue:CP1-PropIO-V2-rescue C19
 U 1 1 525CD924
 P 9700 1400
 F 0 "C19" H 9750 1500 50  0000 L CNN
@@ -1186,7 +1186,7 @@ F 3 "" H 9700 1400 60  0001 C CNN
 	0    1    1    0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:CP1 C18
+L PropVGA-rescue:CP1-PropIO-V2-rescue C18
 U 1 1 525CD92A
 P 9700 1000
 F 0 "C18" H 9750 1100 50  0000 L CNN
@@ -1197,7 +1197,7 @@ F 3 "" H 9700 1000 60  0001 C CNN
 	0    1    1    0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:FUSE F1
+L PropVGA-rescue:FUSE-PropIO-V2-rescue F1
 U 1 1 525CD930
 P 10900 6100
 F 0 "F1" H 11000 6150 40  0000 C CNN
@@ -1208,7 +1208,7 @@ F 3 "" H 10900 6100 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R19
+L PropVGA-rescue:R-PropIO-V2-rescue R19
 U 1 1 525CD936
 P 11550 3600
 F 0 "R19" V 11630 3600 50  0000 C CNN
@@ -1230,7 +1230,7 @@ F 3 "" H 10550 6100 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:CONN_4 P3
+L PropVGA-rescue:CONN_4-PropIO-V2-rescue P3
 U 1 1 525CD942
 P 6050 1650
 F 0 "P3" V 6100 1650 50  0000 C CNN
@@ -1241,7 +1241,7 @@ F 3 "" H 6050 1650 60  0001 C CNN
 	0    1    -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R5
+L PropVGA-rescue:R-PropIO-V2-rescue R5
 U 1 1 525CD948
 P 9750 2000
 F 0 "R5" V 9830 2000 50  0000 C CNN
@@ -1252,7 +1252,7 @@ F 3 "" H 9750 2000 60  0001 C CNN
 	0    1    -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R18
+L PropVGA-rescue:R-PropIO-V2-rescue R18
 U 1 1 525CD94F
 P 11550 3400
 F 0 "R18" V 11630 3400 50  0000 C CNN
@@ -1274,7 +1274,7 @@ F 3 "" H 5300 6000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R1
+L PropVGA-rescue:R-PropIO-V2-rescue R1
 U 1 1 525CD95B
 P 5300 6250
 F 0 "R1" V 5380 6250 50  0000 C CNN
@@ -1285,7 +1285,7 @@ F 3 "" H 5300 6250 60  0001 C CNN
 	-1   0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS06 U1
+L PropVGA-rescue:74LS06-PropIO-V2-rescue U1
 U 2 1 525CD961
 P 5750 6500
 F 0 "U1" H 5945 6615 60  0000 C CNN
@@ -1296,7 +1296,7 @@ F 3 "" H 5750 6500 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:74LS06 U1
+L PropVGA-rescue:74LS06-PropIO-V2-rescue U1
 U 1 1 525CD96D
 P 4850 6500
 F 0 "U1" H 5045 6615 60  0000 C CNN
@@ -1322,7 +1322,7 @@ F 3 "" H 12200 1000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR039
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR039
 U 1 1 525CD980
 P 12200 1500
 F 0 "#PWR039" H 12200 1500 30  0001 C CNN
@@ -1333,7 +1333,7 @@ F 3 "" H 12200 1500 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:MAX232 U11
+L PropVGA-rescue:MAX232-PropIO-V2-rescue U11
 U 1 1 525CD98C
 P 10900 1600
 F 0 "U11" H 10900 1650 60  0000 C CNN
@@ -1348,7 +1348,7 @@ KBD_CLK
 Text Label 6500 5000 0    60   ~ 0
 KBD_DAT
 $Comp
-L PropIO-V2-rescue:C C9
+L PropVGA-rescue:C-PropIO-V2-rescue C9
 U 1 1 525CD994
 P 6900 5700
 F 0 "C9" H 6950 5800 50  0000 L CNN
@@ -1359,7 +1359,7 @@ F 3 "" H 6900 5700 60  0001 C CNN
 	-1   0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R2
+L PropVGA-rescue:R-PropIO-V2-rescue R2
 U 1 1 525CD99A
 P 6550 5400
 F 0 "R2" V 6630 5400 50  0000 C CNN
@@ -1370,7 +1370,7 @@ F 3 "" H 6550 5400 60  0001 C CNN
 	0    1    -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR017
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR017
 U 1 1 525CD9A0
 P 6900 6100
 F 0 "#PWR017" H 6900 6100 30  0001 C CNN
@@ -1381,7 +1381,7 @@ F 3 "" H 6900 6100 60  0001 C CNN
 	-1   0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:SPEAKER SP1
+L PropVGA-rescue:SPEAKER-PropIO-V2-rescue SP1
 U 1 1 525CD9A6
 P 7900 5700
 F 0 "SP1" H 7800 5950 70  0000 C CNN
@@ -1394,7 +1394,7 @@ $EndComp
 Text Label 3900 6500 0    60   ~ 0
 ~nCS~/DAT3
 $Comp
-L PropIO-V2-rescue:LED D1
+L PropVGA-rescue:LED-PropIO-V2-rescue D1
 U 1 1 525CD9B9
 P 6400 6500
 F 0 "D1" H 6400 6600 50  0000 C CNN
@@ -1428,7 +1428,7 @@ DI/CMD
 Text Label 12100 2600 0    60   ~ 0
 ~nCS~/DAT3
 $Comp
-L PropIO-V2-rescue:CP1 C11
+L PropVGA-rescue:CP1-PropIO-V2-rescue C11
 U 1 1 525CD9D8
 P 7200 5400
 F 0 "C11" H 7250 5500 50  0000 L CNN
@@ -1452,7 +1452,7 @@ $EndComp
 NoConn ~ 12700 6400
 NoConn ~ 12700 6000
 $Comp
-L PropIO-V2-rescue:GND #PWR040
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR040
 U 1 1 525CD9E6
 P 12600 6500
 F 0 "#PWR040" H 12600 6500 30  0001 C CNN
@@ -1463,7 +1463,7 @@ F 3 "" H 12600 6500 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R23
+L PropVGA-rescue:R-PropIO-V2-rescue R23
 U 1 1 525CD9EC
 P 12150 6300
 F 0 "R23" V 12230 6300 50  0000 C CNN
@@ -1474,7 +1474,7 @@ F 3 "" H 12150 6300 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R22
+L PropVGA-rescue:R-PropIO-V2-rescue R22
 U 1 1 525CD9F2
 P 12150 5900
 F 0 "R22" V 12230 5900 50  0000 C CNN
@@ -1489,7 +1489,7 @@ KBD_CLK
 Text Label 11300 5900 0    60   ~ 0
 KBD_DAT
 $Comp
-L PropIO-V2-rescue:CONN_6 P5
+L PropVGA-rescue:CONN_6-PropIO-V2-rescue P5
 U 1 1 525CD9FA
 P 13050 6150
 F 0 "P5" V 13000 6150 60  0000 C CNN
@@ -1511,7 +1511,7 @@ F 3 "" H 8200 1300 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:RR9 RR1
+L PropVGA-rescue:RR9-PropIO-V2-rescue RR1
 U 1 1 525CDA06
 P 8800 900
 F 0 "RR1" H 8850 1500 70  0000 C CNN
@@ -1522,7 +1522,7 @@ F 3 "" H 8800 900 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR016
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR016
 U 1 1 525CDA0C
 P 6500 2200
 F 0 "#PWR016" H 6500 2200 30  0001 C CNN
@@ -1533,7 +1533,7 @@ F 3 "" H 6500 2200 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR020
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR020
 U 1 1 525CDA12
 P 8000 4800
 F 0 "#PWR020" H 8000 4800 30  0001 C CNN
@@ -1544,7 +1544,7 @@ F 3 "" H 8000 4800 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:CRYSTAL X1
+L PropVGA-rescue:CRYSTAL-PropIO-V2-rescue X1
 U 1 1 525CDA18
 P 10300 3600
 F 0 "X1" H 10300 3750 60  0000 C CNN
@@ -1556,7 +1556,7 @@ F 3 "" H 10300 3600 60  0001 C CNN
 $EndComp
 NoConn ~ 12100 4800
 $Comp
-L PropIO-V2-rescue:GND #PWR037
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR037
 U 1 1 525CDA1F
 P 12000 5050
 F 0 "#PWR037" H 12000 5050 30  0001 C CNN
@@ -1580,7 +1580,7 @@ GREEN
 Text Label 10750 4200 0    60   ~ 0
 RED
 $Comp
-L PropIO-V2-rescue:R R13
+L PropVGA-rescue:R-PropIO-V2-rescue R13
 U 1 1 525CDA2D
 P 10250 5200
 F 0 "R13" V 10330 5200 50  0000 C CNN
@@ -1591,7 +1591,7 @@ F 3 "" H 10250 5200 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R12
+L PropVGA-rescue:R-PropIO-V2-rescue R12
 U 1 1 525CDA33
 P 10250 5000
 F 0 "R12" V 10330 5000 50  0000 C CNN
@@ -1602,7 +1602,7 @@ F 3 "" H 10250 5000 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R11
+L PropVGA-rescue:R-PropIO-V2-rescue R11
 U 1 1 525CDA39
 P 10250 4800
 F 0 "R11" V 10330 4800 50  0000 C CNN
@@ -1613,7 +1613,7 @@ F 3 "" H 10250 4800 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R10
+L PropVGA-rescue:R-PropIO-V2-rescue R10
 U 1 1 525CDA3F
 P 10250 4600
 F 0 "R10" V 10330 4600 50  0000 C CNN
@@ -1624,7 +1624,7 @@ F 3 "" H 10250 4600 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R9
+L PropVGA-rescue:R-PropIO-V2-rescue R9
 U 1 1 525CDA45
 P 10250 4400
 F 0 "R9" V 10330 4400 50  0000 C CNN
@@ -1635,7 +1635,7 @@ F 3 "" H 10250 4400 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R8
+L PropVGA-rescue:R-PropIO-V2-rescue R8
 U 1 1 525CDA4B
 P 10250 4200
 F 0 "R8" V 10330 4200 50  0000 C CNN
@@ -1646,7 +1646,7 @@ F 3 "" H 10250 4200 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R7
+L PropVGA-rescue:R-PropIO-V2-rescue R7
 U 1 1 525CDA51
 P 10250 4000
 F 0 "R7" V 10330 4000 50  0000 C CNN
@@ -1657,7 +1657,7 @@ F 3 "" H 10250 4000 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:DE15 P4
+L PropVGA-rescue:DE15-PropIO-V2-rescue P4
 U 1 1 525CDA57
 P 12600 4600
 F 0 "P4" H 12600 5250 70  0000 C CNN
@@ -1670,7 +1670,7 @@ $EndComp
 Text Label 6250 4500 0    60   ~ 0
 SPK
 $Comp
-L PropIO-V2-rescue:GND #PWR014
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR014
 U 1 1 525CDA64
 P 6350 3700
 F 0 "#PWR014" H 6350 3700 30  0001 C CNN
@@ -1692,7 +1692,7 @@ F 3 "" H 6200 3750 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R14
+L PropVGA-rescue:R-PropIO-V2-rescue R14
 U 1 1 525CDA70
 P 10250 5400
 F 0 "R14" V 10330 5400 50  0000 C CNN
@@ -1703,7 +1703,7 @@ F 3 "" H 10250 5400 60  0001 C CNN
 	0    -1   -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:P8X32A U4
+L PropVGA-rescue:P8X32A-PropIO-V2-rescue U4
 U 1 1 525CDA76
 P 7200 3750
 F 0 "U4" H 7200 3800 60  0000 C CNN
@@ -1725,7 +1725,7 @@ F 3 "" H 7100 6500 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:24C512 U3
+L PropVGA-rescue:24C512-PropIO-V2-rescue U3
 U 1 1 525CDFE9
 P 7200 1700
 F 0 "U3" H 7200 1750 60  0000 C CNN
@@ -1738,7 +1738,7 @@ $EndComp
 Text Label 4400 2050 0    60   ~ 0
 B_/RESET
 $Comp
-L PropIO-V2-rescue:R R6
+L PropVGA-rescue:R-PropIO-V2-rescue R6
 U 1 1 525DEC86
 P 10000 6700
 F 0 "R6" V 10080 6700 50  0000 C CNN
@@ -1769,7 +1769,7 @@ U7
 Text Notes 6550 10350 0    60   ~ 0
 U8
 $Comp
-L PropIO-V2-rescue:C C3
+L PropVGA-rescue:C-PropIO-V2-rescue C3
 U 1 1 526151B8
 P 5100 10000
 F 0 "C3" H 5150 10100 50  0000 L CNN
@@ -1783,7 +1783,7 @@ $EndComp
 Text Notes 6850 10350 0    60   ~ 0
 U9
 $Comp
-L PropIO-V2-rescue:C C16
+L PropVGA-rescue:C-PropIO-V2-rescue C16
 U 1 1 5261552B
 P 9300 10000
 F 0 "C16" H 9350 10100 50  0000 L CNN
@@ -1796,7 +1796,7 @@ $EndComp
 Text Notes 9250 10350 0    60   ~ 0
 U2
 $Comp
-L PropIO-V2-rescue:C C13
+L PropVGA-rescue:C-PropIO-V2-rescue C13
 U 1 1 52615CF8
 P 7500 10000
 F 0 "C13" H 7550 10100 50  0000 L CNN
@@ -1807,7 +1807,7 @@ F 3 "" H 7500 10000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:CP C17
+L PropVGA-rescue:CP-PropIO-V2-rescue C17
 U 1 1 5261607F
 P 9600 10000
 F 0 "C17" H 9650 10100 50  0000 L CNN
@@ -1818,7 +1818,7 @@ F 3 "" H 9600 10000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:CP C20
+L PropVGA-rescue:CP-PropIO-V2-rescue C20
 U 1 1 52616085
 P 9900 10000
 F 0 "C20" H 9950 10100 50  0000 L CNN
@@ -1835,7 +1835,7 @@ P3
 Text Notes 4750 10350 0    60   ~ 0
 P1
 $Comp
-L PropIO-V2-rescue:CONN_5X2 P6
+L PropVGA-rescue:CONN_5X2-PropIO-V2-rescue P6
 U 1 1 526210AE
 P 13400 1600
 F 0 "P6" H 13400 1300 60  0000 C CNN
@@ -2471,7 +2471,7 @@ Wire Wire Line
 Text Notes 7150 10350 0    60   ~ 0
 U10
 $Comp
-L PropIO-V2-rescue:C C12
+L PropVGA-rescue:C-PropIO-V2-rescue C12
 U 1 1 526475D1
 P 7200 10000
 F 0 "C12" H 7250 10100 50  0000 L CNN
@@ -2482,7 +2482,7 @@ F 3 "" H 7200 10000 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:CONN_3 P1
+L PropVGA-rescue:CONN_3-PropIO-V2-rescue P1
 U 1 1 5265F16F
 P 4400 9200
 F 0 "P1" V 4350 9200 50  0000 C CNN
@@ -2495,7 +2495,7 @@ $EndComp
 Wire Wire Line
 	4050 9200 4050 9300
 $Comp
-L PropIO-V2-rescue:GND #PWR08
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR08
 U 1 1 5265F38D
 P 4050 9400
 F 0 "#PWR08" H 4050 9400 30  0001 C CNN
@@ -2519,7 +2519,7 @@ $EndComp
 Text Notes 4550 9200 0    60   ~ 0
 Optional power connector\nfor standalone operation
 $Comp
-L PropIO-V2-rescue:74LS682 U2
+L PropVGA-rescue:74LS682-PropIO-V2-rescue U2
 U 1 1 5266D112
 P 5850 8000
 F 0 "U2" H 5850 8950 60  0000 C CNN
@@ -2532,7 +2532,7 @@ $EndComp
 Wire Wire Line
 	6550 7150 7000 7150
 $Comp
-L PropIO-V2-rescue:CP C1
+L PropVGA-rescue:CP-PropIO-V2-rescue C1
 U 1 1 52AF559C
 P 4450 10000
 F 0 "C1" H 4500 10100 50  0000 L CNN
@@ -2547,7 +2547,7 @@ P8
 Connection ~ 4450 9800
 Connection ~ 4450 10200
 $Comp
-L PropIO-V2-rescue:R R3
+L PropVGA-rescue:R-PropIO-V2-rescue R3
 U 1 1 52B1C715
 P 6850 6500
 F 0 "R3" V 6930 6500 50  0000 C CNN
@@ -2562,7 +2562,7 @@ Wire Wire Line
 Wire Wire Line
 	10000 1700 10000 1850
 $Comp
-L PropIO-V2-rescue:GND #PWR027
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR027
 U 1 1 52B1C976
 P 10000 1850
 F 0 "#PWR027" H 10000 1850 30  0001 C CNN
@@ -2583,7 +2583,7 @@ Connection ~ 4050 9300
 Text Label 4850 7850 0    60   ~ 0
 /M1
 $Comp
-L PropIO-V2-rescue:LED D3
+L PropVGA-rescue:LED-PropIO-V2-rescue D3
 U 1 1 52B4757A
 P 11250 6950
 F 0 "D3" H 11250 7050 50  0000 C CNN
@@ -2605,7 +2605,7 @@ F 3 "" H 11950 6950 60  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R20
+L PropVGA-rescue:R-PropIO-V2-rescue R20
 U 1 1 52B47586
 P 11700 6950
 F 0 "R20" V 11780 6950 50  0000 C CNN
@@ -2616,7 +2616,7 @@ F 3 "" H 11700 6950 60  0001 C CNN
 	0    1    -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR030
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR030
 U 1 1 52B4759D
 P 10900 7050
 F 0 "#PWR030" H 10900 7050 30  0001 C CNN
@@ -2635,7 +2635,7 @@ SD Card Activity Indicator
 Text Notes 11000 6800 0    60   ~ 0
 Power Indicators
 $Comp
-L PropIO-V2-rescue:LED D4
+L PropVGA-rescue:LED-PropIO-V2-rescue D4
 U 1 1 52B477B4
 P 11250 7250
 F 0 "D4" H 11250 7350 50  0000 C CNN
@@ -2646,7 +2646,7 @@ F 3 "" H 11250 7250 60  0001 C CNN
 	-1   0    0    1   
 $EndComp
 $Comp
-L PropIO-V2-rescue:R R21
+L PropVGA-rescue:R-PropIO-V2-rescue R21
 U 1 1 52B477C0
 P 11700 7250
 F 0 "R21" V 11780 7250 50  0000 C CNN
@@ -2657,7 +2657,7 @@ F 3 "" H 11700 7250 60  0001 C CNN
 	0    1    -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR031
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR031
 U 1 1 52B477C6
 P 10900 7350
 F 0 "#PWR031" H 10900 7350 30  0001 C CNN
@@ -2731,7 +2731,7 @@ Wire Wire Line
 Wire Wire Line
 	4000 9800 4450 9800
 $Comp
-L PropIO-V2-rescue:R R4
+L PropVGA-rescue:R-PropIO-V2-rescue R4
 U 1 1 52BC9BB1
 P 9350 7350
 F 0 "R4" V 9430 7350 50  0000 C CNN
@@ -2742,7 +2742,7 @@ F 3 "" H 9350 7350 60  0001 C CNN
 	0    1    -1   0   
 $EndComp
 $Comp
-L PropIO-V2-rescue:LED D2
+L PropVGA-rescue:LED-PropIO-V2-rescue D2
 U 1 1 52BC9BB7
 P 9800 7350
 F 0 "D2" H 9800 7450 50  0000 C CNN
@@ -2766,7 +2766,7 @@ $EndComp
 Wire Wire Line
 	10000 7350 10100 7350
 $Comp
-L PropIO-V2-rescue:SW_PUSH SW1
+L PropVGA-rescue:SW_PUSH-PropIO-V2-rescue SW1
 U 1 1 52DDFE76
 P 5300 1150
 F 0 "SW1" H 5450 1260 50  0000 C CNN
@@ -2777,7 +2777,7 @@ F 3 "~" H 5300 1150 60  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L PropIO-V2-rescue:GND #PWR012
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR012
 U 1 1 52DE006E
 P 5000 1200
 F 0 "#PWR012" H 5000 1200 30  0001 C CNN
@@ -3263,7 +3263,7 @@ Wire Wire Line
 Wire Wire Line
 	13950 3200 14000 3200
 $Comp
-L PropIO-V2-rescue:GND #PWR042
+L PropVGA-rescue:GND-PropIO-V2-rescue #PWR042
 U 1 1 5D9496B5
 P 13950 3800
 F 0 "#PWR042" H 13950 3800 30  0001 C CNN
@@ -3440,7 +3440,7 @@ Connection ~ 6100 2150
 Wire Wire Line
 	6100 2150 6100 2000
 $Comp
-L PropIO-V2-rescue:JUMPER3 JP1
+L PropVGA-rescue:JUMPER3-PropIO-V2-rescue JP1
 U 1 1 5CD72B9B
 P 5150 2100
 F 0 "JP1" H 5200 2000 40  0000 L CNN

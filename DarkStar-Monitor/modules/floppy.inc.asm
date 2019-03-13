@@ -16,6 +16,7 @@
 
 rtrycnt		equ	3		; # retry count for errors
 
+
 ;;
 ;; FDC delay
 ;
@@ -270,6 +271,20 @@ dmaset:
 	ret
 dsksel:
 	ld	a,c
+	cp	'C'-'A'			; is floppy ?
+	jp	m,dsksel1		; yes
+	cp	'M'-'A'			; is special
+	jp	p,dsksel1		; yes	
+	
+	cp	'H'-'A'			; which hd unit?
+	jp	p,dskselhd1		; < H unit 0 (CDEFG)
+	ld	d,0			; sel drive 0
+	call	loghdrv
+	jr	dsksel1
+dskselhd1:
+	ld	d,1			; >= H unit 1 (HIJKL)
+	call	loghdrv	
+dsksel1:	
 	ld	(fdrvbuf),a
 	ret
 

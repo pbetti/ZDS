@@ -126,7 +126,7 @@ loghdrv:
 	pop	hl
 	ret
 	
-sel_logged_drive:
+sel_loggedhd:
 	ld	a,(hdrvlog)
 	or	a
 	jr	z,sel_master
@@ -241,7 +241,7 @@ driveid:
 	call	idewaitnotbusy
 	jr	c,idrnok
 
-	call	sel_logged_drive
+	call	sel_loggedhd
 	ld	d,cmdid
 	ld	e,regcommand
 	call	idewr8d			; issue the command
@@ -262,7 +262,7 @@ driveid:
 	ld	b,3			; # of retrys
 idretry:
 	push	bc
-	call	sel_logged_drive
+	call	sel_loggedhd
 	call	idewaitnotbusy
 	jr	c,idrnok
 
@@ -473,7 +473,7 @@ getpexi:
 ;; Read sector (512 bytes) from IDE
 ;;
 readsector:
-	call	sel_logged_drive	; m/s
+	call	sel_loggedhd		; m/s
 	call	wrlba			; tell which sector we want to read from.
 	ret	nz			; LBA error
 	call	idewaitnotbusy
@@ -538,7 +538,7 @@ unrecov:
 ;; Write a sector, specified by the 3 bytes in LBA
 ;;
 writesector:
-	call	sel_logged_drive	; m/s
+	call	sel_loggedhd		; m/s
 	call	wrlba			; set LBA sector
 	ret	nz			; LBA error
 	call	idewaitnotbusy		; make sure drive is ready
@@ -684,7 +684,7 @@ idewaitnotbusy:				; drive ready if 01000000
 	ld	b,$ff
 	ld	c,$ff			; delay, must be above 80H for 4MHz Z80
 morewait:
-	call	sel_logged_drive	; m/s
+	call	sel_loggedhd		; m/s
 	ld	e,regstatus		; wait for RDY bit to be set
 	call	iderd8d
 	ld	a,d
@@ -707,7 +707,7 @@ idewaitdrq:
 	ld	b,$ff
 	ld	c,$ff
 moredrq:
-	call	sel_logged_drive
+	call	sel_loggedhd
 	ld	e,regstatus		; wait for DRQ bit to be set
 	call	iderd8d
 	ld	a,d

@@ -2391,10 +2391,7 @@ idtest  push    hl              ; Save code string address
         jp      error
 
 chekfn  call    chksyn          ; Make sure FN follows
-        defb    
-        
-        
-        zfn             ; "FN" token
+        defb    zfn             ; "FN" token
         ld      a,80h
         ld      (forflg),a      ; Flag FN name to find
         or      (hl)            ; FN name has bit 7 set

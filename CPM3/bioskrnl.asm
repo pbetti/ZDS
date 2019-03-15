@@ -24,7 +24,7 @@ TITLE	'ROOT MODULE OF RELOCATABLE BIOS FOR CP/M 3.1'
 	include syshw.inc
 
 	; this enable embedded debugger if true
-WITHDBG	equ	false
+WITHDBG	equ	true
 
 ;		  Copyright (C), 1982
 ;		 Digital Research, Inc

@@ -40,6 +40,7 @@ hretries	equ	5
 signsize	equ	8
 entrysize	equ	8
 ptblsize	equ	15
+trn_mount	equ	true		; mount banked buffer
 
 
 parrcrd	macro				; partition table record format
@@ -193,7 +194,7 @@ hdinitslave:
 	call	iderd8d			; check status
 	ld	a,d
 	or	a
-; 	ret	z			; got "00000000" if not present
+	ret	z			; got "00000000" if not present
 	
 
 	ld	b,$ff			; tunable
@@ -229,6 +230,7 @@ delay11:dec	d			; to speed
 ;; Get drive identification block
 ;;
 driveid:
+	if	trn_mount
 	; Mount transient page used for id buffer
 	ld	b, trnpag
 	call	mmgetp
@@ -237,6 +239,7 @@ driveid:
 	ld	a,(hmempag)		; bios scratch page (phy)
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
+	endif
 	;
 	call	idewaitnotbusy
 	jr	c,idrnok
@@ -298,9 +301,11 @@ idrtrn:
 ;; restore scratch
 ;;
 rsidbuf:
+	if	trn_mount
 	ld	a,(idtsav)		; old
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
+	endif
 	ret
 
 ;;
@@ -394,6 +399,7 @@ gptable0:
 	jr	nz,getperr		; damn !
 getot00:
 	; mount transient page used for operations
+	if	trn_mount
 	ld	b, trnpag
 	call	mmgetp
 	ld	(idtsav), a		; save current
@@ -401,6 +407,7 @@ getot00:
 	ld	a,(hmempag)		; bios scratch page (phy)
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
+	endif
 	; read table
 	ld	bc,0			; track 0
 	call	trkset
@@ -608,8 +615,9 @@ trkoff:
 	ld	iy,partbl0-entrysize	; point to table 0, back one slot
 	ld	a,(hdrvlog)
 	or	a			; drive 0/1
-	jr	z,tonext
+	jr	z,trkof0
 	ld	iy,partbl1-entrysize	; point to table 0, back one slot
+trkof0:	ld	a,c			; restore drive letter
 tonext:	add	iy,de			; point to next
 	dec	b
 	jr	z,toferr		; not found !

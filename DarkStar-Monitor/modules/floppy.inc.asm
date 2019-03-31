@@ -270,6 +270,7 @@ dmaset:
 	ld	(frdpbuf),bc
 	ret
 dsksel:
+	push	de
 	ld	a,c
 	cp	'C'-'A'			; is floppy ?
 	jp	m,dsksel1		; yes
@@ -285,6 +286,7 @@ dskselhd1:
 	ld	d,1			; >= H unit 1 (HIJKL)
 	call	loghdrv	
 dsksel1:	
+	pop	de
 	ld	(fdrvbuf),a
 	ret
 

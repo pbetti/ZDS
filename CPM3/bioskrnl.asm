@@ -349,6 +349,7 @@ ipchl:					; vectored call point
 
 ?pmsg:		; print message @<hl> up to a null
 		; saves <bc> & <de>
+; 	call	print
 	push	bc
 	push	de
 pmsg$loop:
@@ -451,6 +452,7 @@ xofflist:
 	;	in <HL>
 
 seldsk:
+; 	call	embdbg
 	call	bbdsksel
 	ld	a,c
 	ld	(@adrv),a		; save drive select code

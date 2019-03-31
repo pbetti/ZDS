@@ -645,6 +645,9 @@ iocnull:
 ;;
 ;
 ucasemod:
+	push	af
+	call	sndbeep
+	pop	af
 	ex	de,hl
 	set	3,(hl)
 	ret

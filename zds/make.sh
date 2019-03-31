@@ -27,7 +27,7 @@ SRCSN="zrbasic"
 		echo -e "\t$ut"
 		mzmac -m $ut.asm
 		mv -f $ut.bin $ut.com
-		rm -rf $ut.lst
+# 		rm -rf $ut.lst
 	done
 
 	for ut in $SRCSN

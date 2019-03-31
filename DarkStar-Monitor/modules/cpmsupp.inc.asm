@@ -113,11 +113,12 @@ hdbsig:	defb	$55,$aa
 ;;
 
 cpmboot:
+	ld	a,(asav)
+cpmdboot:
+	ld	b,a
 	ld	c,02h			; reset input case
 	call	bbconout
-	ld	a,(asav)
-
-cpmdboot:
+	ld	a,b
 	cp	'A'			; is  a valid drive ?
 	jp	m,drvidw		; no < A
 	cp	'Q'

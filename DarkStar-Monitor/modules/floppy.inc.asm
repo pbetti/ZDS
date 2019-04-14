@@ -274,16 +274,16 @@ dsksel:
 	ld	a,c
 	cp	'C'-'A'			; is floppy ?
 	jp	m,dsksel1		; yes
-	cp	'M'-'A'			; is special
+	cp	'O'-'A'			; is special
 	jp	p,dsksel1		; yes	
 	
-	cp	'H'-'A'			; which hd unit?
-	jp	p,dskselhd1		; < H unit 0 (CDEFG)
-	ld	d,0			; sel drive 0
+	cp	'I'-'A'			; which hd unit?
+	jp	p,dskselhd1
+	ld	d,0			; < I sel drive 0 (CDEFGH)
 	call	loghdrv
 	jr	dsksel1
 dskselhd1:
-	ld	d,1			; >= H unit 1 (HIJKL)
+	ld	d,1			; >= I unit 1 (IJKLMN)
 	call	loghdrv	
 dsksel1:	
 	pop	de

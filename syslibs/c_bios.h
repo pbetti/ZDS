@@ -21,7 +21,7 @@
 #ifndef		_C_BIOS_H
 #define		_C_BIOS_H
 
-#include <cpm.h>
+#include <stdint.h>
 
 struct HDGEO_proto {
 	unsigned int cylinders;
@@ -31,7 +31,9 @@ struct HDGEO_proto {
 
 typedef	struct HDGEO_proto 	HDGEO;
 
-#define	TMPBYTE			0x004B;		// TMPBYTE in page 0
+#define	MIOBYTE			0x004C		// MIOBYTE in page 0
+#define	TMPBYTE			0x004B		// TMPBYTE in page 0
+#define	CNFBYTE			0x0026		// CNFBYTE in page 0
 
 #define	zOFF			0
 #define	zON			1
@@ -60,6 +62,9 @@ extern	uint16_t _getcrs();
 extern	void cls();
 extern	void lockHDAccess();
 extern	void unlockHDAccess();
+extern	int hasHDSlave();
+extern	int logHDrive(uint16_t dsk);
+extern	int curHDrive();
 extern	void getvregion(uint16_t *, uint8_t, uint8_t, uint8_t, uint8_t);
 extern	void putvregion(uint16_t *, uint8_t, uint8_t, uint8_t, uint8_t);
 extern	void clrvregion(uint8_t, uint8_t, uint8_t, uint8_t);

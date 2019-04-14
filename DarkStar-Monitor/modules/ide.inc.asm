@@ -126,6 +126,13 @@ loghdrv:
 	ld	(hl),d
 	pop	hl
 	ret
+
+curhdrv:
+	push	hl
+	ld	hl,hdrvlog
+	ld	d,(hl)
+	pop	hl
+	ret
 	
 sel_loggedhd:
 	ld	a,(hdrvlog)

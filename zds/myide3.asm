@@ -500,7 +500,7 @@ next$format:
 main9b:	call	zeol		;clear line cursor is on
 	call	displayposition	;display actual current track,sector,head#
 	call	zcsts		;any keyboard character will stop display
-	cp	01h		;cpm says something there
+; 	cp	01h		;cpm says something there
 	jp	nz,wrnextsec1
 	call	zci		;flush character
 	ld	de,continue$msg
@@ -590,7 +590,7 @@ nextcopy:
 	call	writesector	;write buffer data to sector
 
 	call	zcsts		;any keyboard character will stop display
-	cp	01h		;cpm says something there
+; 	cp	01h		;cpm says something there
 	jp	nz,bknextsec1
 	call	zci		;flush character
 	ld	de,continue$msg
@@ -690,7 +690,7 @@ nextrestore:
 	call	writesector	;write buffer data to sector
 
 	call	zcsts		;any keyboard character will stop display
-	cp	01h		;cpm says something there
+; 	cp	01h		;cpm says something there
 	jp	nz,resnextsec1
 	call	zci		;flush character
 	ld	de,continue$msg

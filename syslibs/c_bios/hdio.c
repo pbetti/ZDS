@@ -164,6 +164,56 @@ int hdWrite(uint8_t * buf, uint16_t track, uint16_t sector) __naked
 
 }
 
+int logHDrive(uint16_t dsk) __naked
+{
+	dsk;
+	
+	__asm
+	
+	.include "darkstar.inc"
+	
+	;
+	; Select HD 
+	;
+	_logHDrive_::
+	ld	hl,#2
+	add	hl,sp
+	ld	d,(hl)
+	
+	call	BBLOGHDRV
+	
+	
+	; return value
+	ld	hl,#0x0000
+	
+	ret
+	
+	__endasm;
+	
+}
+
+int curHDrive() __naked
+{
+	__asm
+	
+	.include "darkstar.inc"
+	
+	;
+	; Get current HD
+	;
+	_curHDrive_::
+	call	BBCURHDRV
+	
+	; return value
+	ld	l,d
+	ld	h,#0x00
+	
+	ret
+	
+	__endasm;
+	
+}
+
 void unlockHDAccess()
 {
 	unsigned char * tmpbyte = (unsigned char *)TMPBYTE;
@@ -178,3 +228,18 @@ void lockHDAccess()
 	*tmpbyte &= ~(1 << 7);
 }
 
+int hasHDSlave()
+{
+	unsigned char * cnfbyte = (unsigned char *)CNFBYTE;
+	
+	if (
+		(*cnfbyte & 0b10000000) &&		// slave present
+		!(*cnfbyte & 0b01000000)		// and not fail
+	)
+		return 1;
+	else
+		return 0;
+}
+
+
+// -- EOF --

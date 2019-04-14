@@ -110,6 +110,7 @@ syscom:
 
 	public	bbhdinit, bbdriveid, bbhdgeo, bbmvpart
 	public	bbhdrd, bbhdwr, bbldpart, bbloghdrv
+	public	bbcurhdrv
 
 	; SYSBIOS3
 	public	bbsysint
@@ -179,6 +180,7 @@ bbdiv16:	bbjbnk_2 div16
 bbmul16:	bbjbnk_2 mul16
 bboffcal:	bbjbnk_2 offcal
 bbloghdrv:	bbjbnk_2 loghdrv
+bbcurhdrv:	bbjbnk_2 curhdrv
 bbhdinit:	bbjbnk_2 hdinit
 bbdriveid:	bbjbnk_2 driveid
 bbhdwr:		bbjbnk_2 writesector

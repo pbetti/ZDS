@@ -54,6 +54,9 @@ static	unsigned int lsects;
 static	unsigned char cview;
 static	unsigned long mbyte;
 static	unsigned long cylsize;
+static	unsigned int ndisks = 1;
+static	unsigned char selected_drive = 0;
+static	unsigned char system_drive;
 
 	// Some string constant (to save space)
 static const char * msg_partnumber;
@@ -75,6 +78,7 @@ extern	void clearPartition();
 extern	void lockHDAccess();
 extern	void unlockHDAccess();
 extern	void doFormat();
+extern	int changewarn();
 
 // since C11 standard forbid gets...
 extern char * gets(char *);
@@ -83,7 +87,6 @@ main()
 {
 	char cmd;
 	unsigned char loop = true;
-	char answ = 0;
 
 	mbyte = 1024L * 1024L;
 	cview = 1;
@@ -93,12 +96,15 @@ main()
 	msg_invinput = "Invalid input\n";
 
 	unlockHDAccess();		// enable unpartitioned access to hd
+	if (hasHDSlave())
+		++ndisks;
+	system_drive = curHDrive();
 
 	/* hello user ! */
 	cls();
 
 	printf("\nZ80 Darkstar NEZ80 Partition Manager\n");
-	printf("P. Betti, 2014-2018, rev 1.1\n\n");
+	printf("P. Betti, 2014. Rev 2.0 - 2019/04/02\n\n");
 
 	// get HD data
 	readTable();
@@ -121,10 +127,25 @@ main()
 				doHelp();
 				break;
 
+			case 'D':
+				if (!changewarn()) {
+					break;
+				}
+				if (ndisks > 1) {
+					modified = false;
+					selected_drive = (selected_drive) ? 0 : 1;
+					logHDrive(selected_drive);
+					cls();
+					readTable();
+					checkAndInit();					
+					displayTable();
+				}
+				break;
+				
 			case 'V':
 				cview = ! cview;
 				break;
-
+				
 			case 'L':
 				displayTable();
 				break;
@@ -135,13 +156,8 @@ main()
 
 			case 'X':
 			case 'R':
-				if (modified) {
-					printf("Changes pending for save! Reload will discard them.\n");
-					printf("Are you shure to proceed ? \n");
-					answ = getch();
-					answ = toupper(answ);
-					if (answ != 'Y')
-						break;
+				if (!changewarn()) {
+					break;
 				}
 				if (cmd == 'X') {
 					loop = false;
@@ -173,8 +189,23 @@ main()
 
 
 	lockHDAccess();
+	logHDrive(system_drive);
 	exitPrompt();
 	return 0;
+}
+
+int changewarn()
+{
+	char answ;
+
+	if (modified) {
+		printf("Changes pending for save! Continue will discard them.\n");
+		printf("Are you shure to proceed ? \n");
+		answ = getch();
+		answ = toupper(answ);
+		return (answ != 'Y') ? false : true;
+	}
+	return true;
 }
 
 
@@ -246,6 +277,13 @@ void doFormat()
 			if ( hdWrite(hdbuf, trk, sec) ) {
 				printf("\nFormat error!\n");
 				return;
+			}
+			// user do something
+			if (kbhit()) {
+				getch();
+				upromptc("Abort formatting ?", &prm, "YN");
+				if (prm == 'Y')
+					return;
 			}
 		}
 	}
@@ -349,26 +387,55 @@ void editPartition()
 
 	upromptc("Activate partition", &prm, "YN");
 	partition.table[pnum].active = prm;
+	
+	// volume type
+	prm = partition.table[pnum].ptype;
+	
+	upromptc("2=CP/M2 and like\n\
+	3=CP/M3\n\
+	N=NEDOS\n\
+	U=UZI/Fuzix\n\
+	T=TurboDOS\n\
+	O=Others\n\
+	Select partition type", &prm, "23NUTO");
+	partition.table[pnum].ptype = prm;
 
 	// drive letter
 	prm = partition.table[pnum].letter;
 
-	upromptc("Drive id [A-P,0-9]", &prm, "ABCDEFGHIJKLMNOP0123456789");
-	partition.table[pnum].letter = prm;
+	// CP/M partions ID are tied to drive
+	if (partition.table[pnum].ptype == '2' || 
+	    partition.table[pnum].ptype == '3' || 
+	    partition.table[pnum].ptype == 'T')
+	{
+		if (selected_drive == 0) {
+			printf("Valid ID for CP/M volume on drive %d are \"CDEFGH\".\n", selected_drive + 1);
+			upromptc("Drive id [C-H]", &prm, "CDEFGH");
+		}
+		else {
+			printf("Valid ID for CP/M volume on drive %d are \"IJKLMN\".\n", selected_drive + 1);
+			upromptc("Drive id [I-N]", &prm, "IJKLMN");
+		}
+	}
+	else
+		upromptc("Drive id [A-P,0-9]", &prm, "ABCDEFGHIJKLMNOP0123456789");
+	
+	partition.table[pnum].letter = prm;	
 
-	// drive letter
-	prm = partition.table[pnum].ptype;
-
-	upromptc("2=CP/M2\n\
-3=CP/M3\n\
-N=NEDOS\n\
-U=UZI/Fuzix\n\
-T=TurboDOS\n\
-C=CPM/ng / CP/M4\n\
-O=Others\n\
-Select partition type", &prm, "23NUTCO");
-	partition.table[pnum].ptype = prm;
-
+	for (i = 0; i < MAX_PARTITIONS; i++) {
+		if (i == pnum)
+			continue;
+		if (partition.table[pnum].ptype == partition.table[i].ptype && partition.table[pnum].letter == partition.table[i].letter) {
+			printf("Duplicated volume ID/Type %c/%c !\n", partition.table[pnum].letter, partition.table[pnum].ptype);
+			partition.table[pnum].active = 'N';
+			partition.table[pnum].letter = ' ';
+			partition.table[pnum].ptype = 'X';
+			partition.table[pnum].startcyl = 0;
+			partition.table[pnum].endcyl = 0;
+			
+			return;
+		}
+	}
 
 	displayTable();
 }
@@ -395,6 +462,7 @@ void readTable()
 
 	getHDgeo(&geometry);
 
+	printf("System has %d hard drive(s).\n", ndisks);
 	printf("Disk is %d cylinders, %d heads, %d sectors.\n",
 		geometry.cylinders,
 		geometry.heads,
@@ -433,6 +501,8 @@ void displayTable()
 	printf("Current disk partition table: ");
 	if (cview)
 		printf("[short] ");
+	if (ndisks > 1)
+		printf("[%s disk] ", (selected_drive) ? "1 SLAVE" : "0 MASTER");
 	if (modified)
 		printf("(unsaved)\n");
 	else
@@ -583,6 +653,7 @@ void doHelp()
 {
 	printf("Command list:\n");
 	printf("\
+	d - change (awap) hard drive\n\
 	v - toggle cview/full view\n\
 	l - show table\n\
 	f - format partition\n\

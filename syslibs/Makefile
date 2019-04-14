@@ -46,7 +46,7 @@ ZWS_OBJ = ./zwsobj
 
 OBJ_SUBDIRS = $(OBJ_DIR) $(CPM_OBJ) $(ZWS_OBJ)
 
-all: dirmake darkstar.inc cpm0.rel $(CBIOSLIB) $(CPMLIB)  $(ZWSLIB)
+all: dirmake darkstar.inc cpm0.rel $(CBIOSLIB) $(CPMLIB)  $(ZWSLIB) c_bios.h cpm.h zwins.h
 
 # Enumerating of every *.z80/*.c as *.rel and using that as dependency
 $(CBIOSLIB): $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.rel,$(wildcard $(SRC_DIR)/*.c))

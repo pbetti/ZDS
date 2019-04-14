@@ -131,7 +131,7 @@ cpmdboot:
 	cp	'C'-'A'			; is floppy ?
 	jp	m,doflp			; yes
 
-	cp	'M'-'A'			; is hard disk ?
+	cp	'O'-'A'			; is hard disk ?
 	jp	m,dohd			; yes
 ;
 	call	vcpmbt			; then virtual
@@ -192,7 +192,7 @@ bminv:
 
 bmcpm:
 	call	inline
-	defb	cr,lf,"Enter drive (<AB> floppy, <C-L> HD, <MN> special <OP> virtual): ",0
+	defb	cr,lf,"Enter drive (<AB> floppy, <C-N> HD, <OP> virtual): ",0
 	ld	c,SI_EDIT
 	ld	e,SE_STR
 	ld	d,1

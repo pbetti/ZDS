@@ -79,12 +79,12 @@ typedef struct {
 #define DECB				10
 #define HEXB				16
 
-static const uint8_t * MIOBYTE = 0x004C;	// MIOBYTE in page 0
-static uint8_t tempbuf[tmpbuf_size];		// global temp buffer
-static zwWindow * wroot;			// main window ptr
+static const uint8_t * miobyte = MIOBYTE;		// miobyte in page 0
+static uint8_t tempbuf[tmpbuf_size];			// global temp buffer
+static zwWindow * wroot;				// main window ptr
 static uint8_t quit_flag = false;
-static uint8_t * rom_io_buffer;			// rom page io (4k)
-static ROM_INDEX_BLK * rom_io_index;		// rom map (2k)
+static uint8_t * rom_io_buffer;				// rom page io (4k)
+static ROM_INDEX_BLK * rom_io_index;			// rom map (2k)
 static uint8_t file_flag = false;
 static uint8_t lslot;
 static uint8_t bslot;
@@ -126,7 +126,7 @@ extern void	erase_row(ROM_INDEX_BLK *);
 main() {
 
 	// Are we running on serial console?
-	if (*MIOBYTE & 0b00100000) {
+	if (*miobyte & 0b00100000) {
 		fprintf(stderr, "Sorry, run only on CRT.\n");
 		exit(1);
 	}
@@ -178,7 +178,7 @@ main() {
 		strcpy(rom_io_index[0].name, "SYSBIOS");
 		strcpy(rom_io_index[0].page_offset, "C0");
 		strcpy(rom_io_index[0].address, "F000");
-		rom_io_index[0].size = 16384;
+		rom_io_index[0].size = 32768;
 		strcpy(rom_io_index[0].description, "SYSTEM BIOS/MONITOR");
 	}
 

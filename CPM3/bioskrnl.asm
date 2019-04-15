@@ -42,8 +42,8 @@ WITHDBG	equ	false
 ;   Modified for faster character I/O by Udo Munk
 
 bell	equ	7
-ctlq	equ	'q'-'@'
-ctls	equ	's'-'@'
+ctlq	equ	'Q'-'@'
+ctls	equ	'S'-'@'
 
 ccp	equ	0100h				; console command processor gets loaded
 						; into the tpa
@@ -641,9 +641,9 @@ flush:
 
 	; error message components
 
-drive$msg:	db	cr,lf,bell,'bios error on ',0
-track$msg:	db	': t-',0
-sector$msg:	db	', s-',0
+drive$msg:	db	cr,lf,bell,'BIOS ERROR ON ',0
+track$msg:	db	': T-',0
+sector$msg:	db	', S-',0
 
 	; disk communication data items
 

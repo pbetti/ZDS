@@ -188,6 +188,17 @@ gencpm() {
 		rm -f gencpm.dat
 		mv cpm3.sys cpm3.sys.hd.c
 
+		echo "* Slave HD I: *"
+		sed "s/BOOTDRV  = ./BOOTDRV  = I/g" gencpm.dat.bank > gencpm.dat
+		echo
+
+		zxcc gencpm.com auto
+		echo -e "\r"
+		echo "---------------------------------------"
+
+		rm -f gencpm.dat
+		mv cpm3.sys cpm3.sys.hd.i
+
 	fi
 
 }
@@ -241,12 +252,21 @@ makdisk() {
 			cpmcp -f $1 $2 cpm3.sys.floppy.o 0:cpm3.sys
 			cpmcp -f $1 $2 cpm3.sys.floppy.a 3:cpm3.sys
 			cpmcp -f $1 -t $2 profile.sub_o.z3p 0:profile.sub
+			cpmcp -f $1 $2 zsys/configured/z3plus.lbo 0:z3plus.lbr
+			cpmcp -f $1 $2 zsys/configured/z3plus.lba 3:z3plus.lbr
+			cpmcp -f $1 $2 zsys/configured/z3plus.coo 0:z3plus.com
+			cpmcp -f $1 $2 zsys/configured/z3plus.coa 3:z3plus.com
+
 			#cpmcp -f $1 $2 ../DarkStar-Monitor/test.com 0:test.com
 		else
 			imgtype="hd"
 			cpmcp -f $1 $2 cpm3.sys.hd.p 0:cpm3.sys
 			cpmcp -f $1 $2 cpm3.sys.hd.c 3:cpm3.sys
 			cpmcp -f $1 -t $2 profile.sub_p.z3p 0:profile.sub
+			cpmcp -f $1 $2 zsys/configured/z3plus.lbp 0:z3plus.lbr
+			cpmcp -f $1 $2 zsys/configured/z3plus.lbc 3:z3plus.lbr
+			cpmcp -f $1 $2 zsys/configured/z3plus.cop 0:z3plus.com
+			cpmcp -f $1 $2 zsys/configured/z3plus.coc 3:z3plus.com
 		fi
 # 		cpmcp -f $1 $2 zccp/zccp.com 0:zccp.com
 		cpmcp -f $1 $2 ccp.com 0:
@@ -280,6 +300,8 @@ makdisk() {
 			cpmcp -f $1 $2 $f $d:
 		done
 	done
+
+	
 }
 
 
@@ -287,6 +309,20 @@ dodisks() {
 	echo "Generating HD disk image..."
 
 	makdisk $HDFMT $HODISK
+	
+		echo
+	echo "Generating CF disk image I: (+p. table and bootloader)..."
+	dd if=cf_trk0 of=hd_i.img
+	dd if=$HODISK of=hd_i.img seek=256
+	cpmrm -f ZDSCF_C hd_i.img 0:cpm3.sys
+	cpmrm -f ZDSCF_C hd_i.img 0:profile.sub
+	cpmrm -f ZDSCF_C hd_i.img 0:z3plus.lbr
+	cpmrm -f ZDSCF_C hd_i.img 0:z3plus.com	
+	cpmcp -f ZDSCF_C hd_i.img cpm3.sys.hd.i 0:cpm3.sys
+	cpmcp -f ZDSCF_C -t hd_i.img profile.sub_p.z3p 0:profile.sub
+	cpmcp -f ZDSCF_C hd_i.img zsys/configured/z3plus.lbi 0:z3plus.lbr
+	cpmcp -f ZDSCF_C hd_i.img zsys/configured/z3plus.coi 0:z3plus.com	
+
 
 	echo "Generating FD disk image..."
 

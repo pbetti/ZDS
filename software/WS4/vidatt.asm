@@ -5,7 +5,7 @@ string	equ	$8302
 
 	bit	1,c
 	jr	z,nowarn
-	ld	hl,vblink
+	ld	hl,vwarn
 	jp	string
 nowarn:
 	bit	2,c
@@ -16,10 +16,10 @@ nomark:
 	bit	3,c
 	jr	z,nound
 	ld	hl,vund
-	jp	string
+	call	string
 nound:
 	ld	a,c
-	and	00001110B
+	or	a
 	jr	z,nohigh
 	ld	hl,vhigh
 	jp	string
@@ -29,9 +29,10 @@ nohigh:
 
 
 vnor:	defb	02,$11,$0d
-vblink:	defb	03,$1b,$02,$0d
-vrev:	defb	03,$1b,$1b,$0d
-vund:	defb	03,$1b,$03,$0d
-vhigh:	defb	03,$1b,$06,$0d
+vblink:	defb	03,$1b,$02,$0
+vrev:	defb	03,$1b,$1b,$0
+vund:	defb	03,$1b,$04,$0
+vhigh:	defb	03,$1b,$1b,$0
+vwarn:	defb	03,$1b,$02,$04,$0
 
 	end

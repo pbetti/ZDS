@@ -126,7 +126,18 @@ sysbidb:
 ;;
 booti:
 	di				; disable interrupts
-	ld	b,bbpag << 4
+	ld	b,4			; cold start wait
+bootw0:
+	ld	de,$ffff
+bootw1:
+	nop
+	nop
+	dec	de
+	ld	a,d
+	or	e
+	jr	nz,bootw1
+	djnz	bootw0
+	ld	b,bbpag << 4		; real start
 	ld	c,mmuport
 	ld	a,eepage0		; mount rom and start
 	if not bbdebug
@@ -270,10 +281,14 @@ onshadow:
 	ld	a,blifastline		; blink, fast, line shaped cursor
 	ld	(cursshp),a
 	;
+	ld	a,beep
+	out	($8f),a
 	call	bbcrtcini		; Initialize CRTC
 		; workaround for "slow" init video boards
-	ld	de, 1000		; sleep 1 sec.
+	ld	de, 5000		; sleep 5 sec.
 	call	delay
+	ld	a,beep
+	out	($8f),a
 	call	bbcrtcini		; Initialize CRTC (again)
 		;
 	call	bbcurset		; and cursor shape
@@ -304,37 +319,6 @@ shlogo:
 	ld	hl,(11<<8)+inicol
 	call	bbsetcrs
  	call	bbhdinit		; IDE init
-; 	or	a
-; 	jr	nz,ideinok		; error or none
-;  	call	bbdriveid
-; 	or	a
-; 	jr	nz,ideinok
-; 	ld	hl,mrdy
-; 	call	print
-; 	; get hd params from scratch
-; 	ld	b, trnpag
-; 	call	mmgetp
-; 	push	af			; save current
-; 	;
-; 	ld	a,(hmempag)		; bios scratch page (phy)
-; 	ld	b,trnpag		; transient page
-; 	call	mmpmap			; mount it
-; 	;
-; 	ld	hl,hdidbuf + 54		; drive id string is @ BLDOFFS + 54
-; 	ld	b,10			; and 20 bytes long
-; 	call	hdbufprn
-; 	pop	af			; remove scratch
-; 	ld	b,trnpag		; transient page
-; 	call	mmpmap			; mount it
-; 	jr	ideiok
-; ideinok:
-; 	ld	hl,mndrv
-; 	cp	idenone			; drive present?
-; 	jr	z,ideinokp
-; 	ld	hl,mnot
-; ideinokp:
-; 	call	print
-; ideiok:
 	or	a
 	jr	nz,ideinok		; error or none
 	; identify drv 0

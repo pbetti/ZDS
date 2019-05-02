@@ -306,11 +306,12 @@ makdisk() {
 
 
 dodisks() {
+	echo
 	echo "Generating HD disk image..."
 
 	makdisk $HDFMT $HODISK
 	
-		echo
+	echo
 	echo "Generating CF disk image I: (+p. table and bootloader)..."
 	dd if=cf_trk0 of=hd_i.img
 	dd if=$HODISK of=hd_i.img seek=256
@@ -323,7 +324,20 @@ dodisks() {
 	cpmcp -f ZDSCF_C hd_i.img zsys/configured/z3plus.lbi 0:z3plus.lbr
 	cpmcp -f ZDSCF_C hd_i.img zsys/configured/z3plus.coi 0:z3plus.com	
 
+	echo
+	echo "Generating CF disk image C: (+p. table and bootloader)..."
+	dd if=cf_trk0.m of=hd_c.img
+	dd if=$HODISK of=hd_c.img seek=256
+	cpmrm -f ZDSCF_C hd_c.img 0:cpm3.sys
+	cpmrm -f ZDSCF_C hd_c.img 0:profile.sub
+	cpmrm -f ZDSCF_C hd_c.img 0:z3plus.lbr
+	cpmrm -f ZDSCF_C hd_c.img 0:z3plus.com	
+	cpmcp -f ZDSCF_C hd_c.img cpm3.sys.hd.c 0:cpm3.sys
+	cpmcp -f ZDSCF_C -t hd_c.img profile.sub_p.z3p 0:profile.sub
+	cpmcp -f ZDSCF_C hd_c.img zsys/configured/z3plus.lbc 0:z3plus.lbr
+	cpmcp -f ZDSCF_C hd_c.img zsys/configured/z3plus.coc 0:z3plus.com	
 
+	echo
 	echo "Generating FD disk image..."
 
 	makdisk $FDFMT $FODISK

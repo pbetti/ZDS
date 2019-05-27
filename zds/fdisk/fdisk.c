@@ -653,7 +653,7 @@ void doHelp()
 {
 	printf("Command list:\n");
 	printf("\
-	d - change (awap) hard drive\n\
+	d - change (swap) hard drive\n\
 	v - toggle cview/full view\n\
 	l - show table\n\
 	f - format partition\n\

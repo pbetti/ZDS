@@ -75,9 +75,35 @@
 ;
 ; ---------------------------------------------------------------------
 ;
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;::                                                        ::
+;::            System BIOS optional parameters             ::
+;::                                                        ::
+;::                                                        ::
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+;:::[ GLOBAL ]:::::::::::::::::::::::::::::::::::::::::::::::
+
+true		equ	-1
+false		equ	0
+
+;***[ Production/Testing mode ]*****°************************
+BBDEBUG		equ	false
+;
+;
+;:::[ HW OPTIONS ]:::::::::::::::::::::::::::::::::::::::::::
+
+;***[ Old parallel board support ]***************************
+WITH_OLD_PARA	equ	false
+PARA2_BASE	equ	04h		; parallel base address
+;
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;::            DO NOT EDIT BELOW THIS LINE!!               ::
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
 ; Define which assembler we are using
 ;
-
 ; PASMO	equ	1
 mzmac	equ	1
 ; ZMAC	equ	1			; ZMAC Z80 assembler, not Linux/Unix version
@@ -88,7 +114,7 @@ mzmac	equ	1
 ; Monitor version numbers (major.minor.subrel)
 ;
 monmaj		equ	'5'
-monmin		equ	'0'
+monmin		equ	'1'
 subrel		equ	'1'
 
 ;
@@ -166,7 +192,7 @@ cnfbyte		equ	timrcon-1	; config byte
 					;         4: 0 = unused/reserved
 					;         5: 0 = unused/reserved
 					;         6: 1 = IDE slave failure
-					;         7: 0 = single IDE		1 = Dual IDE 
+					;         7: 0 = single IDE		1 = Dual IDE
 fifosto		equ	000fh		; fifo queues storage start
 fifsize		equ	16		; fifo queue lenght
 fifblok		equ	fifsize+3	; fifo queue size
@@ -193,8 +219,6 @@ esc		equ	1bh		; ESCape
 beep		equ	07h		; beep
 xonc		equ	11h		; Xon
 xofc		equ	13h		; Xoff
-true		equ	-1
-false		equ	0
 tpa		equ	0100h		; TPA base address (for CP/M)
 mondelay	equ	10		; seconds to auto monitor
 
@@ -226,8 +250,6 @@ mmutstaddr	equ	mmutstpage<<12	; logical page used for sizing
 ; +--------+
 ;
 
-
-; include	modules/hwequs.inc.asm
 ; Hardware equates
 ; ---------------------------------------------------------------------
 
@@ -339,6 +361,7 @@ fdcreadc	equ	10001000b	; read cmd
 fdcwritc	equ	10101000b	; write cmd
 fdcreset	equ	11010000b	; fdc reset immediate cmd
 ;
+if	WITH_OLD_PARA
 ; ---------------------------------------------------------------------
 ; LX389: PARALLEL INTERFACE
 ; ---------------------------------------------------------------------
@@ -359,6 +382,26 @@ ppuini		equ	01h		; 00000001 Upl Init byte
 ppurdy		equ	05h		; 00000101 Upl Ready
 ppuack		equ	07h		; 00000111 Upl Acknowledge
 ppuokg		equ	03h		; 00000011 Upl Ok Go
+else
+; ---------------------------------------------------------------------
+; PARALLEL 2.0 INTERFACE
+; ---------------------------------------------------------------------
+; alternate printer port
+altprnprt	equ	0ffh
+;
+; parallel port PC link
+ppdatctr	equ	PARA2_BASE+02h	; Data port control
+ppdatdat	equ	PARA2_BASE+00h	; Data port data
+pphndctr	equ	PARA2_BASE+03h	; Handshake port control
+pphnddat	equ	PARA2_BASE+01h	; Handshake port data
+PB_INIT		equ	0
+PB_BUSY		equ	1
+PB_STRB		equ	2
+PB_ACK		equ	3
+PB_TXRX		equ	4
+PL_TX		equ	5
+PL_RX		equ	6
+endif
 ;
 ; virtual disks (PC-linked over parallel port)
 vdrdsec		equ	0		; read sector command
@@ -518,12 +561,6 @@ eerineprom	equ	80h		; tried to program eeprom running inside it
 ;	Slot 2	-> RAM    -> 256k from 80000h to bffffh (option)
 ;	Slot 3	-> EEPROM -> 256k from c0000h to fffffh (mandatory)
 ;
-
-;*************************************
-; Production / Testing
-bbdebug		equ	false
-;*************************************
-
 ;-------------------------------------
 ; Segments, pages locations
 

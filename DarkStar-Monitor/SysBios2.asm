@@ -59,7 +59,11 @@ setdprm:
 ;-------------------------------------
 ; Needed modules
 include modules/floppy.inc.asm		; fd1771
+if	WITH_OLD_PARA
 include modules/parcom.inc.asm		; parallel link
+else
+include modules/parcom2.inc.asm		; parallel link
+endif
 include modules/math.inc.asm		; math support
 include modules/ide.inc.asm		; 8255 ide i/f
 include modules/eeprom.inc.asm		; eeprom

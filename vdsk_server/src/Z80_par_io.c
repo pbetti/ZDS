@@ -94,7 +94,7 @@ int send_block( byte * buffer, int block_size )
 int send_byte( byte b )
 {
 	int err = 0;
-//	printf("clearing strobe...\n"); fflush(stdout);
+	printf("clearing strobe...\n"); fflush(stdout);
 	setbit( CNTRP, BIT_STRB, 1 );
 
 	timeout = 0;
@@ -102,7 +102,7 @@ int send_byte( byte b )
 		if ( err = test2bit( STATP, BIT_BUSY, 1, BIT_ACK, 1 ) ) {	/* check for nak here */
 			return (1);
 		}
-		++timeout;
+// 		++timeout;
 	}
 	if (err < 0) {		/* timed out */
 		printf("Z80 locked on TX\n");
@@ -117,7 +117,7 @@ int send_byte( byte b )
 		if ( err = test2bit( STATP, BIT_BUSY, 1, BIT_ACK, 1 ) ) {	/* check for nak here */
 			return (1);
 		}
-		++timeout;
+// 		++timeout;
 	}
 	if (err < 0) {		/* timed out */
 		printf("Z80 locked on TX (2)\n");

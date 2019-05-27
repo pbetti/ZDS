@@ -85,9 +85,22 @@ crttab:
 ;; CRTCINI - init buffers,6545,test vram,clear,leave cursor at home
 ;;
 crtcini:
+	xor	a			; "ping" board PIOs
+	out	(crtram0dat),a		; PIO 0
+	out	(crtram0cnt),a
+	out	(crtprntdat),a
+	out	(crtprntcnt),a
+	out	(crtram1dat),a		; PIO 1
+	out	(crtram1cnt),a
+	out	(crtkeybdat),a
+	out	(crtkeybcnt),a
+	out	(crtram2dat),a		; PIO 2
+	out	(crtram2cnt),a
+	out	(crtservdat),a
+	out	(crtservcnt),a
 	call	inicrt			; init video hw
-	call	clrscr			; clear vram
 	call	gioini			; init remaing hardware on the board
+	call	clrscr			; clear vram
 	ret
 
 ;;
@@ -300,7 +313,7 @@ scrse:
 ;
 clrscr:
 	ld	hl,$0000
-	ld	(ram0buf),hl
+	ld	(ram0buf),hl		; ram1buf too
 	xor	a
 	ld	(ram2buf),a
 	ld	a,$ef

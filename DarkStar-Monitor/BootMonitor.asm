@@ -143,7 +143,7 @@ bootw1:
 	if not bbdebug
 	out	(c),a
 	endif
-	; Reset memory
+	; Reset memory map
 	ld	e,16			; ram page counter (15 + 1 for loop)
 	ld	c,mmuport		; MMU I/O address
 	xor	a
@@ -276,21 +276,34 @@ onshadow:
 	cpl
 	out	(crtprntdat),a
 	out	(altprnprt),a
+if	WITH_OLD_PARA
 	ld	a, ppuini		; init parallel port for rx
 	out	(ppcntrp), a
+endif
 	ld	a,blifastline		; blink, fast, line shaped cursor
 	ld	(cursshp),a
 	;
-	ld	a,beep
-	out	($8f),a
 	call	bbcrtcini		; Initialize CRTC
 		; workaround for "slow" init video boards
-	ld	de, 5000		; sleep 5 sec.
-	call	delay
-	ld	a,beep
-	out	($8f),a
-	call	bbcrtcini		; Initialize CRTC (again)
+; 	ld	de, 5000		; sleep 5 sec.
+; 	call	delay
+; 	call	bbcrtcini		; Initialize CRTC (again)
+	ld	e,5			; # max retry
+crtnok:
+	in	a,(crt6545adst)
+	bit	7,a
+	jr	z,crtnok
+
+	in	a,(crtram0dat)		; get first char
+	or	a			; is null?
+	jr	z,crtok
+	push	de			; no
+	call	bbcrtcini
+	pop	de
+	dec	e
+	jr	nz, crtnok
 		;
+crtok:
 	call	bbcurset		; and cursor shape
 	;
 tosercns:
@@ -324,10 +337,10 @@ shlogo:
 	; identify drv 0
 	ld	d,0			; drive 0
 	call	bbloghdrv
- 	call	bbdriveid		; get id for master 	
+	call	bbdriveid		; get id for master
 	or	a
 	jr	nz,ideinok
-	
+
 	ld	hl,mrdy			; drv 0 OK
 	call	print
 	call	printhdid		; drive model
@@ -350,10 +363,10 @@ ideslave:
 
 	ld	d,1			; drive 1
 	call	bbloghdrv
- 	call	bbdriveid		; get id for slave 	
+	call	bbdriveid		; get id for slave
 	or	a
 	jr	nz,ide1fail
-	
+
 	ld	hl,mrdy			; drv 1 OK
 	call	print
 	call	printhdid		; drive model
@@ -439,7 +452,7 @@ okrtc:	call	print
 	;
 	call	revon
 	call	inline
-	defb " READY ",0
+	defb	" READY ",0
 	call	revoff
 	; serial console by preference?
 	ld	a,(miobyte)
@@ -738,7 +751,7 @@ printhdid:
 	ld	b,trnpag		; transient page
 	call	mmpmap			; mount it
 	ret
-	
+
 ;;
 ;; initialize fifo queue
 ;;
@@ -932,6 +945,12 @@ pupload:
 	ld	hl, strwait
 	call	print
 
+if	WITH_OLD_PARA
+	;
+else
+	call	pp_clr
+	call	pp_set_rx
+endif
 	call	bbuplchr		; in hi byte of upload offset
 	ld	h,a
 	call	bbuplchr		; in lo byte of upload offset
@@ -967,6 +986,31 @@ puplok:
 	ld	hl,mrdy			; success
 	call	print
 	jp	usrcmd
+
+if	WITH_OLD_PARA
+	;
+else
+;;
+;; parallel 2 modes
+;;
+pp_clr:
+	in	a,(pphnddat)
+	and	10000101b		; RX mode and reset handhake and mode leds
+	or	01100000b
+	out	(pphnddat),a
+	ret
+
+pp_set_rx:
+	ld	a,$cf			; 11-00-1111 mode ctrl word
+	out	(ppdatctr),a		; data port mode 3
+	ld	a,$ff			; load bit mask 11111111 (all inputs)
+	out	(ppdatctr),a		; data port in RX
+	in	a,(pphnddat)
+	res	PB_TXRX,a
+	res	PL_RX,a
+	out	(pphnddat),a
+	ret
+endif
 
 ;;
 ;; FILLMEM - fill memory with a given values

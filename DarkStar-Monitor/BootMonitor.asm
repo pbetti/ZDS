@@ -289,22 +289,59 @@ endif
 ; 	call	delay
 ; 	call	bbcrtcini		; Initialize CRTC (again)
 	ld	e,5			; # max retry
+	ld	hl,0000b
+	call	bbsetcrs
 crtnok:
 	in	a,(crt6545adst)
 	bit	7,a
 	jr	z,crtnok
 
+	ld	a,$f0
+	out	(crtram0dat),a		; put test char
+	xor	a
+	out	(crt6545data),a
+	ld	hl,0000b
+	call	bbsetcrs
+crtnok0:
+	in	a,(crt6545adst)
+	bit	7,a
+	jr	z,crtnok0
+
 	in	a,(crtram0dat)		; get first char
-	or	a			; is null?
-	jr	z,crtok
+	ld	d,a
+	xor	a
+	out	(crt6545data),a
+	ld	a,d
+	cp	$f0			; is it?
+	jr	nz,crtcll
+	jr	crtokt
+crtcll:
 	push	de			; no
 	call	bbcrtcini
+	ld	de,1000			; 1000 msec.
+	call	delay
 	pop	de
 	dec	e
 	jr	nz, crtnok
 		;
+crtokt:
+	ld	c,' '
+	call	bbcrtfill
+	ld	hl,0000b
+	call	bbsetcrs
+	ld	e,3
+crtokt0:
+	in	a,(crt6545adst)
+	bit	7,a
+	jr	z,crtnok0
+
+	in	a,(crtram0dat)		; get first char
+	cp	' '
+	jr	nz,crtokt
+	dec	e
+	jr	nz,crtokt0
 crtok:
-	call	bbcurset		; and cursor shape
+	call	bbcurset		; set cursor shape
 	;
 tosercns:
 	ld	c,ff			; if on serial

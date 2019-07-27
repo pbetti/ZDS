@@ -1,1 +1,0 @@
-zsdos/zsdos1/ZSDOS-GP.Z80

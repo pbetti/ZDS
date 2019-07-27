@@ -1,0 +1,444 @@
+
+	.z80
+	;aseg
+
+	;subttl	common file for basic interpreter
+	;.sall
+
+conto	defl	15		;character to supress output (usually control-o)
+dbltrn	defl	0		;for double precision transcendentals
+	if	0
+
+	.printx	/extended/
+
+
+	.printx	/lpt/
+
+	.printx	/cpm disk/
+
+
+	.printx	/z80/
+
+	.printx	/fast/
+
+	.printx	/5.0 features/
+
+	.printx	/ansi compatible/
+	endif
+
+clmwid	defl	14		;make comma columns fourteen characters
+datpsc	defl	128		;number of data bytes in disk sector
+linln	defl	80		;terminal line length
+lptlen	defl	132
+buflen	defl	255		;long lines
+namlen	defl	40		;maximum length name -- 3 to 127
+
+numlev	defl	0*20+19+2*5	;number of stack levels reserved
+				;by an explicit call to getstk
+
+strsiz	defl	4
+
+strsiz	defl	3
+numtmp	defl	3		;number of string temporaries
+
+numtmp	defl	10
+
+md.rnd	defl	3		;the mode number for random files
+md.sqi	defl	1		;the mode number for sequential input files
+				;never written into a file
+md.sqo	defl	2		;the mode for sequential output files
+				;and program files
+cpmwrm	defl	0		;cp/m warm boot addr
+cpment	defl	cpmwrm+5	;cp/m bdos call addr
+	cseg
+trurom	defl	0
+	page
+	title	bio basic interpreter i/o routines/whg/pga/mbm...
+	;subttl	outdo, outcon - character output
+; microsoft basic has a number of primitive i/o routines:
+;	outdo (either call or rst) prints char in [a] no registers affected
+;		to either terminal or disk file or printer depending
+;		flags:
+;			prtflg if non-zero print to printer
+;			ptrfil if non-zero print to disk file pointed to
+;				by ptrfil
+;
+;	inchr	input a character into [a] condiation codes destroyed.
+;		input from disk file if ptrfil non-zero.
+;
+;	crdo	print a carriage return sequence on either
+;		terminal or printer or disk file depending on flags
+;		see outdo above. see below code for register use
+	extrn	ppswrt
+	public	inchr,outdo,fininl,crfin
+outdo:	push	af
+	push	hl
+	extrn	ptrfil
+	ld	hl,(ptrfil)
+outcon:
+	ld	a,h
+	or	l
+	extrn	filout
+	jp	nz,filout
+	pop	hl
+	extrn	prtflg
+lptcod:	ld	a,(prtflg)	;see if we want to talk to lpt
+	or	a		;test bits
+
+	;regular okia driver only
+	jp	z,ttychr	;if zero then not
+	pop	af		;get back char
+	push	af
+	cp	8		;backspace?
+	jp	nz,ntbks2	;no
+	ld	a,(lptpos)	;get lpt pos
+	dec	a		;subtract one from printer posit
+	ld	(lptpos),a	;correct lptpos
+	pop	af		;get back backspace
+	jp	lptchr		;send char
+ntbks2:	cp	9		;tab
+	jp	nz,notabl	;no
+morspl:	ld	a,32		;get space
+	call	outdo		;send it
+	extrn	lptpos
+	ld	a,(lptpos)	;get current print posit
+	and	7		;at tab stop?
+	jp	nz,morspl	;go back if more to print
+	pop	af		;pop off char
+	ret			;return
+notabl:
+
+	pop	af		;get char back
+	push	af		;save again
+	sub	13		;if funny control char, (lf) do nothing
+	jp	z,zerlp1
+	jp	c,lptch1	;just print char
+	extrn	lptsiz
+	ld	a,(lptsiz)	;get size of printer
+	inc	a		;is it infinite?
+	ld	a,(lptpos)	;get posit
+	jp	z,zerlpt	;then dont fold
+	push	hl		;ssave [h,l]
+	ld	hl,lptsiz	;max length
+	cp	(hl)		;set cc'S
+	pop	hl		;then do crlf
+	call	z,printw	;do crlf
+	jp	z,lptch1	;if forced cr, leave lptpos at zero
+zerlpt:
+	cp	255		;max length?
+	jp	z,lptch1	;then just print
+	inc	a		;increment posit
+zerlp1:	ld	(lptpos),a
+lptch1:	pop	af		;get char back
+lptchr:	push	af		;save back again
+	push	bc		;save [b,c]
+	push	de		;save [d,e]
+	push	hl
+	ld	c,a		;cpm wants char in [c]
+	public	lptout
+lptout:	call	0		;printer routine address stored here
+	pop	hl		;restore regs
+	pop	de
+	pop	bc
+	pop	af		;restore char
+	ret			;return from outchr
+	public	finlpt
+finlpt:	xor	a		;reset print flag so
+	ld	(prtflg),a	;output goes to terminal
+	ld	a,(lptpos)	;get current lpt posit
+	or	a		;on left hand margin already?
+	ret	z		;yes, return
+printw:	ld	a,13		;put out crlf
+	call	lptchr
+	ld	a,10
+	call	lptchr
+	xor	a		;zero lptpos
+	ld	(lptpos),a
+	ret			;done
+	public	ttychr
+ttychr:
+	extrn	cntofl
+	ld	a,(cntofl)
+	or	a
+	jp	nz,ppswrt	;no, do output
+	pop	af		;get the character
+	push	bc
+	push	af		;and save it again
+	cp	8		;backspace?
+	jp	nz,ntbks1	;no
+	ld	a,(ttypos)	;get tty pos
+	or	a		;set cc'S
+	jp	z,morspr	;return
+	dec	a		;decrment posit by one
+	ld	(ttypos),a	;correct ttypos
+				;correct ttypos
+	ld	a,8		;get back backspace char
+	jp	tryout		;send it
+ntbks1:	cp	9		;outputting tab?
+	jp	nz,notab	;no.
+morsp:	ld	a,32		;get space char
+	call	outdo		;call outchr recursively (!)
+	ld	a,(ttypos)	;get current print pos.
+	and	7		;at tab stop yet??
+	jp	nz,morsp	;no, keep spacing
+morspr:	pop	af		;restore current char (tab)
+	pop	bc		;get [b,c] back
+	ret			;all done
+notab:
+	cp	32		;is this a meaningful character?
+	jp	c,tryout	;if it'S A NON-PRINTING CHARACTER
+	extrn	linlen
+	ld	a,(linlen)
+	ld	b,a		;[b]=line length
+				;don'T INCLUDE IT IN TTYPOS
+	ld	a,(ttypos)	;see if print head is at the end of the line
+	inc	b		;is width 255?
+	jp	z,inctps	;yes, just inc ttypos
+	dec	b		;correct [b]
+	cp	b
+	public	linpt1
+linpt1	defl	$-1
+	call	z,crdo		;type crlf and set ttypos and [a]=0 if so
+	jp	z,tryout	;if forced crlf, leave ttypos at zero
+inctps:
+	cp	255		;have we hit max #?
+	jp	z,tryout	;then leave it there
+	inc	a		;increment ttypos since we'RE
+				;going to print a character.
+	extrn	ttypos
+	ld	(ttypos),a	;store new print head position
+				;store new print head position
+tryout:
+	pop	af		;get char off stack
+	pop	bc		;restore [b,c]
+	push	af		;save psw back
+	public	noprin
+noprin:	; end of phlz80 off
+	pop	af		;get character back
+
+	push	af		;then save back
+	push	bc		;save all regs
+	push	de
+	push	hl
+	ld	c,a		;cpm wants char in [c]
+	public	conout
+conout:	call	0		;cpm (bios) entry point
+	pop	hl		;restore regs
+	pop	de
+	pop	bc
+	pop	af		;restore char
+	ret			;return from outchr
+
+
+
+
+	page
+	;subttl	inchr, tryin - character input routines
+	public	inchr,tryin
+inchr:
+	push	hl
+	ld	hl,(ptrfil)
+	ld	a,h
+	or	l
+	jp	z,notflc	;get character from terminal
+	extrn	indskc
+	call	indskc		;read a character
+	extrn	pophrt
+	jp	nc,pophrt	;return with character
+	push	bc		;save all registers
+	push	de
+	push	hl
+	extrn	prgfin
+	call	prgfin		;close the file
+	pop	hl
+	pop	de
+	pop	bc
+	extrn	chnret
+	extrn	chnflg
+	ld	a,(chnflg)	;chain in progress?
+	or	a		;test..
+	jp	nz,chnret	;yes, perform variable block transfer, etc.
+	extrn	lstfre
+	ld	a,(lstfre)	;run it or not?
+	or	a
+	extrn	newstt
+	ld	hl,newstt
+	ex	(sp),hl
+	extrn	runc
+	jp	nz,runc		;run it
+	ex	(sp),hl
+	push	bc		;preserve registers
+	push	de
+	extrn	reddy
+	ld	hl,reddy	;print prompt "OK"
+	extrn	strout
+	call	strout
+	pop	de
+	pop	bc
+	xor	a
+	pop	hl
+	ret
+notflc:	pop	hl
+tryin:
+	public	inchri
+inchri:
+	push	bc		;save regs
+	push	de
+	push	hl
+	public	conin
+conin:	call	0		;changed to call ci
+	pop	hl		;restore regs
+	pop	de
+	pop	bc
+	public	cnlcb2
+cnlcb2	defl	$-1		;console command change loc
+
+inexit:
+	and	127		;get rid of parity bit
+	cp	conto		;is it supress output?
+	ret	nz
+	ld	a,(cntofl)
+	or	a		;are we supressing output?
+	extrn	ctropt
+	call	z,ctropt	;then print control-o now.
+	cpl			;complement its state
+	ld	(cntofl),a	;save back
+	or	a		;see if we are turning output on.
+	jp	z,ctropt	;print the ^o
+	xor	a		;return with null which is always ignored
+
+	ret
+
+	;for some reason sbc doent have cst
+	;terminates rshack
+	page
+	;subttl	crdo	put out a carriage return and associated routines
+; crdo returns with all registers except [a]
+; preserved, [a]=0, zero cc set, carry reset.
+
+	public	crdonz
+; crdonz only does a cr if ttypos is not zero.
+; in other words, only print a carriage return when not at left margin.
+crdonz:
+	ld	a,(ttypos)	;get current ttypos
+				;get current ttypos
+	or	a		;set cc'S
+	ret	z		;if already zero, return
+	jp	crdo		;do cr
+fininl:	ld	(hl),0		;put a zero at the end of buf
+	extrn	bufmin
+	ld	hl,bufmin	;setup pointer
+				;don'T PUT CR/LF OUT TO LOAD FILE
+	public	crdo
+crdo:
+	ld	a,13
+	call	outdo
+	ld	a,10
+	public	crfino
+crfino:	call	outdo
+crfin:
+	push	hl		;save [h,l]
+	ld	hl,(ptrfil)	;see if outputting to disk
+	ld	a,h		;if so, ptrfil .ne. 0
+	or	l		;...
+	pop	hl		;restore [h,l]
+	jp	z,crcont	;not disk file, continue
+	xor	a		;crfin must always return with a=0
+	ret			;and carry=0.
+crcont:
+	ld	a,(prtflg)	;going to printer?
+	or	a		;test
+	jp	z,ntprtr	;no
+	xor	a		;done, return
+	ld	(lptpos),a	;zero positon
+	ret
+ntprtr:
+	xor	a		;set ttypos=0
+	ld	(ttypos),a
+	extrn	nulcnt
+	ld	a,(nulcnt)	;get number of nulls
+prtnul:	dec	a
+	ret	z		;all nulls done [a]=0
+				;some routines depend on crdo
+				;and crfin returning [a]=0 and z true
+	push	af		;save the count
+	xor	a		;[a]= a null
+	call	outdo		;send it out
+	pop	af		;restore the count
+	jp	prtnul		;loop printing nulls
+	public	iscntc
+iscntc:
+
+	extrn	csts
+	push	bc		;save regs
+	push	de
+	push	hl
+
+	public	consts
+consts:	call	csts		;get console status
+	pop	hl
+	pop	de
+	pop	bc
+	or	a		;set cc'S
+	ret	z		;0=false - no character typed
+				;if none, return
+	public	cntccn
+cntccn:
+	call	inchri		;read the character that was present
+	cp	23o		;pause? (^s)
+	call	z,inchri	;if pause, read next char
+	ld	(charc),a	;save char in the buffer
+	cp	3		;^c?
+	extrn	ctrlpt
+	call	z,ctrlpt	;type ^c
+	extrn	stop
+	jp	stop
+	public	inkey,charcg
+	extrn	dscptr,putnew,reddy,faclo,valtyp,strin1,charc,setstr
+	extrn	chrgtr
+inkey:
+	call	chrgtr
+	push	hl		;save the text pointer
+	call	charcg		;get charc and clear if set
+	jp	nz,bufcin
+mrchri:
+	public	const3
+const3:	call	0
+	or	a		;set non-zero if char there
+	jp	z,nulrt		;no, return null string
+; get char if one,
+;****some versions already have char and dont want this code ***
+;****so they should turn on chseat to turn off reads
+	call	inchri
+bufcin:	push	af
+	call	strin1		;make one char string
+	pop	af
+	ld	e,a		;char to [d]
+	call	setstr		;stuff in descriptor and goto putnew
+
+nulrt:	ld	hl,reddy-1
+	ld	(faclo),hl
+	ld	a,3
+	ld	(valtyp),a
+	pop	hl
+	ret
+
+charcg:	ld	a,(charc)	;get saved char
+	or	a		;is there one?
+	ret	z		;no, done
+	push	af		;save char
+	xor	a		;clear it
+	ld	(charc),a	;by storing zero
+	pop	af		;restore char and non-zero cc'S
+	ret
+	public	outch1
+outch1:
+	call	outdo		;output the char
+	cp	10		;was it a lf?
+	ret	nz		;no, return
+	ld	a,13		;do cr
+	call	outdo
+	call	crfin
+	ld	a,10		;restore char (lf)
+	ret
+;	end

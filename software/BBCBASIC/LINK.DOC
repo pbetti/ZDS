@@ -1,0 +1,184 @@
+                LINK.COM - A new linker for CP/M
+
+The   "standard"  CP/M  linkers  - Microsoft's  L80  and  Digital 
+Research's  LINKMT  - are fundamentally designed  to  produce  an 
+executable  ".COM" file for running under CP/M itself.  This they 
+do  well,  but when called upon to produce PROMable code or  code 
+for  "patching" another program then a number of limitations  are 
+evident.
+
+Although the detailed problems cannot be simply  described,  they 
+stem from two main causes:
+
+a)   The  linkers build an image of the final object code in  RAM 
+     and dump this to generate the output file.
+
+b)   The  linkers behave in an "unhelpful" manner when  presented 
+     with code assembled at an absolute address.
+
+To  give some specific examples,  L80 tends to "fill" gaps in the 
+output  file  (caused,  for example,  by ORG  statements  in  the 
+original  source  code) with whatever happened to be in  the  RAM 
+when it was executed. This can mean that a PROM's contents differ 
+even  if  exactly the same object files are linked  together;  it 
+also  results in an object file bigger than  necessary.  Absolute 
+sections  of code (ASEG in Microsoft's terminology) go where  you 
+would expect but don't seem to occupy any real addressing  space: 
+a  subsequent relative module will quite probably be linked to an 
+"overlapping" address (or some unrelated address).
+
+LINKMT is better in some respects,  for example "gaps" are filled 
+with  zeros  (although,  of course,  FF's would  be  better  when 
+programming   conventional   EPROMs).   Unfortunately,   however, 
+absolute sections of code are not accepted at all!  This can make 
+placing jump tables and vector tables very messy.
+
+LINK.COM overcomes these problems in three main ways:
+
+1.   "Gaps" do not appear at all in the output file: advantage is 
+     taken  of  the capability of Intel-hex format  to  represent 
+     non-contiguous data.   Therefore the PROM will remain in its 
+     normal unprogrammed state, which is more sensible and speeds 
+     programming.
+
+2.   Absolutely  addressed  code  is  accepted,   and  "uses  up" 
+     addressing  space.  Therefore  if an absolute module  and  a 
+     relative  module  are linked together (the  absolute  module 
+     first)  then  the  code from the second  module  will  begin 
+     immediately after that from the first module.
+
+3.   Only the size of each module is restricted to the  available 
+     free RAM:  the size of the output file is not limited.  This 
+     allows  very  large files to built even if the  CP/M  system 
+     size is small.
+
+Naturally  LINK.COM has some limitations,  especially when it  is 
+realised  that  it  is only 3K long compared with L80's  11K  and 
+LINKMT's  12K!  These  limitations  are mostly in  the  areas  of 
+Libraries and Overlays,  neither of which are supported by  LINK. 
+Another  limitation is that it has no mode in which code and data 
+areas  are interleaved - in any case not very useful for  PROMmed 
+programs!   Also,  like LINKMT, initialised data is not permitted 
+and, like L80, symbols are significant only to six characters.
+
+
+The command line syntax for LINK.COM is a hybrid of that required 
+by L80 and LINKMT, as follows:
+
+     LINK outfile=[/switch,]module{[/switch][,module]}
+
+where  brackets  ([])  indicate optional items  and  braces  ({}) 
+signify "repeat zero or more times".
+
+outfile is the filename of the output object file.  A disk  drive 
+        other  than the default drive may be specified,  but  the 
+        extension (if any) is ignored: the output file always has 
+        the extension .HEX and is in Intel format.
+
+module  is  the  filename of a relocatable object module such  as 
+        produced  by  M80  or  ASMB.  If  omitted  the  extension 
+        defaults  to .REL,  but any other can be  specified.  The 
+        modules  are linked in the order in which they are  given 
+        in the command line.
+
+switch  is one of the following:
+
+        a:nnnn  suppress  addresses below nnnnH from  the  output 
+                (hex)  file.  Code  at  addresses below  this  is 
+                simply ignored.  This switch can appear  anywhere 
+                in the command line after the =.
+
+        z:nnnn  suppress  addresses  above nnnnH from the  output 
+                file.  To  generate  a hex file for a  single  2K 
+                PROM,    for   example,    one   might    specify 
+                /a:0800/z:0FFF.  This  switch can appear anywhere 
+                in the command line after the =.
+
+        p:nnnn  set  the  linker's code pointer  to  nnnnH.  This 
+                determines the address at which a relative module 
+                (with  no ORG) will be linked (it will  otherwise 
+                follow immediately after the previous module,  or 
+                at  0000  if there is  no  previous  module).  An 
+                absolute module will override the /p switch.  The 
+                switch  takes effect at the point in the  command 
+                line  where  it is encountered;  if you  want  to 
+                offset  the  first  module it  must  precede  the 
+                module  name  (but  follow the  =).  Multiple  /p 
+                switches  within  the same command  are  allowed, 
+                allowing each module to be linked to a  different 
+                address.
+
+        d:nnnn  set  the  linker's data pointer  to  nnnnH.  This 
+                determines  the address at which data items (i.e. 
+                after  an assembler DSEG statement) are  located. 
+                As  with /p,  the position of the switch  in  the 
+                command   line  is  important  and  multiple   /d 
+                switches  are permitted.  If not  specified,  the 
+                data address defaults to 0000. Note that there is 
+                no  need  to  use DSEG at all:  it  is  perfectly 
+                acceptable  to define data locations  (e.g.  with 
+                DEFS) within a (generally absolute) code  segment 
+                - this  will  be the situation with  code  ported 
+                from ASMB80 which has no concept of separate code 
+                and  data  address spaces.  In this case  the  /d 
+                switch has no effect.
+
+        s       Cause  the linker to output a symbol table  file. 
+                This  file will have the same name (and drive) as 
+                the  output  object file but with  the  extension 
+                .SYM.  Note that this file is intended for  human 
+                consumption,  it  is  not suitable  for  symbolic 
+                debuggers such as SID and ZSID.
+
+If the linker fails for some reason,  no output (.HEX) file  will 
+be  produced.  In this case a previous .HEX file on the disk will 
+remain unaltered. If the linker is executed from a submit file it 
+may  be  desirable  to delete the .HEX file  before  running  the 
+linker so that a failure doesn't go unnoticed.
+
+Possible error messages are as follows:
+
+No output file specified        The output filename was missing.
+
+Bad REL file format             An object module was not in  .REL 
+                                format     or    requested     an 
+                                unsupported   feature   (e.g.   a 
+                                library search or a COMMON area).
+
+Bad linked list                 The  linker  couldn't follow  the 
+                                linked    list    of     external 
+                                references.  Probably two modules 
+                                are "overlapping".
+
+SYMBOL multiply defined         The  specified symbol was defined 
+                                in two or more different  modules 
+                                (this is not an abort error,  but 
+                                does  suppress  generation of  an 
+                                output file).
+
+SYMBOL undefined                The    specified    symbol    was 
+                                referenced but not defined in any 
+                                of  the modules (this is  not  an 
+                                abort  error,  but does  suppress 
+                                generation of an output file).
+
+Initialised data found          Initialised data (e.g.  DEFB in a 
+                                DSEG) is not permitted.
+
+Insufficient RAM                There  was not enough RAM to hold 
+                                the  module,  either due  to  the 
+                                module being very large or having 
+                                ORGs    at    widely    different 
+                                addresses.
+
+COMMON not supported            An  address  value  referenced  a 
+                                COMMON area.
+
+Bad switch format               The switch was not recognised.
+
+End of file before end of data  No  end-of-file record was found. 
+                                Probably a corrupted .REL file.
+
+
+                                      Richard Russell, 08-09-1986
+O i  LINK    DOC           !        ööööööööööööööööööööööööööööööö ööööööööööööööööööööööööööööööö

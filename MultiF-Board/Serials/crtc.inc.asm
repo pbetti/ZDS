@@ -1,1 +1,0 @@
-../../DarkStar-Monitor/modules/crtc.inc.asm

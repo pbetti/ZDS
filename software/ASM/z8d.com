@@ -1,1 +1,0 @@
-u1/elettronica/Z80-CPM/hardware/Z80DarkStar/z8d.bin

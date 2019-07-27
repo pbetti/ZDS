@@ -1,0 +1,1532 @@
+;
+;LINK - 2-pass CP/M linker (.REL to .HEX)
+;
+;Performs a similar function to DR's LINKMT.
+;The combined size of the largest object module and the
+;symbol table cannot exceed the available free RAM.
+;Initialised data, .COM output and Libraries are not
+;supported; ASEG behaves differently.  Only the first
+;six characters of symbols are recognised.
+;
+;(C) Copyright R.T.Russell, 1986
+;Version 1.30, 30-09-86
+;
+BOOT	EQU	0
+BDOS	EQU	5
+FCB	EQU	5CH
+BUFFER	EQU	80H
+;
+CR	EQU	13
+LF	EQU	10
+;
+EOF	EQU	0		;End of file flag
+CORD	EQU	1		;Code or Data flag
+NEW	EQU	2		;Awaiting data flag
+ERR	EQU	3		;Error flag
+SYMFLG	EQU	4		;Symbol table flag
+;
+	ORG	100H
+;
+;Introduction:
+;
+START:	LD	SP,STACK
+	LD	IX,FLAGS
+	CALL	TELL
+	DEFB	CR,LF,'2-pass CP/M Linker Version 1.30'
+	DEFB	CR,LF,'(C) Copyright R.T.Russell, 1986'
+	DEFB	CR,LF,0
+;
+;If empty command line, summarise function:
+;
+	LD	A,(FCB+1)
+	CP	' '
+	JP	NZ,SUMMAT
+	CALL	TELL
+	DEFB	CR,LF
+	DEFB	'Syntax: LINK outfile=[/switch,]module'
+	DEFB	'{[/switch][,module]}',CR,LF,CR,LF
+	DEFB	'  where outfile is output file name '
+	DEFB	'(.HEX)',CR,LF
+	DEFB	'        module  is relocatable object'
+	DEFB	' module',CR,LF
+	DEFB	'        switch  is one of:',CR,LF
+	DEFB	'                a:nnnn suppress o/p '
+	DEFB	'below nnnnH',CR,LF
+	DEFB	'                z:nnnn suppress o/p '
+	DEFB	'above nnnnH',CR,LF
+	DEFB	'                p:nnnn set program '
+	DEFB	'address offset',CR,LF
+	DEFB	'                d:nnnn set data '
+	DEFB	'address offset',CR,LF
+	DEFB	'                s      output symbol '
+	DEFB	'file (.SYM)',CR,LF,CR,LF,0
+	RST	BOOT
+;
+;Initialisation:
+;
+SUMMAT:	LD	(IX),0
+	LD	HL,0
+	LD	(LOW),HL
+	DEC	HL
+	LD	(HIGH),HL
+;
+;Terminate user's command:
+;
+	LD	HL,BUFFER
+	LD	C,(HL)		;Length of command
+	LD	B,0
+	INC	HL
+	ADD	HL,BC
+	LD	(HL),CR		;Terminate command line
+;
+;Process output file name:
+;
+	LD	HL,BUFFER+1
+	CALL	SETUP
+	CP	'='
+	JR	Z,OUTFOK
+	CALL	TELL
+	DEFB	CR,LF,'No output file specified',0
+	RST	BOOT
+;
+OUTFOK:	INC	HL		;Skip '='
+	LD	(BUFPTR),HL	;Command buffer pointer
+	LD	DE,OUTFCB
+	LD	HL,FCB
+	LD	BC,36
+	LDIR			;Copy FCB to OUTFCB
+	LD	DE,OUTFCB+9
+	LD	HL,DOLLAR
+	LD	BC,3
+	LDIR			;Extension = .$$$
+;
+;Set up for first pass:
+;
+	LD	HL,(BDOS+1)	;Top of user RAM +1
+	LD	BC,-8
+	ADD	HL,BC
+	LD	(HL),0FFH	;Symbol end marker
+	LD	(SYMPTR),HL	;Top of symbol table
+	LD	HL,0
+	LD	(CPOINT),HL
+	LD	(DPOINT),HL
+;
+;Entry point for each file:
+;
+FILE1:	LD	HL,(BUFPTR)
+	CALL	SWITCH		;Process switch
+	LD	A,(HL)
+	CP	CR		;End of list?
+	JP	Z,PASS2
+	CALL	SETUP
+	LD	(BUFPTR),HL
+	CALL	SAYFIL
+	CALL	OPEN		;Open file
+	EXX
+	LD	DE,INBUF+255
+	LD	HL,0
+	CALL	RDBYTE		;Fill input buffer
+	CALL	RDBYT8		;Get first byte to L'
+	EXX
+;
+;Entry point for each module:
+;
+MODU1:	RES	CORD,(IX)
+	RES	NEW,(IX)
+	LD	HL,(CPOINT)
+	LD	(CBASE),HL
+	LD	(SEGMT),HL
+	LD	HL,(DPOINT)
+	LD	(DBASE),HL
+	LD	HL,-1
+	LD	(FIRST),HL
+;
+LINK1:	LD	A,1
+	CALL	INBITS		;Get 1 bit
+	AND	00000001B
+	JR	Z,DATA1
+	LD	A,2
+	CALL	INBITS		;Get 2 bits
+	AND	00000011B
+	JR	Z,SPEC1
+	CALL	INBYTE		;Pass 1: ditch data
+	CALL	ADJUST		;Adjust pointers etc.
+DATA1:	CALL	INBYTE
+	CALL	ADJUST		;Adjust pointers etc.
+	JR	LINK1
+;
+SPEC1:	LD	A,4
+	CALL	INBITS		;Get 4 bits
+	AND	00001111B
+	LD	C,A
+	LD	B,0
+	LD	HL,JPTAB1
+	ADD	HL,BC
+	ADD	HL,BC
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	JP	(HL)		;Off to routine
+;
+JPTAB1:	DEFW	SKIPZ1		;Internal symbol name
+	DEFW	UNSUPP		;Select COMMON block
+	DEFW	SKIPZ1		;Program name
+	DEFW	UNSUPP		;Request library search
+	DEFW	UNSUPP		;Reserved
+	DEFW	UNSUPP		;Set COMMON size
+	DEFW	EXTRN1		;External symbol
+	DEFW	ISYMV1		;Internal symbol value
+	DEFW	UNSUPP		;Reserved
+	DEFW	SKIPY1		;External + offset
+	DEFW	DSIZE1		;Set DATA size
+	DEFW	ORG1		;Set location counter
+	DEFW	UNSUPP		;Chain address
+	DEFW	SKIPY1		;Set PROGRAM size
+	DEFW	END1		;End program
+	DEFW	EOF1		;End of file
+;
+UNSUPP:	CALL	TELL
+	DEFB	'Bad REL file format',0
+	JP	ABORT
+;
+SKIPY1:	CALL	YPART
+	JR	LINK10		;Ignore
+;
+EXTRN1:	CALL	YPART
+SKIPZ1:	CALL	ZPART
+	JR	LINK10		;Ignore
+;
+ISYMV1:	CALL	YPART		;Address + offset to DE
+	CALL	ZPART		;Name to NAME
+	LD	HL,NAME
+	CALL	SEARCH		;Look up symbol
+	CALL	Z,MULDEF	;Multiple definition
+	JR	Z,LINK10
+	LD	HL,(SYMPTR)	;Symbol table pointer
+	LD	BC,-8
+	ADD	HL,BC		;Bump pointer
+	LD	(SYMPTR),HL
+	LD	BC,TOP
+	OR	A
+	SBC	HL,BC		;Out of room?
+	ADD	HL,BC
+	JP	C,NOROOM
+	EX	DE,HL
+	PUSH	HL
+	LD	HL,NAME
+	LD	BC,6
+	LDIR			;Copy symbol name
+	POP	HL
+	EX	DE,HL
+	LD	(HL),E		;Save symbol address
+	INC	HL
+	LD	(HL),D
+LINK10:	JP	LINK1
+;
+DSIZE1:	CALL	YPART
+	LD	DE,(DPOINT)
+	ADD	HL,DE
+	LD	(DPOINT),HL
+	JR	LINK10
+;
+ORG1:	RES	NEW,(IX)
+	CALL	YPART
+	LD	(SEGMT),DE
+	AND	00000010B
+	RES	CORD,(IX)
+	JR	Z,LINK10
+	SET	CORD,(IX)
+	JR	LINK10
+;
+END1:	CALL	YPART
+	EXX
+	LD	A,C
+	CP	8
+	CALL	NZ,RDBYT8	;Force to byte boundary
+	EXX
+	LD	HL,(FIRST)
+	LD	A,H
+	AND	L
+	INC	A		;Any code bytes?
+	JP	Z,MODU1
+	CALL	TELL
+	DEFB	'Start ',0
+	CALL	PADD
+	CALL	TELL
+	DEFB	' End ',0
+	LD	HL,(CPOINT)
+	DEC	HL
+	CALL	PADD
+	JP	MODU1
+;
+EOF1:	LD	DE,FCB
+	CALL	CLOSE
+	JP	FILE1
+;
+MULDEF:	LD	HL,MULERR
+	CALL	MDORUN
+	XOR	A
+	RET
+;
+MULERR:	DEFB	' multiply ',0
+;
+	EJECT
+;
+;Second pass:
+;
+;Set up for second pass:
+;
+PASS2:	CALL	CRLF		;New line
+	LD	HL,0
+	LD	(CPOINT),HL
+	LD	(DPOINT),HL
+;
+;Skip output file name:
+;
+	LD	HL,BUFFER+1
+	LD	A,'='
+SKIPOF:	CP	(HL)
+	INC	HL
+	JR	NZ,SKIPOF
+	LD	(BUFPTR),HL
+;
+;Open output file:
+;
+	CALL	CREATE		;Open output file
+;
+;Entry point for each file:
+;
+FILE2:	LD	HL,(BUFPTR)
+	CALL	SWITCH		;Process switch
+	LD	A,(HL)
+	CP	CR		;End of list?
+	JP	Z,FINISH
+	CALL	SETUP
+	LD	(BUFPTR),HL
+	CALL	SAYFIL
+	CALL	OPEN		;Open file
+	EXX
+	LD	DE,INBUF+255
+	LD	HL,0
+	CALL	RDBYTE		;Fill input buffer
+	CALL	RDBYT8		;Get first byte to L'
+	EXX
+;
+;Entry point for each module:
+;
+MODU2:	RES	CORD,(IX)
+	RES	NEW,(IX)
+	LD	HL,(SYMPTR)	;End of symbol table
+	LD	(MAPPTR),HL	;Start of map
+	LD	HL,(CPOINT)
+	LD	(CBASE),HL
+	LD	(SEGMT),HL
+	LD	HL,(DPOINT)
+	LD	(DBASE),HL
+	LD	HL,-1
+	LD	(FIRST),HL
+;
+LINK2:	LD	A,1
+	CALL	INBITS		;Get 1 bit
+	AND	00000001B
+	JR	Z,DATA2
+	LD	A,2
+	CALL	INBITS		;Get 2 bits
+	AND	00000011B
+	JR	Z,SPEC2
+	LD	HL,(CBASE)
+	DEC	A
+	JR	Z,ADDR2
+	LD	HL,(DBASE)
+	DEC	A
+	JP	NZ,COMMON
+ADDR2:	CALL	INBYTE
+	LD	E,A
+	CALL	INBYTE
+	LD	D,A
+	ADD	HL,DE
+	LD	A,L
+	CALL	PUTBYT
+	LD	A,H
+	CALL	PUTBYT
+	JR	LINK2
+;
+DATA2:	CALL	INBYTE
+	CALL	PUTBYT
+	JR	LINK2
+;
+SPEC2:	LD	A,4
+	CALL	INBITS		;Get 4 bits
+	AND	00001111B
+	LD	C,A
+	LD	B,0
+	LD	HL,JPTAB2
+	ADD	HL,BC
+	ADD	HL,BC
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	JP	(HL)		;Off to routine
+;
+JPTAB2:	DEFW	SKIPZ2		;Internal symbol name
+	DEFW	UNSUPP		;Select COMMON block
+	DEFW	SKIPZ2		;Program name
+	DEFW	UNSUPP		;Request library search
+	DEFW	UNSUPP		;Reserved
+	DEFW	UNSUPP		;Set COMMON size
+	DEFW	EXTRN2		;External symbol
+	DEFW	ISYMV2		;Internal symbol value
+	DEFW	UNSUPP		;Reserved
+	DEFW	EXTOFF		;External + offset
+	DEFW	DSIZE2		;Set DATA size
+	DEFW	ORG2		;Set location counter
+	DEFW	UNSUPP		;Chain address
+	DEFW	PSIZE2		;Set PROGRAM size
+	DEFW	END2		;End program
+	DEFW	EOF2		;End of file
+;
+EXTRN2:	CALL	YPART		;Address to DE
+	CALL	ZPART		;Name to NAME
+	LD	HL,NAME
+	CALL	SEARCH		;Look up symbol
+	PUSH	DE
+	PUSH	HL
+	CALL	NZ,UNDEF	;Undefined symbol
+	POP	HL
+	POP	DE
+	LD	C,L		;BC = symbol value
+	LD	B,H
+FOLLOW:	LD	A,D
+	OR	E
+	JR	Z,LINK20
+	EX	DE,HL		;Follow linked list
+	LD	DE,(FIRST)
+	OR	A
+	SBC	HL,DE
+	JR	C,BADLL		;Out of range
+	LD	DE,TOP
+	ADD	HL,DE
+	LD	DE,(MAPPTR)
+	OR	A
+	SBC	HL,DE		;Valid RAM address?
+	ADD	HL,DE
+	JR	NC,BADLL	;Bad
+	LD	E,(HL)		;DE = new link
+	LD	(HL),C		;Write symbol value
+	INC	HL
+	LD	D,(HL)
+	LD	(HL),B
+	JR	FOLLOW
+;
+BADLL:	CALL	TELL
+	DEFB	'Bad linked list',0
+	JP	ABORT
+;
+ISYMV2:	CALL	YPART
+SKIPZ2:	CALL	ZPART
+LINK20:	JP	LINK2		;Ignore in pass 2
+;
+ORG2:	CALL	MAPIT
+	RES	NEW,(IX)
+	CALL	YPART
+	LD	(SEGMT),DE
+	AND	00000010B
+	RES	CORD,(IX)
+	JR	Z,LINK20
+	SET	CORD,(IX)
+	JR	LINK20
+;
+DSIZE2:	CALL	YPART
+	LD	DE,(DPOINT)
+	ADD	HL,DE
+	LD	(DPOINT),HL
+	JR	LINK20
+;
+EXTOFF:	CALL	YPART
+	LD	B,H
+	LD	C,L		;BC = offset
+	LD	HL,(CPOINT)
+	LD	DE,(FIRST)
+	OR	A		;Clear carry
+	SBC	HL,DE
+	LD	DE,TOP
+	ADD	HL,DE
+	EX	DE,HL		;DE = address
+	LD	A,1		;Item type
+	CALL	PUTMAP
+	JR	LINK20
+;
+PSIZE2:	CALL	YPART
+	JR	LINK20		;Ignore
+;
+END2:	CALL	MAPIT
+	CALL	YPART
+	LD	(EXECUT),DE	;Execute address
+	EXX
+	LD	A,C
+	CP	8
+	CALL	NZ,RDBYT8	;Force to byte boundary
+	EXX
+	BIT	ERR,(IX)
+	JP	NZ,MODU2	;Errors detected
+;
+;Save data to output file:
+;
+	LD	HL,(SYMPTR)	;End of map
+OUTREC:	LD	DE,(MAPPTR)	;Start of map
+	OR	A
+	SBC	HL,DE
+	ADD	HL,DE
+	JP	Z,OUTOK		;Output done
+	DEC	HL
+	LD	D,(HL)		;DE = segment start
+	DEC	HL
+	LD	E,(HL)
+	DEC	HL
+	LD	B,(HL)		;BC = segment length
+	DEC	HL
+	LD	C,(HL)
+	DEC	HL
+	LD	A,(HL)		;A = item type
+	OR	A
+	JR	Z,MAPTYP	;It's a map item
+	EX	DE,HL
+	LD	A,(HL)
+	ADD	A,C		;Offset external
+	LD	(HL),A
+	INC	HL
+	LD	A,(HL)
+	ADC	A,B
+	LD	(HL),A
+	EX	DE,HL
+	JR	OUTREC
+;
+MAPTYP:	PUSH	HL
+	LD	HL,(LOW)	;Low limit
+	OR	A
+	SBC	HL,DE
+	JR	C,GTLOW
+	EX	DE,HL
+	ADD	HL,DE		;Adjust start
+	PUSH	HL
+	LD	H,B
+	LD	L,C
+	OR	A
+	SBC	HL,DE		;Adjust length
+	LD	B,H
+	LD	C,L
+	POP	DE
+	POP	HL
+	JR	C,OUTOK		;None in range
+	PUSH	HL
+GTLOW:	PUSH	DE
+	EX	DE,HL
+	ADD	HL,BC
+	DEC	HL		;Top address
+	LD	DE,(HIGH)	;High limit
+	OR	A
+	SBC	HL,DE		;Test top
+	JR	C,LTHIGH
+	EX	DE,HL
+	LD	H,B
+	LD	L,C
+	SBC	HL,DE		;Adjust length
+	LD	B,H
+	LD	C,L
+	CCF
+LTHIGH:	POP	DE
+	POP	HL
+	JR	NC,OUTOK	;None in range
+INTEL:	LD	A,32		;Max Intel record
+	INC	B
+	DEC	B
+	JR	NZ,INTEL1
+	CP	C
+	JR	C,INTEL1
+	LD	A,C
+INTEL1:	PUSH	HL
+	PUSH	BC
+	PUSH	DE
+	OR	A
+	JR	Z,INTEL0	;Nothing!
+	LD	B,A
+	LD	A,':'
+	CALL	OUT		;Record marker (:)
+	LD	C,0		;Checksum
+	LD	A,B
+	CALL	OUTHEX		;Record length
+	LD	A,D
+	CALL	OUTHEX		;Output address
+	LD	A,E
+	CALL	OUTHEX
+	XOR	A
+	CALL	OUTHEX		;Record type
+	EX	DE,HL
+	LD	DE,(FIRST)
+	OR	A
+	SBC	HL,DE
+	LD	DE,TOP
+	ADD	HL,DE		;Address in RAM
+OUTBYT:	LD	A,(HL)
+	INC	HL
+	CALL	OUTHEX		;Data
+	DJNZ	OUTBYT
+	LD	A,C
+	NEG
+	CALL	OUTHEX		;Checksum
+	LD	A,CR
+	CALL	OUT
+	LD	A,LF
+	CALL	OUT
+INTEL0:	POP	HL
+	LD	DE,32
+	ADD	HL,DE		;Bump pointer
+	EX	DE,HL
+	POP	HL
+	LD	BC,32
+	OR	A
+	SBC	HL,BC
+	LD	B,H
+	LD	C,L
+	POP	HL
+	JP	Z,OUTREC
+	JR	NC,INTEL
+	JP	OUTREC
+;
+OUTOK:	CALL	TELL
+	DEFB	'Linked successfully',0
+	JP	MODU2
+;
+EOF2:	LD	DE,FCB
+	CALL	CLOSE
+	JP	FILE2
+;
+UNDEF:	LD	HL,UNDERR
+	CALL	MDORUN
+	LD	HL,0
+	RET
+;
+UNDERR:	DEFB	' un',0
+;
+	EJECT
+;
+;Output end-of-file record:
+;
+FINISH:	CALL	CRLF
+	CALL	CRLF
+	BIT	ERR,(IX)
+	JR	Z,NOERR
+	CALL	TELL
+	DEFB	'Errors detected',0
+	JP	ABORT
+;
+NOERR:	LD	A,':'
+	CALL	OUT		;Record marker (:)
+	LD	C,0		;Checksum
+	XOR	A
+	CALL	OUTHEX		;Record length
+	LD	HL,(EXECUT)
+	LD	A,H
+	CALL	OUTHEX		;Output address
+	LD	A,L
+	CALL	OUTHEX
+	LD	A,1
+	CALL	OUTHEX		;Record type
+	LD	A,C
+	NEG
+	CALL	OUTHEX		;Checksum
+	LD	A,CR
+	CALL	OUT
+	LD	A,LF
+	CALL	OUT
+	CALL	FLUSH		;Close object file
+;
+;Output symbol table (if any):
+;
+	BIT	SYMFLG,(IX)
+	JP	Z,EXIT
+;
+;Sort symbols into alphabetical order:
+;(Shell sort)
+;
+	LD	HL,(BDOS+1)
+	LD	BC,(SYMPTR)
+	OR	A
+	SBC	HL,BC		;Table size
+	SRL	H		;Divide-by-2
+	RR	L
+	LD	B,H
+	LD	A,L
+	AND	11111000B	;Gap must be n * 8
+	LD	C,A		;Gap = BC (<>0)
+	OR	B
+	JP	Z,EXIT		;Empty table
+;
+;Open .SYM file:
+;
+	PUSH	BC
+	LD	DE,OUTFCB+9
+	LD	HL,SYM
+	LD	BC,3
+	LDIR
+	XOR	A
+	LD	(DE),A
+	LD	(OUTFCB+32),A
+	CALL	CREATE
+	POP	BC
+;
+;Outer loop - Shell sort:
+;
+SHELL:	LD	HL,(SYMPTR)
+;
+;Inner loop - bubble sort:
+;
+BUBBLE:	XOR	A
+	EX	AF,AF'          ;Zero swapped flag
+	PUSH	HL		;Save first element
+BUBBL1:	PUSH	HL
+	ADD	HL,BC		;Add "gap"
+	LD	DE,(BDOS+1)
+	OR	A
+	SBC	HL,DE
+	ADD	HL,DE
+	POP	DE
+	JR	NC,BUBBL2
+	LD	A,(DE)
+	CP	(HL)
+	CALL	Z,CMPSTR	;Compare strings
+	CALL	NC,SWAP		;Swap symbols
+	JR	BUBBL1
+;
+BUBBL2:	POP	HL		;Restore first element
+	EX	AF,AF'
+	JR	NZ,BUBBLE	;Repeat until sorted
+;
+;Repeat bubble sort for each sublist:
+;
+	LD	DE,8		;Element size
+	ADD	HL,DE		;Next sublist
+	PUSH	HL
+	ADD	HL,BC
+	LD	DE,(BDOS+1)
+	OR	A
+	SBC	HL,DE
+	POP	HL
+	JR	C,BUBBLE
+;
+;Halve gap and repeat:
+;
+	SRL	B		;Halve gap
+	RR	C
+	RES	2,C		;(Must be n * 8)
+	LD	A,B
+	OR	C
+	JR	NZ,SHELL
+;
+;Print symbol table:
+;
+	LD	HL,(SYMPTR)
+SYMLIN:	LD	D,6
+	LD	A,CR
+	CALL	OUT
+	LD	A,LF
+	CALL	OUT
+SYMCOL:	LD	A,(HL)
+	CP	0FFH		;End of symbols?
+	JR	Z,SYMEND
+	LD	B,6
+SYMBOL:	LD	A,(HL)
+	INC	HL
+	CALL	OUT		;Write symbol
+	DJNZ	SYMBOL
+	LD	A,' '
+	CALL	OUT
+	LD	E,(HL)
+	INC	HL
+	LD	A,(HL)
+	INC	HL
+	CALL	OUTHEX
+	LD	A,E
+	CALL	OUTHEX
+	LD	A,' '
+	CALL	OUT
+	LD	A,' '
+	CALL	OUT
+	DEC	D
+	JR	NZ,SYMCOL
+	JR	SYMLIN
+;
+SYMEND:	LD	A,CR
+	CALL	OUT
+	LD	A,LF
+	CALL	OUT
+	CALL	FLUSH		;Close .SYM file
+;
+;Good exit - tidy up files:
+;
+EXIT:	LD	DE,OUTFCB+16
+	LD	HL,OUTFCB
+	LD	BC,16
+	LDIR
+	LD	DE,OUTFCB+16+9
+	LD	HL,HEX
+	LD	BC,3
+	LDIR
+	LD	DE,OUTFCB+16
+	LD	A,19
+	CALL	BDOS0		;Delete .HEX
+	LD	DE,OUTFCB+9
+	LD	HL,DOLLAR
+	LD	BC,3
+	LDIR
+	LD	DE,OUTFCB
+	LD	A,23
+	CALL	BDOS0		;Rename .$$$ to .HEX
+	CALL	TELL
+	DEFB	'No errors detected',0
+	RST	BOOT
+;
+	EJECT
+;
+;Subroutines:
+;
+;Subroutine SAYFIL - print filename to screen
+;  Outputs: None
+; Destroys: Nothing
+;
+SAYFIL:	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	CALL	CRLF		;New line
+	LD	HL,FCB+1
+	LD	B,8
+SAY1:	LD	A,(HL)
+	INC	HL
+	CALL	WRCH		;Output filename
+	DJNZ	SAY1
+	LD	A,'.'
+	CALL	WRCH
+	LD	B,3
+SAY2:	LD	A,(HL)
+	INC	HL
+	CALL	WRCH		;Output extension
+	DJNZ	SAY2
+	LD	A,' '
+	CALL	WRCH		;Output space
+	LD	A,' '
+	CALL	WRCH
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+;
+;CRLF - Output CR,LF to console
+;   Destroys: A,F
+;
+CRLF:	LD	A,CR
+	CALL	WRCH
+	LD	A,LF
+	JP	WRCH
+;
+;Subroutine SEARCH - look up symbol in table
+;   Inputs: HL addresses symbol
+;  Outputs: Z-flag set if found
+;           HL = symbol value
+; Destroys: A,H,L,F
+;
+SEARCH:	PUSH	BC
+	PUSH	DE
+	LD	DE,(SYMPTR)
+	LD	BC,8
+SRCH1:	LD	A,(DE)
+	CP	(HL)
+	JR	Z,SRCH2
+SRCH0:	INC	A		;Test for table end
+	EX	DE,HL
+	ADD	HL,BC
+	EX	DE,HL
+	JR	NZ,SRCH1
+	POP	DE
+	POP	BC
+	OR	1
+	RET			;Not found
+;
+SRCH2:	CALL	CMPSTR		;Compare remainder
+	LD	A,(DE)
+	JR	NZ,SRCH0
+	EX	DE,HL
+	LD	C,6
+	ADD	HL,BC
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	EX	DE,HL
+	POP	DE
+	POP	BC
+	RET			;Found
+;
+;MAPIT - Save segment information in map list
+; Destroys: A,B,C,D,E,H,L,F
+;
+MAPIT:	BIT	CORD,(IX)
+	RET	NZ		;Data!
+	BIT	NEW,(IX)
+	RET	Z		;No code
+	LD	HL,(CPOINT)
+	LD	DE,(SEGMT)
+	XOR	A
+	SBC	HL,DE
+	RET	Z		;Nothing!
+	LD	B,H
+	LD	C,L
+PUTMAP:	LD	HL,(MAPPTR)
+	DEC	HL
+	LD	(HL),D
+	DEC	HL
+	LD	(HL),E
+	DEC	HL
+	LD	(HL),B
+	DEC	HL
+	LD	(HL),C
+	DEC	HL
+	LD	(HL),A		;Item type
+	LD	(MAPPTR),HL
+	RET
+;
+;Subroutine OUTHEX - send a hex pair to output file
+;   Inputs: A = value
+;           C = running checksum
+;  Outputs: C updated
+; Destroys: A,C,D',E',F
+;
+OUTHEX:	PUSH	AF
+	ADD	A,C
+	LD	C,A
+	POP	AF
+	PUSH	AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	CALL	PRVAL
+	POP	AF
+PRVAL:	AND	00001111B
+	ADD	A,90H
+	DAA
+	ADC	A,40H
+	DAA
+;
+;	Caution: Falls through...
+;
+;OUT - Write byte to output file
+;   Inputs: A = byte
+;  Outputs: Z-flag set if sector written
+; Destroys: A,F
+;
+OUT:	PUSH	HL
+	LD	HL,(OUTPTR)
+	LD	(HL),A
+	INC	L
+	LD	(OUTPTR),HL
+	CALL	Z,WRREC		;Write sector
+	POP	HL
+	RET
+;
+;Subroutine CMPSTR - compare strings (length 6 chars)
+;   Inputs: DE & HL address strings (DE)=(HL)
+;  Outputs: Z & C flags set by (DE)-(HL)
+; Destroys: A,F
+;
+CMPSTR:	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	LD	B,5
+CMPST1:	INC	DE
+	INC	HL
+	LD	A,(DE)
+	CP	(HL)
+	JR	NZ,CMPST2
+	DJNZ	CMPST1
+CMPST2:	POP	HL
+	POP	DE
+	POP	BC
+	RET
+;
+;Subroutine SWAP - swap symbol table entries
+;   Inputs: DE & HL address entries
+;  Outputs: A'F' NZ
+; Destroys: A',F'
+;
+SWAP:	EX	AF,AF'
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	LD	B,8
+SWAP1:	LD	C,(HL)
+	LD	A,(DE)
+	LD	(HL),A
+	LD	A,C
+	LD	(DE),A
+	INC	DE
+	INC	HL
+	DJNZ	SWAP1
+	POP	HL
+	POP	DE
+	POP	BC
+	OR	1
+	EX	AF,AF'
+	RET
+;
+;PUTBYT - Store code byte
+;   Inputs: A = byte to store
+; Destroys: A,D,E,F
+;
+PUTBYT:	BIT	CORD,(IX)
+	JR	NZ,INIDAT	;Data!
+	PUSH	HL
+	CALL	ADJUST		;Adjust pointers etc.
+	LD	DE,(FIRST)
+	SCF
+	SBC	HL,DE
+	JR	C,NOROOM
+	LD	DE,TOP
+	ADD	HL,DE
+	LD	DE,(MAPPTR)
+	OR	A
+	SBC	HL,DE
+	ADD	HL,DE
+	JR	NC,NOROOM
+	LD	(HL),A		;Store data
+	POP	HL
+	RET
+;
+INIDAT:	CALL	TELL
+	DEFB	'Initialised data found',0
+	JP	ABORT
+;
+NOROOM:	CALL	TELL
+	DEFB	'Insufficient RAM',0
+	JP	ABORT
+;
+;ADJUST - Adjust pointers for data byte
+; Destroys: H,L,F
+;
+ADJUST:	BIT	CORD,(IX)
+	RET	NZ		;Data
+	BIT	NEW,(IX)
+	JR	NZ,ADJC
+	SET	NEW,(IX)
+	LD	HL,(SEGMT)
+	LD	(CPOINT),HL
+	LD	HL,(FIRST)
+	INC	H
+	JR	NZ,ADJC
+	INC	L
+	JR	NZ,ADJC
+	LD	HL,(CPOINT)
+	LD	(FIRST),HL
+ADJC:	LD	HL,(CPOINT)
+	INC	HL
+	LD	(CPOINT),HL
+	RET
+;
+;YPART - Process Y part of special link item
+;   Inputs: Infile parameters in alternate registers
+;  Outputs: DE = address value + offset
+;           HL = address value (no offset)
+;           A = 0 (ABS), 1 (CODE), 2 (DATA)
+; Destroys: A,D,E,H,L,F,alternates
+;
+YPART:	LD	A,2
+	CALL	INBITS
+	AND	00000011B
+	PUSH	AF
+	CALL	INBYTE
+	LD	E,A
+	CALL	INBYTE
+	LD	D,A
+	POP	AF
+	LD	H,D
+	LD	L,E
+	OR	A
+	RET	Z		;ABS
+	LD	HL,(CBASE)
+	CP	1
+	JR	Z,YPART1
+	LD	HL,(DBASE)
+	CP	2
+	JR	Z,YPART1
+COMMON:	CALL	TELL
+	DEFB	'COMMON not supported',0
+	JP	ABORT
+;
+YPART1:	ADD	HL,DE
+	EX	DE,HL
+	RET
+;
+;ZPART - Process Z part of special link item
+;   Inputs: Infile parameters in alternate registers
+;  Outputs: Symbol name stored at NAME (space filled)
+; Destroys: A,B,H,L,F,alternates
+;
+ZPART:	LD	B,8
+	LD	HL,NAME
+ZPART0:	LD	(HL),' '
+	INC	HL
+	DJNZ	ZPART0
+	LD	A,3
+	CALL	INBITS
+	AND	00000111B
+	RET	Z
+	LD	B,A
+	LD	HL,NAME
+ZPART1:	CALL	INBYTE
+	LD	(HL),A
+	INC	HL
+	DJNZ	ZPART1
+	RET
+;
+;MDORUN - Print "multiply defined" or "undefined" error
+;   Inputs: HL addresses "multiply " or "un"
+; Destroys: A,B,D,E,H,L,F
+;
+MDORUN:	SET	ERR,(IX)
+	PUSH	HL
+	LD	B,6
+	LD	HL,NAME
+PRDEF1:	LD	A,(HL)
+	INC	HL
+	CALL	WRCH
+	DJNZ	PRDEF1
+	POP	HL
+	CALL	TEXT
+	CALL	TELL
+	DEFB	'defined **',CR,LF,'              ',0
+	RET
+;
+;ABORT - print error message then exit
+;
+ABORT:	CALL	TELL
+	DEFB	': aborting',0
+	LD	DE,OUTFCB
+	LD	A,16
+	CALL	BDOS0		;Close .$$$ or .SYM
+	LD	A,19
+	CALL	BDOS0		;Delete .$$$ or .SYM
+	RST	BOOT
+;
+;SWITCH - Process command line switch character
+;   Inputs: HL addresses command string
+;  Outputs: HL updated
+; Destroys: A,B,D,E,H,L,F
+;
+SWITCH:	CALL	SKIPSP
+	CP	'/'
+	RET	NZ
+	INC	HL
+	LD	A,(HL)		;Character
+	INC	HL
+	CP	'S'		;Symbol table?
+	JR	NZ,SWIT1
+	SET	SYMFLG,(IX)
+	JR	SWITCH
+;
+BADSWI:	CALL	TELL
+	DEFB	CR,LF,LF,'Bad switch format',0
+	JP	ABORT
+;
+SWIT1:	LD	B,A
+	LD	A,(HL)
+	INC	HL
+	CP	':'
+	JR	NZ,BADSWI
+	EX	DE,HL
+	LD	HL,0
+SWIT2:	LD	A,(DE)
+	SUB	'0'
+	JR	C,SWIT4
+	CP	10
+	JR	C,SWIT3
+	CP	17
+	JR	C,SWIT4
+	CP	23
+	JR	NC,SWIT4
+	SUB	7
+SWIT3:	ADD	HL,HL
+	ADD	HL,HL
+	ADD	HL,HL
+	ADD	HL,HL
+	ADD	A,L
+	LD	L,A
+	INC	DE
+	JR	SWIT2
+;
+SWIT4:	LD	A,B
+	CP	'A'
+	JR	NZ,SWIT5
+	LD	(LOW),HL
+	JR	SWIT9
+;
+SWIT5:	CP	'Z'
+	JR	NZ,SWIT6
+	LD	(HIGH),HL
+	JR	SWIT9
+;
+SWIT6:	CP	'D'
+	JR	NZ,SWIT7
+	LD	(DPOINT),HL
+	JR	SWIT9
+;
+SWIT7:	CP	'P'
+	JR	NZ,BADSWI
+	LD	(CPOINT),HL
+SWIT9:	EX	DE,HL
+	JR	SWITCH		
+;
+;SETUP - Set up File Control Block.
+;   Inputs: HL addresses filename
+;           Format  [A:]FILENAME[.EXT]
+;           Device defaults to current drive
+;           Extension defaults to .REL
+;  Outputs: HL updated
+;           A = terminator
+; Destroys: A,B,C,D,E,H,L,F
+;
+;FCB FORMAT (36 BYTES TOTAL):
+; 0      0=SAME DISK, 1=DISK A, 2=DISK B (ETC.)
+; 1-8    FILENAME, PADDED WITH SPACES
+; 9-11   EXTENSION, PADDED WITH SPACES
+; 12     CURRENT EXTENT, SET TO ZERO
+; 32     CLEARED TO ZERO
+;
+SETUP:	PUSH	HL
+	LD	DE,FCB+9
+	LD	HL,REL
+	LD	BC,3
+	LDIR
+	POP	HL
+	XOR	A
+	LD	(FCB+32),A
+	LD	(DE),A
+	CALL	SKIPSP
+	INC	HL
+	LD	A,(HL)
+	CP	':'
+	DEC	HL
+	LD	A,B		;B=0
+	JR	NZ,DEVICE
+	LD	A,(HL)
+	AND	31
+	INC	HL
+	INC	HL
+DEVICE:	LD	DE,FCB
+	LD	(DE),A
+	INC	DE
+	LD	B,8
+COPYF:	LD	A,(HL)
+	CP	'.'
+	JR	Z,COPYF1
+	CP	' '
+	JR	Z,COPYF1
+	CP	CR
+	JR	Z,COPYF1
+	CP	','
+	JR	Z,COPYF1
+	CP	'='
+	JR	Z,COPYF1
+	CP	'/'
+	JR	Z,COPYF1
+	INC	HL
+	JR	COPYF2
+;
+COPYF1:	LD	A,' '
+COPYF2:	LD	(DE),A
+	INC	DE
+	DJNZ	COPYF
+	LD	A,(HL)
+	INC	HL
+	CP	'.'
+	LD	BC,3*256+' '
+	LD	DE,FCB+9
+	JR	Z,COPYF
+	DEC	HL
+SKIPSP:	LD	A,(HL)
+	CP	','
+	JR	Z,SKIPS1
+	CP	' '
+	RET	NZ
+SKIPS1:	INC	HL
+	JR	SKIPSP
+;
+REL:	DEFB	'REL'
+DOLLAR:	DEFB	'$$$'
+HEX:	DEFB	'HEX'
+SYM:	DEFB	'SYM'
+;
+;FLUSH - Write last sector and close file
+;
+FLUSH:	LD	A,26
+	CALL	OUT
+	JR	NZ,FLUSH
+	LD	DE,OUTFCB
+;
+;	Caution: Falls through...
+;
+;CLOSE - Close input or output file
+;   Inputs: DE addresses FCB
+; Destroys: A,F
+;
+CLOSE:	LD	A,16
+	CALL	BDOS0
+	INC	A
+	RET	NZ
+	CALL	TELL
+	DEFB	'Close error',0
+	JP	ABORT
+;
+;CREATE - Open file for writing
+;Destroys: A,D,E,H,L,F
+;
+CREATE:	LD	HL,OUTBUF
+	LD	(OUTPTR),HL
+	LD	DE,OUTFCB
+	LD	A,19
+	CALL	BDOS0		;Delete
+	LD	A,22
+	CALL	BDOS0		;Make
+	INC	A
+	RET	NZ
+	CALL	TELL
+	DEFB	'Directory full',0
+	JP	ABORT
+;
+;OPEN - Open file for reading
+;Destroys: A,F
+;
+OPEN:	RES	EOF,(IX)
+	PUSH	DE
+	LD	DE,FCB
+	LD	A,15
+	CALL	BDOS0
+	POP	DE
+	INC	A
+	RET	NZ
+	CALL	TELL
+	DEFB	'File not found',0
+	JP	ABORT
+;
+;INBITS - Read 1 to 8 bits of input file
+;   Inputs: A = no. of bits to read (1-8)
+;           H'L' input data accumulator
+;           D'E' input buffer pointer
+;           C' = no. of data bits in L'
+;  Outputs: A = data read
+;           C'D'E'H'L' updated
+; Destroys: A,F,B',C',D',E',H',L'
+;
+INBITS:	EXX
+	LD	B,A
+INBIT1:	ADD	HL,HL
+	DEC	C
+	CALL	Z,RDBYT8
+	DJNZ	INBIT1
+	LD	A,H
+	EXX
+	RET
+;
+;INBYTE - Read one byte of input file
+;   Inputs: H'L' input data accumulator
+;           D'E' input buffer pointer
+;           C' = no. of data bits in L
+;  Outputs: A = data byte
+;           D'E'H'L' updated
+; Destroys: A,F,B',D',E',H',L'
+;
+INBYTE:	EXX
+	LD	B,C
+INBYT1:	ADD	HL,HL
+	DJNZ	INBYT1
+	CALL	RDBYTE
+	LD	A,8
+	SUB	C
+	LD	B,A
+	JR	Z,INBYT3
+INBYT2:	ADD	HL,HL
+	DJNZ	INBYT2
+INBYT3:	LD	A,H
+	EXX
+	RET
+;
+;RDBYTE - Read byte from input file
+;   Inputs: DE addresses buffer
+;  Outputs: L = character
+;           DE updated
+; Destroys: A,D,E,L,F
+;
+RDBYT8:	LD	C,8
+RDBYTE:	LD	A,(DE)		;Get byte from buffer
+	LD	L,A
+	INC	E
+	RET	NZ
+	BIT	EOF,(IX)
+	JR	NZ,BADEND
+	LD	A,26
+	LD	DE,INBUF
+	CALL	BDOS0		;Set DMA address
+	LD	A,20
+	LD	DE,FCB
+	CALL	BDOS0		;Read sector
+	LD	A,26
+	LD	DE,INBUF+128
+	CALL	BDOS0		;Set DMA address
+	LD	A,20
+	LD	DE,FCB
+	CALL	BDOS0		;Read sector
+	LD	DE,INBUF
+	OR	A		;EOF?
+	RET	Z
+	SET	EOF,(IX)
+	RET
+;
+BADEND:	CALL	TELL
+	DEFB	'End of file before end of data',0
+	JP	ABORT
+;
+;WRREC - Write 2 sectors to output file
+;  Outputs: Z-flag set
+; Destroys: A,F
+;
+WRREC:	PUSH	DE
+	LD	DE,OUTBUF
+	LD	A,26
+	CALL	BDOS0
+	LD	DE,OUTFCB
+	LD	A,21
+	CALL	BDOS0
+	LD	DE,OUTBUF+128
+	LD	A,26
+	CALL	BDOS0
+	LD	DE,OUTFCB
+	LD	A,21
+	CALL	BDOS0
+	POP	DE
+	OR	A
+	RET	Z
+	CALL	TELL
+	DEFB	'Disk full',0
+	JP	ABORT
+;
+;TELL - Output inline text
+; Destroys: A,F
+;
+TELL:	EX	(SP),HL
+	CALL	TEXT
+	EX	(SP),HL
+	RET
+;
+;TEXT - Output text addressed by HL
+;   Inputs: HL addresses text terminated by NUL
+;  Outputs: HL addresses byte following NUL
+; Destroys: A,H,L,F
+;
+TEXT:	LD	A,(HL)
+	INC	HL
+	OR	A
+	RET	Z
+	CALL	WRCH
+	JR	TEXT
+;
+;PADD - Output word as hex
+;   Inputs: HL = value to output
+; Destroys: A,F
+;
+PADD:	LD	A,H
+	CALL	BYTE
+	LD	A,L
+;
+;	Caution: Falls through...
+;
+;BYTE - Output byte as hex
+;   Inputs: A = byte to output
+; Destroys: A,F
+;
+BYTE:	PUSH	AF
+	RLCA
+	RLCA
+	RLCA
+	RLCA
+	CALL	NIBBLE
+	POP	AF
+;
+;	Caution: Falls through...
+;
+;NIBBLE - Output hex digit
+;   Inputs: A = digit value
+; Destroys: A,F
+;
+NIBBLE:	AND	00001111B
+	ADD	A,90H
+	DAA
+	ADC	A,40H
+	DAA
+;
+;	Caution: Falls through...
+;
+;WRCH - Output a character
+;   Inputs: A = character
+; Destroys: A,F
+;
+WRCH:	PUSH	DE
+	LD	E,A
+	LD	A,2
+	CALL	BDOS0
+	POP	DE
+	RET
+;
+;BDOS0 - BDOS call
+;   Inputs: A = function code
+;           DE = parameters (if any)
+;  Outputs: A = result (if any)
+; Destroys: A,F
+;
+BDOS0:	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	PUSH	IX
+	LD	C,A
+	CALL	BDOS
+	POP	IX
+	POP	HL
+	POP	DE
+	POP	BC
+	RET
+;
+;Variables:
+;
+CBASE:	DEFS	2		;Module base (code)
+DBASE:	DEFS	2		;Module base (data)
+CPOINT:	DEFS	2		;Byte pointer (code)
+DPOINT:	DEFS	2		;Byte pointer (data)
+;
+SEGMT:	DEFS	2		;Segment base
+FIRST:	DEFS	2		;1st module byte
+NAME:	DEFS	8		;Symbol name
+LOW:	DEFS	2		;Low limit of hex
+HIGH:	DEFS	2		;High limit of hex
+SYMPTR:	DEFS	2		;Pointer to symbol tab
+MAPPTR:	DEFS	2		;Module map pointer
+EXECUT:	DEFS	2		;Execute address
+BUFPTR:	DEFS	2		;Command buffer pointer
+OUTPTR:	DEFS	2		;Output file pointer
+OUTFCB:	DEFS	36		;Output file FCB
+FLAGS:	DEFS	1		;Flags byte
+	DEFS	64		;Space for stack
+STACK:	ORG	($+255) AND 0FF00H
+INBUF:	DEFS	256		;On page boundary
+OUTBUF:	DEFS	256		;On page boundary
+TOP:
+;
+	END	START
+

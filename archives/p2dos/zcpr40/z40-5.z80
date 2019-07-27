@@ -1,0 +1,745 @@
+
+; Z40-5.Z80
+
+; Revisions to ZCPR 3.4 to make Version 4.0 (C) Copyright Harold F. Bower,
+; 1992, all rights reserved.
+
+;=============================================================================
+;		R E S I D E N T    C O M M A N D    C O D E
+;=============================================================================
+; Command:	DIR
+; Function:	To display a directory of the files on disk
+; Forms:
+;	DIR <afn>	Displays the DIR-attribute files
+;	DIR		Same as DIR *.*
+;	DIR <afn> S	Displays the SYS-attribute files
+;	DIR /S		Same as DIR *.* S
+;	DIR <afn> A	Display both DIR and SYS files
+;	DIR /A		Same as DIR *.* A
+
+	  if  diron
+DIR:
+	   IF  BANKED		;4.0E
+	LD	HL,BDIR		;4.0E .point to banked routine
+	JR	DOITM5		;4.0E ..and execute
+	COMMON	/BANK2/		;4.0E
+BDIR:	CALL	RETBNK		;4.0E Get Current Bank in Context
+	CALL	SETBNK		;4.0E ..and set for DMA Transfers
+	   ENDIF		;4.0E
+	LD	HL,(TFCB+1)	; Get first 2 chars from first FCB
+	LD	A,L		; Get first character
+
+	   IF  slashfl		; If allowing "DIR /S" and "DIR /A" formats
+	CP	'/'		; If name starts with '/'
+	JR	Z,DIR1		; ..pretend we had empty FCB
+	LD	HL,(TFCB2)	; ..Otherwise, get first char from second FCB
+	   ENDIF	;slashfl
+
+	CP	' '		; If space, make all wild
+	JR	NZ,DIR2
+
+DIR1:	LD	DE,TFCB+1	; Point to target FCB
+	LD	B,11
+	LD	A,'?'
+	CALL	FILL
+
+DIR2:
+	   IF  whldir
+	CALL	WHLCHK		; Check wheel status
+	LD	A,H		; Get option character for comparison
+	PUSH	AF		; Save result of whlchk and option character
+	   ELSE		;not whldir
+	PUSH	HL		; Save option character
+	   ENDIF	;whldir
+
+	LD	DE,TFCB		; Point to target FCB
+	CALL	FCBLOG		; Log in the specified directory
+	LD	B,7FH		; Flag for both DIR and SYS files
+
+	POP	AF		; Get option character (& Z-flag) back
+	   IF  whldir
+	JR	Z,DIR2A		; If wheel byte not set, then ignore options
+	   ENDIF	;whldir
+
+	CP	ALLCHAR		; List all (SYS and DIR) option letter?
+	JR	Z,DIRPR1	; ..branch if so
+	XOR	SYSCHAR		; List SYS-only option letter?
+	JR	NZ,DIR2A	; ..jump if Not to set DIR Only
+	LD	B,0FFH		; Else set B for 00 (SYS only) after increment
+DIR2A:	INC	B		; Flag for DIR-only or SYS-only selection
+DIRPR1:
+	   IF  dirsp
+	CALL	DIRPR		; Print the Directory
+	    IF  BANKED		;4.0E
+	     IF  eraon		;4.0E
+	JP	FREEV0		;4.0E Use common code if available
+	     ELSE		;4.0E
+	CALL	CRLF		;4.0E Print Free Space on new line
+	LD	A,(DVVAL)	;4.0E Get Drive if banked
+	INC	A		;4.0E .make 1..16
+	JP	BFREE0		;4.0E ..and execute the Banked portion
+	     ENDIF		;4.0E
+	    ELSE		;4.0E
+	JP	FREE		; ..followed by Free Space & return
+	    ENDIF	;4.0E banked
+	   ENDIF	;dirsp	; Else, do not need call, just..
+			;..Drop into DIRPR to print directory
+	  ENDIF		;diron
+
+;--------------------
+; Directory display routine
+
+; On entry, if attribute checking is required, the B register is
+; set as follows:
+;	00H for SYS files only
+;	80H for DIR files only
+;	7FH for both
+
+	  IF  diron OR eraon
+DIRPR:
+	   IF  diron		; Attribute checking needed only for DIR
+	LD	A,B		;4.0E Get System/All flag
+	LD	(SYSTST),A	; Set system test flag
+	   ENDIF
+	LD	E,0		; Set column counter to zero
+	PUSH	DE		; Save column counter (E)
+	CALL	SRCHFST1	; Search for specified file (first occurrence)
+	JR	NZ,DIR3
+	CALL	PRNNF		; Print no-file message
+	POP	DE		; Restore DE
+	XOR	A		; Set Z to show no files found
+	RET
+
+; Entry selection loop.  On entering this code, A contains the offset in the
+; directory block as returned by the search-first or search-next call.
+
+DIR3:
+	   IF  diron		; Attribute checking needed only for DIR cmd
+	CALL	GETSBIT		; Get and test for type of files
+	JR	Z,DIR6
+	   ELSE		;not diron
+	DEC	A		; Adjust returned value from 1..4 to 0..3
+	RRCA			; Multiply by 32 to convert number to
+	RRCA			; ..offset into TBUFF
+	RRCA
+	LD	C,A		; C = offset to entry in TBUFF
+	   ENDIF	;diron
+
+	POP	DE		; Restore count of
+	LD	A,E		; ..entries displayed
+	INC	E		; Increment entry counter
+	PUSH	DE		; Save it
+	AND	03H		; Output CRLF if 4 entries printed in line
+	JR	NZ,DIR4
+	CALL	CRLF		; New line
+	JR	DIR5
+
+DIR4:	CALL	PRINT
+	   IF  wide
+	DEFB	'  ',FENCE	; 2 spaces, then fence char
+	DEFC	'  '		; Then 2 more spaces
+	   ELSE		;not wide
+	DEFB	' ',FENCE	; Space, then fence char
+	DEFC	' '		; Then another space
+	   ENDIF	; wide
+
+DIR5:	LD	A,1
+	CALL	DIRPTR		; HL now points to 1st byte of file name
+	CALL	PRFN		; Print file name
+DIR6:	CALL	BREAK		; Check for abort
+	JR	Z,DIR7
+	LD	DE,TFCB		; Point to FCB
+	CALL	SRCHNXT		; Search for next file
+	JR	NZ,DIR3		; Continue if file found
+
+DIR7:	POP	DE		; Restore stack
+	DEC	A		; Set NZ flag
+	RET
+	  ENDIF		; diron or eraon
+
+;-----------------------------------------------------------------------------
+; This routine returns NZ if the file has the required attributes and Z if
+; it does not.  It works by performing the 'exclusive or' of the mask passed
+; in register A and the filename attribute obtained by masking out all but
+; the highest bit of the character.  For the 'both' case, setting any bit
+; in the mask other than bit 7 will guarantee a nonzero result.
+
+;	File name: : X 0 0 0  0 0 0 0	(After 80H mask, X=1 if SYS, 0 if DIR)
+
+;	SYS-ONLY   : 0 0 0 0  0 0 0 0	(XOR gives 00H if X=0 and 80H if X=1)
+;	DIR-ONLY   : 1 0 0 0  0 0 0 0	(XOR gives 80H if X=0 and 00H if X=1)
+;	BOTH	   : 0 1 1 1  1 1 1 1	(XOR gives 7FH if X=0 and FFH if X=1)
+
+	  IF  diron OR attchk
+GETSBIT: DEC	A		; Adjust to returned value from 1..4 to 0..3
+	RRCA			; Multiply by 32 to convert number to
+	RRCA			; ..offset into TBUFF
+	RRCA
+	LD	C,A		; Save offset in TBUFF in C
+	LD	A,10		; Add 10 to point to SYS attribute bit
+	CALL	DIRPTR		; A = SYS byte
+	AND	80H		; Look only at attribute bit
+	LD	B,A		; Save the file's characteristics
+	LD	A,(SYSTST)	; .and get desired (0=SYS only, 80H=DIR only
+	XOR	B		; ..7FH=Both).  Check result
+	RET			; NZ if OK, Z if not OK
+	  ENDIF		;diron or attchk
+
+;-----------------------------------------------------------------------------
+; This routine returns a pointer in HL to the directory entry in TBUFF that
+; corresponds to the offset specified in registers C (file offset) and A
+; (byte offset within entry).
+
+	  IF  diron OR attchk OR eraon
+DIRPTR:	LD	HL,TBUFF
+	ADD	A,C		; Add the two offset contributions
+	CALL	ADDAH		; Set pointer to desired byte
+	LD	A,(HL)		; Get the desired byte directly if Not Banked
+	RET
+	  ENDIF		; diron or attchk or eraon
+
+;-----------------------------------------------------------------------------
+; Test File in FCB for existence, ask user to delete if so, and abort if he
+;  choses not to
+
+	  IF  saveon OR renon
+EXTEST:	LD	DE,TFCB		; Point to FCB.  Next entry if DE set already
+EXTESV:	CALL	FCBLOG		; Log into specified directory
+	CALL	SRCHFST		; Look for specified file w/FCB in DE
+	RET	Z		; OK if not found, so return
+	CALL	PRINTC
+	   IF  bellfl
+	DEFB	BELL
+	   ENDIF	;bellfl
+	DEFC	'Erase '
+	LD	L,E		; Copy FCB Addr
+	LD	H,D		; .to HL
+	INC	HL		; ..and advance to FCB+1
+	CALL	PRFN		; Print it
+	CALL	PRINT		; Add question mark
+	DEFC	'?'
+	CALL	CONIN		; Get user response
+	CP	'Y'		; Test for permission to erase file
+	JP	NZ,RESTART	; If not, flush the entire command line
+	JP	DELETE		; Delete the file
+
+	   IF  BANKED		;4.0E
+	CSEG			;4.0E
+	   ENDIF		;4.0E
+	  ENDIF		; saveon or renon
+
+;-----------------------------------------------------------------------------
+; Command:	REN
+; Function:	To change the name of an existing file
+; Forms:	REN <New UFN>=<Old UFN>
+; Notes:	If either file spec is ambiguous, or if the source file does
+;		not exist, the error handler will be entered.  If a file with
+;		the new name already exists, the user is prompted for deletion
+;		and ZEX is turned off during the prompt.
+
+	  IF  renon
+REN:
+	   IF  BANKED		;4.0E
+	LD	HL,BREN		;4.0E .point to Banked routine
+	JR	DOITM5		;4.0E ..and execute
+	COMMON	/BANK2/		;4.0E
+BREN:	CALL	CHKREV		;4.0E Swap to file names according to syntax
+	   ENDIF		;4.0E
+	LD	A,(DELIM2)	;4.0E Get format delimiter
+	CP	'='		;4.0E Was it normal "fn.ft=fn.ft" form?
+	JR	Z,REN0		;4.0E ..jump if so
+	LD	HL,TFCB		; Point to first FCB
+	LD	E,L		;4.0E
+	LD	D,H		;4.0E .copy to DE
+	LD	BC,16		;4.0E Set length of first FCB portion
+	ADD	HL,BC		;4.0E .offset HL to second portion
+	LD	A,(HL)		;4.0E Get Second Drive
+	LD	(DE),A		;4.0E ..move to first
+	LD	BC,13		;4.0E .(offset to User #)
+	ADD	HL,BC		;4.0E Point to 2nd FCB User
+	EX	DE,HL		;4.0E .HL -> 1st FCB, DE -> 2nd FCB User
+	ADD	HL,BC		;4.0E ..HL -> 1st FCB User
+	LD	A,(DE)		;4.0E Get 2nd FCB User
+	LD	(HL),A		;4.0E ..place in 1st FCB
+REN0:	LD	HL,TFCB		; Check for ambiguity in first file name
+	CALL	AMBCHK
+	CALL	FCBLOG		; Login to FCB
+	LD	HL,TFCB2	; Check for ambiguity in second file name
+	CALL	AMBCHK
+	XOR	A		; Use current drive for 2nd file
+	LD	(DE),A
+	CALL	SRCHFST		; Does the Old File Exist?
+	JP	Z,JPNOFIL	; ..jump if Not to Error exit
+	CALL	EXTEST		; Test for file existence and return if not
+	LD	BC,16		; "Exchange" new and old file names
+	EX	DE,HL		; HL now points to new name for FCB
+	LD	DE,TFCB2+16	; Point to 16 bytes beyond second FCB
+	LDIR			; Now copy name: On completion,
+				; .HL points to second FCB
+	EX	DE,HL		; ..and now DE points there
+	LD	C,B_FREN	; BDOS rename function
+	JP	BDOSTEST	; ..and Rename the File!
+	  ENDIF		;renon
+
+	  IF  BANKED		;4.0E
+	CSEG			;4.0E
+	  ENDIF			;4.0E
+
+;-----------------------------------------------------------------------------
+; Command:	ERA
+; Function:	Erase files
+; Forms:
+;	ERA <afn>	Erase specified files and dislay their names
+;	ERA <afn> I	Display names of files to be erased and prompt for
+;			inspection before erase is performed. (Character 'I'
+;			is defined by INSPCH in Z34HDR.LIB; if it is ' ', then
+;			any character triggers inspection.)
+
+	  IF  eraon
+ERA:
+	   IF  BANKED		;4.0E
+	LD	HL,BERA		;4.0E .point to banked routine
+	JR	DOITM5		;4.0E ..and execute!
+	COMMON	/BANK2/		;4.0E
+BERA:	CALL	RETBNK		;4.0E Get Current Bank in Context
+	CALL	SETBNK		;4.0E ..and set for DMA Transfers
+	   ENDIF		;4.0E
+	   IF  inspfl AND eraon	; 'I' flag and verification enabled?
+	LD	A,(TFCB2+1)	; Get flag, if any, entered by user
+	LD	(INSPECT),A	; Save it in code below
+	   ENDIF	; erav and eraok
+
+	LD	DE,TFCB		; Point to target FCB
+	CALL	FCBLOG		; ..and log into the specified directory
+
+	   IF  diron OR attchk	; Attribute checking only in these cases
+	LD	B,7FH		; Display all matching (SYS & Non-SYS) Files
+	   ENDIF	;not diron and not attchk
+	CALL	DIRPR		; Print directory of erased files
+	RET	Z		; Abort if no files
+
+	   IF  eraok		; Print prompt
+	    IF  inspfl		; Test verify flag
+	LD	A,(INSPECT)
+	CP	INSPCH		; Is it an inspect option?
+
+	     IF  inspch NE ' '	; If an explicit inspect character is specified
+	JR	NZ,ERA2		; ..skip prompt if it is not that character
+	     ELSE		; If INSPCH is the space character
+	JR	Z,ERA2		; ..then skip prompt only if FCB has a space
+	     ENDIF	;inspch ne ' '
+	    ENDIF	;inspfl
+
+	CALL	PRINTC
+	DEFC	' OK to Erase?'
+	CALL	CONIN		; Get reply
+	CP	'Y'		; Yes?
+	RET	NZ		; Abort if not
+	   ENDIF	;eraok
+
+ERA2:	LD	DE,TFCB
+	   IF  erasp
+	CALL	DELETE		; Delete files and return
+	    IF  BANKED		;4.0E
+FREEV0:	CALL	CRLF		;4.0E Print Space on new line
+	LD	A,(DVVAL)	;4.0E Get Drive value
+	INC	A		;4.0E .make in 1..16
+	JP	BFREE0		;4.0E ..print free space if banked
+	    ELSE		;4.0E
+	JP	FREE		; Print remaining free space
+	    ENDIF	;4.0E banked
+	   ELSE
+	JP	DELETE		; Delete files and return
+	   ENDIF	; erasp
+	  ENDIF		; eraon
+
+	  IF  BANKED		;4.0E
+	CSEG			;4.0E
+	  ENDIF			;4.0E
+
+;-----------------------------------------------------------------------------
+; Command:	LIST
+; Function:	Print out specified file on the LST: device
+; Forms:	LIST <ufn>	Print file (No Paging)
+; Notes:	The flags which apply to TYPE do not take effect with LIST
+
+	  if  lton
+LIST:	DEFB	3EH	; Along with "xor a", below, becomes "LD A,0AFH"
+
+;-----------------------------------------------------------------------------
+; Command:	TYPE
+; Function:	Print out specified file on the CON: Device
+; Forms:	TYPE <ufn>	Print file with default paging option
+;		TYPE <ufn> P	Print file with paging option reversed
+
+TYPE:	XOR	A		; Turn off printer flag
+
+; Common entry point for LIST and TYPE functions
+
+	LD	(PRFLG),A	; Set printer/console flag
+	   IF  BANKED		;4.0E
+	LD	HL,BTYPE	;4.0E .point to banked routine
+	JR	DOITM5		;4.0E ..and execute!
+	COMMON	/BANK2/		;4.0E
+
+BTYPE:	CALL	RETBNK		;4.0E Get Current Bank in Context
+	CALL	SETBNK		;4.0E ..and set for DMA Transfers
+	   ENDIF		;4.0E
+	LD	A,(TFCB2+1)	; Check for user page toggle ('P') option
+	LD	(INSPECT),A	; Save it as a flag
+	LD	HL,TFCB		; Point to target file FCB
+	CALL	AMBCHK		; Check for ambiguous file spec (vectors to
+				; ..error handler if so)
+	CALL	FCBLOG		; Log into specified directory
+	CALL	OPEN		; Open the file
+
+	   IF  renon		; If REN on, share code
+	JP	Z,JPNOFIL	; ..jump to error if Not found
+	   ELSE		;not renon	; Otherwise repeat code here
+	LD	A,ECNOFILE
+	JP	Z,ERROR
+	   ENDIF	;renon
+
+	CALL	CRLF		; New line
+	LD	A,(CRTTXT0)	; Set line count using value from the
+				; ..environment for CRT0
+	INC	A		; One extra the first time through
+	LD	(PAGCNT),A
+	LD	BC,80H		; Set character position and tab count
+				; (B = 0 = tab, C = 80H = char position)
+; Main loop for loading next block
+
+TYPE2:	LD	A,C		; Get character count
+	CP	80H		; If not end of disk record
+	JR	C,TYPE3		; ..then skip
+
+	LD	DE,TFCB		;4.0E ..else use Default
+	CALL	READ		; Read next record of file
+	JR	NZ,TYPEX	; ..jump to exit via closing file if EOF
+
+	LD	C,0		; Reset character count
+	LD	HL,TBUFF	; Point to first character
+
+; Main loop for printing characters in TBUFF
+
+TYPE3:	LD	A,(HL)		; Get next character
+	AND	7FH		; Mask out MSB
+	CP	1AH		; Check for end of file (^z)
+	JR	Z,TYPEX		; ..jump to exit via closing file if EOF
+
+; Output character to CON: or LST: device with tabulation
+
+	CP	TAB		; If tab
+	JR	Z,TYPE5		; ..expand to spaces
+	CP	LF		; If line feed, then output
+	JR	Z,TYPE4B	; ..with no change in tab count
+	CP	CR		; If carriage return,
+	JR	NZ,TYPE4A	; ..branch to reset tab count
+
+; Output CR and reset tab count
+
+	LD	B,0FFH		; Reset tab counter
+
+; Output character and increment character count
+
+TYPE4A:	INC	B		; Increment tab count
+
+; Output LF and leave tab count as is
+
+TYPE4B:	CALL	LCOUT		; Output <cr> or <lf>
+
+; Continue processing
+
+TYPE6:	INC	C		; Increment character count
+	INC	HL		; Point to next character
+	JR	TYPE2		; Else back for more
+
+; Process tab character
+
+TYPE5:	LD	A,' '		; Space
+	CALL	LCOUT
+	INC	B		; Increment tab count
+	LD	A,B
+	AND	7
+	JR	NZ,TYPE5	; Loop until column = n * 8 + 7
+	JR	TYPE6
+
+;--------------------
+; Output character in A to console or list device depending on a flag.
+; Registers are preserved.  This code is used only by the LIST and TYPE
+; commands.
+
+LCOUT:	PUSH	AF		; Save the output character
+	LD	A,(PRFLG)	; .get device flag
+	OR	A		; Is it for the Console?
+	JP	NZ,LOUTP	; ..jump to Lost Vector if Not
+
+; Output to console with paging
+
+	POP	AF		; Restore the character
+	CP	LF		; Check for new line (paging)
+	JP	NZ,CONOUT	; If not new line, print character and return
+	CALL	CONOUT		; Output to console
+
+; Paging routines
+
+	PUSH	HL
+	LD	HL,PAGCNT	; Decrement lines remaining on screen
+	DEC	(HL)
+	JR	NZ,PAGER1	; Jump if not end of page
+
+				; New page
+	LD	A,(CRTTXT0)	; Get full page count from environment
+	LD	(HL),A		; Reset count to a full page
+	LD	A,(INSPECT)	; Get flag for Page checking
+	CP	PAGECH		; Page default override option wanted?
+
+	  IF  pagech NE ' '	; If using explicit character for page toggle
+	   IF  pagefl		; If paging is default
+	JR	Z,PAGER1	; ..PAGECH means no paging
+	   ELSE			; If paging not default
+	JR	NZ,PAGER1	; ..PAGECH means please paginate
+	   ENDIF	;pagefl
+	  ELSE			; Any character toggles paging
+	   IF  pagefl		; If paging is default
+	JR	NZ,PAGER1	; ..any character means no paging
+	   ELSE			; If paging not default
+	JR	Z,PAGER1	; ..any character means please paginate
+	   ENDIF	;pagefl
+	  ENDIF		;pagech ne ' '
+
+	PUSH	BC		; End of page
+	CALL	BIOS+9		; Wait for user input (BIOS console input)
+	POP	BC
+	CP	CTRLC		; Did user enter control-c?
+	JR	Z,TYPEX0	;4.0E ..jump if So to Exit properly
+PAGER1:	POP	HL		; Restore HL
+	RET
+
+TYPEX0:	POP	HL		;4.0E Clear Stack
+	POP	HL		;4.0E .and Call Return
+TYPEX:	JP	CLOSETF		;4.0E ..close the file and return
+
+	   IF  BANKED		;4.0E
+	CSEG			;4.0E
+	   ENDIF	;4.0E banked
+	  ENDIF		; lton
+
+;-----------------------------------------------------------------------------
+; Command: SAVE
+; Function:  To save the contents of the TPA onto disk as a file
+; Forms:
+;	SAVE <Number of Pages> <ufn>
+;		Save specified number of pages (starting at 100H) from TPA
+;		into specified file
+;
+;	SAVE <Number of Sectors> <ufn> <S>
+;		Like SAVE above, but numeric argument specifies
+;		number of sectors rather than pages
+
+; Entry point for SAVE command
+
+	  IF  saveon
+SAVE:
+	   IF  BANKED		;4.0E
+	LD	HL,NUMBER	;4.0E Point to Conversion routine in Bank
+	CALL	DOITMV		;4.0E Move Page 0 to Bank and Execute
+	   ELSE			;4.0E
+	CALL	NUMBER		; Extract number from command line
+	   ENDIF		;4.0E
+	JP	C,BADNUM	; Invoke error handler if bad number
+	PUSH	DE		; Save the number
+	LD	HL,(PARSPTR)	; Load pointer to Parse point
+	CALL	REPARS		; Reparse tail after number of sectors/pages
+	POP	DE		; Restore the Number
+	   IF  BANKED		;4.0E
+	LD	HL,BSAVE	;4.0E Point to banked routine
+DOITM5:	JP	DOITMV		;4.0E Copy Page 0 to Bank and execute
+	COMMON	/BANK2/		;4.0E
+
+BSAVE:	EX	DE,HL		;4.0E Put Number in HL
+	LD	A,(TFCB2+1)	; Check sector flag in second FCB
+	CP	SECTCH
+	   IF  sectch NE ' '	; If using a specific character, then jump
+	JR	Z,SAVE0		; ..if it is that character
+	   ELSE			; If allowing any character (SECTCH=' ')
+	JR	NZ,SAVE0	; ..jump if it is anything other than space
+	   ENDIF	;sectch ne ' '
+
+	ADD	HL,HL		; Double page count to get sector count
+SAVE0:	LD	A,1		; Maximum allowed value in H
+	CP	H		; Make sure sector count < 512 (64K)
+	JP	C,BADNUM	; If >511, invoke error handler
+
+	PUSH	HL		; Save sector count
+	   IF  BANKED		;4.0E
+	CALL	MOV2CMD		;4.0E If banked, move FCB to Hi CMDFCB
+	LD	HL,CMDFCB	;4.0E .point to it
+	   ELSE			;4.0E
+	LD	HL,TFCB
+	   ENDIF		;4.0E
+	CALL	AMBCHK		; Check for ambiguous file spec (vectors to
+				; ..error handler if so)
+	CALL	EXTESV		; Test for file (->DE) existence, abort if so
+	LD	C,B_FMAK	; BDOS make file function
+	CALL	BDOSTEST
+	JR	Z,SAVE3		; Branch if error in creating file
+
+	POP	BC		; Get sector count into BC
+	LD	HL,TPA		; Set pointer to TPA
+	   IF  BANKED		;4.0E
+	CALL	WRFILB		;4.0E
+	   ELSE			;4.0E
+	CALL	WRFILE		; Write BC sectors to TFCB file
+	   ENDIF		;4.0E
+	LD	B,0FFH		; .return 0 if Ok, <>0 if Error (Set flag)
+	JR	Z,SAVE2		; ..jump if Ok
+	INC	B		; B=0 if write failed (FF-->0)
+
+SAVE2:
+	   IF  BANKED		;4.0E
+	LD	DE,CMDFCB	;4.0E
+	CALL	CLOSE		;4.0E
+	   ELSE			;4.0E
+	CALL	CLOSETF		; Close file even if last write failed
+	   ENDIF		;4.0E
+	AND	B		; Combine close return code with
+				; ..write success flag
+	RET	NZ		; Return if all ok
+
+SAVE3:	LD	A,ECDISKFULL	; Disk must be full, so load Error Code
+	JP	ERROR
+	  ENDIF		; saveon
+
+;-----------------------------------------------------------------------------
+; Check file control block pointed to by HL for any wildcard characters ('?').
+; Return to calling program if none found.  Otherwise branch to error handler.
+; The routine also treats an empty file name as ambiguous.
+
+	  IF  lton OR saveon OR renon OR geton
+AMBCHK:	LD	E,L		; Save pointer to FCB in DE
+	LD	D,H
+	INC	HL		; Point to first character in file name
+	LD	A,(HL)		; See if first character is a space
+	CP	' '
+	JR	Z,AMBCK1	; If so, branch to error return
+
+AMBCK0:	LD	A,'?'		; Set up for scan for question mark
+	LD	BC,11		; Scan 11 characters
+	CPIR
+	RET	NZ		; Return if no '?' found
+AMBCK1:	LD	A,ECAMBIG	; Error code for ambiguous file name
+	JP	ERROR
+	  ENDIF		;lton or renon or saveon or geton
+
+	  IF  BANKED		;4.0E
+	CSEG			;4.0E
+	  ENDIF			;4.0E
+
+;-----------------------------------------------------------------------------
+; Command:	JUMP
+; Function:	To execute a program already loaded into some specified memory
+;		address
+; Forms:	JUMP <adr> <tail>
+;		The address is in hex; the tail will be parsed as usual
+
+	  IF  jumpon
+JUMP:
+	   IF  BANKED		;4.0E
+	CALL	BHEXNM		;4.0E
+	   ELSE			;4.0E
+	CALL	HEXNUM		; Get load address into DE
+	   ENDIF		;4.0E
+	JP	C,BADNUM	; If bad number, invoke error handling
+	PUSH	DE		; ..otherwise save it
+	LD	HL,(PARSPTR)	; Load pointer into Command Tail
+	CALL	REPARS		; Reparse tail after address value
+	POP	HL		; Restore execution address to HL
+	   IF  goon
+	JR	GETPROGLF	; Perform call via code below
+	   ENDIF	; goon
+	  ENDIF		;jumpon
+
+;-----------------------------------------------------------------------------
+; Command:	GO
+; Function:	To Call the program in the TPA without loading
+;		loading from disk. Same as JUMP 100H, but much
+;		more convenient, especially when used with
+;		parameters for programs like STAT. Also can be
+;		allowed on remote-access systems with no problems.
+;
+;Form:		GO <tail>
+
+	  IF  goon
+GO:	LD	HL,TPA		; Set up TPA as the execution address
+	  ENDIF		; goon
+	  IF  jumpon OR goon	; Common code
+GETPROGLF:
+	LD	(EXEADR),HL
+	XOR	A		; Set zero flag to enable leading CRLF
+	JP	CALLPROGLF	; Perform call (with leading CRLF)
+	  ENDIF		;jumpon or goon
+
+;-----------------------------------------------------------------------------
+; Command:	GET
+; Function:	To load the specified file from disk to the specified address
+; Forms:	GET <adr> <ufn> 
+;		Loads the specified file to the specified hexadecimal address
+;		Note that the normal file search path is used to find the file.
+;		If SCANCUR is off, the file may not be found in the current
+;		directory unless a colon is included in the file spec.
+
+	  IF  geton
+GET:
+
+; TMPCOLN was set when the file name was parsed.  We use that as the colon
+; flag so that the file will be loaded from a directory just as if it had
+; been entered as the command name.
+
+	   IF  BANKED		;4.0E
+	LD	HL,BGET		;4.0E Point to banked routine
+	CALL	DOITMV		;4.0E .call the Banked routine..
+				;4.0E ..fall thru to MLOAD after returning fm Bnk.
+	COMMON	/BANK2/		;4.0E
+BGET:				;4.0E
+	   ENDIF		;4.0E
+	   IF  drvprefix AND [NOT scancur] AND [NOT ZSDOS2]
+	LD	A,(TMPCOLN)	; Allow GET to load from specified
+	LD	(COLON),A	; directory
+	   ENDIF	; drvprefix and [not scancur] and [not zsdos2]
+
+	LD	HL,TFCB2	; Copy TFCB2 to CMDFCB for load
+	PUSH	HL
+	LD	DE,CMDFCB
+	LD	BC,16
+	LDIR
+	POP	HL
+	CALL	AMBCHK		; Make sure file is not ambiguous (vectors
+				; ..to error handler if so)
+
+; If GET fails to find the specified file along the search path, we do not
+; want the ECP to be engaged.  To prevent that, we fool the command processor
+; by telling it that the ECP is already engaged.
+
+	LD	HL,CMDSTATFL	; Point to command status flag
+	SET	2,(HL)		; Turn on ECP flag to prevent use of ECP
+	CALL	HEXNUM		; Get load address into DE
+	JP	C,BADNUM	; If invalid number, invoke error handler
+
+	   IF  NOT fullget
+	LD	A,D		; If trying to load into base page
+	OR	A		; ..treat as error
+	JP	Z,BADNUM
+	   ENDIF	; not fullget
+
+	EX	DE,HL		; Move address into HL
+	LD	A,0FFH		; Disable dynamic loading
+			;..Fall through to MLOAD..
+	   IF  BANKED		;4.0E
+	RET			;4.0E Return from Banked segment
+	CSEG			;4.0E ..and fall thru to MLOAD
+	   ENDIF		;4.0E
+	  ENDIF		; geton
+
+; End Z40-5.Z80
+

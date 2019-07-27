@@ -1,0 +1,74 @@
+	TITLE	"ATDELNUM - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Extracted from Z3PRSx.Z80 modules by Richard Conn
+; Date   : 26 Jul 89
+; Version : 1.3
+; Module  : ATDELNUM
+; Abstract: This module contains a common routine extracted from
+;	Z3PRS1, Z3PRS2 and Z3PRS3 to increase re-utilization of
+;	code.  The routine included here is: @NUM which converts
+;	a number string to binary digit.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		@NUM
+
+; From Z3LIB Get..
+
+	EXT		@SDELM, @DIGCK
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - @NUM
+; Entry: HL - Points to first character in numerical string
+; Exit :  A - Contains converted number, Carry Clear (NC) if OK
+;		 Carry Set (C) if error in conversion
+;	 HL - Points to delimiting or erred character
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+@NUM:	PUSH	BC
+	LD	BC,1100H	;C = Accumulated value, B = Char Count
+				; (C=0, B=11)
+NUM1:	LD	A,(HL)		;Get char
+	CALL	@SDELM		;Done if delimiter
+	JR	Z,NUM2
+	INC	HL		;Pt to next char
+	CALL	@DIGCK		;Check for digit in A
+	JR	C,NUMERR
+	LD	D,A		;Digit in D
+	LD	A,C		;New value = Old value * 10
+	RLCA			;*2
+	JR	C,NUMERR
+	RLCA			;*4
+	JR	C,NUMERR
+	ADD	A,C		;*5
+	JR	C,NUMERR
+	RLCA			;*10
+	JR	C,NUMERR
+	ADD	A,D		;New value = Old value * 10 + Digit
+	JR	C,NUMERR	;Check for range error
+	LD	C,A		;Set new value
+	DJNZ	NUM1		;Count down
+
+; Return from number
+
+NUM2:	LD	A,C		;Get accumulated value
+	POP	BC
+	OR	A		;Clear Carry
+	RET
+
+; Restore stack and return with Carry set
+
+NUMERR:	POP	BC
+	SCF
+	RET
+
+	END
+

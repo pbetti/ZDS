@@ -1,0 +1,306 @@
+Here is a list of features and changes in ZCPR33.
+
+MAJOR SYSTEM ENHANCEMENTS
+
+    1.  Transient programs are now installed automatically at execution time 
+        (not at load time).  No longer will you need Z3INS (or Z-RIP), and 
+        no longer will you have files fail to operate correctly because you 
+        forgot to install them.
+
+    2.  Extended command processors (ECPs) and error handlers can now 
+        coexist.  If a ZCPR33-compatible ECP encounters an error in 
+        operation, it can return control to the command processor for error 
+        handling.  In fact, any program can force invocation of the error 
+        handler to process the command by which the program was invoked.  
+        This can be useful when the program detects a syntax error and would 
+        like to afford the user the opportunity to edit the command.
+
+    3.  The command processor can load programs automatically to starting 
+        addresses other than 100H using a new type-3 environment descriptor.  
+        If the environment type number in the program header is more than 2, 
+        then the word after the environment address (i.e., the word at 10bh) 
+        will be used as the load address for the program.  By linking 
+        extended command processors and error handlers to an address high in 
+        memory, one can cause these programs to be loaded so as not to 
+        affect a transient program loaded in the TPA at 100H.  This means 
+        that the GO command can be used after an erroneously entered command 
+        has caused the ECP and error handler to be invoked.  The same could 
+        be done with small shell programs, such as a history shell.  The new 
+        FCP package loads the transient IF processor in high memory also, 
+        and the new RCP dynamically allocates its buffers at the top of the 
+        TPA, so that, again, the GO command can be used fairly predictably.  
+        A further use of the new dynamic loading feature is to make 
+        transient programs that act as pseudo-residents.  For example, one 
+        can now have a transient SAVE program (which could be much more 
+        powerful than the resident one).  If SAVE.COM is linked with a type-
+        3 environment with a load address of 8000H, then it can be used to 
+        save any memory image in the range 100H-7FFFH.  Programs like 
+        FINDERR and MEX2Z, which have to examine the memory image left by 
+        the previous program that ran, can now be made to examine any part 
+        of memory, even at the bottom of the TPA, by linking them to load in 
+        high memory.
+
+    4.  The command processor can now, like the ZCPR3 utilities, configure 
+        itself dynamically according to parameters set in the environment 
+        descriptor (Z3ENV).  The features that can be controlled by the 
+        environment are:
+                a.  the maximum allowed drive and user number
+                b.  the acceptance of the DU form (DUOK)
+                c.  the addresses of the RCP, FCP, and NDR
+        The ability to get the RCP, FCP, and NDR addresses from the 
+        environment makes it possible to allocate a single large buffer in 
+        different proportions under the control of an alias.
+
+
+SPEED ENHANCEMENTS
+
+    1.  The SCANCUR option now works correctly so that the command processor 
+        does not automatically scan the user's current directory first.  One 
+        can now have a command search path that looks first in the directory 
+        where one's most often used programs reside before searching the 
+        current directory.  The current directory can be omitted from the 
+        path so that it is scanned only when a colon is included before the 
+        command name.  The latter feature is particularly useful with ram 
+        disks.  To make it easier to get the effect of a leading colon (a 
+        shifted character), a period (not a shifted character) can be used 
+        instead.
+
+    2.  An option allows searching of the command path and the extended 
+        command processor to be bypassed when an explicit directory is 
+        specified with the command.  Then when one makes a typing mistake or 
+        uses the wrong name for a file, time will not be wasted scanning the 
+        entire path, which may include some slow devices, before the error 
+        handler is invoked.
+
+    3.  With the tremendous power offered by an extended command processor, 
+        a significant fraction of the user's commands may be intended for 
+        the ECP.  If a command is entered with a leading space, the 
+        processing of the command will be directed to the ECP immediately, 
+        saving the time of searching the path.
+
+    4.  The minimum path and root path features have now been implemented 
+        correctly and efficiently (the minpath no longer takes up any room 
+        in the command processor).  Since the minimum path prevents the 
+        command processor from looking more than once in the same directory 
+        for a file, operating speed is improved.
+
+
+COMMAND PROCESSING PRIORITY CHANGES
+
+    1.  Commands in the resident command package (RCP) are now scanned 
+        before those that are resident in the command processor (CPR) 
+        proper.  In this way, when an RCP is loaded that supports a more 
+        powerful version of a command present in the CPR, the RCP command 
+        will take precedence.
+
+    2.  Command line input to the command processor now comes from four 
+        sources in the following order:
+                a.  a running ZEX script
+                b.  a running SUBMIT job
+                c.  the shell stack
+                d.  the user
+        By moving the priority of ZEX input to the top, ZEX jobs can now run 
+        nicely and quickly under shells (since the shell does not have to be 
+        reloaded for each line of the ZEX script), and the shells do not 
+        have to contain complex code to check for ZEX input.  Once a ZEX job 
+        has been started, it is treated as if its script were a single long 
+        command line entered by the user.
+
+
+IMPROVED SECURITY FEATURES
+
+    1.  Security with the DU form of directory reference has been made more 
+        rigorous.  It is now quite possible to allow the DU form to be used 
+        and still have a secure system.  The highest drive and user number 
+        are now under control of the environment, as noted above.  In 
+        addition, if a user has reached a drive or user number beyond that 
+        range by using a named directory, the D: or U: forms cannot then be 
+        used to reach other drives or users that are out of range.  All 
+        directories accessed by any DU-type form (DU:, D:, or U:) are fully 
+        checked.
+
+    2.  For enhanced performance in systems with DU accesses disabled by the 
+        DUOK flag or with some named directories beyond the max DU limits, 
+        DU expressions that reference directories for which there is a named 
+        directory with no password will always be accepted.  For example, if 
+        the maximum allowed drive is C but there is a named directory FLOPPY 
+        which is J0:, the commands "J0:" and "XD J0:" will work exactly the 
+        same as if FLOPPY had appeared in the place of J0.
+
+    3.  For convenience, password checking of named directories can be 
+        automatically disabled when the wheel byte is on.
+
+    4.  Optionally, attempts to log in illegal directories can be passed 
+        directly to the extended command processor for action.  One use of 
+        this is to display a message and a listing of the allowed areas (by 
+        running PWD, for example).
+
+    5.  To reduce the nuisance to users in a secure system, password and 
+        range checking are not applied to references to the currently logged 
+        in directory.  Thus, for example, once you have entered an area 
+        named SECRET (B7) by using the password, commands like "XD SECRET:" 
+        or "XD B7:*.COM" will be accepted.  Such commands would not normally 
+        be entered manually but are often generated by alias scripts.  I 
+        have had some aliases ask me for a password four or five times for a 
+        directory that I am already logged into!
+
+    6.  Password checking is no longer performed for commands scanned while 
+        the current IF state is false.  In ZCPR30 the user was asked for the 
+        password whenever a passworded directory appeared in a command, even 
+        if the command was not going to be executed.  As a result, complex 
+        aliases could result in the user being asked numerous times for the 
+        password even though only one of several possible commands would 
+        actually execute.
+
+
+ENHANCEMENTS TO CPR-RESIDENT COMMANDS
+
+    1.  The command table (and certain other information) is placed in a 
+        standard location in the code (as in the RCP and FCP modules) so 
+        that an 'H' command in the RCP or a SHOW command can display 
+        information about the resident commands (and other options) 
+        supported in the command processor.
+
+    2.  Command errors now result in the invocation of the error handler.  
+        This is very important when the failure of a command could have a 
+        serious detrimental impact on the rest of a command line script.  
+        For example, if a SAVE or REN failed, later operations on the 
+        resulting file would not work as planned.  By vectoring to an error 
+        handler, the user is given the opportunity either to fix the command 
+        or to abort the entire script.
+
+    3.  When the SAVE or REN command will overwrite an existing file, the 
+        user is prompted.  In ZCPR33 the operation of ZEX is temporarily 
+        suspended so that unplanned prompts like this will not upset the ZEX 
+        script.  If you have ever experienced this situation, you know what 
+        a mess it used to cause.
+
+    4.  The command REN NEWFILE=OLDFILE has enhanced exception checking.  
+        Previously, if NEWFILE already existed and OLDFILE did not, the user 
+        would nevertheless be asked if NEWFILE should be erased.  With an 
+        affirmative answer, only after NEWFILE was erased would the user be 
+        informed that there was no OLDFILE.  Now, the existence of OLDFILE 
+        is checked first.
+
+    5.  The JUMP command has been significantly enhanced so that it can now 
+        serve a useful purpose.  Previously, the command "JUMP 1000" left 
+        the default FCBs and the command tail set based on the string 
+        "1000".  Now the command line is reparsed after the address token.  
+        This means, for example, that "JUMP 100 COMMAND-TAIL" functions 
+        identically to "GO COMMAND-TAIL".  It is now possible to execute 
+        code loaded at an arbitrary address AND pass parameters to it in the 
+        usual way.
+
+    6.  The SAVE command can now save a specified number of sectors using 
+        the syntax described in "ZCPR3, The Manual", namely, using the form 
+        "SAVE nn FILENAME S" or "SAVE nnH FILENAME S".
+
+    7.  The DIR command has the additional default forms "DIR /A" and "DIR 
+        /S" to display all files in the directory with any attribute or with 
+        the SYS attribute respectively.
+
+    8.  The GET command will not allow a file to be loaded over the first 
+        page of memory (this happened often in the past because of the 
+        documentation error that indicated that the first parameter with GET 
+        was supposed to be the page address rather than the full address).
+
+
+MISCELLANEOUS NEW FEATURES
+
+    1.  The address of the environment descriptor is passed in the HL 
+        register when a program is called.  This affords an alternative 
+        method for automatically installing programs, one that does not 
+        depend on the standard 'Z3ENV' header at the beginning of the 
+        program.
+
+    2.  The address of the beginning of the current command is always kept 
+        in the message buffer at address Z3MSG+4.  Formerly this occurred 
+        only when there was an error, and the information was going to be 
+        needed by the error handler.  With the new code, programs can make 
+        whatever use they wish of this information.  In Z33FCP (soon to be 
+        released) this feature is used to determine easily whether or not an 
+        explicit directory or colon occurred before an IF command.  Shells 
+        can use this feature to determine precisely how they were first 
+        invoked by the user, namely with an explicit DU: form, an explicit 
+        DIR: form, or neither.
+
+    3.  The drive/user area from which a program was actually loaded by the 
+        command processor is put into the S1 (user) and S2 (drive) bytes of 
+        the external FCB at offsets 13 and 14 into the FCB.  Programs can 
+        thus determine where the CPR was able to locate them.  (Note that 
+        once the file has been loaded, only the name and type fields of the 
+        FCB need be preserved for use by programs; the remaining bytes can 
+        be used for any purpose.)
+
+    4.  The two entry point vectors in the command processor have been 
+        replaced by relative rather than absolute jumps.  The byte at offset 
+        2 that is freed up contains a version ID (33H) that programs can use 
+        to determine whether they are running under version 3.3 of ZCPR.  
+        After the second jump (i.e., at offset 5) there are three 
+        configuration bytes, where each bit indicates whether or not a 
+        specific optional feature of ZCPR33 has been implemented.  The 
+        structure of these bytes can be determined from the source code, and 
+        they will be documented later.  Here is one example of a use for 
+        this.  A program can determine whether or not SCANCUR (automatic 
+        inclusion of the current directory at the head of the path) is in 
+        effect in the command processor and can then follow the same 
+        convention.  ARUNZ used to scan for the ALIAS.CMD file with SCANCUR 
+        enabled.  In a future version, I will make ARUNZ follow the command 
+        processor.  Another use is with a version of the SHOW command that 
+        will tell one much more about the CPR configuration.  (Note that the 
+        table of commands now begins at an offset of 08H in the CPR; the "H" 
+        command in my experimental RCP145 will have to be modified to work 
+        correctly -- it presently looks for the command table at an offset 
+        of 6.)
+
+
+BUG FIXES AND CODE ENHANCEMENTS
+
+    1.  The length of the command tail that is copied from the command line 
+        to the tail buffer at 80h is now length limited so that the tail 
+        cannot overwrite code at 100h.  If the tail is too long, it will be 
+        truncated and a warning message will be displayed.  Processing will 
+        continue, however.  Without this checking, the system could easily 
+        be crashed or even damaged by entering commands with very long 
+        tails.
+
+    2.  The default file control blocks are now properly initialized and 
+        filled when the extended command processor is invoked.
+
+    3.  The root path element is now computed correctly with the minimum 
+        path feature enabled (in fact, the latter is no longer an option -- 
+        it is always enabled).
+
+    4.  The command processor will no longer go into an infinite loop when 
+        the error handler cannot be found.  The built-in error handling will 
+        always take over under this condition.
+
+    5.  When a command error occurs during a false IF condition, invocation 
+        of an external error handler was futile, because the error handler 
+        command line would be flushed.  Results would be unpredictable and 
+        invisible.  Now, when error handling is invoked during a false IF 
+        state, the internal error handler is always given control, and it 
+        echoes the flushed command line to the screen so that the user knows 
+        what has happened.
+
+    6.  In ZCPR30 the code for loading a file into memory made sure that the 
+        CPR was not overwritten, but it did not allow for the case where a 
+        resident system extension (RSX) was present that protected memory 
+        even below the CPR.  ZCPR30 could overwrite the RSX code.  In ZCPR33 
+        the address of the highest free memory is calculated correctly.
+
+    7.  The sending of carriage-return-linefeeds during invocation of the 
+        extended command processor has been fixed so that the ECP looks 
+        exactly like the normal command processor (in ZCPR30 there used to 
+        be another new line for each ECP invocation).
+
+    8.  The code for previously existing functions has been significantly 
+        shortened by using better algorithms, by eliminating redundant or 
+        unused sections of code, by rearranging the code to eliminate jumps, 
+        and by using the special Z80 opcodes.  The previously existing 
+        functions were implemented so much more efficiently that most of the 
+        new features are accommodated without an increase in total code 
+        size.  The logical arrangement of the code has been greatly 
+        improved, routines now being grouped by function and placed into 
+        modules.  The code is now fully, clearly, and extensively commented.
+                                       

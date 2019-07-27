@@ -1,0 +1,47 @@
+;	TITLE	"SISGRAPH - Syslib 4.0"
+	NAME	('ISGRAP')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SISGRAPH.Z80 Ver 1.1 by Richard Conn
+; Date    : 28 Jul 89
+; Version : 1.3
+; Module  : SISGRAPH
+; Abstract: This module contains only the routine ISGRAPH which
+;	evaluates the character in register A and returns with
+;	the Zero Flag Set (Z) if the character is a printable
+;	ASCII char (i.e. in the range of 20H-7EH with the MSB
+;	of an 8-bit byte masked).  If the character is in the
+;	range of 0-1FH or 7FH, the Zero Flag is Reset (NZ).
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+
+	PUBLIC		ISGRAPH
+
+	.Z80
+	CSEG
+;=========================================================================
+; NAME - ISGRAPH
+; Entry: A = Character to evaluate
+; Exit : A = Char, Zero Flag Set (Z) if printable (20-7EH), else Reset (NZ)
+; Uses : F
+; Special Requirements:  None
+;=========================================================================
+
+ISGRAPH: PUSH	BC		; Save BC
+	LD	C,A		; Save char in C
+	AND	7FH		; Mask out MSB
+	CP	' '+1		; Less than or equal to space?
+	JR	C,NO
+	CP	7FH		; Less than Delete?
+	JR	NZ,YES
+NO:	DEFB	0F6H		; Set NO response with "OR  0AFH"
+YES:	XOR	A		; Set Flag
+	LD	A,C		; Get char
+	POP	BC		; Restore BC
+	RET
+
+	END
+

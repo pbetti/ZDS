@@ -1,0 +1,1420 @@
+	TITLE 'ZLT (Z-system Library Typer), September 16, 1989'
+;
+VER	EQU	12		; Current version number
+SubVers	equ	'a'		; special modification
+;
+; ZLT types normal, crunched or squeezed files, either directly or from
+; .LBR members.  Wildcards access a series of library members OR files.
+;
+; Version 1.2a modifications by Gene Pizzetta, October 3, 1989
+; Removed messages, sign-on and instruction lines, and filename
+; displays.  Error messages and usage screen still operable.
+; Defaults to no paging.  Prints all characters, including control
+; characters (except ^Z), to screen.  This is a special version for
+; graphic screen displays.  No filetype limit.
+;
+; Version 1.2 modifications by Ken Reid, September 16, 1989
+; Installed LZH-decoding module to handle files compressed with CRLZH.
+; No other changes. (UNLZH module courtesy of Roger Warren)
+; Added SMACZLT.COM alias that uses SLRMAC and SLRNK+
+;
+; Version 1.1 modifications by Bruce Morgen, September 12, 1988
+; Installed character delay code like PAGE has, fixed command
+; name print routine to strip high bits.  Re-implemented Howard
+; Goldstein's more frequent pause checking, although I kludged
+; my own code for it, no longer "owning" the LT source.  Made
+; disabling of paging with Control-Z a toggle rather than a
+; permanent cancellation.  Disallowed wildcards within LBR file
+; specifications under CP/M 3.x (for Z3PLUS users).  Truncated
+; long Z3LIB/SYSLIB symbol names to 6 characters so RMAC could
+; by used in addition to M80 or SLRMAC, rebuilt UNC.REL to use
+; the public symbol "UNCOUT" instead of "OUT", which is a taboo
+; reserved word for RMAC.  There are now two sample assembly
+; aliases, M80ZLT (M80 and ZLINK) and RMACZLT (RMAC and LINK).
+; Note:
+;	For unmodified RMAC, rename to ZLTxx.ASM before running
+; 	RMACZLT.
+;-----------------------------------------------------------------------
+; 
+; December 15, 1987, ZLT Version 1.0
+;
+; LT was always a marginal file extraction tool at best, so I've spun
+; off ZLT as a typer-only program -- for ZCPR3-compatible systems
+; only.  Use Bob Peddicord's LBREXT for extraction-with-uncompression
+; chores.  Eliminating the parser code in favor of a simple Z3LOG
+; call shrinks ZLT to very manageable proportions, while ZCPR 3.3
+; takes care of security matters very competently.  Filetype exclu-
+; sion is the one remaining assembly-time option of any significance,
+; line count limits are still overridden by a non-zero wheel byte.
+;
+; ZLT is basically a Z-ified LT23 with file extraction and parsing
+; code removed and one significant feature added: ZLT handles wild-
+; card filespecs for files in the same manner as for LBR members --
+; LT23 simply settled for the first matching file found by BDOS.
+; The help message routine has been heavily modified to show the
+; actual name of the program and the options available to the user.
+; Other displays screwed up by questionable conditional assemblies
+; in LT2x.MAC have also been (or seem to be) fixed.  ZLT now appears
+; to be fully re-entrant, even from a help-message-only run.
+;
+; In deferrence to the formidable Prof. Falconer, ZLT remains coded
+; in Intel mnemonics and 8080-compatible opcodes for M80 (SLRMAC will
+; undoubtedly handle it just fine too) - use Irv Hoff's XIZ tool to
+; translate it for Zilog-only assemblers.  Linkage with L80 is possi-
+; ble, I suppose, but Echelon's ZLINK (or DRI's LINK) is much better
+; for that job.  Use the ASMZLT alias (for M80 and ZLINK) as a model.
+; In addition to the UNC and WILDEX modules, you'll also need Z3LIB
+; and SYSLIB - almost any vintage of these should be OK.  Make sure
+; to use Z3INS or Z-RIP on ZLT.COM if you still run ZCPR 3.0, or if
+; you intend to use ZLT with a generic-CP/M CCP emulator like LUX77B.
+;
+; To accommodate a ZCPR3 header, the remaining option bytes start at
+; 10Bh, followed by the filetype exclusion table.  Zeroes at the
+; three active bytes turn off linecount limits, filetype exclusion and
+; control-character filtering, in that order.
+;
+;					Bruce Morgen
+;
+; c/o	NAOG/ZSIG	P.O. Box #2781		Warminster, PA	18974
+;
+; Phone:	215-443-9031	(East Coast business hours only)
+;
+; RAS:	Lillipute Z-Nodes	(312-649-1730, 312-664-1730)
+;	DHN*			(215-623-4040)
+;		(all 300/1200/2400 baud & 24 hours)
+;____________________________________________________________________
+;
+; Revision history of LT (Library Typer) by C.B. Falconer follows:
+;____________________________________________________________________
+;
+; 08/12/87  Fixed to properly handle 0-length files.  Modified to
+;   v23     check for pause and abort from console after every typed
+;	    character rather than at the end of each line.  This was
+;	    necessary to prevent loss of data on some very slow
+;	    terminals such as the one I use, and to enable the typing
+;	    of a file with no linefeeds to be aborted.	Also fixed the
+;	    tab expansion routine to work correctly with files con-
+;	    taining unusual control characters such as backspace, and
+;	    made the "turn up one line" feature more foolproof.
+;					- Howard Goldstein
+;
+; 07/30/87  Added the long needed ZCPR/ZCMD support of maximum user
+;   v22     area.  When the UZCPR option is set, the page 0 value
+;	    will be examined to determine if the requested user area
+;	    is within the allowable range.  This is primarily useful
+;	    on RCP/M's (but I suspect that is where LT is primarily
+;	    used).  Added code to allow overriding the line counter
+;	    and user area restrictions when the wheel is active.
+;					- Gary Inman, Sysop
+;					  West Los Angeles RCP/M
+;
+; 07/21/87  When at a [more] pause, the space bar now turns up one
+;   v21     line at a time.  LTxx is often used on RCPM systems as
+;	    their general purpose TYPE.COM program.  This makes it
+;	    compatible with UNARC16.  These two  programs are used
+;	    in the popular LUX program to type ASCII files in ARC,
+;	    ARK or LBR files.  I have always liked this feature in
+;	    UNARC16 and decided to add it to LT20.  I believe most
+;	    users will find this quite useful and hope JB Falconer
+;	    does not mind my adding this feature.  This version is
+;	    a little over 4k.  If this makes any problem, just use
+;	    an earlier version. 	- Irv Hoff, Sysop
+;					  PRACSA RCPM
+;
+; 07/17/87  Able to use wheel byte in conjunction with OUTFLG flag.
+;   v20     One byte added in ddt modifiable area at program start.
+;	    WHLFLG and/or WHEEL now tested in conjunction with the
+;	    OUTFLG flag eliminating need for two copies of program
+;	    when used on a remote system.  Found that it would not
+;	    assemble properly using M80/L80 because of YES/NO, now
+;	    corrected.	Restored program name, version number, and
+;	    author credit. Other minor mods to keep code size <4k.
+;					- G.F. Reding [72436,45]
+;
+; 06/10/87  Change to only display characters between "[" and "]" in
+;   v19     the header of crunched files as other characters in this
+;	    area are reserved.	Removed the redundant "IF NOT UNCR"
+;	    (marked ";;;;") following an "ELSE" which prevented LT18
+;	    from being assembled in its distributed form. Slight text
+;	    changes to keep <4k.	- Steven Greenberg
+;
+; 12/28/86  Allows access to .LBR files > 512k.  Was using CPM 1.4
+;   v18     variety of direct access.  Mods to keep under 4k total.
+;	    Should CP/M v1.4 check and refusal.
+;					- C.B. Falconer
+;
+; Previous LT revisions, all by C.B. Falconer:
+;
+; v17, 12/13/86; v16, 11/24/86; v15, 11/17/86; v14, 11/15/86;
+; v13, 2/12/86; v12, 12/5/84; v11, 12/4/84; v10, 10/2/84.
+;
+; Adapted from Steven R. Holtzclaw's "LUXTYP (06/10/83)"
+; for independent use without the complete LUX system.
+;
+;-----------------------------------------------------------------------
+;
+	CSEG
+;
+NO	EQU	0		; For conditional assembly
+YES	EQU	NOT NO		; (Some assemblers don't like 0FFh)
+;
+;
+; Assembly time configurable areas.  Each increases COM file size.
+;
+LIMITL	EQU	YES		; Yes allows output line limits
+				; (if wheel byte is not set)
+
+LIMITT	EQU	no		; Yes allows file type restriction
+
+DUSPEC	EQU	YES		; Use DU/DIR-style drive/user specs?
+				; (otherwise forces current DU)
+
+WHLDU	EQU	YES		; Make DU specs wheel-dependent?
+
+ACREDIT	EQU	YES		; Want author names in sign-on?
+
+NOCTRL	EQU	no		; Yes to prevent control char. output
+
+	 IF	WHLDU AND NOT DUSPEC
+OOPS	EQU	NOVALUE;MUST HAVE DUSPEC YES IF YOU WANT WHLDU YES!
+	 ENDIF			; WHLDU AND NOT DUSPEC
+;
+; Configurable values.
+;
+LNMAX	EQU	16H*3		; 0 for no limit, else max file size (to 255)
+;....
+;
+BELL	EQU	07H
+BS	EQU	08H
+TAB	EQU	09H
+LF	EQU	0AH
+CR	EQU	0DH
+;
+; CP/M-DOS+-ZRDOS system values
+;
+BDOS	EQU	0005H
+FCB1	EQU	05CH
+FCB2	EQU	06CH
+TBUFF	EQU	80H
+;
+; BDOS calls
+;
+CIO	EQU	6		; Direct console I/O
+GETVER	EQU	12
+OPEN	EQU	15
+SRCHF	EQU	17
+FREAD	EQU	20
+SETDMA	EQU	26
+FRDRAN	EQU	33		; Read random record
+;
+	CSEG
+;
+	EXTRN	WILDEX		; Sigi Kluger wildcard expander
+	EXTRN	Z3INIT,GETWHL,GETCRT,GETEFCB	; From Z3LIB
+	EXTRN	GETSPEED			; Added @v1.1
+	EXTRN	INITFCB			; From SYSLIB
+	EXTRN	ISDIGIT			; Added @v1.1
+	EXTRN	UNC		; Falconer-Greenberg UNCR module
+	EXTRN	UNL		; R. Warren UNLZH module
+
+;	NOTE: LINK WILDEX.REL FIRST & UNC.REL LAST!
+
+	 IF	DUSPEC
+	EXTRN	Z3LOG		; From Z3LIB
+	EXTRN	PUTUD,GETUD	; From SYSLIB
+	 ENDIF			; DUSPEC
+;
+	PUBLIC	GETBYT,UNCOUT	; Referenced by UNC
+	PUBLIC	GLZHUN,PLZHUN	; Referenced by UNL
+;
+ZLT:	JMP	START
+	DB	'Z3ENV',1
+Z3EADR:	DW	00
+;
+; Configuration values, even if unused via "limit" options
+;
+MAXLIN:	DB	LNMAX		; Max lines to type, 0 = unlimited
+TYPFLG:	DB	LIMITT		; 0 for all file types, else selective
+CTLFLG:	DB	NOCTRL		; 0 allows control char print
+KILLST:	DB	YES		; Non-zero to disable lister output,
+;				; reserved for future, not yet used.
+;
+; '?' matches any character. Alpha order for convenience only,
+; a complete sequential scan is done.  An existing name can be
+; made to disappear by setting its high order bit somewhere.
+
+	 IF	LIMITT		; Table of invalid file types
+BADTBL:	DB	'ABS'		; Intended to disable
+	DB	'ARC'		; ===================
+	DB	'ARK'
+	DB	'BAD'
+	DB	'CRL'
+	DB	'C?M'		; COM, CQM, CZM
+	DB	'E?E'		; EXE, EQE, EZE   (MSDOS executable)
+	DB	'IRL'
+	DB	'I?T'		; INT, IQT, IZT
+	DB	'LBR'
+	DB	'O?J'		; OBJ, OQJ, OZR
+	DB	'P?D'		; PCD, PQD, PZD   (executable by RUNPCD)
+	DB	'TX#'
+	DB	'RBM'
+	DB	'R?L'		; REL, RQL, RZL
+	DB	'S?R'		; SLR, SQR, SZR   (SLR format rel files)
+	DB	'SYS'
+	DB	'LZH'		; Spares, for user configuration
+	DB	'ZIP'
+	DB	0,0,0
+	DB	0		; Table end marker
+	 ENDIF			; LIMITT
+
+START:	LXI	H,0		; Set up HL for add to stack
+	SHLD	MEMCNT		; Zero the memory count
+	DAD	SP		; Add stack pointer
+	SHLD	STACK		; Keep stack contents
+	LXI	SP,STACK	; Set up local stack
+	 IF	DUSPEC
+	CALL	PUTUD		; Stash entry DU for exit
+	 ENDIF			; DUSPEC
+	LHLD	Z3EADR
+	MOV	A,L
+	ORA	H
+	LXI	D,NOTZ3
+	JZ	EXEUNT		; Assume 0000H ENV is non-Z3
+	CALL	Z3INIT
+	LDA	FCB1+1
+	CPI	'/'
+	JZ	HELPER
+	CPI	' '
+	JZ	HELPER
+	CALL	GETCRT		; Point current CRT descriptor
+	INX	H		; Bump to "usable lines"
+	INX	H
+	MOV	A,M
+	STA	PAGSIZ		; Store locally
+	LXI	H,ENDU		; Init. 3 words for re-entrance
+	SHLD	NAMPTR
+	SHLD	NAMPT1
+	LXI	H,65535
+	SHLD	RCNT
+	LXI	D,FCB1		; Point target FCB
+;
+	 IF	DUSPEC		; "Parse" the command line
+	 IF	WHLDU
+	CALL	GETWHL
+	CNZ	Z3LOG		; Non-wheels get current DU only
+	 ELSE			; IF NOT WHLDU
+	CALL	Z3LOG		; Log in as per Z3's parse
+	 ENDIF			; WHLDU
+	 ENDIF			; DUSPEC
+;
+	XRA	A
+	STAX	D		; Force current drive
+	STA	PAGLNS		; Init. line count to 0
+	LXI	H,TBUFF		; Point command tail char. count
+	MOV	C,M		; Get into C
+	MOV	B,A		; Now in BC (A = B = 0)
+	DAD	B		; Add to point HL at char.
+	MOV	A,M		; Get char.
+	CALL	ISDIGIT		; Is it a decimal digit?
+	JNZ	NDELAY		; If not, no inter-char. delay
+	MOV	C,A		; Otherwise save it in C
+	DCX	H		; Point to  previous char.
+	MOV	A,M		; Into A
+	CPI	'/'		; Option delimiter?
+	MOV	A,C		; Get back value
+	JZ	GDELAY		; Use it if we had a delimiter
+NDELAY:	XRA	A		; Otherwise use zero
+GDELAY:	STA	CDELAY
+	CALL	LBROPN		; Set up the library name buffer
+	STA	LBRFLG		; Save extract/type flag
+	JNZ	START2		; Type only
+	LHLD	MEMCNT		; Get member count
+	MOV	A,L		; Get member count lsb
+	ORA	H		; Any members?
+	LXI	D,NFOUND
+	JZ	EXEUNT		; No - exit
+
+START2:
+	LDA	LBRFLG
+	ORA	A
+	JNZ	DUMP		; Type only
+;
+; Per component loop
+;
+NEXT:	CALL	INITLP		; Initialize the "next" loop
+	CALL	GETMEM		; Get next member FCB
+	JC	EXIT		; All done...
+	CALL	LBRSET		; Set up to read the library file
+;
+; Input setup, do the extraction and/or unsqueezing
+;
+DUMP:
+	 IF	LIMITT		; Test the type of file
+	CALL	TSTTYP
+	 ENDIF			; LIMITT
+
+	CALL	GET2HL		; Get the first 2 bytes from the file
+	JNZ	ZERPRT		; Special processing for 0-length file
+	MVI	A,076H
+	CMP	L
+	JNZ	ASPRT		; Not squeezed - print an ascii file
+	MVI	A,0FFH
+	CMP	H
+	JZ	DUMPSQ		; Squeezed, dump it
+	DCR	A		; To 0feh
+	CMP	H
+	JZ	DUMPCR		; Crunched, dump it
+	DCR	A
+	CMP	H
+	JNZ	ASPRT		; Not squeezed - print an ascii file
+;
+; Output from a crlzh compressed file
+;
+	CALL	NMSHOW		; Show actual name etc
+	LHLD	NAMPTR		; Free memory area, above names
+	CALL	UNL		; Rel
+	LXI	D,BADFILE
+	JC	DONEM
+	JMP	DONE
+;
+; Output from a crunched file
+;
+DUMPCR:
+	CALL	NMSHOW		; Show actual name etc
+	LHLD	NAMPTR		; Free memory area, above names
+	CALL	UNC		; Rel
+	LXI	D,BADFILE
+	JC	DONEM
+	JMP	DONE
+;
+; Output from a squeezed component
+;
+DUMPSQ:	CALL	GET2HL		; Get and discard the next 2 bytes
+	CALL	NMSHOW
+	CALL	SQSETU		; Setup the squeezed file
+;
+; List a squeezed component
+;
+SQLOOP:	CALL	GETSQB		; Get a byte from the file
+	JC	DONE		; Eof - get next file name in queue
+	CALL	CRTYPE		; Else print the char
+	JMP	SQLOOP		; And loop for more
+;.....
+;
+; Show UNSQ/UNCR member name, etc.  Optionally revise output name.
+;
+NMSHOW:
+	lxi	d,outfcb+1
+NMSHW2:	PUSH	D		; Filename area of OUTFCB
+	CALL	LBRGET		; Get character from the file
+	POP	D		; Restore pointer
+	ORA	A		; Check for null
+	rz
+	inx	d
+	jmp	nmshw2
+;.....
+;
+; Output an unsqueezed file/component
+;
+ZERPRT:	STA	ZERLEN		; Save zero length file flag
+ASPRT:
+	LDA	ZERLEN
+	ORA	A
+	JNZ	DONE		; Don't type anything for 0-length file
+	MOV	A,L		; Print
+	PUSH	H
+	CALL	CRTYPE		; First
+	POP	H		; (file out clobbers hl)
+	MOV	A,H		; Two
+
+ASPRT1:	CALL	CRTYPE		; Bytes
+	CALL	LBRGET		; Get a byte from the file
+	JZ	ASPRT1		; Not eof, print and get more
+	JMP	DONE
+;.....
+;
+; Done, send message
+;
+DONEM:	CALL	TSTR
+;
+; Done, no message
+;
+DONE:	LXI	SP,STACK	; SP uncertain here - reset the stack
+	LDA	LBRFLG
+	ORA	A
+	JZ	NEXT
+	CALL	TLOOP
+	JMP	DUMP
+;.....
+;
+; Initialize the "next" loop
+;
+INITLP:			; now defaults to no paging
+;	LDA	PAGLNS
+;	ORA	A
+;	JNZ	INITL1		; Paging was not stopped
+	xra	a
+INITLH:	STA	LINCN1		; Else clear for fresh start
+;	LDA	PAGSIZ
+	STA	PAGLNS		; Restart any page pauses
+
+INITL1:	LXI	H,ZEROS		; Fill flag area with zeros
+	MVI	B,LASTZ-ZEROS	; Count of zeroes to load
+;
+; Fill (HL) up for (B) with zeroes
+;
+	XRA	A
+
+INITL2:	MOV	M,A		; Put a byte
+	INX	H		; Next location
+	DCR	B
+	JNZ	INITL2		; Fill all 11 bytes
+	RET
+;.....
+;
+; Open the FILENAME.LBR file and the MEMBER.EXT files, returns Z-flag
+; for library extraction, NZ for pure type
+;
+LBROPN:	MVI	B,12		; Field size for .LBR file
+	LXI	H,FCB1		; Move first file FCB
+	LXI	D,LBRFCB	; To LBRFCB
+	CALL	MOVE
+	XRA	A		; Set ext & rec # to 0 for proper open
+	STA	LBREXT
+	STA	LBRSNO
+	LXI	H,FCB2+1	; Source is member FCB name, no drive
+	MOV	A,M		; First member character
+	CPI	' '		; Is it a space or control ?
+	JC	HELPER		; Control, exit with help
+	JZ	TFILE		; Space, type one file only
+	CPI	'/'
+	JNZ	ISALBR
+	INX	H
+	MOV	A,M
+	INX	H
+	MOV	E,M
+	DCX	H
+	DCX	H
+	CALL	ISDIGIT
+	JNZ	ISALBR
+	MOV	A,E
+	CPI	' '
+	JZ	TFILE
+ISALBR:	LXI	D,LBRBUF
+	MVI	A,SETDMA	; Do all I/O thru this buffer
+	CALL	SYS
+	LXI	D,MEMNAM	; Move FCB2 to MEMNAM
+	MVI	B,11		; Bytes to move
+	CALL	MOVE		; Member name to local area
+;
+; Open the .LBR file
+;
+	LXI	H,'BL'
+	SHLD	LBRTYP		; Force .LBR type
+	MVI	A,'R'
+	STA	LBRTYP+2
+	CALL	FOPNLB		; Open .LBR file
+	INR	A		; Open ok?
+	JZ	NOFILE		; Failure, abort with help
+;
+; Read the first record of the library directory
+;
+	CALL	LBREAD		; Read a sector
+	LHLD	LBRBUF+14	; Get directory size
+;
+; Test for a valid library file
+;
+	LDA	LBRBUF
+	ORA	A		; Test first byte
+	LXI	D,CORRPT
+	JNZ	EXEUNT		; Non-zero, bad .LBR file
+;
+; Read the next library directory record
+;
+LBROP5:	PUSH	H		; Save DIRSIZE
+	CNZ	LBREAD		; Read a sector, except 1st pass
+;
+; Search for the member name in the library directory
+;
+	LXI	H,LBRBUF	; Process first entry
+	CALL	ADDMEM		; To memory buffer
+	LXI	H,LBRBUF+20H	; Process second entry
+	CALL	ADDMEM		; To memory buffer
+	LXI	H,LBRBUF+40H	; Process third entry
+	CALL	ADDMEM		; To memory buffer
+	LXI	H,LBRBUF+60H	; Process forth entry
+	CALL	ADDMEM		; To memory buffer
+	POP	H		; Count of dir entries
+	DCX	H		; -1
+	MOV	A,H		; Zero directory entries left ?
+	ORA	L
+	JNZ	LBROP5		; No read another directory sector
+	RET
+;.....
+;
+; The second parameter is missing, just type the main file, returns NZ
+; flag to signal no library extraction
+;
+TFILE:	LXI	D,FCB1		; Get afn FCB @ 005Ch
+	CALL	INITFCB		; Initialize
+	LXI	H,ENDU		; Point HL at free RAM
+	SHLD	WBUFF		; Stow the pointer for later
+	CALL	WILDEX		; Expand afn to buffer
+	JZ	NOFILE		; Contrary to source, Z=failure
+	SHLD	WCOUNT		; Stow count
+	XCHG			; Over to DE
+	LHLD	WBUFF		; Get buffer start
+	LXI	B,16		; 16 bytes/entry
+WBLOOP:	DAD	B		; Compute end of buffer
+	DCX	D
+	MOV	A,E
+	ORA	D
+	JNZ	WBLOOP
+	SHLD	NAMPTR		; Store as start of UNC's buffer
+	LXI	D,LBRBUF	; Now set up DMA to do all I/O
+	MVI	A,SETDMA	; through this buffer
+	CALL	SYS
+
+TLOOP:	LHLD	WCOUNT		; "per component loop" :-)
+	MOV	A,L		; Test for no more files.
+	ORA	H
+	JZ	EXIT		; If so, break out & quit
+	DCX	H		; Otherwise WCOUNT = WCOUNT-1
+	SHLD	WCOUNT		; Stow new value
+	LXI	D,LBRFCB	; Point working FCB
+	PUSH	D		; Save on stack
+	LHLD	WBUFF		; Point next nfilenametyp@@@@
+	MVI	B,16		; Length of move
+	CALL	MOVE		; Do it, get new pointer back
+	SHLD	WBUFF		; Stow it
+	POP	D		; Restore working FCB
+	CALL	INITFCB		; Initialize for open call
+
+	CALL	FOPEN		; Do the file open
+	INR	A
+	JZ	NOFILE
+
+	 IF	LIMITT
+	INX	D
+	XCHG
+	LXI	D,MEMFCB
+	MVI	B,11
+	CALL	MOVE		; Name to memnam for checking
+	 ENDIF			; LIMITT
+
+	CALL	INITLP		; Other one pass initializers
+	ORI	0FFH		; Set NZ flag
+	JMP	INITPT		; Set up pointers, leave NZ flag
+;.....				; and return to caller...
+;
+LBRSET:
+	lxi	h,memfcb+11
+	MOV	E,M		; Get member starting record LSB
+	INX	H
+	MOV	D,M		; And MSB
+	PUSH	D		; Save
+	INX	H
+	MOV	E,M		; Get member size LSB
+	INX	H
+	MOV	D,M		; And MSB
+	XCHG			; Into 'HL'
+	INX	H		; +1
+	SHLD	RCNT		; Save it in record count
+	POP	H		; Restore starting record number
+	SHLD	LBRRNO
+	XRA	A
+	STA	LBRRNO+2	; Set random rcd no
+	STA	LBREXT
+	CALL	FOPNLB		; Open the LBR file again
+	INR	A
+	JZ	PREEOF		; Should not happen
+	MVI	A,FRDRAN
+	CALL	SYS		; Do a random read to put in sequential
+	ORA	A
+	JNZ	PREEOF		; No such record
+;
+; Initialize pointers to read from LBRFCB
+; A, HL  (but not flags)
+;
+INITPT:	MVI	A,080H
+	STA	CHRCNT		; Set char count to force read
+	LXI	H,LBRBUF-1
+	SHLD	BUFPTR
+	RET
+;.....
+;
+; Get a byte from the .LBR member. GETBYT for UNCREL use
+; A,F,D,E,H,L
+;
+GETBYT:
+GLZHUN:
+LBRGET:	LDA	CHRCNT		; Get pointer
+	INR	A		; Point to next position
+	STA	CHRCNT		; Put pointer back
+	JP	LBRGE1		; Buffer not empty
+	CALL	ZBUFF		; Empty, reset pointers, read sector
+	LHLD	RCNT		; Get record count
+	DCX	H		; -1
+	SHLD	RCNT		; Set new record count
+	MOV	A,L
+	ORA	H
+	JZ	LBRGE2		; If all records read
+	CALL	LBREAD		; Read a sector
+	ORA	A
+	JNZ	LBRGE2		; If read was unsuccessful
+
+LBRGE1:	LHLD	BUFPTR
+	INX	H
+	SHLD	BUFPTR
+	MOV	A,M		; No  - get the next byte
+	CMP	A		; Set zero - no error
+	RET
+;...
+;
+LBRGE2:	MVI	A,0FFH
+	ORA	A
+	RET			; Return non-zero for error
+;.....
+;
+; Zero the buffer pointers (for reaccess from start)
+;
+ZBUFF:	XRA	A		; Empty, read another record
+	STA	CHRCNT		; Clear the character count
+	LXI	H,LBRBUF-1
+	SHLD	BUFPTR
+	RET
+;.....
+;
+; Read a sector from library file
+;
+LBREAD:	MVI	A,FREAD
+	LXI	D,LBRFCB	; LBR FCB
+	JMP	SYS		; Read a block, and exit
+;.....
+;
+; Get 2 bytes from input file into HL
+;
+GET2HL:	CALL	LBRGET		; Get a byte from the input file
+	RNZ			; May be an empty component
+	PUSH	PSW
+	CALL	LBRGET		; Get a byte from the input file
+	MOV	H,A
+	POP	PSW
+	MOV	L,A
+	RET
+;.....
+;
+NOFILE:	LXI	D,NOFMSG
+	JMP	EXEUNT
+;.....
+;
+HELPER:
+	LXI	D,SIGNON	; Give name, version, credit
+	CALL	TSTR
+	LXI	D,USAGE		; Give help menu
+	CALL	TSTRC
+	CALL	COMNAM		; Show actual name of program
+
+	 IF	WHLDU AND DUSPEC
+	CALL	GETWHL
+	LXI	D,DUMSG
+	PUSH	PSW
+	PUSH	D
+	CNZ	TSTR
+	LXI	D,USAGE1
+	CALL	TSTR
+	CALL	COMNAM
+	POP	D
+	POP	PSW
+	CNZ	TSTR
+	 ENDIF			; WHLDU AND DUSPEC
+
+	 IF	DUSPEC AND NOT WHLDU
+	LXI	D,DUMSG
+	PUSH	D
+	CALL	TSTR
+	LXI	D,USAGE1
+	CALL	TSTR
+	CALL	COMNAM
+	POP	D
+	CALL	TSTR
+	 ENDIF			; DUSPEC AND NOT WHLDU
+
+	 IF	NOT DUSPEC
+	LXI	D,USAGE1
+	CALL	TSTR
+	 ENDIF			; NOT DUSPEC
+
+	LXI	D,USAGE2
+	CALL	TSTR
+	XRA	A
+	CALL	INITLH
+	JMP	EXIT
+;.....
+;
+PREEOF:	LXI	D,EOFMSG
+;
+; Error exit, with message (DE)^
+;
+EXEUNT:	CALL	TSTRC		; Print message
+
+EXIT:
+	 IF	DUSPEC
+	CALL	GETUD		; Restore entry conditions
+	 ENDIF			; DUSPEC
+	LHLD	STACK
+	SPHL			; Restore original stack
+	RET			; --exit-- to cp/m
+;.....
+;
+; Output to CRT.  Entry name "out" for UNC or UNCREL use
+;
+UNCOUT:				; RMAC-compatible, unlike "OUT"
+PLZHUN:				 
+CRTYPE:
+	CPI	01AH
+	JZ	DONE		; EOF on 01Ah for ASCII output
+	ANI	7FH		; Make sure its ASCII
+	PUSH	PSW		; Save the character
+	CALL	CRTYP4
+	LDA	CDELAY
+	CALL	ISDIGIT
+	CZ	DDELAY
+	POP	PSW
+	PUSH	PSW
+	CALL	COUT
+	POP	PSW		; Restore character
+	CPI	0AH		; Was it a line feed
+	RNZ			; No - continue
+	CALL	GETWHL
+	JNZ	CRTYP3		; Jump around the line count tests
+
+	 IF	LIMITL		; Check for too many lines typed
+	LDA	LINCNT		; Advance line counter
+	INR	A
+	STA	LINCNT
+	MOV	B,A		; Line number in 'B'
+	LDA	MAXLIN		; Max number of lines to type
+	ORA	A		; Test flag
+	JZ	CRTYP3		; If null function
+	CMP	B		; Else compare to max lines
+	LXI	D,EXCESS
+	JZ	DONEM		; Announce too much
+	 ENDIF			; LIMITL
+
+CRTYP3:	LDA	LINCN1		; Get line counter
+	MOV	B,A		; Keep in 'B'
+	LDA	PAGLNS		; Number of lines per page
+	DCR	A		; Decrement and test flag
+	JM	CRTYP4		; Function is null
+
+	CMP	B		; Compare to lines per page
+	JNC	CRTYP4		; If not at maximum count
+	XRA	A		; Clear lines counter
+	STA	LINCN1
+	LXI	D,MORE
+	CALL	TSTR		; Announce the pause
+	CALL	PAUSE		; Get input from console
+	CPI	' '-1AH		; Space for line at a time?
+	JNZ	$+8
+	MOV	A,B		; Get original line count back
+	DCR	A		; And set to "one line left"
+	STA	LINCN1
+	LXI	D,CLEAN
+	CALL	TSTR		; Clear out the "[more]"
+
+CRTYP4:	MVI	A,CIO		; BDOS function
+	MVI	E,0FFH		; BDOS function
+	CALL	SYS		; Direct console in call
+	CPI	1AH
+	JNZ	NOTPAG
+	LDA	PAGLNS
+	ORA	A
+	LDA	PAGSIZ
+	JZ	PAGDR
+	XRA	A
+PAGDR:	STA	PAGLNS
+	RET
+NOTPAG:	CALL	ISDIGIT
+	JNZ	NOTDIG
+	STA	CDELAY
+	RET
+NOTDIG:	CALL	PSCHK
+	CPI	'S'-40H		; CTL-S to pause?
+	JZ	PAUSE
+	ANI	5FH
+	CPI	'S'
+	RNZ			; Not CTL-S, return
+;
+; Returns input -01Ah.	Aborts on c,C,^C or k,K,^K - next on CTL-X, etc.
+;
+PAUSE:	MVI	A,CIO		; BDOS function
+	MVI	E,0FFH
+	CALL	SYS		; Direct console in call
+	ORA	A		; Was a key entered ?
+	JZ	PAUSE		; Not yet
+	CALL	PSCHK
+	SUI	01AH
+	RNZ			; Not ^Z console entr
+	STA	PAGLNS		; Disable pauses on ^Z
+	RET
+;.....
+;
+; Pause check for special characters
+;
+PSCHK:	CPI	'C'-40H		; Want to abort?
+	JZ	PSCHK2		; If yes, quit
+	CPI	'K'-40H
+	JZ	PSCHK2
+	CPI	'X'-40H		; Jumping to next file?
+	JZ	PSCHK1
+	CPI	' '		; Space for "line at a time"?
+	RZ
+
+	ANI	5FH		; Insure in upper case
+	CPI	'C'
+	JZ	PSCHK2
+	CPI	'K'
+	JZ	PSCHK2
+	CALL	ISDIGIT
+	JZ	DDELAY
+	CPI	'X'
+	RNZ			; If not, keep going
+
+PSCHK1:	CALL	CRLF
+	JMP	DONE		; Next file on CTL-X
+
+PSCHK2:	LXI	D,ABRMSG
+	CALL	TSTRC
+	JMP	EXIT
+
+DDELAY:	SUI	'0'
+	RZ
+	MOV	B,A
+DDLP1:	CALL	GETSPEED
+	LXI	H,0
+	LXI	D,500/4
+DDLP2:	DAD	D
+	DCR	A
+	JNZ	DDLP2
+DDLP3:	XTHL
+	XTHL
+	DCX	H
+	MOV	A,L
+	ORA	H
+	JNZ	DDLP3
+	DCR	B
+	JNZ	DDLP1
+	RET
+;.....
+;
+COUT:	MOV	E,A		; Save output character
+	CPI	TAB
+	JZ	COUT2		; Expand a tab
+	CPI	CR		; Carriage return
+	JNZ	COUT0A
+	XRA	A		; CR sets COLUMN to 0
+	JMP	COUT1A
+
+COUT0A:	CPI	BS		; Is char a backspace?
+	JNZ	COUT0B
+	LDA	COLUMN		; Backspace sets COLUMN back one
+	DCR	A
+	JMP	COUT1A
+
+COUT0B:	CPI	' '		; 
+	JC	COUT1B		; Other controls don't affect COLUMN
+
+COUT1:	LDA	COLUMN		; Advance column counter
+	INR	A
+
+COUT1A:	STA	COLUMN
+
+COUT1B:	CALL	COUT3		; Test control
+	MOV	A,E		; Get character back
+	JZ	CTYPE		; Else print the space
+	RET			; Return to caller
+;...
+;
+COUT2:	MVI	E,' '
+	CALL	COUT1		; Print a space
+	LDA	COLUMN
+	ANI	7		; At next tab stop ?
+	JNZ	COUT2		; Yes, continue
+	RET
+;...
+;
+COUT3:	LDA	CTLFLG		; Get controls active
+	ORA	A		; Test flag
+	RZ			; Return if not
+	MOV	A,E		; Get output char
+	CPI	' '
+	JNC	COUT4		; Not control, clear flags
+	CPI	CR
+	RZ
+	CPI	BS
+	RZ
+	CPI	BELL
+	RZ
+	CPI	LF
+	RET			; Return with Z-flag set for linefeed
+;...
+;
+COUT4:	CMP	A		; Set Z-flag
+	RET
+;.....
+;
+	 IF	LIMITT		; Test for type-able file
+TSTTYP:	LDA	TYPFLG		; Get test flag
+	ORA	A		; Test it
+	RZ			; Return if ok to type all types
+	 ENDIF			; LIMITT
+
+	 IF	LIMITT
+	MVI	B,3
+	LXI	H,BADTBL-3	; Index bad file type table
+TSTTY1:	INX	H		; Next table address pointer
+	DCR	B		; Bump loop counter
+	JNZ	TSTTY1		; Do until at next table entry
+	MOV	A,M		; Get a byte
+	ORA	A		; End of table
+	RZ			; Yes - ok to type this one
+	MVI	B,3		; 3 char extension
+	LXI	D,MEMFCB+8	; Index file name extension
+
+TSTTY2:	LDAX	D		; Get a byte from extension
+	ANI	7FH		; Make sure its ascii
+	CMP	M		; Same as in table
+	JZ	TSTTY3		; Match, continue scan
+	MOV	A,M
+	CPI	'?'		; '?' in table matches all
+	JNZ	TSTTY1		; No match, next entry
+
+TSTTY3:	INX	H		; Bump table address pointer
+	INX	D		; Bump extent pointer
+	DCR	B		; Bump counter
+	JNZ	TSTTY2		; Continue for 3 chars
+	LXI	H,MEMFCB+8	; User name
+	LXI	D,CANT
+	CALL	TSTR		; "can't type a '"
+	MVI	B,3		; 3 byte file type
+
+TSTTY5:	MOV	A,M		; Get byte
+	CALL	CTYPE		; Give a chance to abort here
+	INX	H		; Next byte
+	DCR	B
+	JNZ	TSTTY5		; Type all 3 bytes
+	LXI	D,CANT2		; "' FILE ",CR,LF
+	JMP	DONEM		; And do next file
+	 ENDIF			; LIMITT
+;.....
+;
+; This part is adapted from TYPE109 by David Rand
+;
+GETSQB:	LDA	RPTCNT		; Get repeat flag
+	ORA	A		; Any chars to repeat ?
+	JNZ	GETSQ1		; Yes - get and count
+	CALL	NXTCH		; Get a character
+	RC			; Eof
+	CPI	90H		; Repeat byte flag
+	JNZ	GETSQ3		; No -
+	CALL	NXTCH		; Yes - get another character
+	RC			; EOF
+	ORA	A		; If null
+	JNZ	GETSQ2
+	MVI	A,90H		; Dle is encoded as dle,0
+	RET			; Return with it, carry clear
+;...
+;
+GETSQ2:	DCR	A		; Bump counter twice
+	JZ	GETSQB		; 1 repeat is a null event
+
+GETSQ1:	DCR	A
+	STA	RPTCNT		; Set repeat count
+	LDA	RPTCHR		; Return repeat character
+
+GETSQ3:	STA	RPTCHR		; Set repeat char
+	ORA	A		; Clear any carry, not EOF
+	RET
+;.....
+;
+; Next decoded byte from file, ignoring repeat characters
+;
+NXTCH:	LXI	D,0		; Pointer @ star of text
+	LDA	CHAR
+	MOV	C,A
+
+NXTCH1:	LDA	NUMFLT
+	ORA	A
+	JNZ	NXTCH2
+	PUSH	D		; Save 'DE'
+	CALL	LBRGET		; Get a byte from the input file
+	JNZ	PREEOF		; Not expecting an eof here
+	POP	D		; Restore 'DE'
+	MOV	C,A
+	MVI	A,8		; 'A' is counter
+
+NXTCH2:	DCR	A		; Bump count
+	STA	NUMFLT		; Save it
+	MOV	A,C		; Get character
+	RRC			; Shift right
+	MOV	C,A		; Save character
+	PUSH	PSW		; Save character
+	LXI	H,XLATBL	; Index ram area
+	DAD	D		; HL=HL+(4*DE)
+	DAD	D
+	DAD	D
+	DAD	D
+	POP	PSW		; Restore char
+	JNC	NXTCH3		; If no carry
+	INX	H
+	INX	H
+
+NXTCH3:	MOV	E,M
+	INX	H
+	MOV	D,M
+	MOV	A,D
+	ANI	80H
+	JZ	NXTCH1
+	MOV	A,C
+	STA	CHAR
+	MOV	A,D
+	CPI	0FEH		; Special end of file ?
+	MVI	A,1AH		; Yes - return with EOF character
+	STC
+	RZ			; And carry for EOF
+
+	MOV	A,E
+	CMC
+	CMA
+	RET			; With carry clear, not EOF
+;.....
+;
+; Set up the translation table for the squeezed file
+;
+SQSETU:	CALL	GET2HL		; Get 2 bytes from input file into HL
+	LXI	D,XLATBL	; Index ram area
+
+SQSET1:	MOV	A,H		; Get MSB
+	ORA	L		; Test LSB
+	RZ
+	PUSH	H		; Save table size counter
+	PUSH	D		; Save ram area index
+	CALL	GET2HL		; Get 2 bytes from input file into HL
+	POP	D		; Restore ram area index
+	XCHG			; Into 'HL'
+	MOV	M,E		; Save the LSB byte
+	INX	H
+	MOV	M,D		; And MSB byte
+	INX	H
+	PUSH	H		; Bump & save pointer
+	CALL	GET2HL		; Get 2 bytes from input file into HL
+	XCHG			; Into DE
+	POP	H		; Restore pointer
+	MOV	M,E		; Save the LSB byte
+	INX	H
+	MOV	M,D		; And the MSB byte
+	INX	H		; Bump pointer
+	XCHG			; Restore pointer to 'DE'
+	POP	H		; Restore table size counter
+	DCX	H		; Decrement it the byte count
+	JMP	SQSET1		; And loop for more
+;.....
+;
+; Add a library member to the name queue buffer - only if a match to
+; MEMNAM
+;
+ADDMEM:	MOV	A,M		; Get first byte of member entry
+	ORA	A
+	RNZ			; Non zero - must be deleted or null entry
+;
+	INX	H		; Go to the second byte
+	PUSH	H		; Save source address for coming 'LDIR'
+	PUSH	H		; Save it again
+	MVI	B,11		; 11 byte filename
+
+ADDME0:	MOV	A,M		; Get byte
+	CPI	' '
+	JNZ	ADDME1		; Not space - continue
+	INX	H		; Next char
+	DCR	B
+	JNZ	ADDME0		; Continue searching for spaces
+	POP	H		; Must be the directory
+	JMP	ADDME4		; So abort this one
+;...
+;
+ADDME1:	POP	H
+	LXI	D,MEMNAM	; Index member FCB name
+	MVI	B,11		; 11 byte compare
+
+ADDME2:	LDAX	D		; Get byte from member name FCB
+	CPI	'?'		; '?' matches all entries
+	JZ	ADDME3		; Match
+	CMP	M		; Same as member entry?
+	JNZ	ADDME4		; No - abort this process
+
+ADDME3:	INX	H
+	INX	D
+	DCR	B
+	JNZ	ADDME2		; Compare all 11 bytes
+	LHLD	NAMPTR		; Get destination address
+	XCHG
+	POP	H		; Get source address back again
+	MVI	B,15
+	CALL	MOVE		; Move 15 byte block into memory
+	XCHG
+	SHLD	NAMPTR		; Save name pointer
+	LHLD	MEMCNT		; Get member number count
+	INX	H		; Bump it up one
+	SHLD	MEMCNT		; Set next member memory address
+	RET
+
+ADDME4:	POP	H		; Balance stack
+	RET
+;.....
+;
+; Get the next member name from the memory name queue buffer, return
+; carry set if no more members left
+;
+GETMEM:	LHLD	MEMCNT		; Get member count
+	MOV	A,L
+	ORA	H
+	STC
+	RZ			; Zero count - set error condition
+	DCX	H		; Bump count down
+	SHLD	MEMCNT		; And reset member count
+	LHLD	NAMPT1		; Get source address for move
+	LXI	D,MEMFCB	; Get destination for move
+	MVI	B,15		; 11 byte filename + 4 byte file info
+	CALL	MOVE		; The block
+	SHLD	NAMPT1		; Reset the next source address
+	ORA	A		; Clear any cy
+	RET
+;.....
+;
+; Double CRLF to console
+;
+CRLFLF:	CALL	CRLF
+;
+; CR and LF to console
+; Uses A
+;
+CRLF:	MVI	A,CR
+	CALL	CTYPE
+	MVI	A,LF
+
+; Character to console, preserve all registers
+;
+CTYPE:	PUSH	PSW
+	PUSH	D
+	MOV	E,A
+	CPI	LF
+	JNZ	CTYPE1
+	LDA	LINCN1
+	INR	A
+	STA	LINCN1
+
+CTYPE1:	MVI	A,CIO		; Direct console output
+	CALL	SYS
+	POP	D
+	POP	PSW
+	RET
+;.....
+;
+; CRLF, then fall through to TSTR
+;
+TSTRC:	CALL	CRLF
+;
+; Output string (DE)^
+; Uses A,F
+;
+TSTR:	PUSH	D
+
+TSTR1:	LDAX	D
+	ORA	A
+	JZ	TSTRX
+	CALL	CTYPE
+	INX	D
+	JMP	TSTR1
+;
+TSTRX:	POP	D
+	RET
+;.....
+;
+; Open LBRFCB file
+; Uses A,F,D
+; CP/M 3 apparently does not allow ambiguous file opens, so we
+; screen them out for the benefit of Z3PLUS users
+
+FOPNLB:	MVI	A,GETVER
+	CALL	SYS
+	CPI	30H
+	LXI	D,LBRFCB	; Point LBR's FCB
+	JC	FOPEN		; If not CPM 3, ambiguous is OK
+	PUSH	D		; Save it on the stack
+	PUSH	B		; Save incoming BC
+	MVI	B,11		; Counter in B
+AFNLP:	INX	D		; Advance to to char.
+	LDAX	D		; Get it
+	SBI	'?'		; A = 0 if ambiguous char.found
+	CMA			; Now A = FFH if ambiguous
+	JZ	AFNFND		; Break loop if ambiguous
+	DCR	B		; Otherwise decrement counter
+	JNZ	AFNLP		; & loop around
+	DCR	B		; Cheap NZ flag indication
+AFNFND:	POP	B		; Restore registers
+	POP	D
+	RZ			; Return with A = FFH if amb.
+;
+; Open file (DE)^, return BDOS response in (A)
+; Uses A,F
+;
+FOPEN:	MVI	A,OPEN
+;
+; Execute BDOS function (A), preserve registers
+;
+SYS:	PUSH	H
+	PUSH	D
+	PUSH	B
+	MOV	C,A
+	CALL	BDOS
+	POP	B
+	POP	D
+	POP	H
+	RET
+;.....
+;
+; Move (B) bytes from (HL)^ to (DE)^
+; Uses A,F,B,D,E,H,L
+;
+MOVE:	MOV	A,M
+	STAX	D
+	INX	H
+	INX	D
+	DCR	B
+	JNZ	MOVE
+	RET
+;.....
+;
+; Print the actual name of this program if we can determine it,
+; otherwise print "ZLT", with leading and trailing spaces.
+; Uses all registers.
+;
+COMNAM:	MVI	A,' '		; Print a space
+	CALL	CTYPE
+	CALL	GETEFCB		; Get ZCPR3's External FCB in HL
+	LXI	D,ZLTNAM	; Point at "'ZLT ',0"
+	JZ	TSTR		; Print it if no EFCB
+	MVI	B,8		; Otherwise load down-counter
+COMNLP:	INX	H		; Bump pointer to character
+	MOV	A,M		; Character into A
+	ANI	7FH		; Strip to ASCII
+	CPI	' '		; Is it a space?
+	JZ	CTYPE		; Just type that and return
+	CALL	CTYPE		; Otherwise type the non-space
+	DCR	B		; Decrement the down-counter
+	JNZ	COMNLP		; and loop if not done
+	MVI	A,' '		; This does the trailing space
+	JMP	CTYPE		; for 8-character names only
+;.....
+;
+NFOUND:	DB	'Member '
+;
+NOFMSG:	DB	'Not found',CR,LF,0
+
+SIGNON:	DB	CR,LF,'ZLT Version ',VER/10+'0','.',VER MOD 10+'0',SubVers
+	 IF	ACREDIT
+	DB	' by C.B.Falconer & B.Morgen'
+	 ENDIF			; ACREDIT
+	DB	CR,LF
+
+SIGN1:	DB	'^S pauses, ^C aborts, ^X goes to next'
+	DB	' file, ^Z enables/disables paging, '
+	DB	CR,LF
+	DB	' Space goes to next line, 0-9 sets inter-character'
+	DB	' delay, others page',0
+
+USAGE:	DB	CR,LF,'Types normal/crunched/crlzh/squeezed '
+	DB	'files and LBR members.',CR,LF
+	DB	'Wildcard (*,?) filespecs permitted.',CR,LF,LF
+	DB	'Syntax:',CR,LF,0
+
+	 IF	DUSPEC
+DUMSG:	DB	'[du: or dir:]',0
+	 ENDIF			; DUSPEC
+
+USAGE1:	DB	'afn.typ [/n]',CR,LF,0
+USAGE2:	DB	'lbrname afn.typ [/n]',CR,LF
+	DB	'"n" = delay between characters',CR,LF,LF
+	db	'This is a special version for screen displays.',CR,LF,0
+
+EOFMSG:	DB	BELL,'Early EOF,'	; Fall through to next msg
+ABRMSG:	DB	CR,LF,'<<Aborted!>>',0
+CLEAN:	DB	CR,'       ',CR,0 ; Erase the "more"
+CORRPT:	DB	'LBR file corrupt',0
+MORE:	DB	CR,'[more] ',0
+NOTZ3:	DB	BELL,'ZCPR3 (or equiv.) required',0
+ZLTNAM:	DB	'ZLT ',0
+
+	 IF	LIMITT
+CANT:	DB	BELL,CR,LF,'Can''t type a "',0
+CANT2:	DB	'" file',CR,LF,0
+	 ENDIF			; LIMITT
+
+BADFILE:DB	BELL,CR,LF,'Corrupt or unknown format file',0
+
+	 IF	LIMITL
+EXCESS:
+	DB	BELL,'Too long, download file',CR,LF,0
+	 ENDIF			; LIMITL
+
+;-----------------------------------------------------------------------
+	DSEG
+;
+; Temporary storage area
+;
+BUFPTR:	DS	2
+CHRCNT:	DS	1
+	DS	1
+LINCN1:	DS	1		; Lines printed since [more]
+PAGLNS:	DS	1		; Ln/page before pause, 0 causes setup
+PAGSIZ:	DS	1		; Lines per page, 0 = no pauses
+CDELAY:	DS	1
+
+NAMPT1:	DS	2		; NAMBUF, init. to ENDU
+NAMPTR:	DS	2		; NAMBUF, init. to ENDU
+RCNT:	DS	2		; Maximum. record count for type, init. 65535
+LBRFLG:	DS	1
+WCOUNT:	DS	2
+WBUFF:	DS	2
+MEMCNT:	DS	2
+LBRFCB:	DS	9
+LBRTYP:	DS	3
+LBREXT:	DS	20		; Lbrfcb+12; file extent
+LBRSNO:	DS	1		; Lbrfcb+32; sector #
+LBRRNO:	DS	3		; Lbrfcb+33; random rcd no.
+MEMFCB:	DS	16
+MEMNAM:	DS	16
+OUTFCB:	DS	13
+;
+; Mark start of zeroed area, per component loop
+;
+ZEROS:
+NUMFLT:	DS	1
+CHAR:	DS	1
+RPTCHR:	DS	1		; Char to repeat
+RPTCNT:	DS	1		; Count of repeat characters
+LINCNT:	DS	1		; Number of lines printed total
+COLUMN:	DS	1		; Crt column position
+ZERLEN:	DS	1
+
+LASTZ:	DS	64		; Mark end of zeroed area, stack space
+
+STACK:	DS	2		; Store entry stack pointer
+LBRBUF:	DS	128		; Member read buffer
+XLATBL:	DS	258*4
+
+	EXTRN ENDU
+
+	END
+

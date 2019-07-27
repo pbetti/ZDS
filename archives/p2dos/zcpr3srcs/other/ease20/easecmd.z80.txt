@@ -1,0 +1,277 @@
+;Prog:	EASE CMD file creator
+;Date:	8/6/87
+;Auth:	Paul Pomerleau
+
+	extrn	print
+	extrn	bline
+	extrn	f0$put, fo0$open, fo0$close
+	extrn	f$open, f$read, f$delete
+	extrn	z3log, z3init
+	extrn	zprsfn
+	extrn	crlf
+
+version	equ	20
+FCB	equ	5ch
+
+;=============================================================================
+;
+;		S T A N D A R D    P R O G R A M    H E A D E R
+;
+;=============================================================================
+
+ENTRY:
+	jp	START
+	defb	'Z3ENV'
+	defb	3		; Type-3 environment
+ENVADDR:
+	dw	0f300h
+	dw	ENTRY
+	defb	version
+
+;=============================================================================
+;
+;		C O N F I G U R A T I O N    A R E A
+;
+;=============================================================================
+
+NAME:	db	'FillFillFIL'	; Padding to help find proper places
+
+WIDTH:	dw	80
+TOOSHORT:
+	dw	02
+gobeg:	db	0
+bellflg:
+	db	0
+smartsav:
+	db	0
+	ds	4
+	ds	1
+				; For EASE.COM's table
+TABLE:	ds	3
+
+VECTOR:
+;=============================================================================
+;
+;		M A I N    C O D E    S E C T I O N
+;
+;=============================================================================
+
+START:
+
+	ld	hl,(ENVADDR)	; Get environment address
+	call	Z3INIT		; Initialize library routines
+
+	call	HEADER
+	ld	a,(FCB+1)
+	cp	'/'
+	jp	z,HELP
+	cp	' '
+	jr	nz,GOTNAME
+	call	PRINT
+	db	'Filename to extract infromation from (ie. EASE): ',0
+	ld	hl,80h
+	ld	(hl),79
+	ld	a,0ffh
+	call	BLINE
+	call	CRLF
+	ld	a,(hl)
+	or	a
+	ret	z
+	ld	de,FCB
+	call	ZPRSFN
+
+GOTNAME:
+	ld	de,FCB
+	ld	hl,FCB+9
+	ld	(hl),'C'
+	inc	hl
+	ld	(hl),'O'
+	inc	hl
+	ld	(hl),'M'
+	call	Z3LOG
+	call	F$OPEN		; We have BLAHBLAH.COM -- Open it.
+	jp	nz,RERR
+	ld	de,BUFFER
+	ld	c,26
+	call	5		; Dma to BUFFER
+	ld	de,FCB
+	call	F$READ		; Read first record
+
+	ld	hl,FCB + 12
+	ld	(hl),0
+	inc	hl
+	ld	b,22
+ZEROFCB:
+	inc	hl
+	ld	(hl),0
+	djnz	ZEROFCB
+	ld	hl,FCB+9
+	ld	(hl),'C'
+	inc	hl
+	ld	(hl),'M'
+	inc	hl
+	ld	(hl),'D'	; Gonna write BLAHBLAH.CMD
+	ld	de,FCB
+	push	de
+	call	f$delete
+	pop	de
+	call	FO0$OPEN	; Open it.
+	jp	nz,WERR
+
+	ld	hl,82h
+NAMELOOP:
+	ld	a,(hl)
+	or	a
+	jr	z,OKNAMED
+	cp	' '
+	jr	z,OKNAMED
+	push	hl
+	call	F0$PUT
+	pop	hl
+	inc	hl
+	jr	NAMELOOP
+OKNAMED:
+	call	PUTS
+	db	' Editing Commands:',13,10,0
+	ld	de,BUFFER + VECTOR - ENTRY
+	ld	hl,TEXT		; all this means write each line
+	call	LINE		; or composite line to the file.
+	call	LINE2	; <>
+	call	LINE2	; ^v
+	call	LINE2	; <  >
+	call	LINE2	; <---  --->
+	call	FCRLF
+	call	LINE	; d >
+	call	LINE2	; d <<
+	call	LINE2	; d <  >
+	call	LINE2	; d -->;   d --->
+	call	LINE2	; du <--->
+	call	FCRLF
+	call	LINE2	; c <> (h)
+	call	LINE	; Search
+	call	FCRLF
+	call	LINE2	; Toggle + Tab insert
+	call	LINE	; Special insert
+	call	LINE2	; Replot, Warm Boot
+	call	FCRLF
+	call	WCHARS	; Done
+	call	PUTS
+	db	9,0
+	call	WCHARS	; Quit
+			; No ending CR LF
+
+	call	FO0$CLOSE		; Close the file.
+	jp	nz,WERR
+	call	print
+	db	'  File Completed.',0	; Tah Dah!
+	ret
+
+WCHARS:	ld	a,(de)
+	inc	de
+	inc	de
+	inc	de
+	bit	7,a			; High bit == Meta command.
+	jr	z,NOMETA
+	call	PUTS
+	db	'<Meta> ',0
+	jr	METADONE
+NOMETA:	call	PUTS			; Or skip over that space for TAB
+	db	'       ',0
+METADONE:
+	and	7fh			; get rid of META bit
+	cp	7fh
+	jr	nz,NOTDEL		; If it's <del>, we write that else...
+	call	PUTS
+	db	'<DEL>',0
+	jr	NODEL
+NOTDEL:	push	af
+	ld	a,' '
+	call	F0$PUT			; We write the Control-Code.
+	ld	a,'^'
+	call	F0$PUT
+	pop	af
+	call	F0$PUT
+	ld	a,' '
+	call	F0$PUT			; Sinch up the spacing.
+	ld	a,' '
+	call	F0$PUT
+NODEL:	call	PUTS
+	db	'-- ',0			; And a dash of this and that.
+PUTSTR:	ld	a,(hl)
+	inc	hl
+	or	a
+	ret	z
+	call	F0$PUT
+	jr	PUTSTR			; And write the description string.
+
+PUTS:	ex	(sp),hl			; Routine to write strings to file
+	push	af
+	call	PUTSTR
+	pop	af
+	ex	(sp),hl
+	ret
+
+TEXT:	db	'Meta key',0
+	db	'Right Char',9,0
+	db	'Left Char',9,0
+	db	'Up line',9,9,0
+	db	'Down line',9,0
+	db	'word Back',9,0
+	db	'word Forward',9,0
+	db	'Go to start of line',0
+	db	'Go to end of line',0
+	db	'Delete char right',0
+	db	'Delete char left',9,0
+	db	'Delete left char',0
+	db	'Delete word right',0
+	db	'Delete word left',0
+	db	'Delete command right',0
+	db	'Delete to end of line',0
+	db	'Delete line',9,0
+	db	'Undelete line/cmd',0
+	db	'Back command line',0
+	db	'Forward command line',0
+	db	'Search backwards for command by first char',0
+	db	'Toggle insert',9,0
+	db	'Complete filename',0
+	db	'Insert next char',0
+	db	'Reprint line',9,0
+	db	'Force Warm Boot',0
+	db	'Done editing',9,0
+	db	'Quit shell',0
+
+LINE:	call	WCHARS
+FCRLF:	call	PUTS
+	db	13,10,0
+	ret
+LINE2:	call	WCHARS		; Two lines of text on one.
+	call	PUTS
+	db	9,0
+	jr	LINE
+
+HEADER:	call	PRINT
+	db	'EASE CMD File Creator -- Version ',(version / 10) + '0'
+	db	'.',(version mod 10) + '0',13,10
+	db	'  To create help files for EASE --'
+	db	' Help files get the extension .CMD',13,10,0
+	ret
+
+HELP:	call	PRINT
+	db	'Usage: EASECMD [filname]',13,10,0
+	ret
+
+WERR:	call	PRINT
+	db	'  Error: Disk Full.',13,10,0
+	ret
+
+RERR:	call	PRINT
+	db	'  Error: Cannot Open File.',13,10,0
+	ret
+
+BUFFER	equ	1000h		; Past SYSLIB, Z3LIB, etc.
+
+	end
+t
+
+RERR:	call	PRINT
+	db

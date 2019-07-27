@@ -1,0 +1,427 @@
+   1:			
+   2:			;;
+   3:			;; Serial ports test for NEZ80 (Darkstar) MultiF-Board
+   4:			;;
+   5:			
+   6:			
+   7:	00C0          	SRL1BASE	EQU	$C0
+   8:	00C8          	SRL2BASE	EQU	$C8
+   9:			
+  10:			; UART 16C550 1
+  11:			
+  12:	00C0          	UART0		EQU	SRL1BASE+0	; DATA IN/OUT
+  13:	00C1          	UART1		EQU	SRL1BASE+1	; CHECK RX
+  14:	00C2          	UART2		EQU	SRL1BASE+2	; INTERRUPTS
+  15:	00C3          	UART3		EQU	SRL1BASE+3	; LINE CONTROL
+  16:	00C4          	UART4		EQU	SRL1BASE+4	; MODEM CONTROL
+  17:	00C5          	UART5		EQU	SRL1BASE+5	; LINE STATUS
+  18:	00C6          	UART6		EQU	SRL1BASE+6	; MODEM STATUS
+  19:	00C7          	UART7		EQU	SRL1BASE+7	; SCRATCH REG.
+  20:			
+  21:			; UART 16C550 2
+  22:			
+  23:			; UART0		EQU	SRL2BASE+0	; DATA IN/OUT
+  24:			; UART1		EQU	SRL2BASE+1	; CHECK RX
+  25:			; UART2		EQU	SRL2BASE+2	; INTERRUPTS
+  26:			; UART3		EQU	SRL2BASE+3	; LINE CONTROL
+  27:			; UART4		EQU	SRL2BASE+4	; MODEM CONTROL
+  28:			; UART5		EQU	SRL2BASE+5	; LINE STATUS
+  29:			; UART6		EQU	SRL2BASE+6	; MODEM STATUS
+  30:			; UART7		EQU	SRL2BASE+7	; SCRATCH REG.
+  31:			
+  32:			
+  33:			
+  34:	000A          	LF	EQU	0AH
+  35:	000D          	CR	EQU	0DH
+  36:	0008          	BS	EQU	08H		;Back space (required for sector display)
+  37:	0007          	BELL	EQU	07H
+  38:	0009          	TAB	EQU	09H		;TAB ACROSS (8 SPACES FOR SD-BOARD)
+  39:	001B          	ESC	EQU	1BH
+  40:	001C          	CLEAR	EQU	1CH		;SD Systems Video Board, Clear to EOL. (Use 80 spaces if EOL not available
+  41:							;on other video cards)
+  42:	0001          	RDCON	EQU	1		;For CP/M I/O
+  43:	0002          	WRCON	EQU	2
+  44:	0009          	PRINT	EQU	9
+  45:	000B          	CONST	EQU	11		;CONSOLE STAT
+  46:	0005          	BDOS	EQU	5
+  47:			
+  48:	0000          	FALSE	EQU	0
+  49:	FFFF          	TRUE	EQU	-1
+  50:			
+  51:	0000          	QUIT	EQU	0
+  52:			
+  53:	0100          		ORG	$100
+  54:			
+  55:	0100          	INITIALIZE:
+  56:			
+  57:			; initialize UART related functions and variables
+  58:			
+  59:	0100  3E00    		LD	A,0
+  60:	0102  32BD02  		LD	(SER_ON),A	; Initialize "Serial On" flag
+  61:							; assume it is off until UART
+  62:							; is autodetected
+  63:	0105  3E01    		LD	A,1
+  64:	0107  32BE02  		LD	(UART_FAIL),A	; Initialize "UART FAIL" flag
+  65:							; assume it has failed until UART
+  66:							; is autodetected as working
+  67:			
+  68:	010A  119702  		LD	DE,MSINIT
+  69:	010D  CD9202  		CALL	PSTRING
+  70:			
+  71:			; 	LD	A,$01		; specify baud rate 1200 bps (1200,8,None,1)
+  72:	0110  3E05    		LD	A,$05		; specify baud rate 9600 bps (9600,8,None,1)
+  73:	0112  32BF02  		LD	(SER_BAUD),A	;
+  74:	0115  CD7F01  		CALL	INIT_UART	; WITH NO FLOW CONTROL on terminal!!
+  75:			
+  76:	0118  3ABE02  		LD	A,(UART_FAIL)
+  77:	011B  B7      		OR	A
+  78:	011C  2809    		JR	Z,PNT1
+  79:			
+  80:	011E  11B302  		LD	DE,MSINITNOK
+  81:	0121  CD9202  		CALL	PSTRING
+  82:	0124  C30000  		JP	QUIT
+  83:			
+  84:	0127          	PNT1:
+  85:	0127  11AD02  		LD	DE,MSINITOK
+  86:	012A  CD9202  		CALL	PSTRING
+  87:			
+  88:	012D          	PNT2:
+  89:	012D  0640    		LD	B,'@'
+  90:	012F          	PNT2A:
+  91:	012F  CD6902  		CALL	ZCSTS
+  92:	0132  B7      		OR	A
+  93:	0133  C20000  		JP	NZ,QUIT
+  94:			
+  95:	0136  04      		INC	B
+  96:	0137  78      		LD	A,B
+  97:	0138  CD5301  		CALL	TOUT
+  98:	013B  C5      		PUSH	BC
+  99:	013C  F5      		PUSH	AF
+ 100:	013D  48      		LD	C,B
+ 101:	013E  CD7702  		CALL	ZCO
+ 102:	0141  0E0D    		LD	C,CR
+ 103:	0143  CD7702  		CALL	ZCO
+ 104:	0146  F1      		POP	AF
+ 105:	0147  C1      		POP	BC
+ 106:	0148  FE7A    		CP	'z'
+ 107:	014A  20E3    		JR	NZ,PNT2A
+ 108:	014C  0640    		LD	B,'@'
+ 109:	014E  18DF    		JR	PNT2A
+ 110:			
+ 111:	0150  C30000  		JP	QUIT
+ 112:			
+ 113:			
+ 114:			;-------------------------------------------------------------
+ 115:			;
+ 116:			;
+ 117:			;
+ 118:	0153          	TOUT:
+ 119:			;TX_SER_CHAR:
+ 120:			;	PUSH	AF
+ 121:			;	LD	A,(SER_ON)		; IF COM IS OFF
+ 122:			;	CP	0			;
+ 123:			;	JP	Z,TX_END_CHAR
+ 124:			;	CALL	TX_BUSY			; WAIT FOR UART TO GET READY
+ 125:			
+ 126:	0153          	TX_BUSY:
+ 127:	0153  F5      		PUSH   AF
+ 128:	0154          	TX_BUSYLP:
+ 129:	0154  DBC5    		IN	A,(UART5)		; READ Line Status Register
+ 130:	0156  CB6F    		BIT	5,A			; TEST IF UART IS READY TO SEND
+ 131:	0158  CA5401  		JP	Z,TX_BUSYLP		; IF NOT REPEAT
+ 132:	015B  F1      		POP	AF
+ 133:	015C  D3C0    		OUT	(UART0),A		; THEN WRITE THE CHAR TO UART
+ 134:	015E          	TX_END_CHAR:
+ 135:	015E  C9      		RET			;DONE
+ 136:			
+ 137:			
+ 138:	015F          	TIN:
+ 139:			;RX_SER_CHAR:
+ 140:			;	PUSH	AF
+ 141:			;	LD	A,(SER_ON)		; IF COM IS OFF
+ 142:			;	CP	0			;
+ 143:			;	JP	Z,RX_END_CHAR
+ 144:			;	CALL	RX_BUSY			; WAIT FOR UART TO GET READY
+ 145:			
+ 146:			;RX_BUSY:
+ 147:			;	PUSH	AF
+ 148:	015F          	RX_BUSYLP:
+ 149:	015F  DBC5    		IN	A,(UART5)		; READ Line Status Register
+ 150:	0161  CB47    		BIT	0,A			; TEST IF DATA IN RECEIVE BUFFER
+ 151:	0163  CA5F01  		JP	Z,RX_BUSYLP		; LOOP UNTIL DATA IS READY
+ 152:	0166  DBC0    		IN	A,(UART0)		; THEN READ THE CHAR FROM THE UART
+ 153:			;	LD	B,A			; put received data character in B
+ 154:								; register and pass back to user
+ 155:	0168          	RX_END_CHAR:
+ 156:	0168  C9      		RET
+ 157:			
+ 158:			;*******************************************************
+ 159:			;*	MESSAGE PRINT ROUTINE
+ 160:			;*******************************************************
+ 161:			
+ 162:	0169          	TMSG:
+ 163:			;TX_SER:
+ 164:			;	PUSH	AF
+ 165:			;	LD	A,(SER_ON)		; IF COM IS OFF
+ 166:			;	CP	0			;
+ 167:			;	JP	Z,TX_END
+ 168:	0169          	TX_SERLP:
+ 169:	0169  7E      		LD	A,(HL)			; GET CHARACTER TO A
+ 170:	016A  FE24    		CP	'$'			; TEST FOR END BYTE
+ 171:	016C  CA7E01  		JP	Z,TX_END		; JUMP IF END BYTE IS FOUND
+ 172:			;	CALL	TX_BUSY			; WAIT FOR UART TO GET READY
+ 173:			
+ 174:			;TX_BUSY:
+ 175:	016F  F5      		PUSH   AF
+ 176:	0170          	TX_BUSYLP_MSG:
+ 177:	0170  DBC5    		IN	A,(UART5)		; READ Line Status Register
+ 178:	0172  CB6F    		BIT	5,A			; TEST IF UART IS READY TO SEND
+ 179:	0174  CA7001  		JP	Z,TX_BUSYLP_MSG		; IF NOT REPEAT
+ 180:	0177  F1      		POP	AF
+ 181:	0178  D3C0    		OUT	(UART0),A		; THEN WRITE THE CHAR TO UART
+ 182:	017A  23      		INC	HL			; INC POINTER, TO NEXT CHAR
+ 183:	017B  C36901  		JP	TX_SERLP		; TRANSMIT LOOP
+ 184:	017E          	TX_END:
+ 185:	017E  C9      		RET
+ 186:			
+ 187:				;******************************************************************
+ 188:			;*	INIT_UART
+ 189:			;*	Function	: Init serial port  8250, 16C450, OR 16C550
+ 190:			;*			9600 Baud, 8 bit, 1 stopbit, 0 parity
+ 191:			;*	Output		: none
+ 192:			;*	call		: PAUSE
+ 193:			;*	tested		: 2 Feb 2007
+ 194:			;******************************************************************
+ 195:			
+ 196:	017F          	INIT_UART:
+ 197:	017F  3EAA    		LD	A,$AA
+ 198:	0181  D3C7    		OUT	(UART7),A
+ 199:	0183  DBC7    		IN	A,(UART7)
+ 200:	0185  FEAA    		CP	$AA	; TEST IF YOU COULD STORE AA
+ 201:	0187  C29D01  		JP	NZ,INITUART_FAIL	; IF NOT, THE UART CAN'T BE FOUND
+ 202:	018A  3E55    		LD	A,$55
+ 203:	018C  D3C7    		OUT	(UART7),A		;
+ 204:	018E  DBC7    		IN	A,(UART7)
+ 205:	0190  FE55    		CP	$55			;
+ 206:	0192  C29D01  		JP	NZ,INITUART_FAIL
+ 207:	0195  3E01    		LD	A,$01
+ 208:	0197  32BD02  		LD	(SER_ON),A
+ 209:	019A  C3A301  		JP	UART_OK
+ 210:			
+ 211:	019D          	INITUART_FAIL:				; Handle if initialize UART fails
+ 212:	019D  3E01    		LD	A,1
+ 213:	019F  32BE02  		LD	(UART_FAIL),A
+ 214:	01A2  76      		HALT
+ 215:			
+ 216:			
+ 217:	01A3          	UART_OK:
+ 218:	01A3  3E00    		LD	A,0
+ 219:	01A5  32BE02  		LD	(UART_FAIL),A		; UART OK FOUND
+ 220:	01A8  3ABF02  		LD	A,(SER_BAUD)
+ 221:	01AB  FE01    		CP	1
+ 222:	01AD  CAD301  		JP	Z,UART1200
+ 223:	01B0  FE02    		CP	2
+ 224:	01B2  CAE601  		JP	Z,UART2400
+ 225:	01B5  FE03    		CP	3
+ 226:	01B7  CAF901  		JP	Z,UART4800
+ 227:	01BA  FE04    		CP	4
+ 228:	01BC  CA0C02  		JP	Z,UART9600
+ 229:	01BF  FE05    		CP	5
+ 230:	01C1  CA1F02  		JP	Z,UART19K2
+ 231:	01C4  FE06    		CP	6
+ 232:	01C6  CA3202  		JP	Z,UART38K4
+ 233:	01C9  FE07    		CP	7
+ 234:	01CB  CA4502  		JP	Z,UART57K6
+ 235:	01CE  FE08    		CP	8
+ 236:	01D0  CA5802  		JP	Z,UART115K2
+ 237:								; IF NOTHING IS DEFINED 1200 WILL BE USED..
+ 238:			
+ 239:			
+ 240:	01D3          	UART1200:
+ 241:	01D3  3E80    		LD	A,80H
+ 242:	01D5  D3C3    		OUT	(UART3),A		; SET DLAB FLAG
+ 243:	01D7  3E60    		LD	A,96			;  = 1,843,200 / ( 16 x 1200 )
+ 244:	01D9  D3C0    		OUT	(UART0),A		;
+ 245:	01DB  3E00    		LD	A,00H
+ 246:	01DD  D3C1    		OUT	(UART1),A		;
+ 247:	01DF  3E03    		LD	A,03H
+ 248:	01E1  D3C3    		OUT	(UART3),A		; Set 8 bit data, 1 stopbit
+ 249:			
+ 250:			;	LD	A,03H
+ 251:			;	OUT	(UART4),A		; Force DTR and RTS
+ 252:			
+ 253:	01E3  C36802  		JP	INITRET			; 0 parity, reset DLAP FLAG
+ 254:	01E6          	UART2400:
+ 255:	01E6  3E80    		LD	A,80H
+ 256:	01E8  D3C3    		OUT	(UART3),A		; SET DLAB FLAG
+ 257:	01EA  3E30    		LD	A,48			; = 1,843,200 / ( 16 x 2400 )
+ 258:	01EC  D3C0    		OUT	(UART0),A		;
+ 259:	01EE  3E00    		LD	A,00H
+ 260:	01F0  D3C1    		OUT	(UART1),A		;
+ 261:	01F2  3E03    		LD	A,03H
+ 262:	01F4  D3C3    		OUT	(UART3),A		; Set 8 bit data, 1 stopbit
+ 263:	01F6  C36802  		JP	INITRET			; 0 parity, reset DLAP FLAG
+ 264:	01F9          	UART4800:
+ 265:	01F9  3E80    		LD	A,80H
+ 266:	01FB  D3C3    		OUT	(UART3),A		; SET DLAB FLAG
+ 267:	01FD  3E18    		LD	A,24			; = 1,843,200 / ( 16 x 4800 )
+ 268:	01FF  D3C0    		OUT	(UART0),A		;
+ 269:	0201  3E00    		LD	A,00H
+ 270:	0203  D3C1    		OUT	(UART1),A		;
+ 271:	0205  3E03    		LD	A,03H
+ 272:	0207  D3C3    		OUT	(UART3),A		; Set 8 bit data, 1 stopbit
+ 273:	0209  C36802  		JP	INITRET			; 0 parity, reset DLAP FLAG
+ 274:	020C          	UART9600:
+ 275:	020C  3E80    		LD	A,80H
+ 276:	020E  D3C3    		OUT	(UART3),A		; SET DLAB FLAG
+ 277:	0210  3E0C    		LD	A,12			; = 1,843,200 / ( 16 x 9600 )
+ 278:	0212  D3C0    		OUT	(UART0),A		; Set BAUD rate til 9600
+ 279:	0214  3E00    		LD	A,00H
+ 280:	0216  D3C1    		OUT	(UART1),A		; Set BAUD rate til 9600
+ 281:	0218  3E03    		LD	A,03H
+ 282:	021A  D3C3    		OUT	(UART3),A		; Set 8 bit data, 1 stopbit
+ 283:	021C  C36802  		JP	INITRET			; 0 parity, reset DLAP FLAG
+ 284:	021F  3E80    	UART19K2:	LD	A,80H
+ 285:	0221  D3C3    		OUT	(UART3),A		; SET DLAB FLAG
+ 286:	0223  3E06    		LD	A,06			; = 1,843,200 / ( 16 x 19,200 )
+ 287:	0225  D3C0    		OUT	(UART0),A		;
+ 288:	0227  3E00    		LD	A,0
+ 289:	0229  D3C1    		OUT	(UART1),A		;
+ 290:	022B  3E03    		LD	A,3
+ 291:	022D  D3C3    		OUT	(UART3),A		; Set 8 bit data, 1 stopbit
+ 292:	022F  C36802  		JP	INITRET			; 0 parity, reset DLAP FLAG
+ 293:	0232  3E80    	UART38K4:	LD	A,80H
+ 294:	0234  D3C3    		OUT	(UART3),A		; SET DLAB FLAG
+ 295:	0236  3E03    		LD	A,03
+ 296:	0238  D3C0    		OUT	(UART0),A		; = 1,843,200 / ( 16 x 38,400 )
+ 297:	023A  3E00    		LD	A,00H
+ 298:	023C  D3C1    		OUT	(UART1),A		;
+ 299:	023E  3E03    		LD	A,03H
+ 300:	0240  D3C3    		OUT	(UART3),A		; Set 8 bit data, 1 stopbit
+ 301:	0242  C36802  		JP	INITRET			; 0 parity, reset DLAP FLAG
+ 302:	0245  3E80    	UART57K6:	LD	A,80H
+ 303:	0247  D3C3    		OUT	(UART3),A		; SET DLAB FLAG
+ 304:	0249  3E02    		LD	A,02
+ 305:	024B  D3C0    		OUT	(UART0),A		; = 1,843,200 / ( 16 x 57,600 )
+ 306:	024D  3E00    		LD	A,00H
+ 307:	024F  D3C1    		OUT	(UART1),A		;
+ 308:	0251  3E03    		LD	A,03H
+ 309:	0253  D3C3    		OUT	(UART3),A		; Set 8 bit data, 1 stopbit
+ 310:	0255  C36802  		JP	INITRET			; 0 parity, reset DLAP FLAG
+ 311:	0258  3E80    	UART115K2:	LD	A,80H
+ 312:	025A  D3C3    		OUT	(UART3),A		; SET DLAB FLAG
+ 313:	025C  3E01    		LD	A,01
+ 314:	025E  D3C0    		OUT	(UART0),A		; = 1,843,200 / ( 16 x 115,200 )
+ 315:	0260  3E00    		LD	A,00H
+ 316:	0262  D3C1    		OUT	(UART1),A		;
+ 317:	0264  3E03    		LD	A,03H
+ 318:	0266  D3C3    		OUT	(UART3),A		; Set 8 bit data, 1 stopbit
+ 319:								; 0 parity, reset DLAP FLAG
+ 320:	0268          	INITRET:
+ 321:	0268  C9      		RET
+ 322:			
+ 323:			
+ 324:	0269          	ZCSTS:
+ 325:	0269  C5      		PUSH	BC
+ 326:	026A  D5      		PUSH	DE
+ 327:	026B  E5      		PUSH	HL
+ 328:	026C  0E0B    		LD	C,CONST
+ 329:	026E  CD0500  		CALL	BDOS		;Returns with 1 in [A] if character at keyboard
+ 330:	0271  E1      		POP	HL
+ 331:	0272  D1      		POP	DE
+ 332:	0273  C1      		POP	BC
+ 333:	0274  FE01    		CP	1
+ 334:	0276  C9      		RET
+ 335:			
+ 336:			;
+ 337:	0277          	ZCO:	;Write character that is in [C]
+ 338:	0277  F5      		PUSH	AF
+ 339:	0278  C5      		PUSH	BC
+ 340:	0279  D5      		PUSH	DE
+ 341:	027A  E5      		PUSH	HL
+ 342:	027B  59      		LD	E,C
+ 343:	027C  0E02    		LD	C,WRCON
+ 344:	027E  CD0500  		CALL	BDOS
+ 345:	0281  E1      		POP	HL
+ 346:	0282  D1      		POP	DE
+ 347:	0283  C1      		POP	BC
+ 348:	0284  F1      		POP	AF
+ 349:	0285  C9      		RET
+ 350:			
+ 351:	0286          	ZCI:	;Return keyboard character in [A]
+ 352:	0286  C5      		PUSH	BC
+ 353:	0287  D5      		PUSH	DE
+ 354:	0288  E5      		PUSH	HL
+ 355:	0289  0E01    		LD	C,RDCON
+ 356:	028B  CD0500  		CALL	BDOS
+ 357:	028E  E1      		POP	HL
+ 358:	028F  D1      		POP	DE
+ 359:	0290  C1      		POP	BC
+ 360:	0291  C9      		RET
+ 361:			;
+ 362:			;
+ 363:			;	;Print a string in [DE] up to '$'
+ 364:	0292          	PSTRING:
+ 365:	0292  0E09    		LD	C,PRINT
+ 366:	0294  C30500  		JP	BDOS		;PRINT MESSAGE,
+ 367:			
+ 368:			;
+ 369:			;-------------------------------------------------------------------------------
+ 370:			
+ 371:	0297  496E6974	MSINIT		DB 'Initalising UART...',CR,LF,'$'
+	      616C6973
+	      696E6720
+	      55415254
+	      2E2E2E0D
+	      0A24
+ 372:	02AD  4F6B2E0D	MSINITOK	DB 'Ok.',CR,LF,'$'
+	      0A24
+ 373:	02B3  4661696C	MSINITNOK	DB 'Failure',CR,LF,'$'
+	      7572650D
+	      0A24
+ 374:			; MSINIT		DB 'Initalising UART...',CR,LF,'$'
+ 375:			; MSINIT		DB 'Initalising UART...',CR,LF,'$'
+ 376:			; MSINIT		DB 'Initalising UART...',CR,LF,'$'
+ 377:			;
+ 378:			;-------------------------------------------------------------------------------
+ 379:			
+ 380:	02BD .. 02BD 00	SER_ON:		DS	1	; serial on/off
+ 381:	02BE .. 02BE 00	UART_FAIL:	DS	1	; UART has failed detection flag
+ 382:	02BF .. 02BF 00	SER_BAUD:	DS	1	; specify desired UART com rate in bps
+ 383:			
+ 384:	02C0          		END
+
+
+
+Statistics:
+
+     5	passes
+     0	jr promotions
+    62	symbols
+     0	bytes
+
+
+
+Symbol Table:
+
+bdos           =   5+    quit           =   0+    uart115k2        258     
+bell           =   7+    rdcon          =   1+    uart1200         1d3     
+bs             =   8+    rx_busylp        15f     uart19k2         21f     
+clear          =  1c+    rx_end_char      168+    uart2          =  c2+    
+const          =   b+    ser_baud         2bf     uart2400         1e6     
+cr             =   d+    ser_on           2bd     uart3          =  c3+    
+esc            =  1b+    srl1base       =  c0+    uart38k4         232     
+false          =   0+    srl2base       =  c8+    uart4          =  c4+    
+init_uart        17f     tab            =   9+    uart4800         1f9     
+initialize       100+    tin              15f+    uart5          =  c5+    
+initret          268     tmsg             169+    uart57k6         245     
+inituart_fail    19d     tout             153     uart6          =  c6+    
+lf             =   a+    true           =ffff+    uart7          =  c7+    
+msinit           297     tx_busy          153+    uart9600         20c     
+msinitnok        2b3     tx_busylp        154     uart_fail        2be     
+msinitok         2ad     tx_busylp_msg    170     uart_ok          1a3     
+pnt1             127     tx_end           17e     wrcon          =   2+    
+pnt2             12d+    tx_end_char      15e+    zci              286+    
+pnt2a            12f     tx_serlp         169     zco              277     
+print          =   9+    uart0          =  c0+    zcsts            269     
+pstring          292     uart1          =  c1+    

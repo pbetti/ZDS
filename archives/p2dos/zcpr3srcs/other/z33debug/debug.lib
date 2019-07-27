@@ -1,0 +1,1567 @@
+;  PROGRAM:  DEBUGRCP.ASM
+;  AUTHOR:  RICHARD CONN
+;  VERSION:  1.0
+;  DATE:  30 JUNE 84
+;  PREVIOUS VERSIONS:  NONE
+;
+;++++
+;  Version 1.0A - Rob Friefeld  9/87
+;  - Intended for large RCP (takes over 2k)
+;  - Included hex calculator routine from MU3
+;  - Made minor changes to achieve compatibility with Z33RCP modules
+;  - Expanded command synomyms:
+;	"+" "=" "." advance one block
+;	"-" ","     back one block
+;  - Put in some relative jumps and djnz's.
+;    "De-modularized" stndout/stndend and tinit/dinit to save a few bytes.
+;++++
+;	DEBUGRCP is a resident debug command package for ZCPR3.3
+;
+EOLCH	EQU	0	;END OF LINE CHAR
+SEPCH	EQU	','	;SEPARATOR CHAR
+EROW	EQU	6	;FIRST ROW OF EDITOR DISPLAY
+ECOL	EQU	4	;FIRST COL OF EDITOR DISPLAY
+ECOLC	EQU	ECOL+16*3+8	;FIRST COL OF EDITOR CHAR DISPLAY
+ECURS	EQU	'>'	;EDITOR CURSOR
+PRROW	EQU	22	;PROMPT ROW
+PRCOL	EQU	10	;PROMPT COLUMN
+PRCOLI	EQU	PRCOL+15	;PROMPT INPUT COL
+ERROW	EQU	23	;ERROR MESSAGE ROW
+ERCOL	EQU	15	;ERROR MESSAGE COLUMN
+
+
+;
+; DEFINE FREE SPACE
+;
+MU:
+	call	retsave		; save cpr return address
+
+	LD	HL,TBUFF	;DETERMINE ADDRESS
+	LD	(HL),126	;126 CHARS INPUT ALLOWED
+	LD	(BUFFER),HL	;SET PTR
+;
+; SET UP ARROW KEYS
+;
+	LD	HL,Z3ENV	;PT TO ENVIRONMENT DESCRIPTOR
+	LD	DE,80H+10H	;PT TO ARROW KEY INFO
+	ADD	HL,DE
+	LD	DE,EDCURT	;PT TO CURSOR TABLE
+	LD	B,4	;4 ARROW KEYS
+ARROW:
+	LD	A,(HL)	;GET CHAR
+	LD	(DE),A	;STORE CHAR
+	INC	HL	;PT TO NEXT
+	INC	DE	;PT TO NEXT ENTRY
+	INC	DE
+	INC	DE
+	djnz	ARROW
+;
+; Initialize Terminal
+;
+
+	call	tinit
+;
+; Check for Command Line Parameter
+;
+	ld	hl,fcb+1	;pt to first char
+	ld	a,(hl)		;get char
+	cp	' '		;no param?
+	jr	nz,pcheck
+	ld	hl,tpa		;pt to TPA
+	jr	mu3
+;
+; We have a parameter
+;
+pcheck:
+	call	hexin		;convert to binary
+	ex	de,hl		;HL=value
+	jr	mu3
+;
+; Erase to EOL
+;  If fct not supported, send out B spaces and B backspaces
+;
+vereol:
+	call	ereol	;try erase
+	ret	nz
+	push	bc	;save B
+	ld	a,' '	;send spaces
+	call	vereol1
+	pop	bc	;get B
+	ld	a,bs	;send backspaces
+vereol1:
+	call	conout	;send char in A
+	djnz	vereol1
+	ret
+;
+; Clear Screen
+;  If fct not supported, write 24 CRLFs
+;
+vcls:
+	 IF	CLSON
+	JP	CLS
+	 ELSE
+	call	cls	;try clear
+	ret	nz
+	push	bc	;save B
+	ld	b,24	;count
+vcls1:
+	call	crlf
+	djnz	vcls1
+	pop	bc
+	ret
+	 ENDIF ; clson
+;
+; Run MU3
+;	HL contains starting address
+;
+mu3:
+	LD	(BLOCK),HL	;SAVE PTR TO BLOCK
+;
+; REFRESH EDIT SCREEN
+;
+EDIT0:
+	CALL	VCLS	;NEW SCREEN
+	CALL	AT
+	DB	2,35	;ROW 2, COL 35
+	CALL	VPRINT	;BANNER
+	DB	'MU 1A RCP',' '+80h
+;
+; REENTER MU3 WITH PTRS RESET
+;
+MU3R:
+	XOR	A	;A=0
+	LD	(EINDEX),A	;SET INDEX TO 0 (FIRST ELEMENT)
+	CALL	EDPLOT	;PLOT BUFFER DATA
+;
+; INPUT EDITOR COMMAND
+;
+EDITCMD:
+	CALL	PRMSG		;POSITION AT PROMPT MESSAGE
+	DB	'MU Command?',0
+	CALL	PRINP		;POSITION AT PROMPT INPUT
+	DB	0
+	CALL	CIN		;GET CHAR
+	CALL	CAPS		;CAPITALIZE
+	LD	B,A		;COMMAND IN B
+	LD	HL,EDCURT	;PROCESS CURSOR COMMANDS FIRST
+	CALL	CMD		;PROCESS COMMAND
+	LD	HL,ECMDTBL	;EDITOR COMMAND TABLE
+	CALL	CMD		;PROCESS COMMAND
+	CALL	VPRINT		;ERROR MESSAGE
+	DB	BEL+80h
+	JP	EDITCMD
+;
+; Position at Prompt Message and Print it
+;
+PRMSG:
+	CALL	AT		;POSITION
+	DB	PRROW,PRCOL
+	JP	VPRINT		;PRINT IT
+;
+; Position at Prompt Input and Print Prompt
+;
+PRINP:
+	CALL	AT		;POSITION
+	DB	PRROW,PRCOLI
+	JP	VPRINT		;PRINT IT
+;
+;INPUT ERROR
+;
+WHAT:
+	CALL	VPRINT
+	DB	BEL+80h
+	JP	EDITCMD
+;
+;Command Table Search and Execute
+;
+CMD:
+	LD	A,(HL)		;CHECK FOR END OF TABLE
+	OR	A
+	RET	Z		;COMMAND NOT FOUND
+	CP	B		;MATCH?
+	jr	Z,CMDRUN
+	INC	HL		;SKIP TO NEXT ENTRY IN TABLE
+	INC	HL
+	INC	HL
+	jr	CMD
+;
+;RUN COMMAND
+;
+CMDRUN:
+	INC	HL		;PT TO LOW ADDRESS
+	LD	E,(HL)
+	INC	HL		;PT TO HIGH ADDRESS
+	LD	D,(HL)
+	EX	DE,HL
+	POP	AF		;CLEAR STACK
+	JP	(HL)		;RUN ROUTINE
+;
+;PLOT BUFFER DATA
+;
+EDPLOT:
+	LD	H,EROW-1	;SET ROW
+	LD	L,ECOL		;SET COLUMN
+	CALL	GOTOXY		;POSITION CURSOR
+	CALL	VPRINT
+	DB	DIM
+	DB	'       0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F'
+	DB	BRIGHT,0
+	INC	H		;NEXT ROW
+	CALL	GOTOXY		;POSITION CURSOR
+	EX	DE,HL		;POSITION IN DE
+	LD	HL,(BLOCK)	;PT TO DATA
+	LD	B,8		;8 LINES
+;
+;Print Next Line on Screen
+;
+EDIT00:
+	CALL	STNDOUT		;GO DIM
+	LD	A,H		;OUTPUT ADDRESS
+	CALL	PA2HC
+	LD	A,L
+	CALL	PA2HC
+	CALL	VPRINT
+	DB	':',BRIGHT,' '+80h
+	LD	C,16		;16 ELEMENTS
+EDIT01:
+	LD	A,(HL)		;GET BYTE
+	CALL	PA2HC		;PRINT AS HEX
+	CALL	dSPACE		;PRINT 1 SPACE
+	INC	HL		;PT TO NEXT
+	DEC	C		;COUNT DOWN
+	jr	NZ,EDIT01
+	EX	DE,HL		;POSITION AGAIN
+	INC	H		;NEXT ROW
+	CALL	GOTOXY
+	EX	DE,HL
+	djnz	EDIT00
+	LD	H,EROW		;RESET ROW
+	LD	L,ECOLC		;RESET COL
+	CALL	GOTOXY		;POSITION CURSOR
+	EX	DE,HL		;POSITION IN DE
+	LD	HL,(BLOCK)	;PT TO DATA
+	LD	B,8		;8 LINES
+EDIT02:
+	CALL	BAR		;PRINT BAR
+	LD	C,16		;16 ELEMENTS
+EDIT03:
+	LD	A,(HL)		;GET BYTE
+	AND	7FH		;MASK MSB
+	CP	7FH		;DON'T PRINT 7FH
+	jr	Z,EDIT7F
+	CP	' '		;SPACE OR MORE?
+	jr	NC,EDIT04
+EDIT7F:
+	LD	A,'.'		;PRINT DOT
+EDIT04:
+	CALL	conout		;PRINT BYTE
+	INC	HL		;PT TO NEXT
+	DEC	C		;COUNT DOWN
+	jr	NZ,EDIT03
+	CALL	BAR		;PRINT ENDING BAR
+	EX	DE,HL		;POSITION AGAIN
+	INC	H		;NEXT ROW
+	CALL	GOTOXY
+	EX	DE,HL
+	DEC	B		;COUNT DOWN
+	jr	NZ,EDIT02
+	CALL	EDCUR		;POSITION CURSOR
+	RET
+;
+;EDITOR COMMAND TABLE
+;
+ECMDTBL:
+	DB	CR	;NOP
+	DW	EDITCMD
+	DB	'C'-'@'	;^C = EXIT MU3
+	DW	EDCC
+	DB	'R'-'@'	;^R = REFRESH
+	DW	EDIT0
+	DB	'E'-'@'	;^E=UP
+	DW	EDUP
+	DB	'X'-'@'	;^X=DOWN
+	DW	EDDOWN
+	DB	'D'-'@'	;^D=RIGHT
+	DW	EDRIGHT
+	DB	'S'-'@'	;^S=LEFT
+	DW	EDLEFT
+	DB	' '	;NOP
+	DW	EDITCMD
+	DB	'+'	;ADVANCE
+	DW	EDITPLUS
+	db	'='
+	dw	editplus
+	db	'.'
+	dw	editplus
+	DB	'-'	;BACKUP
+	DW	EDITMINUS
+	db	','
+	dw	editminus
+	DB	'A'	;ADDRESS
+	DW	EDITADR
+	DB	'C'	;COMMAND LINE
+	DW	EDITCL
+	db	'H'	;HEX CALC
+	dw	editcalc
+	DB	'N'	;CHANGE NUMBERS
+	DW	EDITHEX
+	DB	'T'	;CHANGE TEXT
+	DW	EDITALP
+	DB	0	;END OF TABLE
+;
+;  ARROW KEY DEFINITONS FROM TCAP
+;
+EDCURT:
+	DB	0	;0 INDICATES NO ARROW KEYS
+	DW	EDUP
+	DB	0
+	DW	EDDOWN
+	DB	0
+	DW	EDRIGHT
+	DB	0
+	DW	EDLEFT
+	DB	0	;END OF TABLE
+;
+;Enter Command Line
+;
+EDITCL:
+	CALL	VPRINT		;PROMPT INPUT
+	DB	CR,LF,'Command Line?',' '+80h
+	CALL	RDBUF		;INPUT TEXT
+	CALL	PUTCL		;STORE COMMAND LINE
+	call	CRLF		;NEW LINE
+	jp	exit
+;
+; STORE COMMAND LINE
+;
+PUTCL:
+	EX	DE,HL		;PTR TO NEW LINE IN DE
+	CALL	GETCL1		;GET COMMAND LINE DATA
+	LD	B,A		;CHAR COUNT IN B
+	EX	DE,HL		;HL PTS TO NEW LINE
+	PUSH	HL		;SAVE PTR TO NEXT LINE
+PCL1:
+	LD	A,(HL)		;GO TO END OF LINE
+	OR	A		;AT END?
+	jr	Z,PCL2
+	INC	HL		;PT TO NEXT
+	djnz	PCL1
+	POP	HL		;CLEAR STACK
+	RET			;COMMAND LINE TOO LONG - ABORT
+;
+; AT END OF NEW COMMAND LINE
+;	PTR TO FIRST CHAR OF NEW COMMAND LINE ON STACK
+;	HL PTS TO ENDING 0 OF NEW COMMAND LINE
+;	B = NUMBER OF CHARS REMAINING BEFORE COMMAND LINE OVERFLOW
+;
+PCL2:
+	EX	DE,HL		;DE PTS TO LAST BYTE
+	PUSH	DE		;SAVE PTR IN CASE OF ERROR
+	CALL	GETCL2		;PT TO TAIL OF COMMAND LINE BUFFER
+	LD	A,(HL)		;GET FIRST CHAR OF TAIL
+	CP	';'		;CONTINUATION?
+	jr	Z,PCL3
+	OR	A		;DONE?
+	jr	Z,PCL3
+	LD	A,';'		;SET CONTINUATION CHAR
+	LD	(DE),A
+	INC	DE
+	DEC	B		;COUNT DOWN
+	jr	Z,PCL4		;OVERFLOW
+;
+; COPY TAIL ONTO END OF NEW COMMAND LINE
+;
+PCL3:
+	LD	A,(HL)	;GET NEXT CHAR
+	LD	(DE),A	;STORE IT
+	INC	HL	;PT TO NEXT
+	INC	DE
+	OR	A	;DONE?
+	jr	Z,PCL5
+	DEC	B	;COUNT DOWN
+	jr	NZ,PCL3
+;
+; COMMAND LINE TOO LONG
+;
+PCL4:
+	POP	HL	;GET PTR TO END OF OLD LINE
+	LD	(HL),0	;STORE ENDING 0
+	POP	AF	;CLEAR STACK
+	RET
+;
+; NEW COMMAND LINE OK
+;
+PCL5:
+	POP	AF	;CLEAR STACK
+	CALL	GETCL1	;GET PTR TO BUFFER
+	LD	DE,4	;PT TO FIRST CHAR IN BUFFER
+	EX	DE,HL
+	ADD	HL,DE
+	EX	DE,HL
+	LD	(HL),E	;STORE ADDRESS
+	INC	HL
+	LD	(HL),D
+	POP	HL	;HL PTS TO FIRST CHAR OF NEW LINE
+;
+; COPY COMMAND LINE INTO BUFFER
+;
+PCL6:
+	LD	A,(HL)	;COPY
+	LD	(DE),A
+	INC	HL
+	INC	DE
+	OR	A	;DONE?
+	jr	NZ,PCL6
+	RET
+;
+; GETCL1
+;
+GETCL1:
+	LD	HL,(Z3ENV+18H)	;GET ADDRESS OF COMMAND LINE BUFFER
+	PUSH	HL		;SAVE IT
+	INC	HL		;GET SIZE IN A
+	INC	HL
+	LD	A,(HL)
+	POP	HL
+	RET
+;
+; GETCL2
+;
+GETCL2:
+	LD	HL,(Z3ENV+18H)	;GET ADDRESS OF COMMAND LINE BUFFER
+	LD	A,(HL)		;GET ADDRESS OF NEXT CHAR
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		;HL PTS TO NEXT CHAR
+	LD	A,(HL)		;GET IT
+	RET
+
+;
+;Enter ASCII Chars
+;
+EDITALP:
+	call	edercl
+	CALL	PRINP		;PROMPT INPUT
+	DB	DIM,'Enter Text',BRIGHT
+	DB	CR,LF,' -->',' '+80h
+	CALL	RDBUF		;INPUT TEXT WITHOUT PROMPT
+	CALL	EDPRCL		;CLEAR PROMPT LINE
+	LD	A,(EINDEX)	;PT TO POSITION
+	EX	DE,HL
+	LD	HL,(BLOCK)	;COMPUTE OFFSET
+	EX	DE,HL
+	ADD	A,E
+	LD	E,A
+	LD	A,D
+	ADC	0
+	LD	D,A		;DE PTS TO BYTE, HL PTS TO TEXT
+EDITA1:
+	LD	A,(HL)		;GET CHAR
+	CP	EOLCH		;EOL?
+	jr	Z,EDITA2	;REFRESH SCREEN
+	CALL	GETAHV		;GET ASCII OR <HEX> VALUE
+	LD	(DE),A		;UPDATE BYTE
+	INC	HL		;PT TO NEXT INPUT CHAR
+	INC	E		;PT TO NEXT BUFFER BYTE
+	jr	NZ,EDITA1
+EDITA2:
+	CALL	EDPLOT		;REPLOT
+	JP	EDITCMD		;DONE-REFRESH SCREEN
+
+;
+;Calculate Sum and Differences
+;
+EDITCALC:
+	CALL	EDERCL	;CLEAR ERROR LINE
+	CALL	PRINP	;PROMPT INPUT
+	DB	DIM,'Enter Two Hex Numbers - ',BRIGHT,0
+	CALL	RDBUF	;INPUT TEXT
+	CALL	EDPRCL	;CLEAR PROMPT LINE
+	CALL	SKSP	;SKIP TO NON-SPACE
+	LD	A,(HL)	;ANY INPUT?
+	OR	A	;0=NO
+	JP	Z,EDITCMD
+	CALL	HEXIN	;EVALUATE FIRST NUMBER
+	CALL	SKSP	;SKIP TO 2ND NUMBER
+	PUSH	DE	;SAVE FIRST NUMBER
+	CALL	HEXIN	;EVALUATE 2ND NUMBER
+	POP	HL	;GET FIRST NUMBER
+	CALL	ERMSG	;PRINT ERROR MESSAGE
+	DB	0
+	CALL	PHL4HC	;PRINT FIRST NUMBER
+	CALL	VPRINT
+	DB	DIM,' and',BRIGHT,' '+80h
+	EX	DE,HL
+	CALL	PHL4HC	;PRINT 2ND NUMBER
+	EX	DE,HL
+	CALL	VPRINT
+	DB	'    ',DIM,'Sum =',BRIGHT,' '+80h
+	PUSH	HL
+	ADD	HL,DE
+	CALL	NUMOUT
+	POP	HL
+	CALL	VPRINT
+	DB	'  ',DIM,'Diff =',BRIGHT,' '+80h
+	LD	A,L	;HL=HL-DE
+	SUB	E
+	LD	L,A
+	LD	A,H
+	SBC	A,D
+	LD	H,A
+	CALL	NUMOUT
+	JP	EDITCMD
+;
+;Output number in HL in Hex and Decimal
+;
+NUMOUT:
+	CALL	PHL4HC	;HEX
+	CALL	VPRINT
+	DB	' ','('+80h
+	CALL	PHLFDC	;DECIMAL FLOATING
+	LD	A,')'	;CLOSE PAREN
+	JP	conout
+
+;
+; Position at Error Message and Print It
+;
+ERMSG:
+	CALL	AT	;POSITION
+	DB	ERROW,ERCOL
+	JP	VPRINT	;PRINT IT
+
+edercl:
+	call	at
+	db	errow,ercol
+	jp	vereol
+;
+;Enter Numbers
+;
+EDITHEX:
+	call	edercl
+	CALL	PRINP	;PROMPT INPUT
+	DB	DIM,'Enter Hex Numbers',BRIGHT
+	DB	CR,LF,' -->',' '+80h
+	CALL	RDBUF	;INPUT TEXT WITHOUT PROMPT
+	CALL	EDPRCL	;CLEAR PROMPT LINE
+	LD	A,(EINDEX)	;PT TO POSITION
+	EX	DE,HL
+	LD	HL,(BLOCK)	;COMPUTE OFFSET
+	EX	DE,HL
+	ADD	A,E
+	LD	E,A
+	LD	A,D
+	ADC	0
+	LD	D,A	;DE PTS TO BYTE, HL PTS TO TEXT
+EDITH1:
+	LD	A,(HL)	;GET HEX DIGIT
+	CP	EOLCH	;EOL?
+	JP	Z,EDITA2	;REFRESH SCREEN
+	CP	' '	;SKIP SPACES
+	jr	NZ,EDITH2
+	INC	HL	;SKIP SPACE
+	jr	EDITH1
+EDITH2:
+	PUSH	DE	;SAVE PTR
+	CALL	HEXIN	;GET VALUE AND POSITION HL
+	LD	A,E	;... IN A
+	POP	DE	;GET PTR
+	LD	(DE),A	;PUT BYTE
+	INC	E	;ADVANCE TO NEXT BYTE
+	jr	NZ,EDITH1
+	JP	EDITA2	;DONE-REFRESH
+;
+;CLEAR PROMPT LINE
+;
+EDPRCL:
+	CALL	PRINP	;PROMPT LINE
+	DB	0
+	LD	B,40	;40 POSITIONS
+	CALL	VEREOL	;CLEAR TO EOL OR 40 CHARS
+	CALL	AT	;USER INPUT
+	DB	ERROW,1
+	LD	B,79	;79 POSITIONS
+	JP	VEREOL
+;
+;Input Address
+;
+EDITADR:
+	CALL	VPRINT
+	DB	'Address?',' '+80h
+	CALL	RDBUF	;GET USER INPUT
+	CALL	SKSP	;SKIP LEADING SPACES
+	LD	A,(HL)	;EMPTY LINE?
+	OR	A
+	JP	Z,EDIT0
+	CALL	HEXIN	;CONVERT FROM HEX
+	EX	DE,HL		;HL = ADDRESS
+	LD	(BLOCK),HL
+	JP	EDIT0	;REENTER
+;
+;Advance to Next Block
+;
+EDITPLUS:
+	LD	HL,(BLOCK)	;ADVANCE TO NEXT BLOCK
+	LD	DE,128	;128 BYTES
+	ADD	HL,DE
+	LD	(BLOCK),HL
+	JP	MU3R
+;
+;Backup to Last Block
+;
+EDITMINUS:
+	LD	HL,(BLOCK)	;BACKUP TO LAST BLOCK
+	LD	DE,-128	;128 BYTES
+	ADD	HL,DE
+	LD	(BLOCK),HL
+	JP	MU3R
+;
+;Exit MU3
+;
+EDCC:
+	CALL	DINIT	;DEINIT TERM
+	call	CRLF	;NEW LINE
+	jp	exit
+;
+;EDIT MOVE: UP
+;
+EDUP:
+	CALL	EDCCUR	;CLEAR CURSOR
+	LD	A,(EINDEX)	;BACKUP INDEX BY 16
+	SUB	16
+;
+;Common EDIT MOVE Routine - on input, A=new index
+;
+EDMOVE:
+	AND	7FH	;MOD 128
+	LD	(EINDEX),A
+	CALL	EDCUR	;SET CURSOR
+	JP	EDITCMD
+;
+;EDIT MOVE: DOWN
+;
+EDDOWN:
+	CALL	EDCCUR	;CLEAR CURSOR
+	LD	A,(EINDEX)	;INCREMENT INDEX BY 16
+	ADD	16
+	jr	EDMOVE	;COMMON ROUTINE
+;
+;EDIT MOVE: RIGHT
+;
+EDRIGHT:
+	CALL	EDCCUR	;CLEAR CURSOR
+	LD	A,(EINDEX)	;INCREMENT INDEX BY 1
+	INC	A
+	jr	EDMOVE	;COMMON ROUTINE
+;
+;EDIT MOVE: LEFT
+;
+EDLEFT:
+	CALL	EDCCUR	;CLEAR CURSOR
+	LD	A,(EINDEX)	;DECREMENT INDEX BY 1
+	DEC	A
+	jr	EDMOVE	;COMMON ROUTINE
+;
+;EDIT SUBROUTINE: EDCUR
+; Position Editor Cursor at EINDEX
+;EDIT SUBROUTINE: EDCCUR
+; Clear Editor Cursor at EINDEX
+;
+EDCUR:
+	PUSH	HL	;SAVE HL
+	LD	C,ECURS	;CURSOR CHAR
+	CALL	EDSETCUR
+	CALL	AT	;UPDATE DATA
+	DB	3,74
+	LD	A,(EINDEX)	;PT TO BYTE AT CURSOR
+	LD	HL,(BLOCK)
+	ADD	A,L
+	LD	L,A
+	LD	A,H
+	ADC	0
+	LD	H,A	;HL PTS TO BYTE AT CURSOR
+	LD	A,(HL)	;GET BYTE
+	CALL	PA2HC	;PRINT AS HEX
+	CALL	dSPACE
+	LD	A,(HL)	;GET BYTE
+	POP	HL	;RESTORE HL
+	AND	7FH	;MASK
+	CP	7FH	;7FH AS DOT
+	jr	Z,EDC7F
+	CP	' '	;OUTPUT CHAR OR DOT
+	JP	NC,conout
+EDC7F:
+	LD	A,'.'	;DOT
+	JP	conout
+EDCCUR:
+	LD	C,' '	;CLEAR CURSOR
+EDSETCUR:
+	CALL	EDROW	;COMPUTE ROW
+	AND	0FH	;COMPUTE COL MOD 16
+	LD	B,A	;RESULT IN B
+	ADD	A,A	;*2
+	ADD	A,B	;*3
+	ADD	ECOL+6	;ADD IN COL
+	DEC	A	;SUBTRACT 1
+	LD	L,A	;COL POSITION SET
+	CALL	GOTOXY	;POSITION CURSOR
+	LD	A,C	;OUTPUT CHAR
+	JP	conout
+;
+;Compute Row from EINDEX
+;
+EDROW:
+	LD	A,(EINDEX)	;GET INDEX
+	LD	B,A	;SAVE IN B
+	RRCA		;DIVIDE BY 16
+	RRCA
+	RRCA
+	RRCA
+	AND	0FH	;MASK FOR LSB ONLY
+	ADD	EROW	;COMPUTE ROW
+	LD	H,A	;ROW SET
+	LD	A,B	;GET INDEX
+	RET
+
+;
+;PRINT A SPACE
+;
+dSPACE:
+	LD	A,' '
+	JP	conout
+;
+;PRINT AN BARISK IN REV VIDEO
+;
+BAR:
+	CALL	VPRINT
+	DB	DIM,'|',BRIGHT,0
+	RET
+;
+;Get value from input buffer
+;
+GETAHV:
+	LD	A,(HL)	;GET NEXT CHAR
+	CP	'<'	;HEX ESCAPE?
+	RET	NZ		;NO, RETURN
+;"<<" means one "<"
+	INC	HL
+	LD	A,(HL)
+	CP	'<'
+	RET	Z
+;Got hex
+	PUSH	DE
+	CALL	HEXIN	;GET VALUE
+	CP	'>'	;PROPER DELIM?
+	LD	A,E	;GET VALUE
+	POP	DE
+	RET	Z
+;
+;ERROR CONDITION IN SUBROUTINE - CLEAR STACK AND FLAG ERROR
+;
+SERR:
+	POP	AF	;CLEAR STACK
+	JP	WHAT	;ERROR
+;
+;Input Number from Command Line -- Assume it to be Hex
+;  Number returned in DE
+;
+HEXIN:
+	LD	DE,0	;INIT VALUE
+	LD	A,(HL)
+	CP	'#'	;DECIMAL?
+	jr	Z,HDIN	;MAKE DECIMAL
+;
+HINLP:
+	LD	A,(HL)	;GET CHAR
+	CALL	CAPS	;CAPITALIZE
+	CP	CR	;EOL?
+	RET	Z
+	CP	EOLCH	;EOL?
+	RET	Z
+	CP	SEPCH
+	RET	Z
+	CP	' '	;SPACE?
+	RET	Z
+	CP	'-'	;'THRU'?
+	RET	Z
+	CP	'>'
+	RET	Z
+	INC	HL	;PT TO NEXT CHAR
+	CP	'0'	;RANGE?
+	jr	C,SERR
+	CP	'9'+1	;RANGE?
+	jr	C,HINNUM
+	CP	'A'	;RANGE?
+	jr	C,SERR	
+	CP	'F'+1	;RANGE?
+	jr	NC,SERR
+	SUB	7	;ADJUST FROM A-F TO 10-15
+;
+HINNUM:
+	SUB	'0'	;CONVERT FROM ASCII TO BINARY
+	EX	DE,HL
+	ADD	HL,HL	;MULT PREVIOUS VALUE BY 16
+	ADD	HL,HL
+	ADD	HL,HL
+	ADD	HL,HL
+	ADD	A,L	;ADD IN NEW DIGIT
+	LD	L,A
+	EX	DE,HL
+	jr	HINLP
+;
+HDIN:
+	INC	HL	;SKIP '#'
+;
+;Input Number in Command Line as Decimal
+;  Number is returned in DE
+;
+DECIN:
+	LD	DE,0
+	LD	A,(HL)	; GET 1ST CHAR
+	CP	'#'	; HEX?
+	jr	NZ,DINLP
+	INC	HL	; PT TO DIGIT
+	jr	HINLP	; DO HEX PROCESSING
+;
+DINLP:
+	LD	A,(HL)	;GET DIGIT
+	CALL	CAPS	;CAPITALIZE
+	CP	'0'	;RANGE?
+	RET	C
+	CP	'9'+1	;RANGE?
+	RET	NC
+	SUB	'0'	;CONVERT TO BINARY
+	INC	HL	;PT TO NEXT
+	PUSH	HL
+	LD	H,D
+	LD	L,E
+	ADD	HL,HL	;X2
+	ADD	HL,HL	;X4
+	ADD	HL,DE	;X5
+	ADD	HL,HL	;X10
+	ADD	A,L	;ADD IN DIGIT
+	LD	L,A
+	LD	A,H
+	ADC	0
+	LD	H,A
+	EX	DE,HL		;RESULT IN DE
+	POP	HL
+	jr	DINLP
+;
+; READ LINE FROM USER INTO INPUT LINE BUFFER
+;
+RDBUF:
+	LD	HL,(BUFFER)	;PT TO BUFFER
+	EX	DE,HL		;SET DE AS PTR TO BUFFER
+	LD	C,10	;BDOS READLN
+	PUSH	DE	;SAVE PTR
+	CALL	BDOS
+	POP	HL	;PT TO CHAR COUNT
+	INC	HL
+	LD	E,(HL)	;GET CHAR COUNT
+	LD	D,0
+	INC	HL	;PT TO FIRST CHAR
+	PUSH	HL	;SAVE PTR
+	ADD	HL,DE	;PT TO AFTER LAST CHAR
+	LD	(HL),0	;STORE ENDING 0
+	POP	HL	;PT TO FIRST CHAR
+	RET
+
+;
+; Routines from libs
+;
+
+cin:
+	push	hl
+	push	de
+	push	bc
+	ld	c,1
+	call	bdos
+	and	7fh
+	push	af
+	ld	a,bs	;overwrite
+	call	conout
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+;
+; Capitalize char in A
+;
+caps:
+	and	7fh
+	cp	'a'	;range?
+	ret	c
+	cp	'z'+1
+	ret	nc
+	and	5fh	;mask to caps
+	ret
+
+;
+; VLIB ROUTINES
+;
+
+
+;
+; Common vlib routine to find terminal info in ENV
+;
+vterm:
+	ld	hl,z3env+80h	;pt to environment
+	ld	a,(hl)		;no terminal?
+	cp	' '+1
+	ret
+
+
+;
+; CLEAR SCREEN ON TERMINAL
+;
+	 IF	[NOT CLSON]
+cls:
+	push	hl	;save regs
+	push	de
+	call	vterm
+	jr	c,clserr
+	ld	de,14h	;pt to cls delay
+	add	hl,de
+	ld	d,(hl)	;get it
+	inc	hl	;pt to cls string
+	inc	hl
+	inc	hl
+	ld	a,(hl)	;get first char of string
+	or	a	;if no string, error
+	jr	z,clserr
+	call	vidout	;output string with delay
+	pop	de	;done
+	pop	hl
+	xor	a	;return NZ
+	dec	a
+	ret
+clserr:
+	pop	de	;done
+	pop	hl
+	xor	a	;return Z
+	ret
+
+	 ENDIF	; not clson
+
+;
+; Erase to End of Line
+;	Return with A=0 and Zero Flag Set if not done
+;
+ereol:
+	push	bc	;save regs
+	push	de
+	push	hl
+	call	vterm
+	jr	c,err
+	ld	de,16h	;pt to ereol delay
+	add	hl,de
+	ld	d,(hl)	;get it
+	inc	hl	;pt to cls string
+	call	vidskp	;skip over it
+	call	vidskp	;skip over CM string
+	ld	a,(hl)	;get first char of ereol string
+	or	a	;if no string, error
+	jr	z,err
+	call	vidout	;output string with delay
+	jr	noerr
+
+;
+; GOTO XY
+;	HL = Row/Col, with Home=1/1
+;	Return with A=0 and Zero Flag Set if not done
+;
+gotoxy:
+	push	bc	;save regs
+	push	de
+	push	hl
+	call	vterm
+	jr	c,err
+	ld	de,15h	;pt to CM delay
+	add	hl,de
+	ld	a,(hl)	;get it
+	ld	(cmdelay),a	;save it
+	inc	hl	;pt to CL string
+	inc	hl
+	call	vidskp	;skip CL string
+	ld	a,(hl)	;get first char of CM string
+	or	a	;if no string, error
+	jr	z,err
+	ex	de,hl		;DE=address of CM string
+	pop	hl	;get coordinates in HL
+	push	hl
+	call	gxy	;output xy string with delay
+	ld	a,(cmdelay)	;pause
+	call	videlay
+noerr:
+	pop	hl	;done
+	pop	de
+	pop	bc
+	xor	a	;return NZ
+	dec	a
+	ret
+err:
+	pop	hl	;done
+	pop	de
+	pop	bc
+	xor	a	;return Z
+	ret
+
+;
+; Position Cursor at Location Specified by Return Address
+; Usage:
+;	call	at
+;	db	row,col	;location
+;
+at:
+	ex	(sp),hl		;pt to address
+	push	de	;save DE
+	ld	d,(hl)	;get row
+	inc	hl
+	ld	e,(hl)
+	inc	hl	;HL pts to return byte
+	ex	de,hl		;DE pts to return byte, HL contains screen loc
+	call	gotoxy	;position cursor
+	ex	de,hl		;HL pts to return byte
+	pop	de	;restore registers
+	ex	(sp),hl		;restore stack ptr
+	ret
+
+;
+; GOTOXY
+;   On input, H=Row and L=Column to Position To (1,1 is Home)
+;   On input, DE=address of CM string
+;
+gxy:
+	dec	h	;adjust to 0,0 for home
+	dec	l
+	xor	a	;set row/column
+	ld	(rcorder),a	;row before column
+	ld	(rcbase),a	;add 0 to base
+;
+; Cycle thru string
+;
+gxyloop:
+	ld	a,(de)	;get next char
+	inc	de	;pt to next
+	or	a	;done?
+	ret	z
+	cp	'%'	;command?
+	jr	z,gxycmd
+	cp	'\'	;escape?
+	jr	z,gxyesc
+	call	conout	;send char
+	jr	gxyloop
+
+;
+; Escape - output following byte literally
+;
+gxyesc:
+	ld	a,(de)	;get next char
+	call	conout	;output literally
+	inc	de	;pt to next
+	jr	gxyloop
+;
+; Interpret next character as a command character
+;
+gxycmd:
+	ld	a,(de)	;get command char
+	inc	de	;pt to next
+	cp	'd'	;%d
+	jr	z,gxyout1
+	cp	'2'	;%2
+	jr	z,gxyout2
+	cp	'3'	;%3
+	jr	z,gxyout3
+	cp	'.'	;%.
+	jr	z,gxyout4
+	cp	'+'	;%+v
+	jr	z,gxyout5
+	cp	'>'	;%>xy
+	jr	z,gxygt
+	cp	'r'	;%r
+	jr	z,gxyrev
+	cp	'i'	;%i
+	jr	z,gxyinc
+	call	conout	;output char if nothing else
+	jr	gxyloop
+;
+; Set row/col home to 1,1 rather than 0,0
+;
+gxyinc:
+	ld	a,1	;set rcbase to 1
+	ld	(rcbase),a
+	jr	gxyloop
+;
+; Reverse order of output to column then row (default is row then column)
+;
+gxyrev:
+	ld	a,1	;set column and row order
+	ld	(rcorder),a
+	jr	gxyloop
+;
+; Command: >xy
+;   If value of row/col is greater than x, add y to it
+;
+gxygt:
+	call	getval	;get value
+	ld	c,a	;save value
+	ld	a,(de)	;get value to test
+	inc	de	;pt to next
+	cp	c	;if carry, value>x
+	jr	nc,gxygt1
+	ld	a,(de)	;get value to add
+	add	a,c
+	call	putval	;put value back
+gxygt1:
+	inc	de	;pt to next
+	jp	gxyloop	;resume
+;
+; Command: +n
+;   Add n to next value and output
+;
+gxyout5:
+	ld	a,(de)	;get value to add
+	inc	de	;pt to next
+	ld	b,a	;save in B
+	call	getval	;get value
+	add	a,b	;add in B
+	call	conout	;output value
+rcmark:
+	ld	a,(rcorder)	;mark output
+	or	80h
+	ld	(rcorder),a
+	jp	gxyloop
+;
+; Command: .
+;   Output next value
+;
+gxyout4:
+	call	getval	;get value
+	call	conout	;output value
+	jp	rcmark
+;
+; Command: 3
+;   Output next value as 3 decimal digits
+;
+gxyout3:
+	call	getval	;get value
+	ld	b,100	;output 100's
+	ld	c,1	;leading zeroes
+	call	digout
+gxyot3:
+	ld	b,10	;output 10's
+	ld	c,1	;leading zeroes
+gxyot2:
+	call	digout
+	add	'0'	;output 1's
+	call	conout
+	jp	rcmark
+;
+; Command: 2
+;   Output next value as 2 decimal digits
+;
+gxyout2:
+	call	getval	;get value
+	jr	gxyot3
+;
+; Command: d
+;   Output next value as n decimal digits with no leading zeroes
+;
+gxyout1:
+	call	getval	;get value
+	ld	b,100	;output 100's
+	ld	c,0	;no leading zeroes
+	call	digout
+	ld	b,10	;output 10's
+	ld	c,0	;no leading zeroes
+	jr	gxyot2
+;
+; Return next value in A
+;
+getval:
+	ld	a,(rcorder)	;get order flag
+	or	a	;already output the first value?
+	jp	m,getval2
+	and	1	;look at lsb
+	jr	z,getvalr	;if 0, row first
+getvalc:
+	ld	a,(rcbase)	;get base offset
+	add	a,l	;get column
+	ret
+getvalr:
+	ld	a,(rcbase)	;get base offset
+	add	a,h	;get row
+	ret
+getval2:
+	and	1	;look at lsb
+	jr	z,getvalc
+	jr	getvalr
+;
+; Store A as next value
+;
+putval:
+	ld	c,a	;save value
+	ld	a,(rcorder)	;get order flag
+	or	a	;already output the first value?
+	jp	m,putval2
+	and	1	;look at lsb
+	jr	z,putvalr	;if 0, row first
+putvalc:
+	ld	l,c	;set column
+	ret
+putvalr:
+	ld	h,c	;set row
+	ret
+putval2:
+	and	1	;look at lsb
+	jr	z,putvalc
+	jr	putvalr
+;
+; Output A as decimal digit char
+;   B=Quantity to Subtract from A, C=0 if no leading zero
+;
+digout:
+	push	de	;save DE
+	ld	d,'0'	;char
+decot1:
+	sub	b	;subtract
+	jr	c,decot2
+	inc	d	;increment char
+	jr	decot1
+decot2:
+	add	a,b	;add back in
+	push	af	;save result
+	ld	a,d	;get digit
+	cp	'0'	;zero?
+	jr	nz,decot3
+	ld	a,c	;get zero flag
+	or	a	;0=no zero
+	jr	z,decot4
+decot3:
+	ld	a,d	;get digit
+	call	conout	;print it
+decot4:
+	pop	af	;get A
+	pop	de	;restore DE
+	ret
+;
+; GXY Buffers
+;
+rcorder:
+	ds	1	;0=row/col, else col/row
+rcbase:
+	ds	1	;0=org is 0,0, else org is 1,1
+cmdelay:
+	ds	1	;number of milliseconds to delay for CM
+
+;
+; Begin Standout Mode
+;	Return with A=0 and Zero Flag Set if not done
+;
+stndout:
+	push	bc
+	push	de
+	push	hl	;save regs
+	call	vterm
+	jp	c,err
+	ld	de,17h	;pt to cls string
+	add	hl,de
+	ld	d,0	;no delay
+stnd1:	call	vidskp	;skip over CL string
+	call	vidskp	;skip over CM string
+	call	vidskp	;skip over CE string
+	ld	a,(hl)	;get first char of SO string
+	or	a	;if no string, error
+	jp	z,err
+	call	vidout	;output string with delay
+	jp	noerr
+
+;
+; Terminate Standout Mode
+;	Return with A=0 and Zero Flag Set if not done
+;
+stndend:
+	push	bc
+	push	de
+	push	hl	;save regs
+	call	vterm
+	jp	c,err
+	ld	de,17h	;pt to cls string
+	add	hl,de
+	ld	d,0	;no delay
+	call	vidskp	;skip over CL string
+	jr	stnd1
+
+;
+; Initialize Terminal
+;	Affect No Registers
+;
+tinit:
+	push	hl	;save regs
+	push	de
+	push	af
+	call	vterm
+	jp	c,tid
+	ld	de,17h	;pt to cls string
+	add	hl,de
+	ld	d,0	;no delay
+tinit1:	call	vidskp	;skip over CL string
+	call	vidskp	;skip over CM string
+	call	vidskp	;skip over CE string
+	call	vidskp	;skip over SO string
+	call	vidskp	;skip over SE string
+	ld	a,(hl)	;get first char of TI string
+	or	a	;if no string, error
+	jp	z,tid
+	call	vidout	;output string with delay
+tid:
+	pop	af	;done
+	pop	de
+	pop	hl
+	ret
+
+;
+; De-Initialize Terminal
+;	Affect No Registers
+;
+dinit:
+	push	hl	;save regs
+	push	de
+	push	af
+	call	vterm
+	jp	c,tid
+	ld	de,17h	;pt to cls string
+	add	hl,de
+	ld	d,0	;no delay
+	call	vidskp	;skip over CL string
+	jr	tinit1
+
+
+;
+;  VIDOUT - Output video string pted to by HL
+;	Output also a delay contained in the D register
+;
+vidout:
+	ld	a,(hl)	;get next char
+	or	a	;done if zero
+	jr	z,vid2
+	inc	hl	;pt to next
+	cp	'\'	;literal value?
+	jr	nz,vid1
+	ld	a,(hl)	;get literal char
+	inc	hl	;pt to after it
+vid1:
+	call	conout	;output char
+	jr	vidout
+vid2:
+	ld	a,d	;output delay and fall thru to VIDELAY
+
+;
+;	VIDELAY pauses for the number of milliseconds indicated by the A
+; register.  VIDELAY assumes a ZCPR3 environment and uses it to determine
+; processor speed.
+;
+videlay:
+	push	af	;save regs
+	push	bc
+	push	de
+	push	hl
+	ld	c,a	;save count in C
+	or	a	;no delay?
+	jr	z,done
+	ld	hl,z3env	;pt to environment
+	ld	de,2bh	;offset to processor speed
+	add	hl,de
+	ld	a,(hl)	;get processor speed
+	or	a	;zero?
+	jr	nz,vidl1
+	ld	a,4	;assume 4 MHz
+vidl1:
+	ld	b,a	;processor speed in B
+vidl2:
+	push	bc	;delay 1 ms
+	call	delay
+	pop	bc
+	dec	c	;count down
+	jr	nz,vidl2
+done:
+	pop	hl	;restore regs
+	pop	de
+	pop	bc
+	pop	af
+
+	ret
+;
+;  Delay 1 ms at Clock speed
+;
+delay:
+	call	del1	;delay 1 ms at 1MHz
+	dec	b	;count down clock speed
+	jp	nz,delay
+	ret
+;
+;  Delay 1 ms at 1MHz
+;
+del1:
+	ld	c,20	;20 loops of 51 cycles each ~ 1000 cycles
+del1a:
+	ex	(sp),hl		;18 cycles
+	ex	(sp),hl		;+18 = 36 cycles
+	dec	c	;+ 5 = 41 cycles
+	jr	nz,del1a	;+10 = 51 cycles
+	ret
+
+;
+;  VIDSKP - Skip over video string pted to by HL; pt to byte after string
+;
+vidskp:
+	ld	a,(hl)	;get next char
+	inc	hl	;pt to next
+	or	a	;done if zero
+	ret	z
+	cp	'\'	;literal value?
+	jr	nz,vidskp	;continue if not
+	inc	hl	;pt to after literal value
+	jr	vidskp
+
+;
+; Print A as 2 Hex Chars
+;
+pa2hc:
+	push	af
+	push	bc
+	ld	b,a	;value in B
+	rlca
+	rlca
+	rlca
+	rlca
+	call	pa2hc1
+	ld	a,b	;get value
+	call	pa2hc1
+	pop	bc
+	pop	af
+	ret
+pa2hc1:
+	and	0fh
+	add	'0'	;to ASCII
+	cp	'9'+1
+	jr	c,pa2hc2
+	add	7	;to letter
+pa2hc2:
+	jp	conout
+
+;
+; Skip Spaces
+;
+sksp:
+	ld	a,(hl)	;skip to non-space
+	cp	' '
+	ret	nz
+	inc	hl
+	jr	sksp
+
+phl4hc:
+	push	hl
+	push	af
+	ld	a,h
+	call	pa2hc
+	ld	a,l
+	call	pa2hc
+	pop	af
+	pop	hl
+	ret
+
+phlfdc:
+	push	hl
+	push	de
+	push	bc
+	push	af
+	call	hldc1
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+; Routine to convert HL to decimal number and display it
+
+hldc1:	ld	b,0		; B holds leading zero suppression flag
+	ld	de,10000
+	call	hldc2
+	ld	de,1000
+	call	hldc2
+	ld	de,100
+	call	hldc2
+	ld	de,10
+	call	hldc2
+	ld	a,l
+	add	a,'0'
+	jp	conout
+
+hldc2:	ld	c,'0'-1		; Count number of divisions by DE
+hldc3:	inc	c
+	xor	a
+	sbc	hl,de
+	jr	nc,hldc3	; Keep subtracting until negative
+	add	hl,de		; then add one back
+
+	ld	a,c
+	cp	'1'
+	jr	nc,hldc4	; > 0, turn off leading 0 flag and print
+	ld	a,b		; Check flag at B
+	or	a
+	ld	a,c		; Put character back in C
+	jr	nz,hldc5	; If B NOT 0, this '0' is not leading
+	ret			; Else skip
+hldc4:	ld	b,0ffh		; Turn the leading 0 flag off
+hldc5:
+	jp	conout		; Print the number
+
+vprint:
+	ex	(sp),hl
+	call	vprint1
+	ex	(sp),hl
+	ret
+;
+;  Print String (terminated in 0) pted to by HL
+;
+vprint1:
+	ld	a,(hl)		; Done?
+	inc	hl		; Pt to next
+	or	a		; 0 terminator
+	ret	z
+	cp	dim		; Standout?
+	jr	z,vprint1d
+	cp	bright		; Standend?
+	jr	z,vprint1b
+	call	conout		; Print char
+	or	a
+	ret	m		; MSB set
+	jr	vprint1
+vprint1d:
+	call	stndout		; Dim
+	jr	vprint1
+vprint1b:
+	call	stndend		; Bright
+	jr	vprint1
+
+
+;
+;EDITOR BUFFERS
+;
+BLOCK:
+	DS	2	;ADDRESS OF CURRENT BLOCK
+BUFFER:
+	DS	2	;PTR TO FREE SPACE
+EINDEX:
+	DS	1	;INDEX ENTRY
+EDRUN:
+	DS	1	;FLAG SAYING THAT EDITOR IS RUNNING
+
+
+ BLOCK
+BUFFER:
+	DS	2	;PTR TO FREE SPACE
+EINDEX:
+	DS	1	;INDEX 

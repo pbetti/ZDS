@@ -1,0 +1,169 @@
+==============================================================================
+
+GENERAL DESCRIPTION:
+
+        The purpose of this code is to kludge up a solution to the problem
+        of certain programs wiping out ZRDOS public directory definitions.
+        It has been tested with ZCPR 3.3 and ZRDOS 1.7. It may or may not
+        work with other versions of this o/s, though judging by my ZRDOS docs
+        it should work with versions that go as far back as 1.2 (first public
+        ZRDOS?), and I see no good reason why it shouldn't work with other
+        versions of ZCPR.
+
+        ZRDOS uses bytes 126 and 127 of the environment descriptor (the last
+        two bytes prior to the TCAP) as public area user mask bytes.
+
+        The format is as follows:
+
+            Drive byte (126)    Bit:    7 6 5 4 3 2 1 0
+                                        | | | | | | | |
+                                Drive:  H G F E D C B A
+
+            User byte (127)     Bit:    7 6 5 4 3 2 1 0
+                                        | | | | | | | |
+                                User:   8 7 6 5 4 3 2 1
+
+        The apparent problem is that certain programs need to shut off the 
+        public facility, and apparently neglect to turn it on in some cases.
+        In fact, since the public mask is stored in the environment descriptor,
+        something as simple as loading a new one will wipe out the public
+        directories. However, since most people load an environment and set 
+        the public directories up once at cold boot, then don't touch the 
+        environment anymore, this is rarely a problem. It does seem to be a
+        definite design flaw to me tho.
+
+        The solution worked out here is to have a two byte public directory 
+        mask "stash" buffer, to configure one's system to regularly refresh 
+        the actual public directory mask that ZRDOS uses, and to provide a 
+        replacement for the original PUBLIC.COM utility for purposes of
+        setting, clearing and displaying the stash buffer. 
+
+        This approach solves a number of problems. Since ZRDOS and other
+        programs only know about and use the original mask in the environment
+        descriptor, no changes are necessary to any other stuff. The programs
+        are free to set and clear that mask and get exactly the same results 
+        as they do now, but if the refresh code is correctly placed, they 
+        will get that effect ONLY for the duration of their execution, since
+        the original mask will be refreshed from the stash buffer copy when
+        the program terminates.
+
+        OK, you say, how do we go about this? Well...
+
+==============================================================================
+
+INSTALLATION:
+
+        There are essentially two possibilities for installation of this 
+        fix that suggest themselves to me. Either the first or a combination
+        of both is the best solution, but which you opt for may depend 
+        somewhat on how much you know or can find out about your system.
+
+        Option 1
+
+        Assuming that you have installed your Z-system yourself and have the 
+        source code and can re-install it, this is the best. In the source
+        file for the command processor (ZCPR33.Z80 or ZCPR33.MAC, as the case 
+        may be) there is a tag "nextcmd:". This is the entry point for the
+        scan for and processing of each command (i.e. either new command line 
+        OR a semicolon separating two commands. Simply find this label, and
+        insert an "include ZRDPUB.LIB" line immediately after it. This will
+        refresh your public directory mask after EACH and every command, 
+        whether a warm boot occurs or not. This is extremely robust, since 
+        it will reset your public settings even after a change to the ZRDOS 
+        mask in the environment with an RCP POKE command. 
+
+        Option 2
+
+        If you have somebody else's installation of a Z-system and don't have
+        the source, can't spare the 6 bytes in the CCP, or just don't want 
+        to reinstall, you can find someplace else, say above your BIOS, where
+        you have some free bytes, and "thread" the refresh code in front of
+        your warmboot code. What you would do is find out where your warmboot
+        vector points now, create a source file that assembles the refresh 
+        code for someplace in non-volatile memory where you have nine free
+        bytes or so and that follows the "include ZRDPUB.LIB" statement with
+        a jump to your real warmboot code, then patch your warmboot vector
+        to point to the refresh code. This will refresh the public mask on 
+        termination of commands that cause a warmboot, but is better than 
+        having to run PUBLIC again.
+
+==============================================================================
+
+OTHER DETAILS
+
+        You may want to combine options 1 and 2, but I don't really see much
+        point, since option 1 operates so seamlessly that the ability to 
+        refresh the public mask with a ^C at the prompt is a moot point.
+
+        The ZRDPUB.LIB file is intended for includes into other source files.
+        It does two things. It defines a tag called ZRDPMASK if it isn't 
+        defined already, supplying a default stash buffer of the last two 
+        user definable ZCPR message bytes (Z3MSG+04Eh and +04Fh). The IFNDEF
+        leaves you the option of defining it in Z3BASE.LIB to something else
+        and reassembling without having to mess with editing ZRDPUB.LIB.
+
+        The other thing it does is assemble the two public mask refresh 
+        instructions if the tag ZRDPUB is NOT defined. That means those two
+        instructions won't be assembled into ZRDPUB.MAC, and the only purpose
+        of the "include ZRDPUB.LIB" there will be to supply a default for
+        the label ZRDPMASK if you haven't defined it in Z3BASE.LIB to 
+        some other value. It will actually assemble the two instructions
+        at the point it is included in any other source file, so that you 
+        can just stick one line into your CCP or BIOS source, and everybody
+        gets treated as they should.
+
+==============================================================================
+
+ZRDos PUBlic utility for use with ZRDPUB O/S patch
+
+        Written for m80 assembler.
+
+        This is a replacement for the PUBLIC 1.0 utility that knows about
+        and sets, clears and displays the stash buffer. Note that PUBLIC
+        will no longer work once you've patched the O/S with the refresh
+        code, since it only sets the ZRDOS mask in the environment, and 
+        doesn't know about the stash buffer.
+
+        The syntax for this routine is identical to that of the original
+        PUBLIC program for simplicity's sake, allowing you to just rename
+        ZRDPUB to PUBLIC and use all your old aliases as they are. 
+
+        If you don't have the M80 assembler and want to change the location
+        of your stash buffer, just patch the address of the stash buffer you
+        want immediately after the string "PUBSTASH" in the program. It's
+        someplace towards the front of the program right after the environment
+        pointer. 
+
+        The routine is not particularly intelligent, but will respect the 
+        quiet flag and wheel byte. 
+
+==============================================================================
+
+FILES INCLUDED
+
+ZRDPUB.FOR      A short statement of purpose.
+ZRDPUB.DOC      This file.
+ZRDPUB.MAC      Source to the PUBLIC.COM utility replacement.
+                You supply a Z3BASE.LIB for your system.
+ZRDPUB.LIB      INCLUDE file for stash buffer definition and refresh 
+                code generation.
+STRUCT.MAC      Structured programming macros for the M80 assembler.
+                This file has all comments and such stripped out for
+                quicker assemblies and less waste of TPA. If you want
+                the original and documentation, look for M80STR01.LBR.
+ZRDPUB.COM      Executable program. You will probably have to patch
+                the PUBSTASH pointer as noted above. If you are using
+                a version of ZCPR previous to 3.3, you may also need 
+                to install if with Z3INS. ZCPR 3.3 will auto-install
+                the program when loading it, so this is not necessary.
+
+==============================================================================
+
+        Have fun.                               01/20/88    Al Grabauskas
+
+        I can be contacted on the excellent  LILLIPUTE Z-NODE in Chicago,
+        if you have problems, questions or comments.
+
+               (312) 649-1730 (board 1) (312) 664-1730 (board 2)
+    
+

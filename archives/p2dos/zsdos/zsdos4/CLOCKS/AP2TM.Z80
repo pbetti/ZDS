@@ -1,0 +1,259 @@
+	TITLE	"Apple II TimeMaster w/MicroSoft Card - (AP2-TIMASTR)"
+	SUBTTL	"Description of Clock Module"
+;==========================================================
+; SW2 Open sets TimeMaster Mode
+; The One Format with Year value is TimeMaster Format,
+;	With FMTBYTE = ':'
+;	W MO/DD/YY HH:MI:SS<CR>
+;	0  1  2	 3  4  5   Our Initial Locations
+;	==>
+; NOTE:	3 Byte leadin to 1st digit of month
+;
+; We **DON'T Support** this mode:
+; SW2 Closed sets Apple clock mode (Old Mode)
+;	"MO/DD HH:MI:SS$WYY<CR>	  (<CR> is uncertain)
+;	  0  1  2  3  4  5     Our Initial Locations
+;
+; Clock string is returned to 0200H
+;=========================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from Ver of 7/05/85
+; Vers 0.7 current as of 16 Oct 88
+;=========================================================
+
+VERS	EQU	07
+	.Z80
+	NAME AP2TM
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID/
+
+DESCST:	DEFW	0		; Ptr to statyr
+
+CLKNAM:	DEFB	'Ap2 Timemaster          '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'  Apple // Timemaster H$O$ Clock board',CR,LF
+	DEFB	'  using Timemaster mode, with Microsoft Softcard',0
+
+	  IF  [$-DESCST]
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		; Dummy parameters
+	DEFW	0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Apple II TimeMaster"
+
+; Z80 addresses:
+
+SLTTBL	EQU	0F3B9H - 1
+SLTBASE	EQU	0F5F8H
+
+SUBPTR	EQU	0F3D0H		; Avec equ addr of 6502 subr$
+ZCPU	EQU	0F3DEH		; Addr of softcard
+ADDR39	EQU	0F039H		; 6502 page 0 addr $39
+AREG	EQU	0F045H		; A register pass area
+
+THNBUF	EQU	0F200H		; Thunder clock string buffer
+
+;6502 addresses
+
+CTLBASE	EQU	0C000H		; Control base, slot0
+RDTCP	EQU	0C008H		; 6502 read-clock addr, slot 0
+WTTCP	EQU	0C00BH		; 6502 write-clock addr, slot 0
+
+ID0TIM	EQU	008H		; Bytes cn000,cn01,cnfe of timemaster board
+ID1TIM	EQU	078H		; 120$
+IDFETIM	EQU	0B2H		; 178$
+
+SLOT	EQU	7
+
+FMTBYTE	EQU	':'		; Timemaster mode
+
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+PRGBAS:
+GETTIM:	PUSH	HL		; Save buffer ptr
+	LD	DE,5
+	ADD	HL,DE
+	LD	A,(HL)
+	LD	(SAVSEC),A
+
+	LD	A,FMTBYTE	; Set type of format
+	LD	(AREG),A	; Pass in a register
+YWRITE	EQU	$+1
+	LD	HL,WTTCP	; Set write-clock ptr
+	LD	(SUBPTR),HL	; Set ptr to 6502 subroutine
+	LD	HL,(ZCPU)	; Get ptr to softcard addr
+	LD	(HL),A		; Call 6502 subroutine
+
+YREAD	EQU	$+1
+	LD	HL,RDTCP
+	LD	(SUBPTR),HL	; Set ptr to 6502 subroutine
+	LD	HL,(ZCPU)	; Get ptr to softcard addr
+	LD	(HL),A		; Call the 6502 subroutine
+
+	POP	HL		; Caller's 6-byte buffer ptr
+	PUSH	HL
+
+	LD	DE,THNBUF+3	; Point at mo
+	LD	B,6		; Convert mo,da,yr, hr,mi,sec
+$$A2B:	LD	A,(DE)		; Convert ascii to bcd
+	RLD			; Save hi nybble in memory
+	INC	DE		; Point at low ascii nybble
+	LD	A,(DE)		; Get it
+	RLD
+	INC	HL		; Bump destn ptr
+	INC	DE		; Bump source ptr
+	INC	DE		; Skip over source delimiter: '/',' ',';'
+	DJNZ	$$A2B
+
+; data in caller's buffer, now put into D/S order
+
+	POP	HL		; Pop ptr to slot 0 (caller's yr slot)
+	INC	HL
+	LD	D,H		; DE = Ptr to slot 1
+	LD	E,L
+	INC	HL		; HL = Ptr to slot 2
+	LD	B,(HL)		; B equ yr
+	LD	A,(DE)		; A equ da
+	LD	(HL),A		; Slot 2 <equequ da
+	DEC	HL		; Hl -> slot 1
+	DEC	DE		; De -> slot 0
+	LD	A,(DE)		; A equ mo
+	LD	(HL),A		; Slot 1 <equequ mo
+	LD	A,B
+	LD	(DE),A		; Slot 0 <equequ yr
+
+	LD	DE,4
+	ADD	HL,DE		; Hl-> seconds
+SAVSEC	EQU	$+1
+	LD	E,00		; E equ caller's seconds
+	LD	A,01		; Set Ok return value
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	RET			; Return if get here
+
+	DEFB	0,0,0		; Filler
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+
+; Slot-finding code calls machine-specific code,
+; so it must NOT be in the _POST_ Relocation base,
+; or it will be executed by SETUPCLK on other machines
+
+	COMMON	/_PRE_/
+
+; find and set slot, B EQU slot # found
+; Z80 0F000 -> $0000  (slot table is in $0000 area)
+
+SETVAL:	JR	SETVA0		; Jump around the addr word
+
+	DEFW	SETVAL
+
+SETVA0:	LD	HL,SLTTBL+7	; Find slot #, starting with 7
+	LD	B,7
+$$LP:	LD	A,(HL)
+	CP	1
+	JR	Z,$$SLOT
+	DEC	HL
+	DJNZ	$$LP		; Can't be slot 0
+	JR	BAD
+
+; now set addresses for 6502 mode, which are passed
+; to 6502 controller via x6502 call
+
+$$SLOT:	LD	HL,YWRITE	; Set Format-Select addr
+	ADD	HL,DE		; ..in high clock module
+	PUSH	DE
+	LD	DE,WTTCP	; B equ slot # from here on
+	LD	A,D
+	OR	B
+	LD	D,A		; Can't carry
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D
+	POP	DE
+
+	LD	HL,YREAD	; Set Base Slot addr
+	ADD	HL,DE		; ..in high clock module
+	PUSH	DE
+	LD	DE,RDTCP
+	LD	A,D		; + page of slot
+	OR	B
+	LD	D,A
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D
+
+; Check Switch setting (type of clock board to get buffer addr)
+; Z80 E000 -> 6502 C000 = I/O area  (0Exxx -> 0Cxxx)
+
+	LD	HL,0E000H
+	LD	A,H		; Or in slotequequpage
+	OR	B
+	LD	H,A
+	LD	A,(HL)		; Check byte for type of clock board
+	CP	ID0TIM
+	JR	NZ,BAD
+	INC	L
+	LD	A,(HL)
+	CP	ID1TIM
+	JR	NZ,BAD
+	LD	L,0FEH		; 3rd byte is at $cnfe
+	LD	A,(HL)		; Check byte for type of clock board
+	CP	IDFETIM
+	JR	NZ,BAD
+	INC	L		; Check $cnff (last byte of page)
+	LD	A,(HL)
+	CP	3		; Must be 3 for timemaster mode
+	JR	NZ,BAD
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

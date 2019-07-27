@@ -1,0 +1,123 @@
+;
+; DU3HELP.Z80	- include file for du3
+;
+;Help; HELP is entry point for HELP (?) command, HELP1 is entry point for
+; Initial Help Command, and IHELP is entry point for HELP (/) from command
+; line
+;
+IHELP:
+	push	hl
+	call	cls
+	call	z,crlf
+	CALL	ILPRT
+	db	cr,lf,cr,lf,cr,lf,cr,lf,cr,lf
+	db	cr,lf,cr,lf,tab,'DU3 allows the user to  directly  view, '
+	db	'edit, and copy the  data ',cr,lf,tab,'on a disk at '
+	db	'any  location.   It also provides  statistics about'
+	db	cr,lf,tab,'individual disk drives.  Following is a '
+	db	'summary of DU3 commands.',cr,lf,tab
+	db	'See DU3.HLP for more information.',0
+	LD	A,0FFH		;A=0FFH
+	LD	(IHFLG),A	;SET INITIAL HELP
+	pop	hl
+	CALL	SWAIT
+	JP	HELP1		;PROCESS NORMALLY
+HELP:
+	XOR	A		;A=0
+	LD	(IHFLG),A	;SET NO INITIAL HELP
+HELP1:
+	push	hl
+	call	cls
+	call	z,crlf
+	CALL	ILPRT
+	db	tab,tab,tab,tab,'-- DU3 Help --',cr,lf,lf
+	db	'     "h" = ',dim,'any hex digit',bright,'   "d" = ',dim,'any decimal digit',
+	db	bright,'   "c" = ',dim,'any character',bright,cr,lf,lf
+	db	tab,tab,'       ',dim,'Items in',bright,' [brackets] ',dim,'are optional.',bright,cr,lf,lf
+	db	tab,tab,tab,tab,'-- Viewing --',cr,lf,lf
+	db	tab,tab,'#',tab,tab,dim,'Show disk parameters',tab,tab,bright,cr,lf
+	db	tab,tab,'A[hh,hh]',tab,dim,'ASCII byte dump [from,to]',tab,bright,cr,lf
+	db	tab,tab,'D[hh,hh]',tab,dim,'Hex and ASCII Dump [from,to]',tab,bright,cr,lf
+	db	tab,tab,'Ffilename.typ',tab,dim,'Show directory entries',tab,tab,bright,cr,lf
+	db	tab,tab,'H[hh,hh]',tab,dim,'Hex byte dump [from,to] ',tab,bright,cr,lf
+	db	tab,tab,'M[hh]',tab,tab,dim,'Map [at group hh]',tab,tab,bright,cr,lf
+	db	tab,tab,'Q',tab,tab,dim,'Queue status',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'V[dd]',tab,tab,dim,'View [dd blocks] in ASCII',tab,bright,cr,lf
+	db	tab,tab,'?',tab,tab,dim,'This Help',tab,tab,tab,bright,0
+	pop	hl
+	CALL	SWAIT
+	push	hl
+	call	cls
+	call	z,crlf
+	CALL	ILPRT
+	db	tab,tab,tab,tab,'-- Movement --',cr,lf,lf
+	db	tab,tab,'+[dd]',tab,tab,dim,'Forward [dd sectors]',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'-[dd]',tab,tab,dim,'Back',tab,'[dd sectors]',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'=ccc',tab,tab,dim,'Case-dependent search for chars ccc',tab,bright,cr,lf
+	db	tab,tab,'=<hh><hh>....',tab,dim,'Search for hex bytes <hh><hh>...',tab,bright,cr,lf
+	db	tab,tab,'=ccc<hh>cc...',tab,dim,'Search for mixed chars and hex',tab,tab,bright,cr,lf
+	db	tab,tab,tab,tab,dim,'(e.g., "=Hi<0D><0A>" finds "Hi",cr,lf)',tab,bright,cr,lf
+	db	tab,tab,'G[hh]',tab,tab,dim,'Go to Group [hh]',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'L[c]',tab,tab,dim,'Log [drive]',tab,tab,tab,tab,bright,cr,lf
+	db	tab,tab,'N',tab,tab,dim,'New disk',tab,tab,tab,tab,bright,cr,lf
+	db	tab,tab,'Sdd',tab,tab,dim,'Go to Sector [dd]',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'Tdd',tab,tab,dim,'Go to Track  [dd]',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'Udd',tab,tab,dim,'Change User area to dd (for F command)',tab,bright,0
+	pop	hl
+	CALL	SWAIT
+	push	hl
+	call	cls
+	call	z,crlf
+	CALL	ILPRT
+	db	tab,tab,tab,tab,'-- Editing --',cr,lf,lf
+	db	tab,tab,'CHhh hh[,hh,..] ',dim,'Change hex bytes starting at hh ',tab,bright,cr,lf
+	db	tab,tab,tab,tab,dim,'       (e.g., "ch10 5f,3e")',tab,tab,bright,cr,lf
+	db	tab,tab,'CHhh-hh hh',tab,dim,'Change range hh-hh. (e.g."ch2a-2f e5")',tab,bright,cr,lf
+	db	tab,tab,'CAhh c[,c,..]',tab,dim,'Change characters starting at hh',tab,bright,cr,lf
+	db	tab,tab,tab,tab,dim,'       (Use <hh> for imbedded hex)',tab,bright,cr,lf
+	db	tab,tab,'CAhh-hh c',tab,dim,'Change range to c',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'E',tab,tab,dim,'Editor (rest of commands flushed)',tab,bright,cr,lf
+	db	tab,tab,'<',tab,tab,dim,'Save current block in temp.',tab,tab,bright,cr,lf
+	db	tab,tab,'>',tab,tab,dim,'Restore temp. to current block',tab,tab,bright,cr,lf
+	db	tab,tab,'<B',tab,tab,dim,'Save current block in Queue',tab,tab,bright,cr,lf
+	db	tab,tab,'>B',tab,tab,dim,'Restore Queue to current block',tab,tab,bright,cr,lf
+	db	tab,tab,'<G[hh]',tab,tab,dim,'Save group [hh] in Queue',tab,tab,bright,cr,lf
+	db	tab,tab,'>G[hh]',tab,tab,dim,'Restore Queue to Group [hh]',tab,tab,bright,cr,lf
+	db	tab,tab,'QSfilename.typ',tab,dim,'Restore Queue as file',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'QZ',tab,tab,dim,'Zero (empty) Queue',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'R',tab,tab,dim,'Read current block',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'W',tab,tab,dim,'Write',tab,'"      "',tab,tab,tab,bright,0
+	pop	hl
+	CALL	SWAIT
+	push	hl
+	call	cls
+	call	z,crlf
+	CALL	ILPRT
+	db	tab,tab,tab,tab,'-- Programming --',cr,lf,lf
+	db	tab,tab,'@',tab,tab,dim,'Repeat previous command ',tab,bright,cr,lf
+	db	tab,tab,'*[dd]',tab,tab,dim,'Repeat this command [dd] times',tab,bright,cr,lf
+	db	tab,tab,'!',tab,tab,dim,'Prompt User for key',tab,tab,bright,cr,lf
+	db	tab,tab,':d[commands]',tab,dim,'Define Macro 0 - 9',tab,tab,bright,cr,lf
+	db	tab,tab,':Pd',tab,tab,dim,'Print',tab,' "     "',tab,tab,bright,cr,lf
+	db	tab,tab,':PA',tab,tab,dim,'Print all Macros',tab,tab,bright,cr,lf
+	db	tab,tab,':P@',tab,tab,dim,'Print previous command line',tab,bright,cr,lf
+	db	tab,tab,'d',tab,tab,dim,'Execute Macro 0 - 9',tab,tab,bright,cr,lf
+	db	tab,tab,'P',tab,tab,dim,'Toggle printer',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'X',tab,tab,dim,'Exit DU ',tab,tab,tab,bright,cr,lf
+	db	tab,tab,'Z[nn]',tab,tab,dim,'Sleep [nn] second(s)',tab,tab,bright,cr,lf
+	db	tab,tab,'Control-S',tab,dim,'Pause',tab,tab,tab,tab,bright,cr,lf
+	db	tab,tab,'C',tab,tab,dim,'Cancel function ',tab,tab,bright,cr,lf
+	db	tab,tab,',',tab,tab,dim,'Separates Commands',tab,tab,bright,cr,lf,lf
+	db	dim,'Example command:',bright,tab,dim,'Action:',bright,cr,lf
+	db	'DU3 A2? g0,d,+,*',tab,'Go to group zero, dump, advance 1 sector, repeat',cr,lf
+	db	dim,'    |+--Current user ',bright,cr,lf
+	db	dim,'    +---Current drive',bright,0
+	pop	hl
+	LD	A,(IHFLG)	;INITIAL HELP?
+	OR	A		;0=NO
+	JP	NZ,EXIT1	;RETURN TO CP/M IF SO
+	JP	PRMPTR		;NEW LINE INPUT IF NOT
+
+; END DU3HELP.Z80
+
+

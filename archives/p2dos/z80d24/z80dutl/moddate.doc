@@ -1,0 +1,41 @@
+MODDATE.CMD
+by Rick Charnes, San Francisco, 10/25/87
+
+    The successful operation of MODDATE.CMD requires DATEREG.COM to have 
+been run previously, preferably by inserting it in one's startup alias.
+
+    This is another alias that works beautifully to do what I would like 
+to teach myself to write in assembly language.
+
+    MODDATE (to be inserted in your ALIAS.CMD) is used to manually set 
+the creation date of a file.  Syntax is:
+
+        MODDATE SMITH.LTR 05/01
+
+where the user desires to set the creation date of SMITH.LTR to be 
+May 1, 1987.
+
+    The alias is:
+
+MODDATE time 87/$2 12:00;time;save 0 $2;savestmp $d1$u1:$:1.$.1=$2  <<
+era $2;tdir $1;time $r7/$r5/$r6 12:00;time
+
+    First we set the system date with the TIME.COM program supplied by 
+Carson Wilson in Z80DOS10.LBR.  Our second parameter is the month/day, 
+which should be entered in the form 'MM/DD', with the slash included.  
+The parameter becomes a parameter for TIME.COM, using '12:00' as a dummy 
+time.  Running TIME again confirms that we have changed the date 
+correctly.  Then we SAVE a 0-length file whose directory entry will be 
+stamped with the new date.  Then SAVESTMP runs, copying the date of our 
+0k file onto our current file.  Next, the 0k file, having served its 
+purpose, is erased.  TDIR is run to display the changed date.  Finally, 
+since we have previously run DATEREG and the system date is stored in 
+ZCPR3 registers 5, 6 and 7, the next command expands as:
+
+         TIME yy/mm/dd 12:00
+
+which is how TIME.COM requires its parameters.  
+
+    I'm going to try to do an assembly language version of this.  Using 
+Carson's new BDOS functions should make it quite easy.
+

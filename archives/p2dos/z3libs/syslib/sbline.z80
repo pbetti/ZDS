@@ -1,0 +1,83 @@
+;	TITLE	"SBLINE - Syslib 4.0"
+	NAME	('BLINE')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SBLINE.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SBLINE
+; Abstract: This module contains the routine BLINE which provides
+;	a very convenient interface to the BDOS for input line
+;	editor functions.  Is uses a buffer supplied by the user
+;	for storage of the input line, and it returns a pointer to
+;	the first byte of the line upon return.  The line stored
+;	in this buffer is terminated by a binary Zero.
+;	  To use BLINE, the user need only call it, with a capi-
+;	talization flag and address of a buffer structured as:
+;		1st Byte - Size (filled in by user)
+;		2nd Byte - Char count (filled in by BLINE)
+;		3rd-nth Byte - Chars of line (Filled in by BLINE)
+;		n+1st Byte - Terminating Zero
+;	   The number of bytes allocated to the entire buffer is
+;	SIZE+3, where SIZE is the buffer size as supplied by the
+;	user.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		BLINE
+
+; From SYSLIB Get..
+
+	EXT		CAPSTR
+
+; Definitions
+
+BDOS	EQU	5		; CP/M, Zrdos, P2Dos Entry Point
+B$RDLIN	EQU	10		; Read Line Command
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - BLINE
+; Entry: HL - Addresses buffer
+;	  A = 0 for NO Capitalization, <> 0 for Caps
+; Exit :  A = Number of chars in line (Flags set appropriately)
+;	 HL - Points to first byte of line
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+BLINE:	PUSH	DE		; Save DE, BC
+	PUSH	BC
+	PUSH	AF		; Save Caps flag for later test
+	PUSH	HL		; Save Buffer Addr around BDOS call
+	EX	DE,HL		; DE Pts to buffer
+	LD	C,B$RDLIN	; Read line function in BDOS
+	CALL	BDOS		; Do read line function
+	POP	HL		; ..Return Buffer addr to char cnt
+	INC	HL
+	LD	A,(HL)		; Get it
+	INC	HL		; Pt to first char
+	PUSH	HL		; Save ptr to first char
+	LD	E,A
+	LD	D,0		; Add char count
+	ADD	HL,DE		; HL pts to after last char
+	LD	(HL),0		; Store ending zero
+	POP	HL		; Get ptr to first char
+	POP	AF		; ..and Caps flag
+	OR	A		; 0=No
+	CALL	NZ,CAPSTR	; Capitalize string
+	POP	BC		; Restore regs
+	POP	DE
+	DEC	HL		; Pt to char count
+	LD	A,(HL)		; Get char count
+	INC	HL		; Pt to first char of line
+	OR	A		; ..set flags
+	RET
+
+
+	END
+

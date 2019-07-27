@@ -1,0 +1,45 @@
+; 	TITLE	"SSCOUT - Syslib 4.0"
+	NAME	('CSOUT')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SSCOUT.Z80 Ver 1.1 by Richard Conn
+; Date    : 11 Jun 89
+; Version : 1.3
+; Module  : SSCOUT
+; Abstract:  This module contains the routine CSOUT which prints
+;	a character to the CON: and/or LST: device depending on
+;	the value in the public byte SCTLFL.  The character is
+;	printed with Control-char processing.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		CSOUT
+
+;  External References
+
+	EXT		SCTLFL, CCOUT, CLOUT
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - CSOUT
+; Entry:  A - Contains the character to print
+; Exit : - Nothing returned, the character is printed
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+CSOUT:	PUSH	HL		; Save HL Register
+	LD	HL,SCTLFL	; Get Flag
+	BIT	7,(HL)		; LST:?
+	CALL	NZ,CLOUT	; ..Char to LST: if so
+	BIT	0,(HL)		; To CON:?
+	CALL	NZ,CCOUT	; ..Char to CON: if so
+	POP	HL		; Restore HL Reg
+	RET
+
+	END
+

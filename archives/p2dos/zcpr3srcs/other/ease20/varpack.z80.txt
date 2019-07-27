@@ -1,0 +1,634 @@
+; PROGRAM:	EASE history file packer
+; AUTHOR:	Paul Pomerleau
+; DATE:		Jan 22, 1987
+; VERSION:	1.1
+
+;=============================================================================
+;
+;		D E F I N I T I O N S    S E C T I O N
+;
+;=============================================================================
+
+
+MEMLOC		equ	80h + 21h
+STARTREG	equ	80h + 23h
+USEMEM		equ	80h + 20h
+vers	equ	12
+bdos	equ	5
+
+	ext	z3init,pfn3,print,pstr,crlf,cout
+	ext	f$open,f$read,f$write,f$close,f$delete,f$make
+	ext	z3log,qprint,getquiet
+	ext	eval10,skpun,putreg,getreg,phlfdc
+
+
+;=============================================================================
+;
+;		S T A N D A R D    P R O G R A M    H E A D E R
+;
+;=============================================================================
+
+ENTRY:
+	jp	START
+	defb	'Z3ENV'
+	defb	3		; Type-3 environment
+ENVADDR:
+	dw	0f300h
+	dw	ENTRY
+	defb	vers
+
+;=============================================================================
+;
+;		C O N F I G U R A T I O N    A R E A
+;
+;=============================================================================
+
+FCB:	db	0,'EASE    VAR'
+	ds	24,0
+
+;=============================================================================
+;
+;		M A I N    C O D E    S E C T I O N
+;
+;=============================================================================
+
+START:
+
+	ld	hl,(ENVADDR)	; Get environment address
+	call	z3init		; Initialize library routines
+	call	HEADER
+
+	ld	hl,(6)
+	ld	de,900h
+	sbc	hl,de
+	ld	(ENDPOS),hl
+	xor	a
+	ld	(SECTORS),a
+	ld	a,(5dh)
+	cp	'/'
+	jp	z,HELP
+	cp	' '
+	jr	z,DEFAULTS
+	ld	hl,5dh
+	call	eval10
+	or	a
+	jr	z,NAMFIRST
+	ld	a,(hl)
+	cp	' '
+	jr	nz,NAMFIRST
+	ld	a,e
+	ld	(SECTORS),a
+	ld	de,6dh
+	jr	NAMSECOND
+NAMFIRST:
+	ld	de,5dh
+NAMSECOND:
+	ld	a,(de)
+	dec	de
+	cp	' '
+	jr	nz,GOT_NAME
+DEFAULTS:
+	ld	de,FCB
+GOT_NAME:
+	call	nz,Z3LOG
+	call	f$open
+	jp	nz,FILE_NOT_FOUND
+	ld	(FILE),de
+	ld	hl,BUFFER
+READ_FILE:
+	call	SET_DMA_HL
+	jp	z,NO_ROOM
+	call	f$read
+	jr	z,READ_FILE
+	ex	de,hl
+	ld	hl,82h
+	ld	b,7eh
+FIND_COMMA:
+	dec	b
+	jp	z,JUST_WRITE
+	ld	a,(hl)
+	inc	hl
+	or	a
+	jp	z,JUST_WRITE
+	cp	','
+	jr	nz,FIND_COMMA
+	call	skpun
+	ld	a,(hl)
+	cp	'P'
+	jp	nz,BAD_OPTION
+	call	MAKE_INDEX
+	call	PACK
+	ret
+
+MAKE_INDEX:
+	ld	hl,INDEX
+	ld	de,BUFFER + 1
+M_I_LOOP:
+	call	GET_NEXT_STRING
+	push	af
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	pop	af
+	jr	nz,M_I_LOOP
+	inc	hl
+	ld	(hl),1
+	ret
+
+PACK:
+		call	qprint
+		db	13,10,'Packing line #',13,10,0
+		ld	hl,0
+		ld	(LINE),hl
+	call	IHLSKIP
+	call	WIDE_PACK_LOOP
+	ld	a,13
+	call	cout
+	ld	hl,(LINE)
+	call	QPHLFDC
+	call	REPORT_DELS
+	call	THINK
+	call	WRITE
+	ret
+
+WIDE_PACK_LOOP:
+STATUS:		ld	hl,(LINE)
+		inc	hl
+		ld	(LINE),hl
+		ld	a,l
+		and	1111b
+		push	af
+		ld	a,13
+		call	z,cout
+		pop	af
+ENDSTAT:	call	z,QPHLFDC
+	call	HLSKIP
+	ret	z
+	call	IDESKIP
+	call	DESKIP
+	call	PACK_LOOP
+	jp	WIDE_PACK_LOOP
+
+PACK_LOOP:
+	call	DESKIP
+	ret	z
+	call	COMPARE_STRINGS
+	jp	nz,PACK_LOOP
+	call	DEL_CURRENT
+	jp	PACK_LOOP
+
+THINK:
+	ld	de,BUFFER+2
+	call	DEL_PACK
+THINK2:	call	FIND_END
+	inc	hl
+	ld	(ENDPOS),hl
+	push	hl
+	push	de
+	ld	e,l
+	ld	d,h
+	inc	de
+	ld	(hl),0
+	ld	bc,7fh
+	ldir
+	pop	de
+	pop	hl
+	call	FIND_START
+	ret
+
+FIND_START:
+	ld	a,(SECTORS)
+	or	a
+	jr	z,CALC_FINI
+	ld	b,a
+CALC_START:
+	push	bc
+	ld	bc,128
+	sbc	hl,bc
+	pop	bc
+	djnz	CALC_START
+	ex	de,hl
+	push	de
+	ld	hl,BUFFER
+	or	a
+	sbc	hl,de
+	pop	de
+	jr	c,CALC_OK
+CALC_FINI:
+	ld	hl,BUFFER
+	ret
+CALC_OK:
+	call	GET_NEXT_STRING
+	ex	de,hl
+	dec	hl
+	ld	(hl),0
+	dec	hl
+	ld	(hl),0
+	ret
+
+WRITE:
+	ld	de,(FILE)
+	call	CLEAR_FILE
+	call	f$delete
+	call	CLEAR_FILE
+	call	f$make
+	ld	a,(SECTORS)
+	or	a
+	jr	z,WRITE_ALL
+	ld	b,a
+WRITE_LOOP:
+	push	bc
+	call	SET_DMA_HL
+	jr	z,WRITE_DONE
+	call	f$write
+	pop	bc
+	djnz	WRITE_LOOP
+	push	bc
+WRITE_DONE:
+	pop	bc
+WRITE_FINI:
+	call	f$close
+	push	de
+	call	CLEAR_FILE
+	pop	de
+	push	de
+	ex	de,hl
+	ld	de,9
+	add	hl,de
+	ld	de,COM
+	ex	de,hl
+	ld	bc,3
+	ldir
+	call	qprint
+	db	13,10,'Informing Ease of change...',0
+	pop	de
+	call	f$open
+	jp	nz,FILE_NOT_FOUND
+	push	de
+	ld	c,26
+	ld	de,80h
+	call	bdos
+	pop	de
+	call	f$read
+	ld	b,0
+	call	get
+	cp	'E'
+	ret	nz
+	xor	a
+	call	put
+	inc	b
+	call	put
+	inc	b
+	jp	put
+
+FIND_END:
+	call	GET_NEXT_STRING
+	jr	nz,FIND_END
+	ex	de,hl
+	ret
+
+WRITE_ALL:
+	call	SET_DMA_HL
+	jr	z,WRITE_FINI
+	call	f$write
+	jr	WRITE_ALL
+
+REPORT_DELS:
+	call	getquiet
+	ret	nz
+	call	IHLSKIP
+	exx
+	ld	bc,0
+	call	REP_DEL_LOOP
+	push	bc
+	exx
+	call	qprint
+	db	13,10,'Comand lines deleted: ',0
+	pop	hl
+	jp	QPHLFDC
+
+REP_DEL_LOOP:
+	inc	hl
+	ld	a,(hl)
+	inc	hl
+	cp	1
+	ret	z
+	or	a
+	jr	nz,REP_DEL_LOOP
+	inc	bc
+	jr	REP_DEL_LOOP
+
+IDESKIP:
+	exx
+	ld	d,h
+	ld	e,l
+	exx
+	ret
+
+IHLSKIP:
+	exx
+	ld	hl,INDEX
+	ld	(SAVEDHL),hl
+	exx
+	ret
+
+DESKIP:	exx
+	ex	de,hl
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	push	bc
+	ex	de,hl
+	exx
+	pop	de
+	ld	a,d
+	or	a
+	jr	z,DESKIP
+	ld	a,(de)
+	or	a
+	ret
+
+HLSKIP:	exx
+	ld	hl,(SAVEDHL)
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	ld	(SAVEDHL),hl
+	push	bc
+	exx
+	pop	hl
+	ld	a,h
+	or	a
+	jr	z,HLSKIP
+	ld	a,(hl)
+	or	a
+	ret
+
+DEL_CURRENT:
+	ld	(hl),';'
+	exx
+	dec	hl
+	ld	(hl),0
+	inc	hl
+	ld	h,d
+	ld	l,d
+	exx
+	ret
+	
+GET_NEXT_STRING:
+	inc	de
+	ld	a,(de)
+	or	a
+	jp	nz,GET_NEXT_STRING
+	inc	de
+	ld	a,(de)
+	or	a
+	ret
+
+NO_ROOM:
+	call	print
+	db	13,10,'File too large: ',0
+	ld	de,(FILE)
+	inc	de
+	call	pfn3
+	ret
+
+FILE_NOT_FOUND:
+	call	print
+	db	13,10,'Cannot find file: ',0
+	inc	de
+	call	pfn3
+	ret
+
+SET_DMA_HL:
+	push	de
+	ex	de,hl
+	ld	hl,(ENDPOS)
+	sbc	hl,de
+	ex	de,hl
+	jr	nc,SET_DMA_OK
+	xor	a
+	jr	SET_DMA_DONE
+SET_DMA_OK:
+	xor	a
+	inc	a
+SET_DMA_DONE:
+	push	af
+	push	bc
+	push	hl
+	ld	d,h
+	ld	e,l
+	ld	c,26
+	call	bdos
+	pop	hl
+	ld	bc,128
+	add	hl,bc
+	pop	bc
+	pop	af
+	pop	de
+	ret
+
+CLEAR_FILE:
+	push	af
+	push	bc
+	push	de
+	push	hl
+	ex	de,hl
+	ld	bc,12
+	add	hl,bc
+	ld	(hl),0
+	inc	hl
+	inc	hl
+	ld	(hl),0
+	ld	d,h
+	ld	e,l
+	inc	de
+	ld	bc,22
+	ldir
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	ret
+
+COMPARE_STRINGS:
+	push	hl
+	ld	c,e
+	ld	b,d
+CS_LOOP:
+	push	bc
+	ld	a,(hl)
+
+UPCASE:	cp	'z'+1
+	jr	nc,U2
+	cp	'a'
+	jr	nc,U2
+	sub	a,'z'-'Z'
+U2:	ld	b,a
+	ld	a,(de)
+	cp	'z'+1
+	jr	nc,U3
+	cp	'a'
+	jr	nc,U3
+	sub	a,'z'-'Z'
+U3:
+	cp	b
+	pop	bc
+	jp	nz,CS_NO
+	or	a
+	jp	z,CS_DONE
+	inc	hl
+	inc	de
+	jp	CS_LOOP
+CS_DONE:
+	ld	d,b
+	ld	e,c
+CS_NO:	pop	hl
+	ret
+
+GET:	ld	a,(USEMEM)	; B = Location 0..2
+	or	a
+	jr	z,GREGS
+	push	hl
+	push	de
+	ld	d,0
+	ld	e,b
+	ld	hl,(MEMLOC)
+	add	hl,de
+	ld	a,(hl)
+	pop	de
+	pop	hl
+	ret
+GREGS:	ld	a,(STARTREG)
+	push	bc
+	add	b
+	ld	b,a
+	call	getreg
+	pop	bc
+	ret
+
+PUT:	ld	c,a		; A = Data, B = location 0..2
+	ld	a,(USEMEM)
+	or	a
+	jr	z,PREGS
+	push	hl
+	push	de
+	ld	d,0
+	ld	e,b
+	ld	hl,(MEMLOC)
+	add	hl,de
+	ld	(hl),c
+	pop	de
+	pop	hl
+	ret
+PREGS:	ld	a,(STARTREG)
+	push	bc
+	add	b
+	ld	b,a
+	ld	a,c
+	call	putreg
+	pop	bc
+	ret
+
+DEL_PACK:
+	push	af
+	push	de
+	push	hl
+;	ld	a,'D'
+;	call	cout
+	ld	de,BUFFER+2
+	ld	h,d
+	ld	l,e
+DEL_PACK2:
+	ld	a,(hl)
+	or	a
+	jr	z,DEL_PACK23
+	cp	';'
+	jp	nz,DEL_PACK21
+;	push	af
+;	push	hl
+;	push	de
+;	ld	a,'*'
+;	call	cout
+;	pop	de
+;	pop	hl
+;	pop	af
+DEL_PACK22:
+	ld	a,(hl)
+	inc	hl
+	or	a
+	jp	nz,DEL_PACK22
+	jp	DEL_PACK2
+DEL_PACK23:
+	xor	a
+	ld	(de),a
+	pop	hl
+	pop	de
+	pop	af
+	ret
+DEL_PACK21:
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	or	a
+	jp	nz,DEL_PACK21
+	jp	DEL_PACK2
+
+JUST_WRITE:
+	ld	de,BUFFER+2
+	call	THINK2
+	jp	WRITE
+
+BAD_OPTION:
+	push	af
+	call	print
+	db	13,10,'Bad Option: ',0
+	pop	af
+	call	cout
+	jr	LAST_HELP
+
+QPHLFDC:
+	call	getquiet
+	ret	nz
+	call	phlfdc
+	ret
+
+HELP:	call	print
+	db	13,10,9,'Packs EASE history files.',0
+LAST_HELP:
+	call	print
+	db	13,10
+	db	'SYNTAX:',13,10
+	db	9,'VARPACK [nn] [FILENAME.TYP] [,P]',13,10,10
+	db	'Where nn = number of sectors to save.',13,10
+	db	'FILENAME.TYP = EASE history file you wish to shorten.',13,10
+	db	',P option specifies removal of duplicate command lines.',0
+	ret
+
+HEADER:	call	qprint
+	db	'VARPACK v. ',vers / 10 + '0','.',vers mod 10 + '0',0
+	ret
+
+COM:	db	'COM'
+
+ENDPOS:	dw	0
+SECTORS:
+	db	0
+LINE:	dw	0
+FILE:	dw	0
+SAVEDHL:
+	dw	0
+
+LAST:
+INDEX	equ	LAST + 6000	; TO hop over the lib code.
+BUFFER	equ	INDEX + 4000	; Space for 2000 command lines.
+:
+	dw	0
+
+LAST:
+INDEX	equ	LAST + 6000	; TO hop over the lib code.
+BUFFER	equ	INDEX + 4000	; 

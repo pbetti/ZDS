@@ -1,0 +1,453 @@
+;	TITLE	"SFXIO - Syslib 4.0"
+	NAME	('FXIO')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SFXIO.Z80 Ver 1.3 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.4
+; Module  : SFXIO
+; Abstract: This module contains the routines FXI$OPEN, FX$GET, FXI$CLOSE,
+;	FXO$OPEN, FX$PUT, and FXO$CLOSE which provide Byte-oriented File
+;	I/O with User defined buffer size.  All of the routines work with
+;	an I/O Control Block structured as:
+;
+;	Byte	Length (Bytes)	Function
+;	  0		 1	Number of 128-byte pages in
+;					working buffer (set by user)
+;	  1		 1	End of File Flag (set and used
+;					by SFXIO)
+;	  2		 2	Byte Counter (set and used by SFXIO)
+;	  4		 2	Next Byte Pointer (set and used by
+;					SFXIO)
+;	  6		 2	Address of Working Buffer (set by user)
+;	  8		36	FCB of File (FN and FT Fields set by
+;					user, rest set by SFXIO)
+;
+;	The following DEFB/DEFS structure can be used in the calling
+;	program to implement the I/O Control Block:
+;
+;	IOCTL:	DEFB	8		; Use 8 128-byte pages (1K)
+;		DEFS	1		; Filled by SFXIO
+;		DEFS	2		; Filled by SFXIO
+;		DEFS	2		; Filled by SFXIO
+;		DEFW	WORKBF		; Address of Working Buffer
+;
+;	IOCFCB:	DEFB	0		; Current Disk (Inited by SFXIO)
+;		DEFB	'MYFILE  '	; File Name
+;		DEFB	'TXT'		; File Type
+;		DEFS	24		; Fill Out 36 Bytes
+;
+;	WORKBF:	DEFS	1024		; Working Buffer
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		FXI$OPEN, FX$GET, FXI$CLOSE
+	PUBLIC		FXO$OPEN, FX$PUT, FXO$CLOSE
+
+; From SYSLIB Get..
+
+	EXT		F$READ, F$WRITE, SETDMA, INITFCB
+	EXT		F$OPEN, F$MOPEN, F$CLOSE
+
+; Definitions
+
+TBUFF	EQU	80H			;Temporary File I/O buffer
+CTRLZ	EQU	'Z'-'@'			;^Z
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - FXI$OPEN - Open File/Buffers for Input
+; Entry: DE - Points to I/O Control Block
+; Exit :  A = 0FFH, Zero Flag Clear (NZ) if Ok
+;	      A = 0, Zero Flag Set (Z) If Error (not found)
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+FXI$OPEN: PUSH	BC		; Save registers
+	PUSH	DE
+	PUSH	HL
+	CALL	PUTADR		;Copy I/O Control Block data
+	XOR	A		;Set no EOF
+	LD	(EOF),A
+	LD	HL,(FCB)	;Get FCB address
+	EX	DE,HL		;... in DE 
+	CALL	INITFCB		;Init FCB
+	CALL	F$OPEN		;Attempt to open file
+	JR	NZ,ERRET	;NZ = Error (File not found)
+	CALL	FXIO0		;OK - Fill buffer with data
+			;..fall thru to..
+;   Normal return
+
+OKRET:	CALL	GETADR		;Update I/O Control Block data
+	OR	0FFH		;Indicate success
+	JR	OK0		; ..and finish restoring regs
+
+;===============================================================
+; NAME - FXO$OPEN - Open File/Buffers for Output
+; Entry: DE - Points to I/O Control Block
+; Exit :  A = 0FFH, Zero Flag Clear (NZ) if Ok
+;	      A = 0, Zero Flag Set (Z) If Error (No Dir sp)
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+FXO$OPEN: PUSH	BC		; Save Registers
+	PUSH	DE
+	PUSH	HL
+	CALL	PUTADR		;Copy I/O Control Block data
+	CALL	FXOO2		;Init buffers
+	LD	HL,(FCB)	;Get FCB address
+	EX	DE,HL		;... in DE 
+	CALL	INITFCB		;Init FCB
+	CALL	F$MOPEN		;Open and/or Create file
+	JR	Z,OKRET		;OK- Return and update I/O Control Block
+			;..fall thru to..
+;   Error return	
+
+ERRET:	XOR	A		; Indicate Error
+	JR	OK0
+
+;===============================================================
+; NAME - FX$GET - Get next byte from Buffer/File
+; Entry: DE - Points to I/O Control Block
+; Exit :  A = Char, Zero Flag Clear (NZ) if Ok
+;	      Zero Flag Set (Z) If Read past EOF
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+
+FX$GET:	PUSH	BC		; Save Registers
+	PUSH	DE
+	PUSH	HL
+
+; Check if data byte is in buffer. 
+
+	EX	DE,HL		;HL -> I/O Control Block data
+	INC	HL		;Get caller's BYTECNT in DE
+	INC	HL
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	DEC	HL		;Pt to caller's BYTECNT again.
+	LD	A,D		;Is the data byte in the buffer?
+	OR	E
+	JR	Z,FXGET1	;No - Fill buffer and GET byte.
+
+; It is. GET it and update BYTECNT, BYTENXT as quickly as possible.
+
+	DEC	DE		;Update byte count
+	LD	(HL),E		;Update caller's BYTECNT.
+	INC	HL
+	LD	(HL),D
+
+	INC	HL		;Get caller's BYTENXT.
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)	
+
+	LD	A,(DE)		;GET data byte from buffer
+	LD	(BYTE),A	;Save for return.
+
+OKVCTR:	INC	DE		;Update caller's BYTENXT.
+	LD	(HL),D
+	DEC	HL
+	LD	(HL),E
+	JR	OKRET0		; Restore regs and show Success
+
+; Data byte not in buffer - Fill buffer from file first
+
+FXGET1:	EX	DE,HL		;DE -> I/O Control Block data.
+	DEC	DE
+	DEC	DE
+	CALL	PUTADR		;Copy I/O Control Block data
+	CALL	FXIO0		;Fill buffer from file
+	JR	NZ,ERRET	;NZ = Error (End of File)
+	LD	HL,(BYTENXT)	;Pt to first byte in buffer
+	LD	A,(HL)		;GET from buffer
+	LD	(BYTE),A	;Save it
+	INC	HL		;Pt to next byte
+	LD	(BYTENXT),HL	;Update next byte pointer
+	LD	HL,(BYTECNT)	;One less byte in buffer
+	DEC	HL
+	LD	(BYTECNT),HL	;Update byte count
+
+;   Normal return
+
+OKRET1:	CALL	GETADR		;Update I/O Control Block data
+OKRET0:	OR	0FFH		;Indicate success
+	LD	A,(BYTE)	;Get data byte
+OK0:	POP	HL		; Restore Registers
+	POP	DE
+	POP	BC
+	RET
+
+;===============================================================
+; NAME - FX$PUT - Put Next Byte into Buffer/File
+; Entry: DE - Points to I/O Control Block
+;	  A - Character to Put
+; Exit :  A = Char, Zero Flag Clear (NZ) if Ok
+;	      Zero Flag Set (Z) If Write Error
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+FX$PUT:	PUSH	BC		; Save Registers
+	PUSH	DE
+	PUSH	HL
+	LD	(BYTE),A	;Save byte to output 
+
+; Check if data byte will fit in buffer. 
+
+	EX	DE,HL		;HL -> I/O Control Block data
+	INC	HL		;Get caller's BYTECNT in DE
+	INC	HL
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+
+	DEC	HL		;Pt to caller's BYTECNT again.
+	LD	A,D		;Will the data byte fit in the buffer?
+	OR	E
+	JR	Z,FXPUT1	;No - Flush buffer to file and PUT byte.
+
+; It is. PUT it and update BYTECNT, BYTENXT as quickly as possible.
+
+	DEC	DE		;Update byte count
+	LD	(HL),E		;Update caller's BYTECNT.
+	INC	HL
+	LD	(HL),D
+	INC	HL		;Get caller's BYTENXT.
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)	
+
+	LD	A,(BYTE)	;Get data byte
+	LD	(DE),A		;PUT data byte in buffer
+	JR	OKVCTR		; Update caller's BYTENXT.
+
+; Data byte will not fit in buffer - Flush buffer to file first.
+
+FXPUT1:	EX	DE,HL		;DE -> I/O Control Block data.
+	DEC	DE
+	DEC	DE
+	CALL	PUTADR		;Copy I/O Control Block data
+	CALL	FXOO0		;NO - Flush buffer to file
+	JR	NZ,ERRET	;NZ = Error (Write error)
+	LD	HL,(BYTENXT)	;Pt to first byte in buffer
+	LD	A,(BYTE)	;Get next byte
+	LD	(HL),A		;PUT in buffer
+	INC	HL		;Pt to next byte
+	LD	(BYTENXT),HL	;Update next byte pointer
+	LD	HL,(BYTECNT)	;One less byte of free space in buffer
+	DEC	HL
+	LD	(BYTECNT),HL	;Update byte count
+	JR	OKRET1		;OK-return with byte and updated control block
+
+;===============================================================
+; NAME - FXI$CLOSE - Close File/Buffers for Input
+; Entry: DE - Points to I/O Control Block
+; Exit :  A = 0FFH, Zero Flag Clear (NZ) if Ok
+;	      A = 0, Zero Flag Set (Z) If Error (in Closing)
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+FXI$CLOSE:
+	PUSH	BC		; Save Registers
+	PUSH	DE
+	PUSH	HL
+	CALL	PUTADR		;Copy I/O Control Block data
+	JR	FXOCL3		; ..join common code for exit
+
+;===============================================================
+; NAME - FXO$CLOSE - Close File/Buffers for Output
+; Entry: DE - Points to I/O Control Block
+; Exit :  A = 0FFH, Zero Flag Clear (NZ) if Ok
+;	      A = 0, Zero Flag Set (Z) If Error (in closing)
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+FXO$CLOSE:
+	PUSH	BC		; Save Registers
+	PUSH	DE
+	PUSH	HL
+	CALL	PUTADR		;Copy I/O Control Block data
+
+;  Fill last block with ^Z
+
+FXOCL1:	LD	HL,(BYTECNT)	;Get free space count.
+	LD	A,L		;If on page boundary, done
+	AND	7FH
+	JR	Z,FXOCL2
+	DEC	HL		;One less byte of free space in buffer
+	LD	(BYTECNT),HL	;Update byte count
+	LD	HL,(BYTENXT)	;Pt to next byte
+	LD	(HL),CTRLZ	;Store EOF char
+	INC	HL
+	LD	(BYTENXT),HL
+	JR	FXOCL1		;Loop until last block is full
+
+;  Close file and exit
+
+FXOCL2:	CALL	FXOO0		;Flush buffers to disk
+FXOCL3:	LD	DE,(FCB)	;Get FCB address
+	CALL	F$CLOSE		;Close file
+	JP	NZ,ERRET	;NZ = Error (Close file error)
+	JP	OKRET		;OK- Return and update I/O Control Block
+
+
+;  PUTADR - Copy I/O Control Block data to local storage
+
+PUTADR:	EX	DE,HL		;Get I/O Control Block addr in HL
+	LD	(BUFFER),HL	;Save I/O Control Block address
+	LD	A,(HL)		;Get block count
+	LD	(BCNT),A
+	INC	HL
+	LD	A,(HL)		;Get eof flag
+	LD	(EOF),A
+	INC	HL
+	LD	E,(HL)		;Get low count
+	INC	HL
+	LD	D,(HL)
+	LD	(BYTECNT),DE	;Put byte count
+	INC	HL
+	LD	E,(HL)		;Get low address
+	INC	HL
+	LD	D,(HL)
+	LD	(BYTENXT),DE	;Put next byte ptr
+	INC	HL
+	LD	E,(HL)		;Get low address
+	INC	HL
+	LD	D,(HL)
+	LD	(BUFADR),DE	;Put buffer address ptr
+	INC	HL
+	LD	(FCB),HL	;Save address of FCB
+	RET
+
+
+;  GETADR - Update I/O Control Block data from local storage
+
+GETADR:	LD	HL,(BUFFER)	;Get I/O Control Block address
+	INC	HL		;Skip block count
+	LD	A,(EOF)		;Get EOF flag
+	LD	(HL),A
+	LD	DE,(BYTECNT)	;Get byte count
+	INC	HL
+	LD	(HL),E		;Set low count
+	INC	HL
+	LD	(HL),D
+	LD	DE,(BYTENXT)	;Get next byte pointer
+	INC	HL
+	LD	(HL),E		;Set low address
+	INC	HL
+	LD	(HL),D
+	RET
+
+; **** Support Routines for FXIO ****
+
+;  FXIO0 - Routine to read next buffer-full from disk
+
+FXIO0:	LD	A,(EOF)		;Check for EOF
+	OR	A		;Abort if already at EOF
+	RET	NZ		;NZ is error code
+	LD	HL,(BUFADR)	;Get address of input buffer
+	LD	A,(BCNT)	;Get block count
+	LD	B,A		;... in B 
+
+FXIO1:	CALL	SETDMA		; Set the BDOS DMA addr to input buffr
+	LD	DE,(FCB)	;Get FCB address in DE
+	CALL	F$READ		; ..and do a BDOS Read
+	JR	NZ,FXIO2	; Jump if End-of-File
+	LD	DE,128		;Get block length
+	ADD	HL,DE		;Update buffer addr to point to next block
+				;One more block processed
+	DJNZ	FXIO1		;Loop until all blocks written.
+	JR	FXIO3		;Done.
+
+FXIO2:	LD	A,0FFH		;Set "EOF" condition
+	LD	(EOF),A		;Set EOF flag
+FXIO3:	LD	HL,(BUFADR)	;Pt to first byte in buffer
+	LD	(BYTENXT),HL	; as "next byte" address
+	LD	A,(BCNT)	;Get block count
+	SUB	B		;Adjust by # empty blocks
+	LD	H,A		;Convert to bytes
+	LD	L,0
+	SRL	H		; Shift a bit  right (divide by 2)
+	RR	L
+	LD	(BYTECNT),HL	;Set byte count
+	PUSH	HL		;Save byte count
+	LD	HL,TBUFF	;Reset DMA address (for compatability)
+	CALL	SETDMA
+	POP	HL		;Get byte count
+	LD	A,H		;Set EOF return code based on byte count
+	OR	L
+	JR	NZ,FXIO5	; ..jump if No Error (data available)
+FXIO4:	OR	0FFH		;Set error (no data available)
+	RET
+
+
+;  FXOO0 - Routine to flush buffer to disk and set up for next write
+
+FXOO0:	LD	HL,(BYTECNT)	;Get # of bytes yet to go
+	ADD	HL,HL		;Convert to blocks
+	LD	A,(BCNT)	;Get # of blocks in buffer
+	SUB	H		;Compute number to write
+	LD	B,A		;Get final block count in B
+	LD	HL,(BUFADR)	;Pt to first byte to write
+FXOO1:	LD	A,B		;Check if write complete
+	OR	A		;0=Done
+	JR	Z,FXOO2
+	DEC	B		;Decrement block counter
+	CALL	SETDMA		; Set BDOS DMA ptr to Output Buffer
+	LD	DE,(FCB)	;Get FCB address
+	CALL	F$WRITE		; Write block via BDOS
+	LD	DE,128		;Get block length
+	ADD	HL,DE		;Update buffer addr to point to next block
+	OR	A		;Check Write return code.
+	JR	Z,FXOO1		;If OK, Loop until all blocks have been written
+	JR	FXIO4		; ..return by setting Error code
+
+;  FXOO2 - Routine to init buffers for next write
+
+FXOO2:	LD	HL,(BUFADR)	;Pt to first byte in buffer
+	LD	(BYTENXT),HL	; as "next byte" address
+	XOR	A		;SET NO EOF
+	LD	(EOF),A
+	LD	A,(BCNT)	;Get block count
+	LD	H,A		;Convert to bytes
+	LD	L,0
+	SRL	H		; Shift right a bit (divide by 2)
+	RR	L
+	LD	(BYTECNT),HL	;Set byte count
+
+	LD	HL,TBUFF	;Reset DMA address (for compatability)
+	CALL	SETDMA
+
+FXIO5:	XOR	A		;No Error
+	RET
+
+;  Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+BYTE:	DEFS	1		;Data byte
+BUFFER:	DEFS	2		;Starting address of I/O control block
+
+;  The following mirrors the structure of the I/O Control Block
+
+BCNT:	 DEFS	1		;Number of blocks in buffer
+EOF:	 DEFS	1		;EOF flag (0=not at EOF, 0FFH=at EOF)
+BYTECNT: DEFS	2		;Number of bytes to go yet
+BYTENXT: DEFS	2		;Address of next byte to PUT/GET
+BUFADR:	 DEFS	2		;Address of working buffer
+FCB:	 DEFS	2		;Address of FCB
+
+	END
+

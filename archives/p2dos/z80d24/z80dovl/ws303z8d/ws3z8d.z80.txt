@@ -1,0 +1,133 @@
+;**************************************************
+;
+; WS3Z8D.Z80
+;
+; Adapted from Eugene Nolan's WS40Z8D.Z80 (with his 
+; help) for WS 3.0 and 3.3 by Richard Holway (c/o 
+; MOR RCPM 415-654-3798).  
+;
+; This file provides an overlay for a fully installed WS 3.0
+; or 3.3 that allows it to carry the creation date of files
+; from the input file to the output file.  (N.B. the WS 3.3
+; version is untried but I am reasonably sure the values are
+; correct.) 
+;
+; Assemble to a .HEX file and use
+;
+; MLOAD WSNEW.COM=WSOLD.COM,WS3Z8D
+;
+; There are currently defined two areas within 
+; WS.COM where this overlay may be placed.  The 
+; first is at MORPAT, which is 128 bytes long.  The 
+; second is BGMEM, which is of indefinite length 
+; and which has a pointer (PBGMEM) toward the end of 
+; MORPAT.  (Check the end of the USR1 listing in your 
+; WS manual for details.)  To see whether MORPAT, the 
+; address of which is listed below and in the USR1 
+; listing, is free, check it with a utility like    
+; QLIST or ZPATCH.  If MORPAT is filled with 0's, it
+; is free and you can use it.  Otherwise try using 
+; BGMEM. 
+;
+; Included in this .LBR are the files MORPAT30.HEX and
+; MORPAT33.HEX which are ready to overlay if you choose to
+; use the MORPAT area.
+;
+; Overlay is configured for WS 3.0 and MORPAT.
+; Equates for WS 3.3 are "commented out" by a semi-
+; colon placed in the left margin.  To assemble for WS 3.3
+; simply "uncomment" the 3.3 values and comment out the
+; 3.0 ones.
+; 
+	org	1823h			; Call BDOS routine in WS.COM (3.0) 
+;	org	1835h			; Call BDOS routine in WS.COM (3.3) 
+	call	dater			
+
+no	equ	0
+yes	equ	not no
+
+morpat	equ	no			; Set to yes to use the MORPAT area
+					; to store date support code.
+myown	equ	yes			; Set to yes if you have your own
+					; patch area.
+bgmem	equ	no			; Use this equate if you want to
+					; use the bgmem area.
+	 if	morpat
+	org	02e0h			; MORPAT addr for WS 3.0 
+;	org	02cbh			; MORPAT for WS 3.3 
+	 endif
+
+	 if	myown
+	org	02f0h			; Fill in the address you want to use.
+	 endif				
+
+	 if	bgmem
+	org	xxxxh			; Fill it in
+	 endif				; 
+
+dater:
+	ld	a,c
+	cp	0fh			; check if BDOS ftn 15, OPEN
+	jr	z,isopen		; Z=yes
+	cp	16h			; check if BDOS Ftn 22, MAKE
+	jr	z,ismake		; 
+cbdos:	call	5			; WS 3.x has call, not WS 4's jump
+	ret
+
+ismake:	ld	a,e			; Is MAKE for .$$$ file? Check FCB. 
+					; fcb addr for .$$$ file 7690h in WS 3.0;
+					; 8290h in WS 3.3
+	cp	90h			; reg E = 90h for both WS 3.0 & 3.3
+	jr	nz,cbdos
+	ld	a,d
+	cp	76h			; reg D = 76h for WS 3.0
+;	cp	82h			; reg D = 82h for WS 3.3
+	jr	nz,cbdos
+	ld	a,(openflg)		; Check if source file was opened ok
+	inc	a			; Incrememt a to set z flg if a = ffh.
+	jr	z,cbdos
+	push	hl
+	push	de
+	push	bc
+	ld	c,55			; Use Z80DOS's USESTAMP ftn
+	call	5
+	pop	bc
+	pop	de
+	pop	hl
+	jr	cbdos			; Now MAKE the .$$$ file
+
+isopen:	ld	a,e			; Check if trying to open source file
+	cp	3ah			; Source FCB addr = 83ah for WS 3.0, 
+	jr	nz,cbdos		; 81ch for WS 3.3. 
+	ld	a,d			; fcb addr in d-e reg.
+	cp	8h
+	jr	nz,cbdos
+					; GETSTAMP only of 1st ext (ex byte = 00h)
+	ld	a,(846h)		; ex byte of fcb at 846h for WS3.0 
+;	ld	a,(828h)		; 828h for WS3.3.  
+	or	a			; only 0 in a-reg will set zero flag
+	jr	nz,cbdos		; 
+	call	5			; do OPEN (puts flag in a-reg) but keep
+					; control of the program
+	ld	(openflg),a		; store flag from a-reg in overlay 
+					; (0ffh = not found).  
+	inc	a			
+	ret	z			; if file not found, ret without GETSTAMP
+	push	hl
+	push	de
+	push	bc
+	push	af
+	ld	c,54			; Use Z80DOS's GETSTAMP ftn to save
+	call	5			; time stamps of source
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+openflg:
+	db	0			; Flag to hold result from attempt to 
+					; OPEN source file
+
+;****************************************************************************
+

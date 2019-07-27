@@ -1,0 +1,1964 @@
+EESchema Schematic File Version 4
+LIBS:zds-ym2149-cache
+LIBS:parallel2-cache
+EELAYER 29 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title "ZDS YM2149 / AY-3-8910 sound card"
+Date "2019-02-26"
+Rev "1"
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L zds-ym2149-rescue:DIL40 U5
+U 1 1 58979138
+P 8850 3050
+F 0 "U5" H 8850 4100 50  0000 C CNN
+F 1 "AY-3-8190/YM2149F" V 8850 3050 50  0000 C CNN
+F 2 "rc2014:DIP-40_W15.24mm_Socket" H 8850 3050 50  0001 C CNN
+F 3 "" H 8850 3050 50  0000 C CNN
+	1    8850 3050
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:74LS138 U2
+U 1 1 589793B1
+P 5700 3150
+F 0 "U2" H 5800 3650 50  0000 C CNN
+F 1 "74HCT138" H 5850 2601 50  0000 C CNN
+F 2 "rc2014:DIP-16_W7.62mm_Socket" H 5700 3150 50  0001 C CNN
+F 3 "" H 5700 3150 50  0000 C CNN
+F 4 "CD74HCT138E" H 5700 3150 60  0001 C CNN "MPN"
+F 5 "74HCT138" H 5700 3150 60  0001 C CNN "Base number"
+F 6 "http://uk.farnell.com/texas-instruments/cd74hct138e/74hct-cmos-74hct138-dip16-5-5v/dp/1105976" H 5700 3150 60  0001 C CNN "Supplier URL"
+	1    5700 3150
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR01
+U 1 1 5898D287
+P 3900 3350
+F 0 "#PWR01" H 3900 3100 50  0001 C CNN
+F 1 "GND" H 3900 3200 50  0000 C CNN
+F 2 "" H 3900 3350 50  0000 C CNN
+F 3 "" H 3900 3350 50  0000 C CNN
+	1    3900 3350
+	1    0    0    -1  
+$EndComp
+Text Label 8350 2100 0    60   ~ 0
+GND
+Text Label 8350 2300 0    60   ~ 0
+CH_B
+Text Label 8350 2400 0    60   ~ 0
+CH_A
+Text Label 8350 2600 0    60   ~ 0
+IOB7
+Text Label 8350 2700 0    60   ~ 0
+IOB6
+Text Label 8350 2800 0    60   ~ 0
+IOB5
+Text Label 8350 2900 0    60   ~ 0
+IOB4
+Text Label 8350 3000 0    60   ~ 0
+IOB3
+Text Label 8350 3100 0    60   ~ 0
+IOB2
+Text Label 8350 3200 0    60   ~ 0
+IOB1
+Text Label 8350 3300 0    60   ~ 0
+IOB0
+Text Label 8350 3400 0    60   ~ 0
+IOA7
+Text Label 8350 3500 0    60   ~ 0
+IOA6
+Text Label 8350 3600 0    60   ~ 0
+IOA5
+Text Label 8350 3700 0    60   ~ 0
+IOA4
+Text Label 8350 3800 0    60   ~ 0
+IOA3
+Text Label 8350 3900 0    60   ~ 0
+IOA2
+Text Label 8350 4000 0    60   ~ 0
+IOA1
+Text Label 9150 2100 0    60   ~ 0
+VCC
+Text Label 9250 2300 0    60   ~ 0
+CH_C
+Text Label 9250 3200 0    60   ~ 0
+BC1
+Text Label 9250 3300 0    60   ~ 0
+BC2
+Text Label 9250 3400 0    60   ~ 0
+BDIR
+Text Label 9250 3500 0    60   ~ 0
+/SEL
+Text Label 9250 3600 0    60   ~ 0
+YM_A8
+Text Label 9250 3700 0    60   ~ 0
+/YM_A9
+Text Label 9250 3800 0    60   ~ 0
+/RESET
+Text Label 9250 3900 0    60   ~ 0
+CLOCK
+Text Label 9250 4000 0    60   ~ 0
+IOA0
+$Comp
+L zds-ym2149-rescue:VCC #PWR03
+U 1 1 5898E44C
+P 9900 2050
+F 0 "#PWR03" H 9900 1900 50  0001 C CNN
+F 1 "VCC" H 9900 2200 50  0000 C CNN
+F 2 "" H 9900 2050 50  0000 C CNN
+F 3 "" H 9900 2050 50  0000 C CNN
+	1    9900 2050
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR04
+U 1 1 5898E46A
+P 8350 2100
+F 0 "#PWR04" H 8350 1850 50  0001 C CNN
+F 1 "GND" H 8350 1950 50  0000 C CNN
+F 2 "" H 8350 2100 50  0000 C CNN
+F 3 "" H 8350 2100 50  0000 C CNN
+	1    8350 2100
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:JACK_TRS_6PINS J1
+U 1 1 5898EEE9
+P 12400 950
+F 0 "J1" H 12400 1350 50  0000 C CNN
+F 1 "AUDIO OUT" H 12350 650 50  0000 C CNN
+F 2 "rc2014:cliff_fcr1295_socket" H 12500 800 50  0001 C CNN
+F 3 "" H 12500 800 50  0000 C CNN
+	1    12400 950 
+	-1   0    0    1   
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR05
+U 1 1 5898F3AF
+P 11400 1250
+F 0 "#PWR05" H 11400 1000 50  0001 C CNN
+F 1 "GND" H 11400 1100 50  0000 C CNN
+F 2 "" H 11400 1250 50  0000 C CNN
+F 3 "" H 11400 1250 50  0000 C CNN
+	1    11400 1250
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR06
+U 1 1 5898FADC
+P 10050 3300
+F 0 "#PWR06" H 10050 3150 50  0001 C CNN
+F 1 "VCC" H 10050 3450 50  0000 C CNN
+F 2 "" H 10050 3300 50  0000 C CNN
+F 3 "" H 10050 3300 50  0000 C CNN
+	1    10050 3300
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:74LS74 U4
+U 1 1 58ACAA95
+P 7950 5250
+F 0 "U4" H 8100 5550 50  0000 C CNN
+F 1 "74HCT74" H 8250 4955 50  0000 C CNN
+F 2 "rc2014:DIP-14_W7.62mm_Socket" H 7950 5250 50  0001 C CNN
+F 3 "" H 7950 5250 50  0000 C CNN
+F 4 "SN74HCT74N" H 7950 5250 60  0001 C CNN "MPN"
+F 5 "74HCT74" H 7950 5250 60  0001 C CNN "Base number"
+F 6 "http://uk.farnell.com/texas-instruments/sn74hct74n/ic-flip-flop-2-circuits/dp/1470823" H 7950 5250 60  0001 C CNN "Supplier URL"
+	1    7950 5250
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR07
+U 1 1 58B1CE4E
+P 7950 4700
+F 0 "#PWR07" H 7950 4550 50  0001 C CNN
+F 1 "VCC" H 7950 4850 50  0000 C CNN
+F 2 "" H 7950 4700 50  0000 C CNN
+F 3 "" H 7950 4700 50  0000 C CNN
+	1    7950 4700
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR08
+U 1 1 58B1CE76
+P 7950 5800
+F 0 "#PWR08" H 7950 5650 50  0001 C CNN
+F 1 "VCC" H 7950 5950 50  0000 C CNN
+F 2 "" H 7950 5800 50  0000 C CNN
+F 3 "" H 7950 5800 50  0000 C CNN
+	1    7950 5800
+	-1   0    0    1   
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR09
+U 1 1 58B20AA2
+P 11200 3500
+F 0 "#PWR09" H 11200 3250 50  0001 C CNN
+F 1 "GND" H 11200 3350 50  0000 C CNN
+F 2 "" H 11200 3500 50  0000 C CNN
+F 3 "" H 11200 3500 50  0000 C CNN
+	1    11200 3500
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR010
+U 1 1 58B210E6
+P 9750 3700
+F 0 "#PWR010" H 9750 3450 50  0001 C CNN
+F 1 "GND" H 9750 3550 50  0000 C CNN
+F 2 "" H 9750 3700 50  0000 C CNN
+F 3 "" H 9750 3700 50  0000 C CNN
+	1    9750 3700
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR011
+U 1 1 58B2110E
+P 9750 3600
+F 0 "#PWR011" H 9750 3450 50  0001 C CNN
+F 1 "VCC" H 9750 3750 50  0000 C CNN
+F 2 "" H 9750 3600 50  0000 C CNN
+F 3 "" H 9750 3600 50  0000 C CNN
+	1    9750 3600
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:C C5
+U 1 1 58B2B931
+P 9450 1950
+F 0 "C5" H 9475 2050 50  0000 L CNN
+F 1 "0.1uF" H 9475 1850 50  0000 L CNN
+F 2 "rc2014:C_Disc_D3.8mm_W2.6mm_P2.50mm" H 9488 1800 50  0001 C CNN
+F 3 "" H 9450 1950 50  0000 C CNN
+	1    9450 1950
+	-1   0    0    1   
+$EndComp
+$Comp
+L zds-ym2149-rescue:74HCT00 U3
+U 1 1 58B2C39F
+P 7200 3050
+F 0 "U3" H 7200 3100 50  0000 C CNN
+F 1 "74HCT00" H 7200 2950 50  0000 C CNN
+F 2 "rc2014:DIP-14_W7.62mm_Socket" H 7200 3050 50  0001 C CNN
+F 3 "" H 7200 3050 50  0000 C CNN
+	1    7200 3050
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:74HCT00 U3
+U 2 1 58B2C4D6
+P 7200 3600
+F 0 "U3" H 7200 3650 50  0000 C CNN
+F 1 "74HCT00" H 7200 3500 50  0000 C CNN
+F 2 "rc2014:DIP-14_W7.62mm_Socket" H 7200 3600 50  0001 C CNN
+F 3 "" H 7200 3600 50  0000 C CNN
+	2    7200 3600
+	1    0    0    -1  
+$EndComp
+Text Label 4900 2900 0    60   ~ 0
+/WR
+Text Label 4900 3000 0    60   ~ 0
+/RD
+Text Label 4900 3500 0    60   ~ 0
+/IORQ
+$Comp
+L zds-ym2149-rescue:Jumper JP6
+U 1 1 58BC56E2
+P 10900 3500
+F 0 "JP6" H 10900 3650 50  0000 C CNN
+F 1 "YM 1/2 CLK" H 10900 3420 50  0000 C CNN
+F 2 "rc2014:Pin_Header_Straight_1x02_Pitch2.54mm" H 10900 3500 50  0001 C CNN
+F 3 "" H 10900 3500 50  0000 C CNN
+	1    10900 3500
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:74LS74 U4
+U 2 1 58BC6265
+P 7950 6800
+F 0 "U4" H 8100 7100 50  0000 C CNN
+F 1 "74HCT74" H 8250 6505 50  0000 C CNN
+F 2 "rc2014:DIP-14_W7.62mm_Socket" H 7950 6800 50  0001 C CNN
+F 3 "" H 7950 6800 50  0000 C CNN
+	2    7950 6800
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR012
+U 1 1 58BC6355
+P 7950 7350
+F 0 "#PWR012" H 7950 7200 50  0001 C CNN
+F 1 "VCC" H 7950 7500 50  0000 C CNN
+F 2 "" H 7950 7350 50  0000 C CNN
+F 3 "" H 7950 7350 50  0000 C CNN
+	1    7950 7350
+	-1   0    0    1   
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR013
+U 1 1 58BC6393
+P 7950 6250
+F 0 "#PWR013" H 7950 6100 50  0001 C CNN
+F 1 "VCC" H 7950 6400 50  0000 C CNN
+F 2 "" H 7950 6250 50  0000 C CNN
+F 3 "" H 7950 6250 50  0000 C CNN
+	1    7950 6250
+	1    0    0    -1  
+$EndComp
+Entry Wire Line
+	8250 2700 8350 2600
+Entry Wire Line
+	8250 2800 8350 2700
+Entry Wire Line
+	8250 2900 8350 2800
+Entry Wire Line
+	8250 3000 8350 2900
+Entry Wire Line
+	8250 3100 8350 3000
+Entry Wire Line
+	8250 3200 8350 3100
+Entry Wire Line
+	8250 3300 8350 3200
+Entry Wire Line
+	8250 3400 8350 3300
+Entry Wire Line
+	8250 3500 8350 3400
+Entry Wire Line
+	8250 3600 8350 3500
+Entry Wire Line
+	8250 3700 8350 3600
+Entry Wire Line
+	8250 3800 8350 3700
+Entry Wire Line
+	8250 3900 8350 3800
+Entry Wire Line
+	8250 4000 8350 3900
+Entry Wire Line
+	8250 4100 8350 4000
+$Comp
+L zds-ym2149-rescue:CONN_02X09 J2
+U 1 1 58BC7A79
+P 12700 2550
+F 0 "J2" H 12700 3050 50  0000 C CNN
+F 1 "IO Out" V 12700 2550 50  0000 C CNN
+F 2 "rc2014:Pin_Header_Straight_2x09_Pitch2.54mm" H 12700 1350 50  0001 C CNN
+F 3 "" H 12700 1350 50  0000 C CNN
+	1    12700 2550
+	1    0    0    -1  
+$EndComp
+Text Label 13150 2950 2    60   ~ 0
+IOA0
+Text Label 12450 2950 2    60   ~ 0
+IOA1
+Text Label 13150 2850 2    60   ~ 0
+IOA2
+Text Label 12450 2850 2    60   ~ 0
+IOA3
+Text Label 13150 2750 2    60   ~ 0
+IOA4
+Text Label 12450 2750 2    60   ~ 0
+IOA5
+Text Label 13150 2650 2    60   ~ 0
+IOA6
+Text Label 12450 2650 2    60   ~ 0
+IOA7
+Text Label 13150 2550 2    60   ~ 0
+IOB0
+Text Label 12450 2550 2    60   ~ 0
+IOB1
+Text Label 13150 2450 2    60   ~ 0
+IOB2
+Text Label 12450 2450 2    60   ~ 0
+IOB3
+Text Label 13150 2350 2    60   ~ 0
+IOB4
+Text Label 12450 2350 2    60   ~ 0
+IOB5
+Text Label 13150 2250 2    60   ~ 0
+IOB6
+Text Label 12450 2250 2    60   ~ 0
+IOB7
+$Comp
+L zds-ym2149-rescue:VCC #PWR014
+U 1 1 58BC8268
+P 12950 2150
+F 0 "#PWR014" H 12950 2000 50  0001 C CNN
+F 1 "VCC" H 12950 2300 50  0000 C CNN
+F 2 "" H 12950 2150 50  0000 C CNN
+F 3 "" H 12950 2150 50  0000 C CNN
+	1    12950 2150
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR015
+U 1 1 58BC829C
+P 12450 2150
+F 0 "#PWR015" H 12450 1900 50  0001 C CNN
+F 1 "GND" H 12450 2300 50  0000 C CNN
+F 2 "" H 12450 2150 50  0000 C CNN
+F 3 "" H 12450 2150 50  0000 C CNN
+	1    12450 2150
+	1    0    0    -1  
+$EndComp
+Entry Wire Line
+	12150 2350 12250 2250
+Entry Wire Line
+	12150 2450 12250 2350
+Entry Wire Line
+	12150 2550 12250 2450
+Entry Wire Line
+	12150 2650 12250 2550
+Entry Wire Line
+	12150 2750 12250 2650
+Entry Wire Line
+	12150 2850 12250 2750
+Entry Wire Line
+	12150 2950 12250 2850
+Entry Wire Line
+	12150 3050 12250 2950
+Entry Wire Line
+	13150 2250 13250 2350
+Entry Wire Line
+	13150 2350 13250 2450
+Entry Wire Line
+	13150 2450 13250 2550
+Entry Wire Line
+	13150 2550 13250 2650
+Entry Wire Line
+	13150 2650 13250 2750
+Entry Wire Line
+	13150 2750 13250 2850
+Entry Wire Line
+	13150 2850 13250 2950
+Entry Wire Line
+	13150 2950 13250 3050
+Entry Wire Line
+	9600 4050 9700 4150
+$Comp
+L zds-ym2149-rescue:CP C6
+U 1 1 58BDC9B3
+P 11250 750
+F 0 "C6" H 11275 850 50  0000 L CNN
+F 1 "470uF" H 11275 650 50  0000 L CNN
+F 2 "rc2014:CP_Radial_D6.3mm_P2.50mm" H 11288 600 50  0001 C CNN
+F 3 "" H 11250 750 50  0000 C CNN
+	1    11250 750 
+	0    -1   -1   0   
+$EndComp
+$Comp
+L zds-ym2149-rescue:CP C7
+U 1 1 58BDCA34
+P 11250 950
+F 0 "C7" H 11275 1050 50  0000 L CNN
+F 1 "470uF" H 11275 850 50  0000 L CNN
+F 2 "rc2014:CP_Radial_D6.3mm_P2.50mm" H 11288 800 50  0001 C CNN
+F 3 "" H 11250 950 50  0000 C CNN
+	1    11250 950 
+	0    -1   -1   0   
+$EndComp
+$Comp
+L zds-ym2149-rescue:R_Small R4
+U 1 1 58BDD5E0
+P 10550 550
+F 0 "R4" H 10580 570 50  0000 L CNN
+F 1 "1K" H 10580 510 50  0000 L CNN
+F 2 "rc2014:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" H 10550 550 50  0001 C CNN
+F 3 "" H 10550 550 50  0000 C CNN
+F 4 "MF25 1K" H 10550 550 60  0001 C CNN "MPN"
+F 5 "1K  Through Hole Resistor, 1 kohm, 250 V, Axial Leaded, 250 mW, ± 1%" H 10550 550 60  0001 C CNN "Description"
+F 6 "http://uk.farnell.com/multicomp/mf25-1k/resistor-1k-0-25w-1/dp/9341102" H 10550 550 60  0001 C CNN "Supplier URL"
+	1    10550 550 
+	0    1    1    0   
+$EndComp
+$Comp
+L zds-ym2149-rescue:R_Small R5
+U 1 1 58BDD6B5
+P 10550 750
+F 0 "R5" H 10580 770 50  0000 L CNN
+F 1 "1K" H 10580 710 50  0000 L CNN
+F 2 "rc2014:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" H 10550 750 50  0001 C CNN
+F 3 "" H 10550 750 50  0000 C CNN
+	1    10550 750 
+	0    1    1    0   
+$EndComp
+$Comp
+L zds-ym2149-rescue:R_Small R6
+U 1 1 58BDD6F4
+P 10550 950
+F 0 "R6" H 10580 970 50  0000 L CNN
+F 1 "1K6" H 10580 910 50  0000 L CNN
+F 2 "rc2014:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" H 10550 950 50  0001 C CNN
+F 3 "" H 10550 950 50  0000 C CNN
+F 4 "MF25 1K6" H 10550 950 60  0001 C CNN "MPN"
+F 5 "MF25 1K6  Through Hole Resistor, 1.6 kohm, 250 V, Axial Leaded, 250 mW, ± 1%" H 10550 950 60  0001 C CNN "Description"
+F 6 "http://uk.farnell.com/multicomp/mf25-1k6/resistor-0-25w-1-1k6/dp/9341382" H 10550 950 60  0001 C CNN "Supplier URL"
+	1    10550 950 
+	0    1    1    0   
+$EndComp
+$Comp
+L zds-ym2149-rescue:R_Small R7
+U 1 1 58BDD798
+P 10550 1150
+F 0 "R7" H 10580 1170 50  0000 L CNN
+F 1 "1K6" H 10580 1110 50  0000 L CNN
+F 2 "rc2014:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" H 10550 1150 50  0001 C CNN
+F 3 "" H 10550 1150 50  0000 C CNN
+	1    10550 1150
+	0    1    1    0   
+$EndComp
+$Comp
+L zds-ym2149-rescue:R_Small R2
+U 1 1 58BDD8AA
+P 9850 1300
+F 0 "R2" H 9880 1320 50  0000 L CNN
+F 1 "3K" H 9880 1260 50  0000 L CNN
+F 2 "rc2014:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" H 9850 1300 50  0001 C CNN
+F 3 "" H 9850 1300 50  0000 C CNN
+	1    9850 1300
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:R_Small R1
+U 1 1 58BDD8F7
+P 9550 1300
+F 0 "R1" H 9580 1320 50  0000 L CNN
+F 1 "3K" H 9580 1260 50  0000 L CNN
+F 2 "rc2014:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" H 9550 1300 50  0001 C CNN
+F 3 "" H 9550 1300 50  0000 C CNN
+F 4 "MF25 470R" H 9550 1300 60  0001 C CNN "MPN"
+F 5 "470R  Through Hole Resistor, 470 ohm, 250 V, Axial Leaded, 250 mW, ± 1%" H 9550 1300 60  0001 C CNN "Base number"
+F 6 "http://uk.farnell.com/multicomp/mf25-470r/resistor-470r-0-25w-1/dp/9341943" H 9550 1300 60  0001 C CNN "Supplier URL"
+	1    9550 1300
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:R_Small R3
+U 1 1 58BDD938
+P 10150 1300
+F 0 "R3" H 10180 1320 50  0000 L CNN
+F 1 "3K" H 10180 1260 50  0000 L CNN
+F 2 "rc2014:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" H 10150 1300 50  0001 C CNN
+F 3 "" H 10150 1300 50  0000 C CNN
+	1    10150 1300
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR016
+U 1 1 58BE0619
+P 10200 1550
+F 0 "#PWR016" H 10200 1300 50  0001 C CNN
+F 1 "GND" H 10200 1400 50  0000 C CNN
+F 2 "" H 10200 1550 50  0000 C CNN
+F 3 "" H 10200 1550 50  0000 C CNN
+	1    10200 1550
+	1    0    0    -1  
+$EndComp
+Text Label 9250 2400 0    60   ~ 0
+D0
+Text Label 9250 2500 0    60   ~ 0
+D1
+Text Label 9250 2600 0    60   ~ 0
+D2
+Text Label 9250 2700 0    60   ~ 0
+D3
+Text Label 9250 2800 0    60   ~ 0
+D4
+Text Label 9250 2900 0    60   ~ 0
+D5
+Text Label 9250 3000 0    60   ~ 0
+D6
+Text Label 9250 3100 0    60   ~ 0
+D7
+$Comp
+L zds-ym2149-rescue:C C1
+U 1 1 58C9A12D
+P 4800 6350
+F 0 "C1" H 4825 6450 50  0000 L CNN
+F 1 "C" H 4825 6250 50  0000 L CNN
+F 2 "rc2014:C_Disc_D3.8mm_W2.6mm_P2.50mm" H 4838 6200 50  0001 C CNN
+F 3 "" H 4800 6350 50  0001 C CNN
+	1    4800 6350
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:C C2
+U 1 1 58C9A196
+P 5150 6350
+F 0 "C2" H 5175 6450 50  0000 L CNN
+F 1 "C" H 5175 6250 50  0000 L CNN
+F 2 "rc2014:C_Disc_D3.8mm_W2.6mm_P2.50mm" H 5188 6200 50  0001 C CNN
+F 3 "" H 5150 6350 50  0001 C CNN
+	1    5150 6350
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:C C3
+U 1 1 58C9A1DD
+P 5500 6350
+F 0 "C3" H 5525 6450 50  0000 L CNN
+F 1 "C" H 5525 6250 50  0000 L CNN
+F 2 "rc2014:C_Disc_D3.8mm_W2.6mm_P2.50mm" H 5538 6200 50  0001 C CNN
+F 3 "" H 5500 6350 50  0001 C CNN
+	1    5500 6350
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR017
+U 1 1 58C9A864
+P 4800 6500
+F 0 "#PWR017" H 4800 6250 50  0001 C CNN
+F 1 "GND" H 4800 6350 50  0000 C CNN
+F 2 "" H 4800 6500 50  0001 C CNN
+F 3 "" H 4800 6500 50  0001 C CNN
+	1    4800 6500
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR018
+U 1 1 58C9A8AC
+P 5150 6500
+F 0 "#PWR018" H 5150 6250 50  0001 C CNN
+F 1 "GND" H 5150 6350 50  0000 C CNN
+F 2 "" H 5150 6500 50  0001 C CNN
+F 3 "" H 5150 6500 50  0001 C CNN
+	1    5150 6500
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR019
+U 1 1 58C9A8F4
+P 5500 6500
+F 0 "#PWR019" H 5500 6250 50  0001 C CNN
+F 1 "GND" H 5500 6350 50  0000 C CNN
+F 2 "" H 5500 6500 50  0001 C CNN
+F 3 "" H 5500 6500 50  0001 C CNN
+	1    5500 6500
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR020
+U 1 1 58C9A93C
+P 4800 6200
+F 0 "#PWR020" H 4800 6050 50  0001 C CNN
+F 1 "VCC" H 4800 6350 50  0000 C CNN
+F 2 "" H 4800 6200 50  0001 C CNN
+F 3 "" H 4800 6200 50  0001 C CNN
+	1    4800 6200
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR021
+U 1 1 58C9A984
+P 5150 6200
+F 0 "#PWR021" H 5150 6050 50  0001 C CNN
+F 1 "VCC" H 5150 6350 50  0000 C CNN
+F 2 "" H 5150 6200 50  0001 C CNN
+F 3 "" H 5150 6200 50  0001 C CNN
+	1    5150 6200
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR022
+U 1 1 58C9A9CC
+P 5500 6200
+F 0 "#PWR022" H 5500 6050 50  0001 C CNN
+F 1 "VCC" H 5500 6350 50  0000 C CNN
+F 2 "" H 5500 6200 50  0001 C CNN
+F 3 "" H 5500 6200 50  0001 C CNN
+	1    5500 6200
+	1    0    0    -1  
+$EndComp
+Text Label 7850 3050 0    60   ~ 0
+BDIR
+Text Label 7850 3600 0    60   ~ 0
+BC1
+$Comp
+L zds-ym2149-rescue:Jumper_Dual JP5
+U 1 1 58D043AC
+P 9700 5300
+F 0 "JP5" H 9750 5200 50  0000 L CNN
+F 1 "CLOCK DIVIDE 1/2 or 1/4" H 9700 5400 50  0000 C BNN
+F 2 "rc2014:Pin_Header_Straight_1x03_Pitch2.54mm" H 9700 5300 50  0001 C CNN
+F 3 "" H 9700 5300 50  0001 C CNN
+	1    9700 5300
+	1    0    0    -1  
+$EndComp
+Text Label 4950 2800 0    60   ~ 0
+REG
+Text Label 4900 3400 0    60   ~ 0
+A1
+Wire Wire Line
+	8500 2100 8350 2100
+Wire Wire Line
+	8500 2600 8350 2600
+Wire Wire Line
+	8500 2700 8350 2700
+Wire Wire Line
+	8500 2800 8350 2800
+Wire Wire Line
+	8500 2900 8350 2900
+Wire Wire Line
+	8500 3000 8350 3000
+Wire Wire Line
+	8500 3100 8350 3100
+Wire Wire Line
+	8500 3200 8350 3200
+Wire Wire Line
+	8500 3300 8350 3300
+Wire Wire Line
+	8500 3400 8350 3400
+Wire Wire Line
+	8500 3500 8350 3500
+Wire Wire Line
+	8500 3600 8350 3600
+Wire Wire Line
+	8500 3700 8350 3700
+Wire Wire Line
+	8500 3800 8350 3800
+Wire Wire Line
+	8500 3900 8350 3900
+Wire Wire Line
+	8500 4000 8350 4000
+Wire Wire Line
+	9200 2100 9450 2100
+Wire Wire Line
+	9200 2300 9650 2300
+Wire Wire Line
+	9200 3300 10050 3300
+Wire Wire Line
+	9200 3600 9750 3600
+Wire Wire Line
+	9200 3700 9750 3700
+Wire Wire Line
+	9200 3800 9350 3800
+Wire Wire Line
+	9200 3900 10300 3900
+Wire Wire Line
+	9200 4000 9600 4000
+Wire Wire Line
+	8550 5450 8900 5450
+Wire Wire Line
+	8900 5450 8900 4550
+Wire Wire Line
+	8900 4550 7100 4550
+Wire Wire Line
+	7100 4550 7100 5050
+Wire Wire Line
+	7100 5050 7350 5050
+Wire Wire Line
+	6850 5250 7350 5250
+Wire Wire Line
+	4950 3750 4950 4500
+Wire Wire Line
+	4950 4500 6850 4500
+Wire Wire Line
+	6850 4500 6850 5250
+Wire Wire Line
+	9900 2100 9900 2050
+Wire Wire Line
+	6300 3200 6500 3200
+Wire Wire Line
+	6500 3200 6500 2950
+Wire Wire Line
+	6500 2950 6600 2950
+Wire Wire Line
+	6300 3300 6600 3300
+Wire Wire Line
+	6600 3150 6600 3300
+Connection ~ 6600 3300
+Wire Wire Line
+	6300 3100 6450 3100
+Wire Wire Line
+	6450 3100 6450 3700
+Wire Wire Line
+	6450 3700 6600 3700
+Wire Wire Line
+	7800 3050 7900 3050
+Wire Wire Line
+	5100 2900 4900 2900
+Wire Wire Line
+	5100 3000 4900 3000
+Connection ~ 9450 2100
+Wire Wire Line
+	9200 3500 10600 3500
+Wire Wire Line
+	8550 7000 8850 7000
+Wire Wire Line
+	8850 7000 8850 6100
+Wire Wire Line
+	8850 6100 7000 6100
+Wire Wire Line
+	7000 6100 7000 6600
+Wire Wire Line
+	7000 6600 7350 6600
+Wire Wire Line
+	7350 6800 6850 6800
+Wire Wire Line
+	6850 6800 6850 6000
+Wire Wire Line
+	6850 6000 8600 6000
+Wire Wire Line
+	8600 6000 8600 5050
+Connection ~ 8600 5050
+Wire Wire Line
+	8550 6600 9150 6600
+Wire Wire Line
+	12950 2950 13150 2950
+Wire Wire Line
+	12950 2850 13150 2850
+Wire Wire Line
+	12950 2750 13150 2750
+Wire Wire Line
+	12950 2650 13150 2650
+Wire Wire Line
+	12950 2550 13150 2550
+Wire Wire Line
+	12950 2450 13150 2450
+Wire Wire Line
+	12950 2350 13150 2350
+Wire Wire Line
+	12950 2250 13150 2250
+Wire Wire Line
+	12450 2950 12250 2950
+Wire Wire Line
+	12450 2850 12250 2850
+Wire Wire Line
+	12450 2750 12250 2750
+Wire Wire Line
+	12450 2650 12250 2650
+Wire Wire Line
+	12450 2550 12250 2550
+Wire Wire Line
+	12450 2450 12250 2450
+Wire Wire Line
+	12450 2350 12250 2350
+Wire Wire Line
+	12450 2250 12250 2250
+Wire Wire Line
+	9600 4000 9600 4050
+Wire Wire Line
+	11400 950  11850 950 
+Wire Wire Line
+	11400 750  11850 750 
+Wire Wire Line
+	11400 1150 11850 1150
+Wire Wire Line
+	11400 1150 11400 1250
+Wire Wire Line
+	8200 2400 8500 2400
+Wire Wire Line
+	8300 2300 8500 2300
+Wire Wire Line
+	9650 2300 9650 1900
+Wire Wire Line
+	9650 1900 8400 1900
+Wire Wire Line
+	8400 950  9550 950 
+Wire Wire Line
+	10300 1150 10450 1150
+Wire Wire Line
+	10300 950  10300 1150
+Connection ~ 10300 950 
+Wire Wire Line
+	11000 1150 10650 1150
+Wire Wire Line
+	10650 550  11000 550 
+Wire Wire Line
+	8200 550  10150 550 
+Wire Wire Line
+	8200 550  8200 2400
+Wire Wire Line
+	8300 750  9850 750 
+Wire Wire Line
+	8300 750  8300 2300
+Wire Wire Line
+	8400 1900 8400 950 
+Wire Wire Line
+	9550 1200 9550 950 
+Wire Wire Line
+	9850 750  9850 1200
+Wire Wire Line
+	10150 550  10150 1200
+Wire Wire Line
+	9550 1400 9550 1550
+Wire Wire Line
+	9850 1550 9850 1400
+Wire Wire Line
+	10150 1550 10150 1400
+Wire Wire Line
+	9450 1550 9550 1550
+Connection ~ 9850 1550
+Wire Wire Line
+	9450 1800 9450 1550
+Wire Wire Line
+	11000 550  11000 750 
+Wire Wire Line
+	11000 750  11100 750 
+Wire Wire Line
+	10650 750  10850 750 
+Wire Wire Line
+	10850 750  10850 950 
+Wire Wire Line
+	10650 950  10850 950 
+Connection ~ 10850 950 
+Connection ~ 11000 750 
+Connection ~ 10150 550 
+Connection ~ 9850 750 
+Connection ~ 9550 950 
+Wire Wire Line
+	9200 2400 9400 2400
+Wire Wire Line
+	9200 2500 9400 2500
+Wire Wire Line
+	9200 2600 9400 2600
+Wire Wire Line
+	9200 2700 9400 2700
+Wire Wire Line
+	9200 2800 9400 2800
+Wire Wire Line
+	9200 2900 9400 2900
+Wire Wire Line
+	9200 3000 9400 3000
+Wire Wire Line
+	9200 3100 9400 3100
+Connection ~ 10150 1550
+Connection ~ 9550 1550
+Wire Wire Line
+	7800 3600 8000 3600
+Wire Wire Line
+	9200 3200 9400 3200
+Wire Wire Line
+	9200 3400 9400 3400
+Wire Wire Line
+	12000 1050 11850 1050
+Wire Wire Line
+	11850 1050 11850 950 
+Connection ~ 11850 950 
+Wire Wire Line
+	12000 1250 11850 1250
+Wire Wire Line
+	11850 1250 11850 1150
+Connection ~ 11850 1150
+Wire Wire Line
+	12000 850  11850 850 
+Wire Wire Line
+	11850 850  11850 750 
+Connection ~ 11850 750 
+Wire Wire Line
+	9700 5600 9700 5400
+Wire Wire Line
+	4500 3300 5100 3300
+Wire Wire Line
+	4850 2800 5100 2800
+Text Label 4850 3150 0    60   ~ 0
+A15
+$Comp
+L zds-ym2149-rescue:CONN_02X03 JP3
+U 1 1 58DAC18B
+P 4550 2650
+F 0 "JP3" H 4550 2850 50  0000 C CNN
+F 1 "CONN_02X03" H 4550 2450 50  0000 C CNN
+F 2 "rc2014:Pin_Header_Straight_2x03_Pitch2.54mm" H 4550 1450 50  0001 C CNN
+F 3 "" H 4550 1450 50  0001 C CNN
+	1    4550 2650
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	4800 2550 4850 2550
+Wire Wire Line
+	4850 2550 4850 2650
+Wire Wire Line
+	4800 2650 4850 2650
+Connection ~ 4850 2650
+Wire Wire Line
+	4800 2750 4850 2750
+Connection ~ 4850 2750
+Wire Wire Line
+	4300 2550 4100 2550
+Wire Wire Line
+	4300 2650 4100 2650
+Wire Wire Line
+	4300 2750 4100 2750
+Text Label 4100 2650 0    60   ~ 0
+A3
+Text Label 4100 2750 0    60   ~ 0
+A2
+Text Label 4100 2550 0    60   ~ 0
+A14
+$Comp
+L zds-ym2149-rescue:CONN_02X08 JP4
+U 1 1 58DAD194
+P 5800 1100
+F 0 "JP4" H 5800 1550 50  0000 C CNN
+F 1 "BASE ADDRESS" V 5800 1100 50  0000 C CNN
+F 2 "rc2014:Pin_Header_Straight_2x08_Pitch2.54mm" H 5800 -100 50  0001 C CNN
+F 3 "" H 5800 -100 50  0001 C CNN
+	1    5800 1100
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	6050 750  6200 750 
+Wire Wire Line
+	6200 750  6200 850 
+Wire Wire Line
+	6050 850  6200 850 
+Connection ~ 6200 850 
+Wire Wire Line
+	6050 950  6200 950 
+Connection ~ 6200 950 
+Wire Wire Line
+	6050 1050 6200 1050
+Connection ~ 6200 1050
+Wire Wire Line
+	6050 1150 6200 1150
+Connection ~ 6200 1150
+Wire Wire Line
+	6050 1250 6200 1250
+Connection ~ 6200 1250
+Wire Wire Line
+	6050 1350 6200 1350
+Connection ~ 6200 1350
+$Comp
+L zds-ym2149-rescue:74LS138 U1
+U 1 1 58DAFD76
+P 4800 1100
+F 0 "U1" H 4900 1600 50  0000 C CNN
+F 1 "74HCT138" H 4950 551 50  0000 C CNN
+F 2 "rc2014:DIP-16_W7.62mm_Socket" H 4800 1100 50  0001 C CNN
+F 3 "" H 4800 1100 50  0000 C CNN
+F 4 "CD74HCT138E" H 4800 1100 60  0001 C CNN "MPN"
+F 5 "74HCT138" H 4800 1100 60  0001 C CNN "Base number"
+F 6 "http://uk.farnell.com/texas-instruments/cd74hct138e/74hct-cmos-74hct138-dip16-5-5v/dp/1105976" H 4800 1100 60  0001 C CNN "Supplier URL"
+	1    4800 1100
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	5400 750  5550 750 
+Wire Wire Line
+	5400 850  5550 850 
+Wire Wire Line
+	5400 950  5550 950 
+Wire Wire Line
+	5400 1050 5550 1050
+Wire Wire Line
+	5400 1150 5550 1150
+Wire Wire Line
+	5400 1250 5550 1250
+Wire Wire Line
+	5400 1350 5550 1350
+Wire Wire Line
+	5400 1450 5550 1450
+Wire Wire Line
+	4200 750  3950 750 
+Wire Wire Line
+	4200 850  3950 850 
+Wire Wire Line
+	4200 950  3950 950 
+Text Label 4000 950  0    60   ~ 0
+A5
+Text Label 4000 850  0    60   ~ 0
+A6
+Text Label 4000 750  0    60   ~ 0
+A7
+$Comp
+L zds-ym2149-rescue:Jumper_Dual JP1
+U 1 1 58DB01E6
+P 3350 900
+F 0 "JP1" H 3200 1050 50  0000 C CNN
+F 1 "USE A4 FOR ENABLE" H 3350 1200 50  0000 C CNN
+F 2 "rc2014:Pin_Header_Straight_1x03_Pitch2.54mm" H 3350 -300 50  0001 C CNN
+F 3 "" H 3350 -300 50  0001 C CNN
+F 4 "CONN 1x03" H 3350 900 60  0001 C CNN "MPN"
+	1    3350 900 
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR023
+U 1 1 58DB06C5
+P 3100 1250
+F 0 "#PWR023" H 3100 1000 50  0001 C CNN
+F 1 "GND" H 3100 1100 50  0000 C CNN
+F 2 "" H 3100 1250 50  0001 C CNN
+F 3 "" H 3100 1250 50  0001 C CNN
+	1    3100 1250
+	1    0    0    -1  
+$EndComp
+Text Label 3650 1200 0    60   ~ 0
+A4
+$Comp
+L zds-ym2149-rescue:VCC #PWR024
+U 1 1 58DB09C6
+P 3100 900
+F 0 "#PWR024" H 3100 750 50  0001 C CNN
+F 1 "VCC" H 3100 1050 50  0000 C CNN
+F 2 "" H 3100 900 50  0001 C CNN
+F 3 "" H 3100 900 50  0001 C CNN
+	1    3100 900 
+	0    -1   -1   0   
+$EndComp
+Text Label 8000 1100 0    60   ~ 0
+CS
+$Comp
+L zds-ym2149-rescue:Jumper_Dual JP2
+U 1 1 58DB0BB0
+P 4500 3150
+F 0 "JP2" H 4500 3300 50  0000 C CNN
+F 1 "ENABLE SELECTOR" H 4500 2800 50  0000 C CNN
+F 2 "rc2014:Pin_Header_Straight_1x03_Pitch2.54mm" H 4500 1950 50  0001 C CNN
+F 3 "" H 4500 1950 50  0001 C CNN
+	1    4500 3150
+	1    0    0    -1  
+$EndComp
+Text Label 4050 3150 0    60   ~ 0
+CS
+$Comp
+L zds-ym2149-rescue:74HCT00 U3
+U 3 1 58DB1272
+P 7300 1100
+F 0 "U3" H 7300 1150 50  0000 C CNN
+F 1 "74HCT00" H 7300 1000 50  0000 C CNN
+F 2 "rc2014:DIP-14_W7.62mm_Socket" H 7300 1100 50  0001 C CNN
+F 3 "" H 7300 1100 50  0001 C CNN
+F 4 "SN74HCT00N" H 7300 1100 60  0001 C CNN "MPN"
+F 5 "http://uk.farnell.com/texas-instruments/sn74hct00n/quad-2-input-nand-74hct00-dip14/dp/9591745" H 7300 1100 60  0001 C CNN "Supplier URL"
+	3    7300 1100
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:74HCT00 U3
+U 4 1 58DB12E1
+P 7300 1800
+F 0 "U3" H 7300 1850 50  0000 C CNN
+F 1 "74HCT00" H 7300 1700 50  0000 C CNN
+F 2 "rc2014:DIP-14_W7.62mm_Socket" H 7300 1800 50  0001 C CNN
+F 3 "" H 7300 1800 50  0001 C CNN
+	4    7300 1800
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	6700 1000 6600 1000
+Wire Wire Line
+	6450 1200 6600 1200
+Connection ~ 6600 1200
+Wire Wire Line
+	6700 1700 6600 1700
+Wire Wire Line
+	6700 1900 6600 1900
+Connection ~ 6600 1900
+$Comp
+L zds-ym2149-rescue:GND #PWR025
+U 1 1 58DB1813
+P 6600 2050
+F 0 "#PWR025" H 6600 1800 50  0001 C CNN
+F 1 "GND" H 6600 1900 50  0000 C CNN
+F 2 "" H 6600 2050 50  0001 C CNN
+F 3 "" H 6600 2050 50  0001 C CNN
+	1    6600 2050
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:C C4
+U 1 1 58DB1AE2
+P 5850 6350
+F 0 "C4" H 5875 6450 50  0000 L CNN
+F 1 "C" H 5875 6250 50  0000 L CNN
+F 2 "rc2014:C_Disc_D3.8mm_W2.6mm_P2.50mm" H 5888 6200 50  0001 C CNN
+F 3 "" H 5850 6350 50  0001 C CNN
+	1    5850 6350
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:VCC #PWR026
+U 1 1 58DB1B67
+P 5850 6200
+F 0 "#PWR026" H 5850 6050 50  0001 C CNN
+F 1 "VCC" H 5850 6350 50  0000 C CNN
+F 2 "" H 5850 6200 50  0001 C CNN
+F 3 "" H 5850 6200 50  0001 C CNN
+	1    5850 6200
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:GND #PWR027
+U 1 1 58DB1BDB
+P 5850 6500
+F 0 "#PWR027" H 5850 6250 50  0001 C CNN
+F 1 "GND" H 5850 6350 50  0000 C CNN
+F 2 "" H 5850 6500 50  0001 C CNN
+F 3 "" H 5850 6500 50  0001 C CNN
+	1    5850 6500
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	5100 3400 4900 3400
+Wire Wire Line
+	5100 3500 4900 3500
+Wire Wire Line
+	4250 3150 4050 3150
+Wire Wire Line
+	4750 3150 5000 3150
+Wire Wire Line
+	4500 3300 4500 3250
+$Comp
+L zds-ym2149-rescue:PWR_FLAG #FLG028
+U 1 1 58E0E873
+P 3800 3350
+F 0 "#FLG028" H 3800 3425 50  0001 C CNN
+F 1 "PWR_FLAG" H 3800 3500 50  0000 C CNN
+F 2 "" H 3800 3350 50  0001 C CNN
+F 3 "" H 3800 3350 50  0001 C CNN
+	1    3800 3350
+	1    0    0    -1  
+$EndComp
+$Comp
+L zds-ym2149-rescue:PWR_FLAG #FLG029
+U 1 1 58E0EDBF
+P 3700 3450
+F 0 "#FLG029" H 3700 3525 50  0001 C CNN
+F 1 "PWR_FLAG" H 3700 3600 50  0000 C CNN
+F 2 "" H 3700 3450 50  0001 C CNN
+F 3 "" H 3700 3450 50  0001 C CNN
+	1    3700 3450
+	1    0    0    -1  
+$EndComp
+NoConn ~ 8500 2200
+NoConn ~ 8500 2500
+NoConn ~ 9200 2200
+NoConn ~ 6300 2800
+NoConn ~ 6300 2900
+NoConn ~ 6300 3000
+NoConn ~ 6300 3400
+NoConn ~ 6300 3500
+NoConn ~ 7900 1800
+Wire Wire Line
+	10300 5600 9700 5600
+Wire Wire Line
+	10300 3900 10300 5600
+Wire Wire Line
+	9150 6600 9150 5800
+Wire Wire Line
+	9150 5800 9950 5800
+Wire Wire Line
+	9950 5800 9950 5300
+Wire Wire Line
+	8550 5050 8600 5050
+Wire Wire Line
+	9100 5050 9100 5300
+Wire Wire Line
+	9100 5300 9450 5300
+Wire Wire Line
+	6600 1700 6600 1900
+Wire Wire Line
+	7900 1100 8100 1100
+Wire Wire Line
+	6450 1150 6450 1200
+Wire Wire Line
+	6600 1000 6600 1200
+Wire Wire Line
+	6200 1450 6050 1450
+Wire Bus Line
+	12150 1850 13250 1850
+$Comp
+L zds-ym2149-rescue:Jumper_Dual JP7
+U 1 1 596A80CC
+P 3350 1200
+F 0 "JP7" H 3200 1350 50  0000 C CNN
+F 1 "USE !A4 FOR ENABLE" H 3350 900 50  0000 C CNN
+F 2 "rc2014:Pin_Header_Straight_1x03_Pitch2.54mm" H 3350 0   50  0001 C CNN
+F 3 "" H 3350 0   50  0001 C CNN
+F 4 "CONN 1x03" H 3350 1200 60  0001 C CNN "MPN"
+	1    3350 1200
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	4200 1450 4100 1450
+Wire Wire Line
+	3350 1050 3350 1000
+Wire Wire Line
+	3600 900  3750 900 
+Text Label 3650 900  0    60   ~ 0
+A4
+Wire Wire Line
+	3800 1200 3600 1200
+Wire Wire Line
+	3100 1200 3100 1250
+Wire Wire Line
+	4200 1250 3950 1250
+Wire Wire Line
+	3950 1250 3950 1050
+Wire Wire Line
+	3950 1050 3350 1050
+Wire Wire Line
+	4100 1450 4100 1350
+Connection ~ 4100 1350
+Wire Wire Line
+	4200 1350 4100 1350
+Wire Wire Line
+	3350 1350 3350 1300
+Wire Wire Line
+	6600 3300 6600 3500
+Wire Wire Line
+	9450 2100 9900 2100
+Wire Wire Line
+	8600 5050 9100 5050
+Wire Wire Line
+	10300 950  10450 950 
+Wire Wire Line
+	9850 1550 10150 1550
+Wire Wire Line
+	10850 950  11100 950 
+Wire Wire Line
+	11000 750  11000 1150
+Wire Wire Line
+	10150 550  10450 550 
+Wire Wire Line
+	9850 750  10450 750 
+Wire Wire Line
+	9550 950  10300 950 
+Wire Wire Line
+	10150 1550 10200 1550
+Wire Wire Line
+	9550 1550 9850 1550
+Wire Wire Line
+	11850 950  12000 950 
+Wire Wire Line
+	11850 1150 12000 1150
+Wire Wire Line
+	11850 750  12000 750 
+Wire Wire Line
+	4850 2650 4850 2750
+Wire Wire Line
+	4850 2750 4850 2800
+Wire Wire Line
+	6200 850  6200 950 
+Wire Wire Line
+	6200 950  6200 1050
+Wire Wire Line
+	6200 1050 6200 1150
+Wire Wire Line
+	6200 1150 6450 1150
+Wire Wire Line
+	6200 1150 6200 1250
+Wire Wire Line
+	6200 1250 6200 1350
+Wire Wire Line
+	6200 1350 6200 1450
+Wire Wire Line
+	6600 1200 6700 1200
+Wire Wire Line
+	6600 1900 6600 2050
+Wire Wire Line
+	3800 3350 3900 3350
+Wire Wire Line
+	4100 1350 3350 1350
+$Comp
+L Connector_Generic:Conn_01x24 JPB?
+U 1 1 535944CA
+P 800 5300
+F 0 "JPB?" H 550 6525 50  0000 L BNN
+F 1 "PINHD-1X24" H 550 3900 50  0000 L BNN
+F 2 "Pin_Headers:Pin_Header_Angled_1x24" H 800 5450 50  0001 C CNN
+F 3 "" H 800 5300 60  0000 C CNN
+	1    800  5300
+	-1   0    0    -1  
+$EndComp
+$Comp
+L Connector_Generic:Conn_01x24 JPA?
+U 1 1 5359460E
+P 800 2150
+F 0 "JPA?" H 550 3375 50  0000 L BNN
+F 1 "PINHD-1X24" H 550 750 50  0000 L BNN
+F 2 "Pin_Headers:Pin_Header_Angled_1x24" H 800 2300 50  0001 C CNN
+F 3 "" H 800 2150 60  0000 C CNN
+	1    800  2150
+	-1   0    0    -1  
+$EndComp
+Text GLabel 1200 5800 2    60   BiDi ~ 0
+B_D7
+Text GLabel 1200 5900 2    60   BiDi ~ 0
+B_D6
+Text GLabel 1200 6000 2    60   BiDi ~ 0
+B_D5
+Text GLabel 1200 6100 2    60   BiDi ~ 0
+B_D4
+Text GLabel 1200 6200 2    60   BiDi ~ 0
+B_D3
+Text GLabel 1200 6300 2    60   BiDi ~ 0
+B_D2
+Text GLabel 1200 6400 2    60   BiDi ~ 0
+B_D1
+Text GLabel 1200 6500 2    60   BiDi ~ 0
+B_D0
+NoConn ~ 1250 1050
+NoConn ~ 1250 1150
+$Comp
+L power:-12V #PWR?
+U 1 1 535A7B8F
+P 1600 2650
+F 0 "#PWR?" H 1600 2780 20  0001 C CNN
+F 1 "-12V" H 1600 2750 30  0000 C CNN
+F 2 "" H 1600 2650 60  0000 C CNN
+F 3 "" H 1600 2650 60  0000 C CNN
+	1    1600 2650
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:+5V #PWR?
+U 1 1 535A7BFD
+P 1350 2250
+F 0 "#PWR?" H 1350 2340 20  0001 C CNN
+F 1 "+5V" H 1350 2340 30  0000 C CNN
+F 2 "" H 1350 2250 60  0000 C CNN
+F 3 "" H 1350 2250 60  0000 C CNN
+	1    1350 2250
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:GND #PWR?
+U 1 1 535A7C0C
+P 1350 2400
+F 0 "#PWR?" H 1350 2400 30  0001 C CNN
+F 1 "GND" H 1350 2330 30  0001 C CNN
+F 2 "" H 1350 2400 60  0000 C CNN
+F 3 "" H 1350 2400 60  0000 C CNN
+	1    1350 2400
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:+12V #PWR?
+U 1 1 535A8003
+P 1450 2550
+F 0 "#PWR?" H 1450 2500 20  0001 C CNN
+F 1 "+12V" H 1450 2650 30  0000 C CNN
+F 2 "" H 1450 2550 60  0000 C CNN
+F 3 "" H 1450 2550 60  0000 C CNN
+	1    1450 2550
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:VCC #PWR?
+U 1 1 535A94C5
+P 1500 2250
+F 0 "#PWR?" H 1500 2350 30  0001 C CNN
+F 1 "VCC" H 1500 2350 30  0000 C CNN
+F 2 "" H 1500 2250 60  0000 C CNN
+F 3 "" H 1500 2250 60  0000 C CNN
+	1    1500 2250
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	900  5800 1000 5800
+Wire Wire Line
+	900  5900 1000 5900
+Wire Wire Line
+	900  6000 1000 6000
+Wire Wire Line
+	900  6100 1000 6100
+Wire Wire Line
+	900  6200 1000 6200
+Wire Wire Line
+	900  6300 1000 6300
+Wire Wire Line
+	900  6400 1000 6400
+Wire Wire Line
+	900  6500 1000 6500
+Wire Wire Line
+	900  5700 1000 5700
+Wire Wire Line
+	900  5600 1000 5600
+Wire Wire Line
+	900  5500 1000 5500
+Wire Wire Line
+	900  5400 1000 5400
+Wire Wire Line
+	900  5300 1000 5300
+Wire Wire Line
+	900  5200 1000 5200
+Wire Wire Line
+	900  5100 1000 5100
+Wire Wire Line
+	900  1050 1000 1050
+Wire Wire Line
+	900  1150 1000 1150
+Wire Wire Line
+	900  1250 1000 1250
+Wire Wire Line
+	900  1350 1000 1350
+Wire Wire Line
+	900  2350 1000 2350
+Wire Wire Line
+	900  2450 1000 2450
+Wire Wire Line
+	1250 2450 1250 2350
+Wire Wire Line
+	1350 2350 1350 2400
+Connection ~ 1250 2350
+Wire Wire Line
+	900  2150 1000 2150
+Wire Wire Line
+	1250 2150 1250 2250
+Wire Wire Line
+	900  2250 1000 2250
+Connection ~ 1250 2250
+Wire Wire Line
+	900  2950 1000 2950
+Wire Wire Line
+	900  2050 1000 2050
+Wire Wire Line
+	900  1850 1000 1850
+Wire Wire Line
+	900  1750 1000 1750
+Wire Wire Line
+	900  1650 1000 1650
+Wire Wire Line
+	900  1950 1000 1950
+Wire Wire Line
+	1450 2550 1000 2550
+Wire Wire Line
+	1250 2350 1350 2350
+Wire Wire Line
+	900  1550 1000 1550
+Wire Wire Line
+	900  3350 1000 3350
+Wire Wire Line
+	900  1450 1000 1450
+Wire Wire Line
+	900  5000 1000 5000
+Text GLabel 1200 3250 2    60   Input ~ 0
+B_CLK
+Text GLabel 1200 2950 2    60   Input ~ 0
+B_/WR
+Text GLabel 1200 3050 2    60   Input ~ 0
+B_/M1
+Text GLabel 1200 3150 2    60   Input ~ 0
+B_/IORQ
+Text GLabel 1200 3350 2    60   Input ~ 0
+B_/MREQ
+Text GLabel 1200 5700 2    60   Input ~ 0
+B_A15
+Text GLabel 1200 5600 2    60   Input ~ 0
+B_A14
+Text GLabel 1200 5500 2    60   Input ~ 0
+B_A13
+Text GLabel 1200 5400 2    60   Input ~ 0
+B_A12
+Text GLabel 1200 5300 2    60   Input ~ 0
+B_A11
+Text GLabel 1200 5200 2    60   Input ~ 0
+B_A10
+Text GLabel 1200 5100 2    60   Input ~ 0
+B_A9
+Text GLabel 1200 5000 2    60   Input ~ 0
+B_A8
+Text GLabel 1200 4900 2    60   Input ~ 0
+B_A7
+Text GLabel 1200 4800 2    60   Input ~ 0
+B_A6
+Text GLabel 1200 4700 2    60   Input ~ 0
+B_A5
+Text GLabel 1200 4600 2    60   Input ~ 0
+B_A4
+Text GLabel 1200 4500 2    60   Input ~ 0
+B_A3
+Text GLabel 1200 4400 2    60   Input ~ 0
+B_A2
+Text GLabel 1200 4300 2    60   Input ~ 0
+B_A1
+Text GLabel 1200 4200 2    60   Input ~ 0
+B_A0
+Wire Wire Line
+	900  3250 1000 3250
+Wire Wire Line
+	900  2850 1000 2850
+Wire Wire Line
+	900  2750 1000 2750
+Wire Wire Line
+	900  3150 1000 3150
+Wire Wire Line
+	900  3050 1000 3050
+Wire Wire Line
+	900  2650 1000 2650
+Wire Wire Line
+	1200 4500 1000 4500
+Wire Wire Line
+	900  4900 1000 4900
+Wire Wire Line
+	900  4200 1000 4200
+Wire Wire Line
+	900  4600 1000 4600
+Wire Wire Line
+	900  4300 1000 4300
+Wire Wire Line
+	900  4700 1000 4700
+Wire Wire Line
+	900  4400 1000 4400
+Wire Wire Line
+	900  4800 1000 4800
+Text GLabel 1200 2850 2    60   Input ~ 0
+B_/RD
+Text GLabel 1200 2750 2    60   Input ~ 0
+B_/RESET
+Text GLabel 1200 1650 2    60   Input ~ 0
+B_*INT
+Text GLabel 1200 1350 2    60   Input ~ 0
+B_/RFH
+Text GLabel 1200 1250 2    60   Input ~ 0
+B_/HLT
+Text GLabel 1200 2050 2    60   Input ~ 0
+B_/BUSREQ
+Text GLabel 1200 1950 2    60   Input ~ 0
+B_/BUSAK
+Text GLabel 1200 1850 2    60   Input ~ 0
+B_/NMI
+Text GLabel 1200 1750 2    60   Input ~ 0
+B_/WAIT
+Text GLabel 1200 1550 2    60   Input ~ 0
+B_/IEO
+Text GLabel 1200 1450 2    60   Input ~ 0
+B_/IEI
+Wire Wire Line
+	1250 2250 1350 2250
+Connection ~ 1000 1050
+Wire Wire Line
+	1000 1050 1250 1050
+Connection ~ 1000 1150
+Wire Wire Line
+	1000 1150 1250 1150
+Connection ~ 1000 1250
+Wire Wire Line
+	1000 1250 1200 1250
+Connection ~ 1000 1350
+Wire Wire Line
+	1000 1350 1200 1350
+Connection ~ 1000 1450
+Wire Wire Line
+	1000 1450 1200 1450
+Connection ~ 1000 1550
+Wire Wire Line
+	1000 1550 1200 1550
+Connection ~ 1000 1650
+Wire Wire Line
+	1000 1650 1200 1650
+Connection ~ 1000 1750
+Wire Wire Line
+	1000 1750 1200 1750
+Connection ~ 1000 1850
+Wire Wire Line
+	1000 1850 1200 1850
+Connection ~ 1000 1950
+Wire Wire Line
+	1000 1950 1200 1950
+Connection ~ 1000 2050
+Wire Wire Line
+	1000 2050 1200 2050
+Connection ~ 1000 2150
+Wire Wire Line
+	1000 2150 1250 2150
+Connection ~ 1000 2250
+Wire Wire Line
+	1000 2250 1250 2250
+Connection ~ 1000 2350
+Wire Wire Line
+	1000 2350 1250 2350
+Connection ~ 1000 2450
+Wire Wire Line
+	1000 2450 1250 2450
+Connection ~ 1000 2550
+Wire Wire Line
+	1000 2550 900  2550
+Connection ~ 1000 2650
+Wire Wire Line
+	1000 2650 1600 2650
+Connection ~ 1000 2750
+Wire Wire Line
+	1000 2750 1200 2750
+Connection ~ 1000 2850
+Wire Wire Line
+	1000 2850 1200 2850
+Connection ~ 1000 2950
+Wire Wire Line
+	1000 2950 1200 2950
+Connection ~ 1000 3050
+Wire Wire Line
+	1000 3050 1200 3050
+Connection ~ 1000 3150
+Wire Wire Line
+	1000 3150 1200 3150
+Connection ~ 1000 3250
+Wire Wire Line
+	1000 3250 1200 3250
+Connection ~ 1000 3350
+Wire Wire Line
+	1000 3350 1200 3350
+Connection ~ 1000 4200
+Wire Wire Line
+	1000 4200 1200 4200
+Connection ~ 1000 4300
+Wire Wire Line
+	1000 4300 1200 4300
+Connection ~ 1000 4400
+Wire Wire Line
+	1000 4400 1200 4400
+Connection ~ 1000 4500
+Wire Wire Line
+	1000 4500 900  4500
+Connection ~ 1000 4600
+Wire Wire Line
+	1000 4600 1200 4600
+Connection ~ 1000 4700
+Wire Wire Line
+	1000 4700 1200 4700
+Connection ~ 1000 4800
+Wire Wire Line
+	1000 4800 1200 4800
+Connection ~ 1000 4900
+Wire Wire Line
+	1000 4900 1200 4900
+Connection ~ 1000 5000
+Wire Wire Line
+	1000 5000 1200 5000
+Connection ~ 1000 5100
+Wire Wire Line
+	1000 5100 1200 5100
+Connection ~ 1000 5200
+Wire Wire Line
+	1000 5200 1200 5200
+Connection ~ 1000 5300
+Wire Wire Line
+	1000 5300 1200 5300
+Connection ~ 1000 5400
+Wire Wire Line
+	1000 5400 1200 5400
+Connection ~ 1000 5500
+Wire Wire Line
+	1000 5500 1200 5500
+Connection ~ 1000 5600
+Wire Wire Line
+	1000 5600 1200 5600
+Connection ~ 1000 5700
+Wire Wire Line
+	1000 5700 1200 5700
+Connection ~ 1000 5800
+Wire Wire Line
+	1000 5800 1200 5800
+Connection ~ 1000 5900
+Wire Wire Line
+	1000 5900 1200 5900
+Connection ~ 1000 6000
+Wire Wire Line
+	1000 6000 1200 6000
+Connection ~ 1000 6100
+Wire Wire Line
+	1000 6100 1200 6100
+Connection ~ 1000 6200
+Wire Wire Line
+	1000 6200 1200 6200
+Connection ~ 1000 6300
+Wire Wire Line
+	1000 6300 1200 6300
+Connection ~ 1000 6400
+Wire Wire Line
+	1000 6400 1200 6400
+Connection ~ 1000 6500
+Wire Wire Line
+	1000 6500 1200 6500
+Connection ~ 1350 2250
+Wire Wire Line
+	1350 2250 1500 2250
+Connection ~ 3800 3350
+Wire Bus Line
+	8250 4150 12150 4150
+Wire Bus Line
+	13250 1850 13250 3050
+Wire Bus Line
+	12150 1850 12150 4150
+Wire Bus Line
+	8250 2700 8250 4150
+Wire Wire Line
+	3600 3450 3700 3450
+NoConn ~ 3600 1950
+NoConn ~ 3600 2050
+NoConn ~ 3600 2150
+NoConn ~ 3600 2250
+NoConn ~ 3600 2350
+NoConn ~ 3600 2450
+NoConn ~ 3600 3250
+NoConn ~ 3600 3550
+NoConn ~ 3600 3950
+NoConn ~ 3600 3850
+NoConn ~ 3350 5550
+NoConn ~ 3350 5450
+NoConn ~ 3350 5350
+NoConn ~ 3350 5250
+NoConn ~ 3350 5150
+Connection ~ 3600 3450
+Wire Wire Line
+	3350 2550 3600 2550
+Wire Wire Line
+	3350 1850 3600 1850
+Wire Wire Line
+	3350 1750 3600 1750
+Wire Wire Line
+	3350 3550 3600 3550
+Wire Wire Line
+	3800 3150 3350 3150
+Wire Wire Line
+	3350 4050 3600 4050
+Wire Wire Line
+	3350 4150 3600 4150
+Wire Wire Line
+	3350 4250 3600 4250
+Wire Wire Line
+	3350 5050 3600 5050
+Wire Wire Line
+	3350 4950 3600 4950
+Wire Wire Line
+	3350 4850 3600 4850
+Wire Wire Line
+	3350 4750 3600 4750
+Wire Wire Line
+	3350 4650 3600 4650
+Wire Wire Line
+	3350 4550 3600 4550
+Wire Wire Line
+	3350 4450 3600 4450
+Wire Wire Line
+	3350 4350 3600 4350
+Wire Wire Line
+	3350 3950 3600 3950
+Wire Wire Line
+	3350 3850 3600 3850
+Wire Wire Line
+	3350 3750 4950 3750
+Wire Wire Line
+	3350 3650 3600 3650
+Wire Wire Line
+	3350 3450 3600 3450
+Wire Wire Line
+	3350 3350 3800 3350
+Wire Wire Line
+	3350 3250 3600 3250
+Wire Wire Line
+	3350 3050 3600 3050
+Wire Wire Line
+	3350 2950 3600 2950
+Wire Wire Line
+	3350 2850 3600 2850
+Wire Wire Line
+	3350 2750 3600 2750
+Wire Wire Line
+	3350 2650 3600 2650
+Wire Wire Line
+	3350 2450 3600 2450
+Wire Wire Line
+	3350 2350 3600 2350
+Wire Wire Line
+	3350 2250 3600 2250
+Wire Wire Line
+	3350 2150 3600 2150
+Wire Wire Line
+	3350 2050 3600 2050
+Wire Wire Line
+	3350 1950 3600 1950
+$Comp
+L zds-ym2149-rescue:VCC #PWR02
+U 1 1 5898D2A5
+P 3600 3450
+F 0 "#PWR02" H 3600 3300 50  0001 C CNN
+F 1 "VCC" H 3600 3600 50  0000 C CNN
+F 2 "" H 3600 3450 50  0000 C CNN
+F 3 "" H 3600 3450 50  0000 C CNN
+	1    3600 3450
+	1    0    0    -1  
+$EndComp
+Text Label 3400 4250 0    60   ~ 0
+/IORQ
+Text Label 3400 4150 0    60   ~ 0
+/RD
+Text Label 3400 4050 0    60   ~ 0
+/WR
+Text Label 3400 3950 0    60   ~ 0
+MREQ
+Text Label 3400 3850 0    60   ~ 0
+INT
+Text Label 3400 3750 0    60   ~ 0
+CLK
+Text Label 3400 3650 0    60   ~ 0
+/RESET
+Text Label 3400 3550 0    60   ~ 0
+M1
+Text Label 3400 3450 0    60   ~ 0
+5V
+Text Label 3400 3350 0    60   ~ 0
+GND
+Text Label 3400 3250 0    60   ~ 0
+A0
+Text Label 3400 3150 0    60   ~ 0
+A1
+Text Label 3400 3050 0    60   ~ 0
+A2
+Text Label 3400 2950 0    60   ~ 0
+A3
+Text Label 3400 2850 0    60   ~ 0
+A4
+Text Label 3400 2750 0    60   ~ 0
+A5
+Text Label 3400 2650 0    60   ~ 0
+A6
+Text Label 3400 2550 0    60   ~ 0
+A7
+Text Label 3400 2450 0    60   ~ 0
+A8
+Text Label 3400 2350 0    60   ~ 0
+A9
+Text Label 3400 2250 0    60   ~ 0
+A10
+Text Label 3450 5050 0    60   ~ 0
+D7
+Text Label 3450 4950 0    60   ~ 0
+D6
+Text Label 3450 4850 0    60   ~ 0
+D5
+Text Label 3450 4750 0    60   ~ 0
+D4
+Text Label 3450 4650 0    60   ~ 0
+D3
+Text Label 3450 4550 0    60   ~ 0
+D2
+Text Label 3450 4450 0    60   ~ 0
+D1
+Text Label 3450 4350 0    60   ~ 0
+D0
+Text Label 3400 2150 0    60   ~ 0
+A11
+Text Label 3400 2050 0    60   ~ 0
+A12
+Text Label 3400 1950 0    60   ~ 0
+A13
+Text Label 3400 1850 0    60   ~ 0
+A14
+Text Label 3400 1750 0    60   ~ 0
+A15
+$Comp
+L zds-ym2149-rescue:CONN_01X39 P1
+U 1 1 58978FEA
+P 3150 3650
+F 0 "P1" H 3150 5700 50  0000 C CNN
+F 1 "RC2014 BUS" V 3250 3650 50  0000 C CNN
+F 2 "rc2014:Pin_Header_Straight_1x39_Pitch2.54mm_NoSilk" H 3150 3650 50  0001 C CNN
+F 3 "" H 3150 3650 50  0000 C CNN
+	1    3150 3650
+	-1   0    0    -1  
+$EndComp
+$EndSCHEMATC

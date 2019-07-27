@@ -1,0 +1,578 @@
+; Program:  ERASE
+; Version:  5.0
+; Date:  18 May 84
+; Author:  Richard Conn
+; v4.0 (16 JAN 83)
+; v3.3 (06 Jan 83), 3.2 (07 Dec 82)
+; v3.1 (09 Nov 82), 3.0 (18 Oct 82), 2.0 (18 Nov 81)
+; v1.2 (12 Apr 81), 1.3 (25 Oct 81), 1.4 (26 Oct 81)
+; v1.0 (14 Jun 80), 1.1 (19 Oct 80)
+
+VERS	EQU	51
+Z3ENV	DEFL	0FE00H
+
+; Version 5.1A - Fix option parser as per RENAME32, strip high bit when
+; printing program's actual name for help screen, wheel byte checked
+; before granting "S" or "R" option or help text on those options.
+;				December 30, 1987, Bruce Morgen
+
+; Version 5.1 - Z80 opcodes, Zilog mnemonics and ZCPR33 Type 3 format.
+; Help message gives correct COMfile name of program.  Following Howard
+; Goldstein's (LX17 & 18) lead, the ZCPR 3.3 parser is used if it's
+; available.
+;				December 21, 1987, Bruce Morgen
+
+;  ERASE COMMAND --
+;	Erase files specified in command line.	Command is of the form:
+;
+;		ERASE DIR:FILENAME.TYP,... ISR
+;
+;	If 'I' option is given, Inspection of each file is performed and
+;	the user is given the option to erase the file or not.	If 'S'
+;	option is given, System files are included in erase procedure.
+;	Drive specification is optional.  If 'R' option is given, R/O
+;	files are erased without prompting.
+;
+	.Z80
+
+NO	EQU	0
+YES	EQU	NOT NO
+
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+
+ESIZE	EQU	16		; Size of directory entry (from SYSLIB DIRQ routine)
+
+	PUBLIC	COUT		; Make SYSLIB use our COUT routine
+
+	EXTRN	DIRQ		; Directory processor
+
+	EXTRN	Z33CHK		; Version 3.3 test
+	EXTRN	Z33FNAME	; Zfname, 3.3-style
+
+	EXTRN	Z3INIT		; Init z3 enviornment
+	EXTRN	ZFNAME		; File name parser
+	EXTRN	Z3LOG		; Log into Z3 FCB specification
+	EXTRN	GETEFCB
+	EXTRN	GETWHL
+
+	EXTRN	PUTUD		; Save current DU
+	EXTRN	GETUD		; Get current DU
+	EXTRN	PHLDC		; Print HL as decimal characters
+	EXTRN	PHL4HC		; Print HL as hexadecimal characters
+	EXTRN	EPRINT		; Print routine
+	EXTRN	BOUT		; Console output routine
+	EXTRN	CIN		; Console input routine
+	EXTRN	CAPS		; Capitalize routine
+	EXTRN	CRLF		; New line routine
+	EXTRN	FILLB		; Fill routine
+	EXTRN	CODEND		; Code end computation routine
+;
+;  CP/M EQUATES
+;
+CPM	EQU	0		; Warm boot
+BDOS	EQU	5		; BDOS entry
+FCB	EQU	5CH		; FCB
+BUFF	EQU	80H		; Input line buffer
+CR	EQU	13		; <cr>
+LF	EQU	10		; <lf>
+;
+; External ZCPR3 Environment Descriptor
+;
+; TYPE 3 HEADER
+;
+; Code modified as suggested by Charles Irvine to function correctly with
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+
+	 IF	Z3ENV NE 0
+ENTRY:	JR	START0		; Must use relative jump
+	NOP			; Filler
+	DB	'Z3ENV',3	; Type-3 environment
+
+Z3EADR:	DW	Z3ENV		; Filled in by Z33
+	DW	ENTRY		; Intended load address
+
+START0:	LD	HL,0		; Point to warmboot entry
+	LD	A,(HL)		; Save the byte there
+	DI			; Protect against interrupts
+	LD	(HL),0C9H	; Replace warmboot with a return opcode
+	RST	0		; Call address 0, pushing return address
+				; Onto stack
+RETADDR:LD	(HL),A		; Restore byte at 0
+	DEC	SP		; Get stack pointer to point
+	DEC	SP		; To the value of return address
+	POP	HL		; Get it into hl and restore stack
+	EI			; We can allow interrupts again
+	LD	DE,RETADDR	; This is where we should be
+	XOR	A		; Clear carry flag
+	PUSH	HL		; Save address again
+	SBC	HL,DE		; Subtract -- we should have 0 now
+	POP	HL		; Restore value of return address
+	JR	Z,START		; If addresses matched, begin real code
+
+	LD	DE,NOTZ33MSG-RETADDR ; Offset to message
+	ADD	HL,DE
+	EX	DE,HL		; Switch pointer to message into DE
+	LD	C,9
+	JP	0005H		; Return via BDOS print string function
+
+NOTZ33MSG:
+	DB	'Not Z33+$'	; Abort message if not Z33-compatible
+
+START:	LD	HL,(Z3EADR)	; Point to ZCPR3 environment
+	 ENDIF			; Z3ENV NE 0
+;
+; Internal ZCPR3 Environment Descriptor
+;
+	 IF	NOT (Z3ENV NE 0)
+
+	MACLIB	Z3BASE.LIB
+	MACLIB	SYSENV.LIB
+
+Z3EADR:	JP	START
+	SYSENV
+
+START:	LD	HL,Z3EADR	; Point to zcpr3 environment
+	 ENDIF			; NOT (Z3ENV NE 0)
+;
+; Start of Program -- Initialize ZCPR3 Environment
+;
+	CALL	Z3INIT		; Initialize the ZCPR3 env and the VLIB env
+	LD	(STACK),SP	; Get stack pointer and save it
+;
+; Compute Buffer Locations
+;
+	CALL	CODEND		; Determine free space
+	LD	(CMDLNE),HL	; Set ptr to command line
+	LD	DE,100H		; Buffer size
+	ADD	HL,DE		; Command line
+	LD	(ERAFCB),HL	; Fcb for erase
+	ADD	HL,DE
+	LD	(DIRBUF),HL	; Set ptr to directory buffer
+	LD	SP,HL		; Set stack ptr
+;
+; Save Location
+;
+	CALL	PUTUD		; Save away current DU
+;
+; Print Banner
+;
+	CALL	EPRINT
+	DB	'ERASE  Version '
+	DB	VERS/10+'0','.',[VERS MOD 10]+'0'
+	DB	' (loaded at ',0
+	LD	HL,ENTRY
+	CALL	PHL4HC
+	CALL	EPRINT
+	DB	'h)',CR,LF,0
+	LD	A,(FCB+1)	; Get first character of file name
+	CP	'/'		; Option caught?
+	JR	Z,HELP
+	CP	' '
+	JP	NZ,ECONT
+;
+; Print help information
+;
+HELP:	CALL	EPRINT
+	DB	'Syntax:',CR,LF,'  ',0
+	CALL	GETEFCB
+	JR	Z,NOEFCB
+	LD	B,8
+
+CNMLP:	INC	HL
+	LD	A,(HL)
+	AND	7FH
+	CP	' '
+	CALL	NZ,BOUT
+	DJNZ	CNMLP
+	JR	HELP2
+
+NOEFCB:	CALL	EPRINT
+	DB	'ERASE',0
+
+HELP2:	CALL	EPRINT
+	DB	' dir:filename.typ,dir:fn.ft,... [/]o...'
+	DB	CR,LF,'Options:'
+	DB	CR,LF,'   I -- Inspect Mode (Give user approval option)'
+	DB	0
+	CALL	GETWHL
+	JR	Z,RETURN
+	CALL	EPRINT
+	DB	CR,LF,'   R -- Erase R/O Files without prompting user'
+	DB	CR,LF,'   S -- Include SYS Files'
+	DB	0
+;
+; Return fo operating system
+;
+RETURN:	CALL	GETUD		; Reset user if necessary
+
+RETX:	LD	SP,(STACK)	; Get old stack and set it
+	RET
+;
+; Copy buffer into temp buffer
+;
+ECONT:	LD	HL,(CMDLNE)	; Pt to command line
+	EX	DE,HL		; In DE
+	LD	HL,BUFF+1	; Point to buffer
+	LD	BC,80H		; Buffer size (maximum)
+	LDIR			; Copy into command line buffer
+;
+; Extract flags if present
+;
+	XOR	A		; Set no inspect, no R/O, and no system files
+	LD	(INSPECT),A
+	LD	(READONLY),A
+	LD	A,80H		; Select non-system
+	LD	(SYSTEM),A
+	LD	HL,0		; Set file count
+	LD	(FILECNT),HL
+	LD	HL,(CMDLNE)	; Point to buffer
+;
+; Skip to file name string
+;
+SBLANK:	LD	A,(HL)		; Skip to non-blank
+	CP	' '		; <space>?
+	JR	NZ,SBL1
+	INC	HL		; Point to next character
+	JR	SBLANK
+;
+; Skip to end of file name string
+;
+SBL1:	LD	A,(HL)		; Skip to <space> or EOL
+	OR	A		; Done?
+	JP	Z,DSPEC
+	CP	' '		; <space>
+	JR	Z,SBL2
+	INC	HL		; Point to next
+	JR	SBL1
+;
+; Skip over trailing blanks
+;
+SBL2:
+	INC	HL		; Point to character after space
+	LD	A,(HL)
+	OR	A		; End of command tail?
+	JP	Z,DSPEC
+	CP	' '		; Another space
+	JR	Z,SBL2		; If so, continue skipping
+;
+; Check for leading slash on option and skip it if so
+;
+OPT:	CP	'/'		; Option character?
+	JR	NZ,OPTION
+	INC	HL		; Skip slash
+;
+; Process list of options
+;
+OPTION:	LD	A,(HL)		; Get byte
+	OR	A		; Done?
+	JR	Z,DSPEC
+	INC	HL		; Point to next character
+	CP	' '		; Skip over spaces
+	JR	Z,OPTION
+	CP	'/'		; If option letter, obvious error, so help
+	JP	Z,HELP
+	CP	'I'		; Inspect?
+	JR	Z,OPTINS
+	CP	'R'		; Read/only?
+	JR	Z,OPTRO
+	CP	'S'		; System files?
+	JP	NZ,HELP
+;
+; Sset system selection
+;
+	PUSH	AF
+	CALL	GETWHL
+	JR	Z,NOWHL
+	POP	AF
+	LD	A,0C0H		; Set for system and non-system files
+	LD	(SYSTEM),A
+	JR	OPTION
+;
+; Set inspect option
+;
+OPTINS:	LD	A,0FFH		; Inspect
+	LD	(INSPECT),A
+	JR	OPTION
+;
+; Set R/O option
+;
+OPTRO:	PUSH	AF
+	CALL	GETWHL
+	JR	Z,NOWHL
+	POP	AF
+	LD	A,0FFH		; Set R/O
+	LD	(READONLY),A
+	JR	OPTION
+
+NOWHL:	LD	A,'"'
+	CALL	BOUT
+	POP	AF
+	CALL	BOUT
+	CALL	EPRINT
+	DB	'" option denied, Wheel privileges required.',CR,LF,0
+	JR	OPTION
+;
+; Extract disk, user, and file name information
+;
+DSPEC:	LD	HL,(CMDLNE)	; Point to before first byte
+	DEC	HL		; Point to before first byte for following inc
+
+DSPEC0:	INC	HL		; Point to byte
+	LD	A,(HL)		; Get byte
+	OR	A		; Done?
+	JP	Z,HELP
+	CP	' '		; <space>?
+	JR	Z,DSPEC0
+;
+; Major reentry point when file specs are separated by commas
+;   HL points to first byte of next file specification
+;
+DSPEC1:	CALL	GETUD		; Return home
+	LD	DE,FCB		; Point to FCB in DE and to first character of file name in HL
+	CALL	PARSIT		; Extract file name into FCB, and get disk and user
+	LD	(NEXTCH),HL	; Save pointer to delimiter which ended scan
+	LD	HL,FCB+1	; See if file name is all wild
+	LD	B,11		; 11 bytes
+
+WTEST:	LD	A,(HL)		; Get byte
+	INC	HL		; Point to next
+	CP	'?'		; Wild?
+	JR	NZ,NOWILD
+	DJNZ	WTEST		; Count down
+	LD	A,(INSPECT)	; Inspect?
+	OR	A		; 0=no
+	JR	NZ,NOWILD
+	CALL	EPRINT
+	DB	CR,LF,'Erase All Files? ',0
+	CALL	CIN		; Get response
+	CALL	CAPS		; Capitalize
+	CALL	BOUT		; Echo
+	CP	'Y'		; Yes?
+	JR	Z,NOWILD
+	CALL	EPRINT
+	DB	CR,LF,'Aborting',0
+	JP	RETX
+
+NOWILD:	LD	DE,FCB		; Point to FCB
+	CALL	Z3LOG		; Log into directory
+;
+; Load directory and erase files
+;
+ERASE:	LD	HL,(DIRBUF)	; Point to directory buffer
+	LD	A,(SYSTEM)	; Get sys/non-sys flags
+	LD	DE,FCB		; Pt to fcb
+	CALL	DIRQ		; Load dir, select files, pack, and alphabetize
+;
+; Erase directory files; HL points to first file, BC=file count
+;
+	CALL	ERAFILES
+;
+; Check for next file specification
+;
+	LD	HL,(NEXTCH)	; Get pointer
+	LD	A,(HL)		; Get delimiter
+	CP	','		; Another file?
+	JR	NZ,ERADONE
+	INC	HL		; Point to character after comma
+	JR	DSPEC1		; Continue processing
+;
+; Erase complete -- print count and exit
+;
+ERADONE:CALL	PRCOUNT		; Print file count
+	JP	RETURN
+;
+; Erase selected files
+;
+ERAFILES:
+	LD	A,B		; Check for any files loaded
+	OR	C
+	RET	Z
+;
+; Print file name
+;
+ERAFLP:	PUSH	BC		; Save entry count
+	CALL	CRLF		; New line
+	PUSH	HL		; Save pointer to FCB
+	INC	HL		; Point to file name
+	LD	B,8		; Print name
+	CALL	PRNT
+	LD	A,'.'		; Decimal
+	CALL	BOUT
+	LD	B,3		; Print type
+	CALL	PRNT
+	POP	HL		; Get pointer
+;
+; Check for inspection and inspect if set
+;
+	LD	A,(INSPECT)	; Get flag
+	OR	A		; 0=no
+	JR	Z,ERAIT
+;
+; Prompt user for erase
+;
+	CALL	ERAQ		; Erase question
+	CP	'Q'		; Quit?
+	JR	Z,QUIT
+	CP	'Y'		; Yes?
+	JR	Z,ERAIT
+;
+; Don't erase file
+;
+ERANO:	CALL	EPRINT
+	DB	'  NOT Erased',0
+	JP	ERATEST
+;
+; Prompt user for erase
+;
+ERAQ:	CALL	EPRINT		; Print prompt
+	DB	' -- Erase (Y/N/Q=Quit/other=N)? ',0
+	CALL	CIN		; Get response
+	CALL	CAPS		; Capitalize
+
+COUT:	JP	BOUT		; Echo
+;
+; Quit erase program
+;
+QUIT:	CALL	PRCOUNT		; Print count of files erased
+	JP	RETURN
+;
+; Erase file
+;
+ERAIT:	PUSH	HL
+	LD	DE,9		; Point to R/O attribute
+	ADD	HL,DE
+	LD	A,(HL)		; Get R/O attribute
+	POP	HL		; Restore pointer
+	AND	80H		; R/O?
+	JR	Z,ERAIT1	; R/W - proceed
+	LD	A,(READONLY)	; Get R/O erase flag
+	OR	A		; 0=query
+	JR	NZ,ERAIT0	; Erase without question if flag set
+	CALL	EPRINT		; Notify user and prompt
+	DB	CR,LF,' File is R/O',0
+	CALL	ERAQ		; Ask question
+	CP	'Q'		; Quit?
+	JR	Z,QUIT
+	CP	'Y'		; Erase R/O
+	JR	NZ,ERATEST	; Do not erase if not yes
+;
+; Erase R/O file
+;
+ERAIT0:	PUSH	HL		; Save pointer to file entry
+	LD	DE,9		; Point to R/O attribute
+	ADD	HL,DE
+	LD	A,(HL)		; Get attribute
+	AND	7FH		; Make R/W
+	LD	(HL),A
+	POP	HL		; Get pointer to FCB
+	PUSH	HL		; Save pointer again
+	EX	DE,HL		; DE points to FCB
+	XOR	A		; Make sure current disk is selected
+	LD	(DE),A
+	LD	C,30		; Set file attributes
+	CALL	BDOS
+	POP	HL
+;
+; Erase R/W file
+;
+ERAIT1:	PUSH	HL		; Save pointer to file name to erase
+	INC	HL		; Point to first byte of name
+	PUSH	HL		; Save HL
+	LD	HL,(ERAFCB)	; Set up FCB
+	EX	DE,HL		; In DE
+	POP	HL		; Get HL
+	PUSH	DE		; Save pointer
+	XOR	A		; A=0
+	LD	(DE),A		; Current disk
+	INC	DE		; Point to first characterx
+	LD	BC,11		; Copy 11 bytes
+	LDIR			; Copy HL to DE for 11 bytes
+	EX	DE,HL		; HL points to rest of FCB
+	LD	B,24		; Fill rest of FCB with zeroes
+	XOR	A		; A=0
+	CALL	FILLB
+	POP	DE		; Get pointer
+	LD	C,19		; Delete file
+	CALL	BDOS
+	CALL	EPRINT
+	DB	'      Erased',0
+	LD	HL,(FILECNT)	; Increment count
+	INC	HL
+	LD	(FILECNT),HL
+	POP	HL		; Get pointer to directory entry
+;
+; Point to next entry
+;
+ERATEST:LD	DE,ESIZE	; Point to next entry
+	ADD	HL,DE
+	POP	BC		; Get count
+	DEC	BC		; Count down
+	LD	A,B		; Check for zero
+	OR	C
+	JP	NZ,ERAFLP
+;
+; Return to caller
+;
+	RET
+;
+; Print characters pointed to by HL for B bytes
+;
+PRNT:	LD	A,(HL)		; Get character
+	CALL	BOUT
+	INC	HL		; Point to next
+	DJNZ	PRNT		; Count down
+	RET
+;
+; Print count of number of files erased
+;
+PRCOUNT:CALL	CRLF		; New line
+	LD	HL,(FILECNT)	; Get count
+	LD	A,L		; Check for none
+	OR	H
+	JR	Z,PRNO
+	CALL	PHLDC		; Print decimal count
+	JR	PRMS
+
+PRNO:	CALL	EPRINT
+	DB	'No',0
+
+PRMS:	LD	HL,(FILECNT)	; 1 file erased?
+	LD	A,H		; High zero?
+	OR	A
+	JR	NZ,PRMULT
+	LD	A,L		; Low one?
+	CP	1
+	JR	Z,PRSING
+
+PRMULT:	CALL	EPRINT
+	DB	' Files Erased',0
+	RET
+
+PRSING:	CALL	EPRINT
+	DB	' File  Erased',0
+	RET
+
+PARSIT:	CALL	Z33CHK
+	JP	Z,Z33FNAME
+	XOR	A
+	JP	ZFNAME
+;
+; Buffers
+;
+	DSEG
+INSPECT:DS	1	; Inspect flag (0=NO, 0ffh=YES)
+SYSTEM:	DS	1	; System flag (0=NO, 80h=YES)
+READONLY:DS	1	; Read/only flag (0=query for R/O, 0ffh=don't)
+USER:	DS	1	; New user, or 0FFh if no change
+CURUSER:DS	1	; Current user number
+NEXTCH:	DS	2	; Pointer to next character in multifile command line
+FILECNT:DS	2	; Count of number of files erased
+ERAFCB:	DS	2	; Pointer to FCB for erase
+CMDLNE:	DS	2	; Pointer to command line
+DIRBUF:	DS	2	; Pointer to directory buffer
+STACK:	DS	2	; Old stack pointer
+
+	END
+

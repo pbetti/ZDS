@@ -1,0 +1,271 @@
+24-BIT MATH ROUTINES:
+
+I designed these routines to help me complete work on ZPATCH, the Z-system
+file patcher.  What was wanted was a way to specify byte addresses within
+files.  It would have been possible to use some implementation of LONG
+INTEGERS, if I had had access to one, but I didn't, and 24 bits was
+sufficient to address every byte in a legal CP/M file.  The largest 
+legal CP/M file is 8 megabytes; 24 bits yields 16 megabytes.  They require
+the z-80 microprocessor.
+
+No claim is made for thoroughness, efficiency, or anything else, although
+all appear to work.  Anyone may feel free to tinker with them or improve 
+them, although, I feel it only fitting than anyone making any such changes
+should at least let me know what he has done, particularly if the interface
+to the user is in any way changed.
+
+The routines can be divided into two broad categories, subroutines and
+macros.  I chose between them when coding only on the basis of what seemed
+best at the time.  
+
+I apologize in advance for the patchwork quilt quality of this library.
+I am only releasing it to provide interested persons with the complete
+source code for ZPATCH.
+
+This library is released through the good offices of ZSIG,
+the Z-system user's group.  
+
+I may be reached via electronic mail via Z-SIG's official
+remote access system, the Lillipute Z-Node in Chicago, at
+312-649-1730.
+
+March 21, 1987
+Steven M. Cohen
+
+-------------
+MACROS:
+-------------
+
+The following routines are implemented as macros.  This means of course,
+that they are expanded to their full length in the object code, rather
+than coded once and called.  They are designed to be reminiscent of
+the typical 16-bit arithemetic instructions they parallel.
+
+In all these macros, the alternate HL,DE,and BC 
+registers are affected, the primary registers being protected by 
+EXX instructions.  The PSW, both accumulator and flags is also
+affected.  No other registers are affected.
+
+To use these macros, simply include the library into your source code,
+typically with the MACLIB or INCLUDE pseudo-op.
+
+-------------------------------------------
+
+	M24BQ
+
+This macro simply executes a DS	3 instruction, reserving space for
+a 24-bit number in memory.  It is a mnemonic name helping code clarity
+because it indicates immediately the purpose of the three-byte allocation.
+
+-------------------------------------------
+
+	MOV24
+
+Moves a 24-bit number from one 3-byte buffer (M24BQ) to another.
+Their addresses are specified in the operand field of the instruction.
+
+	MOV24	DEST,SOURCE moves 3 bytes of data from the addresses
+SOURCE..SOURCE+2 to the addresses DEST..DEST+2.  
+
+-------------------------------------------
+
+	ADD24
+
+Adds the 24-bit number whose address is given as the second operand 
+to the 24-bit number whose address is given as the first operand
+with the result going into the latter.  The carry flag is set if there
+is carry after the most significant bytes are added.  The routine is 
+thus perfectly analogous to the ADC HL,DE instruction.
+
+-------------------------------------------
+
+	SUB24
+
+Subtracts the 24-bit number whose address is given as the second operand 
+from the 24-bit number whose address is given as the first operand
+with the result going into the latter.  The carry flag is set if there
+is carry after the most significant bytes are subtracted.  The routine is 
+thus perfectly analogous to the SBC HL,DE instruction.
+
+-------------------------------------------
+
+	ADD1624
+
+Adds a CONSTANT 16-bit quantity (NOT the contents of a memory location)
+whose VALUE is given as the second parameter to a 24-bit quantity whose
+ADDRESS is given as the first parameter.  The result goes into the latter.
+The carry flag is set if there is carry from the addition into the most 
+significant byte.
+
+
+-------------------------------------------
+
+	SUB1624
+
+Subtracts a CONSTANT 16-bit quantity (NOT the contents of a memory location)
+whose VALUE is given as the second parameter from a 24-bit quantity whose
+ADDRESS is given as the first parameter.  The result goes into the latter.
+The carry flag is set if there is carry from the subtraction into the most 
+significant byte.
+
+
+-------------------------------------------
+ 	
+	INC24 and DEC24
+
+Simply increment and decrement the 24-bit quantity whose address is given 
+as the only parameter.
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+----------------
+SUBROUTINES
+----------------
+
+The following are implemented as callable subroutines located in the
+library M24.REL.  Source code for the various modules contained is in this
+library M24.LBR.  Some of these routines use the macros contained in 
+MATH24.LIB.
+
+-------------------------------------------
+
+	DOUBLE24 and HALVE24
+
+Routines that as their name implies, double and halve 24 bit quantities.
+The address is specified in HL.  The output value is stored in the same
+3-byte buffer as the input value.  No registers are effected and there are
+no side effects to these routines.
+
+-------------------------------------------
+
+	ZEROBUF
+
+Initializes a 3-byte buffer (24-bit number) to zero.  On input HL points
+to the address of this buffer.  No registers are affected and there are
+no side effects.
+
+-------------------------------------------
+
+	RADIX
+
+Sets or returns the default radix which all the following input routines 
+expect.  The value is stored internally within this module.
+
+On input the value of the desired default radix is in the return address.
+Legal values are 2,10, or 16 for binary, decimal, or hexadecimal radices.
+If the value in the return address is 0, RADIX interprets this as a request
+for the value of the current default radix, which is returned in A.
+If the value in the return address an error results which is detected by
+the carry flag being set.  With a properly designed call this should never
+happen.
+
+Example:
+
+	CALL	RADIX		;change the default radix 
+	DB	2		;to binary
+
+	CALL	RADIX		;a request for the default radix
+	DB	0		;which is returned in A
+	CP	16		;test for hexadecimal
+
+The usefulness of this routine will be more apparent with the following.
+
+-------------------------------------------
+
+	RADIXDSP
+
+This routine simply calls RADIX and based on the result prints the strings
+(BIN),(DEC),or (HEX) on the screen (usually after a prompt) to give further
+information to the user as to which radix the program is expecting.
+Registers affected: PSW.
+
+-------------------------------------------
+
+	INPNUM
+
+Performs the following function:
+
+Prints a ": " on the screen (this routine is designed to be called just
+after a prompt is printed on the screen asking for numeric input).  Then
+calls a line inputter (SYSLIB's BLINE) to read in the input.  Then the
+string is evaluated and the result placed in a 3-byte buffer whose address
+is given in DE.  If the evaluator detects an error, the beeper is sounded.
+
+Input is evaluated in accordance with the rules specified under EVAL24
+below.
+
+Inputs:
+	DE - address of 3-byte buffer
+
+Outputs:
+	DE - address of 3 byte buffer, now containing the 24-bit equivalent
+	of the input value.
+
+Registers affected: PSW,HL
+
+-------------------------------------------
+
+	NUMINP
+
+Exactly the same as INPNUM except that it calls RADIXDSP first so that
+the radix indicator string is printed before the ": " giving a fuller
+prompt.
+
+Example:
+	CALL	RADIX
+	DB	10		; we're expecting decimal
+	CALL	PRINT		; print prompt
+	DB	"Number of miles",0
+				; note no colon in string, NUMINP takes care
+				; of that
+	LD	DE,MILEAGE	; address where number will reside
+	CALL	NUMINP
+;
+;
+;
+MILEAGE:	
+	M24BQ			; a 24 bit number buffer
+;
+-------------------------------------------
+
+	N24EVAL
+
+This routine evaluates a string, and deposits a 24-bit value into 
+a 24-bit buffer corresponding to the string.  The string can be 
+binary, decimal, or hexadecimal.  It is expected to be 
+null-terminated.  It is expected to use the currently selected 
+default radix (see RADIX), or if not in the currently selected 
+default radix, it should be followed by a radix indicator as follows:
+
+    radix      radix indicator char
+      2                 %
+     10                 #
+     16                 H
+
+for example 256#=100000000%=100H.
+ 
+ On input, DE points to a 3-byte buffer into which the number will be stored
+ HL points to a NULL-TERMINATED string of ASCII binary, 
+ decimal, or hexadecimal characters to convert to binary; this string may 
+ take any of the following forms --
+
+	bbbbbbbbbbbbbbbbbbbbbbbb
+    OR bbbbbbbbbbbbbbbbbbbbbbbb%-- b=0 or b=1; binary string
+	ttttttttt or ttttttttt# -- 0<= t <= 9; decimal string
+	hhhhhh or hhhhhhH -- 0<= h <= F; hexadecimal string
+	
+
+	On return, DE points to value (3-byte buffer), 
+		   HL points to next byte after string, 
+		   A lowest order byte  of three-byte buffer 
+		   BC is not affected.
+	On return, CARRY Set means error, and HL pts to byte after error
+
+-------------------------------------------
+
+	EVALB24, EVALD24, EVALH24
+
+These are the binary, decimal, and hexadecimal evaluation routines that are
+called by N24EVAL.  They are also callable individually in a case where only
+one radix is allowable, for example.  Input and output parameters are the same 
+as for N24EVAL.vidually in a case where only

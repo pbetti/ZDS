@@ -1,0 +1,954 @@
+;  Program:	RENAME
+;  Version:	3.0
+;  Date:	18 May 84
+;  Author:	Richard Conn
+;  v2.0 (16 Jan 83)
+;  v1.4 (06 Jan 83), 1.3 (07 Dec 82), 1.2 (10 Nov 82)
+;  v1.1 (26 Oct 81)
+
+VERS	EQU	33
+Z3ENV	DEFL	0FE00H
+
+; Version 3.3A	Bruce Morgen	December 30, 1987
+; Strip high bit from EFCB program name characters, "E" and "S" options
+; require Wheel byte set, help message reflects this.
+
+; Version 3.3	Bruce Morgen	December 19, 1987
+; Help message now reflects actual COMfile name used, PPIP-style dual
+; syntax implemented (as requested by Ken Taschner).  This required some
+; rather tricky parsing to support the single-filespec syntax "afn.typ
+; [/]c", so while I was at it I made control mode mandatory and automatic
+; for single-filespec elements and eliminated the "[/]C" option letter
+; altogether - as Rick says: "it only makes sense".. In order to support
+; this single-filespec mode when such an element is the last (or only)
+; one in a RENAME command line, the second file-spec in the last (or
+; only) command is tested if the MS-DOS syntax is detected.  If that
+; second filespec starts with a "/" or includes only valid option letters
+; (and no more characters than the number of valid option letters) it is
+; assumed to be an option specifier rather than a rename-to filespec.
+; Following Howard Goldstein's (LX17 and 18) lead, filespec-to-FCB par-
+; sing calls the Z33 CCP if it's available.  A Z80, HD64180, NSC800 or
+; (someday?) Z280 CPU now is required.
+
+; VERSION 3.2	Jay Sage	August 25, 1987
+; Changed to allow a leading slash before an option to make program con-
+; sistent with a number of other Z programs (this was supposed to happen
+; but there was a bug in the code).  Put data into a DSEG.  Made header
+; indicate load address.
+
+; VERSION 3.1	Jay Sage	April 12, 1987
+; Took idea of Rick Charnes and implemented it as an option so that one
+; does not have to have two versions of the program.  The option is 'E'.
+; Also updated code to ZCPR33 type-3 environment to allow linking RENAME
+; for execution in high memory if desired.
+
+; This is version 3.0a.  I have modified this source code slightly so
+; that if you try to rename FILE1 to FILE2 and FILE2 already exists, the
+; program will NOT ask you if you are sure you want to delete FILE2, it
+; just goes ahead and deletes the darn thing and renames FILE1.  I had
+; an application for it, studied and little and - it works.  Be careful,
+; though, this is a special use program, and NOT for everyday use.  I
+; found an alias in which I needed it.	If you want to see what changes
+; I made, just do a search for my name - I signed everything I did (only
+; 3 lines).  - Rick Charnes, 4/9/87
+
+; RENAME Command
+; --------------
+; RENAME is used to change the name of one or more files.  Unlike the
+; ZCPR2-resident REN function, RENAME permits ambiguous file names and
+; supports an Inspect mode that allows the user to confirm each rename
+; before it is done.  Additionally, there is a Control Mode which allows
+; the user to manually specify the name for each file as it is presented
+; to him.
+;
+;	The RENAME command may be of the following forms:
+;
+;		RENAME dir:afn1=afn2,dir:afn3=afn4,... [/]o
+;		RENAME dir:afn2 afn1,dir:afn4 afn3,... [/]o
+;		RENAME dir:afn,dir:afn1=afn2,,dir:afn4 afn3... [/]o
+;
+;	The first form shows elements of the CP/M style form:
+;
+;			dir:afn1=afn2
+;
+;	second form shows elements of the MS-DOS style form:
+;
+;			dir:afn2 afn1
+;
+;	while the third form adds an element of the single-filespec form:
+;
+;			dir:afn
+;
+;	which is the same as the completely pointless:
+;
+;			dir:afn=afn
+;
+;	except that it automatically invokes a Control Mode which
+;	allows the user to rename files individually.
+;
+;	The option characters (o) are none or more of the following:
+;		I -- Inspect and approve each rename
+;		S -- Include SYStem files
+;		E -- Erase existing file without prompt
+;
+;	Examples:
+;		RENAME *.MAC=*.ASM    <-- Rename all ASM files to MAC
+;		RENAME *.MAC C	      <-- Rename all MAC files to names
+;						input by the user
+;		RENAME *.OBJ=*.COM SI <-- Rename all COM files to OBJ
+;						and include SYStem files
+;						and Inspect and approve
+;						each change
+;
+
+NO	EQU	0
+YES	EQU	NOT NO
+
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+
+E:
+ESIZE	EQU	16		; Size of directory entry (from SYSLIB DIRF routine)
+
+	PUBLIC	COUT		; So SYSLIB will use ours
+
+	EXT	DIRQ		; Directory processor
+
+	EXT	Z33CHK		; Z33LIB test for version 3.3
+	EXT	Z33FNAME	; Z33LIB CCP-based parser
+
+	EXT	Z3INIT		; Initialize buffers
+	EXT	ZFNAME		; File name processor
+	EXT	Z3LOG		; Z3 DU log
+	EXT	GETEFCB		; Get Z3's external FCB
+	EXT	GETWHL		; Get/test Z3's wheel byte
+
+	EXT	F$DELETE	; Delete file
+	EXT	F$RENAME	; Rename file
+	EXT	BBLINE		; Input line editor
+	EXT	INITFCB		; Initialize FCB
+	EXT	BDOS		; BDOS entry
+	EXT	PUTUD		; Save current user/disk
+	EXT	GETUD		; Restore current user/disk
+	EXT	MOVEB		; Copy routine
+	EXT	PHLDC		; Print HL as decimal characters
+	EXT	EPRINT		; Print routine
+	EXT	PHL4HC		; Print HL as 4 hex characters to console
+	EXT	BOUT		; Console output routine
+	EXT	CIN		; Console input routine
+	EXT	CAPS		; Capitalize routine
+	EXT	CRLF		; New line routine
+	EXT	FILLB		; Fill routine
+	EXT	CODEND		; Code end computation routine
+;
+; CP/M equates
+;
+FCB	EQU	5CH		; FCB
+BUFF	EQU	80H		; Input line buffer
+CR	EQU	13		; <cr>
+LF	EQU	10		; <lf>
+;
+; Environment Definition
+;
+; TYPE 3 HEADER
+;
+; Code modified as suggested by Charles Irvine to function correctly with
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+;
+ENTRY:	JR	START0		; Must use relative jump
+	NOP			; Filler
+	DB	'Z3ENV',3	; Type-3 environment
+
+Z3EADR:	DW	Z3ENV		; Filled in by Z33
+	DW	ENTRY		; Intended load address
+
+START0:	LD	HL,0		; Point to warmboot entry
+	LD	A,(HL)		; Save the byte there
+	DI			; Protect against interrupts
+	LD	(HL),0C9H	; Replace warmboot with a return opcode
+	RST	0		; Call address 0, pushing retaddr
+				; Onto stack
+RETADDR:LD	(HL),A		; Restore byte at 0
+	DEC	SP		; Get stack pointer to point
+	DEC	SP		; To the value of retaddr
+	POP	HL		; Get it into hl and restore stack
+	EI			; We can allow interrupts again
+	LD	DE,RETADDR	; This is where we should be
+	XOR	A		; Clear carry flag
+	PUSH	HL		; Save address again
+	SBC	HL,DE		; Subtract -- we should have 0 now
+	POP	HL		; Restore value of retaddr
+	JR	Z,START		; If addresses matched, begin real code
+
+	LD	DE,NOTZ33MSG-RETADDR ; Offset to message
+	ADD	HL,DE
+	EX	DE,HL		; Switch pointer to message into de
+	LD	C,9
+	JP	0005H		; Return via bdos print string function
+
+NOTZ33MSG:
+	DB	'Not Z33+$'	; Abort message if not Z33-compatible
+;
+; Start of Program
+;
+START:	LD	(STACK),SP	; Save the stack
+	CALL	CODEND
+	LD	(CMDLNE),HL	; Setup command line buffer
+	LD	DE,100H		; Buffer size
+	ADD	HL,DE
+	LD	(NTFCB),HL	; Set temp FCB
+	ADD	HL,DE
+	LD	(DIRBUF),HL	; Pointer to directory buffer
+	LD	SP,HL		; New stack pointer
+	LD	HL,(NTFCB)	; Set 2nd FCB
+	LD	DE,40
+	ADD	HL,DE
+	LD	(OFCB),HL
+	LD	HL,(Z3EADR)	; Point to ZCPR33 environment
+	CALL	Z3INIT		; Initialize the ZCPR33 enviornment
+	CALL	PUTUD		; Save current user/disk away
+	CALL	EPRINT
+	DB	'RENAME  Version '
+	DB	VERS/10+'0','.',(VERS MOD 10)+'0',' (loaded at ',0
+	LD	HL,ENTRY
+	CALL	PHL4HC
+	CALL	EPRINT
+	DB	'h)'CR,LF,0
+	LD	A,(FCB+1)	; Get first character of file name
+	CP	' '		; No file spec?
+	JR	Z,HELP
+	CP	'/'		; Option caught?
+	JP	NZ,ECONT
+;
+; Print help information
+;
+HELP:	CALL	EPRINT
+	DB	'Syntax:',CR,LF
+	DB	'In "CP/M style" (newname=oldname) -',CR,LF,'  ',0
+	CALL	COMNAM
+	CALL	EPRINT
+	DB	' dir:afn1=afn2,afn3=afn4,... [/]o...'
+	DB	CR,LF,'or "MS-DOS style" (oldname newname) -',CR,LF,'  ',0
+	CALL	COMNAM
+	CALL	EPRINT
+	DB	' dir:afn2 afn1,afn4 afn3,... [/]o...'
+	DB	CR,LF,'or interactive single-filespec "Control Mode" -'
+	DB	CR,LF,'  ',0
+	CALL	COMNAM
+	CALL	EPRINT
+	DB	' dir:afn2,dir:afn4,... [/]o...'
+	DB	CR,LF,'All three may be mixed within a command line.'
+	DB	CR,LF,'Options:'
+;;;	DB	CR,LF,'  C -- Control Mode (Allow user to manually name each '
+;;;	DB	'file)'
+	DB	CR,LF,'  I -- Inspect Mode (Give user approval option)'
+	DB	0
+	CALL	GETWHL
+	JR	Z,RETURN
+	CALL	EPRINT
+	DB	CR,LF,'  S -- Include SYS files'
+	DB	CR,LF,'  E -- Erase existing files without prompting'
+	DB	0
+;
+; Return to operatiung system
+;
+RETURN:	CALL	  GETUD
+	LD	SP,(STACK)	; Get old stack
+	RET
+;
+; Copy buffer into temporary buffer
+;
+ECONT:	LD	DE,(CMDLNE)	; Point to command line save buffer
+	LD	HL,BUFF+1	; Point to buffer
+	LD	B,80H		; Buffer size
+	CALL	MOVEB		; Copy into command line buffer
+;
+; Extract flags if present
+;
+	XOR	A		; Set no inspect, no R/O, and no system files
+	LD	(INSPECT),A
+;;;	LC	(CONTROL),A	; Set no control mode
+	LD	(ERAFLAG),A	; Set no erase without prompt
+	LD	A,80H		; Select non-system files only
+	LD	(SYSTEM),A
+	LD	HL,0		; Set file count
+	LD	(FILECNT),HL
+	LD	HL,(CMDLNE)	; Point to buffer
+;
+; Skip to file name string
+;
+SBLANK:	LD	BC,127
+	XOR	A
+	CPIR
+	LD	C,33
+	LD	A,','
+	CPDR
+	JR	Z,GCOMMA
+
+COMMAZ:	LD	HL,(CMDLNE)
+	JR	NCOMMA
+
+GCOMMA:	PUSH	HL
+	LD	DE,(CMDLNE)
+	XOR	A
+	SBC	HL,DE
+	POP	HL
+	JP	Z,HELP
+	JR	C,COMMAZ
+	INC	HL
+	INC	HL
+
+NCOMMA:	LD	DE,ARGTBL
+	LD	A,3
+	LD	(DE),A
+	XOR	A
+	CALL	ARGV
+	JP	NZ,HELP
+	INC	DE
+	LD	A,(DE)
+	CP	3
+	JR	Z,TRIARG
+	CP	2
+	JP	NZ,DSPEC
+	LD	HL,(ARGUM2)
+	DEC	HL
+	LD	A,(HL)
+	INC	HL
+	SUB	'='
+	JP	Z,DSPEC
+
+CALLOQ:	CALL	OPTQ
+	JP	NZ,DSPEC
+	DEC	HL
+	LD	(HL),A
+	INC	HL
+	JR	OPTION
+
+TRIARG:	LD	HL,(ARGUM3)
+	LD	A,(HL)
+;
+; Check for leading slash on option and skip it if so
+;
+OPT:	CP	'/'		; Option character?
+	JR	NZ,OPTION
+	INC	HL		; Skip slash
+;
+; Process list of options
+;
+OPTION:	LD	A,(HL)		; Get byte
+	OR	A		; Done?
+	JR	Z,DSPEC
+	INC	HL		; Point to next character
+	CP	' '		; Skip over spaces
+	JR	Z,OPTION
+	CP	'/'		; If option letter, obvious error, so help
+	JP	Z,HELP
+;;;	CP	'C'		; control?
+;;;	JR	Z,OPTCTRL
+	CP	'E'		; Erase old files?
+	JR	Z,OPTERA
+	CP	'I'		; Inspect?
+	JR	Z,OPTINS
+	CP	'S'		; System files?
+	JP	NZ,HELP
+	PUSH	AF
+	CALL	GETWHL
+	JR	Z,NOWHL
+	POP	AF
+	LD	A,0C0H		; Set for sys files
+	LD	(SYSTEM),A
+	JR	OPTION
+;;;OPTCRTL:
+;;	LD	A,0FFH		; Control mode
+;;	LD	(CONTROL),A
+;;	JR	OPTION
+
+OPTERA:	PUSH	AF
+	CALL	GETWHL
+	JR	Z,NOWHL
+	POP	AF
+	LD	A,0FFH		; Auto erase mode
+	LD	(ERAFLAG),A
+	JR	OPTION
+
+OPTINS:	LD	A,0FFH		; Inspect
+	LD	(INSPECT),A
+	JR	OPTION
+
+NOWHL:	LD	A,'"'
+	CALL	BOUT
+	POP	AF
+	CALL	BOUT
+	CALL	EPRINT
+	DB	'" option denied, Wheel privileges required.',CR,LF,0
+	JR	OPTION
+;
+; Extract disk, user, and file name information
+;
+DSPEC:	LD	HL,(CMDLNE)	; Point to before first byte
+	DEC	HL
+
+DSPEC0:	INC	HL		; Point to byte
+	LD	A,(HL)		; Get byte
+	OR	A		; Done?
+	JP	Z,HELP
+	CP	' '		; <sp>?
+	JR	Z,DSPEC0
+;
+; Major reentry point when file specs are separated by commas
+;    HL points to first byte of next file spec
+;
+DSPEC1:	XOR	A
+	LD	(CONTROL),A
+	CALL	GETUD		; Reset user if necessary
+	LD	DE,(NTFCB)	; Point to FCB in DE
+	CALL	PARSIT		; Extract file name into FCB, and get disk and user
+	LD	(NEXTCH),HL	; Save pointer to delimiter which ended scan
+;;;	LD	DE,(NTFCB)	; Point to FCB in DE
+	CALL	Z3LOG		; Log into DU
+;
+; First name is now extracted -- extract possible second name
+;
+NAME2:	LD	DE,(OFCB)	; Point to FCB for 2nd name
+	LD	HL,(NTFCB)	; Point to first name
+	LD	B,16		; Copy 16 bytes
+	CALL	MOVEB
+	LD	HL,(NEXTCH)	; Point to character which ended parse
+	LD	A,(HL)		; Get it
+	CP	'='		; Assignment?
+	JR	Z,GOTEQU
+	CP	' '		; Reverse assignment?
+	JR	Z,GOTEQU
+	LD	A,0FFH
+	LD	(CONTROL),A
+	JR	RENAME
+
+GOTEQU:	PUSH	AF
+	INC	HL		; Point to character after '=' or space
+	LD	DE,(OFCB)	; Point to temp FCB
+	CALL	PARSIT		; Extract file name into FCB, and get disk and user
+	LD	(NEXTCH),HL	; Save pointer to delimiter which ended scan
+	POP	AF
+	CP	'='
+	JR	Z,RENAME
+	LD	HL,(OFCB)	; Swap pointers for ms-dos "style"
+	LD	DE,(NTFCB)
+	LD	(OFCB),DE
+	LD	(NTFCB),HL
+;
+; Load directory and rename files
+;
+RENAME:	LD	DE,(OFCB)	; Point to FCB
+	LD	HL,(DIRBUF)	; Point to end of code
+	CALL	INITFCB		; Init the FCB
+	LD	A,(SYSTEM)	; Set flags
+	CALL	DIRQ		; Load dir, select files, pack, and alphabetize
+
+; Rename directory files; HL points to first file, BC=file count
+
+	CALL	RENFILES
+;
+; Check for next file spec
+;
+	LD	HL,(NEXTCH)	; Get pointer
+	LD	A,(HL)		; Get delimiter
+	CP	','		; Another file?
+	JR	NZ,RENDONE
+	INC	HL		; Point to character after comma
+	JR	DSPEC1		; Continue processing
+;
+; Rename complete -- print count and exit
+;
+RENDONE:CALL	PRCOUNT		; Print file count
+	JP	RETURN
+;
+; Rename selected files
+;
+RENFILES:
+	LD	A,B		; Check for any files loaded
+	OR	C
+	RET	Z
+;
+; Print file name
+;
+RENLP:	PUSH	BC		; Save entry count
+	CALL	EPRINT
+	DB	CR,LF,'Rename ',0
+	PUSH	HL		; Save pointer to FCB
+	LD	HL,(NTFCB)	; Copy new template into renfcb
+	LD	DE,RENFCB
+	LD	B,16
+	CALL	MOVEB
+	POP	HL		; Get pointer
+	PUSH	HL		; Save pointer
+	INC	HL		; Point to FN of old name
+	INC	DE		; Point to FN of renfcb
+	LD	B,11		; 11 bytes to FN and ft
+
+RENLP1:	LD	A,(DE)		; Get character of new
+	CP	'?'		; Change '?' to old character
+	JR	NZ,RENLP2
+	LD	A,(HL)		; Get old character
+	AND	7FH		; Mask old character
+	LD	(DE),A		; Store it away as new
+
+RENLP2:	INC	HL		; Point to next character
+	INC	DE
+	DJNZ	RENLP1		; Count down
+	LD	HL,RENFCB	; Point to new name
+	CALL	PRFN		; Print file name
+	CALL	EPRINT
+	DB	' from ',0
+	POP	HL		; Get pointer to old file name
+	PUSH	HL		; Save it again
+	CALL	PRFN		; Print file name
+	POP	HL		; Get pointer
+;
+; Check for control mode and perform control function if set
+;
+	LD	A,(CONTROL)	; Get flag
+	OR	A		; Nz=yes
+	JR	NZ,RENCTRL
+;
+; Check for inspection and inspect if set
+;
+	LD	A,(INSPECT)	; Get flag
+	OR	A		; 0=no
+	JP	Z,DOIT
+;
+; Prompt user for rename
+;
+	CALL	RENQ		; Ren question
+	CP	'Q'		; Quit?
+	JP	Z,QUIT
+	CP	'Y'		; Yes?
+	JP	Z,DOIT
+;
+; Don't rename file
+;
+NODO:	CALL	EPRINT
+	DB	CR,LF,'NO Name Change',0
+	JP	RENTEST
+;
+; Print file name pted to by hl
+;
+PRFN:	INC	HL		; Point to file name
+	LD	B,8		; Print name
+	CALL	PRNT
+	LD	A,'.'		; Decimal
+	CALL	BOUT
+	LD	B,3		; Print type
+	JP	PRNT
+;
+; Prompt user for rename
+;
+RENQ:	CALL	EPRINT		; Print prompt
+	DB	' -- Rename (Y/N/Q=Quit)? ',0
+	CALL	CIN		; Get response
+	CALL	CAPS		; Capitalize
+	JP	BOUT		; Echo
+;
+; Control function -- allow user to rename as he desires
+;
+RENCTRL:PUSH	HL		; Save pointer to file
+
+RCTRL:	CALL	EPRINT
+	DB	CR,LF,' -- New Name (<CR>=No Change)? ',0
+	LD	A,0FFH		; Capitalize
+	CALL	BBLINE		; Input line from user
+	OR	A		; Check for just <cr>
+	JR	NZ,RCTRL0
+	POP	HL		; Get pointer to file
+	JP	RENTEST		; Proceed with next entry
+
+RCTRL0:	LD	DE,RENFCB	; Place into new name FCB
+	CALL	PARSIT		; Just extract name
+	LD	B,11		; Check for any wild characters
+
+RCTRL1:	INC	DE		; Point to next character
+	LD	A,(DE)		; Get it
+	CP	'?'		; Can't be wild
+	JR	Z,WERR
+	CP	'*'		; Can't be wild
+	JR	Z,WERR
+	DEC	B		; Count down
+	JR	NZ,RCTRL1
+	JR	RDOIT		; Done -- perform rename
+
+WERR:	CALL	EPRINT
+	DB	CR,LF,'Wild Card (?,*) in Name -- Try Again',0
+	JR	RCTRL
+;
+; Quit rename program
+;
+QUIT:	CALL	PRCOUNT		; Print count of files renamed
+	CALL	EPRINT
+	DB	'  QUIT',0
+	JP	RETURN
+;
+; Rename file, but get pointer first
+;
+RDOIT:	POP	HL		; Get pointer
+;
+; Rename file; old name pointed to by HL, new name in RENFCB
+;
+DOIT:	PUSH	HL
+;
+; Step 1 -- determine if new name already exists
+;
+	LD	DE,RENFCB	; Point to new name
+	CALL	INITFCB
+	LD	C,17		; Search for first
+	CALL	BDOS
+	INC	A		; Not found?
+	JR	Z,DOIT1
+	LD	A,(ERAFLAG)	; See if unprompted erasing option in effect
+	OR	A
+	JR	NZ,DELOLD	; If so, skip prompt
+	CALL	EPRINT
+	DB	CR,LF,'  -- File Exists -- Delete It (Y/N)? ',0
+	CALL	CIN		; Get response
+	CALL	CAPS
+	CALL	BOUT
+	POP	HL		; Prep for abort
+	CP	'Y'		; Yes -- continue?
+	JR	NZ,RENTEST	; Not yes, so skip it
+	PUSH	HL		; Save pointer again
+
+DELOLD:	CALL	INITFCB		; Clear FCB
+	LD	C,30		; Set file attributes to r/w if not already
+	CALL	BDOS
+	CALL	INITFCB
+	CALL	F$DELETE	; Delete file
+
+DOIT1:	POP	HL		; Hl points to old name
+;
+; Clear the old name's attributes in case it was R/O
+;
+	PUSH	HL		; Save pointer to old name
+	LD	DE,(OFCB)	; Copy old name
+	LD	B,16
+	CALL	MOVEB
+	PUSH	DE		; Clear attributes
+	LD	B,11		; 11 bytes
+	INC	DE		; Point to first
+
+DOIT2:	LD	A,(DE)		; Get character
+	AND	7FH		; Clear att
+	LD	(DE),A		; Put character
+	INC	DE		; Point to next
+	DJNZ	DOIT2		; Count down
+	POP	DE		; Now set attributes of old name
+	CALL	INITFCB
+	LD	C,30		; Set attributes
+	CALL	BDOS
+	CALL	INITFCB
+;
+; Do the rename
+;
+	LD	HL,RENFCB	; Point to new name
+	EX	DE,HL
+	CALL	INITFCB		; Init new FCB
+	EX	DE,HL		; Hl pts to new name, de pts to old name
+	CALL	F$RENAME	; Rename the file
+;
+; Restore the original attribute bits
+;
+	POP	HL		; Get pointer to old name
+	LD	DE,RENFCB+1	; Point to new name
+	PUSH	HL		; Save pointer to old name
+	INC	HL		; Point to fn of old name
+	EX	DE,HL		; Hl pts to new name, de pts to old name
+	LD	B,11		; 11 bytes
+
+DOIT3:	LD	A,(DE)		; Get attribute bit of old name
+	AND	80H		; Look only at attribute bit
+	OR	(HL)		; Mask in new name byte
+	LD	(HL),A		; Store it away
+	INC	HL		; Point to next
+	INC	DE
+	DJNZ	DOIT3		; Count down
+;
+; Set the original attributes into the new file
+;
+	LD	DE,RENFCB	; Point to FCB
+	CALL	INITFCB
+	LD	C,30		; Set attributes
+	CALL	BDOS
+	LD	HL,(FILECNT)	; Increment file count
+	INC	HL
+	LD	(FILECNT),HL
+	POP	HL		; Get pointer to directory entry
+;
+; Pt to next entry
+;
+RENTEST:LD	DE,ESIZE	; Point to next entry
+	ADD	HL,DE
+	POP	BC		; Get count
+	DEC	BC		; Count down
+	LD	A,B		; Check for zero
+	OR	C
+	JP	NZ,RENLP
+;
+; Return to caller
+;
+	RET
+;
+; Print characters pted to by hl for b bytes
+;
+PRNT:	LD	A,(HL)		; Get character
+	CALL	BOUT
+	INC	HL		; Point to next
+	DJNZ	PRNT		; Count down
+	RET
+;
+; Print count of number of files renamed
+;
+PRCOUNT:CALL	CRLF		; New line
+	LD	HL,(FILECNT)	; Get count
+	LD	A,L		; Check for none
+	OR	H
+	JR	Z,PRNO
+	CALL	PHLDC		; Print decimal count
+	JR	PRMS
+
+PRNO:	CALL	EPRINT
+	DB	'No ',0
+
+PRMS:	LD	HL,(FILECNT)	; 1 file protected?
+	LD	A,H		; High zero?
+	OR	A
+	JR	NZ,PRMULT
+	LD	A,L		; Low one?
+	CP	1
+	JR	Z,PRSING
+
+PRMULT:	CALL	EPRINT
+	DB	' Files Renamed',0
+	RET
+
+PRSING:	CALL	EPRINT
+	DB	' File  Renamed',0
+	RET
+;
+; Ccheck for ZCPR33, branch to the appropriate parser
+;
+PARSIT:	CALL	Z33CHK
+	JP	Z,Z33FNAME
+	XOR	A
+	JP	ZFNAME
+;
+; Print actual comfile name if we can, otherwise print "RENAME"
+;
+COMNAM:	CALL	GETEFCB
+	JR	Z,NOEFCB
+	LD	B,8
+
+COMNML:	INC	HL
+	LD	A,(HL)
+	AND	7FH
+	CP	' '
+	CALL	NZ,BOUT
+	DJNZ	COMNML
+	RET
+
+NOEFCB:	CALL	EPRINT
+	DB	'RENAME',0
+	RET
+;
+; AI (allegedly intelligent) routine to check for a string containing
+; legal option letters only.
+;
+OPTQ:	LD	A,(HL)
+	SUB	'/'		; Slash is explicit option delimiter
+	JR	NZ,NOSLSH	; If not slash, do char. check
+	LD	(HL),A		; If slash, null it out (a = 0)
+	DEC	HL
+	LD	(HL),A		; Null out leading space
+	INC	HL		; Adjust pointer to options
+	INC	HL
+	RET			; Return with z flag
+
+NOSLSH:	LD	D,H		; Copy into de
+	LD	E,L
+	XOR	A		; Search for terminating null
+	LD	BC,OPTLEN	; Range for search
+	CPIR			; Do short search
+	JR	Z,DOOPTQ	; Found null, proceed
+	EX	DE,HL		; Otherwise too long for options
+	RET			; Return with nz
+
+DOOPTQ:	PUSH	DE
+	DEC	DE
+
+BLOOP:	INC	DE
+	LD	A,(DE)
+	OR	A
+	JR	Z,OQDONE	; End of string, return with z
+	LD	B,OPTLEN
+	LD	HL,OPTLTR
+
+LLOOP:	CP	(HL)
+	JR	Z,BLOOP
+	INC	HL
+	DJNZ	LLOOP		; If b ticks down, a failure!
+	DEC	B		; Cheap nz return
+
+OQDONE:	POP	HL
+	RET
+
+OPTLTR:	DB	'EIS'
+OPTLST:	DS	0
+OPTLEN	EQU	OPTLST-OPTLTR
+;
+;; SYSLIB module name: SARGV
+;; Author:  Richard Conn
+;; SYSLIB v3.6
+;; module v1.1
+;;
+;;	PUBLIC	ARRGV
+;;
+;;	ARGV is a UNIX-style ARGC/ARGV string parser.  It is passed a
+;; null-terminated string in HL and the address of a token pointer table
+;; in DE as follows:
+;;
+;;		LXI	H,STRING
+;;		LXI	D,ARGV$TABLE
+;;		MVI	A,0		; Do not mark token end
+;;		CALL	ARGV
+;;		JNZ	TOKEN$OVFL	; Indicates more tokens than allowed
+;;		...
+;;	ARGV$TABLE:
+;;		DG	MAX$ENT ; Maximum number of entries permitted
+;;		DS	1	; Nnumber of entries stored by ARGVargv
+;;		DS	2	; Pointer to token 1
+;;		DS	2	; Pointer to token 2
+;;		...
+;;		DS	2	; Pointer to token MAX$ENT
+;;
+;;	Tokens are delimited by spaces and tabs.
+;;	as well as '='.  27 Feb 86  Joe Wright
+;;
+;	Completed Joe's mod. by adding "=" to "SKSP:" as well as "SKNSP:"
+;	December 19, 1987	-	Bruce Morgen
+;	on input, if a=0, the end of each token is not marked with a null.
+;	if a<>0, a null is placed after the last byte of each token.
+;	If all went well, return with a=0 and zero flag set.  If there
+;	are possibly more tokens than pointers, return with A=0FFh and NZ.
+;
+ARGV:	PUSH	BC		; Save registers
+	PUSH	DE
+	PUSH	HL
+	LD	C,A		; Save mark flag
+	EX	DE,HL
+	LD	B,(HL)		; Get max entry count
+	PUSH	HL		; Save address of max entry count
+	INC	HL		; Point to token count
+	INC	HL		; Point to first pointer
+;
+; On each loop, DE = address of next character in string and HL = address
+; of the next pointer buffer; B = number of pointer buffers remaining and
+ C =
+; C = mark flag (0 = no mark)
+;
+LOOP:	CALL	SKSP		; Skip spaces and tabs in string pointed to by DE
+	OR	A		; End of string?
+	JR	Z,DONE
+	LD	(HL),E		; Store low
+	INC	HL
+	LD	(HL),D		; Store high
+	INC	HL
+	DEC	B		; Count down
+	JR	Z,LOOP2
+	CALL	SKNSP		; Skip until end of token
+	OR	A		; Done?
+	JR	Z,DONE
+	LD	A,C		; Get mark flag
+	OR	A		; 0=no mark
+	JR	Z,LOOP1
+	XOR	A		; Mark with null
+	LD	(DE),A		; Store null
+	INC	DE		; Point to next character
+
+LOOP1:	LD	A,B		; Check count
+	OR	A
+	JR	NZ,LOOP		; Continue on
+
+LOOP2:	CALL	SKNSP		; Skip over token
+	CALL	SKSP		; Any tokens left?
+	OR	A
+	JR	Z,DONE		; None if eol
+	OR	0FFH		; Make a = 0ffh to indicate more to come
+
+DONE:	POP	HL		; Get address of max token count
+	PUSH	AF		; Save return flags
+	LD	A,(HL)		; Get max token count
+	SUB	B		; Subtract counter
+	INC	HL		; Point to return count
+	LD	(HL),A		; Set return count
+	POP	AF		; Get return flag
+	POP	HL		; Restore regs
+	POP	DE
+	POP	BC
+	RET
+;
+; Skip over space or tab characters
+;
+SKSP:	LD	A,(DE)		; Get character
+	AND	7FH		; Mask
+	INC	DE		; Point to next
+	CP	' '		; Continue if space
+	JR	Z,SKSP
+	CP	9		; Continue if tab
+	JR	Z,SKSP
+	CP	'='
+	JR	Z,SKSP
+	DEC	DE		; Point to character
+	RET
+;
+; Skip over non-space and non-tab characters, added '=' so that A:=B:
+; construct yields two arguments.
+;
+SKNSP:	LD	A,(DE)		; Get character
+	AND	7FH		; Mask
+	RET	Z		; Done if null
+	CP	' '
+	RET	Z		; Done if space
+	CP	9
+	RET	Z		; Done if tab
+	CP	'='
+	RET	Z		; New delimiter
+	INC	DE		; Pointnto next
+	JR	SKNSP
+;
+;;;	END
+;
+; End of ARGV inclusion
+;
+COUT:	JP	BOUT
+;
+; Buffers
+;
+	DSEG
+ARGTBL:
+MAX$ENT:DS	1
+	DS	1
+	DS	2
+ARGUM2:	DS	2
+ARGUM3:	DS	2
+INSPECT:DS	1	; Inspect flag (0=NO, 0FFh=YES)
+CONTROL:DS	1	; Control flag (0=NO, 0FFh=YES)
+SYSTEM:	DS	1	; System flag (80h=non-sys, 0C0h=sys/non-sys)
+ERAFLAG:DS	1	; Unprompted erasure of existing file (0=no)
+NEXTCH:	DS	2	; Pointer to next character in multifile command line
+FILECNT:DS	2	; Count of number of files renamed
+RENFCB:	DS	40	; FCB for rename
+OFCB:	DS	2	; FCB for old file name and old file template
+NTFCB:	DS	2	; Fcb for new file template
+CMDLNE:	DS	2	; Ptointer to command line buffer
+DIRBUF:	DS	2	; Ptointer to directory buffer
+STACK:	DS	2	; Old stack pointer
+
+	END
+

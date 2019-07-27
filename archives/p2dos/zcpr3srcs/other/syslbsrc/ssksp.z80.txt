@@ -1,0 +1,64 @@
+;	TITLE	"SSKSP - Syslib 4.0"
+	NAME	('SKSP')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SSKSP.Z80 Ver 1.1 by Richard Conn
+; Date    : 28 Jul 89
+; Version : 1.3
+; Module  : SSKSP
+; Abstract:  This module contains the routines SKSP and SKNSP
+;	which skip spaces (SKSP) or non-spaces (SKNSP) until
+;	either the delimiting char or ending Null are encountered.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		SKSP, SKNSP
+
+; From SYSLIB Get..
+
+	EXT		ISSP
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - SKSP
+; Entry: HL - Points to a Null-terminated character string
+; Exit : HL - Points to a non-space character or ending Null
+; Uses : HL
+; Special Requirements: None
+;===============================================================
+
+SKSP:	PUSH	AF		; Save A Reg and Flags
+SKSP1:	LD	A,(HL)		; Get next char
+	INC	HL		; Pt to next
+	OR	A		; Done?
+	JR	Z,SKSP2
+	CALL	ISSP		; Is a space?
+	JR	Z,SKSP1		; Continue skip if so
+
+SKSP2:	DEC	HL		; Pt to offending char
+	POP	AF		; Get A reg and Flags
+	RET
+
+;===============================================================
+; NAME - SKNSP
+; Entry: HL - Points to a Null-terminated character string
+; Exit : HL - Points to a space character or ending Null
+; Uses : HL
+; Special Requirements: None
+;===============================================================
+
+SKNSP:	PUSH	AF		; Save A Reg and Flags
+SKNSP1:	LD	A,(HL)		; Get next char
+	INC	HL		; Pt to next
+	OR	A		; Done?
+	JR	Z,SKSP2
+	CALL	ISSP		; Is a space?
+	JR	NZ,SKNSP1
+	JR	SKSP2
+
+	END
+

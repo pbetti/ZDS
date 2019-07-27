@@ -1,0 +1,341 @@
+               A short manual for Ease version 2.0
+               -----------------------------------
+
+Contents:
+		Section 1:	Ease in general.
+		Section 2:	The editor.
+		Section 3:	The options.
+		Section 4:	Running in high memory.
+
+			   Section 1:
+
+		What is this Ease program anyway?
+
+  It's one piece of software that allows you to edit the commands
+that you are entering and have entered.  If you make a typo,
+you can go back and get the line right without retyping it.  If
+ZCPR33 encounters a problem with a command that you type, you can
+make whatever changes are necessary for it to be correct and
+then re-execute the line.
+
+Ease is a shell which allows you to edit the command you're typing:
+
+  Ease provides a bunch of commands that the BDOS line input
+function (what you use to send commands to ZCPR3 when you don't
+use Ease or HSH or VCED) doesn't have the smarts to.  Commands
+like word forward, word back, delete word or line or character. 
+In fact Ease provides a fairly large subset of the commands of
+whatever editor you are using to change documents (eg. WordStar,
+NewWord, Perfect Writer, Mince, etc.).  And whatever word
+processor you use, Ease can be made to use the same commands.
+
+And to recall and edit the commands you have typed:
+
+  Using Ease, you can step backward through your commands or
+search for a specific command, no matter how long ago it was
+typed.  You can then edit it and re-execute it.
+
+Ease is an error handler because there isn't much to an error
+handler, other than an editor:
+
+  The majority of the 4k that Ease takes up is its editor.  Or
+rather, if you took out all the text messages that the error 
+handler needs, it would be.  But an error handler's a real simple 
+thing, so making Ease an error handler as well as a shell was no 
+big thing.  And because it's all one program, it takes only one 
+file on your disk. 
+
+			   Section 2:
+
+	       I don't particularly like WordStar.
+
+  Ease has a lot of code in it.  But the part which you actually
+have to deal with is the editor.  If that editor rubs you the
+wrong way, you won't like the program.  To insure that you 
+will like it, Ease provides you with a way of changing the 
+command keys.
+
+  WordStar commands have become the standard for ZCPR3.  I think
+Emacs commands would be infinitely preferable.  I provide Ease
+with WordStar command keys, but I'd rather you set them to
+emulate whatever you're comfortable with than leave them in the
+state they're in.
+
+  At the bottom of Ease (at the start of the program) is a list
+of commands and the keystrokes which make them happen.  By
+changing this table, you change Ease.
+
+Actually patching:
+
+  Use the included overlay, EASE2OVL.ASM, to change EASE.
+
+  The changeable stuff starts at NAME.  That's the name of 
+the command history file.  If you don't like it, change it.  
+Be sure to think out it as "FILENAMETYP" and not as a file 
+name like you type it at the ZCPR3 or Ease prompt.  Fill out 
+the first eight characters of the name (padding with spaces 
+if necessary) and then the 3 character type.
+
+  The next changeable location is the byte following "VAR".  
+It represents the number of characters in a single line.  
+If you have a 40 or 132 column display, change this to that 
+number.
+
+  The next patch point is TOOSHORT.  It represents the 
+length which a command must be to be stored in the history 
+file.  If a command is two characters or less (as released), 
+it will be discarded.  You could make this number bigger or 
+smaller, depending on your preferences.  Smaller would 
+include drive changes (eg. B:) and bigger would exclude the 
+more often used commands (eg. DIR, CLS, etc.).
+
+  The next location is the flag GOBEGFLG.  Set it to zero if 
+you want the cursor at the end of a line when you use ^B or 
+^O or ^N.  Set it to YES if you want the cursor at the 
+begining of the line.
+
+  The next is also a flag (BEEPFLG).  Set it to YES to beep 
+on an error, NO to be silent.
+
+  Next is the SMARTSAV flag.  Set it to YES if you don't want to 
+save those commands which you called up with a ^O, ^B or ^N and 
+haven't modified.  Set it to NO if you want all commands saved.  
+With this set, you might be in a position when ^B would call up 
+something other than your last command typed.
+
+  The next three pertain to where the pointers to the 
+history file should be stored.  The first is a switch that 
+decides whether to use memory or the registers to store the 
+pointers (USEMEM).  The next is the memory location to save 
+the information in (MEMLOC).  The third is the first of the 
+registers to use (STARTREG).
+
+  Whether you use memory or registers, EASE needs to store 
+three bytes.  So if you decide on registers and you set 
+STARTREG to 7, register 7, 8 and 9 must be used for nothing 
+else.
+
+  If you use memory, set MEMLOC to a place that will never 
+be used.  On many systems, a good choice would be 3Bh, since 
+3Bh, 3Ch, and 3Dh are almost never used.  On others, a 
+location in high memory might be more suitable.
+
+  Setting USE6 to yes will cause EASE to use BDOS function 
+6 for all input.  This is usefull on CP/M 3.0 or other 
+modified BDOS's.
+
+
+  And now we get to the three character Key/Command entries.  
+The first character is a letter, the second and third make up a 
+location (ie. a command).  You can change the character to 
+anything you want.
+
+Byte:		--  Corresponds to:
+'A'		--  ^A
+'A' + 80h	--  (<Meta key> and ^A) or (<Meta key> and A)
+7Fh		--  Delete key
+
+  The Meta Key is the single prefix key you can use with Ease. 
+In Emacs emulations, the Meta key is usually escape.  In
+WordStar, it's ^Q for most of the functions that Ease uses.  So
+by A + 80h, we mean a sequence of characters, namely (in the
+distribution setup) ^Q ^A or ^Q A.
+
+  The functions which you can set your keystrokes for are:
+
+SHIFTED		-- Meta Key
+FCHR		-- Right Char
+BCHR		-- Left Char
+UP		-- Up line
+DOWN		-- Down line
+MBWORD		-- Left word
+MFWORD		-- Right word
+GOBOLN		-- Start of line
+GOEOLN		-- End of line
+FDEL		-- Del char right
+DELCHR		-- Del char left
+DELCHR		-- Del char left
+FDWORD		-- Del word right
+BDWORD		-- Del word left
+CMDKILL		-- Kill to semi-colon
+DELTOEND	-- Delete to end of line
+DELLIN		-- Delete line
+UNDO		-- Reinsert deleted text
+BACKLINE	-- Back in history shell
+NEXTLINE	-- Forward in history file
+BSEARCH		-- Search for first char
+TOGLIN		-- Toggle insert
+COMPLETE	-- Complete a filename
+QINSERT		-- Insert any char
+REPLOT		-- Redraw line
+WARM		-- Warm Boot
+DONE		-- End edit
+QUITSH		-- End EASE
+
+  After all that garbage is the punctuation, this is the 
+stuff that word functions are going to consider non-letters.  
+It ends with and includes the Tab.
+
+  So if you don't like the way that MFWORD goes about it's
+business with respect to (for instance) colons, just place a
+space over the colon.  Or if you want it to think that double
+quotes are punctuation, just put one on top of a character (maybe
+the backslash) that you don't want as punctuation.
+
+  Last but not least is a smaller list of punctuation that 
+seperates parameters.  So when you hit TAB to complete a 
+filename, EASE stops backing up when it hits one of these.  
+
+			   Section 3:
+
+   All right, never mind the keystrokes, what do the commands do?
+
+Movement commands:
+------------------
+
+FCHR:		Forward one char.  If the cursor is at the end of
+		the line, it will "wrap" to the beginning of the line.
+
+BCHR:		Backward one char.  If the cursor is at the
+		beginning of the line, it will "wrap" to the end
+		of the line.
+
+UP:		Go back the number of characters in a screen line
+		(the release package comes set to 80 chars for a
+		line).  If there aren't enough chars to to up a
+		screen line, go to the beginning of the command line.
+
+DOWN:		Go forward the number of chars in a screen line. 
+		If there aren't enough chars to go down a screen
+		line, go to the end of the command line.
+
+MBWORD:		Move back a word.  Skip backwards over letters
+		until a punctuation character (usually including
+		space) is hit, then skip all punctuation until a
+		letter is hit.  Punctuation is setable (see
+		section 1).  "Wrap" if at beginning of line.
+
+MFWORD:		Move forward a word.  "Wrap" if at end of line.
+
+GOBOLN:		Go to beginning of command line.
+
+GOEOLN:		Go to end of command line.
+
+Deletion commands:		
+------------------
+
+FDEL:		Delete forward one character.
+
+DELCHR:		Delete backward a character.  Two are supplied,
+		so Backspace and Delete may be used.
+
+FDWORD:		Delete a word Forwards.
+
+BDWORD:		Delete a word Backwards.
+
+CMDKILL:	Delete all chars until end of line or semi-colon.
+
+DELTOEND:	Delete until end of command line.
+
+DELLIN:		Delete entire command line.
+
+UNDO:		Insert chars from last line DELTOEND or DELLIN
+
+Buffer Commands:
+----------------
+
+BACKLINE:	Put the current line in the kill buffer (so you
+		can bring it back with UNDO) and put the
+		previous line in the history buffer on your
+		screen.  If there is no previous line, the
+		console should Beep.
+
+NEXTLINE:	Put the current line in the kill buffer (so you
+		can bring it back with UNDO) and put the next
+		line in the history buffer on your screen.  If
+		there is no previous line, the console should Beep.
+
+BSEARCH:	Search for a previous command starting with 
+		whatever is on the command line.  The current 
+		line is put in the kill buffer, and if no line is 
+		found, the console will Beep.  This function 
+		used to work differently.  People complained.
+
+Bizarre Commands:
+-----------------		
+
+SHIFTED:	The Meta key.  All commands in Ease must be one
+		keystroke long.  I cheated in the coding, to
+		make it simple.  But that's very restrictive. 
+		So Ease includes a Meta Shift key which turns on
+		a second set of commands.  ^F does one thing,
+		Meta ^F does another.  This is fairly
+		transparent to the user--He thinks he has
+		entered a sequence (eg. ^Q ^D (Go to the end of
+		the line)) when in fact, he has done two
+		separate commands.  The first being to set the
+		Meta Switch. And the second to actually execute
+		the end of line command.  Since the Meta switch
+		is on, the highbit of the command is set, and
+		the command table is searched for 'D' + 80h.
+
+TOGLIN:		Toggle insert.  This command will set the prompt
+		to '}>', when in overwrite mode, or '>>' when in
+		insert mode.  Overwrite mode inserts when it
+		hits the end of the line.
+
+COMPLETE:	(Formerly ITAB) You seldom use a tab in a command 
+		line, so I grabbed the key.  When you envoke this
+		command, the cursor backs up to the beginning of 
+		the line or to one of the seperators found at 
+		location SEP.  It adds *.* to the end of the file 
+		name and then replaces the file name with one that 
+		is found by SEARCH FOR FIRST (BDOS #17).  Subsequent 
+		COMPLETEs will replace that file name with subsequent 
+		matches on the disk (SEARCH FOR NEXT (BDOS #18)).  
+		You may include a DU/Dir in the name and may make it 
+		ambigous in any way.  Hitting any keys other than 
+		the COMPLETE key will cause COMPLETE to start over, 
+		that is, perform a SEARCH FOR FIRST again.
+
+
+QINSERT:	Insert any character.  After evoking this
+		command, hit the key key want in the text (this
+		is really only needed for control keys.
+
+REPLOT:		Redraw the line (just in case it gets scrambled). 
+		This should only be necessary if you get line noise.
+
+WARM:		Cause a Warm Boot.
+
+DONE:		Execute the command line.  If it is longer than
+		the user-setable maximum discard length, it will
+		be stored in the history file.
+
+QUITSH:		Pop the shell stack and quit Ease.
+
+			Section 4:
+
+	Why do I want it to run in high memory?
+
+  When you run a CP/M or ZCPR3 program, it usually does 
+everything in fairly low memory (from 100h up).  And once you 
+leave a program, you might want to see what it did with that 
+memory or you might want to re-enter or SAVE the program you just 
+loaded into low memory with a GET or a program load.  But if 
+your shell overwrites the program, you only have a shell program 
+down there.
+
+  So a shell should run in high memory and leave your normal 
+programs alone.  The release version of Ease runs at 8000h.  
+This is a fairly high location which should leave most of your 
+smaller programs well enough alone.
+
+  If you want to change that number to a higher one (since you 
+have a higher TPA, which is to say more free memory, than I do) 
+go right ahead.  You will need SLR's SLRNK (which I highly 
+recommend along with SLR's Z80ASM) or some other linker.  A copy 
+of EASE.REL is contained in the release package.  Just link it to 
+whatever location you want.  
+ome other linker.  A copy 
+of EASE.REL is contained in the release package.  Just link it to 

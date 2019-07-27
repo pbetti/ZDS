@@ -1,0 +1,178 @@
+;	TITLE	"SINS - Syslib 4.3c"
+	NAME	('INSERT')
+;=====================================================================
+; Author  : Joe Wright
+; Date    : 15 Nov 90
+; Version : 1.0
+; Module  : SINS
+; Abstract:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		INSERT, APPEND, INSRTO
+
+; External References
+
+	EXT		KEY, LL, RR, SNREC, SSIZE, SPOINT
+	EXT		LOGSSB, SRCH, PTORD, PTREC, RETSSB
+
+;=====================================================================
+; NAME - INSRTO.  Insert a pointer into the Order table only. It is
+;	called after the first call to INSERT and is used to order the
+;	auxiliary Order tables.
+; Entry: HL points to Item, DE points to SSB
+; Exit : Pointer to Item is inserted into Order Table
+; Uses : All registers
+; Special Requirements: None
+;=====================================================================
+
+INSRTO:	LD	A,255
+	LD	(NSRTO),A	; Flag pointers only
+	CALL	INSERT		; Uses key from last INSERT
+	XOR	A
+	LD	(NSRTO),A	; Clear the flag
+	RET
+
+NSRTO	DEFB	0
+
+;=====================================================================
+; NAME - INSERT.  Insert an item into the array [and the Order table].
+; Entry: DE - points to caller's SSB
+;	 HL - points to the item to be inserted
+; Exit : Item is inserted
+; Uses : All registers
+; Special Requirements: None.
+;=====================================================================
+
+INSERT:	LD	(KEY),HL
+	CALL	LOGSSB
+	LD	HL,(SNREC)
+	LD	A,(NSRTO)
+	OR	A
+	JR	Z,INSRT
+
+	DEC	HL		; Back it up
+	LD	(SNREC),HL
+
+INSRT:	LD	A,H
+	OR	L
+	JR	Z,APP0		; No records yet, append it
+
+	CALL	SRCH		; Search for the key
+	JR	Z,SLL		; Found it, save HL
+
+	EX	DE,HL		; Not found, save DE
+SLL:	LD	(LL),HL		; Save I
+	LD	A,(SPOINT)
+	OR	A
+	JR	Z,INSREC	; No pointers, insert the record
+
+	CALL	PUTREC
+
+	LD	HL,(SNREC)	; N
+	LD	DE,(LL)		; I
+	OR	A		; Clear Cy
+	SBC	HL,DE
+	ADD	HL,DE
+	JR	Z,APPORD	; Append R(N) to Order table
+
+; Open the Order table.
+
+	PUSH	DE		; Save I
+	PUSH	HL		; Save N
+	SBC	HL,DE		; N - I
+	ADD	HL,HL		; *2
+	EX	DE,HL		; Length to DE
+	POP	HL		; Get N
+	CALL	PTORD
+	LD	B,D
+	LD	C,E		; Length to BC
+	LD	D,H
+	LD	E,L
+	INC	DE
+	DEC	HL
+	LDDR
+	POP	HL		; Get I
+	JR	APPORD
+
+; Insert a record (No Pointers)
+
+INSREC:	CALL	PTREC		; R(I)
+	LD	(RR),HL		; Place for new record
+	EX	DE,HL		; Save it in DE
+
+	LD	HL,(SNREC)
+	INC	HL
+	LD	(SNREC),HL	; New N
+
+	CALL	PTREC		; Point to it
+	PUSH	HL		; Save it a moment
+	SBC	HL,DE		; Length of move
+	POP	DE		; R(N+1)
+	JR	Z,INSR0		; New record is appended
+
+	LD	B,H
+	LD	C,L		; To BC
+	DEC	DE		; Source
+	LD	HL,(SSIZE)
+	ADD	HL,DE
+	EX	DE,HL		; Source to HL, Destin to DE
+	LDDR			; Open up the Record list
+
+INSR0:	LD	HL,(KEY)
+	LD	DE,(RR)
+	LD	BC,(SSIZE)
+	LDIR
+	JP	RETSSB
+
+;=====================================================================
+; NAME - APPEND.  Add the item at HL to the Record list.  Update the
+;		Order table and Count (N).
+; Entry: HL points to the new Item
+; Exit : Item is appended to the Record List (and Order Table)
+; Uses : All registers
+; Special Requirements:
+;=====================================================================
+
+APPEND:	LD	(KEY),HL
+	CALL	LOGSSB
+
+APP0:	CALL	PUTREC		; Increment N and put new record there
+	LD	A,(SPOINT)	; Using pointers?
+	OR	A
+	JP	Z,RETSSB	; No, We're finished
+
+	LD	HL,(SNREC)	; I(N+1)
+
+APPORD:	LD	DE,(RR)		; Ptr R(?)
+	CALL	PTORD		; Point HL to P(?)
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D
+	JP	RETSSB		; Return modified SSB
+
+;.....
+; Increment N and place the Key record at the new N.
+
+PUTREC:	LD	HL,(SNREC)	; N
+	INC	HL		; N+1
+	LD	(SNREC),HL	; New N
+	CALL	PTREC		; Next free space
+	LD	(RR),HL		; Save pointer to new record
+
+	LD	A,(NSRTO)
+	OR	A
+	RET	NZ		; No move
+
+	EX	DE,HL		; Destination
+	LD	HL,(KEY)
+	SBC	HL,DE
+	ADD	HL,DE
+	RET	Z
+
+	LD	BC,(SSIZE)
+	LDIR			; Move new record to R(N)
+	RET
+
+	END		;..of SINS.Z80
+

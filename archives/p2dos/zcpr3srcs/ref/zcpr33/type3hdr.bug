@@ -1,0 +1,56 @@
+; TYPE3HDR will eventually fail if your system is interrupt driven.
+; If an interrupt occurs after the RET planted at 0000H is executed
+; and before the two  DEC   SP  operations are executed the address
+; that you find on the stack will be that pushed by the interrupt.
+; It may close but that only counts in horseshoes. And the ZCPR33
+; program running on your ZCPR33 system will mysteriously exit.
+; The fix is to include a DI and an EI as shown below.
+;   9-25-87   C. S. Irvine
+
+; This is header code that can be used at the beginning of a type-3-environment
+; program so that it will abort with an error message when not loaded to the
+; correct address (such as when a user tries to run it under CP/M or Z30).
+
+entry:
+	jr	start0		; Must use relative jump
+	defb	0		; Filler
+	db	'Z3ENV',3	; Type-3 environment
+z3env:	dw	0		; Filled in by Z33
+	dw	entry		; Intended load address
+
+start0:
+	ld	hl,0		; Point to warmboot entry
+	ld	a,(hl)		; Save the byte there
+	ld	(hl),0c9h	; Replace it with a return opcode
+
+	di		; PROTECT THE RETURN ADDRESS   CSI
+
+	rst	0		; Call address 0, pushing RETADDR onto stack
+retaddr:
+	ld	(hl),a		; Restore byte at 0
+	dec	sp		; Fake a push (leaving stack as it was)
+	dec	sp
+
+	ei		; NOW THAT WE HAVE RESET THE SP ALLOW INTERRUPTS   CSI
+
+	pop	hl		; HL now has actual address of RETADDR
+	ld	de,retaddr	; This is where we should be
+	xor	a		; Clear carry flag
+	push	hl		; Save address again
+	sbc	hl,de		; Subtract -- we should have 0 now
+	pop	hl		; Restore value of RETADDR
+	jr	z,start		; If addresses matched, begin real code
+
+	ld	de,notz33msg-retaddr ; Offset to message
+	add	hl,de
+	ex	de,hl		; Switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; Return via BDOS print string function
+
+notz33msg:
+	defb	'Not Z33+$'	; Abort message if not Z33-compatible
+
+start:
+	ret			; Replace with real code
+
+	end

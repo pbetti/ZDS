@@ -1,0 +1,1346 @@
+   1:			
+   2:	0000          		.Z80
+   3:	0000          		ASEG
+   4:			
+   5:			;		    FINDBAD.ASM ver. 5.4
+   6:			;		     (revised 05/21/81)
+   7:			;
+   8:			;	     NON-DESTRUCTIVE DISK TEST PROGRAM
+   9:			;
+  10:			;FINDBAD will find all bad blocks on a disk and build a file
+  11:			;named [UNUSED].BAD to allocate them, thus "locking out" the
+  12:			;bad blocks so CP/M will not use them.
+  13:			;
+  14:			;Originally written by Gene Cotton,  published in "Interface
+  15:			;Age", September 1980 issue, page 80.
+  16:			;
+  17:			;See notes below concerning 'TEST' conditional assembly option,
+  18:			;SYSTST and BADUSR directives.
+  19:			;
+  20:			;********************************************************
+  21:			;*							*
+  22:			;*			  NOTE				*
+  23:			;*							*
+  24:			;*   This program has been re-written to allow it to	*
+  25:			;* work  with (hopefully)  all CP/M 2.x systems, and	*
+  26:			;* most 1.4 CP/M systems. It has been tested on sev-	*
+  27:			;* eral different disk systems, including Northstar,	*
+  28:			;* Micropolis, DJ2D, and  Keith  Petersen's 10 MByte    *
+  29:			;* hard disk system.  I have tested it personally on	*
+  30:			;* my "modified" Northstar, under several  different	*
+  31:			;* formats (including >16K per extent), and have ob-	*
+  32:			;* no difficulties.					*
+  33:			;*  If you have have difficulties getting this	pro-	*
+  34:			;* gram  to run, AND if you  are using CP/M 2.x, AND	*
+  35:			;* if  you  know  your CBIOS  to be  bug-free, leave	*
+  36:			;* me a message on the CBBS mentioned below ... I am	*
+  37:			;* interested in making this program  as "universal"	*
+  38:			;* as possible. 					*
+  39:			;*  I can't help with any version of CP/M 1.4, other    *
+  40:			;* than  "standard" versions  (whatever that means),	*
+  41:			;* because there are just too many heavily  modified	*
+  42:			;* versions available.					*
+  43:			;*  One  possible  problem you may  find is with the	*
+  44:			;* system tracks of your diskettes...if they are  of	*
+  45:			;* a  different density  than the data	tracks, then	*
+  46:			;* see the note regarding the "SYSTST" equate.		*
+  47:			;*							*
+  48:			;*				Ron Fowler		*
+  49:			;*				Westland, Mich		*
+  50:			;*				7 April, 1981		*
+  51:			;*							*
+  52:			;********************************************************
+  53:			;
+  54:			;SYSTST and BADUSR options:
+  55:			;  Many double-density disk systems have single-density system
+  56:			;tracks.  If this is true with your system, you can change the
+  57:			;program to skip the system tracks,  without re-assembling it.
+  58:			;To do this, set the byte at 103H to a 0 if you don't want the
+  59:			;system  tracks tested,  otherwise leave it 1.   This is  also
+  60:			;necessary if you have a "blocked" disk system;  that is, when
+  61:			;the same physical disk is seperated into logical disks by use
+  62:			;of the SYSTRK word in the disk parameter block.
+  63:			;   If you are a CP/M 2.x user, you may assign the user number
+  64:			;where  [UNUSED.BAD] will be created by changing the  byte  at
+  65:			;104H  to  the  desired user number.   If you want it  in  the
+  66:			;default user,  then leave it 0FFH.  CP/M 1.4 users can ignore
+  67:			;this byte altogether.
+  68:			;
+  69:			;Note that these changes can be done with DDT as follows:
+  70:			;
+  71:			;		A>DDT FINDBAD.COM
+  72:			;		-S103
+  73:			;		103 01 0	;DON'T TEST SYSTEM TRACKS
+  74:			;		104 FF F	;PUT [UNUSED.BAD] IN USER 15
+  75:			;		105 31 .	;DONE WITH CHANGES
+  76:			;		-^C
+  77:			;		A>SAVE XX FINDBAD.COM
+  78:			;
+  79:			;----------------------------------------------------------------
+  80:			;NOTE: If you want to  update this program, make sure you have
+  81:			;the latest version first.  After adding your changes, please
+  82:			;modem a copy of the new file to "TECHNICAL CBBS" in Dearborn,
+  83:			;Michigan - phone 313-846-6127 (110, 300, 450 or 600 baud).
+  84:			;Use the filename FINDBAD.NEW.	 (KBP)
+  85:			;
+  86:			;Modifications/updates: (in reverse order to minimize reading time)
+  87:			;
+  88:			;05/21/81 Corrected error in description of how to set SYSTST
+  89:			;	  byte at 103h.  Added CRLF to block error message. (KBP)
+  90:			;
+  91:			;05/19/81 Corrected omission in DOLOG routine so that BADUSR
+  92:			;	  will work correctly. Thanks to Art Larky. (CHS)
+  93:			;
+  94:			;04/10/81 Changed extent DB from -1 to 0FFH so program can be
+  95:			;	  assembled by ASM.  Added BADUSR info to instructions
+  96:			;	  for altering with DDT.  (KBP)
+  97:			;
+  98:			;04/09/81 Changed sign-on message, added control-c abort test,
+  99:			;	  added '*' to console once each track	(RGF)
+ 100:			;
+ 101:			;04/07/81 Re-wrote to add the following features:
+ 102:			;		1) "Universal" operation
+ 103:			;		2) DDT-changeable "SYSTRK" boolean (see above)
+ 104:			;		3) Report to console when bad blocks are detected
+ 105:			;		4) Changed the method of printing the number of
+ 106:			;		   bad blocks found (at end of run)...the old
+ 107:			;		   method used too much code, and was too cum-
+ 108:			;		   bersome.
+ 109:			;		5) Made several cosmetic changes
+ 110:			;
+ 111:			;			Ron Fowler
+ 112:			;			Westland, Mich
+ 113:			;
+ 114:			;03/23/81 Set equates to standard drive and not double-sided. (KBP)
+ 115:			;
+ 116:			;03/01/81 Corrected error for a Horizon with double sided drive.
+ 117:			;	  This uses 32k extents, which code did not take into account.
+ 118:			;	  (Bob Clyne)
+ 119:			;
+ 120:			;02/05/81 Merged 2/2/81 and 1/24/81 changes, which were done
+ 121:			;	  independently by Clyne and Mack.  (KBP)
+ 122:			;
+ 123:			;02/02/81 Added equates for North Star Horizon - 5.25" drives,
+ 124:			;	  double density, single and double sided. (Bob Clyne)
+ 125:			;
+ 126:			;01/24/81 Added equates for Jade DD disk controller
+ 127:			;	  (Pete H. Mack)
+ 128:			;
+ 129:			;01/19/81 Added equates for Icom Microfloppy 5.25" drives.
+ 130:			;	  (Eddie Currie)
+ 131:			;
+ 132:			;01/05/81 Added equates for Heath H-17 5.25" drives.
+ 133:			;	  (Ben Goldfarb)
+ 134:			;
+ 135:			;12/08/80 Added equates for National Multiplex D3S/D4S
+ 136:			;	  double-density board in various formats.
+ 137:			;	  (David Fiedler)
+ 138:			;
+ 139:			;09/22/80 Added equates for Morrow Disk Jockey 2D/SS, 256,
+ 140:			;	  512 and 1024-byte sector options.  Fix 'S2' update
+ 141:			;	  flag for larger max number of extents. Cleaned up
+ 142:			;	  file. (Ben Bronson and KBP)
+ 143:			;
+ 144:			;09/14/80 Corrected DGROUP equate for MMDBL. Added new routine
+ 145:			;	  to correct for IMDOS group allocation.  Corrected
+ 146:			;	  error in instructions for using TEST routine.
+ 147:			;	  (CHS) (AJ) (KBP) - (a group effort)
+ 148:			;
+ 149:			;09/08/80 Fixed several errors in Al Jewer's mods.  Changed
+ 150:			;	  return to CP/M to warm boot so bitmap in memory will
+ 151:			;	  be properly updated. Added conditional assembly for
+ 152:			;	  testing program. (KBP)
+ 153:			;
+ 154:			;09/02/80 Added IMDOS double-density equates & modified for
+ 155:			;	  more then 256 blocks per disk. (Al Jewer)
+ 156:			;
+ 157:			;09/01/80 Changed equates so that parameters are automatically
+ 158:			;	  set for each disk system conditional assembly (KBP)
+ 159:			;
+ 160:			;08/31/80 Add conditional assembly for Digital Microsystems FDC3
+ 161:			;	  controller board in double-density format and fix to
+ 162:			;	  do 256 blocks in one register. (Thomas V. Churbuck)
+ 163:			;
+ 164:			;08/31/80 Correct MAXB equate - MAXB must include the directory
+ 165:			;	  blocks as well as the data blocks.  Fix to make sure
+ 166:			;	  any [UNUSED].BAD file is erased before data area is
+ 167:			;	  checked. (KBP)
+ 168:			;
+ 169:			;08/30/80 Added conditional assembly for Micromation
+ 170:			;	  double-density format. (Charles H. Strom)
+ 171:			;
+ 172:			;08/27/80 Fix missing conditional assembly in FINDB routine.
+ 173:			;	  Put version number in sign-on message. (KBP)
+ 174:			;
+ 175:			;08/26/80 Modified by Keith Petersen, W8SDZ, to:
+ 176:			;	  (1) Add conditional assembly for 1k/2k groups
+ 177:			;	  (2) Add conditional assembly for standard drives
+ 178:			;	      and Micropolis MOD II
+ 179:			;	  (3) Make compatible with CP/M-2.x
+ 180:			;	  (4) Remove unneeded code to check for drive name
+ 181:			;	      (CP/M does it for you and returns it in the FCB)
+ 182:			;	  (5) Changed to open additional extents as needed for
+ 183:			;	      overflow, instead of additional files
+ 184:			;	  (6) Add conditional assembly for system tracks check
+ 185:			;	      (some double-density disks have single-density
+ 186:			;	      system tracks which cannot be read by this program)
+ 187:			;	  (7) Increased stack area (some systems use more than
+ 188:			;	      others).
+ 189:			;
+ 190:			;08/06/80 Added comments and crunched some code.
+ 191:			;	  KELLY SMITH.	805-527-9321 (Modem, 300 Baud)
+ 192:			;			805-527-0518 (Verbal)
+ 193:			;
+ 194:			;
+ 195:			;			Using the Program
+ 196:			;
+ 197:			; Before  using this program to "reclaim" a diskette,  it  is
+ 198:			;recommended that the diskette be reformatted. If this is not
+ 199:			;possible,  at least assure yourself that any existing	files
+ 200:			;on the diskette  do not contain unreadable  sectors.  If you
+ 201:			;have changed disks since the last warm-boot, you  must warm-
+ 202:			;boot again before running this program.
+ 203:			;
+ 204:			; To  use the program,	insert	both the disk containing  the
+ 205:			;program  FINDBAD.COM and the diskette to be checked into the
+ 206:			;disk drives. It is possible that the diskette containing the
+ 207:			;program is the one to be checked. Assume that the program is
+ 208:			;on drive "A" and the suspected bad disk is on drive "B".  In
+ 209:			;response to the CP/M prompt "A>",  type in FINDBAD B:.  This
+ 210:			;will  load the file FINDBAD.COM from drive "A" and test  the
+ 211:			;diskette  on  drive "B" for  unreadable  sectors.  The  only
+ 212:			;allowable  parameter  after  the  program name  is  a	drive
+ 213:			;specification	(of the form " N:") for up to four (A  to  D)
+ 214:			;disk drives.  If no drive is specified, the currently logged
+ 215:			;in drive is assumed to contain the diskette to check.
+ 216:			;
+ 217:			; The  program first checks the CP/M System tracks (0 and 1),
+ 218:			;and  any  errors here prohibit the disk from being  used  on
+ 219:			;drive	"A",  since all "warm  boots" occur using the  system
+ 220:			;tracks from the "A" drive.
+ 221:			;
+ 222:			; The  program next checks the first two data blocks  (groups
+ 223:			;to some of us) containing the directory of the diskette.  If
+ 224:			;errors  occur	here,  the  program  terminates  and  control
+ 225:			;returns  to  CP/M  (no other data blocks are  checked	since
+ 226:			;errors in the directory render the disk useless).
+ 227:			;
+ 228:			; Finally,  all  the remaining data blocks are	checked.  Any
+ 229:			;sectors  which  are  unreadable cause the data  block	which
+ 230:			;contains them to be stored temporarily as a "bad block".  At
+ 231:			;the end of this phase,  the message "XX bad blocks found" is
+ 232:			;displayed (where XX is replaced by the number of bad blocks,
+ 233:			;or "No" if no read errors occur).  If bad blocks occur,  the
+ 234:			;filname [UNUSED].BAD is created, the list of "bad blocks" is
+ 235:			;placed  in  the allocation map of the	directory  entry  for
+ 236:			;[UNUSED].BAD,	and the file is closed.  Note,	that when the
+ 237:			;number of "bad blocks" exceeds 16,  the  program  will  open
+ 238:			;additional  extents  as  required  to	hold the overflow.  I
+ 239:			;suggest that if the diskette has more than  32 "bad blocks",
+ 240:			;perhaps it should be sent to the "big disk drive in the sky"
+ 241:			;for the rest it deserves.
+ 242:			;
+ 243:			; The  nifty part of all this is that if any "bad blocks"  do
+ 244:			;occur, they are allocated to [UNUSED].BAD and no longer will
+ 245:			;be available to CP/M for future allocation...bad sectors are
+ 246:			;logically locked out on the diskette!
+ 247:			;
+ 248:			;
+ 249:			;	       Using the TEST conditional assembly
+ 250:			;
+ 251:			;A  conditional  assembly has been added to allow  testing  this
+ 252:			;program  to  make sure it is reading all sectors on  your  disk
+ 253:			;that  are accessible to CP/M.	The program reads the disk on  a
+ 254:			;block by block basis, so it is necessary to first determine the
+ 255:			;number of blocks present.  To start, we must know the number of
+ 256:			;sectors/block (8 sectors/block for standard IBM single  density
+ 257:			;format).  If  this  value  is	not  known,  it  can  easily  be
+ 258:			;determined  by saving one page in a test file and interrogating
+ 259:			;using the STAT command:
+ 260:			;
+ 261:			;	A>SAVE 1 TEST.SIZ
+ 262:			;	A>STAT TEST.SIZ
+ 263:			;
+ 264:			;For standard single-density STAT will report this file as being
+ 265:			;1k.  The file size reported (in bytes) is the size of a  block.
+ 266:			;This  value  divided  by 128 bytes/sector  (the  standard  CP/M
+ 267:			;sector  size)	will  give sectors/block.  For	our  IBM  single
+ 268:			;density example, we have:
+ 269:			;
+ 270:			;  (1024 bytes/block) / (128 bytes/sector) = 8 sectors/block.
+ 271:			;
+ 272:			;We  can now calculate blocks/track (assuming we know the number
+ 273:			;sectors/track). In our example:
+ 274:			;
+ 275:			;  (26 sectors/track) / (8 sectors/block) = 3.25 blocks/track
+ 276:			;
+ 277:			;Now  armed with the total number of data tracks (75 in our  IBM
+ 278:			;single density example), we get total blocks accessible:
+ 279:			;
+ 280:			;  75 (tracks/disk) x (3.25 blocks/track) = 243.75 blocks/disk
+ 281:			;
+ 282:			;CP/M cannot access a fractional block, so we round down (to 243
+ 283:			;blocks  in  our  example).  Now  multiplying  total  blocks  by
+ 284:			;sectors/block	results in total sectors as should  be	reported
+ 285:			;when TEST is set TRUE and a good disk is read. For our example,
+ 286:			;this value is 1944 sectors.
+ 287:			;
+ 288:			;Finally,  note that if SYSTST is set to 0,  the sectors present
+ 289:			;on  the  first  two tracks must be added in  as  well.  In  the
+ 290:			;previous  example,  this  results in  1944 + 52 = 1996  sectors
+ 291:			;reported by the TEST conditional.
+ 292:			;
+ 293:			;Run the program on a KNOWN-GOOD disk.	It should report that it
+ 294:			;has read  the	correct number of sectors.  The test conditional
+ 295:			;assembly should then be set FALSE and the program re-assembled.
+ 296:			;The test routines  cannot be left in  because this program does
+ 297:			;not read all the sectors in a block that is found to be bad and
+ 298:			;thus will report an inaccurate number of sectors read.
+ 299:			;
+ 300:			;
+ 301:			;Define TRUE and FALSE
+ 302:			;
+ 303:	0000          	FALSE	EQU	0
+ 304:	FFFF          	TRUE	EQU	NOT FALSE
+ 305:			;
+ 306:			;******************************************************************
+ 307:			;
+ 308:			;Conditional assembly switch for testing this program
+ 309:			;(for initial testing phase only - see remarks above)
+ 310:			;
+ 311:	0000          	TEST	EQU	FALSE		;TRUE FOR TESTING ONLY
+ 312:			;
+ 313:			;******************************************************************
+ 314:			;
+ 315:			;System equates
+ 316:			;
+ 317:	0000          	BASE	EQU	0		;STANDARD CP/M BASE ADDRESS (4200H FOR ALTCPM)
+ 318:	0005          	BDOS	EQU	BASE+5		;CP/M WARM BOOT ENTRY
+ 319:	005C          	FCB	EQU	BASE+5CH	;CP/M DEFAULT FCB LOCATION
+ 320:			;
+ 321:			;Define ASCII characters used
+ 322:			;
+ 323:	000D          	CR	EQU	0DH		;CARRIAGE RETURN CHARACTER
+ 324:	000A          	LF	EQU	0AH		;LINE FEED CHARACTER
+ 325:	0009          	TAB	EQU	09H		;TAB CHARACTER
+ 326:			;
+ 327:	003A          	DPBOFF	EQU	3AH		;CP/M 1.4 OFFSET TO DPB WITHIN BDOS
+ 328:	000F          	TRNOFF	EQU	15		;CP/M 1.4 OFFSET TO SECTOR XLATE ROUTINE
+ 329:			;
+ 330:			;
+ 331:	0100          		ORG	BASE+100H
+ 332:			;
+ 333:	0100  C30501  		JP	START		;JMP AROUND OPTION BYTES
+ 334:			;
+ 335:			;If you want the system tracks tested, then
+ 336:			;put a 1 here, otherwise 0.
+ 337:			;
+ 338:	0103  01      	SYSTST:	DEFB	1		;0 IF NO SYS TRACKS, OTHERWISE 1
+ 339:			;
+ 340:			;If you are a CP/M 2.x user, change this byte
+ 341:			;to the user number you want [UNUSED].BAD to
+ 342:			;reside in.  If you want it in the default
+ 343:			;user, then leave it 0FFH.  CP/M 1.4 users
+ 344:			;can ignore this byte altogether.
+ 345:			;
+ 346:	0104  FF      	BADUSR:	DEFB	0FFH		;USER # WHERE [UNUSED.BAD] GOES
+ 347:				;0FFH = DEFAULT USER
+ 348:			;
+ 349:	0105  316407  	START:	LD	SP,NEWSTK	;MAKE NEW STACK
+ 350:	0108  CD6701  		CALL	START2		;GO PRINT SIGNON
+ 351:	010B  0D0A4649		DEFB	CR,LF,'FINDBAD - ver 5.4'
+	      4E444241
+	      44202D20
+	      76657220
+	      352E34
+ 352:	011E  0D0A4261		DEFB	CR,LF,'Bad sector lockout '
+	      64207365
+	      63746F72
+	      206C6F63
+	      6B6F7574
+	      20
+ 353:	0133  70726F67		DEFB	'program',CR,LF
+	      72616D0D
+	      0A
+ 354:	013C  556E6976		DEFB	'Universal version',CR,LF
+	      65727361
+	      6C207665
+	      7273696F
+	      6E0D0A
+ 355:	014F  0D0A5479		DEFB	CR,LF,'Type CTL-C to abort',CR,LF,'$'
+	      70652043
+	      544C2D43
+	      20746F20
+	      61626F72
+	      740D0A24
+ 356:			;
+ 357:	0167  D1      	START2:	POP	DE		;GET MSG ADRS
+ 358:	0168  0E09    		LD	C,9		;BDOS PRINT BUFFER FUNCTION
+ 359:	016A  CD0500  		CALL	BDOS		;PRINT SIGN-ON MSG
+ 360:	016D  CDA501  		CALL	SETUP		;SET BIOS ENTRY, AND CHECK DRIVE
+ 361:	0170  CD0006  		CALL	ZMEM		;ZERO ALL AVAILABLE MEMORY
+ 362:	0173  CD4002  		CALL	FINDB		;ESTABLISH ALL BAD BLOCKS
+ 363:	0176  CA7C01  		JP	Z,NOBAD		;SAY NO BAD BLOCKS, IF SO
+ 364:	0179  CD3504  		CALL	SETDM		;FIX DM BYTES IN FCB
+ 365:			;
+ 366:	017C  CDAD05  	NOBAD:	CALL	CRLF
+ 367:	017F  3E09    		LD	A,TAB
+ 368:	0181  CDB405  		CALL	TYPE
+ 369:	0184  11E606  		LD	DE,NOMSG	;POINT FIRST TO 'NO'
+ 370:	0187  2AFD06  		LD	HL,(BADBKS)	;PICK UP # BAD BLOCKS
+ 371:	018A  7C      		LD	A,H		;CHECK FOR ZERO
+ 372:	018B  B5      		OR	L
+ 373:	018C  CA9501  		JP	Z,PMSG1		;JUMP IF NONE
+ 374:	018F  CD8B05  		CALL	DECOUT		;OOPS..HAD SOME BAD ONES, REPORT
+ 375:	0192  C39A01  		JP	PMSG2
+ 376:			;
+ 377:	0195  0E09    	PMSG1:	LD	C,9		;BDOS PRINT BUFFER FUNCTION
+ 378:	0197  CD0500  		CALL	BDOS
+ 379:			;
+ 380:	019A  11E906  	PMSG2:	LD	DE,ENDMSG	;REST OF EXIT MESSAGE
+ 381:			;
+ 382:	019D  0E09    	PMSG:	LD	C,9
+ 383:	019F  CD0500  		CALL	BDOS
+ 384:			;
+ 385:	0000          		IF	TEST
+ 393:				ENDIF			;TEST
+ 394:			;
+ 395:	01A2  C30000  		JP	BASE		;EXIT TO CP/M WARM BOOT
+ 396:			;
+ 397:			;Get actual address of BIOS routines
+ 398:			;
+ 399:	01A5  2A0100  	SETUP:	LD	HL,(BASE+1)	;GET BASE ADDRESS OF BIOS VECTORS
+ 400:			;
+ 401:			;WARNING...Program modification takes place here...do not change.
+ 402:			;
+ 403:	01A8  111800  		LD	DE,24		;OFFSET TO "SETDSK"
+ 404:	01AB  19      		ADD	HL,DE
+ 405:	01AC  220A02  		LD	(SETDSK+1),HL	;FIX OUR CALL ADDRESS
+ 406:	01AF  110300  		LD	DE,3		;OFFSET TO "SETTRK"
+ 407:	01B2  19      		ADD	HL,DE
+ 408:	01B3  227703  		LD	(SETTRK+1),HL	;FIX OUR CALL ADDRESS
+ 409:	01B6  110300  		LD	DE,3		;OFFSET TO "SETSEC"
+ 410:	01B9  19      		ADD	HL,DE
+ 411:	01BA  226F03  		LD	(SETSEC+1),HL	;FIX OUR CALL ADDRESS
+ 412:	01BD  110600  		LD	DE,6		;OFFSET TO "DREAD"
+ 413:	01C0  19      		ADD	HL,DE
+ 414:	01C1  227A03  		LD	(DREAD+1),HL	;FIX OUR CALL ADDRESS
+ 415:	01C4  110900  		LD	DE,9		;OFFSET TO CP/M 2.x SECTRAN
+ 416:	01C7  19      		ADD	HL,DE
+ 417:	01C8  22BF03  		LD	(SECTRN+1),HL	;FIX OUR CALL ADDRESS
+ 418:	01CB  0E0C    		LD	C,12		;GET VERSION FUNCTION
+ 419:	01CD  CD0500  		CALL	BDOS
+ 420:	01D0  7C      		LD	A,H		;SAVE AS FLAG
+ 421:	01D1  B5      		OR	L
+ 422:	01D2  32C406  		LD	(VER2FL),A
+ 423:	01D5  C2E401  		JP	NZ,GDRIV	;SKIP 1.4 STUFF IF IS 2.x
+ 424:	01D8  110F00  		LD	DE,TRNOFF	;CP/M 1.4 OFFSET TO SECTRAN
+ 425:	01DB  2A0600  		LD	HL,(BDOS+1)	;SET UP JUMP TO 1.4 SECTRAN
+ 426:	01DE  2E00    		LD	L,0
+ 427:	01E0  19      		ADD	HL,DE
+ 428:	01E1  22BF03  		LD	(SECTRN+1),HL
+ 429:			;
+ 430:			;Check for drive specification
+ 431:			;
+ 432:	01E4  3A5C00  	GDRIV:	LD	A,(FCB)		;GET DRIVE NAME
+ 433:	01E7  4F      		LD	C,A
+ 434:	01E8  B7      		OR	A		;ZERO?
+ 435:	01E9  C2F301  		JP	NZ,GD2		;IF NOT,THEN GO SPECIFY DRIVE
+ 436:	01EC  0E19    		LD	C,25		;GET LOGGED-IN DRIVE
+ 437:	01EE  CD0500  		CALL	BDOS
+ 438:	01F1  3C      		INC	A		;MAKE 1-RELATIVE
+ 439:	01F2  4F      		LD	C,A
+ 440:			;
+ 441:	01F3  3AC406  	GD2:	LD	A,(VER2FL)	;IF CP/M VERSION 2.x
+ 442:	01F6  B7      		OR	A
+ 443:	01F7  C20002  		JP	NZ,GD3		;  SELDSK WILL RETURN SEL ERR
+ 444:			;
+ 445:			;Is CP/M 1.4, which doesn't return a select
+ 446:			;error, so we have to do it here
+ 447:			;
+ 448:	01FA  79      		LD	A,C
+ 449:	01FB  FE05    		CP	4+1		;CHECK FOR HIGHEST DRIVE NUMBER
+ 450:	01FD  D2ED04  		JP	NC,SELERR	;SELECT ERROR
+ 451:			;
+ 452:	0200  0D      	GD3:	DEC	C		;BACK OFF FOR CP/M
+ 453:	0201  C5      		PUSH	BC		;SAVE DISK SELECTION
+ 454:	0202  59      		LD	E,C		;ALIGN FOR BDOS
+ 455:	0203  0E0E    		LD	C,14		;SELECT DISK FUNCTION
+ 456:	0205  CD0500  		CALL	BDOS
+ 457:	0208  C1      		POP	BC		;GET BACK DISK NUMBER
+ 458:			;
+ 459:			;EXPLANATION: WHY WE DO THE SAME THING TWICE
+ 460:			;
+ 461:			;	You might notice that we are
+ 462:			;	doing the disk selection twice,
+ 463:			;	once by a BDOS call and once by
+ 464:			;	direct BIOS call. The reason for this:
+ 465:			;
+ 466:			;	The BIOS call is necessary in order to
+ 467:			;	get the necessary pointer back from CP/M
+ 468:			;	(2.x) to find the sector translate table.
+ 469:			;	The BDOS call is necessary to keep CP/M
+ 470:			;	in step with the  BIOS...we may later
+ 471:			;	have to create a [UNUSED].BAD file, and
+ 472:			;	CP/M must know which drive we are using.
+ 473:			;			     (RGF)
+ 474:			;
+ 475:	0209  CD0000  	SETDSK:	CALL	$-$		;DIRECT BIOS VEC FILLED IN AT INIT
+ 476:	020C  3AC406  		LD	A,(VER2FL)
+ 477:	020F  B7      		OR	A
+ 478:	0210  CA2802  		JP	Z,DOLOG		;JUMP IF CP/M 1.4
+ 479:	0213  7C      		LD	A,H
+ 480:	0214  B5      		OR	L		;CHECK FOR 2.x
+ 481:	0215  CAED04  		JP	Z,SELERR	;JUMP IF SELECT ERROR
+ 482:	0218  5E      		LD	E,(HL)		;GET SECTOR TABLE PNTR
+ 483:	0219  23      		INC	HL
+ 484:	021A  56      		LD	D,(HL)
+ 485:	021B  23      		INC	HL
+ 486:	021C  EB      		EX	DE,HL
+ 487:	021D  220507  		LD	(SECTBL),HL	;STORE IT AWAY
+ 488:	0220  210800  		LD	HL,8		;OFFSET TO DPB POINTER
+ 489:	0223  19      		ADD	HL,DE
+ 490:	0224  7E      		LD	A,(HL)		;PICK UP DPB POINTER
+ 491:	0225  23      		INC	HL		;  TO USE
+ 492:	0226  66      		LD	H,(HL)		;  AS PARAMETER
+ 493:	0227  6F      		LD	L,A		;  TO LOGIT
+ 494:			;
+ 495:	0228  CD6B06  	DOLOG:	CALL	LOGIT		;LOG IN DRIVE, GET DISK PARMS
+ 496:	022B  CD4206  		CALL	GETDIR		;CALCULATE DIRECTORY INFORMATION
+ 497:			;
+ 498:			;Now set the required user number
+ 499:			;
+ 500:	022E  3AC406  		LD	A,(VER2FL)
+ 501:	0231  B7      		OR	A
+ 502:	0232  C8      		RET	Z		;NO USERS IN CP/M 1.4
+ 503:	0233  3A0401  		LD	A,(BADUSR)	;GET THE USER NUMBER
+ 504:	0236  FEFF    		CP	0FFH		;IF IT IS 0FFH, THEN RETURN
+ 505:	0238  C8      		RET	Z
+ 506:	0239  5F      		LD	E,A		;BDOS CALL NEEDS USER # IN E
+ 507:	023A  0E20    		LD	C,32		;GET/SET USER CODE
+ 508:	023C  CD0500  		CALL	BDOS
+ 509:	023F  C9      		RET
+ 510:			;
+ 511:			;Look for bad blocks
+ 512:			;
+ 513:	0240  3A0301  	FINDB:	LD	A,(SYSTST)
+ 514:	0243  B7      		OR	A
+ 515:	0244  CA4A02  		JP	Z,DODIR		;JUMP IF NO SYS TRACKS TO BE TESTED
+ 516:	0247  CD9202  		CALL	CHKSYS		;CHECK FOR BAD BLOCKS ON TRACK 0 AND 1
+ 517:			;
+ 518:	024A  CDDF02  	DODIR:	CALL	CHKDIR		;CHECK FOR BAD BLOCKS IN DIRECTORY
+ 519:	024D  CD6902  		CALL	TELL1
+ 520:	0250  0D0A5465		DEFB	CR,LF,'Testing data area...',CR,LF,'$'
+	      7374696E
+	      67206461
+	      74612061
+	      7265612E
+	      2E2E0D0A
+	      24
+ 521:			;
+ 522:	0269  D1      	TELL1:	POP	DE
+ 523:	026A  0E09    		LD	C,9		;BDOS PRINT STRING FUNCTION
+ 524:	026C  CD0500  		CALL	BDOS
+ 525:	026F  CD0C04  		CALL	ERAB		;ERASE ANY [UNUSED].BAD FILE
+ 526:	0272  2AC206  		LD	HL,(DIRBKS)	;START AT FIRST DATA BLOCK
+ 527:	0275  44      		LD	B,H		;PUT INTO BC
+ 528:	0276  4D      		LD	C,L
+ 529:			;
+ 530:	0277  CD1D03  	FINDBA:	CALL	READB		;READ THE BLOCK
+ 531:	027A  C4C103  		CALL	NZ,SETBD	;IF BAD, ADD BLOCK TO LIST
+ 532:	027D  03      		INC	BC		;BUMP TO NEXT BLOCK
+ 533:	027E  2AB706  		LD	HL,(DSM)
+ 534:	0281  50      		LD	D,B		;SET UP FOR (MAXGRP - CURGRP)
+ 535:	0282  59      		LD	E,C
+ 536:	0283  CD1606  		CALL	SUBDE		;DO SUBTRACT: (MAXGRP - CURGRP)
+ 537:	0286  D27702  		JP	NC,FINDBA	;UNTIL CURGRP>MAXGRP
+ 538:	0289  CDAD05  		CALL	CRLF
+ 539:	028C  2A0807  		LD	HL,(DMCNT)	;GET NUMBER OF BAD SECTORS
+ 540:	028F  7C      		LD	A,H
+ 541:	0290  B5      		OR	L		;SET ZERO FLAG, IF NO BAD BLOCKS
+ 542:	0291  C9      		RET			;RETURN FROM "FINDB"
+ 543:			;
+ 544:			;Check system tracks, notify user if bad, but continue
+ 545:			;
+ 546:	0292  CDB202  	CHKSYS:	CALL	CHSY1		;PRINT MESSAGE
+ 547:	0295  0D0A5465		DEFB	CR,LF,'Testing system tracks...',CR,LF,'$'
+	      7374696E
+	      67207379
+	      7374656D
+	      20747261
+	      636B732E
+	      2E2E0D0A
+	      24
+ 548:			;
+ 549:	02B2  D1      	CHSY1:	POP	DE
+ 550:	02B3  0E09    		LD	C,9		;PRINT STRING FUNCTION
+ 551:	02B5  CD0500  		CALL	BDOS
+ 552:	02B8  210000  		LD	HL,0		;SET TRACK 0, SECTOR 1
+ 553:	02BB  220107  		LD	(TRACK),HL
+ 554:	02BE  23      		INC	HL
+ 555:	02BF  22FF06  		LD	(SECTOR),HL
+ 556:			;
+ 557:	02C2  CD5E03  	CHKSY1:	CALL	READS		;READ A SECTOR
+ 558:	02C5  C2D602  		JP	NZ,SYSERR	;NOTIFY, IF BAD BLOCKS HERE
+ 559:	02C8  2ABF06  		LD	HL,(SYSTRK)	;SET UP (TRACK-SYSTRK)
+ 560:	02CB  EB      		EX	DE,HL
+ 561:	02CC  2A0107  		LD	HL,(TRACK)
+ 562:	02CF  CD1606  		CALL	SUBDE		;DO THE SUBTRACT
+ 563:	02D2  DAC202  		JP	C,CHKSY1	;LOOP WHILE TRACK < SYSTRK
+ 564:	02D5  C9      		RET			;RETURN FROM "CHKSYS"
+ 565:			;
+ 566:	02D6  111205  	SYSERR:	LD	DE,ERMSG5	;SAY NO GO, AND BAIL OUT
+ 567:	02D9  0E09    		LD	C,9		;BDOS PRINT BUFFER FUNCTION
+ 568:	02DB  CD0500  		CALL	BDOS
+ 569:	02DE  C9      		RET			;RETURN FROM "SYSERR"
+ 570:			;
+ 571:			;Check for bad blocks in directory area
+ 572:			;
+ 573:	02DF  CD0003  	CHKDIR:	CALL	CHKD1
+ 574:	02E2  0D0A5465		DEFB	CR,LF,'Testing directory area...',CR,LF,'$'
+	      7374696E
+	      67206469
+	      72656374
+	      6F727920
+	      61726561
+	      2E2E2E0D
+	      0A24
+ 575:			;
+ 576:	0300  D1      	CHKD1:	POP	DE
+ 577:	0301  0E09    		LD	C,9		;BDOS PRINT STRING FUNCTION
+ 578:	0303  CD0500  		CALL	BDOS
+ 579:	0306  010000  		LD	BC,0		;START AT BLOCK 0
+ 580:			;
+ 581:	0309  CD1D03  	CHKDI1:	CALL	READB		;READ A BLOCK
+ 582:	030C  C23C05  		JP	NZ,ERROR6	;IF BAD, INDICATE ERROR IN DIRECTORY AREA
+ 583:	030F  03      		INC	BC		;BUMP FOR NEXT BLOCK
+ 584:	0310  2AC206  		LD	HL,(DIRBKS)	;SET UP (CURGRP - DIRBKS)
+ 585:	0313  2B      		DEC	HL		;MAKE 0-RELATIVE
+ 586:	0314  50      		LD	D,B
+ 587:	0315  59      		LD	E,C
+ 588:	0316  CD1606  		CALL	SUBDE		;DO THE SUBTRACT
+ 589:	0319  D20903  		JP	NC,CHKDI1	;LOOP UNTIL CURGRP > DIRGRP
+ 590:	031C  C9      		RET			;RETURN FROM "CHKDIR"
+ 591:			;
+ 592:			;Read all sectors in block, and return zero flag set if none bad
+ 593:			;
+ 594:	031D  CD3003  	READB:	CALL	CNVRTB		;CONVERT TO TRACK/SECTOR IN H&L REGS.
+ 595:	0320  3AB506  		LD	A,(BLM)
+ 596:	0323  3C      		INC	A		;NUMBER OF SECTORS/BLOCK
+ 597:	0324  57      		LD	D,A		;  IN D REG
+ 598:			;
+ 599:	0325  D5      	READBA:	PUSH	DE
+ 600:	0326  CD5E03  		CALL	READS		;READ SKEWED SECTOR
+ 601:	0329  D1      		POP	DE
+ 602:	032A  C0      		RET	NZ		;ERROR IF NOT ZERO...
+ 603:	032B  15      		DEC	D		;DEBUMP SECTOR/BLOCK
+ 604:	032C  C22503  		JP	NZ,READBA	;DO NEXT, IF NOT FINISHED
+ 605:	032F  C9      		RET			;RETURN FROM "READBA"
+ 606:			;
+ 607:			;Convert block number to track and skewed sector number
+ 608:			;
+ 609:	0330  C5      	CNVRTB:	PUSH	BC		;SAVE CURRENT GROUP
+ 610:	0331  60      		LD	H,B		;NEED IT IN HL
+ 611:	0332  69      		LD	L,C		; FOR EASY SHIFTING
+ 612:	0333  3AB406  		LD	A,(BSH)		;DPB VALUE THAT TELLS HOW TO
+ 613:			;
+ 614:	0336  29      	SHIFT:	ADD	HL,HL		;  SHIFT GROUP NUMBER TO GET
+ 615:	0337  3D      		DEC	A		;  DISK-DATA-AREA RELATIVE
+ 616:	0338  C23603  		JP	NZ,SHIFT	;  SECTOR NUMBER
+ 617:	033B  EB      		EX	DE,HL		;REL SECTOR # INTO DE
+ 618:	033C  2AB206  		LD	HL,(SPT)	;SECTORS PER TRACK FROM DPB
+ 619:	033F  CD1D06  		CALL	RNEG		;FASTER TO DAD THAN CALL SUBDE
+ 620:	0342  EB      		EX	DE,HL
+ 621:	0343  010000  		LD	BC,0		;INITIALIZE QUOTIENT
+ 622:			;
+ 623:			;Divide by number of sectors
+ 624:			;	quotient = track
+ 625:			;	     mod = sector
+ 626:			;
+ 627:	0346  03      	DIVLP:	INC	BC		;DIRTY DIVISION
+ 628:	0347  19      		ADD	HL,DE
+ 629:	0348  DA4603  		JP	C,DIVLP
+ 630:	034B  0B      		DEC	BC		;FIXUP LAST
+ 631:	034C  EB      		EX	DE,HL
+ 632:	034D  2AB206  		LD	HL,(SPT)
+ 633:	0350  19      		ADD	HL,DE
+ 634:	0351  23      		INC	HL
+ 635:	0352  22FF06  		LD	(SECTOR),HL	;NOW HAVE LOGICAL SECTOR
+ 636:	0355  2ABF06  		LD	HL,(SYSTRK)	;BUT BEFORE WE HAVE TRACK #,
+ 637:	0358  09      		ADD	HL,BC		;  WE HAVE TO ADD SYS TRACK OFFSET
+ 638:	0359  220107  		LD	(TRACK),HL
+ 639:	035C  C1      		POP	BC		;THIS WAS OUR GROUP NUMBER
+ 640:	035D  C9      		RET
+ 641:			;
+ 642:			;READS reads a logical sector (if it can)
+ 643:			;and returns zero flag set if no error.
+ 644:			;
+ 645:	035E  C5      	READS:	PUSH	BC		;SAVE THE GROUP NUMBER
+ 646:	035F  CDA503  		CALL	LTOP		;CONVERT LOGICAL TO PHYSICAL
+ 647:	0362  3AC406  		LD	A,(VER2FL)	;NOW CHECK VERSION
+ 648:	0365  B7      		OR	A
+ 649:	0366  CA7103  		JP	Z,NOTCP2	;SKIP THIS STUFF IF CP/M 1.4
+ 650:	0369  2A0307  		LD	HL,(PHYSEC)	;GET PHYSICAL SECTOR
+ 651:	036C  44      		LD	B,H		;INTO BC
+ 652:	036D  4D      		LD	C,L
+ 653:			;
+ 654:	036E  CD0000  	SETSEC:	CALL	$-$		;ADDRS FILLED IN AT INIT
+ 655:			;
+ 656:			;QUICK NOTE OF EXPLANATION: This code appears
+ 657:			;as if we skipped the SETSEC routine for 1.4
+ 658:			;CP/M users.  That's not true; in CP/M 1.4, the
+ 659:			;call within the LTOP routine to SECTRAN  ac-
+ 660:			;tually does the set sector, so no need to do
+ 661:			;it twice.      (RGF)
+ 662:			;
+ 663:	0371  2A0107  	NOTCP2:	LD	HL,(TRACK)	;NOW SET THE TRACK
+ 664:	0374  44      		LD	B,H		;CP/M WANTS IT IN BC
+ 665:	0375  4D      		LD	C,L
+ 666:			;
+ 667:	0376  CD0000  	SETTRK:	CALL	$-$		;ADDRS FILLED IN AT INIT
+ 668:			;
+ 669:			;Now do the sector read
+ 670:			;
+ 671:	0379  CD0000  	DREAD:	CALL	$-$		;ADDRS FILLED IN AT INIT
+ 672:	037C  B7      		OR	A		;SET FLAGS
+ 673:	037D  F5      		PUSH	AF		;SAVE ERROR FLAG
+ 674:			;
+ 675:	0000          		IF	TEST
+ 679:				ENDIF			;TEST
+ 680:			;
+ 681:	037E  2AFF06  		LD	HL,(SECTOR)	;GET LOGICAL SECTOR #
+ 682:	0381  23      		INC	HL		;WE WANT TO INCREMENT TO NEXT
+ 683:	0382  EB      		EX	DE,HL		;BUT FIRST...CHECK OVERFLOW
+ 684:	0383  2AB206  		LD	HL,(SPT)	;  BY DOING (SECPERTRK-SECTOR)
+ 685:	0386  CD1606  		CALL	SUBDE		;DO THE SUBTRACTION
+ 686:	0389  EB      		EX	DE,HL
+ 687:	038A  D29F03  		JP	NC,NOOVF	;JUMP IF NOT SECTOR>SECPERTRK
+ 688:			;
+ 689:			;Sector overflow...bump track number, reset sector
+ 690:			;
+ 691:	038D  2A0107  		LD	HL,(TRACK)
+ 692:	0390  23      		INC	HL
+ 693:	0391  220107  		LD	(TRACK),HL
+ 694:	0394  3E2A    		LD	A,'*'		;TELL CONSOLE ANOTHER TRACK DONE
+ 695:	0396  CDB405  		CALL	TYPE
+ 696:	0399  CDC105  		CALL	STOP		;SEE IF CONSOLE WANTS TO QUIT
+ 697:	039C  210100  		LD	HL,1		;NEW SECTOR NUMBER ON NEXT TRACK
+ 698:			;
+ 699:	039F  22FF06  	NOOVF:	LD	(SECTOR),HL	;PUT SECTOR AWAY
+ 700:	03A2  F1      		POP	AF		;GET BACK ERROR FLAGS
+ 701:	03A3  C1      		POP	BC		;RESTORE GROUP NUMBER
+ 702:	03A4  C9      		RET
+ 703:			;
+ 704:			;Convert logical sector # to physical
+ 705:			;
+ 706:	03A5  2A0507  	LTOP:	LD	HL,(SECTBL)	;SET UP PARAMETERS
+ 707:	03A8  EB      		EX	DE,HL		;  FOR CALL TO SECTRAN
+ 708:	03A9  2AFF06  		LD	HL,(SECTOR)
+ 709:	03AC  44      		LD	B,H
+ 710:	03AD  4D      		LD	C,L
+ 711:	03AE  0B      		DEC	BC		;ALWAYS CALL SECTRAN W/ZERO-REL SEC #
+ 712:			;
+ 713:	03AF  CDBE03  	SECT1:	CALL	SECTRN		;DO THE SECTOR TRANSLATION
+ 714:	03B2  3AB306  		LD	A,(SPT+1)	;CHECK IF BIG TRACKS
+ 715:	03B5  B7      		OR	A		;SET FLAGS (TRACKS > 256 SECTORS)
+ 716:	03B6  C2BA03  		JP	NZ,LTOP1	;NO SO SKIP
+ 717:	03B9  67      		LD	H,A		;ZERO OUT UPPER 8 BITS
+ 718:			;
+ 719:	03BA  220307  	LTOP1:	LD	(PHYSEC),HL	;PUT AWAY PHYSICAL SECTOR
+ 720:	03BD  C9      		RET
+ 721:			;
+ 722:			;Sector translation vector
+ 723:			;
+ 724:	03BE  C30000  	SECTRN:	JP	$-$		;FILLED IN AT INIT
+ 725:			;
+ 726:			;Put bad block in bad block list
+ 727:			;
+ 728:	03C1  C5      	SETBD:	PUSH	BC
+ 729:	03C2  CDD303  		CALL	SETBD1
+ 730:	03C5  0D0A4261		DEFB	CR,LF,'Bad block: $'
+	      6420626C
+	      6F636B3A
+	      2024
+ 731:			;
+ 732:	03D3  D1      	SETBD1:	POP	DE		;RETRIEVE ARG
+ 733:	03D4  0E09    		LD	C,9		;PRINT STRING
+ 734:	03D6  CD0500  		CALL	BDOS
+ 735:	03D9  C1      		POP	BC		;GET BACK BLOCK NUMBER
+ 736:	03DA  78      		LD	A,B
+ 737:	03DB  CD2E06  		CALL	HEXO		;PRINT IN HEX
+ 738:	03DE  79      		LD	A,C
+ 739:	03DF  CD2E06  		CALL	HEXO
+ 740:	03E2  CDAD05  		CALL	CRLF
+ 741:	03E5  2A0807  		LD	HL,(DMCNT)	;GET NUMBER OF SECTORS
+ 742:	03E8  3AB506  		LD	A,(BLM)		;GET BLOCK SHIFT VALUE
+ 743:	03EB  3C      		INC	A		;MAKES SECTOR/GROUP VALUE
+ 744:	03EC  5F      		LD	E,A		;WE WANT 16 BITS
+ 745:	03ED  1600    		LD	D,0
+ 746:	03EF  19      		ADD	HL,DE		;BUMP BY NUMBER IN THIS BLOCK
+ 747:	03F0  220807  		LD	(DMCNT),HL	;UPDATE NUMBER OF SECTORS
+ 748:	03F3  2AFD06  		LD	HL,(BADBKS)	;INCREMENT NUMBER OF BAD BLOCKS
+ 749:	03F6  23      		INC	HL
+ 750:	03F7  22FD06  		LD	(BADBKS),HL
+ 751:	03FA  2A0A07  		LD	HL,(DMPTR)	;GET POINTER INTO DM
+ 752:	03FD  71      		LD	(HL),C		;...AND PUT BAD BLOCK NUMBER
+ 753:	03FE  23      		INC	HL		;BUMP TO NEXT AVAILABLE EXTENT
+ 754:	03FF  3AB806  		LD	A,(DSM+1)	;CHECK IF 8 OR 16 BIT BLOCK SIZE
+ 755:	0402  B7      		OR	A
+ 756:	0403  CA0804  		JP	Z,SMGRP		;JUMP IF 8 BIT BLOCKS
+ 757:	0406  70      		LD	(HL),B		;ELSE STORE HI BYTE OF BLOCK #
+ 758:	0407  23      		INC	HL		;AND BUMP POINTER
+ 759:			;
+ 760:	0408  220A07  	SMGRP:	LD	(DMPTR),HL	;SAVE DM POINTER, FOR NEXT TIME THROUGH HERE
+ 761:	040B  C9      		RET			;RETURN FROM "SETBD"
+ 762:			;
+ 763:			;Eliminate any previous [UNUSED].BAD entries
+ 764:			;
+ 765:	040C  11C506  	ERAB:	LD	DE,BFCB		;POINT TO BAD FCB
+ 766:	040F  0E13    		LD	C,19		;BDOS DELETE FILE FUNCTION
+ 767:	0411  CD0500  		CALL	BDOS
+ 768:	0414  C9      		RET
+ 769:			;
+ 770:			;Create [UNUSED].BAD file entry
+ 771:			;
+ 772:	0415  11C506  	OPENB:	LD	DE,BFCB		;POINT TO BAD FCB
+ 773:	0418  0E16    		LD	C,22		;BDOS MAKE FILE FUNCTION
+ 774:	041A  CD0500  		CALL	BDOS
+ 775:	041D  FEFF    		CP	0FFH		;CHECK FOR OPEN ERROR
+ 776:	041F  C0      		RET	NZ		;RETURN FROM "OPENB", IF NO ERROR
+ 777:	0420  C36905  		JP	ERROR7		;BAIL OUT...CAN'T CREATE [UNUSED].BAD
+ 778:			;
+ 779:	0423  AF      	CLOSEB:	XOR	A
+ 780:	0424  3AD306  		LD	A,(BFCB+14)	;GET CP/M 2.x 'S2' BYTE
+ 781:	0427  E61F    		AND	1FH		;ZERO UPDATE FLAGS
+ 782:	0429  32D306  		LD	(BFCB+14),A	;RESTORE IT TO OUR FCB (WON'T HURT 1.4)
+ 783:	042C  11C506  		LD	DE,BFCB		;FCB FOR [UNUSED].BAD
+ 784:	042F  0E10    		LD	C,16		;BDOS CLOSE FILE FUNCTION
+ 785:	0431  CD0500  		CALL	BDOS
+ 786:	0434  C9      		RET			;RETURN FROM "CLOSEB"
+ 787:			;
+ 788:			;Move bad area DM to BFCB
+ 789:			;
+ 790:	0435  216407  	SETDM:	LD	HL,DM		;GET DM
+ 791:	0438  220A07  		LD	(DMPTR),HL	;SAVE AS NEW POINTER
+ 792:	043B  3AB606  		LD	A,(EXM)		;GET THE EXTENT SHIFT FACTOR
+ 793:	043E  0E00    		LD	C,0		;INIT BIT COUNT
+ 794:	0440  CD5706  		CALL	COLECT		;GET SHIFT VALUE
+ 795:	0443  218000  		LD	HL,128		;STARTING EXTENT SIZE
+ 796:	0446  79      		LD	A,C		;FIRST SEE IF ANY SHIFTS TO DO
+ 797:	0447  B7      		OR	A
+ 798:	0448  CA5004  		JP	Z,NOSHFT	;JUMP IF NONE
+ 799:			;
+ 800:	044B  29      	ESHFT:	ADD	HL,HL		;SHIFT
+ 801:	044C  3D      		DEC	A		;BUMP
+ 802:	044D  C24B04  		JP	NZ,ESHFT	;LOOP
+ 803:			;
+ 804:	0450  E5      	NOSHFT:	PUSH	HL		;SAVE THIS, IT IS RECORDS PER EXTENT
+ 805:	0451  3AB406  		LD	A,(BSH)		;GET BLOCK SHIFT
+ 806:	0454  47      		LD	B,A
+ 807:			;
+ 808:	0455  CD6306  	BSHFT:	CALL	ROTRHL		;SHIFT RIGHT
+ 809:	0458  05      		DEC	B
+ 810:	0459  C25504  		JP	NZ,BSHFT	;TO GET BLOCKS PER EXTENT
+ 811:	045C  7D      		LD	A,L		;IT'S IN L (CAN'T BE >16)
+ 812:	045D  32C106  		LD	(BLKEXT),A	;SETDME WILL NEED THIS LATER
+ 813:	0460  E1      		POP	HL		;GET BACK REC/EXT
+ 814:			;
+ 815:	0461  EB      	SET1:	EX	DE,HL		;NOW HAVE REC/EXTENT IN DE
+ 816:	0462  2A0807  		LD	HL,(DMCNT)	;COUNT OF BAD SECTORS
+ 817:			;
+ 818:	0465  E5      	SETDMO:	PUSH	HL		;SET FLAGS ON (DMCNT-BADCNT)
+ 819:	0466  CD1606  		CALL	SUBDE		;HAVE TO SUBTRACT FIRST
+ 820:	0469  44      		LD	B,H		;SAVE RESULT IN BC
+ 821:	046A  4D      		LD	C,L
+ 822:	046B  E1      		POP	HL		;THIS POP MAKES IT COMPARE ONLY
+ 823:	046C  DA9004  		JP	C,SETDME	;JUMP IF LESS THAN 1 EXTENT WORTH
+ 824:	046F  78      		LD	A,B
+ 825:	0470  B1      		OR	C		;TEST IF SUBTRACT WAS 0
+ 826:	0471  CA8504  		JP	Z,EVENEX	;EXTENT IS EXACTLY FILLED (SPL CASE)
+ 827:	0474  60      		LD	H,B		;RESTORE RESULT TO HL
+ 828:	0475  69      		LD	L,C
+ 829:	0476  E5      		PUSH	HL		;SAVE TOTAL
+ 830:	0477  D5      		PUSH	DE		;AND SECTORS/EXTENT
+ 831:	0478  EB      		EX	DE,HL
+ 832:	0479  CD9004  		CALL	SETDME		;PUT AWAY ONE EXTENT
+ 833:	047C  EB      		EX	DE,HL
+ 834:	047D  220A07  		LD	(DMPTR),HL	;PUT BACK NEW DM POINTER
+ 835:	0480  D1      		POP	DE		;GET BACK SECTORS/EXTENT
+ 836:	0481  E1      		POP	HL		;AND COUNT OF BAD SECTORS
+ 837:	0482  C36504  		JP	SETDMO		;AND LOOP
+ 838:			;
+ 839:			;Handle the special case of a file that ends on an extent
+ 840:			;boundary.  CP/M requires that such a file have a succeeding
+ 841:			;empty extent in order for the BDOS to properly access the file.
+ 842:			;
+ 843:	0485  EB      	EVENEX:	EX	DE,HL		;FIRST SET EXTENT W/BAD BLOCKS
+ 844:	0486  CD9004  		CALL	SETDME
+ 845:	0489  EB      		EX	DE,HL
+ 846:	048A  220A07  		LD	(DMPTR),HL
+ 847:	048D  210000  		LD	HL,0		;NOW SET ONE WITH NO DATA BLOCKS
+ 848:			;
+ 849:			;Fill in an extent's worth of bad sectors/block numbers.
+ 850:			;Also fill in the extent number in the FCB.
+ 851:			;
+ 852:	0490  E5      	SETDME:	PUSH	HL		;SAVE RECORD COUNT
+ 853:	0491  3A0707  		LD	A,(EXTNUM)	;UPDATE EXTENT BYTE
+ 854:	0494  3C      		INC	A
+ 855:	0495  320707  		LD	(EXTNUM),A	;SAVE FOR LATER
+ 856:	0498  32D106  		LD	(BFCB+12),A	; AND PUT IN FCB
+ 857:	049B  CD1504  		CALL	OPENB		;OPEN THIS EXTENT
+ 858:	049E  E1      		POP	HL		;RETRIEVE REC COUNT
+ 859:			;
+ 860:			;Divide record count by 128 to get the number
+ 861:			;of logical extents to put in the EX field
+ 862:			;
+ 863:	049F  0600    		LD	B,0		;INIT QUOTIENT
+ 864:	04A1  1180FF  		LD	DE,-128		;-DIVISOR
+ 865:	04A4  7C      		LD	A,H		;TEST FOR SPL CASE
+ 866:	04A5  B5      		OR	L		;  OF NO RECORDS
+ 867:	04A6  CABB04  		JP	Z,SKIP
+ 868:			;
+ 869:	04A9  19      	DIVLOP:	ADD	HL,DE		;SUBTRACT
+ 870:	04AA  04      		INC	B		;BUMP QUOTIENT
+ 871:	04AB  DAA904  		JP	C,DIVLOP
+ 872:	04AE  118000  		LD	DE,128		;FIX UP OVERSHOOT
+ 873:	04B1  19      		ADD	HL,DE
+ 874:	04B2  05      		DEC	B
+ 875:	04B3  7C      		LD	A,H		;TEST FOR WRAPAROUND
+ 876:	04B4  B5      		OR	L
+ 877:	04B5  C2BB04  		JP	NZ,SKIP
+ 878:	04B8  2E80    		LD	L,80H		;RECORD LENGTH
+ 879:	04BA  05      		DEC	B
+ 880:			;
+ 881:	04BB  3A0707  	SKIP:	LD	A,(EXTNUM)	;NOW FIX UP EXTENT NUM
+ 882:	04BE  80      		ADD	A,B
+ 883:	04BF  320707  		LD	(EXTNUM),A
+ 884:	04C2  32D106  		LD	(BFCB+12),A
+ 885:	04C5  7D      		LD	A,L		;MOD IS RECORD COUNT
+ 886:	04C6  32D406  		LD	(BFCB+15),A	;THAT GOES IN RC BYTE
+ 887:			;
+ 888:	04C9  3AC106  	MOVDM:	LD	A,(BLKEXT)	;GET BLOCKS PER EXTENT
+ 889:	04CC  47      		LD	B,A		;INTO B
+ 890:			;
+ 891:	04CD  2A0A07  	SETD1:	LD	HL,(DMPTR)	;POINT TO BAD ALLOCATION MAP
+ 892:	04D0  EB      		EX	DE,HL
+ 893:	04D1  21D506  		LD	HL,BFCB+16	;DISK ALLOC MAP IN FCB
+ 894:			;
+ 895:	04D4  1A      	SETDML:	LD	A,(DE)
+ 896:	04D5  77      		LD	(HL),A
+ 897:	04D6  23      		INC	HL
+ 898:	04D7  13      		INC	DE
+ 899:			;
+ 900:			;Now see if 16 bit groups...if so,
+ 901:			;we have to move another byte
+ 902:			;
+ 903:	04D8  3AB806  		LD	A,(DSM+1)	;THIS TELLS US
+ 904:	04DB  B7      		OR	A
+ 905:	04DC  CAE304  		JP	Z,BUMP1		;IF ZERO, THEN NOT
+ 906:	04DF  1A      		LD	A,(DE)		;IS 16 BITS, SO DO ANOTHER
+ 907:	04E0  77      		LD	(HL),A
+ 908:	04E1  23      		INC	HL
+ 909:	04E2  13      		INC	DE
+ 910:			;
+ 911:	04E3  05      	BUMP1:	DEC	B		;COUNT DOWN
+ 912:	04E4  C2D404  		JP	NZ,SETDML
+ 913:	04E7  D5      		PUSH	DE
+ 914:	04E8  CD2304  		CALL	CLOSEB		;CLOSE THIS EXTENT
+ 915:	04EB  D1      		POP	DE
+ 916:	04EC  C9      		RET
+ 917:			;
+ 918:			;Error messages
+ 919:			;
+ 920:	04ED  11F304  	SELERR:	LD	DE,SELEMS	;SAY NO GO, AND BAIL OUT
+ 921:	04F0  C39D01  		JP	PMSG
+ 922:			;
+ 923:	04F3  0D0A4472	SELEMS:	DEFB	CR,LF,'Drive specifier out of range$'
+	      69766520
+	      73706563
+	      69666965
+	      72206F75
+	      74206F66
+	      2072616E
+	      676524
+ 924:			;
+ 925:	0512  0D0A2B2B	ERMSG5:	DEFB	CR,LF,'+++ Warning...System tracks'
+	      2B205761
+	      726E696E
+	      672E2E2E
+	      53797374
+	      656D2074
+	      7261636B
+	      73
+ 926:	052F  20626164		DEFB	' bad +++',CR,LF,CR,LF,'$'
+	      202B2B2B
+	      0D0A0D0A
+	      24
+ 927:			;
+ 928:	053C  114205  	ERROR6:	LD	DE,ERMSG6	;OOPS...CLOBBERED DIRECTORY
+ 929:	053F  C39D01  		JP	PMSG
+ 930:			;
+ 931:	0542  0D0A4261	ERMSG6:	DEFB	CR,LF,'Bad directory area, try reformatting$'
+	      64206469
+	      72656374
+	      6F727920
+	      61726561
+	      2C207472
+	      79207265
+	      666F726D
+	      61747469
+	      6E6724
+ 932:			;
+ 933:	0569  116F05  	ERROR7:	LD	DE,ERMSG7	;SAY NO GO, AND BAIL OUT
+ 934:	056C  C39D01  		JP	PMSG
+ 935:			;
+ 936:	056F  0D0A4361	ERMSG7:	DEFB	CR,LF,'Can''t create [UNUSED].BAD$'
+	      6E277420
+	      63726561
+	      7465205B
+	      554E5553
+	      45445D2E
+	      42414424
+ 937:			;
+ 938:			;
+ 939:			;==== SUBROUTINES ====
+ 940:			;
+ 941:			;Decimal output routine
+ 942:			;
+ 943:	058B  C5      	DECOUT:	PUSH	BC
+ 944:	058C  D5      		PUSH	DE
+ 945:	058D  E5      		PUSH	HL
+ 946:	058E  01F6FF  		LD	BC,-10
+ 947:	0591  11FFFF  		LD	DE,-1
+ 948:			;
+ 949:	0594  09      	DECOU2:	ADD	HL,BC
+ 950:	0595  13      		INC	DE
+ 951:	0596  DA9405  		JP	C,DECOU2
+ 952:	0599  010A00  		LD	BC,10
+ 953:	059C  09      		ADD	HL,BC
+ 954:	059D  EB      		EX	DE,HL
+ 955:	059E  7C      		LD	A,H
+ 956:	059F  B5      		OR	L
+ 957:	05A0  C48B05  		CALL	NZ,DECOUT
+ 958:	05A3  7B      		LD	A,E
+ 959:	05A4  C630    		ADD	A,'0'
+ 960:	05A6  CDB405  		CALL	TYPE
+ 961:	05A9  E1      		POP	HL
+ 962:	05AA  D1      		POP	DE
+ 963:	05AB  C1      		POP	BC
+ 964:	05AC  C9      		RET
+ 965:			;
+ 966:			;Carriage-return/line-feed to console
+ 967:			;
+ 968:	05AD  3E0D    	CRLF:	LD	A,CR
+ 969:	05AF  CDB405  		CALL	TYPE
+ 970:	05B2  3E0A    		LD	A,LF		;FALL INTO 'TYPE'
+ 971:			;
+ 972:	05B4  C5      	TYPE:	PUSH	BC
+ 973:	05B5  D5      		PUSH	DE
+ 974:	05B6  E5      		PUSH	HL
+ 975:	05B7  5F      		LD	E,A		;CHARACTER TO E FOR CP/M
+ 976:	05B8  0E02    		LD	C,2		;PRINT CONSOLE FUNCTION
+ 977:	05BA  CD0500  		CALL	BDOS		;PRINT CHARACTER
+ 978:	05BD  E1      		POP	HL
+ 979:	05BE  D1      		POP	DE
+ 980:	05BF  C1      		POP	BC
+ 981:	05C0  C9      		RET
+ 982:			;
+ 983:			;Subroutine to test console for control-c abort
+ 984:			;
+ 985:	05C1  2A0100  	STOP:	LD	HL,(1)		;FIND BIOS IN MEMORY
+ 986:	05C4  2E06    		LD	L,6		;OFFSET TO CONSOLE STATUS
+ 987:	05C6  CDFF05  		CALL	GOHL		;THANKS TO BRUCE RATOFF FOR THIS TRICK
+ 988:	05C9  B7      		OR	A		;TEST FLAGS ON ZERO
+ 989:	05CA  C8      		RET	Z		;RETURN IF NO CHAR
+ 990:	05CB  2A0100  		LD	HL,(1)		;NOW FIND CONSOLE INPUT
+ 991:	05CE  2E09    		LD	L,9		;OFFSET FOR CONIN
+ 992:	05D0  CDFF05  		CALL	GOHL
+ 993:	05D3  FE03    		CP	'C'-40H		;IS IT CONTROL-C?
+ 994:	05D5  C0      		RET	NZ		;RETURN IF NOT
+ 995:	05D6  11E105  		LD	DE,ABORTM	;EXIT WITH MESSAGE
+ 996:	05D9  0E09    		LD	C,9		;PRINT MESSAGE FUNCTION
+ 997:	05DB  CD0500  		CALL	BDOS		;SAY GOODBYE
+ 998:	05DE  C30000  		JP	0		;THEN LEAVE
+ 999:			;
+1000:	05E1  0D0A    	ABORTM:	DEFB	CR,LF
+1001:	05E3  54657374		DEFB	'Test aborted by control-C'
+	      2061626F
+	      72746564
+	      20627920
+	      636F6E74
+	      726F6C2D
+	      43
+1002:	05FC  0D0A24  		DEFB	CR,LF,'$'
+1003:			;
+1004:			;A thing to allow a call to @HL
+1005:			;
+1006:	05FF  E9      	GOHL:	JP	(HL)
+1007:			;
+1008:			;Zero all of memory to hold DM values
+1009:			;
+1010:	0600  2A0600  	ZMEM:	LD	HL,(BDOS+1)	;GET TOP-OF-MEM POINTER
+1011:	0603  116407  		LD	DE,DM		;STARTING POINT
+1012:	0606  CD1606  		CALL	SUBDE		;GET NUMBER OF BYTES
+1013:	0609  44      		LD	B,H
+1014:	060A  4D      		LD	C,L
+1015:	060B  EB      		EX	DE,HL		;BEGIN IN HL, COUNT IN BC
+1016:			;
+1017:	060C  3600    	ZLOOP:	LD	(HL),0		;ZERO A BYTE
+1018:	060E  23      		INC	HL		;POINT PAST
+1019:	060F  0B      		DEC	BC		;COUNT DOWN
+1020:	0610  78      		LD	A,B
+1021:	0611  B1      		OR	C
+1022:	0612  C20C06  		JP	NZ,ZLOOP
+1023:	0615  C9      		RET
+1024:			;
+1025:			;Subtract DE from HL
+1026:			;
+1027:	0616  7D      	SUBDE:	LD	A,L
+1028:	0617  93      		SUB	E
+1029:	0618  6F      		LD	L,A
+1030:	0619  7C      		LD	A,H
+1031:	061A  9A      		SBC	A,D
+1032:	061B  67      		LD	H,A
+1033:	061C  C9      		RET
+1034:			;
+1035:			;Negate HL
+1036:			;
+1037:	061D  7D      	RNEG:	LD	A,L
+1038:	061E  2F      		CPL
+1039:	061F  6F      		LD	L,A
+1040:	0620  7C      		LD	A,H
+1041:	0621  2F      		CPL
+1042:	0622  67      		LD	H,A
+1043:	0623  23      		INC	HL
+1044:	0624  C9      		RET
+1045:			;
+1046:			;Move from (HL) to (DE)
+1047:			;Count in BC
+1048:			;
+1049:	0625  7E      	MOVE:	LD	A,(HL)
+1050:	0626  12      		LD	(DE),A
+1051:	0627  23      		INC	HL
+1052:	0628  13      		INC	DE
+1053:	0629  05      		DEC	B
+1054:	062A  C22506  		JP	NZ,MOVE
+1055:	062D  C9      		RET
+1056:			;
+1057:			;Print byte in accumulator in hex
+1058:			;
+1059:	062E  F5      	HEXO:	PUSH	AF		;SAVE FOR SECOND HALF
+1060:	062F  0F      		RRCA			;MOVE INTO POSITION
+1061:	0630  0F      		RRCA
+1062:	0631  0F      		RRCA
+1063:	0632  0F      		RRCA
+1064:	0633  CD3706  		CALL	NYBBLE		;PRINT MS NYBBLE
+1065:	0636  F1      		POP	AF
+1066:			;
+1067:	0637  E60F    	NYBBLE:	AND	0FH		;LO NYBBLE ONLY
+1068:	0639  C690    		ADD	A,90H
+1069:	063B  27      		DAA
+1070:	063C  CE40    		ADC	A,40H
+1071:	063E  27      		DAA
+1072:	063F  C3B405  		JP	TYPE		;PRINT IN HEX
+1073:			;
+1074:			;Subroutine to determine the number
+1075:			;of groups reserved for the directory
+1076:			;
+1077:	0642  0E00    	GETDIR:	LD	C,0		;INIT BIT COUNT
+1078:	0644  3ABB06  		LD	A,(AL0)		;READ DIR GRP BITS
+1079:	0647  CD5706  		CALL	COLECT		;COLLECT COUNT OF DIR GRPS..
+1080:	064A  3ABC06  		LD	A,(AL1)		;..IN REGISTER C
+1081:	064D  CD5706  		CALL	COLECT
+1082:	0650  69      		LD	L,C
+1083:	0651  2600    		LD	H,0		;BC NOW HAS A DEFAULT START GRP #
+1084:	0653  22C206  		LD	(DIRBKS),HL	;SAVE FOR LATER
+1085:	0656  C9      		RET
+1086:			;
+1087:			;Collect the number of '1' bits in A as a count in C
+1088:			;
+1089:	0657  0608    	COLECT:	LD	B,8
+1090:			;
+1091:	0659  17      	COLOP:	RLA
+1092:	065A  D25E06  		JP	NC,COSKIP
+1093:	065D  0C      		INC	C
+1094:			;
+1095:	065E  05      	COSKIP:	DEC	B
+1096:	065F  C25906  		JP	NZ,COLOP
+1097:	0662  C9      		RET
+1098:			;
+1099:			;Shift HL right one place
+1100:			;
+1101:	0663  B7      	ROTRHL:	OR	A		;CLEAR CARRY
+1102:	0664  7C      		LD	A,H		;GET HI BYTE
+1103:	0665  1F      		RRA			;SHIFT RIGHT
+1104:	0666  67      		LD	H,A		;PUT BACK
+1105:	0667  7D      		LD	A,L		;GET LO
+1106:	0668  1F      		RRA			;SHIFT WITH CARRY
+1107:	0669  6F      		LD	L,A		;PUT BACK
+1108:	066A  C9      		RET
+1109:			;
+1110:			;Routine to fill in disk parameters
+1111:			;
+1112:	066B  3AC406  	LOGIT:	LD	A,(VER2FL)
+1113:	066E  B7      		OR	A		;IF NOT CP/M 2.x THEN
+1114:	066F  CA7B06  		JP	Z,LOG14		;	DO IT AS 1.4
+1115:	0672  11B206  		LD	DE,DPB		;   THEN MOVE TO LOCAL
+1116:	0675  060F    		LD	B,DPBLEN	;  WORKSPACE
+1117:	0677  CD2506  		CALL	MOVE
+1118:	067A  C9      		RET
+1119:			;
+1120:	067B  2A0600  	LOG14:	LD	HL,(BDOS+1)	;FIRST FIND 1.4 BDOS
+1121:	067E  2E00    		LD	L,0
+1122:	0680  113A00  		LD	DE,DPBOFF	;THEN OFFSET TO 1.4'S DPB
+1123:	0683  19      		ADD	HL,DE
+1124:	0684  1600    		LD	D,0		;SO 8 BIT PARMS WILL BE 16
+1125:	0686  5E      		LD	E,(HL)		;NOW MOVE PARMS
+1126:	0687  23      		INC	HL		; DOWN FROM BDOS DISK PARM BLOCK
+1127:	0688  EB      		EX	DE,HL		; TO OURS
+1128:	0689  22B206  		LD	(SPT),HL
+1129:	068C  EB      		EX	DE,HL
+1130:	068D  5E      		LD	E,(HL)
+1131:	068E  23      		INC	HL
+1132:	068F  EB      		EX	DE,HL
+1133:	0690  22B906  		LD	(DRM),HL
+1134:	0693  EB      		EX	DE,HL
+1135:	0694  7E      		LD	A,(HL)
+1136:	0695  23      		INC	HL
+1137:	0696  32B406  		LD	(BSH),A
+1138:	0699  7E      		LD	A,(HL)
+1139:	069A  23      		INC	HL
+1140:	069B  32B506  		LD	(BLM),A
+1141:	069E  5E      		LD	E,(HL)
+1142:	069F  23      		INC	HL
+1143:	06A0  EB      		EX	DE,HL
+1144:	06A1  22B706  		LD	(DSM),HL
+1145:	06A4  EB      		EX	DE,HL
+1146:	06A5  5E      		LD	E,(HL)
+1147:	06A6  23      		INC	HL
+1148:	06A7  EB      		EX	DE,HL
+1149:	06A8  22BB06  		LD	(AL0),HL
+1150:	06AB  EB      		EX	DE,HL
+1151:	06AC  5E      		LD	E,(HL)
+1152:	06AD  EB      		EX	DE,HL
+1153:	06AE  22BF06  		LD	(SYSTRK),HL
+1154:	06B1  C9      		RET
+1155:			;
+1156:			;--------------------------------------------------
+1157:			;The disk parameter block
+1158:			;is moved here from CP/M
+1159:			;
+1160:	06B2          	DPB	EQU	$		;DISK PARAMETER BLOCK (COPY)
+1161:			;
+1162:	06B2          	SPT:	DEFS	2		;SECTORS PER TRACK
+1163:	06B4          	BSH:	DEFS	1		;BLOCK SHIFT
+1164:	06B5          	BLM:	DEFS	1		;BLOCK MASK
+1165:	06B6          	EXM:	DEFS	1		;EXTENT MASK
+1166:	06B7          	DSM:	DEFS	2		;MAXIMUM BLOCK NUMBER
+1167:	06B9          	DRM:	DEFS	2		;MAXIMUM DIRECTORY BLOCK NUMBER
+1168:	06BB          	AL0:	DEFS	1		;DIRECTORY ALLOCATION VECTOR
+1169:	06BC          	AL1:	DEFS	1		;DIRECTORY ALLOCATION VECTOR
+1170:	06BD          	CKS:	DEFS	2		;CHECKED DIRECTORY ENTRIES
+1171:	06BF          	SYSTRK:	DEFS	2		;SYSTEM TRACKS
+1172:			;
+1173:			;End of disk parameter block
+1174:			;
+1175:	000F          	DPBLEN	EQU	$-DPB		;LENGTH OF DISK PARM BLOCK
+1176:			;
+1177:			;--------------------------------------------------
+1178:	06C1  00      	BLKEXT:	DEFB	0		;BLOCKS PER EXTENT
+1179:	06C2  0000    	DIRBKS:	DEFW	0		;CALCULATED # OF DIR BLOCKS
+1180:	06C4  00      	VER2FL:	DEFB	0		;VERSION 2.X FLAG
+1181:			;
+1182:	06C5  005B554E	BFCB:	DEFB	0,'[UNUSED]BAD',0,0,0,0
+	      55534544
+	      5D424144
+	      00000000
+1183:	06D5          	FCBDM:	DEFS	17
+1184:			;
+1185:	06E6  4E6F24  	NOMSG:	DEFB	'No$'
+1186:	06E9  20626164	ENDMSG:	DEFB	' bad blocks found',CR,LF,'$'
+	      20626C6F
+	      636B7320
+	      666F756E
+	      640D0A24
+1187:			;
+1188:	06FD  0000    	BADBKS:	DEFW	0		;COUNT OF BAD BLOCKS
+1189:	06FF  0000    	SECTOR:	DEFW	0		;CURRENT SECTOR NUMBER
+1190:	0701  0000    	TRACK:	DEFW	0		;CURRENT TRACK NUMBER
+1191:	0703  0000    	PHYSEC:	DEFW	0		;CURRENT PHYSICAL SECTOR NUMBER
+1192:	0705  0000    	SECTBL:	DEFW	0		;SECTOR SKEW TABLE POINTER
+1193:			;
+1194:	0707  FF      	EXTNUM:	DEFB	0FFH		;USED FOR UPDATING EXTENT NUMBER
+1195:	0708  0000    	DMCNT:	DEFW	0		;NUMBER OF BAD SECTORS
+1196:	070A  6407    	DMPTR:	DEFW	DM		;POINTER TO NEXT BLOCK ID
+1197:			;
+1198:	070C  20746F74	SECMSG:	DEFB	' total sectors read',CR,LF,'$'
+	      616C2073
+	      6563746F
+	      72732072
+	      6561640D
+	      0A24
+1199:			;
+1200:	0722  0000    	SECCNT:	DEFW	0		;NUMBER OF SECTORS READ
+1201:			;
+1202:	0724          		DEFS	64		;ROOM FOR 32 LEVEL STACK
+1203:	0764          	NEWSTK	EQU	$		;OUR STACK
+1204:	0764          	DM	EQU	$		;BAD BLOCK ALLOCATION MAP
+1205:			;
+1206:	0764          		END
+
+
+
+Statistics:
+
+   132	symbols
+  1540	bytes
+
+
+
+Symbol Table:
+
+abortm           5e1     erab             40c     seccnt           722+    
+al0              6bb     ermsg5           512     secmsg           70c+    
+al1              6bc     ermsg6           542     sect1            3af+    
+aseg               0+    ermsg7           56f     sectbl           705     
+badbks           6fd     error6           53c     sector           6ff     
+badusr           104     error7           569     sectrn           3be     
+base           =   0     eshft            44b     selems           4f3     
+bdos           =   5     evenex           485     selerr           4ed     
+bfcb             6c5     exm              6b6     set1             461+    
+blkext           6c1     extnum           707     setbd            3c1     
+blm              6b5     false          =   0     setbd1           3d3     
+bsh              6b4     fcb            =  5c     setd1            4cd+    
+bshft            455     fcbdm            6d5+    setdm            435     
+bump1            4e3     findb            240     setdme           490     
+chkd1            300     findba           277     setdml           4d4     
+chkdi1           309     gd2              1f3     setdmo           465     
+chkdir           2df     gd3              200     setdsk           209     
+chksy1           2c2     gdriv            1e4     setsec           36e     
+chksys           292     getdir           642     settrk           376     
+chsy1            2b2     gohl             5ff     setup            1a5     
+cks              6bd+    hexo             62e     shift            336     
+closeb           423     lf             =   a     skip             4bb     
+cnvrtb           330     log14            67b     smgrp            408     
+colect           657     logit            66b     spt              6b2     
+colop            659     ltop             3a5     start            105     
+coskip           65e     ltop1            3ba     start2           167     
+cr             =   d     movdm            4c9+    stop             5c1     
+crlf             5ad     move             625     subde            616     
+decou2           594     newstk         = 764     syserr           2d6     
+decout           58b     nobad            17c     systrk           6bf     
+dirbks           6c2     nomsg            6e6     systst           103     
+divlop           4a9     noovf            39f     tab            =   9     
+divlp            346     noshft           450     tell1            269     
+dm             = 764     notcp2           371     test           =   0     
+dmcnt            708     nybble           637     track            701     
+dmptr            70a     openb            415     trnoff         =   f     
+dodir            24a     physec           703     true           =ffff+    
+dolog            228     pmsg             19d     type             5b4     
+dpb            = 6b2     pmsg1            195     ver2fl           6c4     
+dpblen         =   f     pmsg2            19a     z80                0+    
+dpboff         =  3a     readb            31d     zloop            60c     
+dread            379     readba           325     zmem             600     
+drm              6b9     reads            35e     
+dsm              6b7     rneg             61d     
+endmsg           6e9     rotrhl           663     

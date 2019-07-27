@@ -1,0 +1,508 @@
+;===========================================================================
+;
+; VFCMDS7.Z80 - Group Operations
+;
+;===========================================================================
+
+; * * * COMMAND: G
+
+; Group operation
+
+group$op:
+	call	cprmpt
+	db	'Group: (A,C,D,M,A,F,Q,P,V,T,U) ',0
+	call	keyin		; Get response
+	ld	(massop),a	; Save command for mass$olp
+	ld	b,a		; Get command in b
+	ld	hl,gtable	; Pt to table
+	call	ctpr1		; Process command
+	jp	loop		; Resume if not found
+
+; Group Command Table
+
+gtable:
+	db	'C'
+	db	0		; (wheel)
+	dw	mass$copy
+
+	db	'M'
+	db	0		; (wheel)
+	dw	mass$move
+
+	db	'D'
+	db	0		; (wheel)
+	dw	mass$del
+
+	db	'A'		; Archive
+	db	0		; (wheel)
+	dw	mass$arc
+
+	db	'F'
+	db	0ffh		; (safe)
+	dw	mass$fsize
+
+	db	'P'
+	db	0		; (wheel)
+	dw	mass$prt
+
+	db	'Q'
+	db	0		; (wheel)
+	dw	mass$usq
+
+	db	'T'
+	db	0ffh		; (safe)
+	dw	mass$tag
+
+	db	'U'
+	db	0ffh		; (safe)
+	dw	mass$untag
+
+	db	'V'
+	db	0ffh		; (safe)
+	dw	mass$view
+
+	db	0		; End of table
+
+
+;---------------------------------------------------------------------------
+
+; Group File Tagging and Untagging Commands
+
+
+; COMMAND: GT
+
+mass$tag:
+	ld	b,tagch		; Tag char
+	jr	masstu		; Do work
+
+
+; COMMAND: GU
+
+mass$untag:
+	ld	b,' '		; Untag char
+
+; Common Entry Point for Mass Untag/Tag: Reg B = Untag/Tag Char
+
+masstu:
+	push	bc		; Save tag char
+	ld	de,d$fcb	; init this fcb to *.*
+	push	de		; need it later
+	inc	de
+	ld	hl,joker	; move the '?'s in
+	ld	b,11	
+	call 	movec
+	pop	de		; point to the fcb again
+	jp	wtagen		; enter wildcard tag/untag with *.*
+
+
+;---------------------------------------------------------------------------
+
+; File Size Group Command
+
+
+; COMMAND: GF
+
+mass$fsize:
+	call	workmsg		; Print 'working' msg
+	ld	hl,0		; Zero total
+	ld	(tag$tot),hl
+	ld	hl,(ringpos)	; Save ring position
+	ld	(sringpos),hl
+	ld	hl,(ring)	; Set new ring position
+	ld	(ringpos),hl
+
+; Main Loop to Compute File Sizes
+
+mass$fs:
+	ld	hl,(ringend)	; At end of ring?
+	ex	de,hl
+	ld	hl,(ringpos)
+	call	cmpdehl		; Same if so
+	jr	z,mass$fs2
+	ld	de,eltsiz-1	; Pt to tag
+	add	hl,de
+	ld	a,(hl)		; Get tag
+	inc	hl		; Pt to next file
+	cp	tagch		; Tagged?
+	jr	nz,mass$fs1	; Skip if not tagged
+
+; Compute Size of Tagged File
+
+	push	hl		; Save ptr to next file
+	call	sizer		; Compute file size
+	ex	de,hl		; Size in de
+	ld	hl,(tag$tot)	; Get total
+	add	hl,de
+	ld	(tag$tot),hl	; New total
+	pop	hl		; Get ptr to next file
+mass$fs1:
+	ld	(ringpos),hl	; Set ptr to next file
+	jr	mass$fs
+
+; File Size Accumulation Done - Print Result
+
+mass$fs2:
+	ld	hl,(sringpos)	; Restore ring position
+	ld	(ringpos),hl
+	call	fsnote		; Print file size message
+	call	vprint		; Print specific
+	db	'Tagged Files is ',0
+	ld	hl,(tag$tot)	; Get total
+	jp	fsize1		; Print size in hl and return
+
+;---------------------------------------------------------------------------
+
+; Group File Deletion
+
+
+; COMMAND: GD
+
+mass$del:
+	call	cprmpt
+	db	'Group Delete (Yes/No/Verify)? ',0
+	call	keyin		; Get response
+	cp	'Y'
+	jr	z,md1
+	cp	'V'
+	jp	nz,loop		; Return to position
+md1:
+	ld	(mdflg),a	; Set flag
+	jp	mass$run
+
+;---------------------------------------------------------------------------
+
+; Group Archive, Copy, Squeeze, and Move
+
+
+; COMMAND: GA - Untag any tagged files that are already archived, set aflag if
+; any files remain tagged, then exit to mass copy.  Copy will set archive
+; attribute on source at end of copy.
+
+mass$arc:
+	ld	hl,(ringpos)
+	ld	(sringpos),hl
+	ld	hl,(curat)
+	ld	(scurat),hl
+	xor	a
+	ld	(aflag),a	; Clear archive flag
+	ld	hl,(ring)	; Top of ring
+	ld	de,-eltsiz	; One element
+	add	hl,de		; Back up
+	ld	(ringpos),hl	; Start here
+
+archive:
+	ld	hl,(ringpos)
+	ld	de,eltsiz
+	add	hl,de
+	ld	(ringpos),hl
+	ld	de,(ringend)
+	call	cmpdehl
+	jr	z,mass$arx
+
+; Untag any tagged files that are already archived
+
+	ld	de,eltsiz-1	; Point to tag byte
+	add	hl,de
+	ld	a,(hl)
+	cp	tagch
+	jr	nz,archive	; If not tagged, go on to next file
+	dec	hl		; Check archive byte
+	ld	a,80h
+	and	(hl)		; High bit set on 3rd char of file type?
+	jr	nz,archive1	; If so, jump (file is already archived)
+	ld	a,0ffh		; Set aflag to show at least one file to copy
+	ld	(aflag),a
+	jr	archive		; On to next file in ring
+archive1:			; File is already archived
+	inc	hl		; Back to tag byte
+	ld	(hl),stagch	; Change tag to soft tag
+	jr	archive		; On to next file in ring
+
+mass$arx:
+	ld	hl,(sringpos)
+	ld	(ringpos),hl
+	ld	hl,(scurat)
+	ld	(curat),hl
+	ld	a,(aflag)
+	or	a
+	push	af
+	call	refresh		; Show remaining tagged files
+	pop	af
+	jr	z,noarchive	; Nothing to do
+	call	ermsg
+	db	'Group Archive',0
+	jr	mass$run
+noarchive:
+	call	ermsg
+	db	'All Tagged Files ARE Archived.',0
+	jp	loop		; Next command
+
+
+; COMMAND: GC
+
+; Copy files tagged using the 't' command.
+
+mass$copy:
+	call	ermsg
+	db	'Group Copy',0
+	jr	mass$run
+
+
+; COMMAND: GQ
+
+; Unsqueeze files tagged using the 't' command.
+
+mass$usq:
+	call	ermsg
+	db	'Group usQ',0
+	jr	mass$run
+
+
+; COMMAND: GM
+
+; Copy tagged files, then erase the source
+
+mass$move:
+	call	ermsg
+	db	'Group Move',0
+	jr	mass$run
+
+
+;---------------------------------------------------------------------------
+
+; Group Print and View Commands
+
+
+; COMMAND: GP
+
+mass$prt:
+	call	ermsg
+	db	'Group Print',0
+	jr	mass$run
+
+
+; COMMAND: GV
+
+; View files tagged using the 't' command.
+
+mass$view:
+	call	ermsg
+	db	'Group View',0
+
+
+;---------------------------------------------------------------------------
+
+; Working Code for Group Routines
+
+; Main Entry Point for Mass Operation
+;    On entry, MASSOP = C if copy,
+;			D if delete
+;			P if print
+;			Q if usq,
+;			V if view
+;			M if Move
+;			A if Archive
+
+mass$run:
+	ld	hl,(ringpos)	; Save position
+	ld	(sringpos),hl
+	ld	hl,(curat)
+	ld	(scurat),hl	; Save cursor position
+	call	clrcur		; Clear cursor
+	ld	hl,curhome
+	ld	(curat),hl	; Home position
+	ld	hl,(ring)
+	ld	de,-eltsiz
+	add	hl,de
+	ld	(ringpos),hl	; Set position
+
+; Set Flags for First Time Thru and Mass Operation
+
+	xor	a		; A=0
+	ld	(first$m),a	; Set for prompt for dest with first file
+	dec	a		; A=0ffh
+	ld	(mflag),a	; This is a mass operation
+	jr	mass$olp0
+
+; Main Mass Operation Loop
+
+mass$olp:
+	call	stag		; If tagged, soft tag and redisplay name
+	call	psn$next	; Advance cursor pointer
+
+; Advance the ring position
+
+mass$olp0:
+	ld	hl,(ringpos)
+	ld	de,eltsiz
+	add	hl,de
+	ld	(ringpos),hl
+	ex	de,hl
+
+; Check for Loop Completion -- DE = Current RINGPOS
+
+mass$olp1:
+	ld	hl,(ringend)	; At ring end yet?
+	call	cmpdehl		; Compare present position with end
+	jp	z,mass$olx	; Done
+	call	mass$can	; Cancel?
+	jp	nz,mass$olx	; Exit on any keypress
+
+; Check for Tagged File at RINGPOS
+
+	ld	hl,(ringpos)	; Get position
+	ld	de,eltsiz-1	; Get tag location
+	add	hl,de
+	ld	a,(hl)		; Get tag
+	cp	tagch
+	jr	nz,mass$olp	; Not tagged, so skip
+
+; Test RINGPOS within local ring (if not, make it so and rebuild screen)
+
+	ld	hl,(ringpos)
+	ex	de,hl
+	ld	hl,(locbeg)
+	call	cmpdehl		; Set carry if HL > DE
+	jr	c,newscr	; New screen if so
+	ld	hl,(locend)
+	call	cmpdehl
+	jr	c,mass$sel0	; Screen is ok
+newscr:
+	call	findscr		; Find new local screen
+	call	rebuild		; Rebuild it
+	or	a		; Ensure no carry
+mass$sel0:
+	call	c,setcur	; Set the cursor if not from newscr
+	call	dispcfn		; Display current file name
+
+; Select Mass Operation
+
+mass$sel:
+	ld	a,(massop)	; Get type of mass operation
+	cp	'C'		; 'c' = copy
+	jr	z,mass$oc	; Do copy
+	cp	'P'		; 'p' = print
+	jr	z,mass$op	; Do print
+	cp	'Q'		; 'q' = usq
+	jr	z,mass$oq	; Do unsqueeze
+	cp	'V'		; 'v' = view
+	jr	z,mass$ov	; Do view
+	cp	'M'		; 'M' = move
+	jr	z,mass$om	; Do move
+	cp	'A'		; 'A' = archive
+	jr	z,mass$oa	; Do archive
+
+
+; Do Mass Delete - Current File Delete
+
+mass$od:
+	call	delete		; Delete filename at ringpos
+
+	ld	a,(delcode)	; Deletion done?
+	or	a		; 0=no
+	jr	z,mass$olp	; Skip to next if not
+
+	ld	hl,(ringpos)	; Blank out name of deleted file in ring
+	ld	b,eltsiz-2	; Exclude disk letter and tag character
+mass$od1:
+	inc	hl
+	ld	(hl),'.'	; Replace filename by row of dots
+	djnz	mass$od1
+	jr	mass$olp
+
+
+; Do Mass Move - Current File Move
+
+mass$om:
+	call	copy
+	jr	mass$od
+
+
+; Do Mass Copy - Current File Copy
+
+mass$oc:
+	call	copy		; Do copy
+	jp	mass$olp	; Loop until thru ring list
+
+
+; Do Mass Archive - Copy and archive current file
+
+mass$oa:
+	call	copy
+	ld	a,(cflag)	; Was copy successful?
+	or	a
+	jp	z,mass$olp	; If not, do not set archive bit
+
+	ld	hl,(ringpos)
+	ld	de,11
+	add	hl,de
+	ld	a,128
+	or	(hl)
+	ld	(hl),a
+	ex	de,hl
+	ld	de,s$fcb	; Source file control block
+	add	hl,de		; Point to $ARC byte
+	ld	a,128
+	or	(hl)
+	ld	(hl),a
+	ld	c,attr
+	call	bdos		; Set attributes
+	jp	mass$olp	; Try again
+
+
+; Do Mass Print - Current File Print
+
+mass$op:
+	call	lstfile		; Do print
+	jp	mass$olp	; Loop until thru ring list
+
+
+; Do Mass Usq - Current File Unsqueeze
+
+mass$oq:
+	call	usq		; Do unsqueeze
+	jp	mass$olp	; Loop until thru ring list
+
+
+; Do Mass View - Current File View
+
+mass$ov:
+	call	view		; Do view
+	jp	mass$olp	; Loop until thru ring list
+
+
+
+; Exit Mass Operation Loop
+
+mass$olx:
+	ld	hl,(sringpos)	; Reset ring position
+	ld	(ringpos),hl
+	call	clrcur		; Clear this cursor
+	ld	hl,(scurat)	; Reset cursor position
+	ld	(curat),hl
+	call	setcur		; Display old cursor
+
+	ld	a,(massop)	; Get group operation type.
+	cp	'D'		; 'd' = delete
+	jp	z,runsh2
+	cp	'M'
+	jp	z,runsh2	; Relog files, rebuild and get next command.
+
+mass$olx1:
+	cp	'Q'		; UnsQueeze
+	jp	z,runsh2	; If unsQueeze, reload files showing new ones.
+	cp	'V'		; 'v' = view
+	jp	z,runsh4	; If view, rebuild display.
+	call	erclr		; Otherwise, clear error message line.
+	jp	loopfn		; Display current file, get next command.
+
+
+; Cancel Mass Operation - Check any key, Return Zero if not
+
+mass$can:
+	ld	e,255
+	ld	c,6
+	call	bdos
+	or	a
+	ret
+                                                                                                         

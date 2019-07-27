@@ -1,0 +1,254 @@
+	TITLE	"Heath WISE 2+2+2 RTC Clock (Z80) - (H89-WISE)"
+	SUBTTL	"Description of Clock Module"
+;===================================================================
+; WISECLK.Z80
+;  ZSDOS Clock driver for Heath computers equipped with the WISE
+;  clock using the MM58167 chip.  Derived from WISECLK.AZM by
+;  Bridger Mitchell
+;				Harold F. Bower   9 July 88
+;===================================================================
+
+; Translated for Z80ASM and ZSDOS 06/11/88
+
+STATYR	EQU	1		; Static year byte equ 1, latch year byte equ 0
+
+VERS	EQU	04
+	.Z80
+	NAME	WISE
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:				; Ptr to statyr
+	  IF STATYR
+	DEFW	YEAROFF		; Static year offset
+	  ELSE
+	DEFW	0
+	  ENDIF
+
+CLKNAM:	DEFB	'Heath - WISE - MM58167  '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'   WISE-H89 2+2+RTC board - '
+	  IF  STATYR
+	DEFB	'static year'
+	  ELSE
+	DEFB	'year in latch'
+	  ENDIF
+	DEFB	CR,LF
+	DEFB	'   (Wisconsin Intelligent Systems Engineering)',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	NPARMS		; # of parameters
+	DEFW	STRS		; Ptr to strings
+
+NP0:
+XMHZ	EQU	$+1
+	DEFB	BYTE		; Byte/Word Flag
+	DEFW	MHZ		; Configurable value
+	  IF  STATYR
+XSTYR	EQU	$+1		; Static year
+	DEFB	BYTE
+	DEFW	CURYR
+	  ENDIF
+NPARMS	EQU	[$-NP0]/3
+
+; Descriptions of configurble parameters
+
+STRS:	DEFB	'MHz CPU Speed',0
+	  IF  STATYR
+	DEFB	'Current Year ',0
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Clock Code - Heath - WISE - MM58167"
+
+	CSEG
+
+; Reg D is Mask, E is preserved buffer-seconds value
+; Reg B is Count, C is Data Port
+
+	  IF  STATYR
+; skip the '1' bits
+
+REGMSK	EQU	11001000B	; Yr,thsec,mon,day, daywk,hr,min,sec
+	  ELSE
+REGMSK	EQU	01001000B	; Yr,thsec,mon,day, daywk,hr,min,sec
+				; 9  8	   7   6    5	  4  3	 2
+	  ENDIF
+
+; Hardware Equates
+
+ACE	EQU	0E4H
+ACE1	EQU	0D8H+4
+MASK	EQU	0F3H
+
+YEAR	EQU	0D9H		; Not always implemented in latch
+MONTH	EQU	0D7H		; Month
+SECONDS	EQU	0D2H
+INTSTAT	EQU	0D0H
+
+STAT	EQU	04H
+CNTR	EQU	0CH
+RTCBIT	EQU	04H
+
+;-------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set time
+; Exit :  A = 1 on Success, A = FFH if error
+;	 HL points to last char in buffer
+
+PRGBAS:
+;== Commented out til set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R E A D    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	PUSH	HL		; Save the buffer addr
+RETRY:	POP	HL
+	PUSH	HL
+
+	LD	BC,256*RTCBIT + ACE
+	DI			; No interrupts while reading multiplexed ports
+	CALL	SETREG		; Select the RTC device
+	LD	C,ACE1		; B still equ 04 equ stat
+	CALL	SETREG		; Status
+	IN	A,(INTSTAT)	; Clear interrupt
+
+	LD	B,CNTR		; C still equ ace1
+	CALL	SETREG		; Select counters
+
+	IN	A,(SECONDS)	; Read seconds
+	PUSH	AF		; $$$ and save on stack
+
+	LD	D,REGMSK	; Set skip mask
+	LD	BC,256*9 + YEAR	; Set B equ count, C equ port
+
+	  IF  STATYR
+YEARAD	EQU	$+1
+YEAROFF	EQU	YEARAD-PRGBAS
+	LD	(HL),CURYR	; Static year version
+	INC	HL
+	  ENDIF
+LOOP:	SCF			; Last time will exit
+	RL 	D
+	JR	C,SKIP
+	LD	E,(HL)		; Save buffer's 'seconds'
+	INI
+	INC	B		; Offset auto-decrement B
+SKIP:	DEC	C		; Next port
+	DJNZ	LOOP
+
+; Now check for rollover while reading
+
+	EI
+	DEC	HL		; Point at seconds
+	POP	AF		; Compare to initial read value
+	CP	(HL)		; Stored sec's
+	POP	BC		; Clear stack
+	JR	Z,OKRET		; ..No rollover, so exit with good status
+	PUSH	BC		; Buf ptr back to stack
+	LD	(HL),E		; Restore 'seconds'
+	JR	RETRY
+
+OKRET:	LD	A,01		; Set Good Read Status
+	RET
+
+; Select register
+
+SETREG:	IN	A,(C)
+	AND	MASK
+	OR	B
+	OUT	(C),A
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S E T    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Return Error Return Code.  Set Not implemented.
+
+;== Commented out til set code written
+;==WRCLK:	OR	0FFH		; Set error status return
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	  IF  STATYR
+	SETBYT	XSTYR,YEARAD
+	  ENDIF
+
+	SETBYT	XMHZ,YMHZ
+	RET
+
+	PAGE
+	SUBTTL	"Test for Clock Ticking (Pre-execution checks)"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+
+	COMMON	/_PRE_/
+
+	DI			; No interrupts while reading multiplexed ports
+	IN	A,(ACE)		; Select the RTC device
+	AND	MASK
+	OR	RTCBIT
+	OUT	(ACE),A
+
+	IN	A,(ACE1)	; Select status
+	AND	MASK
+	OR	STAT
+	OUT	(ACE1),A
+	IN	A,(INTSTAT)	; Clear interrupt
+
+	IN	A,(ACE1)
+	AND	MASK
+	OR	CNTR		; Select counters
+	OUT	(ACE1),A
+
+	IN	A,(SECONDS)	; Read seconds
+	PUSH	AF
+	CALL	DELAY		; Wait
+	IN	A,(SECONDS)	; Read again
+	EI
+	POP	BC
+	CP	B		; Does A=B?
+	SCF
+	RET	NZ
+	CCF
+	RET
+
+; Delay 1$25 Sec at configured cpu speed
+
+YMHZ	EQU	$+1
+DELAY:	LD	B,MHZ
+$$0:	LD	HL,40000+10000	; Constant with slop
+$$1:	DEC	HL		; 6
+	LD	A,H		; 4
+	OR	L		; 4
+	JR	NZ,$$1		; 10 equ 24 cycles/loop
+	DJNZ	$$0
+	RET
+
+	END
+

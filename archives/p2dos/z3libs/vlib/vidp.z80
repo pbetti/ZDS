@@ -1,0 +1,275 @@
+	TITLE	"VIDP - Vlib 4.1"
+	NAME	('VIDP')
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+; Date    : 9 Apr 89
+; Version : 1.0
+; Module  : VIDP
+; Abstract:  This module contains the routine SELPDM which sets
+;	the Pull Down Mode, clearing the screen and printing the
+;	menu selections.  Key strokes are then sensed for selections
+;	or escape key.  If a menu is selected, the submenus are
+;	displayed for further selection.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		SELPDM
+
+; ..From VLIB Get..
+
+	EXT		GOTOXY, CLS, @PDMBF, VPSTR, @MBUFF, @PDMCH
+	EXT		STNDOUT, STNDEND, CLREOS, MCLS, ISPDM, ISCUR
+	EXT		VIDOUT, @CDO, @CDE, VPRINT, TINIT, DINIT
+
+; ..From SYSLIB Get..
+
+	EXT		CIN, COUT
+
+; Constants
+
+CR	EQU	13
+
+	.Z80
+	CSEG
+;===============================================================
+; SELPDM - Select Pull Down Menu Mode
+;  Entry: - None
+;  Exit :  A <> 0, Zero flag Reset (NZ) if item selected
+;	       A = 0, Zero Flag Set (Z) if Escape key pressed
+;	  HL = Menu selection and item if selected as:
+;		H = Menu Number, L = Item Number
+;  Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+SELPDM:	PUSH	DE		; Save regs
+	PUSH	BC
+	CALL	CLS		; Start with clear screen
+	LD	HL,(@CDO)	; Turn the cursor off
+	CALL	VIDOUT
+	CALL	TINIT		; Initialize the Terminal (for DIM)
+SELPD0:	XOR	A		; Set for first selection
+SELPD1:	LD	(MENU),A
+	LD	HL,@PDMBF	; Clear any previous menu selection
+	LD	B,(HL)
+CLLOOP:	INC	HL
+	RES	7,(HL)
+	DJNZ	CLLOOP		; ..loop thru all locations
+	ADD	A,A		; *2 Calculate offset to this menu item
+	LD	C,A
+	ADD	A,A		; *4
+	ADD	A,C		; *6
+	LD	C,A
+	LD	B,0
+	LD	HL,@MBUFF	; Index into array of words
+	ADD	HL,BC
+	LD	E,(HL)		; Get header pointer
+	INC	HL		; ..to BC
+	LD	D,(HL)
+	INC	HL
+	LD	A,D		; Is it valid?
+	OR	E
+	JR	Z,SELPD0	; ..loop to first if not
+	LD	(HDRADR),DE
+	LD	B,(HL)
+	INC	HL
+	LD	A,(HL)		; Get True Menu Number
+	LD	(MENU0),A	; ..and save
+	INC	HL
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	LD	(SUBMEN),HL
+	EX	DE,HL
+STLOOP:	SET	7,(HL)		; Set MSBs on current menu
+	INC	HL
+	DJNZ	STLOOP		; ..loop til done
+
+	LD	HL,101H		; Set to first Row, first Col
+	CALL	GOTOXY
+	LD	HL,@PDMBF	; Print Menu line
+PRLOOP:	INC	HL
+	LD	A,(HL)
+PRLOO1:	OR	A		; End?
+	JR	Z,CHLOOP	; ..get selection if so
+	BIT	7,A		; Time for Rev Video?
+	JR	NZ,DOBRIT	; ..jump if so
+	CALL	COUT		; Else print
+	JR	PRLOOP	
+
+DOBRIT:	PUSH	AF
+	CALL	STNDOUT		; Put in Standout mode
+	POP	AF
+DOBRI0:	AND	7FH		; Mask out MSB
+	CALL	COUT		; ..and print
+	INC	HL
+	LD	A,(HL)
+	BIT	7,A
+	PUSH	AF
+	CALL	Z,STNDEND	; Turn off Standout mode if not B7 set
+	POP	AF
+	JR	Z,PRLOO1	; ..and jump to normal print
+	JR	DOBRI0		; Else loop here
+
+CHLOOP:	CALL	GETCH		; Get keyboard char and test
+	JR	Z,SELEC		; ..jump if selecting this one
+	CP	3		; Right cursor?
+	LD	A,(MENU)	; Get current menu #
+	JR	C,CHLOOP	; ..loop if Up/Down
+	JR	Z,CHLOO1	; Jump if Right
+	DEC	A		; .back up
+	JP	P,SELPD1	; ..and continue if >= 0
+
+CHLOO1:	INC	A		; Advance to next
+	JR	SELPD1
+
+; Get input character.  Return Zero if Carriage Return, Escape PDM char
+; causes direct exit with flags set.
+
+GETCH:	CALL	CIN		; Get a character
+	CP	CR
+	RET	Z		; ..return if carriage return
+	CALL	ISCUR		; Is it a Cursor movement?
+	RET	NZ		; ..return if so
+	CALL	ISPDM		; Is it the PDM Escape char?
+	JR	Z,GETCH		; ..loop to get another char if not
+	POP	BC		; Else, Escape by clearing call addr
+	JR	EXIT0		; ..and exit with ESCape flag set
+
+EXIT:	LD	HL,(ITEM)	; Else get Item in L, Menu-1 in H
+	DEFB	0F6H		; Set flags for Ok ID w/ "OR  0AFH"
+EXIT0:	XOR	A		; Show we are aborting
+	PUSH	AF
+	CALL	MCLS		; Else clear menus
+	PUSH	HL		; Save return values
+	LD	HL,(@CDE)	; Turn Cursor back on
+	LD	D,0		; Set for no delay
+	CALL	VIDOUT
+	CALL	DINIT		; Return Term to Normal
+	POP	HL
+	POP	AF		; Return status flags
+	POP	BC		; ..and quit
+	POP	DE
+	RET
+
+SELEC:	LD	A,1		; Set for first item in list
+	LD	(ITEM),A
+SELEC0:	LD	BC,@PDMBF	; Point to menu line
+	INC	BC
+	LD	HL,(HDRADR)
+	OR	A		; Calculate offset for submenu
+	SBC	HL,BC
+	INC	L		; L points to starting column
+	LD	H,2		; Submenu starts on line 2
+	LD	DE,(SUBMEN)	; Point to submenu text
+	LD	C,0		; Set to first item
+ILOOP:	CALL	GOTOXY		; ..Position cursor
+	LD	B,0		; Zero character count
+	CALL	SCAN		; Scan til end of item or list
+	OR	A		; Is it the end?
+	JR	Z,IDONE		; ..jump if so
+	CP	2		; Is it Subheader?
+	JR	NZ,INXT0	; ..jump if not
+	JR	IPRNT		; ..and print below
+
+INXT0:	CP	3		; Selectable item?
+	JR	NZ,INXT1	; ..jump if not
+	LD	A,(ITEM)	; Is this the current item?
+	CP	C
+	JR	NZ,INXT0A	; ..jump if not
+	CALL	STNDOUT		; Else go to standout mode
+	LD	A,'>'
+	CALL	COUT		; Add pointer
+IPRNT:	CALL	PRNT0		; Print string from DE for B spaces
+	CALL	STNDEND		; Go to normal print
+ILOOPX:	INC	DE		; Bypass ending char
+	INC	H		; Set for next line
+	JR	ILOOP		; ..and loop to position
+
+INXT0A:	LD	A,' '		; Add another space
+	CALL	COUT
+	JR	IPRNT		; ..and rejoin print
+
+INXT1:	CP	4		; Separate line?
+	JR	NZ,INXT2	; ..jump if not
+	LD	B,6		; Else print six dashes
+	LD	A,'-'
+INXT1A:	CALL	COUT
+	DJNZ	INXT1A
+	JR	ILOOPX		; ..and continue with print
+
+INXT2:	CP	5		; Leave blank line?
+	JR	Z,ILOOPX	; ..jump if so
+	INC	DE		; Else disregard
+	JR	ILOOP		; ..and continue
+
+IDONE:	LD	A,C		; Save last item in list
+	LD	(MAXITM),A
+
+ENDMEN:	CALL	GETCH		; Get a char
+	JP	Z,EXIT		; ..jump exit if selection char (CR)
+	CP	2		; Cursor Down?
+	JR	Z,ENDME0	; ..jump if so
+	JR	NC,ENDMEN	; ...get another if R/L
+	LD	A,(ITEM)	; Else get current item
+	DEC	A		; ..and back down
+	JR	NZ,ENDME1	; Continue elsewhere if not 0
+	LD	A,(MAXITM)	; Else get last item
+ENDME1:	LD	(ITEM),A	; Store new desired selection
+	JR	SELEC0		; ..and print again
+
+ENDME0:	LD	A,(MAXITM)	; Else get maximum setting
+	LD	C,A
+	INC	C
+	LD	A,(ITEM)	; ..and current item
+	INC	A		; ...bump
+	CP	C		; Compare to maximum
+	JR	C,ENDME1	; ..jump if OK
+	LD	A,1		; Else set for first item
+	JR	ENDME1
+
+;.....
+; Scan for entry end in ITEM menu
+
+SCAN:	PUSH	DE		; Save pointer to list
+SCAN0:	LD	A,(DE)
+	CP	10		; Is it an ending char?
+	JR	C,SCAN1		; ..jump if 0..9
+	INC	DE		; Else point to next char
+	INC	B		; ..and bump count
+	JR	SCAN0
+
+SCAN1:	POP	DE		; Retrieve pointer to item start
+	CP	3		; Is it selectable?
+	RET	NZ		; ..return if not
+	INC	C		; Else bump current
+	RET
+
+;.....
+; Print from DE for B places
+
+PRNT0:	LD	A,(DE)		; Get char
+	INC	DE
+	CALL	COUT		; ..and print
+	DJNZ	PRNT0		; Loop til done
+	RET
+
+;.....
+; Data Storage in separate segment
+
+	DSEG
+
+ITEM:	DEFS	1		; Item selection storage
+MENU0:	DEFS	1		; True Menu Number
+MENU:	DEFS	1		; Working Menu selection #
+MAXITM:	DEFS	1		; Storage for Maximum item #
+HDRADR:	DEFS	2		; Addr of header in Menu line
+SUBMEN:	DEFS	2		; Pointer to submenu string
+
+	END
+

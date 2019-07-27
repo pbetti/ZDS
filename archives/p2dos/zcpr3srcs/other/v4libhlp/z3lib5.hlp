@@ -1,0 +1,531 @@
+Introduction   ZCPR3 Utilities
+ Named Dir/DU Conversion  - DIRTDU, DUTDIR
+ Resolve Dir References   - DNSCAN et al
+ Parse Command Line       - PARSER
+ Path Search for File     - PFIND
+ Program Loader (Chain)   - PRGLOAD
+ Console Output (Quiet)   - Qxxx
+ Locate ROOT Directory    - ROOT
+ Shell Stack Routines     - SHxxx
+ Delay Routines           - WAITs
+ Log into ZCPR3 FCB DU    - Z3LOG
+ Return Z3LIB Version #   - Z3LVER
+ Parse Token              - ZPRSFN, ZFNAME
+ ZCPR 3.3 Parsers         - PARSE2, Z33FNAME, REPARSE, SCAN
+ Check Z33 Parse Results  - FCB1CHK, FCB2CHK, FCBCHK
+ Print Load Module Data   - PRTTYPE
+ Z33 Internal Prog Name   - GETNAME, PRTNAME
+ Highest Useable Memory   - GZMTOP
+:            Introduction to ZCPR3 Utilities 
+
+These utilities provide a number of convenient functions for
+ZCPR3 Programmers.  Access to directories, conversion from text
+string names to directory reference values, command and command
+line parsing, quiet output routines, shell stack manipulation,
+delay routines, and other ZCPR3-specific functions are provided.
+
+:                   DIRTDU/DUTDIR 
+
+DIRTDU - Convert specified DIR name to DU equivalent
+
+  ENTER: HL = Address of first character of DIR Name
+  EXIT : HL = Points to delimiter at end of Name
+         BC = DU, B=Disk (A=0,..P=15), C =User (0..31)
+          A <> 0, Zero Flag Clear (NZ) if Found
+              A = 0, Zero Flag Set (Z) if NOT Found
+  USES : AF,BC,HL
+
+ Usage:  This routine converts a DIR name consisting of
+  a string of up to eight characters terminated by any
+  character other than a digit or letter to its DU:
+  equivalent found in the Named Directory Buffer.
+
+DUTDIR - Convert specified DU to DIR equivalent
+
+  ENTER: BC = DU, B=Disk (A=0,..P=15), C=User (0..31)
+  EXIT : HL = Pointer to 8-char Name String
+          A <> 0, Zero Flag Clear (NZ) if Found
+              A = 0, Zero Flag Set (Z) if NOT Found
+  USES : AF,HL
+
+ Usage:  This routine searches the Named Directory for the
+  specified DU.  If an entry exists for the corresponding DU, a
+  pointer is returned to the 8-character name (followed by an
+  8-character password).
+
+:                DNSCAN - DUSCAN - DIRSCAN 
+
+DNSCAN - Resolve Directory Name using both DU and DIR
+
+  ENTER: HL = Address of the first char of Directory Name
+          A = 0  - Scan DU before DIR,
+          A <> 0 - Scan DIR before DU
+  EXIT : BC = DU, B=Disk (A=0,..P=15), C=User (0..31)
+          A <> 0, Zero Flag Clear (NZ) if Found
+              A = 0, Zero Flag Set (Z) if NOT Found
+  USES : AF,BC
+
+ Usage:  This routine attempts to resolve a candidate Directory
+  name by checking both DIR and DU formats in specified order.
+  The candidate name may be up to eight characters terminated
+  by a delimiter such as a space, comma, period, dash, a char
+  less than space, etc.  If found, the DU is returned in BC.
+
+DUSCAN - Resolve addressed string in DU form
+
+  ENTER: HL = Address of string (up to 8 chars)
+  EXIT : BC = DU.  B=Disk (A=0,..P=15), C=User (0..31)
+          A <> 0, Zero Flag Clear (NZ) if Valid DU form
+              A = 0, Zero Flag Set (Z) if NOT Valid
+  USES : AF,BC
+
+ Usage:  This routine resolves the DU form of a string
+  addressed by HL.  The DU string  is stored in a buffer up to
+  eight chars long, and is terminated by a delimiter, which may
+  be a char less than a space, equal sign (=), underscore (_),
+  period (.), comma (,), Less than (<) or greater than (>).
+
+DIRSCAN - Resolve addressed in DIR form
+
+  ENTER: HL = Address of string (up to 8 chars)
+  EXIT : BC = DU.  B=Disk (A=0,..P=15), C=User (0..31)
+          A <> 0, Zero Flag Clear (NZ) if Valid DU form
+              A = 0, Zero Flag Set (Z) if NOT Valid
+  USES : AF,BC
+
+ Usage:  This routine resolves the DIR form of a string
+  addressed by HL.  The DU string is stored in a buffer up to
+  eight chars long, and is terminated by a delimiter, which may
+  be a char less than a space, equal sign (=), underscore (_),
+  period (.), comma (,), Less than (<) or greater than (>).
+
+:PARSER - Parse Complete Command Line
+
+  ENTER: HL = Address of Command line
+          A = 0, Scan DIR before DU, <> 0=Scan DU before DIR
+  EXIT : HL = address of next command (0 or leading ;)
+         DE = address of FCB with command name  (verb. COM)
+          A = 0, Zero Flag Set (Z) if Ok
+              A = Number of question marks, Zero Clear (NZ)
+                   if verb contains one or more "?" chars
+  USES : AF,DE,HL
+
+ Usage:  This routine parses a complete command up to an ending
+  Null or MCL delimiter (usually a semicolon).  It parses and
+  initializes all elements per the ZCPR3 Command conventions to
+  include FCB1 at 005CH, FCB2 at 006CH and the default Buffer
+  (TBUFF) at 0080H.  The command name is returned in an FCB
+  addressed by DE.
+
+:PFIND - Search for specified file along Search Path
+
+  ENTER: DE = Address of an FCB
+          A <> 0 to search current Dir, 0 if No Current search
+  EXIT : BC = DU.  B=Disk (A=0,..P=15), C=User (0..31)
+          A <> 0, Zero Flag Clear (NZ) if Found
+              A = 0, Zero Flag Set (Z) if NOT Found
+  USES : AF,BC
+
+ Usage:  Used to locate a file along the ZCPR3 Search Path.
+  When located, the Disk and User where the file was found are
+  returned.
+
+:PRGLOAD - Load and Execute specified program (Chain)
+
+  ENTER: DE = Addresses the first 12 bytes of an FCB
+  EXIT : None
+  USES : All regs.  If routine returns, Load was a failure
+
+ Usage:  This routine is a "Chain" function which loads the
+  program indicated by the first 12 bytes addressed by DE into
+  memory at 100H and transfers control to it.  The loader and
+  FCB used forthe load are relocated to just under the Command
+  Processor after PRGLOAD begins execution, so the TPA is free
+  for the load.  Care should be taken to ensure that the system
+  stack (located out of the TPA in a safe area) is used instead
+  of a stack in the TPA which may be overwritten during load.
+
+  If PRGLOAD returns to the calling program, an error in
+  loading occurred.  If all goes well, the loaded program
+  executes successfully.
+
+:                      Qxxxx 
+
+These routines output their values only if the Quiet Flag is
+clear (0).  If the Quiet Flag is TRUE (not 0), then no values
+are output.
+
+This class of routines includes the following:
+
+	QCOUT	 Console Character Output with Control
+	QCRLF	 New Line
+	QOUT	 Console Character Output
+	QPRINT	 String Output (Return Address)
+	QPSTR	 String Output (HL)
+
+QCOUT - Print character on Console if Not Quiet
+
+  ENTER: A = Character to print
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is comparible to the SYSLIB routine COUT
+  except that it only prints if the Quiet Flag is OFF.  Control
+  characters are printed as a karet (^) followed by the char
+  offset by 40H (1 outputs as ^A).
+
+QCRLF - Print a New Line (CR LF pair) if Not Quiet
+
+  ENTER: None
+  EXIT : None
+  USES : None
+
+ Usage:  This routine corresponds to the SYSLIB routine CRLF
+  except that in is only sent to the Console if the Quiet Flag
+  is OFF (0).
+
+QOUT - Print w/o Control Char Processing if Not Quiet
+
+  ENTER: A = Character to Output
+  EXIT : None
+  USES : None
+
+ Usage:  QOUT outputs the character in A without control
+  character processing (1 outputs as binary 1) if the Quiet
+  Flag is OFF (0).
+
+QPRINT - Inline print of string if Not Quiet
+
+  ENTER: None.  String at Return Address
+  EXIT : None
+  USES : None
+
+ Usage:  This routine prints a Null-terminated string whose
+  address is contained on the Stack Top if the Quiet Flag is
+  OFF (0).  Execution resumes at the byte following the Null
+  after the string is printed.
+
+QPSTR - Print Null-terminated string if Not Quiet
+
+  ENTER: HL = Address of first character of the string
+  EXIT : None
+  USES : None
+
+ Usage:  QPSTR is the same as QPRINT, except that printing is
+  from a register as opposed the inline address from the Stack.
+
+:ROOT - Return DU for the last Directory in Search Path
+
+  ENTER: None
+  EXIT : BC = DU.  B=Disk (A=0,..P=15), C=User (0..31)
+  USES : BC
+
+ Usage:  This routine provides a convenient way to find the
+  last directory in a Path expression (ROOT Directory).  No
+  path optimization is performed.
+
+  Note:  This routine is sometimes not consistent with the
+  ZCPR3 Command Processor if the MINPATH (Minimize Path Expres-
+  sion) option is selected.  ROOT advances to the last
+  referenced directory in the path without minimization, which
+  ZCPR3 minimizes the search and may resolve a path to end
+  (with duplication) at a directory other than the physically
+  last directory in the path.
+
+:                         SHxxx 
+
+This set of routines supports Shell Stack manipulation.  The
+following routines are provided:
+
+	SHEMPTY - test to see if Shell Stack is empty
+	SHFULL  - test to see if Shell Stack is full
+	SHPOP   - pop top string off of Shell Stack
+	SHPUSH  - push string onto Shell Stack
+
+A Shell Stack is implemented as a series of strings (recom-
+mended size is 32 bytes/string, and the stack should contain
+at least four of these strings).  The top element of a Shell
+Stack specifies the command line to be executed as a Shell
+by the ZCPR3 CP.  This command line is copied into the
+Multiple Command Line Buffer for execution.
+
+SHEMPTY - Return status of Shell Stack
+
+  ENTER: None
+  EXIT : A <> 0, Zero Flag Clear (NZ) if Not Empty
+             A = 0, Zero Flag Set (Z) if Empty or None
+  USES : AF
+
+ Usage:  This routine simply provides the current state of the
+  Shell Stack.  The Zero Flag indicates whether or not Shell
+  Stack space is available.
+
+SHFULL - Determine if the Shell Stack is Full
+
+  ENTER: None
+  EXIT : A <> 0, Zero Flag Clear (NZ) if Stack NOT Full
+             A = 0, Zero Set (Z) if Stack FULL or None
+  USES : AF
+
+ Usage:  This routine simply returns a flag indicating if the
+  Shell Stack is full or non-existant.
+
+SHPOP - Pop Top Element from Shell Stack and discard
+
+  ENTER: None
+  EXIT : A = 0, Zero Flag Set (Z) if Ok
+             A = Error Code, Zero Clear (NZ) as:
+		  1 - NO Shell Stack, Zero Clear
+		  2 - Shell Stack empty, Zero Clear
+  USES : AF
+
+ Usage:  This routine removes the top element from the Shell
+  Stack, if possible, and discards it.  Error codes report if
+  the operation was successful, or the reason for the error.
+
+SHPUSH - Push Null-terminated string onto Shell Stack
+
+  ENTER: HL = Addresses Null-term string to push on Stack
+  EXIT :  A = 0, Zero Flag Set (Z) if Successful
+             A = Return code as --
+		  1 - No Shell Stack available, Zero Clear
+		  2 - Shell Stack is full, Zero Clear
+		  3 - String too long for entry, Zero Clear
+  USES : AF
+
+ Usage:  This routine performs needed functions to push Null-
+  terminated strings onto the Shell Stack.  Returned status
+  shows the results of the action.
+
+:                         WAITs 
+
+The following routines provide a software delay based upon the
+processor speed value in the ZCPR3 Environment Descriptor.
+These routines simply delay for the indicated period of time
+(approximately) and then return.  No registers are affected.
+
+The routines are:
+
+	WAIT1S    - delay for 1 second
+	WAIT1MS   - delay for 0.001 second
+	WAITP1S   - delay for 0.1 second
+
+WAIT1S - Wait for approximately One second
+
+  ENTER: None
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is used to pause for approximately one
+  second based on the Processor Speed in the ENV and CPU type.
+
+WAIT1MS - Wait for approximately One Millisecond
+
+  ENTER: None
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is used to pause for approximately one
+  millisecond (.001 sec) based on the Processor Speed in the
+  ENV and CPU type.
+
+WAITP1S - Wait for approximately One-Tenth Second
+
+  ENTER: None
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is used to pause for approximately one
+  tenth of a second based on the Processor Speed and CPU type.
+
+:Z3LOG - Log into DU contained in a specified ZCPR3 FCB
+
+  ENTER: DE = Addresses first byte of ZCPR3 FCB
+  EXIT : None
+  USES : None
+
+ Usage:  This routine logs into the Drive and User contained in
+  a specified ZCPR3 FCB.  The drive is in Byte 0 of the FCB
+  (A=1,..P=16), and the User (0..31) is in Byte 13.  This is
+  the standard format used by ZCPR3 to store a complete DU
+  reference in an FCB.
+
+:Z3LVER - Return Version Number of Z3LIB.REL
+
+  ENTER: None
+  EXIT : HL = Version Number (H=Major, L=Minor) in binary
+  USES : HL
+
+ Usage:  This routine is used to highlight the Z3LIB Version in
+  linked programs, or in debugging with different versions.
+
+:ZPRSFN / ZFNAME - Parse FCB Token
+
+  ENTER: HL = Address of first char of token
+         DE = Address of 36-byte FCB
+          A = Flag: 0 - scan for DIR form before DU
+                    1 - scan for DU form before DIR
+  EXIT : HL = Address of char after token
+          A = Number of question marks in Filename.Typ,
+                Zero Flag set accordingly
+  USES : AF,HL
+
+ Usage:  These two routines perform the identical function of
+  parsing a complete FCB token in the ZCPR3 Command Processor
+  sense.  Tokens may take the form of "Dir:Filename.Typ",
+  "DU:Filename.Typ", "Filename.Typ", etc.  The resulting FCB
+  contains the filename and type and a proper DU reference.
+  (see PARSER, which is related).
+
+  ZFNAME is a literal interpretation of the code within the
+  ZCPR3 Command Processor, while ZPRSFN is a more efficient
+  body of code but uses more buffer space.
+
+:Z33FNAME - Parse single token from Ext Command Buff           (*)
+
+  ENTER: DE - points to user-defined FCB to receive token
+  EXIT : HL - points to delimiter in Command Buffer
+  USES : HL
+  REQUIREMENTS: ZCPR 3.3 or later Command Processor
+
+ Usage:  This routine parses a single token from the External
+  Command Buffer to a specified FCB.  It uses the SCAN entry
+  in ZCPR 3.3 or later.
+ NOTE: You must insure that the Command Processor has not
+         been overwritten to use this function.
+
+PARSE2 - Parse Command Line using ZCPR 3.3 REPARSE entry      (*)
+
+  ENTER: HL = address of the Command line to re-parse
+  EXIT : None.  Line is reparsed and FCBs filled
+  USES : None
+  REQUIREMENTS: ZCPR 3.3 or later Command Processor
+
+ Usage:  This routine parses a specified command line to the
+  default FCBs at 5CH and 6CH.
+ NOTE: You must insure that the ZCPR 3.3 or later Command
+         Proc. has not been overwritten to use this routine.
+
+REPARSE - Reparse Default Command Line one token later        (*)
+
+  ENTER: None
+  EXIT : None.  The Command Line is reparsed
+  USES : None
+  REQUIREMENTS: ZCPR 3.3 or later Command Processor
+
+ Usage:  This routine reparses the current Command Line
+  starting one token after current setting and sets the
+  default FCBs.
+ NOTE: You must insure that the Command Processor has
+         not been overwritten.
+
+SCAN - Scan Single Token from Specified Command Line          (*)
+
+  ENTER: HL = Points to Command Line to scan
+	 DE = Points to FCB to receive parsed token
+  EXIT : None.  Token is parsed
+  USES : None
+  REQUIREMENTS: ZCPR 3.3 or later Command Processor
+
+ Usage:  This routine parses a single token from a User-
+  specified Command Line into a specified FCB using the
+  SCAN entry in ZCPR 3.3 or later.
+ NOTE: You must insure that the Command Processor has not
+         been overwritten.
+
+:FCB1CHK - Examine first default FCB for validity.             (*)
+ FCB2CHK - Examine second default FCB for validity.            (*)
+
+  ENTER: None
+  EXIT :  A = 0, Zero Set (Z) if FCB has valid name
+	      A <> 0, Zero Clear (NZ) if Error or no name
+  USES : AF
+  REQUIREMENTS: FCB parsed by ZCPR 3.3 or later
+
+ Usage:  Examine the default FCBs at locations 5CH (FCB1CHK)
+  and 6CH (FCB2CHK) for validly parsed filenames from ZCPR 3.3
+  or later parsers.  Errors are due to DU: out of range,
+  illegal Named Directory, or illegal password.
+
+FCBCHK - Examine specified FCB for validity.                  (*)
+
+  ENTER: DE = address of an FCB to check
+  EXIT :  A = 0, Zero Set (Z) if FCB has valid name
+	      A <> 0, Zero Clear (NZ) if Error or No Name
+  USES : AF
+  REQUIREMENTS: FCB parsed by ZCPR 3.3 or later
+
+ Usage:  Examine the FCB at a specified address for validly
+  parsed filename by ZCPR 3.3 or later type parse sequence.
+  Errors are due to DU: out of range, illegal Named Direc-
+  tory, or illegal password.  
+
+:PRTTYPE - Print Load Module Type and Address                  (*)
+
+  ENTER:  A = Program type (1..4)
+	 HL = Program Load address
+  EXIT : None.  The Type and address are printed on CON:
+  USES : None
+
+ Usage:  This routine is most often used in Extended
+  Processors and utilities to display load information.
+  It prints a message to the CON: device containing Load
+  Module Type (3 or 4) and the Load address in Hex.
+
+Example:
+	EXT	PRTTYPE		; Declare the routine
+	...
+	JP	BEGIN		; ZCPR 3 Header structure
+	DEFB	'Z3ENV'		; .ID String
+TYPE:	DEFB	3		; ..Module Load Type
+Z3EADR:	DEFW	$-$		; ...Candidate ENV Address
+START:	DEFW	9800H		; Type 3 starting addr = 9800H
+
+BEGIN:	...			; Initial setup, set stack, etc
+	LD	A,(TYPE)	; Get the load module type
+	LD	HL,(START)	; ..and load starting address
+	CALL	PRTTYPE		; Print them to the Console
+	...			; ..continue on
+
+:GETNAME - Return pointer to Current Program Name              (*)
+
+  ENTER: None
+  EXIT :  A <> 0, Zero Clear (NZ) if External FCB exists
+              A = 0, Zero Set (Z) if NO External FCB
+	 HL = Address of Internal Name buffer
+                        (valid only if ext FCB exists)
+  USES : AF,DE,HL
+  REQUIREMENTS: External FCB must be defined to function
+
+ Usage: This routine returns a pointer to the currently
+  executing program by accessing the External FCB defined
+  in the Z3 Environment Descriptor.  It is useful for
+  identifying the Real program name when re-executed with
+  a "GO" command or equivalent facility.
+
+PRTNAME - Print Program Name from Internal Buffer             (*)
+
+  ENTER: None
+  EXIT : None.  The name is printed to CON:
+  USES : None
+
+ Usage:  This routine simply prints the current program
+  name from an internally-held buffer to the Console.
+
+:GZMTOP - Return Last Usable TPA Memory Address                (*)
+
+  ENTER: None
+  EXIT : HL = Last usable memory address in TPA
+  USES : HL
+
+ Usage:  This routine may be used to determine the top of
+  the available TPA.  It uses the Extended Environment, if
+  available, otherwise it calculates the CCP base from BIOS
+  Warm Boot addr.  It also accomodates sensing for resident
+  RSXes.  The address returned is the last byte below a
+  Page boundary (L=0FFH) for an added safety margin.
+     For Example, if the CCP begins at 0C000H and no RSXes
+  are present, this routine would return 0BFFFH.  On the
+  other hand, if an RSX exists with a protect address of
+  0BC6CH, GXMTOP will return 0BBFFH.
+

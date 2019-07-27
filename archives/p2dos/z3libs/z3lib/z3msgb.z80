@@ -1,0 +1,64 @@
+	TITLE	"Z3MSGB - Z3lib 4.0"
+;---------------------------------------------------------------;
+; Author  : Unknown.  Contributed by Jay Sage (PUTERC.Z80)
+;		Derived from Z3MSGB.Z80 Ver 1.1 by Richard Conn
+; Date    : 28 Apr 88
+; Version : 1.1
+; Module  : Z3MSGB
+; Abstract: This module contains the routine PUTERC which stores
+;	the addressed character string in the Error Command Line
+;	message buffer.  This version replaces the original to
+;	limit the length of the Error Command Line to 28 bytes,
+;	since the bour bytes at the end of the Command Line space
+;	have been assigned other purposes.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		PUTERC
+
+;  External References
+
+	EXT		GETERC
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PUTERC
+; Entry: HL - Points to a Null-terminated character string
+; Exit :  A <> 0, Zero Flag Reset (NZ) if string copied
+;	      A=0, Zero Set (Z) if string (w/ending 0) > 28 chars,
+;			and error command line is cleared.
+;	 HL - Points to char in New Cmd line just after last one copied
+; Uses : AF,HL
+; Special Requirements : None
+;===============================================================
+
+PUTERC:	PUSH	DE		; Preserve regs
+	PUSH	BC
+	EX	DE,HL		; Switch ptr to new comnd line to DE
+	CALL	GETERC		; Set HL to Error Command Line addr
+	LD	B,28		; Maximum number of characters to move
+
+PUTER1:	LD	A,(DE)		; Get source character
+	LD	(HL),A		; ..copy to destination
+	INC	HL		; Increment pointers
+	INC	DE
+	OR	A		; Check for end of Command Line
+	JR	Z,PUTER2	; ..branch if so
+	DJNZ	PUTER1		; If max chars not exceeded, copy more
+
+	CALL	GETERC		; Clear the Error Command Line
+	XOR	A
+	LD	(HL),A		; Return Z to show failure
+
+	DEFB	0EH		; ..this falls thru to PUTER3 by making..
+				; ....a LD  E,3DH command of the DEC  A
+PUTER2:	DEC	A		; Set NZ to show success
+PUTER3:	POP	BC		; Restore regs
+	POP	DE
+	RET
+
+	END
+

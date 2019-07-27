@@ -1,0 +1,347 @@
+	TITLE	"Clock Interface for ZDDOS"
+;************************************************************************
+; Z D D C L K								*
+;-----------------------------------------------------------------------*
+; Clock interface module between ZDDOS and Clocks in the ZSDOS library.	*
+; These routines extracted from ZDS and P2D datestamp code.  This must	*
+; be in MicroSoft .REL form for incorporation in the STAMPS.DAT file for*
+; extraction and linkage by SETUPZST.					*
+;									*
+; Revision:								*
+;	1.1 - Changed vers number					*
+;	1.0 - Initial Release				    16 Dec 88	*
+;************************************************************************
+
+VER	EQU	11		; Release Version
+
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+
+	MACLIB	RSXFLAG		; Get definition of RSX equate flag
+				; TRUE=Assemble as RSX, FALSE=Assemble hi-mem
+
+DOSVER	EQU	11H
+DOSID	EQU	'D'
+
+	PAGE
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;  S T A R T	O F    R E L O C A T A B L E	C O D E
+;==========================================================
+BEGIN:				; Label for ending space calculations
+
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+; RSX Install Routine - Used once, then no longer needed.
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+	  IF	  RSX
+INSTALL: PUSH	BC
+	PUSH	DE		; Save params for others
+	LD	A,D
+	OR	E		; Is there an Environment?
+	JR	Z,INST00	; ..jump if none 'cause can't be NZCOM
+	LD	HL,8
+	ADD	HL,DE		; Point to ENV type
+	BIT	7,(HL)		; Is it an extended Environment?
+	JR	Z,INST00	; ..jump if Not
+	LD	HL,42H		; Point to DOS addr in Extended Env
+	ADD	HL,DE
+	LD	A,(HL)		; ..and get it to HL
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	JR	INST01		; Continue to set HL
+
+INST00:	LD	C,0		; Insure BIOS is even page
+	LD	HL,-0E00H	; Subtract DOS size from BIOS
+	ADD	HL,BC		; DOS starting addr now in HL
+INST01:	LD	(OFFSET),HL	; Let LOADER know where things are
+	PUSH	HL
+	LD	DE,6		; Offset from DOS base page to entry
+	ADD	HL,DE
+	LD	C,48		; Get Version command
+	CALL	CALLHL		; ..and do it
+	CP	DOSVER		; Is it the correct version?
+	JR	NZ,INST02	; ..jump if not
+	LD	A,H		; Get type flag byte
+	CP	DOSID		; Is it our type?
+INST02:	POP	DE		; Restore DOS base addr
+	JR	NZ,INSNXT	; Skip install if wrong DOS
+	LD	HL,LOADED	; Are we loaded already?
+	LD	A,(HL)
+	AND	A
+	JR	NZ,INSNXT	; If we are loaded already
+	DEC	(HL)		; Else flag loaded
+	CALL	INSRSX		; Set up header and tie in
+	LD	HL,16H		; Offset to DOS table
+	ADD	HL,DE
+	LD	BC,RWCLK	; Set the Clock address
+	LD	(HL),C		; ..and save in DOS table
+	INC	HL
+	LD	(HL),B
+	LD	HL,UNLOAD	; Offset to UNLOAD vector storage
+	ADD	HL,DE
+	LD	DE,MODRMV	; Point to remove vector
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; ..and save in DOS
+INSNXT:	POP	DE
+	POP	BC
+	RET
+
+INSRSX:	DI			; Don't interrupt during this
+	LD	HL,MODWARM	; Get address of module warm boot
+	LD	(MODWB+1),HL	; Place module boot address
+	LD	HL,(0006H)	; Get top of memory
+	LD	(JTABLE+1),HL
+	LD	HL,JTABLE
+	LD	(RSXPTA),HL	; Set protect address
+	LD	(0006H),HL
+	LD	HL,(0001H)
+	LD	(WBBIOS),HL	; BIOS Warm Boot target
+	INC	HL
+	LD	C,(HL)
+	INC	HL
+	LD	B,(HL)		; Get where WBOOT is pointing
+	PUSH	HL
+	LD	HL,WBNEXT
+	LD	(HL),0C3H	; JP Opcode
+	INC	HL
+	LD	(HL),C
+	INC	HL
+	LD	(HL),B		; Place jump to next WBOOT routine
+	POP	HL
+	LD	BC,MODWB
+	LD	(HL),B
+	DEC	HL
+	LD	(HL),C		; Install ourself into BIOS warm boot
+	EI			; Ok, we're tied in - make my day
+	RET
+	  ENDIF		;Rsx
+
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+; Patch Area Header (doubles as RSX header)
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+JTABLE:	JP	0		; [BDOS for RSX]
+MODWB:	JP	INSTALL		; Install routine [WBOOT for RSX]
+MODRMV:	JP	REMOVE		; Remove routine
+WBBIOS:	DEFW	0		; Next module install [WBOOT addr for RSX]
+RSXPTA:	DEFW	0		; Previous module remove [protect addr for RSX]
+	DEFW	MODID		; Text header for module
+WBNEXT:	DEFB	'PCH'		; Patch signature for nzcom [JP NXTWB for RSX]
+NXTLOD:	DEFW	TOP		; Last address in the module + 1
+VERIFY:	DEFW	JTABLE		; Pointer to head of table for verify
+
+MODID:	DEFB	'ZDDCLK v',VER/10+'0','.',[VER	MOD 10]+'0',0
+
+	PAGE
+	  IF  RSX
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+; Routine to check if this RSX is lowest RSX in memory,
+; Restores Warm Boot Address at 0001H
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+CKWARM:	LD	DE,MODWB
+	LD	HL,(WBBIOS)
+	LD	(0001H),HL	; Restore warm boot
+	INC	HL
+	LD	A,(HL)
+	INC	HL
+	SUB	E		; Are we the lowest module?
+	RET	NZ
+	LD	A,(HL)
+	SUB	D		; ..Set Zero if so
+	RET
+
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;     R S X    W a r m	  B o o t    R o u t i n e
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+MODWARM: CALL	CKWARM		; Restore wb, check if we are lowest RSX
+	JR	NZ,MODWM1	; If not lowest
+	LD	HL,(RSXPTA)
+	LD	(0006H),HL	; Protect address
+MODWM1:	LD	A,(WBNEXT+2)	; Get pointer to next wb routine
+	LD	HL,WBBIOS+1	; Get base page of BIOS
+	CP	(HL)		; See if below BIOS
+	JR	C,WBNEXT	; If below, must be another RSX
+	LD	A,(0004H)	; Get logged DU:
+	LD	C,A
+	LD	D,(HL)
+	DEC	HL
+	LD	E,(HL)		; Get BIOS WBOOT address
+	LD	HL,-[0E00H+800H] ; Offset from WBOOT to CCP+3
+	ADD	HL,DE		; Point to CCP+3
+CALLHL:	JP	(HL)		; And exit to CCP
+
+	PAGE
+	  ELSE
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;	  I n s t a l l   ZDDCLK    R o u t i n e
+;..........................................................
+; Enter: BC = BIOS Warm Boot address (from location 0001,2)
+;	 DE = Environment address or 0000 if none
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+INSTALL: PUSH	BC
+	PUSH	DE		; Save params for others
+	LD	A,D
+	OR	E		; Was an ENV pointer passed?
+	JR	Z,INSTA0	; ..no pointer, can't be NZCOM
+	LD	HL,8
+	ADD	HL,DE		; Point to ENV Type
+	BIT	7,(HL)
+	JR	Z,INSTA0	; ..jump if not Extended ENV
+	LD	HL,42H		; Point to DOS Hi-address in Extended ENV
+	ADD	HL,DE
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)		; ..and get it to HL
+	LD	L,A
+	JR	INSTA1		; Continue below to save HL
+
+INSTA0:	LD	C,0		; Insure BIOS is page boundary
+	LD	HL,-0E00H	; Subtract DOS size
+	ADD	HL,BC		; DOS starting page now in HL
+INSTA1:	LD	(OFFSET),HL	; Let LOADER know where things are
+	PUSH	HL
+	LD	DE,6		; Offset to DOS entry jump
+	ADD	HL,DE
+	LD	C,48		; Get Version command
+	CALL	CALLHL		; ..and do it
+	CP	DOSVER		; Is it the correct version?
+	JR	NZ,CHKDO2	; ..jump if not
+	LD	A,H		; Get type flag byte
+	CP	DOSID		; Is it our type?
+CHKDO2:	POP	DE		; Restore DOS base addr
+	JR	NZ,INSNX1	; Skip install if wrong DOS
+	LD	HL,LOADED
+	LD	A,(HL)
+	AND	A
+	JR	NZ,INSNX1	; Quit if we are loaded already
+	DEC	(HL)		; Else flag loaded
+
+; We need to do this in case NZCOM is used.
+
+	LD	HL,tbloff	; Offset DOS to table
+	ADD	HL,DE
+	LD	BC,RWCLK
+	LD	(HL),C
+	INC	HL
+	LD	(HL),B
+	LD	HL,UNLOAD	; Show no stamp routine loaded
+	ADD	HL,DE
+	LD	DE,MODRMV	; Point to REMOVE vector
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; Save REMOVE in DOS
+INSNX1:	LD	HL,(WBBIOS)
+INSNXT:	POP	DE
+	POP	BC		; Restore registers
+	LD	A,H
+	OR	L		; Test for another module present
+	RET	Z		; Exit if no others
+CALLHL:	JP	(HL)		; Else install next
+	  ENDIF		;Rsx
+	PAGE
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+;     R e m o v e    Z D D C L K    R o u t i n e
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+REMOVE:	PUSH	BC
+	PUSH	DE
+LOADED	EQU	$+1
+	LD	A,00		; Store LOADED flag inline
+	AND	A		; Test if loaded
+	JR	Z,REMOV2	; ..jump if we aren't loaded
+	XOR	A
+	LD	(LOADED),A	; Else flag not loaded anymore
+OFFSET	EQU	$+1
+	LD	HL,0000		;   <DOS entry value stored inline>
+	LD	DE,UNLOAD+1	; Point to MSB of Unload vector
+	EX	DE,HL		; ..preserve DOS addr in DE
+	ADD	HL,DE
+	LD	(HL),A
+	DEC	HL
+	LD	(HL),A		; Clear the REMOVE address in DOS
+	DEC	HL		; Point to MSB of DUMMY
+	LD	B,(HL)
+	DEC	HL
+	LD	C,(HL)		; Dummy value in DE
+	LD	HL,tbloff	; Set addr to dummy out Clock vector in DOS
+	ADD	HL,DE
+	LD	(HL),C
+	INC	HL
+	LD	(HL),B
+REMOV2:	LD	HL,(RSXPTA)	; Get address of next module to remove
+
+	  IF  RSX
+	CALL	CKWARM		; See if we're lowest RSX - includes ZEX
+	JR	NZ,REMOV3	; Don't allow removal if there are others
+	DI			; Hold things off while we work
+	LD	HL,(JTABLE+1)	; Get prior BDOS vector
+	LD	(0006),HL	; Restore it
+	LD	HL,(WBBIOS)	; Get BIOS entry address
+	INC	HL
+	LD	DE,(WBNEXT+1)	; Get Warm Boot of next RSX up
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; Patch it into BIOS
+	EI			; Ok, back on now
+	SCF			; Set carry to indicate success
+	DEFB	0EH		; ..and fall thru with LD  C,AFH
+REMOV3:	XOR	A		; Clear carry to show error
+REMOV4:	POP	DE
+	POP	HL
+	RET			; ..and exit
+	  ELSE
+	JR	INSNXT		; Quit
+	  ENDIF		; Rsx
+
+	PAGE
+;**********************************************************
+; Clock Driver routines for ZSDOS
+;
+; The routine placed here implements the clock driver for
+; ZSDOS/DateStamper.  The target of JRWCLK points to this
+; location.  The actual routine exists here, appended by
+; SETUPZST, and may be a complete driver or may point to
+; routines implemented in BIOS.
+;
+; If a DateStamper "type" clock driver is being added,
+; SETUPZST will set the code to return error status on a
+; clock set function while the code is altered to enable
+; clock setting if a ZSDOS "type" clock is selected.
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+; The interface specification at this point is:
+;
+; Entry Parameters:
+;	C = Read/Write Code (1=Write, 0=Read)
+;	DE= Address to Put Time
+;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+	DEFS	8-[[$-BEGIN] MOD 8] ; End on boundary
+
+RWCLK:	EX	DE,HL		; Put address for time in HL
+	LD	A,C		; Is it a set or read?
+	OR	A
+	JR	Z,CLK		; ..jump to read if 0
+
+; The following code sets error status on a Set Time for DateStamper
+; clocks.  It is overwritten with a relative jump to CLK+3 if ZDDOS
+; style clock is appended.
+
+	XOR	A		; Set error status
+	DEC	A		; ..to 0FFH
+	RET
+
+;.....
+; The remaining memory in this module is overwritten by
+;  the clock driver.
+
+CLK:
+
+TOP	EQU	$
+
+	END
+

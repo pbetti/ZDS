@@ -1,0 +1,608 @@
+Introduction   ZCPR3 Utilities
+Named Directory/Disk User Conversion    DIRTDU DUTDIR
+Resolve Directory References            DNSCAN et al
+Parse Command Line                      PARSER
+Search for File Along Path              PFIND
+Program Loader (Chain)                  PRGLOAD
+Output Routines Based on the Quiet Flag Qxxx
+Locate ROOT Directory in Path           ROOT
+Shell Stack Manipulation Routines       SHxxx
+Delay Routines                          WAITs
+Log into ZCPR3 FCB DU                   Z3LOG
+Return Z3LIB.REL Version Number         Z3LVER
+Parse Token                             ZPRSFN ZFNAME
+:Introduction to ZCPR3 Utilities
+
+     Theså   utilitieó   providå  á  numbeò  oæ   convenienô 
+functionó  foò  thå  ZCPR³  Systeí  Programmer®   Accesó  tï 
+directories¬  conversioî froí texô strinç nameó tï directorù 
+referencå values¬  commanä anä commanä linå  parsing¬  quieô 
+outpuô routines¬  shelì stacë manipulation¬  delaù routines¬ 
+and other ZCPR3-specific functions are provided.
+
+:DIRTDU/DUTDIR
+
+Z3LIB Routine:  DIRTDU
+
+Function:
+     DIRTDÕ convertó thå DIÒ namå pointeä tï bù HÌ intï  itó 
+DÕ  equivalent®   Thå  DIÒ namå ió á strinç oæ uğ  tï  eighô 
+ASCIÉ  characters¬  anä  itó enä ió denoteä bù  á  delimiteò 
+whicè  ió  anù  ASCIÉ  characteò thaô ió noô á  digiô  oò  á 
+letter® 
+
+Inputs: HL = address of first character of DIR name
+
+Outputs: If match found, BC = DU (disk A = 0) and NZ
+          If no match, A=0 and Zero Flag Set (Z)
+          HÌ alwayó pointó tï thå delimiteò aô thå enä of
+               name
+
+Registers Affected: HL, BC, PSW
+Side Effects: None
+Special Error Conditions: None
+
+Z3LIB Routine: DUTDIR
+
+Function:
+     DUTDIÒ searcheó thå nameä directorù foò thå DÕ giveî iî 
+BÃ (B=disë witè disë Á ½ 0¬ C=user)®  Iæ aî entrù existó foò 
+thå correspondinç DU¬  DUTDIÒ returnó á pointeò iî HÌ tï thå 
+8-characteò namå (followeä bù aî 8-characteò password).
+
+Inputs: BC = DU (disk A = 0)
+
+Outputs: If found, A=0FFH and NZ and HL = pointer to name
+               If not found, A=0 and Zero Flag is Set
+
+Registers Affected: HL and PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+:DNSCAN/DUSCAN/DIRSCAN
+
+Z3LIB Routine: DNSCAN
+
+Function:
+     DNSCAÎ  scanó  foò á resolutioî oæ thå  directorù  namå 
+pteä  tï bù HL®   Thå disë namå ió aô mosô eighô  characteró 
+lonç and¬  iæ lesó thaî eighô characters¬ ió terminateä bù á 
+delimiteò sucè aó á space¬  á characteò lesó thaî  space¬  á 
+comma¬  á period¬ á dash¬ etc®  Iæ found¬ thå DÕ ió returneä 
+iî BC.  Both DIR and DU forms are resolved by this routine.
+
+Inputs: HL = address of first character of directory name
+               A = Flag:
+                    A=0 if scan DU before DIR
+                    A<>0 if scan DIR before DU
+
+
+Outputs: BC = DU (disk A = 0) if found
+               A = Return Code:
+                    A=° anä Zerï Flaç Seô (Z© iæ noô valid
+                    A=0FFH and NZ if valid and BC=DU
+
+Registers Affected: BC, PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: DUSCAN
+
+Function:
+     DUSCAÎ  resolveó  thå DÕ forí pteä tï bù  HL®   Thå  DÕ 
+strinç  ió storeä iî á buffeò uğ tï eighô  characteró  long¬ 
+anä iô ió terminateä bù á delimiter¬ whicè maù bå anù oæ thå 
+following bytes:
+
+          a character of value space or less
+          an equal sign (=)
+          an underscore (_)
+          a period (.)
+          a colon (:)
+          a comma (,)
+          a less-than sign (<)
+          a greater-than sign (>)
+
+
+Inputs: HL = address of first char
+
+Outputs: A=0FFH, NZ, and BC=DU (disk A = 0) if valid
+               A=0 and Zero Flag Set (Z) if not valid
+
+Registers Affected: BC, PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: DIRSCAN
+
+Function:
+     DIRSCAÎ  resolveó thå DIÒ forí pteä tï bù HL®   Thå DIÒ 
+strinç  ió storeä iî á buffeò uğ tï eighô  characteró  long¬ 
+anä  iô  ió terminateä bù á delimiteò iæ iô ió  undeò  eighô 
+characteró long¬ whicè maù bå anù oæ thå followinç bytes:
+
+          a character of value space or less
+          an equal sign (=)
+          an underscore (_)
+          a period (.)
+          a colon (:)
+          a comma (,)
+          a less-than sign (<)
+          a greater-than sign (>)
+
+
+Inputs: HL = address of first char
+
+Outputs: A=0FFH, NZ, and BC=DU (disk A = 0) if valid
+               A=0 and Zero Flag Set (Z) if not valid
+
+Registers Affected: BC, PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+:PARSER
+
+Z3LIB Routine: PARSER
+
+Function:
+     PARSEÒ performó á completå parså oæ thå commanä pointeä 
+tï  bù HÌ (thå commanä ió á strinç terminateä bù á binarù  ° 
+oò aî MCÌ delimiter¬  á semicoloî [;])®  Alì elementó oæ thå 
+commanä linå arå parseä aó thougè thå ZCPR³ CĞ werå  parsinç 
+thå line.
+
+     Thå  followinç bufferó arå initializeä aó peò thå ZCPR³ 
+CP conventions:
+          FCB1 (at 5CH)
+          FCB2 (at 6CH)
+          TBUFF (at 80H)
+
+     The command name is returned in an FCB pted to by DE.
+
+
+Inputs: HL = address of command
+               A = 0 if DIR form scanned before DU
+               A <> 0 if DU form scanned before DIR
+
+Outputs: HL = address of next command (0 or leading ;)
+               DE = address of FCB with command name
+                    (verb.COM)
+               A = Flag:
+                    A=0 and Zero Flag Set (Z) if OK
+                    A=number of question marks and NZ if
+                         verb contains one or more ? chars
+
+Registers Affected: HL, DE, PSW
+
+Side Effects: Buffers Altered
+
+Special Error Conditions: None
+
+:PFIND
+
+Z3LIB Routine: PFIND
+
+Function:
+     PFINÄ searcheó foò thå filå specifieä iî thå targeô FCÂ 
+alonç thå ZCPR³ commanä searcè path®  Iæ found¬ thå DÕ iô ió 
+located in is returned.
+
+Inputs: DE = Address of FCB
+               A=0 if do not search current directory
+               A<>0 if search of current directory
+
+Outputs: BC = DU (disk A = 0)
+               A=0 and Zero Flag Set (Z) if not found
+               A=0FFH and NZ if found
+
+Registers Affected: BC, PSW
+Side Effects: FCB is affected
+Special Error Conditions: None
+
+:PRGLOAD
+
+Z3LIB Routine: PRGLOAD
+
+Function:
+     PRGLOAÄ  loadó  thå prograí indicateä bù thå  firsô  1² 
+byteó  pointeä  tï bù DÅ intï memorù aô 100È  anä  transferó 
+controì tï it®   Iô ió á chaiî function®  Thå loadeò anä FCÂ 
+useä  foò thå loaä arå relocateä tï jusô undeò thå CĞ  afteò 
+PRGLOAÄ  beginó execution¬  sï thå TPÁ ió freå foò thå load®  
+Carå  shoulä  bå  takeî  tï ensurå  thaô  thå  systeí  stacë 
+(locateä  ouô oæ thå TPÁ iî á safå area© ió useä insteaä  oæ 
+somå  stacë iî thå TPÁ whicè maù bå overwritteî  durinç  thå 
+load.
+Š     Iæ  PRGLOAÄ  returnó  froí beinç called¬  aî  erroò  iî 
+loadinç  occurred®   Iæ alì goeó well¬  thå  loadeä  prograí 
+executes successfully.
+
+
+Inputs: DE pts to first 12 bytes of FCB
+
+Outputs: None
+
+Registers Affected: All (if PRGLOAD returns, load was a
+                         failure)
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+:Qxxxx
+
+     Theså  routineó  outpuô theiò valueó onlù iæ thå  Quieô 
+Flaç ió cleaò (0)®   Iæ thå Quieô Flaç ió TRUÅ (noô 0)¬ theî 
+no values are output.
+
+     This class of routines includes the following:
+
+          QCOUT     Console Character Output with Control
+          QCRLF     New Line
+          QOUT      Console Character Output
+          QPRINT    String Output (Return Address)
+          QPSTR     String Output (HL)
+
+
+Z3LIB Routine: QCOUT
+
+Function:
+     QCOUÔ outputó thå characteò iî Á witè controì characteò 
+processing (1 outputs as ^A) if the Quiet Flag is OFF (0).
+
+Inputs: A=Character
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: Character(s) is printed
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: QCRLF
+
+Function:
+     QCRLÆ outputó á Ne÷ Linå (CÒ LÆ pair© iæ thå Quieô Flaç 
+is OFF (0).
+
+Inputs: None
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: CRLF is Output
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: QOUT
+
+Function:
+     QOUÔ  outputó  thå  characteò  iî  Á  withouô   controì 
+characteò  processinç (± outputó aó 1© iæ thå Quieô Flaç  ió 
+OFF (0).
+
+Inputs: A=character to output
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: Character is output
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: QPRINT
+
+Function:
+     QPRINÔ outputó thå string¬ terminateä bù á binarù 0¬ aô 
+thå returî addresó iæ thå Quieô Flaç ió OFÆ (0)®  Controì ió 
+returned to the byte following the string.
+
+Inputs: None (String at Return Address)
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: String is output
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: QPSTR
+
+Function:
+     QPSTÒ  outputó  thå string¬  terminateä bù á binarù  0¬ 
+pted to by HL if the Quiet Flag is OFF (0).
+
+Inputs: HL = address of first character of the string
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: String is output
+
+Special Error Conditions: None
+
+:ROOT
+
+Z3LIB Routine: ROOT
+
+Function:
+     ROOÔ  returnó  thå DÕ iî BÃ (disë Á ½ 0©  oæ  thå  lasô 
+directorù iî thå commanä searcè path®   Nï patè optimizatioî 
+ió  performed®   Thió  routinå provideó á convenienô waù  tï 
+finä  thå ROOÔ directory¬  wherå thió directorù ió thå  lasô 
+directory referenced in a path expression.
+
+     Thió routinå ió sometimeó noô consistenô witè thå ZCPR³ 
+CĞ  iæ  thå  MINPATÈ (Minimizå Patè  Expression©  optioî  ió 
+selected®  ROOÔ advanceó tï thå lasô referenceä directorù iî 
+thå  patè withouô minimization¬  whicè ZCPR³  minimizeó  thå 
+searcè   anä   maù  resolvå  á  patè  tï   terminatå   (witè 
+duplication©  aô á directorù otheò thaî thå physicallù  lasô 
+directory in the path.
+
+
+Inputs: None
+
+Outputs: BC = DU (Disk A = 0)
+
+Registers Affected: BC, PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+:SHxxx
+
+     Thió seô oæ routineó supportó Shelì Stacë manipulation®  
+The following routines are provided:
+
+          SHEMPTY - test to see if Shell Stack is empty
+          SHFULL  - test to see if Shell Stack is full
+          SHPOP   - pop top string off of Shell Stack
+          SHPUSH  - push string onto Shell Stack
+
+     Á  Shelì  Stacë ió implementeä aó á serieó  oæ  stringó 
+(recommendeä sizå ió 3² bytes/string¬  anä thå stacë  shoulä 
+contaiî aô leasô fouò oæ theså strings)®  Thå toğ elemenô oæ 
+á Shelì Stacë specifieó thå commanä linå tï bå executeä aó á 
+Shelì bù thå ZCPR³ CP®  Thió commanä linå ió copieä intï thå 
+Multiple Command Line Buffer for execution.
+
+
+Z3LIB Routine: SHEMPTY
+
+Function:
+     SHEMPTÙ determineó iæ thå shelì stacë ió empty®   Iæ iô 
+ió emptù oò nï shelì stacë ió available¬  A=0» iæ noô empty¬ 
+A<>0.
+
+Inputs: None
+
+Outputs: A=0 and Zero Flag Set (Z) if empty or none
+               A<>0 and NZ if not empty
+
+Registers Affected: PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: SHFULL
+
+Function:
+     SHFULÌ  determineó iæ thå shelì stacë ió full®   Iæ thå 
+stacë ió fulì oò noô available¬  A=0»  else¬ iæ thå stacë ió 
+not full, A<>0.
+
+Inputs: None
+
+Outputs: A=0 and Zero Flag Set (Z) if stack full or none
+               A<>0 if stack not full
+
+Registers Affected: PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: SHPOP
+
+Function:
+     SHPOĞ  popó thå toğ elemenô ofæ oæ thå Shelì Stacë  anä 
+discardó iô iæ possible®   SHPOĞ returnó witè A=° iæ poğ waó 
+successful¬  elså  A<>0®   Thå  followinç  erroò  codeó  arå 
+returned:
+
+          A=1 if no Shell Stack available
+          A=2 if Shell Stack is empty
+
+Inputs: None
+
+Outputs: A=Code:
+               A=0 if success (and Zero Flag Set - Z)
+               A=1 if no Shell Stack available (NZ)
+               A=2 if Shell Stack empty (NZ)
+
+
+Registers Affected: PSW
+
+Side Effects: String is popped from Shell Stack
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: SHPUSH
+
+Function:
+     SHPUSÈ pusheó thå strinç (includinç thå endinç 0©  pteä 
+tï  bù HÌ ontï thå Shelì Stacë iæ possible®   SHPUSÈ returnó 
+with A=0 if successful, else A<>0.
+
+Inputs: HL = string to push onto Shell Stack (end in 0)
+
+Outputs: A=Return Code:
+               A=0 if successful and no error (Z)
+               A=1 if no Shell Stack available (NZ)
+               A=2 if Shell Stack is full (NZ)
+               A=3 if string is too long for Shell Stack
+                   entry (NZ)
+
+Registers Affected: PSW
+Side Effects: String is pushed onto Shell Stack
+Special Error Conditions: None
+:WAITs
+
+     Thå  followinç routineó providå á softwarå delaù  baseä 
+upoî  thå  processoò  speeä valuå iî thå  ZCPR³  Environmenô 
+Descriptor®   Theså routineó simplù delaù foò thå  indicateä 
+perioä   oæ  timå  (approximately©  anä  theî  return®    Nï 
+registers are affected.
+
+     The routines are:
+
+          WAIT1S    - delay for 1 second
+          WAIT1MS   - delay for 0.001 second
+          WAITP1S   - delay for 0.1 second
+
+
+Z3LIB Routine: WAIT1S
+
+Function:
+     WAIT1S delays for approximately 1 second.
+
+Inputs: None
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: A 1-second delay takes place
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: WAIT1MS
+
+Function:
+     WAIT1MÓ  delayó foò approximatelù ± milliseconä  (0.00± 
+second).
+
+Inputs: None
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: A 1-millisecond delay takes place
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: WAITP1S
+
+Function:
+     WAITP1Ó  delayó foò approximatelù onå tentè (0.1© oæ  á 
+second.
+
+Inputs: None
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: A 0.1-second delay takes place
+
+Special Error Conditions: None
+
+:Z3LOG
+
+Z3LIB Routine: Z3LOG
+
+Function:
+     Z3LOÇ logó intï thå DÕ containeä iî á ZCPR³ FCB®   Thió 
+FCÂ  containó thå disë referencå iî Bytå ° anä thå Useò Areá 
+iî Bytå 1³ (S1)®   Thió ió thå standarä formaô useä bù ZCPR³ 
+to store a complete DU reference in an FCB.
+
+Inputs: DE = First Byte of FCB
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: Directory is logged into
+
+Special Error Conditions: None
+
+:Z3LVER
+
+Z3LIB Routine: Z3LVER
+
+Function:
+     Returî Versioî Numbeò oæ Z3LIB.REL®  H=Majoò Version¬ Ì 
+= Minor Version.  Numbers are in pure binary.
+
+Inputs: None
+
+Outputs: HL = Version Number (H=Major, L=Minor)
+
+Registers Affected: HL
+
+Side Effects: None
+
+Special Error Conditions: None
+Š:ZPRSFN
+
+Z3LIB Routine: ZPRSFN/ZFNAME
+
+Function:
+     ZPRSFÎ  ió á completå FCÂ tokeî parseò iî thå senså  oæ 
+thå ZCPR³ CĞ (seå PARSER¬  whicè ió related)®   Oî input¬ HÌ 
+pointó    tï    á    token¬     likå     'dir:filename.typ'¬ 
+'du:filename.typ'¬   'filename.typ'¬   etc¬   anä  á  ZCPR3-
+identicaì  parså ió performeä oî thå token®   Thå  resultinç 
+FCÂ containó thå filenamå anä tyğ anä á propeò DÕ reference.
+
+     ZFNAMÅ  ió á literaì interpretatioî oæ thå codå  withiî 
+thå  ZCPR³ CP®   ZPRSFÎ ió á morå efficienô bodù oæ codå buô 
+useó morå buffeò space.
+
+Inputs: HL = address of first char of token
+               DE = address of 36-byte FCB
+               A = Flag:
+                    A = 0 if scan for DIR form before DU
+                    A = 1 if scan for DU form before DIR
+
+
+Outputs: HL = address of char after token
+               A = number of question marks in filename.typ
+                    and Zero Flag set accordingly
+
+Registers Affected: HL, PSW
+
+Side Effects: FCB is loaded
+
+Special Error Conditions: None
+
+

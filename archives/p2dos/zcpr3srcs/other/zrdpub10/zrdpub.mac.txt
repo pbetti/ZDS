@@ -1,0 +1,504 @@
+
+            .z80
+            aseg
+
+;==============================================================================
+
+;           ZRDos PUBlic utility for use with ZRDPUB.LBR
+;           approach to fixing loss of publicity.
+;           (Can you take a little PUNishment?)
+
+;           written for m80 assembler
+
+;           this routine provides a means of setting and resetting
+;           ZRDOS public directories for systems with the ZRDPUB patch.
+;           the original PUBLIC utility WILL NOT WORK if you have
+;           added the public refresh code to your system, since it 
+;           doesn't set the stash buffer.
+
+;           the stash buffer defaults to the last two user message bytes
+;           which don't seem to be used by the programs I have. it is easily
+;           configured for anyplace in memory if you have a few wasted bytes
+;           someplace even safer. most systems do, if you can find 'em.
+
+;           the syntax for this routine is identical to that of the
+;           original ZRDOS PUBLIC 1.0 utility for simplicity's sake.
+;           you should be able to just rename this to PUBLIC and use
+;           all your old aliases, etc. the slash is optional. commas 
+;           are required.
+
+;                       ZRDPUB /oo,oo,oo,....
+;           Options:            (options must be separated by commas)
+;                       Cc      Clear PUBLIC settings
+;                           CA  Clear All
+;                           CD  Clear Disks
+;                           CU  Clear Users
+;                       Dd      Set disk d (where d is A-H) PUBLIC
+;                       Uu      Set user u (where u is 1-8) PUBLIC
+
+
+;           created:    01/20/88    Al Grabauskas
+
+;           I can be contacted on:  LILLIPUTE Z-NODE, Chicago
+;                                   (312) 649-1730 (board 1)
+;                                   (312) 664-1730 (board 2)
+    
+;==============================================================================
+
+;           general purpose equates
+
+vers        equ     10              ; version
+
+cr          equ     0dh             ; carriage return
+lf          equ     0ah             ; line feed
+
+bdos        equ     5               ; bdos call vector
+conout      equ     2               ; bdos console output function code
+
+pgmbase     equ     100h            ; used for initial org and z33 load page 
+tailcnt     equ     080h            ; count of chars in command tail
+comtail     equ     tailcnt+1       ; beginning of command tail
+
+zrdpub      equ     pgmbase         ; definition of this label prevents
+                                    ;   generation of two instructions
+                                    ;     when ZRDPUB.LIB is included
+
+quietoff    equ     028h            ; offset to quiet flag from z3env
+whlptoff    equ     029h            ; offset to wheel pointer from z3env
+
+;==============================================================================
+
+;           file inclusions
+
+;           STRUCT.LIB contains a set of structured macros, cause I'd
+;           for sure be too lazy to do this the any other way.
+;           MAKE SURE it is version 1.10 or better. 1.00 had a bug in
+;           the .switch/.case/.cond/.endsw structure that was discovered
+;           while writing this... 
+
+            include STRUCT.LIB      ; structured macros
+
+;           Z3BASE.LIB is your problem to supply for your system...
+
+            .xlist
+            include Z3BASE.LIB
+            .list
+
+;           define stash buffer location
+
+            include ZRDPUB.LIB
+    
+;==============================================================================
+
+;           begin at the beginning....
+
+            org     pgmbase
+
+            jp      start
+
+;           zcpr stuff
+
+            db      'Z3ENV'
+            db      1
+envptr:     dw      z3env
+
+;           pointer to "stashed" public mask
+
+            db      'PUBSTASH'      ; patch tag
+pubstash:   dw      zrdpmask        ; stash buffer pointer (patchable)
+    
+;==============================================================================
+
+;           code starts here
+
+start:
+            pop     hl              ; get o/s return address
+            ld      (retaddr),hl    ; save it
+            push    hl              ; just for the sake of form, put it back
+
+            ld      hl,signomsg     ; make your presence known
+            call    msgout
+
+            ld      hl,(envptr)     ; get env desc ptr
+            ld      de,whlptoff     ; offset to wheel byte pointer
+            add     hl,de           ; address of wheel byte pointer
+            ld      e,(hl)          ; get ptr to actual wheel byte
+            inc     hl
+            ld      d,(hl)
+            ld      a,(de)          ; wheel
+            or      a               ; set?
+            jp      z,whlerr        ; no... abort
+
+;           what's going on here?
+
+            ld      hl,(pubstash)   ; get ptr to stash buffer
+            ld      a,(hl)          ; get public disk mask
+            ld      (diskmask),a
+            inc     hl
+            ld      a,(hl)          ; get public user mask
+            ld      (usermask),a
+
+;           having gathered your wits, now figure out why they woke you up
+
+            ld      d,0             ; mark command tail end
+            ld      a,(tailcnt)
+            ld      e,a
+            ld      hl,comtail
+            add     hl,de
+            xor     a
+            ld      (hl),a          ; ...  with a zero
+
+;           skip leading spaces
+
+            ld      hl,comtail      
+            .do                     
+                ld  a,(hl)
+                cp  ' '
+            .while  z
+                inc hl
+                cp  0
+                jp  z,help
+            .enddo
+
+;           if there's a slash, discard it
+;              if there's a second slash, output help and exit
+
+            ld      a,(hl)          
+            cp      '/'
+            .if     z
+                inc hl
+                cp  0
+                jp  z,help
+                ld  a,(hl)
+                cp  '/'
+                .if z
+                    jp  help
+                .endif
+            .endif
+
+;           get to the point already...
+
+            ld      (curchar),hl
+
+            .do                     ; this is the options character loop
+                call gettailc
+                cp  0
+            .while  nz 
+                .switch             ; what now? 
+                    .case 
+                    cp  'C'     ; clear? 
+                    .cond z 
+                        call gettailc 
+                        .switch 
+                            .case 
+                            cp  'A' ; all? 
+                            .cond z 
+                                xor a 
+                                ld  (diskmask),a 
+                                ld  (usermask),a
+                                .break
+                            .case
+                            cp  'D' ; disks?
+                            .cond z
+                                xor a
+                                ld  (diskmask),a
+                                .break
+                            .case
+                            cp  'U' ; users?
+                            .cond z
+                                xor a
+                                ld  (usermask),a
+                                .break
+                            .otherwise
+                                jp  clrerr
+                        .endsw
+                        .break
+                    .case
+                    cp  'D'     ; disk?
+                    .cond z
+                        call gettailc
+                        sub  'A'
+                        jp   c,dskerr
+                        cp   'H'+1-'A'
+                        jp   nc,dskerr
+                        call bittran
+                        ld   hl,diskmask
+                        or   (hl)
+                        ld   (diskmask),a
+                        .break
+                    .case
+                    cp  'U'     ; user?
+                    .cond z
+                        call gettailc
+                        sub  '1'
+                        jp   c,usrerr
+                        cp   '8'+1-'1'
+                        jp   nc,usrerr
+                        call bittran
+                        ld   hl,usermask
+                        or   (hl)
+                        ld   (usermask),a
+                        .break
+                    .otherwise  ; option error...
+                        jp  opterr
+                .endsw
+
+;               get a comma, and nothing but a comma
+;               or a zero, which is legal end of parameters
+
+                call    gettailc
+                cp      ','
+                .if     nz
+                    cp  0
+                    jp  nz,osleap
+                    .break
+                .endif
+
+            .enddo
+
+;           pubwork now has the new public settings... put 'em up there
+
+            ld      hl,(pubstash)
+            ld      a,(pubwork)
+            ld      (hl),a              ; disk byte of stash buffer
+            ld      (z3env+126),a       ; disk byte of ZRDOS public mask
+            inc     hl
+            ld      a,(pubwork+1)       ; user byte of stash buffer
+            ld      (z3env+127),a       ; user byte of ZRDOS public mask
+            ld      (hl),a
+
+;           display current public directories
+
+            call    pubdisp
+
+;           ===================================================
+
+;           go back to sleep... collect o/s return address and exit
+
+osleap:
+            ld      hl,(retaddr)    
+            jp      (hl)
+
+;           ===================================================
+
+;           subroutines follow
+
+;           return with next tail character in register a
+
+gettailc: 
+            push    hl              ; save hl
+            ld      hl,(curchar)    ; get ptr to current comtail char
+            ld      a,(hl)          ; get char
+            inc     hl              ; inc comtail pointer
+            ld      (curchar),hl    ; update cur char ptr
+            pop     hl              ; restore it
+            ret                     ; go back
+
+;           translate binary 0-7 in register A to bit 7-0 (note reverse order)
+
+bittran:
+            push    hl
+            push    de
+            ld      hl,bittable
+            ld      d,0
+            ld      e,a
+            add     hl,de
+            ld      a,(hl)
+            pop     de
+            pop     hl
+            ret
+
+bittable:
+            db      00000001b
+            db      00000010b
+            db      00000100b
+            db      00001000b
+            db      00010000b
+            db      00100000b
+            db      01000000b
+            db      10000000b
+
+;           public directory display routine
+
+pubdisp:
+            ld      a,(diskmask)
+            or      a
+            .if     z
+                ld  hl,nodisk
+                call msgout
+                jp  osleap
+            .endif
+
+            ld      a,(usermask)
+            or      a
+            .if     z
+                ld  hl,nouser
+                call msgout
+                jp  osleap
+            .endif
+
+            ld      hl,pubmsg
+            call    msgout
+            
+            .do
+                ld  a,(pubdisk)
+                cp  'H'
+            .while  c
+                inc a
+                ld  (pubdisk),a
+                ld  hl,diskmask
+                rr  (hl)
+                .if c
+                    ld  a,(usermask)
+                    ld  h,a
+                    xor a
+                    ld  de,pubuser
+                    .do
+                        cp  8
+                    .while c
+                        rr  h
+                        .if c
+                            add a,'1'
+                            ld  (de),a
+                            sbc a,'1'
+                        .else
+                            push af
+                            ld  a,'.'
+                            ld  (de),a
+                            pop af
+                        .endif
+                        inc de
+                        inc de
+                        inc a
+                    .enddo
+                    ld  hl,publine
+                    call msgout
+                .endif
+            .enddo          
+
+            ret
+
+publine:    db      '       Disk '
+pubdisk:    db      'A'-1,', User: '
+pubuser:    db      '1 2 3 4 5 6 7 8',cr,lf,0
+
+;           console message output 
+
+msgout:
+            push    af
+            push    bc
+            push    de
+            push    hl
+
+            push    hl
+            ld      hl,(envptr)
+            ld      de,quietoff
+            add     hl,de
+            ld      a,(hl)
+            pop     hl
+            or      a
+            jr      nz,msgret
+
+nqmsgout:
+            ld      a,(hl)
+            or      a
+            jr      z,msgret
+            inc     hl
+            push    hl
+            ld      e,a
+            ld      c,conout
+            call    bdos
+            pop     hl
+            jr      nqmsgout
+
+msgret:
+            pop     hl
+            pop     de
+            pop     bc
+            pop     af
+            ret
+
+;           assorted errors
+
+whlerr:   ; no wheel error
+            ld      hl,wemsg    ; tell 'em no wheel
+            call    msgout
+            jp      osleap      ; exit without further ado
+
+opterr:   ; bad option specified
+            ld      hl,oemsg
+            call    msgout
+            jp      help
+
+clrerr:   ; bad suboption on Clear
+            ld      hl,cemsg
+            call    msgout
+            jp      help
+
+dskerr:   ; bad disk specifier
+            ld      hl,demsg
+            call    msgout
+            jp      help
+
+usrerr:   ; bad user number
+            ld      hl,uemsg
+            call    msgout
+            jp      help
+
+;           print help and exit
+
+help:
+            ld      hl,helpmsg
+            call    msgout
+            jp      osleap
+
+;           general scratch pad
+
+pubwork:                            ; temp public mask work buffer
+diskmask:   db      0               ; public disk bits
+usermask:   db      0               ; public user bits
+
+curchar:    dw      0               ; current comtail char
+retaddr:    dw      0               ; address to goto on exit
+
+;           signon message
+
+signomsg:
+            db      cr,lf
+            db      'ZRDPUB Public Directory Utility   v'
+            db      (vers/10)+'0','.',(vers mod 10)+'0'
+            db      cr,lf,0
+
+;           assorted error messages
+
+oemsg:      db      '       Option not recognized',cr,lf,0
+cemsg:      db      '       Clear suboption not recognized',cr,lf,0
+demsg:      db      '       Error specifying Disk',cr,lf
+            db      '                Acceptable range is A-H',cr,lf,0
+uemsg:      db      '       Error specifying User',cr,lf
+            db      '                Acceptable range is 1-8',cr,lf,0
+wemsg:      db      '       No Wheel, no service. Shirt and shoes optional.'
+            db      cr,lf,0
+
+;           help message
+
+helpmsg:
+            db      cr,lf
+            db      '       Syntax:',cr,lf
+            db      '                ZRDPUB',cr,lf
+            db      '                 <or>',cr,lf
+            db      '                ZRDPUB /opts...',cr,lf,cr,lf
+            db      '       Options: (separated by commas)',cr,lf
+            db      '                CA - Clear All  public declarations',cr,lf
+            db      '                CD - Clear Disk public declarations',cr,lf
+            db      '                CU - Clear User public declarations',cr,lf
+            db      '                Dd - Disk  d    set public',cr,lf
+            db      '                Uu - User  u    set public',cr,lf
+            db      0                   ; end of string
+
+nodisk:     db      '       There are no disks declared public.',cr,lf,0
+nouser:     db      '       There are no user areas declared public.',cr,lf,0
+pubmsg:     db      '       Public Directories:',cr,lf,0
+
+            end
+

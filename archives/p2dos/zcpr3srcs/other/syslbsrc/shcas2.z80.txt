@@ -1,0 +1,119 @@
+;	TITLE	"SHCAS2 - Syslib 4.0"
+	NAME	('HCASE2')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SHCAS2.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SHCAS2
+; Abstract: This module contains the single routine HCASE2 which is
+;	a case statement processor.  On input, register pair HL contains
+;	a value against which to test, and register pair DE contains the
+;	address of the case table which may be located remotely in memory.
+;	If the value does not match any of those in the table, a specified
+;	default address is executed.  The routine is implemented as:
+;
+;	  LD	HL,TEST	 ; test value
+;	  LD	DE,TABLE ; case table address
+;	  CALL	HCASE2
+;	  ...
+;	TABLE:
+;	  DEFW	NUM$ENT	; number of entries in CASE table
+;	  DEFW	DEFAULT	; address to goto if no match in case
+;	  DEFW	VAL1	; entry value 1 to test for
+;	  DEFW	ADDR1	; address to goto if entry 1 matches
+;	  DEFW	VAL2	; entry value 2 to test for
+;	  DEFW	ADDR2	; address to goto if entry 2 matches
+;	  ...
+;	  DEFW	VALN	; entry value N to test for (N = NUM$ENT)
+;	  DEFW	ADDRN	; address to goto if entry N matches
+;
+;	NUM$ENT is the number of values (VAL1 .. VALN) in the table
+;  Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+
+	PUBLIC		HCASE2
+
+	.Z80
+	CSEG
+;=========================================================================
+; NAME - HCASE2 - A case statement processor which evaluates a 16-bit
+;	  value against table values and executes the specified address if
+;	  a match is found.  If no match is found, a default address is
+;	  executed.
+; Entry: HL - Contains a 16-bit value to test against table entries
+;	 DE - Contains the address of the Case Table
+; Exit : No values returned, but program control passes to another routine
+; Uses : None  (all regs preserved for destination routine)
+; Special Requirements:  None
+;=========================================================================
+
+HCASE2:	LD	(VALUE),HL	; save test value
+	POP	HL		; flush return address
+	PUSH	AF		; save regs
+	PUSH	DE
+	EX	DE,HL		; case table address in HL
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)		; DE = number of entries
+	INC	HL		; pt to default
+	LD	(DEFAULT),HL	; save it
+	INC	HL		; pt to first entry
+	INC	HL
+
+; Loop through case table entries, looking for a match
+
+LOOP:	PUSH	DE		; Save regs
+	LD	DE,(VALUE)	; Get value
+	INC	HL
+	LD	A,(HL)		; Get the high byte
+	DEC	HL		; ..and restore pointer
+	CP	D		; Are high bytes same?
+	JR	NZ,TESTX	; ..exit if not
+	LD	A,(HL)		; Get low byte
+	CP	E		; Set flags for complete comparison
+TESTX:	POP	DE		; Restore regs
+	JR	Z,MATCH
+	INC	HL		; pt to next
+	INC	HL
+	INC	HL
+	INC	HL
+	DEC	DE		; count down
+	LD	A,D		; done?
+	OR	E
+	JR	NZ,LOOP
+
+; No match found - use default
+
+	LD	HL,(DEFAULT)	; get default
+	JR	GOTO
+
+; Match - use HL+1
+
+MATCH:	INC	HL		; point to address
+	INC	HL
+
+; Get address in HL and return
+
+GOTO:	LD	A,(HL)		; get low
+	INC	HL
+	LD	H,(HL)		; get high
+	LD	L,A		; HL = address
+	POP	DE		; restore regs
+	POP	AF
+	PUSH	HL		; return address on stack
+	LD	HL,(VALUE)	; restore value
+	RET
+
+; Storage buffers
+
+	DSEG			; Put in Data Segment
+
+VALUE:	 DEFS	2		; original HL
+DEFAULT: DEFS	2		; default address
+
+	END
+

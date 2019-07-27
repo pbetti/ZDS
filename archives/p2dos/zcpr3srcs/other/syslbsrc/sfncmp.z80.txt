@@ -1,0 +1,49 @@
+;	TITLE	"SFNCMP - Syslib 4.0"
+	NAME	('ATFNCM')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from various modules by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.0
+; Module  : SFNCMP
+; Abstract: This module contains the routine @FNCMP which
+;	compares the byte addressed by DE with the byte addressed
+;	by HL for B bytes.  It is most commonly used to compare
+;	short strings such as those encountered in comparing
+;	Filenames and Types.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		@FNCMP
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - @FNCMP
+; Entry: HL - Addresses one string to compare
+;	 DE - Addresses the other string
+;	  B - Number of bytes to compare
+; Exit :  A - unknown, Zero flag Set (Z) if match
+;		 Zero flag Reset (NZ) if No match
+;		 Carry Flag Set (C) if (DE) < (HL)
+; Uses : AF,BC,DE,HL
+; Special Requirements: None
+;===============================================================
+
+@FNCMP:	LD	A,(HL)		; Get (HL) byte
+	AND	7FH		; ..masking MSB
+	LD	C,A		; Store in C
+	LD	A,(DE)		; Get (DE) byte
+	AND	7FH		; ..masking MSB
+	CP	C		; Compare the two bytes
+	RET	NZ		; ..quit here if not equal
+	INC	HL		; Bump pointers
+	INC	DE
+	DJNZ	@FNCMP		; Loop til done
+	RET
+
+	END
+

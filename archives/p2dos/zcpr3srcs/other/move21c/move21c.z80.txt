@@ -1,0 +1,680 @@
+
+; Program: MOVE
+; Author: Joe Wright
+; Date: 28 February 1986
+; Version: 2.0
+
+vers	equ	21	; "C" version, init. write flag for safe
+			; operation with GO command.  Neither Joe
+			; Wright nor I claimed MOVE to be re-entrant,
+			; but it's a darn good idea that costs only
+			; three bytes.
+			; January 24, 1988	Bruce Morgen
+			; "B" version, one Bridger hint, one bug fix.
+			; Wildcard to both extent bytes before file
+			; existence test in "mainloop:", clear carry
+			; flag before the "sbc hl,de" a little after 
+			; the call to "eval10".
+			; December 31, 1987	Bruce Morgen
+			; "A" version, incorporated Bridger's FRESET
+			; December 30, 1987	Bruce Morgen
+			; ZCPR33 Type 3 format with safety header, search
+			; for an empty user area instead of bombing out
+			; everything in user 31, established DSEG - with
+			; initialization to assure predictable re-entrance.
+			; Fixed wildcard FCB (had too many "?"s).  Allow
+			; legitimate DU/DIR destination specs without
+			; colons, ditto standalone user numbers.  Added
+			; intelligent help message (change name to MAKE or
+			; MV, help also changes).  Scanning code ATTEMPTS
+			; to following all Z33/BGii stipulations where
+			; applicable....
+			; December 28, 1987	Bruce Morgen
+
+;vers	equ	20	; Fixed drive selection bug. Add Query as default
+			; option. Report directories in DU:DIR form.
+			;  28 Feb 86  jww
+
+z3env	defl	0fe00h
+
+biosv	equ	001h
+fcb1	equ	05ch
+usr1	equ	fcb1+13
+fcb2	equ	06ch
+usr2	equ	fcb2+13
+tbuf	equ	080h
+
+tab	equ	9
+cr	equ	13
+lf	equ	10
+
+	ext	z33chk,getccp,freset
+	ext	z3init,cout,dutdir,crlf,dnscan,duscan,dirscan,getefcb
+	ext	mafdc,phl4hc,eprint,pfn1,bdos
+	ext	caps,cin,initfcb,fillb,eval10
+
+
+; TYPE 3 HEADER
+
+; Code modified as suggested by Charles Irvine to function correctly with
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+
+entry:
+	jr	start0			; Must use relative jump
+	nop				; Filler
+	db	'Z3ENV',3		; Type-3 environment
+z3eadr:
+	dw	z3env			; Filled in by Z33
+	dw	entry			; Intended load address
+
+start0:
+	ld	hl,0			; Point to warmboot entry
+	ld	a,(hl)			; Save the byte there
+	di				; Protect against interrupts
+	ld	(hl),0c9h		; Replace warmboot with a return opcode
+	rst	0			; Call address 0, pushing RETADDR
+					; onto stack
+retaddr:
+	ld	(hl),a			; Restore byte at 0
+	dec	sp			; Get stack pointer to point
+	dec	sp			; To the value of RETADDR
+	pop	hl			; Get it into HL and restore stack
+	ei				; We can allow interrupts again
+	ld	de,retaddr		; This is where we should be
+	xor	a			; Clear carry flag
+	push	hl			; Save address again
+	sbc	hl,de			; Subtract -- we should have 0 now
+	pop	hl			; Restore value of RETADDR
+	jr	z,start			; If addresses matched, begin real code
+
+	ld	de,notz33msg-retaddr	; Offset to message
+	add	hl,de
+	ex	de,hl			; Switch pointer to message into DE
+	ld	c,9
+	jp	0005h			; Return via BDOS print string function
+notz33msg:
+	db	'Not Z33+$'		; Abort message if not Z33-compatible
+
+
+start:	ld	(stack),sp
+	ld	sp,stack
+	ld	a,'Q'
+	ld	(option),a
+	ld	a,32
+	ld	(empusr),a
+	ld	de,fcbwild
+	call	initfcb
+	ex	de,hl
+	inc	hl
+	ld	b,11
+	ld	a,'?'
+	call	fillb
+	ld	de,fcbdrv
+	call	initfcb
+	ld	hl,(z3eadr)
+	call	z3init		; initialize the environment
+;
+; Turn off PUBLIC
+;
+	ld	de,126
+	add	hl,de		; point to PUBLIC bytes
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	(public),de	; save them
+	xor	a
+	ld	(wrflag),a	; Init. write flag for safety
+	ld	(hl),a
+	dec	hl
+	ld	(hl),a		; Turn public off
+	ld	hl,fcb1+1
+	ld	a,(hl)
+	cp	' '
+	jp	z,help		; Invoked without command tail
+	cp	'/'
+	jr	nz,gotname
+	inc	hl
+	ld	a,(hl)
+	cp	'/'
+	jp	z,help		; Help is asked for
+;
+;  Search for options
+;
+gotname:
+	ld	hl,tbuf+2	; Beginning of command tail
+gotloop:
+	ld	a,(hl)		; Get the character
+	inc	hl		; Point to next
+	or	a
+	jr	z,got0		; Use default options
+	cp	'/'
+	jr	nz,gotloop	; Try again
+	ld	a,(hl)		; Get option character
+	call	caps		; Force capitals (Why, Joe?)
+	cp	'O'		; Overwrite option
+	jr	z,setopt
+	cp	'S'		; Skip option
+	jr	z,setopt
+	cp	'Q'
+	jp	nz,invopt	; Invalid option selected
+setopt:
+	ld	(option),a
+;
+;  Resolve Drive/User with ZCPR3 constructs
+;
+got0:
+	ld	a,(fcb1)	; Source
+	dec	a		; 0ffh if current drive, otherwise drvno.
+	call	m,getdsk	; Return selected disk
+	ld	(drvno),a	; Save drive number
+	ld	hl,fcb2+1	; Point second FCB name area
+	ld	a,' '
+	cp	(hl)		; Is it blank?
+	jr	nz,doscan	; If not, go parse possible DU
+	ld	hl,tbuf+2	; Otherwise, find 2nd tail token
+	ld	bc,19
+	cpir
+	jr	nz,bddrv2
+	push	hl		; Protect pointer
+	ld	a,(fcb2)	; Obtain drive number
+	dec	a
+	call	m,getdsk	; Via BDOS if necessary
+	ld	b,a		; Stow in B
+	ld	a,(usr2)	; Get CCP-parsed user code
+	ld	c,a		; Into C
+	pop	hl		; Retrieve pointer
+	jr	doeval		; See if it's user number only
+doscan:	call	scaner		; Partial parser :-)
+	jr	z,bddrv2	; n/g, use old code
+	ld	a,c		; Otherwise, user to A
+	ld	(usr2),a	; Poke into FCB
+doeval:	ld	a,(drvno)
+	cp	b		; Drive letters the same?
+	jr	z,got2		; Makes it easy...
+	push	hl		; Save pointer
+	call	eval10		; Decimal evaluation
+	inc	d		; Make sure it ain't 16-bitter
+	dec	d
+	pop	de		; Old pointer into DE
+	jp	nz,invusr	; If number's too big, n/g
+	or	a		; Clear carry, leave A alone
+	sbc	hl,de		; If it wouldn't evaluate, the
+	jp	z,invdrv	; pointer did not move, n/g
+	cp	c		; Compare to parsed user code
+	jp	nz,invdrv	; Not a "pure" user number
+	ld	(usr2),a	; User code into FCB
+	ld	a,(drvno)
+	jr	got2
+
+bddrv2:	ld	a,(fcb2)	; Destination
+	dec	a		; 0ffh if current drive, otherwise drvno.
+	call	m,getdsk
+got1:
+	ld	hl,drvno
+	cp	(hl)
+	jp	nz,invdrv	; Drives must be the same
+got2:
+	call	seldsk		; Select the disk in any case
+	ld	a,(usr1)
+	ld	(srcusr),a
+	ld	c,a
+	ld	a,(usr2)
+	ld	(desusr),a
+	cp	c
+	jp	z,invusr	; Users must be different
+;
+	ld	a,(drvno)
+	ld	b,a		; B = drive, C = source user
+	ld	de,srcdir
+	call	setname
+	ld	a,(desusr)
+	ld	c,a
+	ld	de,desdir
+	call	setname
+;
+search0:
+;
+;  Find a scratchpad user area
+;
+	ld	hl,desusr
+	ld	a,(empusr)
+search1:
+	dec	a
+	jp	m,usfail
+	cp	(hl)
+	jr	z,search1
+	ld	(empusr),a
+	call	gsuser
+	ld	de,fcbwild	; All wildcards
+	call	searchf
+	jr	nz,search0
+
+;
+;  Confirm file existence
+;
+userok:
+	ld	a,(srcusr)
+	call	gsuser
+	ld	de,fcb1
+	call	searchf
+	jp	z,nofile
+
+;
+;  Check for CON: abort, then do per-file main loop
+;
+mainloop:
+	ld	c,6		; Direct console input
+	ld	e,0ffh
+	call	bdos
+	cp	3		; Control C?
+	jp	z,abort
+	ld	de,fcb1
+	call	searchf		; Search First function
+	jp	z,quit		; No more found
+	call	findir		; Point to specific entry in tbuf
+	ld	bc,16		; Move 16 bytes
+	ld	de,fcbdrv
+	ldir
+	ld	a,(desusr)
+	call	gsuser
+	ld	a,(fcb1)	; Drive number
+	ld	(fcbdrv),a	; Replace user number from BDOS
+	ld	hl,'??'		; Wild card
+	ld	(fcb1+12),hl
+	ld	(fcbext),hl	; Make extents wild
+
+	ld	de,fcbdrv
+	call	searchf
+	jp	nz,filexists	; Bail out if file exists in destination
+
+	call	eprint
+	db	cr,lf,' Moving ',0
+	ld	hl,srcdir
+	call	pdir
+	ld	de,fcbname	; Point to name
+	call	pfn1
+	call	eprint
+	db	' to ',0
+	ld	hl,desdir
+	call	pdir
+	ld	a,(srcusr)
+	call	gsuser
+	call	moveit
+	jr	mainloop
+
+moveit:
+	ld	de,fcbdrv
+	call	searchf		; Find matching entry
+	ret	z		; Not this one, try again
+	call	findir		; point hl to dir entry
+	ld	a,(desusr)
+	ld	(hl),a		; Replace current with destination
+	call	write		; Write the buffer back to disk
+	ld	a,255
+	ld	(wrflag),a
+	jr	moveit
+;
+;  SETNAME fills the vector at DE with the drive, user and name
+;  of the directory defined by BC.
+;
+setname:
+	push	bc		; Save drive, user
+	ld	a,b		; Drive number
+	add	a,'A'
+	ld	(de),a
+	inc	de
+	ld	a,c
+	call	mafdc		; Decimal user number to vector
+	ld	a,':'
+	ld	(de),a
+	inc	de
+	call	dutdir		; Attempt to find directory name
+	jr	nz,name		; Found it
+	ld	hl,noname
+name:
+	ld	bc,8		; Move 8 characters
+	ldir
+	ld	a,' '
+	ld	(de),a		; Terminate with space
+	pop	bc		; Restore drive/user in BC
+	ret
+
+noname:
+	db	'Noname- '
+
+;
+;  Print string at HL, with terminating space
+;
+pdir:
+	ld	a,(hl)
+	inc	hl
+	call	cout
+	cp	' '
+	ret	z
+	jr	pdir
+
+;
+; Return current disk in A
+;
+getdsk:
+	ld	c,25
+	jp	bdos
+;
+; Select disk
+;
+seldsk:
+	ld	e,a
+	ld	c,14
+	jp	bdos
+;
+; Get/Set user function
+;
+gsuser:
+	ld	c,32
+	ld	e,a
+	jp	bdos
+;
+;  Search For First function
+;
+searchf:
+	ld	c,17
+	call	bdos
+	cp	0ffh
+	ret
+;
+;  Point hl to the found directory entry
+;
+findir:
+	rrca
+	rrca
+	rrca
+	add	a,tbuf
+	ld	l,a
+	ld	h,0
+	ret
+
+;
+; Bios Write function
+;
+write:
+	ld	hl,(biosv)
+	ld	l,42		; Bios write entry
+	ld	c,1		; Directory write
+	jp	(hl)		; Jump to bios, return to caller
+
+;
+; Convert D, U, DU, or named DIR to drive in B, user in C
+scaner:
+	call	ifcbg		; Running BGii?
+	ld	a,0		; Value for DU first
+	jr	z,scanjp	; BG is always DU before DIR
+	call	z33chk		; Running Z33 or later?
+	ld	a,0ffh		; Value for DIR first
+	jr	nz,scanjp	; If not Z33, assume that
+	push	hl		; Save pointer
+	call	getccp		; Get start of CCP
+	push	hl		; Transfer to IX via stack
+	pop	ix
+	pop	hl		; Restore pointer
+	xor	a		; A is uncertain here, zero it
+	bit	0,(ix+7)	; Do we take DU prefixes at all?
+	jr	nz,chkdir	; If so, see if DIRs are also OK
+	bit	1,(ix+7)	; If not, DIR is our only hope
+	jp	nz,dirscan	; OK, scan for DIR only
+	ret			; Otherwise return Z for failure
+chkdir:	bit	1,(ix+7)	; Let's see if both DIR and DU
+	jp	z,duscan	; If not, scan for DU only
+	cpl			; Flip A to DIR-first value (0FFh)
+	bit	2,(ix+7)	; Are we DU-firsters?
+	jr	z,scanjp	; Go to DNSCAN now if not
+	cpl			; Otherwise flip to zero first
+scanjp:	jp	dnscan		; Central JP so we can use JRs
+
+; Adapted from Jay Sage's COMIF:
+;
+; Condition:  BG (BackGrounder)
+;
+; This option tests for the presence of the 'BGii' ID string that
+; shows that BackGrounder ii is running.  The code looks for the
+; ID at an offset of IDOFF from the beginning of the CPR code.	The
+; value of IDOFF was determined by examination.
+
+idoff	equ	5bh
+
+ifcbg:
+	push	hl
+
+	ld	hl,(biosv)	; Get BIOS pointer
+	ld	de,-1603h+idoff	; Offset to 'BGii' ID string in BG CPR
+	add	hl,de
+	ld	de,idstr	; Point to reference ID string
+	ld	b,idlen		; Length of ID string
+bgchk1:
+	ld	a,(de)		; Get reference character
+	cp	(hl)		; Compare to actual character
+	jr	nz,bgfals	; Set false if mismatch
+	inc	hl		; Move to next characters
+	inc	de
+	djnz	bgchk1		; Loop through all characters
+bgfals:
+	pop	hl
+	ret
+
+idstr:	db	'BGii'
+idlen	equ	[$-idstr]
+
+
+;  Error message routines
+
+invopt:
+	call	eprint
+	db	cr,lf,tab,'-- Invalid Option --',0
+	jp	help
+
+invdrv:
+invusr:
+	call	eprint
+	db	cr,lf,'-- Invalid Drive/User Selection --',0
+	jp	help
+
+abort:
+	call	eprint
+	db	cr,lf,tab,'-- Aborted --',0
+	jp	quit
+
+nofile:
+	call	eprint
+	db	cr,lf,tab,'-- No Source File --',0
+	jp	quit
+
+usfail:
+	call	eprint
+	db	cr,lf,'-- No Empty User Area On Drive --',0
+	jp	quit
+
+filexists:
+	call	crlf		; New line
+	call	eprint
+	db	'  ',0		; two spaces
+	ld	hl,desdir
+	call	pdir
+	ld	de,fcbname
+	call	pfn1
+
+	ld	a,(option)
+	cp	'O'		; Overwrite
+	jr	z,overwr
+	cp	'S'
+	jr	z,filex1
+	call	eprint
+	db	' exists. ',0
+	call	eprint
+	db	' Move anyway? (Y or N)',0
+	call	cin		; Wait for response
+	call	caps
+	cp	'Y'
+	jr	z,overwr
+;
+;  Move temporarily to scratchpad user area
+;
+filex1:
+	ld	a,(desusr)
+	push	af		; save it on the stack
+	ld	a,(empusr)
+	ld	(desusr),a	; temporarily
+
+	ld	a,(srcusr)
+	call	gsuser
+	call	moveit
+
+	pop	af
+	ld	(desusr),a
+	call	eprint
+	db	'  NOT moved.',0
+	jr	filexex
+
+overwr:
+;
+;  Delete the destination file
+;
+	ld	de,fcbdrv
+	ld	c,19
+	call	bdos
+
+	call	eprint
+	db	'  Erased',0
+filexex:
+	ld	a,(srcusr)
+	call	gsuser
+	jp	mainloop
+
+;
+;  Main and ONLY program exit
+;
+quit:
+	ld	a,(wrflag)
+	or	a
+	jr	z,exit
+;
+;  Move any files in scratchpad user area back to source
+;
+	ld	a,(empusr)
+	call	gsuser
+quit0:
+	ld	de,fcb1		; use ambiguous fcb
+	call	searchf
+	jr	z,quit1		; No entries left
+	call	findir		; point hl to dir entry
+	ld	a,(srcusr)
+	ld	(hl),a		; Replace current with destination
+	call	write		; Write the buffer back to disk
+	jr	quit0
+quit1:
+;	ld	c,13		; Reset disk system
+;	call	bdos
+	ld	a,(drvno)
+	call	freset
+exit:
+;
+;  Turn PUBLIC on again
+;
+	ld	hl,(z3eadr)
+	ld	de,126
+	add	hl,de		; Point to PUBLIC area
+	ld	de,(public)	; Get original bytes
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	ld	sp,(stack)
+	ret
+
+
+help:
+	call	eprint
+	db	cr,lf,'MOVE Version '
+	db	vers/10+'0','.',vers mod 10+'0'
+	db	' (loaded at ',0
+	ld	hl,entry
+	call	phl4hc
+	call	eprint
+	db	'h)'
+	db	cr,lf,'Syntax:',cr,lf,' ',0
+	call	comnam
+	call	eprint
+	db	' [dir1:]afn [dir2:] [/o]',cr,lf,lf,' ',0
+	call	comnam
+	call	eprint
+	db	' afn dir:       Moves from current to dir:'
+	db	cr,lf,' ',0
+	call	comnam
+	call	eprint
+	db	' dir:afn dir1:  Moves from dir: to dir1:'
+	db	cr,lf,' ',0
+	call	comnam
+	call	eprint
+	db	' dir:afn        Moves from dir: to current.'
+	db	cr,lf,lf,'All directories must reference the same drive.'
+	db	cr,lf,'Options are: "Q"uery, "S"kip or "O"verwrite.'
+	db	cr,lf,'Duplicate entries will be Queried by default.'
+	db	cr,lf,lf,'Example: ',0
+	call	comnam
+	call	eprint
+	db	' dir:afn dir1: /o to overwrite.'
+	db	cr,lf,0
+	jp	quit
+
+; Print actual COMfile name if we can,
+; otherwise print "MOVE"
+
+comnam:	call	getefcb
+	jr	z,noefcb
+	ld	b,8
+comnml:	inc	hl
+	ld	a,(hl)
+	and	7fh
+	cp	' '
+	call	nz,cout
+	djnz	comnml
+	ret
+;
+noefcb:	call	eprint
+	db	'MOVE',0
+	ret
+;___________________________
+;
+	dseg
+srcdir:
+	ds	13		; Allow for 'DUU:DIRNAMES ' construct
+desdir:
+	ds	13
+
+wrflag:
+	ds	1
+
+empusr:
+	ds	1
+srcusr:
+	ds	1
+drvno:
+	ds	1		; Drive number
+desusr:
+	ds	1
+option:
+	ds	1		; Default to Query duplicate files
+fcbwild:
+	ds	36
+fcbdrv:
+	ds	16
+fcbname	equ	fcbdrv+1
+fcbext	equ	fcbdrv+12
+	ds	20
+
+public:
+	ds	2
+
+	ds	48		; Stack area
+stack:	ds	2		; ZCPR3's stack
+
+	end
+

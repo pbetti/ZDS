@@ -1,0 +1,481 @@
+; PROGRAM:	Push -- To save DU: and registers
+; AUTHOR:	Paul Pomerleau
+; DATE:		July 31, 1987
+; VERSION:	1.2
+
+;=============================================================================
+;
+;		D E F I N I T I O N S    S E C T I O N
+;
+;=============================================================================
+
+version	equ	12
+
+cr	equ	0dh
+lf	equ	0ah
+tab	equ	09h
+bdos	equ	0005h
+
+	extrn	z33chk,getefcb,pdefdu		; Z33lib
+	extrn	z3init,z3log,getreg,putreg	; Z3lib
+	extrn	getmuser,getmdisk		; Z3lib
+	extrn	root,dirndr			; Z3lib
+	extrn	sksp				; Syslib
+;=============================================================================
+;
+;		S T A N D A R D    P R O G R A M    H E A D E R
+;
+;=============================================================================
+
+ENTRY:
+	jp	START
+	defb	'Z3ENV'
+	defb	3		; Type-3 environment
+ENVADDR:
+	dw	0f300h
+	dw	ENTRY
+	defb	version
+
+;=============================================================================
+;
+;               Configuration section
+;
+;=============================================================================
+
+FCB:	db	0,'PUSH    COM',0,0
+	ds	22,0
+
+ROOTSTR:
+	db	'ROOT    '
+
+;=============================================================================
+;
+;		M A I N    C O D E    S E C T I O N
+;
+;=============================================================================
+
+;=================
+; File Routines:
+;=================
+OPEN:	push	de
+	ld	c,15		; Open file
+	call	bdos
+	inc	a
+	pop	hl
+	ld	de,NOTFOUND	; Not here? Quite unlikely...
+	jp	z,STRING
+	ex	de,hl
+	ret
+
+GETSEC2:
+	ld	hl,33
+	add	hl,de		; Random record position
+	ld	(hl),1
+	inc	hl
+	ld	(hl),0
+	inc	hl
+	ld	(hl),0		; Not zero, but one.  That makes rec #2
+	push	de
+	ld	de,BUFFER
+	ld	c,26		; Set dma to our buffer
+	call	bdos
+	pop	de
+	push	de
+	ld	c,34		; Write random
+	call	bdos
+	pop	de
+	ret
+
+CLOSE:	ld	c,16		; CLose 'er up
+	jp	bdos
+
+;==========================================
+; More routines to pad this sector out...
+;==========================================
+
+MASKDRIVE:			; Put drive into (4)
+	call	SETFLAG
+	ld	a,(4)
+	and	0f0h
+	ld	c,a
+	ld	a,b
+	and	0fh
+	jr	MASKED
+
+MASKUSER:			; Put user in (4)
+	call	SETFLAG
+	ld	a,(4)
+	and	0fh
+	ld	c,a
+	ld	a,b
+	rlca
+	rlca
+	rlca
+	rlca
+	and	0f0h
+MASKED:	or	c
+	ld	(4),a
+	ret
+
+;===============
+; Buffer Space:
+;===============
+	db	'-->'
+
+Garbage:			; Pad out to record boundry
+Here	equ	Garbage - ENTRY
+	ds	128 - Here
+
+BUFFER:
+POINTER:
+	ds	128,0
+
+START:	ld	hl,LOOP
+	push	hl
+	ld	(STACK),sp
+	ld	hl,(envaddr)	; Get environment address
+	call	z3init		; Initialize library routines
+	ld	hl,80h
+	ld	a,(hl)
+	or	a
+	jp	z,HELP
+	inc	hl
+	call	sksp
+	ld	a,(hl)
+	cp	'/'
+	jp	z,HELP
+	ld	(LINEP),hl
+	xor	a
+	ld	(FLAG),a	; For re-entrance
+LOOP:	ld	sp,(STACK)
+	call	sksp
+	call	NEXT
+	or	a
+	jp	z,FINISHED
+	cp	'$'
+	jr	z,PUSHDU
+	cp	'D'
+	jr	z,PUSHD
+	cp	'U'
+	jr	z,PUSHU
+	cp	'@'
+	jp	z,POPIT
+	cp	'!'
+	jp	z,POP_ELEMENT
+	cp	'C'
+	jp	z,CLEAR_STACK
+	cp	'0'
+	jr	c,BAD
+	cp	'9'+1
+	jr	c,NUM
+BAD:	ld	de,BADCMD
+STRING:	ld	sp,(STACK)
+CSTRING:
+	ex	de,hl
+STRLOOP:			; Print until we hit a null
+	ld	e,(hl)
+	ld	a,(hl)
+	or	a
+	ret	z
+	push	hl
+	ld	c,2		; BDOS console out
+	call	bdos
+	pop	hl
+	inc	hl
+	jr	STRLOOP
+
+PUSHD:	ld	a,(4)		; Push the drive
+ANDPUSH:
+	and	0fh
+	jr	PUSH
+
+PUSHU:	ld	a,(4)		; Push the user
+	rlca
+	rlca
+	rlca
+	rlca
+	jr	ANDPUSH
+
+SPUSHDU:
+	ld	a,'$'
+	ld	(5dh),a
+PUSHDU:	ld	a,(4)		; Push drive and user both
+	jr	PUSH
+
+NUM:	sub	'0'		; Gonna push the register
+	ld	b,a
+	call	getreg
+
+PUSH:	ld	b,a		; Put it into the stack
+	ld	a,(POINTER)
+	ld	l,a
+	ld	h,0
+	cp	128		; Are we full?
+	ld	de,OVERFLOW
+	jr	z,STRING
+	ld	de,BUFFER + 1
+	add	hl,de
+	ld	(hl),b		; Put 'er in
+	inc	hl
+	inc	a
+	inc	a
+	ld	(POINTER),a	; Update the stack pointer
+	ld	a,(5dh)
+	ld	(hl),a		; Put in what it was
+	ret
+
+SAVE:	call	z33chk
+	jr	z,Z33
+	ld	a,(FCB)
+	or	a
+	jr	nz,NZ33
+	ld	de,ROOTSTR
+	call	dirndr
+	jr	z,NEED_PATH
+GOT_ROOT:
+	ld	a,b
+	ld	(FCB),a
+	ld	a,c
+	ld	(FCB+13),a
+	jr	NZ33
+NEED_PATH:
+	call	root
+	jr	z,GOT_ROOT
+	jr	DEFAULT
+
+Z33:	call	getefcb		; Get address of the command FCB
+	push	hl
+	ld	de,14		; Offset to drive number
+	add	hl,de		; HL now points to the drive number
+
+; Here we get the drive where the program was found.  Since we know that this
+; is not a resident program, there is no need to check for a zero value.
+
+	ld	a,(hl)		; Get it and
+	pop	hl
+	ld	(hl),a
+	ex	de,hl
+	jr	Z332
+NZ33:	ld	de,FCB
+Z332:	call	z3log		; Log, Open, Write, Close
+DEFAULT:
+	call	OPEN
+	call	GETSEC2
+	call	CLOSE
+	ld	a,(FLAG)	; Did we change the drive/user?
+	or	a
+	ret	z
+	ld	a,(4)		; Get DU
+	push	af
+	and	0fh
+	ld	b,a
+	pop	af
+	rlca			; Shift the User 'round
+	rlca
+	rlca
+	rlca
+	and	0fh
+	ld	c,a		; B = Drive, C = User
+	jp	pdefdu		; Set the Du and quit
+
+POP_ELEMENT:			; Pop the kind of element it is in the stack
+	call	POP_INDEX
+	inc	hl
+	ld	a,(hl)
+	jr	POP_CONTINUE
+
+POP_INDEX:
+	ld	a,(POINTER)	; Get Stack Pointer
+	or	a
+	ld	de,UNDERFLOW
+	jp	z,STRING	; No stuff left to pop
+	dec	a
+	dec	a
+	ld	l,a
+	ld	h,0
+	ld	de,BUFFER + 1	; Index into the stack
+	add	hl,de
+	ld	b,(hl)
+	ret
+
+POPIT:	call	POP_INDEX
+	call	NEXT
+	or	a
+	jp	z,FINISHED
+POP_CONTINUE:
+	cp	'$'
+	jr	z,POP_BOTH	; Pop DU
+	cp	'0'
+	jp	c,BAD
+	cp	'9'+1
+	jr	c,POP_REG
+	cp	'D'
+	jr	z,POP_DRIVE
+	cp	'U'
+	jr	z,POP_USER
+	jp	BAD
+POP_BOTH:
+	call	SETFLAG		; Pop DU
+	ld	a,b
+	and	0fh
+	ld	c,a
+	call	getmdisk
+	inc	c
+	cp	c
+	jr	nc,NOTDBAD
+	ld	a,b
+	and	0f0h
+	ld	c,a
+	ld	a,(4)
+	and	0fh
+	or	c
+	ld	b,a
+	call	BADDRIVE
+NOTDBAD:
+	ld	a,b
+	rlca
+	rlca
+	rlca
+	rlca
+	and	0fh
+	ld	c,a
+	call	getmuser
+	cp	c
+	jr	nc,NOTUBAD
+	ld	a,b
+	and	0fh
+	ld	c,a
+	ld	a,(4)
+	and	0f0h
+	or	c
+	ld	b,a
+	call	BADUSER
+NOTUBAD:
+	ld	a,b
+	ld	(4),a
+	jr	POP_OUT
+
+POP_DRIVE:			; Pop the Drive
+	call	getmdisk
+	dec	a
+	cp	b
+	call	c,BADDRIVE
+	
+	call	nc,MASKDRIVE
+POP_OUT:
+	ld	hl,POINTER	; Updatew the pointer
+	dec	(hl)
+	dec	(hl)
+	ret
+
+POP_USER:			; Pop user
+	call	getmuser
+	cp	b
+	call	c,BADUSER
+	call	nc,MASKUSER
+	jr	POP_OUT
+
+POP_REG:			; Pop the register
+	sub	'0'
+	ld	c,a
+	ld	a,b
+	ld	b,c
+	call	putreg
+	jr	POP_OUT
+
+SETFLAG:			; Yes, we changed Drive or User
+	push	hl
+	ld	hl,FLAG
+	inc	(hl)
+	pop	hl
+	ret
+
+BADDRIVE:
+	push	af
+	push	bc
+	ld	de,BADDU
+	call	CSTRING
+	ld	de,DRIVE
+BADSTR:	call	CSTRING
+	ld	de,CRLF
+	call	CSTRING
+	pop	bc
+	pop	af
+	ret
+
+BADUSER:
+	push	af
+	push	bc
+	ld	de,BADDU
+	call	CSTRING
+	ld	de,USER
+	jp	BADSTR
+
+CLEAR_STACK:
+	xor	a
+	ld	(POINTER),a
+	ret
+
+FINISHED:
+	ld	sp,(STACK)
+	pop	hl
+	jp	SAVE
+
+NEXT:	push	hl
+	ld	hl,(LINEP)
+	ld	a,(hl)
+	inc	hl
+	ld	(LINEP),hl
+	pop	hl
+	ret
+
+HELP:	ld	de,HELPSTR
+	call	CSTRING
+ABORT:	ld	sp,(STACK)
+	pop	hl
+	ret
+;============
+; Messages:
+;============
+
+BADCMD:	db	'Invalid Command.'
+CRLF:	db	cr,lf,0
+NOTFOUND:
+	db	'Can''t find file.',0
+OVERFLOW:
+	db	'Overflow.',cr,lf,0
+UNDERFLOW:
+	db	'Underflow.',cr,lf,0
+BADDU:	db	'Access denied: ',0
+DRIVE:	db	'Drive',0
+USER:	db	'User',0
+
+HELPSTR:
+	db	'Push vers ',version / 10 + '0','.',version mod 10 + '0',cr,lf
+	db	'Syntax:',cr,lf
+	db	'Key letters: (D)rive, (U)ser, ($) Drive User, (0-9) for register and (C)lear.',cr,lf
+	db	'Prefix with @ to Pop as specified or ! to Pop as needed.',cr,lf
+	db	tab,'PUSH $',cr,lf
+	db	tab,'PUSH @$',cr,lf
+	db	tab,'PUSH $@u',cr,lf
+	db	tab,'PUSH ud05!@2!!',cr,lf
+	db	tab,'PUSH C',0
+
+;==============
+; Data Space:
+;==============
+
+FLAG:	db	0
+STACK:	dw	0
+LINEP:	dw	0
+
+	end
+,cr,lf
+	db	tab,'PUSH C',0
+
+;==============
+; Data Space:
+;==============
+
+FLAG:	db	0
+STACK:	

@@ -1,0 +1,75 @@
+; version:	02
+; author:	D. McCord
+; date:		06/25/87 
+; DOSVER - a quick program which displays the version number of the
+; currently-running ZRDOS.  The original DOSVER did not display the
+; version number correctly in Z-System implementations such as the DT42
+; "hyperspace" system (which was v2.0).
+;
+; version:	03
+; author:	Steven Gold
+; date:		05/25/88
+; 	
+;  added support for ZSDOS/ZDDOS as well as ZRDOS
+;
+vers			equ	03	; version of this program
+dos			equ	5	; dos entry point
+return$zrdos$ver	equ	48	; dos function #
+
+	extrn	pafdc,print		; SYSLIB functions
+
+start:
+	ld 	c,return$zrdos$ver
+	call	dos			; get dos version #
+	ld	a,h
+	or	h			; is it 0 ?
+	ex 	de,hl			; save version #
+	jr	z,zrdos 
+	cp	'D'			; is it 'D' ?
+	ex	de,hl			; save version #
+	jr	z,zddos
+	cp	'S'			; is it 'S' ? 
+	ex	de,hl			; save version #
+	jr	z,zsdos
+	jr	z,not$dos
+
+dosver:
+	ld	a,e
+	and	0f0h			; strip low nybble
+	rrc	a			; move to proper position
+	rrc	a
+	rrc	a
+	rrc	a
+	call	pafdc			; print first digit
+	call	print
+	db	'.',0			; period
+	ld	a,e
+	and	0fh			; strip high nybble
+	call	pafdc			; print second digit
+	call	print
+	db	' is currently running',0
+	ret
+
+ZRDOS:	
+	call 	print
+	db	'ZRDOS version ',0
+	jp	dosver
+	ret
+
+ZDDOS:	
+	call 	print
+	db	'ZDDOS version ',0
+	jp 	dosver
+	ret
+
+ZSDOS:	
+	call	print
+	db	'ZSDOS version ',0
+	jp 	dosver
+	ret
+
+not$dos:
+	call	print
+	db	'Enhanced DOS is not currently running',0
+	ret				; exit program
+

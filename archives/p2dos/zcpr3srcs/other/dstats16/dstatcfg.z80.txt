@@ -1,0 +1,203 @@
+;
+; DSTATCFG.Z80 - JTH 11/11/93
+; (from ZCNFGCFG.SRC)
+;
+;---------------------------------------------------------
+
+vers	equ	16		;dstats version number
+
+; DATEFN Patch offsets
+
+lines	equ	0bh		;number of screen lines
+columns	equ	0ch		;number of screen columns
+fname	equ	0dh		;filename offset
+pause	equ	16h		;pause before alloc map disp
+map	equ	17h		;display alloc map
+flag	equ	18h		;label file flag
+
+;---------------------------------------------------------
+
+;DATA FOR CNFG PROGRAM LINKAGE
+;function definitions - **needed for CASE Table entries**
+
+switch	equ	0	;toggle bit n in a byte (n is specified)
+text	equ	1	;replace a text string of specified length
+duspec	equ	2	;replace a ZCPR style DU specification (NOT DIR:!)
+hexrad	equ	3	;edit byte/word using HEX radix
+decrad	equ	4	;edit byte/word using decimal radix
+togl3	equ	7	;toggle to one of three options: 001B, 010B, 100B
+togltf	equ	8	;toggle a byte between 0ffh and 0
+filesp	equ	9	;change d, du, fn.ft, or du:fn.ft
+
+;ASCII definitions
+;these are convenient, but only required if you wish
+;to use them in text or data fields (including HELP)
+ctlc	equ	3
+bs	equ	8		;backspace
+tab	equ	9		;tab
+lf	equ	10		;line feed
+cr	equ	13		;carriage return
+spc	equ	32		;space char
+
+;=========================================================
+;	MACRO DEFINITIONS
+;You don't HAVE to use the macros. But it does make it
+;easier to fill in the tables!
+
+;this macro is used for creating a CASE table
+;entry which specifies toggling or setting a
+;single bit (0..7) in a configuration data byte.
+;It is useful when the 'switch' function is named.
+
+bitmap	macro	A,sub,off,bit,scr,dat
+	db	'&A'
+	dw	sub,off
+	db	1 shl bit	;;make a mask byte
+	dw	scr,dat
+	endm
+
+;=========================================================
+
+;macro parameter definitions
+;	A   = the character used in the screen for a menu item
+;	off = byte offset in config block
+;	sub = subroutine for translation to screen
+;	scr = screen location
+;	dat = extra data word if required. Normally 0
+;produces a record which is 8 bytes long
+
+;=========================================================
+;this macro is used to create a case table entry
+;which contains a byte of data required by the function
+;to be performed. (see table of function definitions above)
+
+vector	macro	A,sub,off,byte,scr,dat
+	db	'&A'
+	dw	sub,off
+	db	byte		;;a byte of data
+	dw	scr,dat
+	endm
+
+;************************************************************
+;	START OF OVERLAY CODE
+;************************************************************
+;The next 13 bytes must remain in this location.
+	rst	0	;for safety - file won't execute
+	dw	amenu	;for relocation of addresses, this
+			;points to the NEXT location.
+;first MENU list must be here. All names are local.
+amenu:	dw	amenu,amenu,ascrn,acase,ahelp	;MENU A
+
+;=========================================================
+;Case table used for first menu & screen:
+;=========================================================
+
+acase:	db	(acasex-acase1)/(acase2-acase1)	;number of cases
+	db	acase2-acase1			;length of each record
+
+;	macro	.single char menu selector
+;	|	|	.function (see above)
+;	|	|	|	.offset in cnfg block
+;	|	|	|	|	.function dependent data
+;	|	|	|	|	|	.screen location
+;	|	|	|	|	|	|
+;acse1: bitmap	0,	switch, obyte0, crtflg, ascrl0, yndata
+;							|
+;	    address of data structure used by function._|
+;
+;The first two entries in the case table must be labeled to
+;provide data for the calculation at ACASE:. Subsequent
+;entries (one for each menu selection) need not be labeled.
+acase1:	vector	0, text,   fname,   8,	ascr0,	0
+acase2:	vector	1, decrad, lines,   1,	ascr1,	0
+	vector	2, decrad, columns, 1,	ascr2,	0
+	vector	3, togltf, map,	    1,	ascr3,	yndata
+	vector	4, togltf, pause,   1,	ascr4,	yndata
+	vector	5, text,   flag,    1,	ascr5,	0
+
+;the next entry is a label which terminates the list.
+;It is required for use in the calculation at ACASE:
+acasex:		;label used to calc number of entries
+
+;=========================================================
+
+ascrn:
+;screen image for first screen
+;db cr,lf	;ensure clean top of screen
+;Title line
+	db	cr,lf
+	db	tab,tab
+	db	1,' DSTATS VERS ',VERS/10+'0','.',VERS MOD 10+'0'
+	db	' DEFAULTS ',2
+	db	cr,lf,lf
+;
+	db	'Default CFG filename.......................... 0) '
+ascr0:	db	'        ',cr,lf
+;
+	db	'Number of screen lines (0=Z3ENV Lines)........ 1)'
+ascr1:	db	'   ',cr,lf
+
+	db	'Number of screen columns (0=Z3ENV Columns) ... 2)'
+ascr2:	db	'   ',cr,lf
+;
+	db	'Default display of allocation map............. 3) '
+ascr3:	db	'   ',cr,lf
+
+	db	'Default pause before allocation map display... 4) '
+ascr4:	db	'   ',cr,lf
+;
+	db	'First character in label filename............. 5) "'
+ascr5:	db	' "'
+
+	db	0		;termination
+
+;=========================================================
+;
+ahelp:		;help screen for menu A
+
+	DB	CR,LF
+	db	tab,tab
+	DB	1,' DSTATS VERS '
+	DB	VERS/10+'0','.',VERS MOD 10+'0'
+	DB	' OPTION DEFAULTS ',2
+	DB	CR,LF,LF
+
+	DB	'DEFAULT CFG FILENAME:',CR,LF
+	DB	'     This filename is used as the default configuration'
+	DB	' overlay (CFG) file.',CR,LF
+	DB	'     A maximum of 8 characters may be entered.'
+	DB	CR,LF,LF
+
+	DB	'NUMBER OF SCREEN LINES AND COLUMNS:',CR,LF
+	DB	'     Set to 0 to use the default values from the ZCPR3'
+	DB	' environment.'
+	DB	CR,LF,LF
+;
+	DB	'DEFAULT DISPLAY OF ALLOCATION MAP:',CR,LF
+	DB	'     Set to YES to display allocation map by default.'
+	DB	CR,LF
+	DB	'     Set to NO to display allocation map only by option.'
+	DB	CR,LF,LF
+;
+	DB	'DEFAULT PAUSE BEFORE ALLOCATION MAP DISPLAY:',CR,LF
+	DB	'     Set to YES to pause before allocation map display.'
+	DB	CR,LF
+	DB	'     Set to NO to display first allocation map screen '
+	DB	'automatically.'
+	DB	CR,LF,LF
+;
+	DB	'FIRST CHARACTER IN LABEL FILENAMES:',CR,LF
+	DB	'     Usually ''-'', this initial filename character is '
+	DB	'used to flag',CR,LF
+	DB	'     filenames as dir: label files for utilities such '
+	DB	'as LDSK.'
+	DB	0
+;
+yndata:	defz	'YES'
+	defz	'no '
+
+;=========================================================
+; db cr,lf,lf,lf		;ensure clean top of screen
+; db '			      HELP SCREEN NOT IMPLEMENTED',cr,lf,lf,0
+;=========================================================
+

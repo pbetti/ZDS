@@ -1,0 +1,265 @@
+;
+; Program: GOTO
+; Author:  Richard Conn
+; Version: 1.2
+; Date: 8 June 85
+; Previous Versions:  1.0 (8 Mar 84), 1.1 (unknown)
+;
+version	equ	13
+
+; Version 1.3 modifications by Bruce Morgen, September 9, 1988
+;	Type 3 format with safety header, "intelligent" displays
+; (at least with regard to the program's actual invoked name),
+; code cleanup, Z80fication and use of v4 LIBs to keep filesize
+; the same as GOTO12, tested with ZEX31A/ZEX32 and NZEX-D.  Type
+; 4 version for Z34/NZCOM/Z3PLUS supplied in distribution LBR.
+
+;
+;	GOTO is a program designed to be run under ZEX which permits
+; branching within a ZEX file.	It accepts only one argument, a label,
+; which is defined within the ZEX file as a special comment of the
+; form:
+;	;=label anytext
+; The syntax of GOTO is:
+;	GOTO label
+;
+;	GOTO always aborts the rest of a multiple command line when it
+; executes; if it did not do this, commands following the GOTO would
+; be executed before the GOTO is performed (control returned to ZEX).
+;
+
+;
+; Basic Equates
+;
+z3env	defl	0fe00h		; Environment Descriptor
+fcb	equ	5ch
+cr	equ	0dh
+lf	equ	0ah
+lflag	equ	'='		; Label flag in comment
+
+;
+; Externals
+;
+	extrn	z3init,getzrun,getzfc,putznc,putzrun
+	extrn	getefcb,getcl2,getquiet
+	extrn	eprint,cout,caps
+
+;
+; Environment Definition
+;
+
+; TYPE 3 HEADER
+
+; Code modified as suggested by Charles Irvine to function correctly with
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+
+entry:
+	jr	start0		; Must use relative jump
+	nop			; Filler
+	db	'Z3ENV',3	; Type-3 environment
+z3eadr:
+	dw	z3env		; Filled in by Z33
+	dw	entry		; Intended load address
+
+start0:
+	ld	hl,0		; Point to warmboot entry
+	ld	a,(hl)		; Save the byte there
+	di			; Protect against interrupts
+	ld	(hl),0c9h	; Replace warmboot with a return opcode
+	rst	0		; Call address 0, pushing RETADDR
+				; Onto stack
+retaddr:
+	ld	(hl),a		; Restore byte at 0
+	dec	sp		; Get stack pointer to point
+	dec	sp		; To the value of RETADDR
+	pop	hl		; Get it into HL and restore stack
+	ei			; We can allow interrupts again
+	ld	de,retaddr	; This is where we should be
+	xor	a		; Clear carry flag
+	push	hl		; Save address again
+	sbc	hl,de		; Subtract -- we should have 0 now
+	pop	hl		; Restore value of RETADDR
+	jr	z,start		; If addresses matched, begin real code
+
+	ld	de,notz33msg-retaddr; Offset to message
+	add	hl,de
+	ex	de,hl		; Switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; Return via BDOS print string function
+notz33msg:
+	db	'Not Z33+$'	; Abort message if not Z33-compatible
+
+start:
+	ld	hl,(z3eadr)	; Pt to ZCPR3 environment
+;
+;
+; Start of Program -- Initialize ZCPR3 Environment
+;
+	call	z3init		; Initialize the ZCPR3 Env
+;
+; Check for Valid Label
+;
+	ld	a,(fcb+1)	; Get first char of FCB
+	cp	' '		; No label?
+	jr	z,help
+	cp	'/'
+	jr	nz,start1
+;
+; Print GOTO Help
+;
+help:
+	call	eprint
+	db	'GOTO, Version '
+	db	(version/10)+'0','.',(version mod 10)+'0'
+	db	cr,lf,0
+	call	comnam
+	call	eprint
+	db	' -- Branch Within a ZEX File'
+	db	cr,lf,'Syntax:'
+	db	cr,lf,' ',0
+	call	comnam
+	call	eprint
+	db	' label'
+	db	cr,lf,'where "label" is defined by ";',lflag,'label"'
+	db	0
+	ret
+;
+; Check for Running ZEX
+;
+start1:
+	call	getzrun		; Get ZEX run flag
+	jr	nz,start2
+	call	eprint
+	db	' ZEX Not Running',0
+	ret
+;
+; Begin Scan of ZEX Message Buffer
+;
+start2:
+	call	getzfc		; Get ptr to first ZEX char
+	ld	de,fcb+1	; Pt to GOTO label
+;
+; Scan for Label Comment
+;
+scanc:
+	ld	a,(hl)		; Get char
+	cp	';'		; Comment?
+	jr	nz,flush	; Advance to next line
+	dec	hl		; Pt to next
+	ld	a,(hl)
+	cp	lflag		; Label?
+	jr	nz,flush	; Advance to next line if not label
+;
+; We have a label - check it
+;
+	push	hl		; Save ptrs
+	push	de
+	dec	hl		; Pt to first char
+	ld	b,8		; At most 8 chars
+label:
+	ld	a,(de)		; Get GOTO char
+	cp	' '		; Done?
+	jr	z,label1
+	ld	c,a
+	ld	a,(hl)
+	call	caps		; Capitalize label in ZEX file
+	cp	c		; Compare
+	jr	nz,label2
+	dec	hl		; Advance
+	inc	de
+	djnz	label
+;
+; Label Matches
+;
+label1:
+	ld	a,(hl)		; Must be space or less for match
+	cp	' '+1
+	jr	nc,label2
+	pop	de		; Restore ptrs
+	pop	hl
+;
+; Advance to Beginning of Next Line
+;
+nxtline:
+	ld	a,(hl)		; Get char
+	dec	hl		; Pt to next
+	cp	cr		; End of line?
+	jr	z,nxtl1
+	inc	a		; End of processing (0FFh)?
+	jr	nz,nxtline
+nxtl1:
+	call	putznc		; Store ptr to next char
+	call	getcl2		; (1.2 - RLC) get address of next command line char (HL)
+	ld	(hl),0		; (1.2 - RLC) set no next command
+	call	getquiet
+	ret	nz
+	ld	a,' '
+	call	cout
+	call	comnam
+	call	eprint		; (1.2 - RLC) quiet print
+	db	' Label ',0
+	jr	prlabel		; (1.2 - RLC) print label if not quiet
+;
+; No Match on Label
+;
+label2:
+	pop	de		; Restore regs
+	pop	hl
+;
+; Flush to Next Line or EOB
+;
+flush:
+	ld	a,(hl)		; Get next char
+	cp	0ffh		; End of buffer?
+	jr	z,notfnd
+	dec	hl		; Pt to next
+	cp	cr		; End of line?
+	jr	nz,flush
+	jr	scanc		; Resume search
+;
+; Label Not Found
+;
+notfnd:
+	call	eprint
+	db	' Label ',0
+	call	prlabel		; Print label
+	call	eprint
+	db	' Not Found -- Aborting ZEX',0
+	xor	a		; Turn off ZEX
+	jp	putzrun
+
+;
+; Print Label Name
+;
+prlabel:
+	ld	b,8
+	ld	hl,fcb+1
+prl1:
+	ld	a,(hl)		; Get next char
+	cp	' '		; Done?
+	ret	z
+	call	cout		; Print char
+	inc	hl
+	djnz	prl1		; Count down
+	ret
+
+; Print actual program name if system knows it, else print "GOTO"
+
+comnam:	call	getefcb
+	jr	z,noefcb
+	ld	b,8
+cmnmlp:	inc	hl
+	ld	a,(hl)
+	and	7fh
+	cp	' '
+	call	nz,cout
+	djnz	cmnmlp
+	ret
+;
+noefcb:	call	eprint
+	db	'GOTO',0
+	ret
+
+	end
+

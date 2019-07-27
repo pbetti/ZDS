@@ -1,0 +1,610 @@
+	TITLE	"INSTZST - ZSDOS Time Stamp Install Routine"
+;_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_;
+; Loader for ZSDOS Time Stamping Modules			;
+;---------------------------------------------------------------;
+; Copyright (C) 1988  by Harold F. Bower and Cameron W. Cotrill	;
+;---------------------------------------------------------------;
+;   This routine is the generic loader for Time Stamps under	;
+; ZSDOS.  It is combined with a Time Stamp overlay module and a	;
+; clock driver in SETUPZST.  The overlay and clock driver are	;
+; added after INSTZST in Page Relocatable format.  The result	;
+; is a standalone module performing actual installation.	;
+;   The embedded address in this module contains the load addr	;
+; for the Time Stamp routines.  If Zero, a default of "Below	;
+; CCP" is assumed.  Also embedded is a version number which	;
+; must match that returned by ZSDOS.  On load, if a previously	;
+; loaded module is detected, the user is given the choice of	;
+; aborting or removing the installed one and loading the new.	;
+;   Command line switches are recognized as:			;
+;	// - Print a brief HELP message				;
+;	/R - Remove an installed module				;
+;	/L - List the name of an installed module		;
+;								;
+; Authors  : Harold F. Bower / Cameron W. Cotrill		;
+; Revision :							;
+;	1.0 - Initial Release			16 Sep 88	;
+;_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_;
+
+VER	EQU	11		; Loader version number
+
+; Internal Version-dependant ZSDOS offsets (Release ZSDOS Version1.0)
+
+UNLOAD	EQU	24H		; Address of label UNLOAD (remove address)
+
+; General purpose equates
+
+BEL	EQU	7		; Bell character
+LF	EQU	10		; Line Feed character
+CR	EQU	13		; Carriage Return character
+
+BDOS	EQU	0005H		; BDOS Jump Vector
+TBUF	EQU	0080H		; Default DOS buffer
+
+;----------------------------------------------------------------
+	CSEG			; Insure we start out here
+
+BEGIN:	JP	START		; bypass the default address
+
+XADR:	DEFW	0E300H		; 0000H = Load as RSX below CCP
+				; FFFFH = Load at default NZCOM User area
+MODSIZ:	DEFW	0000H		; Time Stamp Module Size (filled in by SETUP)
+CLKSIZ:	DEFW	0000H		; Clock Driver Size (filled in by SETUP)
+CCPSIZ:	DEFW	0800H		; Command Processor Size (default=800H)
+TXTADR:	DEFW	TXTSTR-100H	; Optional starting text string (offset by ORG)
+VERS:	DEFB	11H		; Embedded version number for match
+DOSID:	DEFB	'S'		; ID for ZSDOS
+
+; Begin by comparing the ZDSDOS Version Number to embedded Module Number
+
+START:	LD	(STACK),SP	; Save entry stack and start ours
+	LD	SP,STACK
+
+	LD	A,0C9H		; Prevent re-execution by placing a RET..
+	LD	(100H),A	; ..at the beginning of the TPA
+
+	CALL	ILPRT		; Announce our presence
+	DEFB	CR,LF,'ZSDOS Time Stamp Loader, Ver ',VER/10+'0','.'
+	DEFB	[VER MOD 10]+'0',CR,LF
+	DEFB	'  Copyright (C) 1988  by H.F.Bower / C.W.Cotrill',CR,LF,LF,0
+
+; Locate ZCPR3 Environment by scanning from the DOS vector to page FF
+
+	LD	HL,(0006)	; Scan for Environment from DOS base up
+	LD	A,05H		; Find number of bytes to check
+	SUB	L		; ..only need to go to FF05
+	LD	C,A
+	LD	A,0FFH
+	SBC	A,H
+	LD	B,A		; BC now has # of bytes to scan
+ENVLOP:	LD	A,'Z'		; Do quick scan for first char in string
+	CPIR
+	LD	DE,0		; Prepare for error exit
+	JP	PO,NOENV	; ..and exit (DE=0) if no 'Z' found
+	PUSH	BC		; Else save count and addr
+	PUSH	HL
+	LD	BC,4		; Only 4 chars remain in string
+	LD	DE,Z3TAG	; Find this string in memory
+ENVLO1:	LD	A,(DE)
+	CPI
+	JR	NZ,ENVXIT	; Exit if not found
+	INC	DE		; ..bump source pointer
+	JP	PE,ENVLO1	; Check more if not yet done
+
+	LD	DE,-8		; String matched, check vector
+	ADD	HL,DE
+	EX	DE,HL		; Put possible Z3ENV addr in DE
+	LD	HL,27
+	ADD	HL,DE		; Offset to check vector
+	LD	A,(HL)
+	CP	E		; Check low byte of pointer
+	JR	NZ,ENVXIT	; ..no match is error
+	INC	HL		; Move to hi byte
+	LD	A,(HL)
+	CP	D		; ..and check it
+ENVXIT:	POP	HL
+	POP	BC
+	JR	NZ,ENVLOP	; No match?  Loop if not
+				; ..else fall thru with ENV addr in DE
+NOENV:	LD	(ENVLOC),DE
+
+; Locate DOS starting address by checking extended ENV, then calculating
+; from BIOS Warm boot address if that fails.
+
+	LD	A,D
+	OR	E
+	JR	Z,CALCIT	; ..jump to calculate if not
+	LD	HL,8
+	ADD	HL,DE		; Point to ENV type if so
+	BIT	7,(HL)		; Is it Extended?
+	JR	Z,CALCIT	; ..jump if not to calculate
+	LD	HL,43H
+	ADD	HL,DE		; Point to Extended ENV DOS page
+	LD	B,(HL)		; ..and get DOS page
+	DEC	HL		; Back up for ZCPR3 starting address
+	LD	C,(HL)		; Get LSB of Dos
+	DEC	HL		; ..at ENV+3FH, 40H
+	DEC	HL
+	LD	D,(HL)		; Get page at ENV+40H
+	DEC	HL
+	LD	E,(HL)		; ..and offset at ENV+3FH
+	LD	H,B
+	LD	L,C		; Xfer Dos address to HL
+	JR	CALCI0		; Jump to finish up
+
+CALCIT:	LD	A,(0002)	; Get BIOS WB page value
+	SUB	0EH		; DOS starting page is this far down
+	LD	H,A		; ..store page value
+	LD	BC,(CCPSIZ)	; Get CCP Size
+	LD	D,A		; Save DOS starting page in DE
+	LD	L,0		; ..and set first DOS val to even page
+	OR	A
+	SBC	HL,BC		; Calculate base of CCP
+	EX	DE,HL		; Put CCP in DE, DOS page in H
+	LD	L,0		; Start DOS on even page boundary
+CALCI0:	LD	(DOSLOC),HL	; ..and save address for later
+	LD	(CCPLOC),DE	; Save CCP/ZCPR3 address also
+
+; Scan command buffer for any option flags
+
+	LD	HL,TBUF		; See if there are any arguments
+	LD	A,(HL)		; Get number of chars in string
+	INC	HL		; Advance to 1st char
+	INC	HL
+	OR	A		; Any chars?
+	JP	Z,START1	; ..jump if not
+	CP	3		; Help must have 3 chars
+	JP	NZ,START1	; ..jump if not
+	LD	A,(HL)		; Get 1st char
+	INC	HL		; Point to next char
+	CP	'/'		; Is it an option flag?
+	JP	NZ,START1	; ..jump if not
+	LD	A,(HL)		; Get option character
+	CP	'/'		; Is it a HELP request?
+	JP	NZ,START0	; ..if not, check for other options
+
+; Arrive here if HELP request.  Print it and return to ZCPR
+
+	CALL	ILPRT
+	DEFB	CR,LF,' Purpose:',CR,LF
+	DEFB	'   Load a ZSDOS Time Stamp module and patch in place.',CR,LF
+	DEFB	'   Set Stamping method & Clock type with SETUPZST.',CR,LF,LF
+	DEFB	' Usage :',CR,LF
+	DEFB	'   Name<cr>      <-- Load the module contained',CR,LF
+	DEFB	'   Name /L<cr>   <-- List the installed module',CR,LF
+	DEFB	'   Name /R<cr>   <-- Remove the installed module',CR,LF,LF,0
+	CALL	ILPRT
+	DEFB	' This is: ',0
+	LD	HL,TXTSTR	; Print initial string for this module
+	CALL	PRINT
+	CALL	CRLF
+	JR	STARTA		; End by printing module name
+
+; Check for command line options.
+
+START0:	CP	'L'		; Is it a request to list the module name?
+	JR	NZ,STAR0A	; ..jump if not
+STARTA:	CALL	ILPRT
+	DEFB	CR,LF,'    The Installed module is : ',0
+	CALL	GETRMV		; Get the remove vector address
+	JR	Z,STARNN	; ..jump if no module installed
+	CALL	CHKRMV		; Does it have a Name?
+	JR	Z,STARNR	; ..jump if not
+	CALL	PMDNAM		; Print the module name
+	JR	X1		; ..exit with CRLF
+
+STARNN:	CALL	ILPRT		; Print No module string
+	DEFB	'- Empty -',0
+X1:	JP	EXIT0		; ..and exit
+
+STARNR:	CALL	ILPRT		; Print error message
+	DEFB	'- Not removable -',0
+	JR	X1		; ..and vector common exit routine
+
+STAR0A:	CP	'R'		; Is it a remove request?
+	JR	NZ,STAR0B	; ..jump if not
+	CALL	ILPRT
+	DEFB	CR,LF,'    Removing : ',0
+	CALL	GETRMV		; Get the remove vector address
+	JR	Z,STARNN	; Exit here if nothing installed
+	CALL	CHKRMV		; See if removable
+	JP	Z,NORMV		; exit with error if not
+	XOR	A		; Null out remove address
+	LD	(DE),A
+	DEC	DE
+	LD	(DE),A
+	CALL	PMDNAM		; Print the module name
+	CALL	JPHL		; ..and Remove it!
+	JR	EXIT0
+
+JPHL:	JP	(HL)		; This "calls" addr in HL
+
+STAR0B:	CALL	ILPRT
+	DEFB	CR,LF,' ++ Bad option',0
+STAR0C:	CALL	ILPRT	
+	DEFB	'...aborting',0
+	JR	EXITCR
+
+START1:	LD	C,48		; Get Version
+	CALL	BDOS		; Call DOS
+	LD	A,(VERS)	; Get module's version number
+	CP	L		; Check Version
+	JR	NZ,CHKDO2	; ..jump if wrong version
+	LD	A,(DOSID)
+	CP	H		; See if CORRECT DOS
+	JR	Z,START2	; Jump if they match
+CHKDO2:	CALL	ILPRT		; ..else print error message and abort
+	DEFB	BEL,CR,LF,' ++ Incorrect DOS or Version Number',0
+EXITCR:	CALL	ILPRT		; Print CRLF then exit with Warm Boot
+	DEFB	' ++',0
+EXIT0:	CALL	CRLF
+	LD	SP,(STACK)	; Restore entry stack
+	RET			; ..and return
+
+; Exit to reset all drives when exitting here
+
+EXITLG:	LD	DE,0FFFFH	; Mask for all drives
+	LD	C,37
+	CALL	BDOS		; ..and reset all
+	JR	EXIT0
+
+; Print non-removable clock error message and exit
+
+NORMV:	CALL	ILPRT	
+	DEFB	BEL,CR,LF,' ++ Can''t remove the current clock!',0 ;
+	JP	STAR0C		; print aborting and exit
+
+
+; All portions have now been validated.  Calculate the
+; addresses for loading of the .REL Time Stamping file.
+
+START2:	LD	HL,(XADR)	; Check installed load address
+	LD	A,H		; ..for default (below CCP)
+	OR	L
+	JR	NZ,CKNZCL	; If not zero, check NZCOM & load hi memory
+
+; At this point, we have to calculate a load point for the RSX mode
+;   Get CCP base addr and compare to DOS Entry vector (Is RSX present?)
+
+	LD	HL,(CCPLOC)	; Get CCP/ZCPR3 address
+	LD	DE,(0006)	; ..and DOS Entry vector/Protect location
+	LD	A,L
+	SUB	E
+	LD	A,H
+	SBC	A,D		; Is CCP the lower?
+	JR	C,CCPLOW	; ..jump if it is
+	EX	DE,HL		; Else have RSX already, Protect addr to HL
+CCPLOW:	LD	DE,(SIZE+200H)	; Get module size..
+	XOR	A
+	SBC	HL,DE		; ..and subtract from desired location
+	LD	(XADR),HL	; This is where the module will go
+	JP	OK2LHI		; ..and jump to relocate it
+
+; Check for loading in NZCOM User Patch area
+
+CKNZCL:	LD	HL,(XADR)	; Get selected load area
+	INC	HL		; ..and make FFFF go to 0000
+	LD	A,H
+	OR	L		; Is it an automatic NZCOM load?
+	JP	NZ,OK2LHI	; ..jump to absolute load if not
+	LD	DE,(ENVLOC)	; Else get Z3ENV address
+	LD	HL,8
+	ADD	HL,DE		; Check ENV type byte
+	BIT	7,(HL)		; Is it an extended ENV?
+	JP	Z,NONZC		; ..jump error if not
+	LD	HL,18H		; Offset to Multiple Comnd Buffer
+	ADD	HL,DE
+	LD	C,(HL)		; ..and load start addr
+	INC	HL
+	LD	B,(HL)
+	LD	HL,256		; User Patch area is 256 bytes above MCL
+	ADD	HL,BC		; ..and add to start addr
+	LD	C,L		; Put Starting addr in BC
+	LD	B,H
+	EX	DE,HL		; Put start in DE
+	INC	HL		; Advance to CBIOS page
+	INC	HL
+	LD	H,(HL)		; Get Page from ENV header Jump
+	LD	L,0		; Set to page boundary
+	OR	A
+	SBC	HL,DE		; ..and subtract start of User area
+	JR	C,NOUSPC	; Jump to error if no user space
+	PUSH	BC		; Save proposed start address
+	EX	DE,HL		; Put available area in DE
+	LD	HL,(CLKSIZ)	; .while
+	LD	BC,(MODSIZ)	; ..calculating
+	ADD	HL,BC		; ...total module space required in HL
+	POP	BC		; Restore start address
+	EX	DE,HL
+	OR	A
+	SBC	HL,DE		; Is Required space greater then available?
+	JP	NC,LDNZP
+			;..else fall thru to error
+NOUSPC:	PUSH	DE		; save module size for printing
+	CALL	ILPRT
+	DEFB	BEL,CR,LF,' ++ Not enough space in NZCOM User Area'
+	DEFB	CR,LF,' Clock requires ',0
+	POP	HL	
+	DEC	HL		; Show true size
+	LD	A,H		; Print size MSB in Hex	
+	CALL	PRHEX	
+	LD	A,L		; ..now LSB
+	CALL	PRHEX	
+	CALL	ILPRT		; Print tag
+	DEFB	'H bytes of user space.',cr,lf,0
+X0V:	JP	EXITCR
+
+NONZC:	CALL	ILPRT
+	DEFB	BEL,CR,LF,' ++ NZ-COM Not Present...Can''t load',0
+	JR	X0V
+
+; Set NZ-COM User space address and load
+
+LDNZP:	LD	(XADR),BC	; Stuff addr in header
+			;..and fall thru to load
+
+; Relocate the module and move into position.  Former Start2 code moved here
+; so NZCOM User Area size bombout retains old clock
+
+OK2LHI:	CALL	GETRMV		; Get the remove vector
+	JR	Z,OK2LH2	; ..nothing installed, OK to load
+	CALL	CHKRMV		; Can it be removed?
+	JP	Z,NORMV		; Exit with error if not
+
+; Another module is loaded, ask for permission to replace it
+
+	PUSH	HL		; Save the remove addr
+	CALL	ILPRT
+	DEFB	BEL,CR,LF,' +++ ',0
+	POP	HL		; Get remove vector back
+	CALL	PMDNAM		; Print name
+	PUSH	HL		; Save remove vector
+	CALL	ILPRT
+	DEFB	' - Loaded, Replace it (Y/[N])? : ',0
+	LD	C,1		; Get char with DOS call
+	CALL	BDOS
+	AND	5FH		; ..in uppercase
+	CP	'Y'		; Is it a Yes?
+	POP	HL
+	JP	NZ,EXITCR	; ..exit if not
+	CALL	CRLF
+	CALL	JPHL		; Else do indirect call to remove in HL
+
+OK2LH2:	LD	BC,(XADR)	; Get the Module Physical load addr
+	LD	HL,JTABLE	; ..and address of .PRL code
+	EXX			; Swap to alternate regs
+	LD	DE,(SIZE+200H)	; Get module code size
+	LD	HL,JTABLE	; ..and add to base address
+	ADD	HL,DE		; Resulting in addr of Bit Map start
+
+RELOC:	LD	A,E
+	OR	D		; Done with relocation?
+	EXX			; ..back to main regs
+	JR	Z,RELDON	; Exit if finished
+	LD	A,L		; Do we need a new Map Byte?
+	AND	07H
+	JR	NZ,NXTBYT	; ..jump if not
+	EXX			; Else go to alternate regs
+	LD	C,(HL)		; Get next Map byte
+	INC	HL
+	EXX			; ..and back to primary regs
+NXTBYT:	EXX			; Alternate regs to check relocation
+	RL	C		; Shift out next Map Bit
+	EXX
+	JR	NC,RELOC1	; Jump if no relocation necessary
+	LD	D,(HL)		; Get high byte
+	DEC	HL
+	LD	E,(HL)		; ..and low in case base not page aligned
+	EX	DE,HL		; Swap for 16-bit add
+	ADD	HL,BC		; Add in offset
+	EX	DE,HL
+	LD	(HL),E		; Save relocated address
+	INC	HL
+	LD	(HL),D
+RELOC1:	INC	HL		; Point to next byte in code
+	EXX			; Go to alternate regs
+	DEC	DE		; Count down byte count
+	JR	RELOC		; ..and loop
+
+; Move the module into high memory
+
+RELDON:	LD	HL,JTABLE	; Set source address
+	LD	DE,(XADR)	; ..destination address
+	LD	BC,(SIZE+200H)	; ..and size
+	LDIR			; Move the program
+
+; Perform pre-installation tests to insure the clock works
+
+	LD	HL,CLKPRE+2	; First we must move the check code
+	LD	E,(HL)		; Destination address to DE
+	INC	HL
+	LD	D,(HL)
+	LD	HL,CLKPRE	; Reset the Source addr for move
+	PUSH	DE		; Save the destination
+	LD	BC,256		; Move the whole page
+	LDIR	
+	POP	DE		; Restore the execution address
+	LD	HL,RETADR	; Return here when it is all done
+	PUSH	HL		; End location..
+	PUSH	DE		; ..after going here
+
+	LD	HL,(MODSIZ)	; Get the module size
+	LD	DE,(XADR)	; ..and starting addr in high memory
+	ADD	HL,DE		; Offset to clock start
+	EX	DE,HL		; Put module start in HL
+	RET			; ..and "jump" to first location
+
+RETADR:	JR	C,CLOKOK	; ..jump if the clock is OK
+
+	CALL	ILPRT		; Else print an error message
+	DEFB	BEL,' ++Clock not working ...aborting',CR,LF,0
+	JP	0		; Exit with a warm boot
+
+;  If we get here, the only thing left is to set the return addr and
+;  jump to modules Install routine
+
+CLOKOK:	LD	HL,EXITLG	; Pass addr to exit after installation
+	PUSH	HL		; ..to the stack
+	LD	HL,(XADR)	; Get initial load addr
+	LD	A,H		; Are we loading below-CCP?
+	OR	L
+	JR	Z,ISRSX		; ..jump if so
+	INC	HL		; Else advance to second jump
+	INC	HL
+	INC	HL
+ISRSX:	PUSH	HL		; Now put execution addr on stack
+
+;  Announce any prompt line that was left for this module
+
+	CALL	CRLF
+	LD	HL,TXTSTR
+	CALL	PRINT
+	CALL	ILPRT		; Print load address info
+	DEFB	' ...loaded at ',0
+	LD	HL,(XADR)
+	LD	A,H
+	CALL	PRHEX		; Print the Page value
+	LD	A,L
+	CALL	PRHEX		; ..and byte value
+	LD	E,'H'
+	CALL	CONOUT
+	CALL	CRLF
+	CALL	ILPRT	
+	DEFB	' Clock is : ',0
+	LD	HL,CLKID+2
+	CALL	PRINT	
+	CALL	CRLF	
+
+;  All done, so exit by jumping to module's INSTAL vector (addr on stack)
+;   Return by resetting all drives
+
+	LD	DE,(ENVLOC)	; Get Z3 ENV to DE (0 if none)
+	LD	BC,(0001H)	; Pass BIOS WB Address in BC, ENV in DE
+	LD	C,0		; Set to Page boundary
+	RET			; ..and do it..
+
+;...............................................;
+;	S U P P O R T    R O U T I N E S	;
+;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~;
+
+Z3TAG:	DEFB	'3ENV'
+
+;.....
+; In-line print of Null-terminated string
+
+ILPRT:	EX	(SP),HL		; Swap return addr (string start) w/HL
+	CALL	PRINT
+	EX	(SP),HL		; Swap ret adr back w/HL
+	RET
+
+;.....
+; Print a null terminated string in HL
+
+PRINT:	LD	A,(HL)
+	INC	HL
+	LD	E,A
+	OR	A
+	RET	Z
+	CALL	CONOUT
+	JR	PRINT
+
+;.....
+; Print module name vectored from remove vector in module
+; Enter: HL -> Module remove vector
+; Exit : HL preserved.  Others used
+
+PMDNAM:	PUSH	HL		; Preserve remove vector on stack
+	LD	DE,7		; Offset to Name string pointer
+	ADD	HL,DE
+	LD	E,(HL)		; Get pointer value
+	INC	HL
+	LD	D,(HL)
+	EX	DE,HL
+	CALL	PRINT		; Print name
+	POP	HL		; Restore vector
+	RET
+
+;.....
+; Print a CRLF to the console, preserving HL
+
+CRLF:	PUSH	HL
+	LD	E,CR
+	CALL	CONOUT
+	LD	E,LF
+	POP	HL
+CONOUT:	PUSH	HL
+	LD	C,2		; DOS Print char command
+	CALL	BDOS
+	POP	HL
+	RET
+
+;.....
+; Print value in A as two Hex characters
+
+PRHEX:	PUSH	AF		; Save the byte
+	RRCA			; Rotate High Nybble to low
+	RRCA
+	RRCA
+	RRCA
+	CALL	PRHEX0		; Convert and print
+	POP	AF		; Restore for low nybble print
+PRHEX0:	AND	0FH		; Mask high nybble
+	ADD	A,90H		; Convert to Hex
+	DAA
+	ADC	A,40H
+	DAA
+	LD	E,A		; Prepare for print
+	JR	CONOUT		; ..and do it
+
+;.....
+; Find the address of installed module remove vector
+; Return: DE --> DOS Unload Vector + 1
+;	  HL --> Module Remove entry point
+
+GETRMV:	LD	HL,(DOSLOC)	; Get DOS address in HL
+	LD	DE,UNLOAD
+	ADD	HL,DE		;.. and offset to remove address
+	LD	E,(HL)		; Get remove address
+	INC	HL
+	LD	D,(HL)
+	EX	DE,HL
+	LD	A,L
+	OR	H		; Set flag
+	RET
+
+;.....
+; Check remove address in HL for dummy address of 0FFFFH
+; Returns A=0 if dummy remove address
+
+CHKRMV:	LD	A,H	
+	AND	L		; FF if HL=0FFFFH
+	INC	A		; FF -> 0
+	RET		
+
+TXTSTR:	DEFB	'-- Uninstalled --   '	; 40 chars max (including ending 0)
+	DEFB	'                    ',0
+
+;.....
+; Data in Code segment for accountability
+
+ENVLOC:	DEFS	2		; Identified Z3 Environment location
+DOSLOC:	DEFS	2		; Identified or calculated DOS start page addr
+CCPLOC:	DEFS	2		; Identified or calculated CCP/ZCPR3 address
+	DEFS	40		; Stack space
+STACK:	DEFS	2		; Storage for entry stack
+ENDDAT:
+
+PRGSIZ	EQU	ENDDAT-BEGIN
+SIZE	EQU	[ENDDAT+256]-[PRGSIZ MOD 256]	; Just label at present
+
+;.....
+; The following labels are used to set up module header values to proper
+; locations depending on whether module is to be loaded in specified
+; location or as Resident System Extension (RSX) below the CCP/DOS.
+
+CLKID	EQU	SIZE		; (256 bytes) Clock Identification area
+CLKPRE	EQU	SIZE+100H	; (256 bytes) Clock Pre-execution code
+
+JTABLE	EQU	SIZE+280H	; Base of Stamp code
+
+	END
+

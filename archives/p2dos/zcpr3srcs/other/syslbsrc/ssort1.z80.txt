@@ -1,0 +1,389 @@
+	TITLE	"SSORT1	- SYSLIB 4.3"
+	NAME	('SORT')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Joe Wright with touches and formatting by Harold F. Bower
+; Date	  : 19 Oct 90
+; Version : 2.11
+; Module  : SSORT1
+; Abstract: This module contains the routine SORT which implement a
+;	general purpose sort shell.  SORT implements a memory-based
+;	sort of fixed-length records in memory using an externally-
+;	provided Sort routine.	Parameters for the routine are provided
+;	via a Sort Specification Block (SSB) with the following format:
+;
+;	SSB:
+;	SFIRST: DEFS	2	; Address of First Record in file
+;	SNREC:	DEFS	2	; Number of records in File
+;	SSIZE:	DEFS	2	; Size of Each Record (in Bytes)
+;	SCOMP:	DEFS	2	; Address of a User Compare Routine
+;	SORDER: DEFS	2	; Address of ORDER Buffer (SNREC*2 in size)
+;	SPOINT: DEFS	1	; <>0 = Sort Pointers, 0 = Sort Records
+;	SNOREC: DEFS	1	; If SPOINT<>0, 0 = Order records after sort
+;				;	       FF = Don't reorder records
+; Revision:
+;  2.11- 23 Dec 90 - Optimized SWP routine per Al Hawley.  HFB
+;  2.1 - 29 Oct 90 - Changed PTREC Multiply routines to avoid EXX.  Joe Wright
+;  2.01- 27 Oct 90 - Revised to include regs preservation around ICOMPARE
+;		     and ISWAP as well as adding Swap counter.
+;  2.0 - 19 Oct 90 - Initial version
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		SORT				; Main entry
+	PUBLIC		ISWAP, ICOMPARE			; Routines for BSORT
+	PUBLIC		LOGSSB, RETSSB, PTORD, PTREC	; For Sort utilities
+	PUBLIC		SFIRST,	SNREC, SSIZE, SORDER	; SSB Vars needed
+	PUBLIC		SCOMP, SPOINT, SNOREC
+	PUBLIC		SJJ, SGAP			; GP Vars for BSORT
+
+N	EQU	0
+Y	EQU	NOT N
+
+;;	.ACCEPT ' Include ISWAP Counter? (Y/N) ',TEST
+TEST	equ	0
+
+	 IF	TEST
+	PUBLIC		SWAPS		; 24-bit ISWAP count
+	 ENDIF	; TEST
+
+; Externals
+
+	EXT		BSORT		; Sort routine
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - SORT
+; Entry: DE - points to an SSB
+; Exit : - Nothing returned, the array is sorted
+; Uses : - None
+;===============================================================
+
+SORT:	PUSH	HL		; Save Regs
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+
+	CALL	LOGSSB		; Copy Caller's SSB to us.
+
+	CALL	BSORT		; Call External Sort routine
+
+	LD	A,(SPOINT)	; Use pointers?
+	OR	A		; 0 = No
+	JR	Z,SEXIT		; Done if no pointers
+
+	LD	A,(SNOREC)	; Shall we order the Record List?
+	OR	A
+	JR	NZ,SEXIT	; ..jump if caller says No
+
+	LD	HL,(SNREC)	; Number of records
+	LD	A,H
+	OR	L		; Anything there?
+	JR	Z,SEXIT		; ..quit if Not
+
+; Order the Record buffer according to the Order table.
+
+	LD	(SJJ),HL	; Save count in J
+	LD	HL,0
+	LD	(SGAP),HL	; Clear J index
+
+; Top of the loop.  We always come back here until we are finished.
+
+SRTDN:	LD	HL,(SJJ)
+	DEC	HL		; N-1
+	LD	A,H
+	OR	L		; Done?
+	JR	Z,SEXIT		; ..exit when N = 0
+
+	LD	(SJJ),HL	; N = N - 1
+	LD	HL,(SGAP)
+	INC	HL
+	LD	(SGAP),HL	; Next J
+
+; Check correspondence of Pointer position and pointer value
+
+	LD	D,H
+	LD	E,L		; Save J in DE
+	CALL	PTORD		; Get Record Pointer to HL
+	LD	A,(HL)		; Get pointer into records (right)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	EX	DE,HL		; ..to DE, J to HL
+	CALL	PTREC		; Point HL into Record buffer
+	SBC	HL,DE
+	ADD	HL,DE		; Carry Set if out of order
+	JR	NC,SRTDN	; ..jump if Ok to do next
+
+; Else swap the two entries
+
+	PUSH	DE		; Save far pointer
+	PUSH	HL		; ..and current pointer
+	CALL	SWAP		; Swap (HL) with (DE) for SSIZE bytes
+
+; Swap the Pointers.  Place HL at current position.  Find HL in the Order
+; List and replace it with DE at that position.
+
+	LD	HL,(SGAP)	; Current J
+	CALL	PTORD		; Point HL to the Record pointer
+	POP	DE		; Current pointer into Dir
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; Current pointer in current position
+	INC	HL		; Advance to next position
+
+; Search Order list for current pointer in DE
+
+SRTDN1:	LD	A,(HL)		; Lo
+	INC	HL
+	CP	E
+	INC	HL
+	JR	NZ,SRTDN1	; ..Lo failed, try next
+
+	DEC	HL		; Lo passed, back up to Hi
+	LD	A,(HL)		; Get it
+	INC	HL		; ..point to next
+	CP	D
+	JR	NZ,SRTDN1	; ..Hi failed, try next
+
+	POP	DE		; Get Far pointer back
+	DEC	HL		; Back up
+	LD	(HL),D		; Plug in Hi order
+	DEC	HL
+	LD	(HL),E		; ..plug in Lo order
+	JR	SRTDN		; Go to next item
+
+SEXIT:	POP	AF		; Restore all Regs
+	POP	BC
+	POP	DE
+	POP	HL
+	RET			; Done
+
+;.....
+; ISWAP -- Perform exchange of elements whose indices are in HL and DE
+
+ISWAP:	PUSH	HL
+	PUSH	DE		; Save the caller's indices
+	LD	BC,ISWPX
+	PUSH	BC
+
+	LD	A,(SPOINT)	; Use pointers?
+	OR	A		; .(0 = No)
+	JR	NZ,SWPTR	; ..jump to Pointer swap if specified
+
+	CALL	INDEX		; Compute address of records from their indices
+SWAP:	LD	BC,(SSIZE)	; Size of Record to BC
+	JR	SWP		; ..jump to the actual swap
+
+ISWPX:
+	  IF  TEST
+	LD	HL,SWAPS	; Point to the 24-bit count
+	INC	(HL)		; Increment Low order
+	JR	NZ,ICOMPX	; ..exit if No overflow
+	INC	HL
+	INC	(HL)		; Bump Mid order
+	JR	NZ,ICOMPX	; ..exit if No overflow
+	INC	HL
+	INC	(HL)		; Else bump High order too
+	  ENDIF		;test
+
+ICOMPX:	POP	DE		; Restore DE
+	POP	HL		; ..and HL before returning
+	RET
+
+;.....
+; 24-bit counter for Swap counting placed in CSEG for initialization
+
+	  IF  TEST
+SWAPS:	DEFB	0,0,0		; 24-bit ISWAP counter (16 Megaswaps)
+	  ENDIF		;test
+
+; SWPTR (Exchange) pointers in the SORDER table whose indexes are in HL & DE
+
+SWPTR:	CALL	PTORD		; Order Table base in BC, Index in HL gets addr
+	EX	DE,HL		; DE now pts to pointer indexed by HL
+	DEC	HL		; Adjust index to 0...N-1 from 1...N
+	ADD	HL,HL		; HL pts to offset address indicated by index
+				;   of original DE (0, 2, 4, ...)
+	ADD	HL,BC		; HL now pts to pointer involved
+	LD	BC,2		; exchange 2-byte pointers
+
+; Now do Al Hawley's nifty (and FAST) little swap
+
+SWP:	LD	A,(DE)		; Get first byte
+	LDI			; .move other byte in its place
+	DEC	HL		; Back up to other byte's source
+	LD	(HL),A		; .save first byte there
+	INC	HL		; ..correct pointers
+	JP	PE,SWP		; ...and loop if more to go
+	RET
+
+;.....
+; INDEX - Convert indices in HL and DE to pointers to actual Records
+;  in the RECORD buffer.  By convention, DE contains the Left index and
+;  HL the Right index.	As we convert the Indices to pointers, we swap
+;  DE and HL such that HL points to the Left item and DE to the Right item.
+
+INDEX:	CALL	PTREC		; Convert pointer in HL
+	EX	DE,HL		; ..store in DE
+
+; Enter: HL = I (1..N)		Exit: HL pointing to the Ith record
+; This is the main time-spender of the SORT routine.  Converting Indices
+; to pointers requires a Multiply of I * SSIZE.  If SSIZE is less than 27,
+; a simpler routine adding I to an accumulator SSIZE times would be faster.
+; To the extent that SSIZE is greater than 26, this is faster, taking only
+; 16 loops for any multiply.
+
+PTREC:	PUSH	DE
+	DEC	HL		; Rel 0 (0..N-1)
+
+	LD	D,H
+	LD	E,L		; To DE
+
+	LD	BC,(SSIZE)
+	LD	HL,-27
+	ADD	HL,BC		; Carry if SSIZE > 27
+	LD	HL,0		; Clear an accumulator
+	JR	NC,FAST		; Faster routine for small SSIZE
+
+; Perform 16-bit Multiplication [HL := BC*DE] in 16 loops.
+
+	LD	A,16		; Set a counter
+
+; Main loop.  We do this sixteen times.
+
+MLHD:	ADD	HL,HL		; Shift Accumulator left into Cy	11
+	EX	DE,HL		; Multiplier  to HL			 4
+	ADD	HL,HL		; MSB to Carry				11
+	EX	DE,HL		; .put it back				 4
+
+	JR	NC,MLHD1	; ..jump if MB was Zero, else..        ~10
+	ADD	HL,BC		; Add multiplicand to accumulator	~5
+
+MLHD1:	DEC	A		;					 4
+	JR	NZ,MLHD		; Loop til finished			12
+
+				;				Sub    ~61
+				;			   16 * ~61 = ~976
+	JR	MULX		; Jump around FAST routine
+
+; Faster routine for small SSIZE.  As MLHD always takes ~976 states,
+; this routine is faster for SSIZE < 27.
+
+MUL:	DEC	BC		;					 6
+	ADD	HL,DE		;					11
+FAST:	LD	A,B		;					 4
+	OR	C		;					 4
+	JR	NZ,MUL		; ..loop til done			12
+
+				;				Total	37
+; Product now in HL.
+
+MULX:	LD	DE,(SFIRST)	; Beginning of Record list
+	ADD	HL,DE		; Offset to desird record
+	POP	DE		; Restore DE
+	RET
+
+;.....
+; ICOMPARE - Compares entries whose indices are in HL and DE
+; On exit:
+;	Carry Set means (HL) < (DE)
+;	Zero Set means  (HL) = (DE)
+;	No Carry means (HL) >= (DE)
+
+ICOMPARE: PUSH	HL		; Save HL and DE for Core Sort routine
+	PUSH	DE
+	LD	BC,ICOMPX	; Set Exit return addr
+	PUSH	BC		; ..on stack
+
+	LD	A,(SPOINT)	; Use pointers?
+	OR	A		; .(0 = No)
+	JR	NZ,COMPARE	; ..jump if Pointers specified
+	CALL	INDEX		; Else compute addresses
+	JR	UCOMP		; Call compare routine uf user
+
+; COMPARE compares the entry pointed to by the pointer addressed by HL
+; with that addressed by DE (1st level indirect addressing); on entry,
+; HL and DE contain the numbers of the elements to compare (1, 2, ...);
+; on Exit: Carry (C) = (DE) < (HL)
+;	   Zero  (Z) = (HL) = (DE),
+;	   Non-Zero (NZ) & No-Carry (NC) = (DE) > (HL)
+
+COMPARE: CALL	PTORD		; Point HL to Ptr whose index (1..N) is in HL
+	EX	DE,HL		; Result in DE
+	DEC	HL		; Adjust index to 0...N-1 from 1...N
+	ADD	HL,HL		; Do the same with the original DE
+	ADD	HL,BC
+
+; HL now points to the pointer whose index was in DE to begin with
+; DE now points to the pointer whose index was in HL to begin with
+;	For example, if DE = 5 and HL = 4, DE now points to the 4th
+;	ptr and HL to the 5th pointer
+
+	LD	C,(HL)		; BC is made to point to the object indexed to
+	INC	HL		; ... by the original HL
+	LD	B,(HL)
+	EX	DE,HL
+	LD	E,(HL)		; DE is made to point to the object indexed to
+	INC	HL		; ... by the original DE
+	LD	D,(HL)
+	LD	H,B		; Set HL = object pted to indirectly by BC
+	LD	L,C
+
+; Compare key at (DE) with the one at (HL), effectively (DE) - (HL)
+;	No net effect on DE and HL.
+;	C  =  (DE) < (HL)
+;	Z  =  (DE) = (HL)
+
+UCOMP:	PUSH	HL		; Save HL on stack
+	LD	HL,(SCOMP)	; Get address of compare routine in HL
+	EX	(SP),HL		; Addr of Compare routine on stack, restore HL
+	RET			; "CALL" routine and return to Sort correctly
+
+;.....
+; Point HL into the order list based on index in HL  (destroys BC)
+
+PTORD:	DEC	HL		; Make it relative to 0
+	ADD	HL,HL		; .double it (2 bytes)
+	LD	BC,(SORDER)	; Point to beginning of Order Table
+	ADD	HL,BC		; Point to the correct pointer
+	RET
+
+; LOGSSB and RETSSB are Public routines to provide support for
+; the new SEARCH, INSERT and DELETE procedures.
+
+LOGSSB:	EX	DE,HL		; Make HL pt to User's SSB
+	LD	(USRSSB),HL
+	LD	DE,SFIRST	; Copy into our SSB
+
+MOVSSB:	LD	BC,12		; 12 Bytes
+	LDIR
+	RET
+
+RETSSB:	LD	HL,SFIRST	; Updated SSB
+	LD	DE,(USRSSB)	; Caller's SSB
+	JR	MOVSSB		; Move it back to him
+
+; Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+USRSSB:	DEFS	2		; Storage for Caller's SSB pointer
+
+; Sort Specification Block (SSB) used by Sort Routine
+
+SFIRST:	DEFS	2		; Pointer to First Record in File
+SNREC:	DEFS	2		; Number of Records in File
+SSIZE:	DEFS	2		; Size of each record
+SCOMP:	DEFS	2		; Address of Compare routine
+SORDER:	DEFS	2		; Address of Order Table
+SPOINT:	DEFS	1		; Use Pointers? 0 = No, <>0 = Yes
+SNOREC:	DEFS	1		; If SPOINT<>0, 00=Order records after Sort
+				;		FF=Don't reorder records
+SJJ:	DEFS	2		; Scratch word used herein, available for BSORT
+SGAP:	DEFS	2		;    "	    "	 "    "        "       "    "
+
+	END
+

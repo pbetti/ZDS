@@ -1,0 +1,540 @@
+	TITLE	"DDDIRQ - Directory Routine w/o Sizing, Syslib 4.0"
+;=================================================================
+; Copyright (C) 1989/90 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Based on SDIRQ.Z80 Ver 1.5 by Richard Conn
+; Date    : 11 Oct 93
+; Version : 1.3
+; Module  : DDDIRQ
+; Abstract: This module contains the routine DDIRQ which is a
+;	General-purpose directory select routine WITHOUT sizing
+;	information, but with Date Stamps.  It scans the designated
+;	(or default) disk and loads all file names matching that
+;	contained in an FCB which is passed to the routine, to a
+;	memory buffer.  The buffer is sorted using a Shell Sort with
+;	pointers in accordance with user-defined flags passed to the
+;	routine.  This routine does NOT provide enough information
+;	to determine file size, and is intended for applications
+;	needing only a sorted table of file names.  Additional
+;	capabilities are provided by DDIRQS and DDIR.
+;	   Time Selection may be set to search for DateStamper in
+;	addition to DosDisk (MS-DOS), P2Dos, or NZTIME Time stamps.
+;	If DateStamper is selected, and either DateStamper is not
+;	resident, or no valid !!!TIME&.DAT file is found, the
+;	program defaults to search for DosDisk, P2Dos, or NZTIME
+;	specs.  The Search First attempts to locate a DosDisk-
+;	generated flag word, and adds MS-DOS time in modified field
+;	if found.  If no flag word is found, P2Dos or NZTIME stamps
+;	are selected based on the signature byte at offset 60H from
+;	each Directory Sector start.  If entry conditions specify
+;	MS/P2Dos/NZTIME search, the search begins with DosDisk
+;	validation, then P2D/NZTIME if necessary.  No defaulting to
+;	DateStamper format is provided.
+; Revision:
+;  1.1 - 18 Mar 89 - first release.				HFB
+;  1.2 -  5 Jan 91 - Changed to use SYSLIB's SORT, return address of
+;	Pointer table (if ptrs used), use Bit 6 of Select Flag #2 to
+;	control reordering of records after a pointer sort.	HFB
+;  1.3 - 11 Oct 93 - Added NZTIME Stamp support.		HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		DDIRQ
+
+	EXT	FINDCK, CKTDF, OPENTD, RWTD, CLOSTD, FSTNXT	; DsLib
+	EXT	P2UTIM, M2UTIM, BIN2BCD				;   "
+
+	EXT	DIRMAX, EXTENT, SELFLG, DIRBUF			 ; SysLib
+	EXT	@FNCMP, @AFNCMP, GETMTOP, DPARAMS, SORT, SSBINIT ;  "
+
+; Definitions
+
+BDOS	EQU	5
+BUFF	EQU	0080H		; Default DMA buffer
+SETDMA	EQU	26		; Dos Command to set DMA transfer addr
+SRCHF	EQU	17		; Dos Command to Search for First file match
+SRCHN	EQU	18		; Dos Command to Search for Next file match
+FNSIZE	EQU	16
+ESIZE	EQU	FNSIZE+15	; Entry Size (+ Create, Access & Modify times)
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DDIRQ
+; Entry: HL - Points to Memory Buffer
+;	 DE - Points to FCB for selection (36 bytes)
+;	  A - Contains selection flags
+;		Bit 7 - 1=Select Non-System Files, 0=No Non-sys
+;		Bit 6 - 1=Select System Files, 0=No System Files
+;		Bit 5 - 1=Select All Users, 0=Select Current User
+;		Bits 4-0 =Desires User Number
+;	  C - Secondary Select character:
+;		Bit 7 - 1=Sort Type then Name, 0=Name then Type
+;		Bit 6 - 1=No Re-order Records after Sort, 0=Reorder
+;		Bits 5-2 - Unused
+;		Bit 0 - 1=Use DateStamper Stamps, 0=Use MS/P2Dos Stamps
+; Exit :  A <> 0, Zero Flag Clear (NZ) if Ok
+;	      A = 0 and Zero flag Set (Z) if TPA Overflow
+;	 HL - Points to first file in Buffer
+;	 DE - Points to Start of Order Table
+;	 BC - Contains number of files in Buffer
+; Special Requirements: DMA address set to default of 80H.
+;===============================================================
+
+DDIRQ:	PUSH	DE		; Save ptr to FCB
+	LD	(SELFLG),A	; Save select flag for selection and Alpha
+	LD	(TFCB),HL	; Set ptr to temp FCB
+	LD	A,C		; Get Secondary Selection flags
+	BIT	0,A		; Are we going for DateStamper type?
+	JR	Z,DDIRV0	; ..jump if P2Dos type
+	PUSH	HL		; Save regs while we test for DS Routines
+	PUSH	DE
+	PUSH	AF		; ..including flag byte in A
+	CALL	FINDCK		; Is DateStaper alive and well?
+	JR	Z,NODS		; ..jump to P2D if not
+	CALL	CKTDF		; Do we have a valid !!!TIME&.DAT file?
+	JR	Z,NODS		; ..jump to MS/P2D if not
+	POP	AF		; Else we have everything ready for DS, Do it
+	JR	DSOK		; ..bypass defaulting to P2D and continue
+
+NODS:	POP	AF		; Restore flag byte
+	AND	0FEH		; ..Mask out DS bit
+DSOK:	POP	DE		; Restore rest of regs
+	POP	HL
+DDIRV0:	LD	(S2FLG),A	; ..and save
+	LD	BC,36		; Offset to after FCB
+	ADD	HL,BC		; ..useable memory now starts at (HL)
+	CALL	DPARAMS		; Set parameters to logged disk
+
+; Set values in the Sort Selection Block
+
+	EX	DE,HL		; Save in DE while we set up SSB
+	LD	HL,(DIRMAX)	; Get Max Number of DIR entries
+	LD	(FCOUNT),HL	; ..save in SSB
+	LD	HL,ESIZE	; Get size of records
+	LD	(ELSIZ),HL	; ..save in SSB
+	LD	HL,0		; Let SSBINIT set buffer addr
+	LD	(DSTART),HL
+	DEC	L		; (0-->FF) Use pointers for sorting
+	BIT	6,A		; Re-order after sorting?
+	JR	Z,REORDR	; ..jump if so to show reordering (H=0)
+	LD	H,L		; Else set for No re-order (H <> 0)
+REORDR:	LD	(PTRFLG),HL	; ..place in POINTR (L) and NOREC (H) in SSB
+	LD	HL,DICOMP	; Address User Compare routine
+	LD	(COMPIT),HL	; ..place addr in SSB
+	EX	DE,HL		; Put Memory base back in HL
+	LD	DE,SSB		; .point to SSB
+	CALL	SSBINIT		; ..and Initialize the sort routine
+	LD	(DIRBUF),HL	; Save returned Record Buffer Address
+	POP	DE		; Get ptr to FCB
+	CALL	NZ,DIRLOAD	; Load directory w/o sizing info (if space)
+	RET	Z		; Abort if TPA overflow
+	LD	DE,SSB		; Set parm for Sort routine
+	CALL	SORT		; ..and do it!
+	LD	DE,(ORDBUF)	; Get ptr to Pointer table (if used)
+	LD	HL,(DSTART)	; .and load exit parms
+	LD	BC,(FCOUNT)
+	OR	0FFH		; Set Ok status and return
+	RET
+
+
+; Build Directory Table at DIRBUF
+;   This is the optimal Directory Load Routine; It only loads unique file names
+; from disk, but the information is not sufficient to compute the file sizes
+;
+; On Input : HL pts to Directory Buffer (ESIZE x N Max)
+;	     DE pts to FCB (Only 12 bytes needed)
+; On Output: BC is Number of Files
+;	     A = 0 and Zero Flag set if TPA Overflow
+
+DIRLOAD: LD	(DSTART),HL	; Set start of Buffer area
+	INC	DE		; Pt to file name
+	LD	HL,(TFCB)	; Pt to TFCB
+	LD	A,(SELFLG)
+	BIT	5,A		; Are we selecting all users?
+	LD	A,'?'		; ..(assume Yes)
+	JR	NZ,DIRLO0	; ..jump if So
+	XOR	A		; Else set for current user
+DIRLO0:	LD	(HL),A		; Stash User Selects
+	INC	HL		; Pt to File Name in TFCB
+	LD	BC,11		; 11 Chars
+	EX	DE,HL
+	LDIR			; Copy the Name and Type
+	EX	DE,HL
+	
+	LD	B,24		; 24 chars (Incl Zero EX)
+	XOR	A		; Zero rest of TFCB
+
+DLLOOP1: LD	(HL),A		; Store Zero
+	INC	HL		; Pt to next
+	DJNZ	DLLOOP1		; Count down
+
+	LD	L,A		; Initialize counters (A has null)
+	LD	H,A
+	LD	(FCOUNT),HL	; Total Files on Disk = 0
+
+; Begin by setting default DMA address to 80H
+
+	LD	DE,BUFF		; Set DMA address to default
+	LD	C,SETDMA
+	CALL	BDOS
+
+; Now we begin scanning for files to place into the memory buffer
+
+	LD	C,SRCHF		; Search for file
+	JR	DIRLP1
+
+DIRLP:	CALL	PENTRY		; Place entry in Dir
+	JR	Z,DIRDNX	; Memory Overflow Error
+	LD	C,SRCHN		; Search for Next match
+
+DIRLP1:	LD	DE,(TFCB)	; Pt to FCB
+	CALL	FSTNXT
+	CP	255		; Done?
+	JR	NZ,DIRLP
+
+	LD	A,(S2FLG)	; Are we loading P2D Stamps?
+	RRA
+	JR	NC,DIRPDN	; ..jump to exit if so
+
+; We are using DateStamper stamps, so append stamps to FN.FT string
+
+	XOR	A		; Open T&D for Read-only
+	CALL	OPENTD		; ..don't check errs cause CKTD was Ok
+	LD	BC,(FCOUNT)	; Load this many records
+	LD	HL,(DSTART)	; ..starting with this entry
+	LD	DE,0FFFFH	; Set dummy Random record # to force read
+
+TDLOOP:	LD	A,B		; Are we done?
+	OR	C
+	JR	Z,DIRDDN	; ..exit if so
+	PUSH	BC		; Save count
+	LD	BC,FNSIZE	; Offset to RR #
+	ADD	HL,BC
+	LD	A,(HL)		; Get Index #
+	PUSH	HL		; Save index to entry TD Field
+	PUSH	AF		; ..and index
+	INC	HL
+	LD	A,(HL)		; Get RR # to HL
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	OR	A		; Compare current (DE) w/desired (HL)
+	SBC	HL,DE
+	ADD	HL,DE
+	JR	Z,SAMREC	; ..jump if we already have the record
+	EX	DE,HL		; Else put rec in DE
+	PUSH	DE		; ..and save
+	XOR	A
+	CALL	RWTD		; Read the T&D file ignoring errors
+	LD	(TDBUF),HL	; Save TD buffer start addr
+	JR	NZ,TDRDOK	; ..jump if T&D File Read Ok
+	LD	B,128		; Else Null record (A already = 0)
+TDNULL:	LD	(HL),A
+	INC	HL
+	DJNZ	TDNULL		; Loop til sector filled
+TDRDOK:	POP	DE		; ..and restore RR #
+SAMREC:	POP	AF		; Restore record Index
+	ADD	A,A		; ..and mult by 16 to get relative addr
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	LD	C,A
+	LD	B,0
+	LD	HL,(TDBUF)
+	ADD	HL,BC		; HL Now points at source T&D string in Buffer
+	EX	DE,HL		; Swap regs..
+	EX	(SP),HL		; ..to put RR # on stack, DEst adr in HL
+	EX	DE,HL		; ...then Dest in DE, source in HL
+	LD	BC,15		; Move all three stamps
+	LDIR
+	EX	DE,HL		; HL --> Next Dir entry
+	POP	DE		; DE = RR # in Buff
+	POP	BC		; BC = Count
+	DEC	BC
+	JR	TDLOOP		; ..and loop til done
+
+; Now we are done with the Load -- Set up Return Values
+
+DIRDDN:	CALL	CLOSTD		; Close the T&D tile for safety
+DIRPDN:	OR	0FFH		; Set Flags NZ for Load Ok
+DIRDNX:	LD	BC,(FCOUNT)	; Get total number of files in BC
+	RET
+
+
+; PENTRY -- Place entry in Directory Buffer if not an erased entry
+
+; On Input:  A = 0-3 for Adr index in Buff of Entry FCB
+;	     FCOUNT = Number of files in Dir so far
+; On Output: FCOUNT = Number of files in dir so far
+;	     A = 0 and Zero Flag Set if Memory Overflow Error
+
+PENTRY:	LD	(INDX),A	; Save index in case of P2Dos Stamp load
+	PUSH	DE		; Save any DS Indices
+	PUSH	BC
+	RRCA			; Multiply by 32 for Offset computation
+	RRCA
+	RRCA
+	AND	60H		; A = Byte Offset
+	LD	DE,BUFF		; Pt to Buffer Entry
+	LD	L,A		; Let HL = Offset
+	LD	H,0
+	ADD	HL,DE		; HL = Ptr to FCB
+
+	LD	A,(HL)
+	CP	20H		; Is it CP/M Plus Volume, T&D or Deleted?
+	JP	NC,PEDONE	; ..jump if so
+
+	PUSH	HL		;1.3 Save the pointer
+	LD	BC,12		;1.3
+	ADD	HL,BC		;1.3 Offset to EX
+	LD	A,(EXTENT)	;1.3 Get Extent Mask
+	INC	A		;1.3 .bump for range check
+	LD	C,A		;1.3 ..position
+	LD	A,(HL)		;1.3 Get this Entry's Extent
+	CP	C		;1.3 First Extent?
+	INC	HL		;1.3
+	INC	HL		;1.3 .(advance to DM)
+	LD	A,(HL)		;1.3 ..(fetch)
+	POP	HL		;1.3 ...(restore regs in case exit)
+	JP	NC,PEDONE	;1.3 ..exit if Not First Extent
+	OR	A		;1.3 First Data Module?
+	JP	NZ,PEDONE	;1.3 ..exit if Not
+
+; HL = Adr of FCB in BUFF.  Check for attributes of file
+
+	LD	A,(SELFLG)	; Load select flags
+	PUSH	HL		; Save ptr
+	LD	BC,10		; Pt to System Attribute
+	ADD	HL,BC
+	BIT	7,(HL)		; Check for System Attribute
+	POP	HL		; Restore ptr
+	JR	Z,ATDIR		; ..jump if Not System File (Selflg in A)
+	RLA			; Else Rotate System Select bit to B7
+ATDIR:	BIT	7,A		; Check Normal Attribute
+	JR	Z,PEDONE	; Skip if attribute not desired
+
+; Increment total number of files
+
+	LD	DE,(FCOUNT)	; Total Files = Total Files + 1
+	INC	DE
+	LD	(FCOUNT),DE
+
+; Copy FCB pted to by HL into Directory Buffer
+
+	LD	DE,(DIRBUF)	; Pt to Next Entry location
+	LD	BC,FNSIZE	; Number of Bytes/Entry
+	LDIR			; Copy FCB into Memory Buffer
+	POP	BC		; Restore any DS indices
+	POP	HL
+	LD	A,(S2FLG)	; Which method do we use?
+	RRA
+	JR	NC,USEMS	; ..jump if using MS/P2Dos Time stamps
+	EX	DE,HL		; Put destination in HL
+	LD	(HL),B		; Stash index into T&D sector
+	INC	HL
+	LD	(HL),E		; ..and T&D Sector number
+	INC	HL
+	LD	(HL),D
+	INC	HL
+	EX	DE,HL		; Put Buffer pointer back in DE
+	LD	B,ESIZE-FNSIZE-3
+	JR	FILLIT		; Null out remaining
+
+USEMS:	LD	HL,BUFF+16	; Point to DosDisk Flag bytes
+	LD	A,(HL)		; Get first byte
+	CP	0FDH		; Is it the MS-DOS 40-byte flag?
+	JR	NZ,USEP2D	; ..jump if not
+	INC	HL		; Else check second byte to be sure
+	SUB	(HL)
+	JR	NZ,USEP2D	; ..jump if no match
+	LD	B,10		; Ok, so null Create and Access fields
+	CALL	NULLIT
+	LD	HL,BUFF+22	; Point to source MS-DOS DateSpec
+	CALL	M2UTIM		; ..and do the conversions to DE
+	JR	P2DONE		; Continue with common code
+
+USEP2D:	LD	HL,BUFF+60H	; Point to P2D Time indicator
+	LD	A,(HL)
+	AND	7FH		;1.3 .(mask diff between P2D and NZTime)
+	CP	21H		; Is there a valid time stamp flag?
+	JR	NZ,NOTP2D	; ..jump if not
+	LD	A,(INDX)	; Else calculate offset to correct entry
+	LD	C,A
+	ADD	A,A		; *2
+	ADD	A,A		; *4
+	ADD	A,C		; *5
+	ADD	A,A		; *10
+	INC	A		; +1
+	LD	C,A		; Entries start at offset=1,11,21 decimal
+	LD	B,0
+	LD	A,(HL)		;1.3 Get Flag Byte (A1=NZTime, 21=P2Dos)
+	ADD	HL,BC		; Point to Stamp field for desired entry
+	RLA			;1.3 Is it NzTime?
+	JR	C,USENZT	;1.3 ..jump if NZTime Stamping
+	CALL	P2UTIM		; ..and parse Create Stamp to Table
+	LD	B,5		; Null the Last Accessed field
+	CALL	NULLIT
+	CALL	P2UTIM		; Parse Modify Stamp
+	JR	P2DONE		; ..and continue
+
+NOTP2D:	LD	B,ESIZE-FNSIZE	; Set count to fill entire field
+FILLIT:	CALL	NULLIT		; Fill rest of time with Nulls
+P2DONE:	LD	(DIRBUF),DE	; Set ptr to Next Entry
+	CALL	GETMTOP		; Return highest avail addr in HL
+	LD	A,H		; Get CCP page in A
+	DEC	A		; ..and back one page in front of it
+	SUB	D		; Is ptr to next entry beyond this?
+	RET	Z		; ..Ret 00=Overflow if So
+
+	DEFB	11H		; Fall thru trashing DE
+
+; Done with PENTRY and No Error
+
+PEDONE:	POP	BC		; Clear the stack
+	POP	DE
+	OR	0FFH		; Set NZ for No Error
+	RET
+
+; Gather File Stamps from NZTime-stamped directory
+
+USENZT:	LD	(IPTR),HL	;1.3 Save Pointer to input NZTime stamps
+	LD	L,(HL)		;1.3
+	LD	A,(INDX)	;1.3 Get Index number (0,1,2)
+	LD	B,A		;1.3 .save
+	LD	A,8		;1.3
+	SUB	B		;1.3 Compute current byte when starting
+	LD	C,A		;1.3  save
+	INC	B		;1.3
+	DEC	B		;1.3 Is Input byte already aligned?
+	JR	Z,USENZ1	;1.3 ..jump if so
+USENZ0:	ADD	HL,HL		;1.3 Else rotate input byte (H is don't care)
+	DJNZ	USENZ0		;1.3 ..looping til done
+USENZ1:	LD	A,3		;1.3 Get all three stamps
+USENZ2:	LD	(LPCTR),A	;1.3 Set Outer Loop Counter
+	LD	B,7		;1.3
+	CALL	GBITS		;1.3 Get Year (7 bits)
+	LD	B,4		;1.3
+	CALL	GBITS		;1.3 Month (4 bits)
+	LD	B,5		;1.3
+	CALL	GBITS		;1.3 Day (5 bits)
+	LD	B,5		;1.3
+	CALL	GBITS		;1.3 Hour (5 bits)
+	LD	B,6		;1.3
+	CALL	GBITS		;1.3 Minute (6 bits)
+	LD	A,(LPCTR)	;1.3
+	DEC	A		;1.3 Have we done all 3 fields?
+	JR	NZ,USENZ2	;1.3 .loop if Not (saving new count)
+	JR	P2DONE		;1.3 ..jump to exit when finished
+
+;========================================================================
+; NAME - DICOMP.  Compare the directory entry pointed to by HL with that
+;		addressed by DE.
+; Entry: HL - Points to one FCB extracted entry
+;	 DE - Points to second FCB extracted entry
+; Exit :  F - Carry Set (C) means (DE) < (HL)
+;		Zero Set (Z) means (DE) = (HL)
+;		Non-Zero (NZ) and No Carry (NC) mans (DE) > (HL)
+;========================================================================
+
+DICOMP:	PUSH	BC		; Save count
+	LD	A,(S2FLG)	; Group by File Type?
+	RLA
+	JR	NC,CPFNFT
+
+; Compare by File Type and File Name (in that order)
+
+	PUSH	HL
+	PUSH	DE
+	LD	BC,9		; Pt to FT (8 bytes + 1 byte for user number)
+	ADD	HL,BC
+	EX	DE,HL
+	ADD	HL,BC
+	EX	DE,HL		; DE, HL now pt to their FT'S
+	LD	B,3		; 3 bytes
+	CALL	@FNCMP		; Compare FT'S
+	POP	DE
+	POP	HL
+	JR	NZ,CMPEX	; Continue if complete match
+	LD	B,8		; 8 bytes
+	JR	CMPFT1
+
+; Compare by File Name and File Type (in that order)
+
+CPFNFT:	LD	B,11		; 11 bytes for FN and FT
+CMPFT1:	PUSH	HL
+	PUSH	DE
+	INC	HL		; Pt to FN
+	INC	DE
+	CALL	@FNCMP		; Do comparison
+	POP	DE
+	POP	HL
+	JR	NZ,CMPEX
+	LD	A,(DE)		; Compare User Number
+	CP	(HL)
+CMPEX:	POP	BC		; Restore count
+	RET			; ..and exit
+
+;.....
+; NZTime Support Routine.  Get # of bits spec'ed from NZTIM, Return BCD Digit
+; ENTER: L = Current working byte
+;	DE = Ptr to Dest of Univ stamps
+;	 C = Bit # currently in position (8..1)
+;	 B = Number of bits to gather
+; EXIT : A = BCD Conversion of # bits from entry
+
+GBITS:	LD	H,0		;1.3 Clear Bit Accumulator
+GBITS0:	ADD	HL,HL		;1.3 Shift B7 of L into B0 of H, H shifts left
+	DEC	C		;1.3 Have we shifted last of input Byte?
+	JR	NZ,GBITS1	;1.3 ..jump if Not
+
+	PUSH	HL		;1.3 Else need a byte, save regs
+	LD	HL,(IPTR)	;1.3 Get input ptr
+	INC	HL		;1.3 .go to next byte
+	LD	A,(HL)		;1.3 ..fetch
+	LD	(IPTR),HL	;1.3 ...save updated ptr
+	POP	HL		;1.3 .(restore regs
+	LD	L,A		;1.3 Place new Input byte for shifting
+	LD	C,8		;1.3  and init Bits Remaining counter
+
+GBITS1:	DJNZ	GBITS0		;1.3 ..Shift another if not done
+	LD	A,H		;1.3 Else get completed output byte
+	CALL	BIN2BCD		;1.3 .make BCD for Universal
+	LD	(DE),A		;1.3 ..store in Output
+	INC	DE		;1.3 ...and advance to next digit
+	RET			;1.3
+
+;.....
+; Fill the string addressed by DE with a zero for B bytes
+
+NULLIT:	XOR	A		; Load a cheap Null
+NULL0:	LD	(DE),A		; Stuff a byte
+	INC	DE		; ..and advance
+	DJNZ	NULL0		; Loop til done
+	RET
+
+; Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+IPTR:	DEFS	2		;1.3 Pointer to current NZTime Input Byte
+LPCTR:	DEFS	1		;1.3 Loop Counter for NZTime Conversion
+INDX:	DEFS	1		; Directory index into sector
+S2FLG:	DEFS	1		; Secondary Select Flag (Sort & Stamp method)
+TFCB:	DEFS	2		; Address of Temporary FCB
+
+SSB:				; Sort Selection Block:
+DSTART:	DEFS	2		; Pointer to first Directory Entry
+FCOUNT:	DEFS	2		; Tot Number of Files/Number of Selected Files
+ELSIZ:	DEFS	2		; Size of each element
+COMPIT:	DEFS	2		; Addr of compare routine
+ORDBUF:	DEFS	2		; Addr of Order buffer
+PTRFLG:	DEFS	1		; FF=Use ptrs, 0=No ptrs
+	DEFS	1		; If Ptrflg<>0, FF=No reorder, 0=Reorder
+
+TDBUF:	DEFS	2		; Temp storage loc'n for T&D Sector Buffer adr
+
+	END
+

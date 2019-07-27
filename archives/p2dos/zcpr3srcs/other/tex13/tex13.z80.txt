@@ -1,0 +1,1912 @@
+;
+;			** TEX.MAC **
+;
+; Timed EXecution for ZCPR33: allows time-scheduling of programs.
+; Requires Z80 processor.
+;
+; V1.0 rjm 30/4/88
+; V1.1 rjm 3/7/88     - Fixed bug which stopped new commands from a .TEX file
+;			from being saved in TEX.VAR if there were more
+;			commands on the command line.
+;		      - ASCII command file on invocation now defaults to .TEX
+;
+; v1.2 rjm 25/7/89    - Fixed bug in shell routine which resulted in bad
+;			command lines for user numbers greater than 9
+;		      - Fixed bug which caused bad time addition for
+;			repeated execution
+;
+; v1.3 Jim Lill  27 Aug 89
+;
+; - replaced BCDBIN with JBCD2BN from ZSLIB
+; - modified GETTIME to use DSLIB/ZSLIB routines so ZSDOS, Z80DOS or CP/M+
+;   clocks will all work
+; - assembled ok as-is with SLR Z80ASM
+; - tested with ZSDOS only, see excerpt from DSLIB.HLP below
+
+.comment&
+
+TIMINI - See if	there is a Clock we can	read.
+
+  ENTER: None
+  EXIT : A = Time method, Zero Flag Clear (NZ) if Clock	found
+	     A = 0, Zero Flag Set (Z) if no clock found
+  USES : AF
+
+RCLOCK	- Read clock identified	by TIMINI to specified addr
+
+  ENTER: HL = Address of 6-byte	area to	receive	time string
+  EXIT :  A = 0, Zero Flag Set (Z) if Ok, Time String filled
+	      A	<> 0, Zero Flag	Clear (NZ) if Error
+  USES : HL,DE,BC,AF
+
+ Usage:	This routine forms a generalized Clock Read for	ZSDOS,
+  DateStamper or CP/M Plus clocks identified by	TIMINI.	 It
+  reads	clock data to the specified address in the standard
+  format.  Since CP/M Plus does	not return a valid read	flag,
+  the status is	always assumed to be True, for a good read.
+  Note:	You must insure	that a valid clock is installed	and
+  working before calling this routine.
+
+&
+; - following note no longer applies.
+;
+;    Note: although this program has been written for use with Z80DOS,
+; the only Z80DOS-specific portion is the GET TIME function. This could
+; easily be re-written for use with any real-time clock. Details are in the
+; GETTIME routine.
+;
+;    I have written TEX for the M80 assembler. If you change it to suit your
+; own assembler, please don't distribute it unless you include a set of
+; equates to allow use of either M80 or your own. End of lecture.
+;
+;    This program is hereby placed in the public domain. By this I mean that
+; I allow its free copying and distribution for non-commercial purposes,
+; that I make no claims as to its fitness for any or all purposes, and that
+; any bugs contained herein, though not deliberate, are for you to find and
+; tell me about. Please don't sell it for profit (apart from GENUINE copying
+; and distribution costs), and don't claim that you wrote it. Either course
+; of action tends to make me angry, and I don't think you'd like the
+; consequences.
+;
+;    Comments, suggestions etc. about TEX are welcome. Abuse will be directed
+; to the nearest round filing cabinet. Send either to me at Z-Node 62, on
+; (061+) 09-450-0200.
+;
+;				- Ron Murray 30/4/88
+;
+vers	equ	13		;version number
+maxcmd	equ	20		;number of command lines allowed (255 max)
+clbsize	equ	203		;size of internal cl buffer
+ctsize	equ	12		;size of command table
+tid	equ	'!'		;identifier for TEX commands
+cmdsep	equ	';'		;separator between TEX commands and command
+defpri	equ	99		;default priority for timed commands
+dispchr	equ	'D'-'@'		;Command display character
+editchr	equ	'E'-'@'		;Edit mode character
+
+no	equ	0
+yes	equ	not no
+
+delete	equ	7fh
+esc	equ	1bh
+eof	equ	1ah
+ctlx	equ	'X'-'@'
+cr	equ	0dh
+lf	equ	0ah
+backsp	equ	8
+bell	equ	7
+ctld	equ	'D'-'@'
+ctlc	equ	'C'-'@'
+
+bdos	equ	5
+wmboot	equ	0
+fcb1	equ	5ch
+fcb2	equ	6ch
+
+	.z80
+	cseg
+
+;VLIB routines used:
+	ext	z3vinit,vprint,tinit,dinit,ereol
+
+;DSLIB routines used:
+	ext	timini,rclock
+
+;ZSLIB routines used:
+	ext	bcd2jul,jbcd2bn
+
+;Z33LIB routines used:
+	ext	z33chk,gcmddu
+
+;Z3LIB routines used:
+	ext	qshell,getefcb,shpush,shpop,getcl2,putcl,dutdir
+	ext	putcst,root,z3log
+
+;SYSLIB routines used:
+	ext	ialloc,alloc,capstr,cin,crlf,cout,getud,putud
+	ext	retud,pafdc,logud,condin,en,sksp,logud,compb
+	ext	initfcb,f$exist,fi0$open,fi0$close,f$delete
+	ext	fo0$open,fo0$close,f0$get,f0$put,mulhd,pstr
+	ext	ssbinit,sort,pa2hc,caps,eval10,isdigit,phlfdc
+	ext	fillb,bbline,pfn2,isctrl
+
+tex:
+	jp	start		;jump over things..
+
+	db	'Z3ENV'
+	db	1		;External environment descriptor
+z3env:
+	dw	0		;ZCPR33 supplies descriptor address..
+
+	ds	16 - ($	- tex)	;blanks so we can read next label
+
+	db	'ROOT>'
+rootfl:
+	db	yes		;Flag: use ROOT: directory for TEX.VAR
+
+	db	'DU:>'
+nrdu:
+	db	'A'-'@'		;Drive for TEX.VAR if not rootfl (A=0)
+	db	0		;User area for TEX.VAR if not rootfl
+
+start:
+	ld	hl,nogo		;stop user using 'GO'
+	ld	(tex+1),hl	;(will almost never do what he wants)
+	ld	hl,(z3env)	;set pointers
+	call	z3vinit
+	call	tinit		;init terminal
+	xor	a		;allocate memory
+	call	ialloc
+	ld	de,150		;request 150 bytes for stack
+	call	alloc
+	jr	nz,stkok
+
+memerr:
+	call	vprint
+	db	'Insufficient memory.',cr,lf,0
+	jp	wmboot
+
+stkok:
+	ld	(oldstk),sp	;save stack
+	add	hl,de		;point to top of stack space
+	ld	sp,hl		;and use it
+	call	putud		;save this du:
+	call	retud		;find what it is
+	ld	(curdu),bc	;and save it
+	ld	de,clbsize+51	;get space for command line buffer
+	call	alloc
+	jr	z,memerr
+	ld	(clb),hl	;save pointer
+	ld	de,maxcmd * ctsize	;get memory for command table
+	call	alloc
+	jr	z,memerr
+	ld	(cmdtab),hl
+	ld	de,clbsize * maxcmd	;and commands
+	call	alloc
+	jr	z,memerr
+	ld	(cmds),hl
+	ld	de,clbsize+1	;and stcmd buffer
+	call	alloc
+	jr	z,memerr
+	ld	(stcbuf),hl
+	ld	de,2 * maxcmd	;and sort routine
+	call	alloc
+	jr	z,memerr
+	ld	de,ssb		;init sort routine
+	call	ssbinit
+	xor	a		;clear number of commands
+	ld	(numcmd),a
+
+	call	qshell		;have we just been invoked?
+	jr	nz,ckhelp	;yes, check for help/options
+	call	readvar		;no, shell-invoked. Read TEX.VAR
+	jp	prompt		;then wait for user input
+
+ckhelp:
+	ld	a,(fcb1+1)	;see if user wants help
+	cp	'/'
+	jp	nz,tstif	;no help or option, maybe i/p file
+	ld	a,(fcb1+2)
+	cp	'/'
+	jp	nz,tstopt	;no help, maybe option
+
+dohelp:
+	call	vprint		;yes!
+	db	cr,lf,'TEX v',(vers/10)	+ '0','.'
+	db	(vers mod 10) +	'0',cr,lf
+	db	'Allows time-scheduled execution of programs.',cr,lf
+	db	'Usage: TEX [command file] /options',cr,lf
+	db	'  where <command file> is an ASCII file containing '
+	db	'TEX commands.',cr,lf
+	db	'  Options: C = clear any TEX.VAR file (start anew)',cr,lf,lf
+	db	'LF gives run-time help.',cr,lf,0
+	jp	done
+
+tstif:
+	cp	' '		;if first char in fcb1 is not space,
+	jp	z,tstfcb2	;try and read input file
+	call	logtex
+	ld	de,tvfcb	;first see if TEX.VAR exists
+	call	initfcb
+	call	f$exist
+	jr	z,novar
+
+	call	vprint
+	db	cr,lf,'Erase current TEX.VAR file? ',0
+	ld	a,0ffh		;capitalise
+	call	bbline
+	call	crlf
+	or	a		;no if no answer
+	jr	z,novar
+	ld	a,(hl)		;else get it
+	cp	'Y'		;only if Y
+	jr	nz,novar
+	call	f$delete	;then delete it
+
+novar:
+	ld	bc,(curdu)	;back to original
+	call	logud
+	ld	a,(fcb1+9)	;if no filetype,
+	cp	' '
+	jr	nz,logifdu
+	ld	de,fcb1+9	;default to .TEX
+	ld	hl,texft
+	ld	bc,3
+	ldir
+logifdu:
+	ld	de,fcb1		;get fcb of input file
+	call	z3log		;log into it
+	call	fi0$open	;try to open it
+	jr	z,ifopok
+	call	vprint
+	db	cr,lf,'Unable to open ',0
+	ld	de,fcb1+1
+	call	pfn2		;print filename
+	call	crlf
+	jp	rdinex
+
+ifopok:
+	call	vprint
+	db	cr,lf,'Reading from ',0
+	ld	de,fcb1+1
+	call	pfn2		;print filename
+	call	crlf
+	call	gettime		;get time in (iy)
+ifline:
+	ld	ix,(clb)	;read into local command line buffer
+	ld	c,0		;initialise count
+	ld	(ix),0		;and put 0 at end
+ifloop:
+	call	f0$get		;get next byte
+	jr	nz,ifinerr	;error
+	cp	cr		;process line if cr
+	jr	z,ifplin
+	cp	eof		;finished if eof
+	jr	z,ifinex
+	call	isctrl		;ignore other control characters
+	jr	z,ifloop
+	ld	e,a		;put in e
+	ld	a,c		;test for buffer full
+	cp	clbsize+51
+	jr	nc,ifloop	;ignore if so
+	ld	(ix),e		;else store
+	ld	a,e
+	call	cout		;print
+	inc	ix		;bump pointer
+	ld	(ix),0		;put 0 at end
+	inc	c		;and bump count
+	jr	ifloop
+ifplin:
+	call	crlf		;got line: do cr/lf
+	ld	hl,(clb)	;point hl to buffer
+	ld	a,(hl)		;if TEX command,
+	cp	tid
+	call	z,ptcmd		;process line
+	jr	ifline		;and get another line
+
+ifinerr:
+	call	vprint
+	db	cr,lf,'Input file read error.',cr,lf,0
+ifinex:
+	call	fo0$close	;close input file
+
+rdinex:
+	ld	bc,(curdu)	;back to original fcb
+	call	logud
+	jp	nohelp		;and proceed
+
+tstfcb2:
+	ld	a,(fcb2+1)	;test fcb #2
+	cp	'/'		;option?
+	jr	nz,nohelp	;no, process normally
+	ld	a,(fcb2+2)	;get second character
+tstopt:
+	cp	'C'		;clear current TEX.VAR?
+	jr	nz,nohelp
+	call	eravar		;yes, erase the file if any
+	jr	texid		;and proceed
+
+nohelp:
+	call	readvar		;read current TEX.VAR
+
+texid:
+	call	vprint		;ok, so identify
+	db	cr,lf,'TEX v',(vers/10)	+ '0','.'
+	db	(vers mod 10) +	'0',0
+	call	getefcb		;We feel wanted. What's our name?
+	jr	nz,efcbok
+	call	vprint		;error
+	db	': No external FCB -- aborting.',cr,lf,0
+	jp	done
+
+efcbok:
+	ld	ix,ourname	;initialise f/n pointer
+	call	z33chk		;if using zcpr33,
+	jr	nz,setname
+	call	gcmddu		;get du: of .COM file
+	ld	a,b		;get drive
+	add	a,'A'		;convert to ascii
+	ld	(ix),a
+	inc	ix
+	ld	a,c		;same for user
+	cp	10		; leading 1 if > 9
+	jr	c,setusr
+	ld	(ix),'1'
+	inc	ix
+	sub	10
+
+setusr:
+	add	a,'0'
+	ld	(ix),a
+	inc	ix
+	ld	a,':'		;then colon
+	ld	(ix),a
+	inc	ix
+
+setname:
+	inc	hl		;bump ext fcb pointer
+	ld	b,8		;transfer 8 characters
+
+movnam:
+	ld	a,(hl)
+	cp	' '		;done if space
+	jr	z,dunnam
+	ld	(ix),a
+	inc	ix
+	inc	hl
+	djnz	movnam
+
+dunnam:
+	ld	(ix),0		;put 0 at end
+	ld	hl,ourname	;put ourselves on the shell stack
+	call	shpush
+	jp	z,ckcmd		;ok if 0
+	cp	1		;1 = no shell stack
+	jr	nz,shfull
+	call	vprint
+	db	': No shell stack -- aborting.',cr,lf,0
+	jp	done
+shfull:
+	cp	2		;2 = shell stack full
+	jr	nz,shlong
+	call	vprint
+	db	': Shell stack full -- aborting.',cr,lf,0
+	jp	done
+shlong:
+	call	vprint
+	db	': Command line too long for shell stack'
+	db	' -- aborting.',cr,lf,0
+	jp	done
+
+ckcmd:
+	call	vprint
+	db	' Installed.',cr,lf,'   Press LF for help.',cr,lf,0
+	ld	a,1		;say we're a shell
+	call	putcst
+	call	getcl2		;any more commands?
+	jp	nz,docmd	;finish if more
+
+prompt:
+	call	doprom		;print the prompt
+	ld	ix,(clb)	;set command line pointer
+	ld	(ix),0		;put 0 at end
+	ld	c,0		;and clear counter
+
+cmdin:
+	call	condin		;get next character if any
+	jr	nz,gotchr	;got one
+	call	gettime		;get current time in IY
+	call	scan4ex		;scan for execution times
+	jp	nz,docmd	;execute this one
+	ld	a,(prmins)	;if minutes have changed,
+	cp	(iy+3)
+	jr	z,cmdin
+	ld	a,c		;and no characters entered,
+	or	a
+	jr	nz,cmdin
+	jp	prompt		;do another prompt
+gotchr:
+	and	07fh		;remove parity
+	cp	' '		;branch if control char
+	jr	c,ctlin
+	cp	delete		;or if delete
+	jr	z,delchr
+	ld	e,a		;save in E
+	ld	a,c		;get count in A
+	cp	clbsize+50	;if clb not full,
+	jr	nc,cmdin
+	ld	a,e		;print it
+	call	cout
+	ld	(ix),a		;store
+	inc	c		;bump counter, pointer
+	inc	ix
+	ld	(ix),0		;put 0 at end
+	jr	cmdin		;then get another
+
+ctlin:
+	cp	esc		;if esc and first character,
+	jr	nz,ctlin1
+	ld	a,c
+	or	a
+	jr	nz,cmdin
+	call	shpop		;remove us from stack
+	call	vprint
+	db	cr,lf,'Terminating TEX.',cr,lf,0
+	call	writevar	;write TEX.VAR to disk
+	jp	done		;and quit
+
+ctlin1:
+	cp	backsp		;process delete/backsp
+	jr	nz,ctlin2
+delchr:
+	ld	a,c		;ignore if first character
+	or	a
+	jr	z,cmdin
+	dec	c		;else drop count
+	dec	ix		;pointer
+	ld	(ix),0		;put 0 at end
+	call	vprint
+	db	backsp,' ',backsp,0
+	jp	cmdin
+ctlin2:
+	cp	cr		;process command if cr
+	jr	nz,ctlin3
+	ld	a,c		;only if non-zero
+	or	a
+	jp	nz,procmd
+	call	crlf		;else just cr/lf
+	jp	prompt
+procmd:
+	ld	a,cr		;print cr
+	call	cout
+	ld	hl,(clb)	;get command line
+	call	sksp		;skip over spaces
+	ld	a,(hl)		;get first character
+	cp	tid		;if first is TEX command,
+	jr	z,texcmd	;process it
+	ld	hl,(clb)	;else restore address
+	call	stcmd		;store in real cmd line buffer
+	jp	nz,docmd	;ok if non-zero
+	ld	a,lf		;do lf, since it's a..
+	call	cout
+	jp	prompt		;error or null command
+
+texcmd:
+	call	crlf
+	call	ptcmd		;process command line
+	jp	prompt		;and back to user
+
+ctlin3:
+	cp	ctlc		;if control-c,
+	jr	nz,ctlin4
+	ld	a,c		;and first character
+	or	a
+	jp	nz,cmdin
+	call	vprint
+	db	'^C',0
+	ld	c,13		;reset disks
+	call	bdos
+	ld	bc,(curdu)	;log into this disk
+	call	logud
+	call	crlf
+	jp	prompt
+
+ctlin4:
+	cp	ctlx		;if control-x,
+	jp	nz,ctlin5
+	ld	a,c		;and not first character,
+	or	a
+	jp	z,cmdin
+	ld	b,c		;clear the line
+dellp:
+	call	vprint
+	db	backsp,' ',backsp,0
+	dec	ix		;drop pointer
+	djnz	dellp		;and clear it all
+	ld	c,0		;set no characters
+	ld	(ix),0		;put 0 at start
+	jp	cmdin
+
+ctlin5:
+	cp	lf		;if lf
+	jp	nz,ctlin6
+	call	vprint		;print help
+	db	cr,lf,lf,'TEX command line format:',cr,lf
+	db	tid,'X [dd/mm/yy] hh:mm[:ss]',cmdsep,'<command line>',cr,lf
+	db	' -- Execute <command line> once at specified time [/date]'
+	db	cr,lf
+	db	tid,'R [/days] hh:mm[:ss];<command line>',cr,lf
+	db	' -- Repeated execution of <command line> at '
+	db	'specified intervals.',cr,lf
+	db	tid,'P <number> -- priority of command (1 - 254,'
+	db	' 1 = highest, default = '
+
+	 if	defpri ge 100
+	db	(defpri/100) + '0'
+	 endif
+
+	db	((defpri mod 100) / 10)	+ '0'
+	db	(defpri	mod 10)	+ '0'
+	db	')',cr,lf
+	db	'NOTE THE '''
+	db	cmdsep
+	db	''' BETWEEN THE TIME SPECIFICATION AND THE COMMAND!'
+	db	cr,lf,lf
+	db	'Both ',tid,'R and ',tid,'X may be specified in the same'
+	db	' command line. '
+	db	'Example:',cr,lf
+	db	tid,'R /5 10:05:03 ',tid
+	db	'X 15/3/88 12:04;COMPLAIN LOUDLY;DIR',cr,lf
+	db	' -- Executes the program COMPLAIN with parameter LOUDLY, '
+	db	'followed by DIR',cr,lf
+	db	'starting at 12:04 pm on March 15, 1988 and every'
+	db	' 5 days, 10 hours',cr,lf,'5 minutes and 3 seconds '
+	db	'thereafter.',cr,lf,lf
+	db	'Command lines which do not begin with ',tid,' are executed '
+	db	'as they are encountered.',cr,lf
+	db	lf,'Other commands:',cr,lf
+	db	'LF - Print this help',cr,lf
+	db	'ESC - Terminate TEX',cr,lf
+	db	'Control-',dispchr + '@'
+	db	' - Display current command line list.',cr,lf
+	db	'Control-',editchr + '@'
+	db	' - Edit current command line list.'
+	db	cr,lf,lf,0
+	call	rescmd		;restore command line
+	jp	cmdin		;and continue
+
+
+ctlin6:
+	cp	editchr		;if edit character,
+	jp	nz,ctlin7
+	call	vprint
+	db	cr,lf,1,' Delete (number, cr = no): ',2,' ',bell,0
+	ld	a,0ffh
+	call	bbline
+	call	crlf
+	or	a		;if none, quit
+	jr	z,editex
+	ld	a,(hl)		;must be digit (in case 0)
+	call	isdigit
+	jr	nz,editex
+	call	eval10		;got one, convert
+	ld	e,a		;save it
+	call	dispcmd		;display command
+	jr	nz,editex	;non-existent
+	call	vprint
+	db	'Delete this command (Y/N)? ',0
+	ld	a,0ffh
+	call	bbline
+	call	crlf
+	or	a		;not if none entered
+	jr	z,editex
+	ld	a,(hl)		;get it
+	cp	'Y'		;if Y,
+	jr	nz,editex
+	ld	a,e		;restore count
+	call	remove		;delete it
+	call	vprint
+	db	cr,lf,'Done.',cr,lf,0
+editex:
+	call	rescmd		;restore command line
+	jp	cmdin		;and continue
+
+
+ctlin7:
+	cp	dispchr		;if display character,
+	jp	nz,cmdin
+	push	bc		;save bc
+	push	de		;and de
+	ld	a,(numcmd)	;get number present
+	ld	b,a		;put count in B
+	ld	c,0		;current in C
+	ld	e,5		;display 5 lines/screen
+
+displp:
+	ld	a,c		;get current
+	call	dispcmd		;display it
+	jr	nz,dchrex	;error or none entered
+	inc	c		;bump current
+	dec	e		;if done enough lines,
+	jr	nz,displp1
+	call	vprint
+	db	cr,lf,1,' Strike any key -- ',2,0
+	call	cin
+	ld	a,cr
+	call	cout
+	call	ereol		;then erase it
+	ld	e,5		;reset line count
+
+displp1:
+	djnz	displp		;and loop till all done
+dchrex:
+	pop	de
+	pop	bc
+	call	rescmd		;restore command line
+	jp	cmdin
+
+
+docmd:
+	call	writevar	;write current TEX.VAR
+
+done:
+	xor	a		;say we're not a shell
+	call	putcst
+	call	getud		;restore original du:
+	call	dinit		;de-init terminal
+	ld	sp,(oldstk)	;restore stack
+	ret
+
+;Come here if user types 'GO'
+nogo:
+	call	vprint
+	db	'''GO'' cannot be used with TEX.',cr,lf,0
+	ret
+
+;Display details on the command line whose number (zero-based) is in A
+;  Exit with Z if ok, NZ if out of range or no commands
+dispcmd:
+	push	bc		;save bc
+	push	de
+	push	hl
+	push	ix		;and ix
+	ld	e,a		;save number
+	ld	a,(numcmd)	;get count
+	or	a		;if none,
+	jr	nz,dispckc
+	call	vprint
+	db	cr,lf,'No commands presently entered.',cr,lf,0
+	jr	dispnok
+dispckc:
+	ld	d,a
+	ld	a,e		;restore
+	cp	d		;if out of range,
+	jr	c,dispok
+	call	vprint
+	db	cr,lf,'Command out of range.',cr,lf,0
+dispnok:
+	or	0ffh		;and set NZ
+	jp	dispex
+
+dispok:
+	call	getcte		;command table entry
+	push	hl		;in ix
+	pop	ix
+	call	vprint
+	db	cr,lf,'Command number ',0
+	ld	a,c
+	call	pafdc		;print
+	call	vprint
+	db	':  Priority = ',0
+	ld	a,(ix+10)
+	call	pafdc
+	call	vprint
+	db	'   Scheduled: ',0
+	push	bc
+	push	ix
+	ld	b,3
+	jr	pslp1		;jump over first colon
+pslp:
+	call	colon
+pslp1:	ld	a,(ix+2)
+	call	pa2hc		;print each
+	inc	ix
+	djnz	pslp
+	pop	ix
+	pop	bc
+	call	vprint
+	db	',  ',0
+	ld	h,(ix)
+	ld	l,(ix+1)
+	call	datehl		;convert days to date
+	call	pa2hc		;print days
+	ld	a,' '
+	call	cout
+	push	hl
+	ld	a,l		;get month (bcd)
+	call	jbcd2bn		;convert to binary
+	call	getmonth	;get name
+	call	pstr		;and print
+	pop	hl
+	call	vprint
+	db	' 19',0
+	ld	a,h		;and year
+	call	pa2hc
+	call	vprint
+	db	cr,lf,'   Repeat Interval: ',0
+	ld	h,(ix+5)
+	ld	l,(ix+6)
+	call	phlfdc		;print days
+	push	bc
+	push	ix
+	ld	b,3
+prlp:
+	call	colon
+	ld	a,(ix+7)
+	call	pa2hc
+	inc	ix
+	djnz	prlp
+	pop	ix
+	pop	bc
+
+	call	vprint
+	db	'   Command Line is:',cr,lf,0
+	ld	a,(ix+11)	;then get command line
+	call	getcmd
+	call	pstr		;print it
+	call	crlf
+	xor	a		;set Z to say ok
+dispex:
+	pop	ix
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+
+;Put null-terminated command line pointed to by hl into
+;   zcpr3 command line buffer.
+;   Exit with Z=1 if null command or error, NZ if ok
+stcmd:
+	ld	a,(hl)		;quit if none
+	or	a
+	ret	z
+	cp	';'		;ignore comments
+	ret	z
+	push	hl
+	push	de
+	ld	de,(stcbuf)	;ok, move to new buffer
+stclp:
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	or	a		;till ending zero
+	jr	nz,stclp
+	ld	hl,(stcbuf)	;get new buffer address
+	call	capstr		;capitalise it
+	call	putcl		;then put in real clb
+	jr	nz,stcex	;nz if ok
+	call	vprint
+	db	cr,lf,'Command Line Overflow.',cr,lf,0
+	xor	a		;set Z
+stcex:
+	pop	de
+	pop	hl
+	ret
+
+;Process TEX command line in clb
+; Enter with hl pointing to command line
+ptcmd:
+	push	bc
+	push	de		;save regs
+	push	hl
+	push	ix
+	ld	a,(numcmd)	;get current count
+	cp	maxcmd		;more allowed?
+	jr	c,ptcok
+	call	vprint		;no
+	db	cr,lf,'Command buffers full.',cr,lf,0
+	jp	ptdun
+ptcok:
+	push	hl		;save clb pointer
+	xor	a		;clear new command table entry
+	ld	(newcte),a
+	ld	bc,ctsize-1
+	ld	hl,newcte
+	ld	de,newcte+1
+	ldir
+	ld	a,defpri	;set default priority
+	ld	(newcte+10),a
+	pop	hl		;restore cmd line pointer
+ptloop:
+	call	sksp		;skip over spaces
+	ld	a,(hl)		;is this a TEX command id?
+	inc	hl
+	cp	tid
+	jp	nz,ptccs	;no, maybe a command separator
+	ld	a,(hl)		;get next character
+	inc	hl
+	call	caps		;capitalise
+	cp	'P'		;priority?
+	jr	z,ptlp		;yes
+	cp	'R'		;repeat time?
+	jr	z,ptlr		;yes
+	cp	'X'		;absolute execution time?
+	jp	nz,pterr	;no, must be error
+ptlx:
+	call	scantd		;scan for time/date
+	jp	nz,pterr	;error
+	push	af		;save seconds
+	ld	a,d		;if days = 0,
+	or	e
+	jr	nz,ptlx1
+	ld	d,(iy)		;use current day
+	ld	e,(iy+1)
+ptlx1:
+	pop	af		;restore seconds
+	ld	ix,newcte
+sttime:
+	ld	(ix+4),a	;store seconds
+	ld	(ix+3),c	;minutes
+	ld	(ix+2),b	;hours
+	ld	(ix+1),e	;low(days)
+	ld	(ix),d		;hi(days)
+	jr	ptloop
+ptlp:
+	call	sksp		;skip over spaces
+	call	eval10		;get decimal number
+	or	a		;ignore 0
+	jp	z,pterr
+	cp	255		;and 255
+	jr	z,pterr
+	ld	(newcte+10),a	;else store it
+	jr	ptloop		;done
+ptlr:
+	call	scantd
+	jr	nz,pterr	;error
+	push	af		;save a,b,c
+	push	bc
+	ld	ix,newcte	;if no !X yet,
+	ld	b,5
+ptlr1:
+	ld	a,(ix)
+	or	a
+	jr	nz,ptlr4
+	inc	ix
+	djnz	ptlr1
+ptlr2:
+	ld	b,5		;transfer current time
+	push	iy
+	ld	ix,newcte
+ptlr3:
+	ld	a,(iy)		;to force immediate execute
+	ld	(ix),a
+	inc	ix
+	inc	iy
+	djnz	ptlr3
+	pop	iy
+ptlr4:
+	pop	bc		;restore time
+	pop	af
+	ld	ix,newcte+5	;get pointer to repeat interval
+	jr	sttime		;and store it
+
+ptccs:
+	cp	cmdsep		;command separator?
+	jr	z,ptpc		;yes, put in CMD
+	or	a		;zero?
+	jp	nz,ptloop	;no, try again
+	jr	pterr		;yes, must be error line
+ptpc:
+	push	hl		;save pointer
+	ld	a,(numcmd)	;get command count
+	ld	(newcte+11),a	;store as pointer to CMD
+	ld	l,a
+	ld	h,0
+	ld	de,ctsize
+	call	mulhd		;add (count * size)
+	ld	de,(cmdtab)	;to table base
+	add	hl,de		;to get pointer to new entry
+	ex	de,hl
+	ld	hl,newcte
+	ld	bc,ctsize
+	ldir			;and store it
+	ld	a,(numcmd)	;now find CMD place
+	call	getcmd
+	ex	de,hl		;to de
+	pop	hl
+ptpcl:
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	or	a		;repeat till 0
+	jr	nz,ptpcl
+	ld	ix,numcmd	;then bump count
+	inc	(ix)
+	call	sorttab		;and sort in order
+	jr	ptdun
+
+pterr:
+	call	vprint
+	db	cr,lf,'Error in TEX command.',cr,lf,0
+
+ptdun:
+	pop	ix
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+;Scan the command line table and set to execute any that are due.
+;Enter with IY pointing to Z80DOS standard time buffer (see GETTIME)
+;Exit with NZ if command has been placed in real command line buffer
+;   and requires executing.
+;
+;Format of command table:
+;   Bytes 0,1:	Day of scheduled execution, hi byte/lo byte
+;   Byte  2  :	BCD hours    of scheduled execution
+;   Byte  3  :	BCD minutes		"
+;   Byte  4  :	BCD seconds		"
+;   Bytes 5,6:	Repeat interval, hi byte/lo byte   |
+;   Byte  7  :	BCD hours of repeat interval	   | 0 = execute once only
+;   Byte  8  :	BCD minutes	"		   |
+;   Byte  9  :	BCD seconds	"		   |
+;   Byte 10  :	Priority of this command (1 - 255, 1 = highest)
+;   Byte 11  :	Position of this command in CMD list
+;
+scan4ex:
+	ld	a,c		;only if no command line ..
+	or	a		;in process of being typed
+	jr	z,scan4x1
+	xor	a		;set Z
+	ret
+scan4x1:
+	ld	a,(numcmd)	;get current command count
+	or	a
+	ret	z		;quit if none
+	push	bc		;save regs
+	push	de
+	push	hl
+	push	ix
+	push	iy
+	ld	e,0		;clear command indicator
+	ld	c,a		;put command count in C
+s4x:
+	ld	a,e		;current command to A
+	call	getcte		;get command table entry in hl
+	push	de		;save the current count
+	push	iy		;get time bytes to de
+	pop	de
+	ld	b,5		;compare 5 bytes
+	call	compb		;do the compare
+	pop	de		;restore count
+	jr	z,s4exec	;equal, execute now
+	jr	c,s4exec	;past time, execute
+
+;This command not due yet.
+s4xnex:
+	inc	e		;bump current command
+	dec	c
+	jr	nz,s4x		;and try next one
+	xor	a		;none due yet: set Z
+	jp	s4dun		;and exit
+
+s4exec:
+	ld	a,e		;get cmd table entry
+	call	getcte
+	push	hl		;into ix
+	pop	ix
+	ld	a,(ix+11)	;and retrieve position in CMD
+	ld	d,a		;save in D
+	call	getcmd		;find its start
+	call	stcmd		;put in real clb
+	jr	nz,s4xok	;ok
+	ld	a,e		;overflow, remove from list
+	call	remove
+	xor	a		;clear Z
+	jr	s4dun
+
+s4xok:
+	ld	a,d		;ok, so get CMD entry
+	call	getcmd
+	call	pstr		;print it
+	call	crlf
+	ld	a,e		;then command table entry
+	call	getcte
+	push	hl		;get in ix
+	pop	ix
+	ld	b,5		;if repeat interval is zero,
+ckrpt:
+	ld	a,(ix+5)
+	or	a
+	jr	nz,setrpt
+	inc	ix
+	djnz	ckrpt
+	ld	a,e		;remove this one
+	call	remove
+	or	0ffh		;set nz so we execute
+	jp	s4dun		;and go
+
+setrpt:
+	push	hl
+	pop	ix		;get cte in ix again
+	ld	a,(ix+9)
+	ld	c,(ix+4)	;get seconds
+	ld	b,0		;no carry
+	call	addtime		;add them
+	ld	(ix+4),a	;store
+	ld	a,(ix+8)	;minutes
+	ld	c,(ix+3)
+	call	addtime
+	ld	(ix+3),a
+	ld	a,(ix+7)	;hours
+	ld	c,(ix+2)
+	call	addhour
+
+upday:
+	ld	(ix+2),a	;store
+	ld	a,(ix+1)	;get lo byte of days
+	add	a,b		; add any overflow from hours
+	adc	a,(ix+6)	;add update interval
+	ld	(ix+1),a
+	ld	a,(ix)		;then hi byte
+	adc	a,(ix+5)	; (note: not bcd)
+	ld	(ix),a
+
+	push	iy		;get time in de again
+	pop	de
+	ld	b,5		;see if this would execute now
+	call	compb
+	jr	z,setrpt	;yes, update again
+	jr	c,setrpt	;ditto
+
+	or	0ffh		;no, so set NZ, allow execute
+
+s4dun:
+	pop	iy
+	pop	ix		;restore regs
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+;Add bcd time quantities in A and C, modulo 60 with carry in B
+;Result in A, B=1 if overflow
+;Addition of minutes/seconds
+addtime:
+	rr	b		;put lsb B into carry
+	ld	b,0		;then clear B
+	adc	a,c		;add A & C
+	daa			;adjust
+	jr	c,addovf	;overflow if >99
+	cp	60h		;or if >59
+	ret	c
+addovf:
+	sub	60h		;overflow: subtract 60
+	daa
+	ld	b,1		;b=1
+	ret
+
+;Addition of hours
+addhour:
+	rr	b		;put lsb B into carry
+	ld	b,0		;then clear B
+	adc	a,c		;add A & C
+	daa			;adjust
+	jr	c,addhvf	;overflow if >99
+	cp	24h		;or if >23
+	ret	c
+
+addhvf:
+	sub	24h		;overflow: subtract 24
+	daa
+	ld	b,1		;b=1
+	ret
+
+
+;Remove command table entry in A from list
+remove:
+	push	bc
+	push	de
+	push	hl
+	push	ix
+	push	af		;save it
+	ld	a,(numcmd)	;get current count
+	ld	e,a
+	pop	af		;restore and compare
+	cp	e
+	jr	nc,remex	;error, not in list
+	call	getcte		;get command table entry
+	push	hl
+	pop	ix		;in ix
+	ld	(ix+10),0ffh	;set priority = 255
+	ld	e,(ix+11)	;get its position in CMD
+	ld	a,(numcmd)	;get current count
+	dec	a
+	cp	e		;if not last one,
+	jr	z,remsrt
+	ld	a,e
+	push	de
+	call	getcmd		;find its start
+	push	hl		;save
+	ld	a,e
+	inc	a		;then get address of next one
+	call	getcmd
+	push	hl
+	ex	de,hl		;put into de
+	ld	a,(numcmd)	;get address of end
+	call	getcmd
+	xor	a		;clear carry
+	sbc	hl,de		;get difference
+	push	hl
+	pop	bc		;into bc
+	pop	hl		;restore source
+	pop	de		;destination
+	ldir			;and move down
+	pop	de		;restore the place in CMD
+	ld	ix,(cmdtab)	;test command table
+	ld	a,(numcmd)
+	ld	d,a
+remadj:
+	ld	a,(ix+11)	;if this one's position > deleted,
+	cp	e
+	jr	c,remadj1
+	dec	(ix+11)		;subtract 1
+remadj1:
+	ld	bc,ctsize
+	add	ix,bc		;then do next
+	dec	d
+	jr	nz,remadj	;till all done
+
+remsrt:
+	call	sorttab		;sort command table
+remex:
+	pop	ix
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+;Find line number in A. Exit with hl pointing to first byte.
+getcmd:
+	ld	hl,(cmds)	;look in command buffer
+	jr	findtab		;and use findtab
+
+;Find month name in A (1-12). Exit with hl pointing to first byte
+getmonth:
+	ld	hl,monthname	;hl points to first
+	dec	a		;get in range 0-11
+	jr	findtab
+
+;Get entry A (zero-based) in a list of null-terminated strings
+;  pointed to by hl. Exit with hl pointing to desired entry
+findtab:
+	or	a		;if zero,
+	ret	z		;done
+	push	bc		;else save bc
+	push	de		;and de
+	ld	e,a		;put it in C
+findc1:
+	ld	bc,0ffffh	;ensure bc doesn't interfere
+	xor	a		;search for 0
+	cpir
+	dec	e		;and drop count
+	jr	nz,findc1	;loop till done
+	pop	de
+	pop	bc
+	ret
+
+
+;Get Command Table Entry in A
+; Exit with hl pointing to desired entry
+getcte:
+	push	de
+	ld	l,a		;multiply size by count
+	ld	h,0
+	ld	de,ctsize
+	call	mulhd
+	ld	de,(cmdtab)	;then add to base
+	add	hl,de
+	pop	de
+	ret
+
+
+;Sort command table. Delete any with priority = 0ffh
+sorttab:
+	push	bc
+	push	de
+	push	hl
+	push	ix
+	ld	a,(numcmd)	;set command count
+	or	a		;quit if none
+	jr	z,sortex
+	cp	1		;don't sort if one
+	jr	z,tstval
+	ld	(ssb+2),a
+	xor	a
+	ld	(ssb+3),a
+	ld	hl,(cmdtab)	;base = command table
+	ld	(ssb),hl
+	ld	de,ssb
+	call	sort		;do the sort
+tstval:
+	ld	ix,(cmdtab)	;test how many are valid
+	ld	a,(numcmd)
+	ld	b,a
+	ld	c,0
+sortlp:
+	ld	a,(ix+10)	;get priority byte
+	cp	0ffh
+	jr	nz,sortok	;ok if not deleted
+	inc	c		;else bump deleted count
+sortok:
+	ld	de,ctsize	;test next
+	add	ix,de
+	djnz	sortlp		;and do all
+	ld	a,(numcmd)	;subtract deleted count
+	sub	c
+	ld	(numcmd),a
+sortex:
+	pop	ix
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+;Routine for sort routine to compare records
+;Return with Z=1 if records are equal, else C=1 if (de) < (hl)
+ctcomp:
+	push	bc
+	push	ix
+	push	iy
+	push	hl
+	pop	iy		;hl --> iy
+	push	de
+	pop	ix		;de --> ix
+	ld	a,(ix+10)	;test priority
+	cp	(iy+10)
+	jr	nz,ctcompx
+	ld	b,5		;then test 5 time bytes
+ctc1:
+	ld	a,(ix)
+	cp	(iy)
+	jr	nz,ctcompx
+	inc	ix
+	inc	iy
+	djnz	ctc1
+ctcompx:
+	pop	iy
+	pop	ix
+	pop	bc
+	ret
+
+
+;Restore current command line after help, display etc.
+rescmd:
+	call	doprom		;do prompt
+	ld	a,c		;quit if line empty
+	or	a
+	ret	z
+	ld	iy,(clb)	;point to command line
+resclp:
+	ld	a,(iy)		;output it all till 0
+	or	a
+	ret	z
+	call	cout
+	inc	iy
+	jr	resclp
+
+
+;Print prompt for user input
+doprom:
+	push	bc
+	push	iy
+	push	hl
+	call	vprint
+	db	cr,'[',0
+	call	gettime		;get current time in (iy)
+	ld	a,(iy+2)	;get hours
+	call	pa2hc		;print
+	call	colon
+	ld	a,(iy+3)	;then minutes
+	ld	(prmins),a	;save
+	call	pa2hc
+	call	vprint
+	db	'] ',0
+
+	ld	bc,(curdu)	;get the du:
+	ld	a,b		;print it
+	add	a,'A'
+	call	cout
+	ld	a,c
+	call	pafdc
+	call	dutdir		;has this du: got a name?
+	jr	z,setin		;no
+	call	colon		;yes, print colon
+	ld	b,8		;max = 8
+pdunam:
+	ld	a,(hl)
+	inc	hl
+	cp	' '
+	jr	z,setin
+	call	cout
+	djnz	pdunam
+
+setin:
+	ld	a,'>'
+	call	cout
+	pop	hl
+	pop	iy
+	pop	bc
+	ret			;done
+
+;Read current TEX.VAR if any
+; Structure of file is as follows:
+; Byte 1: Number of commands in file (binary)
+; Bytes 2 - ? : Command table (n entries: see SCAN4EX for format)
+; Bytes ? - ? : Commands (ASCII, each null-terminated)
+
+readvar:
+	push	bc
+	push	de
+	push	hl
+	call	logtex		;log into correct du:
+	ld	de,tvfcb	;point to TEX.VAR fcb
+	call	initfcb		;initialise
+	call	f$exist		;does it exist?
+	jp	z,readvarx	;no
+	call	fi0$open	;yes, open it
+	call	f0$get		;get count
+	jr	nz,rverr	;error
+	ld	(numcmd),a	;store
+	ld	b,a		;put in B
+	ld	hl,(cmdtab)	;set to store in table
+rvgtab:
+	ld	c,ctsize	;ctsize bytes per entry
+rvgtab1:
+	call	f0$get		;get next byte
+	jr	nz,rverr	;error
+	ld	(hl),a		;store
+	inc	hl		;do all this command
+	dec	c
+	jr	nz,rvgtab1
+	djnz	rvgtab		;then do rest
+
+	ld	a,(numcmd)	;now get commands into buffer
+	ld	b,a
+	ld	hl,(cmds)
+rvgcmd:
+	call	f0$get		;get next byte
+	jr	nz,rverr	;error
+	ld	(hl),a
+	inc	hl
+	or	a		;done this one if zero
+	jr	nz,rvgcmd
+	djnz	rvgcmd		;then do rest
+	call	fi0$close	;close file
+	jr	readvarx	;done
+
+rverr:
+	call	vprint
+	db	cr,lf,'Error in reading TEX.VAR.',cr,lf,0
+
+readvarx:
+	ld	bc,(curdu)	;back to our own du:
+	call	logud
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+;Write TEX.VAR file to disk
+writevar:
+	push	bc		;save registers
+	push	de
+	push	hl
+	call	logtex		;log into correct du:
+	ld	de,tvfcb	;point to TEX.VAR fcb
+	call	initfcb		;initialise
+	call	f$delete	;erase it if there
+	ld	a,(numcmd)	;if no commands,
+	or	a
+	jr	z,writevarx	;quit
+	ld	b,a		;save in B
+	call	fo0$open	;then open
+	jr	nz,wverr	;error
+	ld	a,b		;number of commands to A
+	call	f0$put		;and write
+	jr	nz,wverr
+	ld	hl,(cmdtab)	;write table first
+wvtab:
+	ld	c,ctsize	;size to C
+wvtab1:
+	ld	a,(hl)		;write all bytes
+	call	f0$put
+	jr	nz,wverr
+	inc	hl
+	dec	c
+	jr	nz,wvtab1
+	djnz	wvtab		;for all entries
+
+	ld	hl,(cmds)	;write commands next
+	ld	a,(numcmd)
+	ld	b,a
+wvcmd:
+	ld	a,(hl)		;get next byte
+	call	f0$put
+	jr	nz,wverr
+	inc	hl
+	or	a		;done this one if 0
+	jr	nz,wvcmd
+	djnz	wvcmd		;then do the rest
+	call	fo0$close	;close the file
+	jr	writevarx
+
+wverr:
+	call	vprint
+	db	cr,lf,'Error in writing TEX.VAR file.',cr,lf,0
+
+writevarx:
+	ld	bc,(curdu)	;back to our own du:
+	call	logud
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+
+;Erase current TEX.VAR file if any
+eravar:
+	call	logtex		;log into appropriate DU:
+	ld	de,tvfcb	;point to TEX.VAR fcb
+	call	initfcb		;initialize
+	call	f$delete	;and erase it
+	ld	bc,(curdu)	;then back to our DU:
+	call	logud
+	ret
+
+;Log into TEX.VAR DU:
+logtex:
+	ld	a,(rootfl)	;use root directory?
+	or	a
+	jr	z,ltsepdu	;no, specified DU:
+	call	root		;yes, get root directory
+	jr	ltlog
+ltsepdu:
+	ld	a,(nrdu)	;get disk
+	ld	b,a		;in B
+	ld	a,(nrdu+1)	;user in C
+	ld	c,a
+ltlog:
+	call	logud		;log into it
+	ret
+
+;Scan string pointed to by hl for time and date information.
+; End on non-space, non-digit, with hl pointing to it.
+; On exit, Z = ok, NZ = error
+; if no error,	A = seconds, B = hours, C = minutes (all BCD)
+;		DE = days (since 1/1/78 if year supplied) in binary
+scantd:
+	push	ix
+	ld	ix,stdbuf	;point to buffer
+	push	hl
+	xor	a		;clear it
+	ld	b,5
+	ld	hl,stdbuf
+	call	fillb
+	pop	hl
+stdlp:
+	call	sksp		;advance to next
+	ld	a,(hl)		;get it
+	cp	'/'		;if /,
+	jr	z,stdays	;process as day count
+	call	isdigit		;if not digit,
+	jp	nz,stddun	;finished
+	call	eval10		;read next number
+	ld	a,(hl)		;find what stopped it
+	cp	'/'		;date?
+	jr	z,stdate	;yes
+	cp	':'		;time?
+	jp	nz,stderr	;no, error
+	ld	a,e		;time: get first digit
+	cp	24		;max 23
+	jp	nc,stderr
+	call	binbcd		;convert to bcd
+	ld	(stdbuf+2),a	;store
+	inc	hl		;get next
+	call	eval10
+	cp	60		;max 60
+	jp	nc,stderr
+	call	binbcd
+	ld	(stdbuf+3),a	;minutes
+	ld	a,(hl)		;what stopped it?
+	cp	' '
+	jp	z,stdlp		;space ok
+	cp	cmdsep		;command separator
+	jp	z,stdlp		;ok
+	cp	':'
+	jr	nz,stderr	;error if not :
+	inc	hl		;get next
+	call	eval10
+	cp	60		;max 60
+	jr	nc,stderr
+	call	binbcd
+	ld	(stdbuf+4),a	;seconds
+	jp	stdlp		;done
+
+stdays:
+	inc	hl
+	call	eval10		;convert to day count
+	ld	(ix),d
+	ld	(ix+1),e
+	jp	stdlp
+
+stdate:
+	ld	a,e		;get first digit
+	ld	(stdbuf+1),a	;store
+	inc	hl
+	call	eval10		;get next
+	ld	a,(hl)		;what stopped it?
+	cp	'/'		;must be /
+	jr	nz,stderr
+stdat1:
+	push	hl
+	ld	a,e
+	call	mths_to_days	;ok, convert months to days
+	ld	a,(stdbuf+1)	;add day count
+	ld	e,a
+	ld	d,0
+	add	hl,de
+	ld	(ix),h		;store
+	ld	(ix+1),l
+	pop	hl		;restore pointer
+	inc	hl
+	call	eval10		;get year
+	cp	78		;must be >77
+	jr	c,stderr
+	push	hl
+	push	af		;save year
+	call	yr_to_days	;convert to days
+	ld	e,(ix+1)	;then add to last
+	ld	d,(ix)
+	add	hl,de
+	pop	af		;restore year
+	ld	e,a
+	and	0fch		;if leap year,
+	cp	e
+	jr	nz,stdat2
+	ld	a,(month)	;and month >2,
+	cp	3
+	jr	c,stdat2
+	inc	hl		;add 1
+stdat2:
+	ld	(ix),h
+	ld	(ix+1),l
+	pop	hl
+	jp	stdlp		;done
+
+stderr:
+	or	0ffh		;flag 'not ok'
+	jr	stdun1
+
+stddun:
+	xor	a		;clear Z to flag ok
+stdun1:
+	ld	d,(ix)		;load registers
+	ld	e,(ix+1)
+	ld	b,(ix+2)
+	ld	c,(ix+3)
+	ld	a,(ix+4)
+	pop	ix
+	ret
+
+;Convert month in A to days in hl
+mths_to_days:
+	push	ix
+	push	bc
+	push	de
+	ld	(month),a	;save month
+	ld	b,a		;B is counter
+	ld	hl,0		;clear count
+	dec	b		;january = 0
+	jr	z,mtdex		;done if so
+	ld	ix,montab	;point ix to month table
+mtdlp:
+	ld	e,(ix)
+	ld	d,0
+	add	hl,de		;add this month
+	inc	ix		;bump pointer
+	djnz	mtdlp		;loop till done
+mtdex:
+	pop	de
+	pop	bc
+	pop	ix
+	ret
+
+montab:	db	31,28,31,30,31,30,31,31,30,31,30,31
+
+
+;Convert 2-digit year in A to days since Dec 31,1977 in hl
+yr_to_days:
+	push	bc
+	push	de
+	ld	c,a		;save the year
+	ld	b,78		;initialise year count
+	ld	hl,0		;and day count
+yrlp:
+	ld	a,b		;there yet?
+	cp	c
+	jr	z,yrex		;yes
+	ld	de,365		;no, assume 365 days
+	and	0fch		;but if leap year (divisible by 4),
+	cp	b
+	jr	nz,yrlp1
+	inc	de		;add 1
+yrlp1:
+	add	hl,de		;add this year in
+	inc	b		;bump year count
+	jr	yrlp
+yrex:
+	pop	de
+	pop	bc
+	ret
+
+
+; Module Name:	DATEHL
+; Author:	Carson Wilson
+; Version:	1.0
+; Date: 	25 Sept 87
+
+;
+; DATEHL converts the value in HL to BCD year, month, day
+;	 for use with Z80DOS time stamps.
+;
+; Inputs:	HL contains hex days since December 31, 1977
+;
+; Outputs:	H contains BCD 20th century year
+;		L contains BCD month
+;		A contains BCD day
+;
+;		Zero flag set (Z) and A=0 if invalid date (zero) detected,
+;		Zero flag reset (NZ) and A=0ffh otherwise.
+
+; Adapted from B5C-CPM3.INS
+
+DateHL:
+	ld	a,h
+	or	l		; Test blank date (zero)
+	ret	z		; Return Z and A=0 if so
+
+	push	bc		; save bc and de
+	push	de
+	ld	(days),hl	; Save initial value
+	ld	b,78		; Set years counter
+dhlloop:
+	call	ckleap
+	ld	de,-365		; Set up for subtract
+	jp	nz,nolpy	; Skip if no leap year
+	dec	de		; Set for leap year
+nolpy:
+	add	hl,de		; Subtract
+	jp	nc,ydone	; Continue if years done
+	ld	a,h
+	or	l
+	jp	z,ydone
+	ld	(days),hl	; Else save days count
+	inc	b		; Increment years count
+	jp	dhlloop		; And do again
+;
+; The years are now finished, the years count is in 'B' (HL is invalid)
+;
+ydone:
+	ld	a,b
+	call	binbcd
+	ld	(year),a	; save BCD year
+;
+	call	ckleap		; Check if leap year
+	ld	a,-28
+	jp	nz,febno	; February not 29 days
+	ld	a,-29		; Leap year
+febno:
+	ld	(feb),a		; Set february
+	ld	hl,(days)	; Get days count
+	ld	de,mtable	; Point to months table
+	ld	b,0ffh		; Set up 'B' for subtract
+	ld	a,0		; Set a for # of months
+mloop:
+	push	af
+	ld	a,(de)		; Get month
+	ld	c,a		; Put in 'C' for subtract
+	pop	af
+	ld	(days),hl	; save days count
+	add	hl,bc		; Subtract
+	inc	de		; Increment months counter
+	inc	a
+	jp	c,mloop		; Loop for next month
+;
+; The months are finished, days count is on stack.  First, calculate
+; month.
+;
+mdone:
+	ld	b,a		; Save months
+	ld	hl,(days)
+	ld	a,h
+	or	l
+	jp	nz,nzd
+	dec	de
+	dec	de
+	ld	a,(de)
+	cpl
+	inc	a
+	ld	l,a
+	dec	b
+nzd:
+	ld	a,l		; Retrieve binary day of month
+	call	binbcd		; Convert to BCD
+	push	af		; Save day in A
+;
+	ld	a,b		; Retrieve the binary month
+	call	binbcd		; Convert binary month to BCD
+	ld	l,a		; Return month in L
+;
+	ld	a,(year)
+	ld	h,a		; Return year in H
+;
+	or	0ffh		; Return no error
+	pop	af		; Restore day
+	pop	de		; then de and bc
+	pop	bc
+	ret
+
+;
+; Support Routines:
+;
+
+;
+; Check for leap years.
+;
+ckleap:	ld	a,b
+	and	0fch
+	cp	b
+	ret
+;
+; Convert A to BCD & store back in A
+;
+BinBCD:
+	or	a
+	ret	z
+	push	bc
+	ld	b,a
+	xor	a
+BinBCD1:
+	add	a,1
+	daa
+	djnz	BinBCD1
+	pop	bc
+	ret
+;
+; Months table
+;
+mtable:
+	db	-31		;January
+feb:
+	db	-28		;February
+	db	-31,-30,-31,-30	;Mar-Jun
+	db	-31,-31,-30	;Jul-Sep
+	db	-31,-30,-31	;Oct-Dec
+days:
+	ds	2		; temporary buffers
+year:
+	ds	1
+
+;Get the current time from the system
+;  This routine gets the current time from Z80DOS's inbuilt Get Time
+;  function. If you are not using Z80DOS or similar, you will need to
+;  write your own routine which returns with current BCD seconds in A,
+;  and with IY pointing to a table which is structured as follows:
+;
+;
+;  Note reversed order of day count from Z80DOS standard
+;
+;  All other registers are unaltered.
+;
+gettime:			;modified in version 1.3
+	push	de		;save DE
+	push	bc		;BC
+	push	hl		;HL
+	push	ix		;and IX
+	call	timini		; Initialize and identify clock
+	ld	hl,timestr	; tell rclock were to put time/date
+	push	hl		; will need it again
+	call	rclock		; ..and read the clock
+	jp      nz,done		; no clock, leave TEX          
+	pop	hl		; rclock destroyed hl
+	call	bcd2jul		; convert to Z80DOS style date
+	ld	(timestr),hl	; bcd2jul left answer in hl
+	ld	a,(timestr)	;\_ get the LO byte
+	ld	(timebuf+1),a	;/  and move it down
+	ld	ix,timebuf	; point at corrected time string
+	pop	ix
+	pop	hl
+	pop	bc		;restore registers
+	pop	de
+	ld	iy,timebuf	;point IY to buffer
+	ld	a,(iy+4)	;get seconds in A
+	ret
+
+; combined storage of the two different date/time formats
+
+			;    ___ after RDCLOCK
+			;   /	  ___ after JBCD2BN_
+			;  /	 /     ___ original TEX requirement
+timestr:		; /	/     /
+	ds	1	; YY  | LO |
+timebuf:		;
+	ds	1	; MM  | HI | (IY + 0) = HI byte # days
+	ds	1	; DD  | DD | (IY + 1) = LO  "	   "
+	ds	1	; HH  | HH | (IY + 2) = BCD Hours
+	ds	1	; MM  | MM | (IY + 3) = BCD Minutes
+	ds	1	; SS  | SS | (IY + 4) = BCD Seconds
+
+;Print colon
+colon:
+	push	af
+	ld	a,':'
+	call	cout
+	pop	af
+	ret
+
+;---------------------------------------------------------------------------
+;Constants:
+
+;Names of months (null-terminated)
+monthname:
+	db	'January',0
+	db	'February',0
+	db	'March',0
+	db	'April',0
+	db	'May',0
+	db	'June',0
+	db	'July',0
+	db	'August',0
+	db	'September',0
+	db	'October',0
+	db	'November',0
+	db	'December',0
+
+texft:	db	'TEX'		;default input filetype
+
+;---------------------------------------------------------------------------
+;Variables:
+
+decbuf:	ds	11		;decimal input buffer
+ourname:
+	ds	12		;name under which invoked
+oldstk:	ds	2		;old stack pointer
+clb:	ds	2		;pointer to local command line buffer
+stcbuf:	ds	2		;pointer to buffer for stcmd
+curdu:	ds	2		;original du:
+prmins:	ds	1		;time (in minutes) of last prompt
+cmdtab:	ds	2		;pointer to command table
+cmds:	ds	2		;pointer to command lines
+numcmd:	ds	1		;current number of commands
+newcte:	ds	ctsize		;new command table entry
+stdbuf:	ds	5		;temporary buffer for scantd
+month:	ds	1		;temporary month for scantd
+
+tvfcb:	db	0,'TEX     VAR'	;fcb for TEX.VAR
+	ds	24
+
+ssb:				;sort specification block
+	ds	2		;start address of record 1
+	ds	2		;number of records to sort
+	dw	ctsize		;size of record
+	dw	ctcomp		;address of compare routine
+	ds	2		;address of pointer table
+	db	0ffh		;use pointers
+	ds	1		;unused
+
+	end	tex
+

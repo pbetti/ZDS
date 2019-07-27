@@ -1,0 +1,165 @@
+	TITLE	"QT - S100  5832  Clock - (QTSYS-S100)"
+	SUBTTL	"Description of Clock Module"
+;========================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from ver of 7/5/85
+; Vers 0.3 current as of 18 Oct 88
+;========================================================
+
+VERS	EQU	03
+	.Z80
+	NAME	QTS100
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID/
+
+DESCST:	DEFW	0		; Ptr to statyr
+
+CLKNAM:	DEFB	'QT Systems z80 S-100    '		; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'  QT/Suntronics/Computime S-100',CR,LF
+	DEFB	'  (5832)',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	NPARAMS		; # of parameters
+	DEFW	STRS		; Ptr to strings
+NP0:
+XMHZ	EQU	$+1
+	DEFB	BYTE
+	DEFW	MHZ
+XBASPRT	EQU $+1
+	DEFB	BYTE		; Byte/word flag
+	DEFW	BASE		; Configurable value
+NPARAMS	EQU	($-NP0)/3
+
+; Descriptions of configurable parameters
+
+STRS:	DEFB	'MHz CPU Speed    ',0
+	DEFB	'Base Port Address',0
+
+
+	PAGE
+	SUBTTL	"Clock Code - QT Systems S100 5832"
+
+HLDBIT	EQU	010H
+RDBIT	EQU	020H
+
+BASE	EQU	3CH		; Base port
+CLKCMD	EQU	BASE+1
+CLKDAT	EQU	BASE+2
+
+YEARRG	EQU	12
+NDELY	EQU	3*15H
+
+	CSEG
+;------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	LD	A,HLDBIT	; Hold the clock while reading
+YCMD1	EQU	$+1
+	OUT	(CLKCMD),A	; Board generates 150us delay
+
+YDELY	EQU	$+1
+	LD	B,NDELY
+$$WAIT:	DJNZ	$$WAIT
+				; B equ hi byte equ 10's of year
+				; C equ even/odd
+	LD	BC,256*(RDBIT + YEARRG) + 0
+
+LOOP:	LD	A,B
+	CP	RDBIT + 1
+	JR	NZ,CKDONE
+	LD	E,(HL)		; Save buffer 'seconds'
+CKDONE:	CP	RDBIT - 1
+	JR	Z,HLDOFF	; All done
+	CP	RDBIT + 6
+	JR	NZ,NOTDY
+	DEC	B		; Skip day of week
+	LD	A,B
+YDAT1	EQU	$+1
+NOTDY:	OUT	(CLKDAT),A	; Same port for reg$ select
+	EX	(SP),HL		; Wait
+	EX	(SP),HL
+	CP	RDBIT + 5
+YDAT2	EQU	$+1
+	IN	A,(CLKDAT)	; ...and  input
+	JR	NZ,NOT24
+	AND	03H		; Mask out 24 hr  & am/pm bits
+NOT24:	RLD			; Install nybble
+	DEC	B		; Count down
+	DEC	C		; Toggle odd/even bit
+	BIT	0,C
+ODEVEN:	JR	NZ,LOOP		; Get 2nd nybble
+	INC	HL		; Byte complete$$
+	JR	LOOP			; $$do next one
+
+HLDOFF:	XOR	A		; Turn off clock hold
+YCMD2	EQU	$+1
+	OUT	(CLKCMD),A
+	DEC	HL		; Point at seconds
+	INC	A		;== Set Ok status return of 01
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	LD	A,(XBASPRT)
+	INC	A
+	SETBYT	,YCMD1		; Clkcmd equ base+1
+	SETBYT	,YCMD2
+	INC	A
+	SETBYT	,YDAT1		; Clkdat equ base+2
+	SETBYT	,YDAT2
+
+	SETBYT	XMHZ,
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A
+	ADD	A,A		; 16*mhz
+	SETBYT	,YDELY
+	RET
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

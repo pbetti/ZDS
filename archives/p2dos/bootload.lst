@@ -1,0 +1,332 @@
+   1:			;;
+   2:			;;----------------------------------------------------------------------------
+   3:			;; Z80DARKSTAR BOOTLOADER FOR FLOPPIES, HARD (IDE) AND VIRTUAL DISKS
+   4:			;;----------------------------------------------------------------------------
+   5:			;;
+   6:			rsym bios.sym				; take symbols from bios
+   7:			
+   8:			
+   9:			;--------------------
+  10:	0200          	SREFSIZ	EQU	512			; sector reference size
+  11:	0001          	IF SREFSIZ EQ 512
+  12:	2C00          	SIZE	EQU	(512*11*2)		; size of cp/m system
+  13:			ELSE
+  15:			ENDIF
+  16:								; high order byte of monitor
+  17:	00EE          	MONHBY	EQU	((SYSBASE - SREFSIZ) >> 8) & $FF
+  18:			
+  19:	3000          		ORG BLDOFFS			; code start
+  20:			
+  21:			
+  22:			;       CP/M 2.2 boot-loader for Z80-Simulator
+  23:			;
+  24:			;       Copyrigth (C) 2005-06 by Piergiorgio Betti
+  25:			;
+  26:				;
+  27:				;       begin the load operation
+  28:				;
+  29:	3000          	BOOTLOAD:
+  30:	3000  318000  		LD      SP,$80			; use space below buffer for stack
+  31:	3003  3A0400  		LD	A,(CDISK)		; select...
+  32:	3006  4F      		LD	C, A			; logged drive
+  33:	3007  CDBDFC  		CALL	BBDSKSEL		;
+  34:	300A  DD21A730		LD	IX,FLSECS		; default floppy
+  35:	300E  FE03    		CP	3			; is floppy ?
+  36:	3010  FA1730  		JP	M,BLINI			; yes
+  37:	3013  DD21A330		LD	IX,VDSECS		; no
+  38:				;
+  39:				;	drive logged, calc sectors to read
+  40:				;
+  41:	3017  DD5E02  	BLINI:	LD	E,(IX+2)		; sec. size in DE
+  42:	301A  DD5603  		LD	D,(IX+3)
+  43:	301D  01002C  		LD	BC,SIZE			; CP/M size in BC
+  44:	3020  CDE1FC  		CALL	BBDIV16			; div cpmsize/secsize
+  45:	3023  51      		LD	D,C			; # SECTORS in D
+  46:	3024  14      		INC	D			; pad
+  47:				;
+  48:				; track, side, start sector
+  49:				;
+  50:	3025  010000  		LD	BC, 0			; START TRACK
+  51:	3028  CDABFC  		CALL	BBTRKSET
+  52:	302B  CDD5FC  		CALL	BBSIDSET		; side 0 select
+  53:	302E  1E02    		LD      E,2			; START SECTOR
+  54:	3030  FD2100C2		LD	IY,CCP			; IY = base offset
+  55:				;
+  56:				;       load the next sector
+  57:				;
+  58:	3034  CDEDFC  	BLSECT:	CALL	BBOFFCAL		; calc trans sector and offset
+  59:	0001          	IF SREFSIZ EQ 512
+  60:	3037  3A4200  		LD	A,(FRDPBUF+1)		; high order byte of dma in A
+  61:	303A  FEEE    		CP	MONHBY			; since read is out-of-order we discard
+  62:	303C  F26B30  		JP	P,SKIPRD		; sectors overwriting MONITOR area
+  63:			ENDIF
+  64:				; since we are using a banked bios, to access the space
+  65:				; freed from F000 to FC00 we must ensure CP/M load operation
+  66:				; do NOT overwrite that space during bank switching operated by the
+  67:				; BIOS, to serve our requests...
+  68:	303F  2A4100  		LD	HL,(FRDPBUF)		; load DMA address in HL
+  69:	3042  E5      		PUSH	HL			; save it
+  70:	3043  21AB30  		LD	HL,BMBELOW		; temporary DMA after us
+  71:	3046  224100  		LD	(FRDPBUF),HL		; set up
+  72:				; ------------------------------------------------
+  73:	3049  3A4500  		LD	A,(FDRVBUF)		; get active drive
+  74:	304C  FE02    		CP	2			; is floppy ?
+  75:	304E  F25930  		JP	P,BRDVRT		; no
+  76:	3051  CDDBFC  	BRDFLO:	CALL	BBFDRVSEL		; activate driver
+  77:	3054  CD87FC  		CALL	BBFREAD			; do read
+  78:	3057  1803    		JR	CKERR
+  79:	3059  CD75FC  	BRDVRT:	CALL	BBRDVDSK		; call par. read
+  80:	305C  B7      	CKERR:	OR	A
+  81:	305D  2025    		JR	NZ, BOOTNOK
+  82:			
+  83:	305F  E1      		POP	HL			; recover real DMA address
+  84:	3060  D5      		PUSH	DE			; saves DE
+  85:	3061  EB      		EX	DE,HL			; DMA in DE
+  86:	3062  21AB30  		LD	HL,BMBELOW		; our buffer
+  87:	3065  010002  		LD	BC,SREFSIZ		; size
+  88:	3068  EDB0    		LDIR				; put in right place
+  89:	306A  D1      		POP	DE			; recover our counters
+  90:			
+  91:				; go to next sector if load is incomplete
+  92:	306B  15      	SKIPRD:	DEC     D               	; sects=sects-1
+  93:	306C  CA00D8  		JP      Z,BIOS			; head for the bios
+  94:				;
+  95:				;       more sectors to load
+  96:				;
+  97:	306F  1C      	BLNXTS:	INC     E		; sector = sector + 1
+  98:	3070  7B      		LD      A,E
+  99:	3071  3D      		DEC	A		; offset is zero based in table
+ 100:	3072  DDBE00  		CP      (IX+0)		; last sector of track ?
+ 101:	3075  38BD    		JR      C,BLSECT	; no, go read another
+ 102:				;
+ 103:				;       end of track, increment to next track
+ 104:				;
+ 105:	3077  ED4B4600		LD	BC, (FTRKBUF)	; track = track + 1
+ 106:	307B  03      		INC	BC
+ 107:	307C  ED434600		LD	(FTRKBUF),BC
+ 108:	3080  1E01    		LD      E,1		; sector = 0
+ 109:	3082  18B0    		JR      BLSECT		; for another group
+ 110:	3084          	BOOTNOK:
+ 111:	3084  219C30  		LD	HL, BLFAILM
+ 112:	3087  CD9030  		CALL	PRSTR
+ 113:				;
+ 114:	308A  CD94FD  		CALL	BBCONIN		; *** TO SETUP WHEN THINGS IN FINAL PLACE
+ 115:	308D  C30010  		JP	$1000		; jump to debugger
+ 116:			; 	JP	BMPRO		; Return to monitor boot menu
+ 117:	3090          	PRSTR:
+ 118:	3090  4E      		LD	C,(HL)
+ 119:	3091  79      		LD	A,C
+ 120:	3092  CBB9    		RES	7,C
+ 121:	3094  CD9FFD  		CALL	BBCONOUT
+ 122:	3097  23      		INC	HL
+ 123:	3098  07      		RLCA
+ 124:	3099  30F5    		JR	NC,PRSTR
+ 125:	309B  C9      		RET
+ 126:			
+ 127:	309C          	BLFAILM:
+ 128:	309C  0D0A424F		DEFB	CR,LF,"BOOT",'!'+$80
+	      4F54A1
+ 129:			;SECTORS DESCS...
+ 130:	30A3  0B00    	VDSECS:	DEFW	11
+ 131:	30A5  0002    		DEFW	512
+ 132:	30A7  0B00    	FLSECS:	DEFW	11
+ 133:	30A9  0002    		DEFW	512
+ 134:			
+ 135:	0000          		IF	($-BOOTLOAD+1) GT SREFSIZ
+ 137:				ENDIF
+ 138:			
+ 139:	30AB          	BMBELOW:
+ 140:	30AB .. 30AB 00		DEFS	1
+ 141:			
+ 142:			;----------------------------------------------------------------------------
+ 143:			
+ 144:	30AC          		END
+
+
+
+Statistics:
+
+     5	passes
+     0	jr promotions
+   523	symbols
+     0	bytes
+
+
+
+Symbol Table:
+
+aftrio          dca3+    ctc1tc50hz         a+    r0brdl             0+    
+all00           dff7+    ctcbase           e8+    r0rxtx             0+    
+all01           e02e+    ctcchan0          e8+    r1brdm             1+    
+all02           e0e5+    ctcchan1          e9+    r1ier              1+    
+all03           e11c+    ctcchan2          ea+    r2fcr              2+    
+alloc           dbfb+    ctcchan3          eb+    r2iir              2+    
+altprnprt          3+    curpbuf           48+    r3lcr              3+    
+appbuf            2e+    cursoroff         20+    r4mcr              4+    
+base               0+    cursoron           a+    r5lsr              5+    
+bbappp             e+    cursshp           4a+    r6msr              6+    
+bbbase          f000+    cwflg           da3d+    r7spr              7+    
+bbcalret        fd5a+    datsiz           475+    ram0buf           3b+    
+bbcbank            c+    delay           fd85+    ram1buf           3c+    
+bbcomn          fc00+    dfmt128            0+    ram2buf           3d+    
+bbconin         fd94+    dfmt256            0+    ram3buf           3e+    
+bbconout        fd9f+    dfmt512         ffff+    ramtbl          e000+    
+bbconst         fdaa+    diff16          dd01+    rcp             e200+    
+bbcpboot        fcc9+    dirbf           df77+    rcps              10+    
+bbcptime        fcc3+    dly1            fd89+    rdflo           db13+    
+bbcrtcini       fc03+    dly2            fd87+    rdvrt           db22+    
+bbcrtfill       fc09+    dmaadr          dd75+    readcfg8255       92+    
+bbcstck            d+    dpbase          d837+    readhst         dafd+    
+bbcurset        fc21+    dpbnds          d882+    regastatus        16+    
+bbdebug         ffff+    dpbvrt          d857+    regcommand         f+    
+bbdiv16         fce1+    dreadh          db00+    regcontrol        16+    
+bbdmaset        fcb7+    dselbf            4e+    regcyllsb          c+    
+bbdriveid       fcf9+    dwrith          db30+    regcylmsb          d+    
+bbdsksel        fcbd+    eep29c             4+    regdata            8+    
+bbeidck         fd23+    eep29ee            1+    regerr             9+    
+bbepmngr        fd1d+    eep29xe            2+    regseccnt          a+    
+bbexec          fd29+    eepage0           c0+    regsector          b+    
+bbfdrvsel       fcdb+    eeproglock        10+    regshd             e+    
+bbfhome         fc81+    eepsta          f000+    regstatus          f+    
+bbflopio        fc93+    eepunsupp          8+    resroom          400+    
+bbfread         fc87+    eerineprom        80+    rhstfi          dc66+    
+bbfwrite        fc8d+    enddat          e1d3+    rldrom          fe79+    
+bbhdboot        fd11+    erflag          dd5f+    rst7sp1           38+    
+bbhdgeo         fd0b+    esc               1b+    rst7sp2           39+    
+bbhdinit        fcf3+    expath          edf4+    rst7sp3           3a+    
+bbhdrd          fd05+    expaths            5+    rtbsiz           3c0+    
+bbhdwr          fcff+    extfcb          edd0+    rtcbuf          da5b+    
+bbimgp             4+    extrabias       1200+    rwmove          dcef+    
+bbinictc        fc57+    extstk          efd0+    rwoper          dc02+    
+bbjtobnk        fc00+    false              0+    rwoshf          dc09+    
+bbldpart        fd17+    fcp             ea00+    sconin          fc2d+    
+bbmul16         fce7+    fcps               4+    sconout         fc27+    
+bboffcal        fced+    fdcbase           d0+    sconst          fc33+    
+bbpag              f+    fdccmdstatr       d0+    sectran         dade+    
+bbprcvblk       fc6f+    fdcdatareg        d7+    seg1            e200+    
+bbprnchr        fc99+    fdcdrvrcnt        d6+    seg10           ec00+    
+bbpsndblk       fc63+    fdcreadc          88+    seg11           ef00+    
+bbrdtime        fca5+    fdcrestc           7+    seg12           efd0+    
+bbrdvdsk        fc75+    fdcsectreg        d2+    seg2            ea00+    
+bbresctc        fc5d+    fdcseekc          17+    seg3            ea00+    
+bbsecset        fcb1+    fdctrakreg        d1+    seg4            ed00+    
+bbsidset        fcd5+    fdcwritc          a8+    seg5            ed80+    
+bbstack         feb4+    fdrvbuf           45+    seg6            edd0+    
+bbstbase        fe90+    ff                 c+    seg7            edf4+    
+bbsttim         fc9f+    fifblok            b+    seg8            edff+    
+bbtrkset        fcab+    fifoend           25+    seg9            ee00+    
+bbu0ini         fc39+    fifokb            1a+    sekdsk          dd65+    
+bbu1ini         fc51+    fifosto            f+    sekhst          dd74+    
+bbu1rx          fc45+    fifou0             f+    seksec          dd68+    
+bbu1st          fc4b+    fifsize            8+    sektrk          dd66+    
+bbu1tx          fc3f+    fin             fdc4+    selact          da98+    
+bbuplchr        fc69+    fixblock           0+    seldsk          da7d+    
+bbvcpmbt        fccf+    flsecs          30a7     selflp          dac0+    
+bbvoid          fd6a+    fout            fde1+    selhdd          dac6+    
+bbwrvdsk        fc7b+    frdpbuf           41+    selndb          dabb+    
+bdos            ca06+    fsecbuf           43+    selvrt          dac7+    
+bdosb           ca00+    fsekbuf           3f+    setdma          dad9+    
+bdwtyp          dd62+    fstat           fdb5+    setsec          dad4+    
+begdat          dd5e+    ftrkbuf           46+    settrk          dacf+    
+bfailmsg        d902+    gocpm           d9f1+    shsize            20+    
+bias            8e00+    haseds          ffff+    shstk           ed00+    
+biohby            d8+    hmempag            b+    shstks             4+    
+bioreas          a00+    home            da65+    signon          d8a8+    
+bios            d800+    homflo          da73+    sintvec         fff0+    
+biosiz           55e+    hstact          dd5e+    size           =2c00+    
+biostds          600+    hstbsz           200+    sk2hst          dcb2+    
+bldoffs         3000+    hstbuf          dd77+    skiprd          306b     
+blfailm         309c     hstdsk          dd6f+    srefsiz        = 200+    
+blifastblok       60+    hstfil          dc6e+    stmpp2          ffff+    
+blifastline       6a+    hstfrd          dca0+    stmpzs             0+    
+blini           3017     hstful          dc48+    synpnd          dcf2+    
+blislowblok       40+    hstlgs          dd6d+    sysbase         f000+    
+blislowline       4a+    hstloa          dc37+    syscmlo         feb4+    
+blnxts          306f+    hstrdd          dc3a+    syscom          fc00+    
+blsect          3034     hstrsf          dcc5+    syshertz          13+    
+bmbelow         30ab     hstsec          dd72+    sytimr          fe19+    
+bootfail        d9e9+    hstsyn          dc45+    tblblk            30+    
+bootload        3000     hsttmp          dd6e+    tdesclen          14+    
+bootnok         3084     hsttrk          dd70+    tiaddrlen          4+    
+botdsk          d836+    hstwrt          dd60+    time            da54+    
+botok           d93f+    idea0line          1+    timrcon           28+    
+brdflo          3051+    idea1line          2+    tmpbyte           4b+    
+brdvrt          3059     idea2line          4+    tnamelen           8+    
+bseldsk         dd16+    idecs0line         8+    tpa              100+    
+bsetdma         dd11+    idecs1line        10+    tpagelen           2+    
+bsetsec         dd0c+    ideporta          e0+    trans           d877+    
+bsettrk         dd07+    ideportb          e1+    trnpag             d+    
+btpasiz            6+    ideportc          e2+    true            ffff+    
+cbboot          d914+    ideportctrl       e3+    tsizelen           4+    
+cbread          db7b+    iderdline         40+    u0defspeed         6+    
+cbrev              f+    iderstline        80+    u0isr           fe25+    
+ccp             c200+    idewrline         20+    u1defspeed         c+    
+cdisk              4+    idisk1            24+    u1isr           fe59+    
+chk00           e065+    idisk2            24+    u1nul           fe70+    
+chk01           e0a5+    idisk3             1+    uart0             c0+    
+chk02           e153+    idisk4             1+    uart0base         c0+    
+chk03           e193+    imtpag            ff+    uart0br           2c+    
+chksid          db61+    imtsiz           400+    uart1             c8+    
+chkuna          dbb6+    intrdi          fe0f+    uart115k2          1+    
+ckerr           305c     intren          fdfe+    uart1200          60+    
+cldcmnd         da28+    intron             0+    uart19k2           6+    
+clkday          da5e+    iobval            95+    uart1base         c8+    
+clkdow          da60+    iobyte             3+    uart1br           2b+    
+clkhr           da5d+    ioflag          dd61+    uart2400          30+    
+clkio              6+    iop                0+    uart38k4           3+    
+clkmm           da5c+    iops               0+    uart4800          18+    
+clkmon          da5f+    iuser1            24+    uart57k6           2+    
+clkrst             7+    iuser2             f+    uart9600           c+    
+clksclk            5+    iuser3            24+    uastav          fe84+    
+clkse           da5b+    iuser4             f+    uastkb          fe86+    
+clkyea          da61+    kbdbyte           4d+    uisre           fe4e+    
+cloisr          da62+    keybstrbbit        7+    uisri           fe32+    
+cmdid             ec+    lf                 a+    unacnt          dd64+    
+cmdinit           91+    lsect           d9c1+    unadsk          dd69+    
+cmdread           20+    maxblk            14+    unasec          dd6c+    
+cmdrecal          10+    mconin          dd1b+    unatrk          dd6a+    
+cmdset          da4f+    mconout         dd2c+    usenodeblock       0+    
+cmdspindown       e0+    mconst          dd3b+    vconin          fc15+    
+cmdspinup         e1+    menaprt           21+    vconout         fc0f+    
+cmdwrite          30+    miobyte           4c+    vconst          fc1b+    
+cnfbyte           27+    mmgetp          fd78+    vdbufsz            a+    
+colbuf            4f+    mmpmap          fd6b+    vdrdsec            0+    
+coldbeg         da3e+    mmtpapag          ef+    vdsecs          30a3     
+coldend         da45+    mmuport           20+    vdskbuf           30+    
+constr          dd4f+    mmutstaddr      d000+    vdwrsec            1+    
+cont            d9d1+    mmutstpage         d+    vers              16+    
+copsys            2d+    mnodev          dd4a+    voidisr         fe22+    
+cpmsiz          1bde+    monhby         =  ee+    wboot           d986+    
+cr                 d+    monmaj            33+    wboote          d803+    
+crdureg         fc27+    monmin            32+    whstfi          dc5f+    
+crt6545adst       8c+    mscnt             f6+    wrall              0+    
+crt6545data       8d+    msize             3c+    wrdir              1+    
+crtbase           80+    mzmac              1+    wrfl2           db53+    
+crtbeepport       8f+    nextop          d9d4+    wrflo           db43+    
+crtblinkbit        0+    noovf           dbf4+    wrflt           db47+    
+crthilitbit        3+    noprow          dd63+    write           db8e+    
+crtkeybcnt        87+    path            da46+    writecfg8255      80+    
+crtkeybdat        85+    phydpt          d8a6+    writehst        db2d+    
+crtmodebit         4+    phylen             a+    wrttmp          dd73+    
+crtprntcnt        83+    phyoff             f+    wrual              2+    
+crtprntdat        81+    phyprm          d89b+    wrvrt           db56+    
+crtram0cnt        82+    physpt          d8a5+    z3cl            ef00+    
+crtram0dat        80+    phystr          dae1+    z3cls             d0+    
+crtram1cnt        86+    pio2bit2           2+    z3env           ec00+    
+crtram1dat        84+    pio2bit3           3+    z3envs             2+    
+crtram2cnt        8a+    pio2bit4           4+    z3msg           ed80+    
+crtram2dat        88+    ppakstb            1+    z3ndir          ee00+    
+crtram3port       8e+    ppcntrp            2+    z3ndirs           1c+    
+crtrevrsbit        1+    ppdatap            3+    z3rev             21+    
+crtservcnt        8b+    ppdini             0+    z3whl           edff+    
+crtservdat        89+    ppdokg             2+    zbufbas         e200+    
+crtunderbit        2+    ppdrdy             4+    zdsstpr         e838+    
+crtwidthbit        1+    ppdstp             6+    zdsstsz          1c8+    
+cslp0           dd50+    ppstrob            0+    zero128         da35+    
+ctc0tc            2a+    ppuack             7+    zerom           da37+    
+ctc0tchi          20+    ppuini             1+    zflopkg          200+    
+ctc1tc            29+    ppuokg             3+    ziopkg             0+    
+ctc1tc100hz        5+    ppurdy             5+    zrespkg          800+    
+ctc1tc10hz        30+    prntbusybit        0+    zstdovr          400+    
+ctc1tc25hz        13+    prstr           3090     
+ctc1tc2hz         f4+    prvtop            4f+    

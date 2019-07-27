@@ -1,0 +1,191 @@
+	TITLE	"ONSystems Clock driver for ZSDOS - (ONEAC-ON!)"
+	SUBTTL	"Description of Clock Module"
+;============================================================
+; Rewritten for ZSDOS/ZDDOS  6/24/88  C.W.Cotrill
+; Vers 0.3 current as of 18 Oct 88
+;============================================================
+
+VERS	EQU	03
+	.Z80
+	NAME	ONSYS
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID/
+
+DESCST:	DEFW	0		; Ptr to statyr
+
+CLKNAM:	DEFB	'ON! System Clock        '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'  Oneac ON!  System Clock',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		; Dummy parameter
+	DEFW	0
+
+
+	PAGE
+	SUBTTL	"Clock Code - ON! Systems Clock"
+
+	CSEG
+;===================================================================
+; DSONCLOK.Z80
+;  ZSDOS Clock driver for ON! Systems' ON! computer.  Derived from
+;  DSONCLOK.Z80 by Bruce Morgen and Ron Fowler
+;				Harold F. Bower   22 Jun 88
+;===================================================================
+
+DATPORT	EQU	88H		; Address/Data port
+CTLPORT	EQU	8CH		; Control port
+
+;-------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set time
+; Exit :  A = 1 on Success, A = FFH if error
+;	 HL points to last char in buffer
+
+;== Set code commented out until written.  HFB
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R E A D    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	EX	DE,HL
+	CALL	RDCLOK		; Fill temp. buffer from 5833
+	LD	HL,(YEARS)	; Unpacked BCD into HL
+	CALL	PACK		; Pack into (DE) and bump DE
+	LD	HL,(MONTHS)	; Etc.
+	CALL	PACK
+	LD	HL,(DATES)
+	CALL	PACK
+	LD	HL,(HOURS)	; Pick up unpacked BCD HH
+	LD	A,H		; Hours need different mask
+	AND	3
+	CALL	PACKA		; Call PACK after "LD A,H"
+	LD	HL,(MINUTE)	; Back to normal processing
+	CALL	PACK
+	LD	A,(DE)		; Get old value at buffer+5
+	LD	B,A		; Temp. storage in B
+	LD	HL,(SECOND)	; One more normal process
+	CALL	PACK
+	EX	DE,HL		; Buffer pointer back to HL
+	DEC	HL		; Back up over new secs
+	LD	E,B		; Old secs into E and
+	LD	A,01		; Set Ok status return
+	RET			; return as per specs
+
+;__________________________________________________________________________
+; DateStamper buffer organization (for reference)
+;clktbl:			; Storage for packed BCD values 
+;year:	ds	1		; 00 - 99
+;mon:	ds	1		;  1 - 12
+;day:	ds	1		;  1 - 31
+;hrs:	ds	1		; 00 - 23
+;mins:	ds	1		; 00 - 59
+;secs:	ds	1		; 00 - 59
+;--------------------------------------------------------------------------
+
+PACK:	LD	A,H		; Get tens (clean data,
+PACKA:	RLCA			; no need for masking)
+	RLCA
+	RLCA
+	RLCA			; To high nybble
+	OR	L		; Make packed BCD byte
+	LD	(DE),A		; Store it
+	INC	DE		; Bump stowage pointer
+	RET			; Return to caller
+
+; Ron Fowler's comment concerning original ON!
+; "TIME.COM" follows:
+
+; Read the realtime clock.  This routine depends on
+; TIMBUF's being located on a 16-byte boundary.  Shameful
+; use of position-dependent code (it appears to save
+; a 2-byte load of an additonal loop register, but in
+; fact can waste up to 15 bytes of space).
+
+; FIXED 9/9/86 by Bruce Morgen
+
+RDCLOK:	LD	HL,TIMBUF	; Input buffer
+	LD	BC,13*256+0	; 13 to B, 0 to C
+RDCLP:	LD	A,C		; 5833 reg # to A, start w/zero
+	CALL	RDREG		; Read it
+	LD	(HL),A		; Store register value
+	INC	HL		; Advance buffer pointer
+	INC	C		; Bump reg #
+	DJNZ	RDCLP		; Downcount & read all 13
+	RET
+
+; read 5833 register in A
+
+RDREG:	OUT	(DATPORT),A	; Select register
+	LD	A,4
+	OUT	(CTLPORT),A
+	LD	A,1		; Set read bit
+	OUT	(CTLPORT),A
+	IN	A,(DATPORT)	; Read it
+	PUSH	AF		; Save it
+	XOR	A		; Reset read bit
+	OUT	(CTLPORT),A
+	POP	AF		; Return register
+	AND	0FH		; Modulo 16....
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;== Set code commented out til written
+;==WRCLK:	OR	0FFH		; Set the error flags
+;==	RET
+
+;---------------- D a t a    A r e a -----------------
+
+; Time buffer (temp. storage)
+
+TIMBUF:
+SECOND:	DEFS	2
+MINUTE:	DEFS	2
+HOURS:	DEFS	2
+DAYS:	DEFS	1
+DATES:	DEFS	2
+MONTHS:	DEFS	2
+YEARS:	DEFS	2
+TIMEND:	DEFS	0
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	RET			; No set code with ON!
+
+	DEFB	0,0,0		; Filler
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

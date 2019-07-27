@@ -1,0 +1,1542 @@
+; Program: EDITND  - EDIT the resident Named Directory
+
+;EDITND is copyright by A. E. Hawley January 30, 1987.
+;It may be freely distributed, but it must not be sold 
+;either separately or as part of a package without the 
+;written consent of the author.  The author may be reached 
+;via electronic mail at the Ladera Z-Node in Los Angeles,
+;213-670-9465, or through the Lillipute Z-Node in Chicago 
+;at 312-649-1730.
+;
+;EDITND is released for beta test through the Z-system 
+;users group Z-SIG on January 30, 1987 by the author.
+
+	.sall		;suppress macro code
+
+; Author: Al Hawley, Ladera Z-Node, (213) 670-9465
+
+Vers	equ '1'		;version number, ascii
+rev	equ '0'		;revision number, ascii
+
+;the following will normally be a quoted space character
+;in released versions. The letter is meaningful during the
+;testing of modified versions until modifications are complete.
+beta	equ 'a'		;quoted lc letter for test versions
+
+; Version Date: 01/21/87
+; Previous versions: none
+;
+; PROGRAM FUNCTION:
+;      Edit the System Named Directory. Change, add,
+; or delete directory names and passwords. The changes
+; are to the resident Named Directory buffer, but may
+; be aborted (restored to original) if desired.
+;      Multiple commands on the command line or in
+; interactive mode are supported. Commands on the invoking
+; command line produce no unsolicited console output, so
+; this program can execute silently in an alias or RAS
+; environment. In the interactive mode, command errors are
+; explained only on request. The HELP screen is automatically
+; maintained; so if you change the name of the program, the
+; version number, or the command separator character, the
+; HELP information will remain relevant.
+;      If an error condition occurs during execution of commands
+; from the invoking command line, the error code is placed in
+; the ZCPR3 program error code byte. There, it can be tested
+; by IF.COM and appropriate action taken.
+; See EDITND.DOC for details.
+
+;***************************************************
+;THIS SOURCE FILE IS CODED TO ASSEMBLE WITH THE
+; ZAS (FROM ECHELON) AND COMPATIBLE ASSEMBLERS.
+; OTHERS MAY REQUIRE SOME TRANSLATION.
+;***************************************************
+
+;The following tells ZAS to pass
+;names of libraries to ZLINK. The link command line
+;does not need to name the libraries
+
+	.REQUEST Z3LIB,SYSLIB
+
+; External Z3LIB Routines
+	EXT	Z3INIT,GETNDR,GETEFCB,GETMDISK
+	EXT	GETWHL,DUTDIR,DNSCAN,GETER2,PUTER2
+
+; External SYSLIB Routines
+	EXT	CODEND,SUA,RETUD,LOGUD
+	EXT	SKSP,SKNSP,ACASE3,ARGV
+	EXT	MULHD,SSBINIT,SORT,COMPB
+	EXT	COUT,CRLF,PADC,PSTR,PRINT
+	EXT	BLINE
+
+;
+; External VLIB Routines
+;
+; Other External Library Routines
+;
+; COMMON ASCII & SYSTEM DEFINITIONS
+	.xlist
+	.IN	SYSDEF
+	.list
+;DEFINITIONS UNIQUE TO THIS PROGRAM
+
+ENTLEN	equ	18	; NDR Entry Len = 18 bytes
+
+;***************************************************
+;MACRO DEFINITIONS
+
+;Toggle the value of a named memory location
+;typically, the values toggle between 00 and ffh
+; (i.e., False and True)
+TOGGLE	MACRO	FLAG
+	LD	A,(FLAG)
+	CPL
+	LD	(FLAG),A
+	ENDM
+
+;set a value into a memory variable
+;typically True or False
+MAKE	MACRO	FLAG,VAL
+	LD	A,VAL
+	LD	(FLAG),A
+	ENDM
+
+;load reg hl from the address in hl
+LDHLHL	MACRO
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A
+	ENDM
+
+;LOAD (HL) FROM DE
+STDEHL	MACRO
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D
+	ENDM
+
+;***************************************************
+
+;program code starts here..
+
+	JP	START
+	DB	'Z3ENV'		;This is a ZCPR3 Utility
+	DB	1		;External Environment Descriptor
+
+Z3EADR: DW	0fe00h		;this is corrected by Z3INS
+
+;***************************************************
+
+ctermd:	db	'\'	;multiple cmd separator
+hlprqd:	db	true	;show help after error note
+errbel:	db	true	;sound terminal bell on error
+ernote:	db	true	;emit error warning msg
+
+;***************************************************
+
+START:	LD	HL,(Z3EADR)	;pt to ZCPR3 environment
+	CALL	Z3INIT		;initialize the ZCPR3 Environment
+
+;***************************************************
+;This is the main routine, from which all other
+;functions are called.
+
+MAIN:	ld	(stak), sp	; save callers stack for exit
+	ld	sp, stak	; set up local stack
+	call	init		; test for z3env and sys NDR,
+				; initialize local ndr buffer
+				; store data for NDR, default disk
+
+	call	copyin		; save a system NDR copy for abort
+				; after changes were made.
+
+	call	getail		;move command tail to cl buffer
+	call	nz,doline	;parse & execute commands if present
+	make	lclcmd,true	;declare interactive mode
+
+main1:	call	kbdin		;get user command line input
+	call	doline		;parse & execute commands
+	jr	nz,main1	;do cmds until exit condition
+
+exit:	call	wrapup		;deinitialization
+	ld	sp, (stak)	;done. Return quiet (no warm boot)
+	ret
+
+;***************************************************
+
+;wrapup: set/reset system messages, disk system,
+; and any other miscellaneous housecleaning
+; before returning to the operating system.
+
+wrapup:
+;reset the warm boot trap
+	ld	hl,(1)		;->bios wbjump
+	inc	hl		;.. the jmp addr
+	ld	de,(wbaddr)	;recover the saved addr
+	stdehl			;(hl)<-de
+
+;if in Z3 commandline mode and an error has been
+;detected (causing an exit) then set the error flag
+;value into the Z3 program error code.
+	xor	a
+	call	puter2		;reset pgm error code
+	ld	a,(lclcmd)
+	or	a		;exiting from invoking CL?
+	ld	a,(errflg)	;get the error flag (0 if no error)
+	call	z,puter2	;z=yes, pass error msg to system
+
+;If no changes have been made, skip the following.
+	ld	a,(chgflg)
+	or	a
+	ret	z
+
+;if the abort flag is set, replace the
+; ndr with the local copy saved at the
+; start of the program.
+	ld	a,(abtflg)
+	or	a
+	jp	nz,copyout	;copy local ndr buffer to system ndr
+
+;If sort flag is set, sort the ndr
+	ld	a,(srtflg)
+	or	a
+	call	nz,ndrsrt	;sort the entries into D/U order
+
+	ret
+
+;***************************************************
+
+;transfer the command line tail into the local
+; input buffer (keybuf) for execution.
+getail:	ld	hl,tbuf		;point to command tail
+	ld	a,(hl)		;get character count
+	ld	(keycnt),a	;..save in keybuf counter
+	or	a,a		;test for null
+	ret	z		;don't move empty tail..
+				;..return false instead
+	inc	hl		;point to command tail
+	ld	de,keybuf	;destination
+	ld	c,a		;for ldir
+	ld	b,0
+	ldir			;move the tail
+	ld	a,b		;enter the...
+	ld	(de),a		;terminating null
+	ld	(eoline),a	;say last cmd not done yet
+	dec	a
+	ret			;return true
+
+;***************************************************
+
+; doline: scan the command line for commands.
+; If none are found, then display the current directories
+; and return to caller.
+; Else execute the commands.
+; Return TRUE after completion of commands.
+; Return FALSE after completion of any command that
+;  requires an abort to the system.
+
+doline:
+
+tfetch:	call	cfetch		;move a single command to cmbuf
+	jr	z,tpexit	;exit if no more commands
+	call	cmproc
+	jr	nz,tfetch	;repeat if no error
+;arrive here on a command error
+	ld	a,(lclcmd)	;if invoked by Z3 cmd line
+	or	a
+	jr	z,exit		;..terminate the pgm
+;any error is recorded by error flag and will
+;be detected on the next cycle through cmproc
+tpexit:	xor	a		;normal exit
+	dec	a
+	ret			;return true
+
+fpexit:	xor	a
+	ret			;return False
+
+;***************************************************
+
+cmproc:
+
+	ld	hl,spaces	;initialise argv pointers
+	ld	(arg1),hl
+	ld	(arg2),hl
+	ld	(arg3),hl
+	ld	hl,0		;..and parameter codes
+	ld	(a1code),hl
+	ld	(a3code),hl
+
+	ld	de,argvtb	;result table
+	ld	hl,cmdbuf	;->command to parse
+	ld	a,h		;null terminate tokens
+	call	argv		;ret. pointers to 1 to 4 args.
+;returns True if more args than allowed, else False
+	ld	a,5		;error code for too many args
+	jr	nz,cmerr	;jump if true return
+
+	ld	a,(argnum)	;is the number of args
+	or	a		;..zero?
+	jr	z,makey		;finish up if yes
+
+	call	tst1ch		;single ltr command?
+	jr	nz,makey	;finish up if yes(nz)
+	or	a		;test error return code
+	jr	nz,cmerr	;invalid character error
+
+	call	tstdir		;analyse arg1
+	jr	z,cmerr		;if invalid, error exit
+
+	call	tsta23		;analyse arg2 & arg3
+	jr	z,cmerr
+
+makey:	ld	bc,(a2code)	;get arg parameters
+	ld	a,(a1code)
+	ld	hl,argnum
+	add	b		;calculate sum (=ckey)
+	add	c		;ckey = argnum + a1code...
+	add	(hl)		;..+ a2code + a3code
+	ld	(ckey),a	;key for indexing in case call
+	ld	de,ctable	;table of keys & cmd routines
+	call	acase3		;go execute command
+	jr	z,cmerr		;error/abort if z. error type in acc
+				;else eoline flag in acc?????
+
+tcmxit:	xor	a		;True CMproc eXIT
+	ld	(errflg),a	;clear error flag
+	dec	a
+	ret			;return true
+
+cmerr:	ld	(errflg),a	;record the error type
+	ld	(errhst),a
+	ld	hl,cmdcnt	;source: single command buff
+	ld	de,cmdhst	;dest: command history buff
+	ld	a,(hl)		;get cmd char count
+	ldi			;transfer to dest, dec hl,de
+	ld	b,a		;loop counter
+cmerr1:	ld	a,(hl)		;pick up a char
+	or	a		;is it null?
+	jr	nz,cmerr2
+	ld	a,' '		;yes, change to a space
+cmerr2:	ld	(de),a		;copy to history buff
+	inc	de		;bump pointers
+	inc	hl
+	djnz	cmerr1		;repeat b times
+	xor	a		;make a null
+	ld	(de),a		;terminate string in cmdhst
+	ret			;return False, showing error
+
+;***************************************************
+
+tst1ch:
+;test arg1 to see if only one character.
+;if so, get the char in acc, subtract the
+;value in argnum, and store it in a1code.
+;The subtraction compensates for later addition
+; of (argnum) during calculation of ckey, and
+; preserves the ascii value for use in the case table.
+;returns true if arg1 is one character, else false
+	ld	hl,(arg1)
+	push	hl
+	inc	hl		;->2nd char
+	ld	a,(hl)
+	or	a		;terminator?
+	jr	nz,not1		;no, more than one char
+	dec	hl		;->char
+	ld	a,(hl)		;get it
+
+	cp	a,'/'
+	jr	z,tst1ok
+	cp	a,'>'		;'?' or alpha?
+	jr	c,badchr	;cy=no, bad char
+
+tst1ok:	ld	hl,argnum
+	sub	(hl)		;subtract argnum
+	ld	(a1code),a	;store the parameter
+	pop	hl
+optx:	xor	a
+	dec	a
+	ret			;return true
+
+not1:	pop	hl
+	ld	a,(hl)
+	cp	'/'		;option char?
+	jr	z,optch		;z=yes
+	xor	a		;not a single char arg
+	ret			;return false
+
+optch:	ld	a,1		;put data in argnum
+	ld	(argnum),a
+	ld	a,8		;..and in a1code to
+	ld	(a1code),a	;make a case key of 9
+	jr	optx		;return true & calc. ckey
+
+badchr:	pop	hl		;clear stack
+	xor	a		;set z flg, mark error
+	ld	a,1		;error code - bad cmd
+	ret
+
+;***************************************************
+
+tstdir:
+;test for valid du|dir form in first arg
+; (validity is in terms of max du from sysenv
+; or of existance of dir in the NDR buffer)
+; if invalid, set an error flag & return False
+;else test returns pointer to the ndr entry.
+
+	ld	hl,(arg1)	;->arg to test
+;to be a valid DU or DIR, the first char must
+;be alpha. (dnscan would accept a number, then
+;use the default drive to complete the DU)
+	ld	a,(hl)		;get first char
+	cp	'A'		;must be >=
+	jr	c,ftstdu	;cy if < 'A', so
+				; set error
+	xor	a
+	call	dnscan		;valid du|dir?
+;if valid, returns bc=d/u (d=0..max, u=1..max)
+;and acc=TRUE. if invalid, acc=FALSE
+;NOTE: Named Directory uses drive designators
+;  in the range (d=1,2,3,....), so reg. b must
+;  be incremented before use for entry/compare
+;  of NDR data.
+	ld	a,2		;error code
+	ret	z		;no, can't process
+				;ret false, error code in acc
+;ARG1 is valid, but may not be present in the NDR
+	ld	(ndrdu),bc	;store user at ndrdu,
+	ld	a,c		;drive at Z3fcb
+	ld	(fcbusr),a	;..user in z3fcb(13)
+;Test for presence in the NDR
+	call	dutdir		;du in the ndr?
+;returns hl->name, a=true if present in ndr;
+;  hl->next entry, a=false if not in ndr
+; True return means there is an entry to change.
+; False means any change will be an append
+
+	jr	z,enpntr	;if z, hl->append loc
+	dec	hl		;else hl-> entry name loc
+	dec	hl		;and must be decremented
+enpntr:	ld	(ndrloc),hl	;->NDR entry/append loc
+	ld	(appflg),a	;0=du NOT present in NDR
+				;0FFH=du present in NDR
+	xor	a
+	dec	a
+	ret			;return TRUE, valid du
+
+ftstdu:	xor	a		;return showing error
+	ld	a,2		;error code
+	ret
+
+;***************************************************
+
+tsta23:
+;part of the encoding scheme to make unique keys for
+;the case routine to use for selecting action routines.
+;If arg2 -> ',' then set a2code = 2 else a2code =0
+;if arg3 -> ',' then set a3code = 3 else a3code = 0
+;if arg4 -> ',' then it is in error. set error flg
+;count commas. if more than one, set error flg.
+
+	ld	bc,0		;default values
+	ld	d,b		;for counting commas
+	ld	a,','		;comma to test for
+	ld	hl,(arg3)	;test arg3
+	cp	(hl)
+	jr	nz,tsta2	;use default if not ','
+	ld	b,3		;for a3code
+	inc	d
+tsta2:	ld	hl,(arg2)	;test arg2
+	cp	(hl)		;comma?
+	jr	nz,tsta4	;nz=no, use default
+	ld	c,2		;for a2code
+	inc	d
+tsta4:	ld	hl,(arg4)	;check comma in arg4
+	cp	(hl)		;comma?
+	jr	z,ftstax	;error if so	
+	ld	a,1
+	cp	a,d		;more than 1 comma?
+	jr	c,ftstax	;cy=yes, use error exit
+
+ttstax:	ld	(a2code),bc	;store both at once
+	xor	a
+	dec	a
+	ret
+
+ftstax:	xor	a		;return False
+	make errflg,6		;store error code
+	ret
+
+;***************************************************
+
+ctable:
+;table used by acase3 to dispatch commands based on
+;the key value passed in the acc. The key is compared
+;with each db value in the table. when a match is
+;found, control is passed to the corresponding adddress.
+	db	16		;number of cases
+	dw	scerr		;here if not found
+;the search for a match starts here
+	db	'?'		;display help
+	dw	help		;
+	db	'/'		;display help
+	dw	help		;
+	db	'Q'		;exit to Z, ignore changes
+	dw	abort		;
+	db	'R'		;recover ndr, start over
+	dw	copyout		;(recovery from 'Z' cmd)
+	db	'X'		;exit to Z, keep changes
+	dw	exit		;
+	db	'S'		;Sort the system NDR entries
+	dw	ndrsrt		;
+	db	'Z'		;Zap (erase) all NDR entries
+	dw	erandr		;
+	db	0		;
+	dw	pwd		;show the ndr contents
+	db	1		;
+	dw	era1		;erase entry if present
+	db	2		;
+	dw	case2		;replace|append dirname
+	db	3		;
+	dw	chgndr		;add|change to new name,pw
+	db	4		;
+	dw	case4		;delete a password
+	db	5		;
+	dw	case5		;add|change a password
+	db	6		;
+	dw	case6		;new dirname with blank pw
+	db	7		;
+	dw	case7		;add|change to new name,pw
+	db	9		;case 9 - specify options
+	dw	optsel		;decode & set any options
+
+;***************************************************
+
+;this is the default case - unrecognized command 
+scerr:	xor	a		;set z to mark error
+	ld	a,1		;error code - bad command
+	ret
+
+;***************************************************
+
+;erase all entries from the NDR buffer
+erandr:	ld	hl,(bcb1)	;->system NDR
+	ld	d,h
+	ld	e,l
+	inc	de		;->2nd byte
+	xor	a
+	ld	(hl),a		;enter a zero,
+	ld	bc,(size0)
+	dec	bc		;bytes yet to zero out
+	ldir			;chase thru the buffer
+	dec	a		;return True
+	ld	(chgflg),a	;report changed NDR
+	ret
+
+;***************************************************
+
+era1:		;erase entry if present
+	ld	a,(appflg)
+	or	a
+	jr	z,cant3		;not present, can't erase
+
+	ld	bc,entlen	;18
+	ld	hl,(ndrloc)	;->entry
+	ld	d,h		;destination
+	ld	e,l
+	add	hl,bc		;->source (next entry)
+	xor	a,a		;make null for cp(hl)
+ovrite:	cp	(hl)		;done if null
+	jr	z,back0
+	push	bc
+	ldir			;copy over preceding record
+	pop	bc
+	jr	ovrite
+;
+back0:	ld	d,h		;hl->terminal null
+	ld	e,l
+	dec	de		;de->last byte of last
+				;record, now redundant
+	push	bc		;save block counter
+	lddr			;chase null through record
+	pop	bc
+;update the data in bcb1:
+	ld	hl,bcb1+2
+	dec	(hl)		;number of entries decreased
+	ld	hl,(bcb1+6)
+	sbc	hl,bc		;next free loc is 18 less
+	ld	(bcb1+6),hl
+	dec	a		;make 0ffh, nz
+	ld	(chgflg),a	;report changed NDR
+	ret			;return true
+
+;***************************************************
+
+cant3:
+;error return. A du form was used in arg1 which
+;was not present in the NDR, so there is no entry
+;from which to get the default name for arg2.
+	xor	a
+	ld	a,3	;error code
+	ret
+
+;***************************************************
+
+case2:		;replace|append dirname
+	ld	a,(appflg)
+	or	a
+	jr	z,case6		;append with blank pw
+
+	ld	hl,(ndrloc)	;->ndr entry
+	ld	bc,10		;->dir password
+	add	hl,bc
+	ld	(arg3),hl	;preserve it
+	jp	chgndr
+
+;***************************************************
+
+case4:		;delete a password
+	ld	a,(appflg)
+	or	a
+	jr	z,cant3		;z=none to delete
+
+	ld	hl,spaces
+	ld	(arg3),hl	;blank password
+	
+;fall through to case5 to get the extant name ptr.
+;***************************************************
+
+case5:		;add|change a password
+	ld	a,(appflg)
+	or	a
+	jr	z,cant3		;z=nothing to change
+
+	ld	hl,(ndrloc)	;->ndr entry
+	inc	hl
+	inc	hl		;->dirname
+	ld	(arg2),hl	;replace the ','
+	jp	chgndr
+
+;***************************************************
+
+case6:		;new dirname with blank pw
+	ld	hl,spaces
+	ld	(arg3),hl	;replace the comma
+	jp	chgndr
+
+;***************************************************
+
+case7:		;add|change to new name,pw
+	ld	hl,(arg4)
+	ld	(arg3),hl	;replace the comma
+
+;fall through to chgndr
+;***************************************************
+
+chgndr:
+;over-writes an extant name-pw entry or appends
+; to the end of the ndr if possible.
+	ld	a,(appflg)
+	or	a
+	jp	z,appndr	;z=no entry, append rqd.
+
+ldname:
+;first, initialize a prototype ndr entry buffer
+	ld	hl,spaces
+	ld	de,entnm
+	ld	bc,16
+	ldir
+;copy the data pointed to by arg2 and arg3
+;into the name and password fields of buffer
+	ld	hl,(arg2)	;->new name
+	ld	de,entnm
+	ld	bc,8		;max # to copy
+	xor	a		;arg terminator=0
+	call	strcpy
+	ld	hl,(arg3)	;->new password
+	ld	de,entpw
+	ld	bc,8
+	call	strcpy
+;copy the name & pw into the system ndr
+	ld	hl,entnm
+	ld	de,(ndrloc)	;->ndr entry
+	inc	de
+	inc	de		;->ndr name
+	ld	bc,16
+	ldir			;copy the name,pw
+	dec	a		;make logic True
+	ld	(chgflg),a	;report changed NDR
+	ret	;True, no problems
+
+appndr:
+;append a new entry to ndr if possible
+	ld	hl,bcb1+2	;current # of entries
+	ld	a,(ndblks)	;max # allowed
+	cp	a,(hl)		;are they the same yet?
+	jr	z,fappnd	;error abort if yes, else..
+	inc	(hl)		;..count the new entry
+;get the d/u and load into the system ndr
+	ld	hl,(ndrloc)	;append location
+	ld	bc,(ndrdu)	;d/u from arg1
+	inc	b		;convert to ndr form (1...n)
+	ld	(hl),b		;enter drive
+	inc	hl
+	ld	(hl),c		;enter user
+	inc	hl
+; then move the name and pw
+	call	ldname		;enter name, pw
+;ldname returns acc=True
+	ld	(srtflg),a	;sort required
+	ret			;return True, no problems
+
+fappnd:	xor	a		;return False
+	ld	a,4		;error code
+	ret			;No room to append
+
+;***************************************************
+
+abort:	ld	a,-1		;set abort flag and
+	ld	(abtflg),a	; take action as
+	jp	exit		; needed in wrapup
+
+;***************************************************
+
+; copyin: copy the existing NDBuff into buffer 0
+; Enter buffer data in bcb0 to permit access.
+
+copyin:
+
+;first, initialize the buffer to nulls
+	ld	hl,(bcb0)	;source
+	ld	d,h
+	ld	e,l
+	inc	de		;destination = HL+1
+	ld	bc,(size0)
+	dec	bc		;number of bytes to fill
+	xor	a		;fill byte = 00
+	ld	(hl),a		;fill first loc, and..
+	ldir			;chase it through the buffer
+
+	push	ix
+	ld	ix,bcb0+2	;for counting number of entries
+	ld	de, (bcb0)
+	ld	hl, (z3ndb)	; prepare copying, (hl) to (de)
+	jr	cpin02
+
+cpin01:	ld	bc, entlen
+	ldir			; no, load it.
+	inc	(ix)		;count entries in bcb0+2
+cpin02:	xor	a		; Disk == 0 means end
+	or	(hl)		;end of ND entries?
+	jr	nz, cpin01	;if no, get more
+
+;transfer complete. Now complete filling in BCB0 & BCB1
+	ld	(bcb0+6),de	;save pointer to next avail. loc
+	push	de		;save for (bcb1+6) calculation
+	ld	hl,(bcb0+2)
+	ld	(bcb1+2),hl	;number of entries in sys ndr
+	ld	hl,(size0)	;offset to end+1
+	ld	de,(bcb1)	;start of system ndr
+	add	hl,de
+	ld	(bcb1+8),hl
+	ld	hl,(bcb0)	;HL->local, de-> sys ndr
+	ex	de,hl		;put larger in hl
+	sbc	hl,de		;offset in hl
+	pop	de		;-> empty entry in local ndr
+	add	hl,de		;addr of empty entry in sys ndr
+	ld	(bcb1+6),hl
+	pop	ix
+	ret
+
+;***************************************************
+
+;cfetch: copy a string terminated by 'cterm' or null
+; from the address at keyptr: to cmdbuf, replacing
+; the terminator with a null. Delimit commas with
+; spaces during transfer so argv will parse
+; them out as tokens for interpreting the command.
+; Update the address at keyptr to point to the
+; source byte which follows the terminator.
+
+cfetch:	ld	a,(eoline)	;no more commands?
+	inc	a		;yes, if eoline is 0ffh
+	ret	z		;return false if so
+
+	ld	b,0		;character counter
+	ld	hl,ctermd
+	ld	c,(hl)		;command separator in c
+
+;note the inversion of assignments here
+	ld	de,(keyptr)	;source
+	ld	hl,cmdbuf	;destination
+
+cfet1:	ld	a,(de)		;get char from input buff
+	inc	de		;-> next byte
+
+	cp	a,c		;terminator?
+	jr	z,cfetx		;branch if done
+	or	a,a		;null (end-of-line) terminator?
+	jr	z,cfeol		;branch if done
+	cp	','		; comma?
+	call	z,schas		; if so, delimit with spaces
+
+	cp	':'		;colon?
+	jr	nz,cfet2	;no, go on..
+	ld	a,' '		;yes, replace with space
+
+cfet2:	ld	(hl),a		;copy to dest.
+	inc	hl		;rdy for next
+	inc	b		;count the char
+	jr	cfet1		;..and do it
+
+cfeol:	dec	a		; set last-command flag true
+	ld	(eoline),a
+cfetx:	ld	a,b
+	ld	(cmdcnt),a	; store char count
+	xor	a,a		; make a null
+	ld	(hl),a		; terminator in dest.
+	ld	(keyptr),de	; save for next time
+	dec	a		; return logic true
+	ret
+
+schas:	;Space CHAr Space - delimit char with
+	; spaces so argv won't miss it.
+
+	ld	(hl),' '	;store leading space
+	inc	hl
+	inc	b		;count the char
+	ld	(hl),','	;store comma
+	inc	hl
+	inc	b		;count the char
+	ld	a,' '		;trailing space
+	ret			; finish up in caller
+
+;***************************************************
+
+;issue prompt & get a line of input from con:
+kbdin:
+	ld	a,(errflg)
+	or	a
+	jr	z,prompt
+
+	ld	a,(errbel)
+	or	a		;sound bell on error?
+	jr	z,eprmpt	;skip it if false
+	call	print
+	db	bel,bel,bel,bel,0
+
+eprmpt:	ld	a,(ernote)
+	or	a		;emit the error note?
+	jr	z,prompt	;skip the note if false
+	call	print
+	db	'type ? or / for error diagnosis'cr,lf,0
+
+prompt:	call	print
+	db	'Command (? for help): '
+	db	0	;string terminator
+
+	xor	a		;make a null
+	ld	(eoline),a	;reset last-command flag
+	dec	a		;capitalize like zrdos
+	ld	hl,keysiz	;->local command input buffer
+	call	bline		;get multiple command line with editing
+	ld	(keyptr),hl	;save the parameters
+	ld	(keycnt),a
+	call	crlf		;give user his cr
+	ret
+
+;***************************************************
+
+; PWD routine
+; Print Names of Directory Elements in system NDR
+; on entry, IX -> BCB for the buffer to be printed
+
+pwd:	ld	ix,bcb1		;supply entry param for sys ndr
+	call	crlf		; new line
+	ld	a,(ix+2)	;check count first
+	or	a		;no entries?
+	jp	nz,pwd01
+	call	print
+	db	' No Entries in Directory',0
+	ret
+;
+; Print Header for Password Entries
+;
+pwd01:
+	ld	b,2		;2 times
+pwd0a:
+	call	print
+	db	' DU : DIR Name - Password    ',0
+	dec	b		;count down
+	jp	nz,pwd0a
+	call	crlf
+	ld	b,2
+pwd0b:
+	call	print
+	db	'----  --------   --------    ',0
+	dec	b		;count down
+	jp	nz,pwd0b
+	call	crlf
+;
+; Begin Output Processing
+;
+	ld	c,0		;set entry count
+	ld	b,1		;set disk 1
+	ld	l,(ix)		;pt to buffer containing
+	ld	h,(ix+1)	;directory data
+;
+; Print Each Resident Command Name
+;
+pwd1:
+	ld	a,(hl)		;get table entry
+	or	a		;end of table?
+	jr	z,pwdx		;exit
+	cp	b		;same disk?
+	jp	z,pwd2
+;
+; Advance to Next Set of Entries for New Disk
+;
+	ld	b,a		;set new disk
+	call	cnline		;newline if needed
+	call	crlf		;1 additional line
+	ld	c,0		;reset count
+pwd2:
+	push	bc		;save counters
+;
+; Print DU:
+;
+	ld	a,(hl)		;get disk
+	add	'@'		;convert to letter (A to P)
+	call	cout
+	inc	hl		;pt to user
+	ld	a,(hl)		;get user
+	call	padc		;print user number
+	call	print		;print separator
+	db	': ',0
+	inc	hl		;pt to name
+;
+; Print DIR
+;
+	call	prname		;print name of directory
+	call	print
+	db	' - ',0
+	call	prname		;print password
+	pop	bc		;get counters
+	inc	c		;another entry
+	push	bc		;save counters
+;
+; Print Separator
+;
+	call	print		;print separator
+	db	'    ',0
+	pop	bc		;get counters
+;
+; New Line Counter
+;
+	inc	c		;increment entry counter
+	ld	a,c		;check for done
+	and	3		;every 4
+	call	z,crlf		;new line
+	jp	pwd1
+;
+; Print 8-char name (directory or password) and advance ptr
+;
+prname:
+	ld	b,8		;print name
+prn1:
+	ld	a,(hl)		;get char
+	call	cout
+	inc	hl		;pt to next
+	dec	b		;count down
+	jp	nz,prn1
+	ret
+
+cnline:
+	ld	a,c		;get count
+	and	3		;see if newline already given
+	call	nz,crlf		;complete current line
+	ret
+
+pwdx:	call	cnline		;finish off display with
+	call	crlf		;1 or 2 newlines as rqd.
+	xor	a
+	dec	a		;return logic true
+	ret
+
+;***************************************************
+
+init:
+;save the address of the warm boot routine IN BIOS
+;then replace it with the address of our local exit
+;routine, where it will be restored. This traps ^C
+; so that housekeeping activity is performed
+; before the return to the operating system. 
+	ld	hl,(1)		;->bios wb jump
+	inc	hl		;->wb routine addr
+	push	hl
+	ldhlhl			;get the address
+	ld	(wbaddr),hl	;save it for WRAPUP
+	pop	hl		;now replace it..
+	ld	de,exit		; with local exit
+	stdehl			;(hl)<-de
+
+;test for valid z3env
+	ld	hl,(z3eadr)
+	inc	hl		
+	inc	hl
+	inc	hl		;->'Z3ENV' in sys env.
+	ld	de,[z3eadr-6]	;->local 'Z3ENV' string
+	ld	b,5		;compare 5 bytes
+	call	compb
+	jp	nz,noenv	;if nz, pgm not installed
+
+; test for wheel. Only priviledged users modify the system.
+	call	getwhl
+	jp	z,nowhl		;deny use if no wheel
+
+; get Named Directory pointer, exit with error if none
+	call	getndr		; get ndr addr & length
+	jp	z, noNDB	; exit if none (0, Z)
+	ld	(z3ndb),hl	; store the address, and
+	ld	(ndblks),a	; the max number of entries
+
+; initial memory allocation
+	call	codend		;set hl-> first free memory
+	ld	(freesp),hl	;store in freespace pointer
+	ld	(bcb0),hl	; setup bcb0 as local ndr buff
+
+; initialize Buffer Control Block 0 as the
+; descriptor for the local buffer which will
+; contain the copy of system NDR entries.
+
+	ld	hl,(ndblks)	; max number of blocks
+	ld	de,entlen	; length of each block
+	ld	(bcb0+4),de	; store in Buffer Control Block
+	call	mulhd		; hl*de = buffer data bytes
+
+; The system NDR is a multiple of 128 bytes in length
+	ld	de,80h		; round off to the
+	add	hl,de		; ..next higher multiple
+	ld	a,l		; ..of 128 bytes (80h)
+	and	a,80h
+	ld	l,a		; hl = buffer length
+; save this to avoid another calculation later
+	ld	(size0),hl	; save for copyout:
+	push	hl
+	ld	de,(bcb0)	; buffer start addr
+	add	hl,de		; loc for next buffer
+	ld	(bcb0+8),hl	; save in Buf. Cntl. Blk.
+	ld	(freesp),hl	; ..and for global use
+; also calc end+1 of system NDR buff for bcb1
+	ld	de,(bcb1)
+	pop	hl
+	add	hl,de
+	ld	(bcb1+8),hl
+
+; initialize flags in case of re-entry
+	xor	a
+	ld	(lclcmd),a
+
+;get the name under which this program was
+; invoked and put it in the help message
+; if this is the first invocation
+	ld	a,(myname)
+	cp	a,' '		;space if first time
+	jr	nz,xinit	;jmp if already done
+
+	ld	a,(ctermd)	;transfer cmd terminator
+	ld	(ctrm),a	;to the help text
+
+	call	getefcb
+	jr	z,xinit		;jmp if no ext fcb
+	inc	hl		;point to pgm name
+	ld	de,myname
+	ld	bc,8
+	ldir			;transfer the name...
+
+xinit:	xor	a
+	dec	a		;mark successful return(-1, NZ)
+	ret
+
+;***************************************************
+
+;Error exits which result from unrecoverable
+;conditions during initialization.
+
+nowhl:	ld	hl, nowhlm	;'no wheel' message
+	jr	fatalerror
+
+noenv:	ld	hl, noenvm	;not installed for ZCPR3
+	jr	fatalerror
+
+nondb:	ld	hl, nondbs	;can't find NDR
+fatalerror:
+	call	pstr
+	jp	exit		; ERROR EXIT
+
+;***************************************************
+
+
+optsel:
+;Routine for setting/executing options in
+;response to '/ooo...' in the command line.
+;If there are no options, then it was a command
+;to display the help screen.
+
+	ld	hl,(arg1)
+	inc	hl		;->first option chr
+	ld	a,(hl)
+	or	a		;end?
+	jp	z,help		;/ was only char - means help
+
+optse1:	push	hl		;save pointer to option
+	ld	(ckey),a
+	ld	de,optble
+	call	acase3		;execute the option & return
+	pop	hl		;recover option pointer
+	ret	z		;stop if error. code is in reg A
+	inc	hl		;->next option or end of arg1
+	ld	a,(hl)
+	or	a		;done if 0
+	jr	nz,optse1
+;finished processing options. Return nz for success.
+toptx:	xor	a		;used by others so xor is rqd.
+	dec	a
+	ret
+
+;***************************************************
+
+;these are the cases executed by acase3
+;during option function execution. They
+;are referenced from optble:
+
+hopt:	toggle hlprqd
+	jr	toptx
+
+bopt:	toggle errbel
+	jr	toptx
+
+eopt:	toggle ernote
+	jr	toptx
+
+ohelp:	ld	hl,ohelpm
+	jr	pinfo
+
+echelp:	ld	hl,ehelpm
+pinfo:	call	pstr
+	jr	toptx
+
+setsep:	ld	hl,(arg1)
+	inc	hl
+	inc	hl	;->new cmd separator
+	ld	a,(hl)	;get it
+	or	a	;if null, it's not there
+	jr	z,setser;jmp if not there
+;see if it's one of the command/option characters
+	ld	c,a	;tuck away during test
+	ld	hl,ctable	;check command chars
+	call	allow
+	ret	z		;error. code 9 in A reg
+	ld	hl,optble	;check option chars
+	call	allow
+	ret	z		;error. code 9 in A reg
+	ld	a,c		;all ok, recover new separator
+;store the new separator where pgm & help can find it.
+	ld	(ctermd),a
+	ld	(ctrm),a
+	jr	toptx
+
+setser:	ld	a,7	;error code
+	ret		;no new command separator
+
+badopt:	xor	a
+	ld	a,8	;error code
+	ret		;bad option character
+
+allow:
+;search a case table pointed to by hl
+;for the character in reg c. If found,
+;ret z with error code 9 in accumulator
+	ld	b,(hl)	;get number of cases
+	inc	hl
+	inc	hl
+	inc	hl
+allow1:	ld	a,(hl)	;get a char
+	cp	c	;found it?
+	ld	a,9	;..in case yes
+	ret	z	;..ret with 9
+	inc	hl	;not found..
+	inc	hl
+	inc	hl	;->next entry
+	djnz	allow1	;test more
+	ret		;done, z-flag is nz
+
+;***************************************************
+
+optble:
+	db	8
+	dw	badopt
+	db	'/'
+	dw	help
+	db	'H'	;toggle auto help-after-error
+	dw	hopt
+	db	'B'	;toggle bell-after-error
+	dw	bopt
+	db	'E'	;toggle error reminder note
+	dw	eopt
+	db	'O'	;display options
+	dw	ohelp
+	db	'0'	;same as 'O' for those who
+	dw	ohelp	;..can't see the difference
+	db	'C'	;display error codes
+	dw	echelp
+	db	'S'	;set new cmd separator
+	dw	setsep
+
+;***************************************************
+
+help:	ld	a,(errhst)	;get error flag for
+	or	a		;last bad cmd, test
+	jr	z,help1		;normal help if no error
+;an error condition is present. Show the
+;discrepant command, the error message, and the
+;help screeen without the Program Banner
+	dec	a		;for indexing, codes must
+				;start from 00h.
+	add	a		;make an index to table
+	ld	c,a
+	ld	b,0
+	ld	hl,errndx	;->index table
+	add	hl,bc		;->error msg address
+	ldhlhl			;load hl from (hl)
+	push	hl
+
+	call	print		;delimit the command
+	db	cr,lf,'???????--->',0
+	ld	hl,cmdhst+1	;->command in error
+	call	pstr		;send to console
+	call	print		;complete the line
+	db	'<---'cr,lf,lf,0
+
+	pop	hl		;->error msg
+	call	ptstrl		;display message
+	call	crlf
+	xor	a		;make 0
+	ld	(errhst),a	;only display error once
+
+	ld	hl,cmdhlp	;->body of help msg
+	ld	a,(hlprqd)	;get option byte
+	or	a		;test true/false
+	jr	nz,help2	;show help if true
+	dec	a		;else, make true
+	ret			;and return no error
+
+;display help & return to caller in interactive mode.
+;When invoked from the Z command line, display HELP
+;screen and exit immediately.
+help1:	ld	hl,hlpmsg	;->entire help msg
+help2:	call	pstr
+	ld	a,(lclcmd)
+	or	a		;local interactive mode?
+				;don't do the exit if local
+	ret	nz		;..return True (no error)
+	jp	exit		;exit if this came from cmd line
+
+;*************************************************************
+
+;ndrsrt: sets up the Sort Specification Block for
+; sorting the system NDR buffer in d/u order, then
+; calls dosort: for the actual buffer allocation
+; and sorting.
+
+ndrsrt:	push	hl
+	push	de
+	push	bc
+	ld	hl,bcb1
+	ld	de,ssb		;Sort Specification Block
+	ld	bc,6
+	ldir			;copy 1st 3 words from bcb1
+	ld	hl,(freesp)	;tell where to work
+	ld	(ssb+8),hl
+	call	dosort		;sort system NDR buffer
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+;***************************************************
+
+; copyout: copy new NDR into System Named Directory
+
+copyout:
+	ld	hl, (bcb0)	; source is local NDR image
+	ld	de, (z3ndb)	; dest is system NDR buffer
+	ld	bc, (size0)	; buffer size, bytes
+	ldir
+	ld	(chgflg),bc	;reset flags
+	ld	(abtflg),bc	;reset flags
+	ld	(eoline),bc	;reset flags
+	xor	a,a
+	dec	a
+	ret
+
+;***************************************************
+
+; dosort: is called to sort the contents of a
+; buffer using memory space starting at addr in HL.
+; Assumes the sort parameters in SSB: have been
+; correctly entered therein.
+; BC,DE,HL are preserved
+
+dosort:	push	bc		;save for caller
+	push	de
+	push	hl
+	ld	bc,(ssb)
+	push	bc		;save for sort
+	ld	de,ssb
+	call	ssbinit		;munches (ssb)
+	pop	bc
+	ld	(ssb),bc	;restore (ssb)
+	call	sort
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+;***************************************************
+
+;compdu: is referenced indirectly through the
+;Sort Specification Block. It is the compare
+;routine used by Sort (from Syslib)
+
+compdu:	push	bc	;preserve for caller
+	ld	b,2	;number of bytes in comp vector
+	ex	de,hl	;for ascending sort order
+	call	compb	;vector compare routine
+	ex	de,hl
+	pop	bc
+	ret
+
+;***************************************************
+
+strcpy:
+;copy a string terminated by (Acc) from HL to DE.
+;If a terminator is not encountered, copy BC bytes
+;all registers used.
+	cp	(hl)	;terminator?
+	ret	z	;quit if so
+	ldi		;copy a byte
+	ret	po	;return if bc=0
+	jr	strcpy	;copy more
+
+;***************************************************
+
+ptstrl:
+;copy a string terminated by line feed to con
+	ld	a,lf
+ptstr:	;Print Terminated STRing
+;copy a string terminated by (Acc) to console
+;on entry, hl->string
+;on exit, hl->next char past the terminator
+;THE TERMINATOR IS SENT TO THE CONSOLE
+	push	bc
+	ld	c,a
+ptstr1:	ld	a,(hl)
+	call	cout
+	inc	hl
+	sub	c
+	jr	nz,ptstr1
+	dec	a
+	pop	bc
+	ret
+
+;***************************************************
+
+;MESSAGES
+nowhlm:	db 'Sorry - Wheel privileges are required for this pgm.'
+	db	cr,lf,0
+
+nondbs:	db 'Can''t find System Named Directory!'
+	db	cr,lf,0
+
+noenvm:	db 'This is a ZCPR3 program which must ',cr,lf
+	db 'be installed with Z3INS.'
+	db	cr,lf,0
+
+;table for indexing into the cmd error messages
+errndx:	dw errm01,errm02,errm03,errm04
+	dw errm05,errm06,errm07,errm08
+	dw errm09
+
+;these are the error messages
+ehelpm:	db lf,tab,tab,'ERROR CODE DESCRIPTIONS'cr,lf,lf
+errm01:	db 'Code 1 - First argument is invalid. Missing space?'cr,lf
+errm02:	db 'Code 2 - First arg interpreted as invalid DU or DIR form.'cr,lf
+errm03:	db 'Code 3 - For this command, the DU must exist in the NDR.'cr,lf
+errm04:	db 'Code 4 - NDR buffer is full. The append was not performed.'cr,lf
+errm05:	db 'Code 5 - Too many arguments. Missing command separator?'cr,lf
+errm06:	db 'Code 6 - Too many commas. Only one has syntactic meaning.'cr,lf
+errm07:	db 'Code 7 - New command separator was not supplied.'cr,lf
+errm08:	db 'Code 8 - Invalid option character. Missing command separator?'cr,lf
+errm09:	db 'Code 9 - Invalid separater. It''s a command or option char!'cr,lf
+	db lf
+	db 'One of these code values will be placed in the ZCPR3 program'cr,lf
+	db 'error byte (where IF can find it) when an error occurs in a'cr,lf
+	db 'command in the invoking command line. In the interactive mode'cr,lf
+	db 'no errors are reported to the operating system.'cr,lf
+	db	lf,0	;marks end of error msg table
+
+;option list screen
+ohelpm:	db lf,tab,tab,'COMMAND OPTIONS (preceded by "/")'cr,lf,lf
+	db '/',tab,'Display Help. If error, show error diagnostic'cr,lf
+	db 'H',tab,'Toggle display of help after error diagnostic'cr,lf
+	db 'B',tab,'Toggle audible notice of command error'cr,lf
+	db 'E',tab,'Toggle visual notice of command error'cr,lf
+	db 'S<ch>',tab,'Change command separator to character <ch>'cr,lf
+	db 'O',tab,'Display this screen of option selections'cr,lf
+	db 'C',tab,'Display the list of error codes'cr,lf
+	db	lf
+	db 'Option commands start with ''/'' and end with a carriage'cr,lf
+	db 'return or command separator. Multiple options from the'cr,lf
+	db 'list above may be included in any order. For example,'cr,lf
+	db tab,'/hbeo<cr>',tab,'is perfectly acceptable.'cr,lf
+	db 'Note that if you assign a new separator, the assignment'cr,lf
+	db 'takes place immediately, and your next separator must be'cr,lf
+	db 'the one you assigned!'cr,lf
+	db	lf,0		;0 marks end of option screen
+
+hlpmsg:	db	lf,tab,tab,'EDITND version ',vers,'.',rev,beta,cr,lf
+	db	tab,'CHange Resident Named DiRectory',cr,lf,lf
+cmdhlp:	db	'SYNTAX:   '
+myname:	db	' EDITND '
+	db	' [<command>  [ '
+ctrm:	db	'\',' <command>]...]',cr,lf
+	db tab,'<command> = <verb> [name] [,] [password]'cr,lf,lf
+	db 'Typical Commands ( [xxx] means xxx is optional)',cr,lf
+	db '(DU/DIR)[:]',tab,tab,'delete Named Directory entry',cr,lf
+	db '(DU/DIR)[:] NAME',tab,'add/change a directory name only',cr,lf
+	db '(DU/DIR)[:] NAME,[PW]',tab,'add/change name & password',cr,lf
+	db '(DU/DIR)[:] ,[PW]',tab,'Change password only',cr,lf
+	db '(DU/DIR)[:] [NAME],',tab,'Password is deleted.',cr,lf,lf
+	db '? or / or //',tab,tab,'Display Help & Explain last error.'cr,lf
+	db '<CR>',tab,tab,tab,'empty cmd shows current NDR.',cr,lf
+	db 'Q or q',tab,tab,tab,'Quit & return to Z (no changes)',cr,lf
+	db 'R or r',tab,tab,tab,'Restart with original NDR',cr,lf
+	db 'S or s',tab,tab,tab,'Sort the NDR entries',cr,lf
+	db 'X or x',tab,tab,tab,'eXit to Z with .NDR updated',cr,lf
+	db 'Z or z',tab,tab,tab,'Zap (erase) ALL NDR entries',cr,lf
+	db '/oo...',tab,tab,tab,'Other options. Type /O to see them.'cr,lf
+	db	lf,0
+
+;misc data
+spaces:	ds	16,20h	;fill data for blank name,password
+
+;working temporary storage
+ndrloc:	dw	0	;place to change/append in NDR
+wbaddr:	dw	0	;addr of wb routine in bios
+
+;the following comprise a single structure, accessed by
+; both word and byte instrctions. Keep 'em together.
+ndrdu:	db	0	;d/u for current NDR entry
+z3fcb:	db	0	;ZCPR3 style fcb
+z3fcbn:	ds	11,20h
+	db	0
+fcbusr:	ds	1	;last byte in the fcb
+;end structure
+
+;working buffer in NDR entry format.
+entdu:	ds	2
+entnm:	ds	8
+entpw:	ds	8
+;end structure
+
+;table of results from argv used to process command arguments.
+argvtb:	db	4		;parse 4 arguments
+argnum:	ds	1		;count of tokens found
+arg1:	ds	2		;-> token
+arg2:	ds	2		;-> token
+arg3:	ds	2		;-> token
+arg4:	ds	2		;-> token
+;end structure
+
+;command arg parameter data structure
+a1code:	ds	1
+a2code:	ds	1
+a3code:	ds	1
+ckey:	ds	1
+;end structure
+
+;status flags
+chgflg:	db	0	;nz if sys ndr is changed
+srtflg:	db	0	;nz if sort is required
+abtflg:	db	0	;nz if abort to Z in progress
+appflg:	db	0	;z if current cmd requires NDR append
+eoline:	db	0	;nz if current cmd is last one on line
+errflg:	db	0	;contains current error code. 0=no error
+lclcmd:	db	0	;0=cmds from invoking cmd, 0ffh for interactive
+			;this flag used to distinguish between the
+			;two modes for routines that act differently,
+			;like HELP.
+;single-command buffer
+cmdcnt:	db	0
+cmdbuf:	ds	40
+;end structure
+
+;previous command here for error reporting
+cmdhst:	ds	41
+errhst:	ds	1	;error code
+;end structure
+
+;buffer for local keyboard input
+; may contain multiple commands
+keyptr:	dw	keybuf		;pointer to next char
+keysiz:	db	200
+keycnt:	db	0		;character count
+keybuf:	ds	201,0		;command buffer
+;end structure
+
+ndblks:	dw	0		;sys NDR max number of entries
+freesp:	dw	0		;start of free mem after buffer alloc
+
+;Sort Specification Block
+;Controls operation of the SORT routine
+
+ssb:	dw	0	;addr of first record
+	dw	0	;number of records to sort
+	dw	0	;record size, bytes
+	dw	compdu	;addr of compare routine to use
+	dw	0	;addr of scratch area for sort
+	db	true	;use pointers (false/no = don't)
+
+; Buffer Control Blocks - contain pointers and data
+; for the dynamically allocated buffers
+
+; Buffer 0 - for copy of system Named Directory buffer
+bcb0:	dw	0	; buffer start address
+	dw	0	; number of records/blocks
+	dw	entlen	; number of bytes/(record/block)
+	dw	0	; pointer to next loc in buffer
+	dw	0	; next buffer start/freespace
+
+size0:	dw	0	;(bcb0+8) - (bcb0)
+;end structure
+
+;this data has the same structure as bcb0: --
+z3ndb:			;system NDR address
+bcb1:	ds	4,0	; for Buffer 1 - for System NDR buffer
+	dw	entlen
+	ds	4,0
+;end structure
+
+
+;***************************************************
+
+stak_space:
+	ds 	64		; This seems enough
+stak:	dw 	0
+
+;***************************************************
+
+	end
+                 

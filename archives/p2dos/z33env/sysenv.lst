@@ -1,0 +1,658 @@
+ZAS Relocating Macro Assembler (v3.05                             page    1
+                                                            
+                                                            
+
+  0000           ;* SYSTEM SEGMENT:  SYSTEM.ENV
+  0000           ;* AUTHOR:  RICHARD CONN
+  0000           
+  0000           ; PROGRAM:  SYSENV.ASM
+  0000           ; AUTHOR:  Richard Conn
+  0000           ; Version:  1.0
+  0000           ; Date:  22 Feb 84
+  0000           ; Previous Versions:  None
+  0000           
+  0000           ;
+  0000           ;       SYSENV is the definition for my ZCPR3 environment, and it is loaded
+  0000           ; as my ZCPR3 Environment Descriptor by Z3LDR.  SYSENV is named to SYS.ENV
+  0000           ; after assembly to permit this.
+  0000           ;
+  0000           
+  0000           ;
+  0000           ;  Environment Definitions
+  0000           ;
+  0000+                  MACLIB  COMMON.ASM
+  0000+          ;
+  0000+          ; Here just some common symbol...
+  0000+          ;
+  0000+          
+  0016+=         VERS    EQU     22              ; VERSION 2.2 (CP/M related)
+  0000+          ;
+  0000+          ; MSIZE EQU     63              ; CP/M VERSION MEMORY SIZE IN KILOBYTES
+  003C+=         MSIZE   EQU     60              ; CP/M VERSION MEMORY SIZE IN KILOBYTES
+  0000+          ; MSIZE EQU     56              ; CP/M VERSION MEMORY SIZE IN KILOBYTES
+  0400+=         RESROOM EQU     1024            ; RESERVED ROOM SPACE BELOW MONITOR (FC00)
+  0600+=         BIOSTDS EQU     1536            ; BIOS STANDARD SIZE
+  0A00+=         BIOREAS EQU     BIOSTDS+RESROOM ; BIOS REAL SIZE
+  0400+=         ZSTDOVR EQU     1024            ; ZCPR STANDARD OVERHEAD SIZE
+  0000+=         ZIOPKG  EQU     0               ; ZCPR IO PACKAGE SIZE
+  0800+=         ZRESPKG EQU     2048            ; ZCPR RESIDENT CMD PKG SIZE
+  0200+=         ZFLOPKG EQU     512             ; ZCPR FLOW CMD PACKAGE SIZE
+  01C8+=         ZDSSTSZ EQU     01C8H           ; ZDS Stamper reserved space
+  0000+          
+  1200+=         EXTRABIAS       EQU     RESROOM+ZSTDOVR+ZIOPKG+ZRESPKG+ZFLOPKG  ; ...
+  0000+                  ;
+  0000+                  ;       "BIAS" IS ADDRESS OFFSET FROM 3400H FOR MEMORY SYSTEMS
+  0000+                  ;       THAN 16K (REFERRED TO AS"B" THROUGHOUT THE TEXT)
+  0000+                  ;
+  8E00+=         BIAS    EQU     ((MSIZE-20)*1024)-EXTRABIAS
+  C200+=         CCP     EQU     3400H+BIAS      ; BASE OF CCP
+  CA06+=         BDOS    EQU     CCP+0806H       ; BASE OF BDOS
+  CA00+=         BDOSB   EQU     CCP+0800H       ; BDOS base offset
+  D800+=         BIOS    EQU     CCP+1600H       ; BASE OF BIOS
+  E200+=         ZBUFBAS EQU     BIOS+BIOREAS    ; BASE OF ZCPR3 BUFFERS
+  0000+                  ;
+  0000+                  ;       some other equs...
+  0000+                  ;
+  000D+=         CR      EQU     0DH             ; CARRIAGE RETURN
+  000A+=         LF      EQU     0AH             ; LINE FEED;
+  000C+=         FF      EQU     0CH             ; FORM FEED (clear screen)
+  FFFF+=         TRUE    EQU     -1
+  0000+=         FALSE   EQU     0
+ZAS Relocating Macro Assembler (v3.05                             page    2
+                                                            
+                                                            
+
+  0000+          
+  0000+=         INTRON  EQU     FALSE           ; Interrupts disabled
+  0000+                  ;
+  0000+                  ; define which kind of date stamper must be embedded in
+  0000+                  ; RCP
+  0000+                  ;
+  FFFF+=         STMPP2  EQU     TRUE            ; P2DOS date stamper
+  0000+=         STMPZS  EQU     FALSE           ; ZSDOS date stamper
+  FFFF+=         HASEDS  EQU     (STMPP2+STMPZS) ; set a flag for embedded date stamper
+  0000+                  ;
+  0000+                  ; path for ZCPR3 used on cold boot
+  0000+                  ;
+  0024+=         IDISK1  EQU     '$'             ; 1st: current disk, current user
+  0024+=         IUSER1  EQU     '$'
+  0024+=         IDISK2  EQU     '$'             ; 2nd: current disk, user 15
+  000F+=         IUSER2  EQU     15
+  0001+=         IDISK3  EQU     'A'-'@'         ; 3rd: disk A, current user
+  0024+=         IUSER3  EQU     '$'
+  0001+=         IDISK4  EQU     'A'-'@'         ; 4th: disk A, user 15
+  000F+=         IUSER4  EQU     15
+  0000+          
+  0000+          ; COMMON.ASM [EOF]
+  0000+                  MACLIB  Z3BASE
+  0000+          ; Z3BASE - Dynamic Configuration
+  0000+          ;
+  0000+          ; ZCPR33 is copyright 1987 by Echelon, Inc.  All rights reserved.  End-user
+  0000+          ; distribution and duplication permitted for non-commercial purposes only.
+  0000+          ; Any commercial use of ZCPR33, defined as any situation where the duplicator
+  0000+          ; recieves revenue by duplicating or distributing ZCPR33 by itself or in
+  0000+          ; conjunction with any hardware or software product, is expressly prohibited
+  0000+          ; unless authorized in writing by Echelon.
+  0000+          ;
+  0000+          ; This is a special version of Z3BASE, inspired by Joe Wright's Z3BASE
+  0000+          ; for Z-Com.  All segment addresses are automatically derived when the
+  0000+          ; CCP equate is set.  The benefit of this is that reconfiguration of the
+  0000+          ; system after initial installation is greatly eased.
+  0000+          ;
+  0000+          ; Although this version of Z3BASE is being distributed with ZCPR 3.3, any
+  0000+          ; previous version of Z3BASE can be used to assemble the Z33 Command
+  0000+          ; Processor.  No new symbols are needed.  So, if you have an existing
+  0000+          ; Z3BASE, go ahead and use it.
+  0000+          ;
+  0000+          ; Instructions:
+  0000+          ;
+  0000+          ; The user should first design the ZCPR3 memory usage using the chart
+  0000+          ; below.  (Echelon recommends the chart be filled out, even though it is
+  0000+          ; not read by the assembler, so that your system will be self-documenting.)
+  0000+          ; Then set the CCP equate for the beginning address of ZCPR3.  Next, examine
+  0000+          ; and change the SEGn equates which follow in the file to ensure that the
+  0000+          ; system segments and buffers are placed at the proper addresses.
+  0000+          ;
+  0000+          ; This file has been customized for use with AMPRO hard disk systems.  The
+  0000+          ; target configuration has support for hard disks up to 49 Meg, extended
+  0000+          ; IOP support, and 28-entry NDR.
+  0000+          ;
+  0000+          ;****************************************************************
+ZAS Relocating Macro Assembler (v3.05                             page    3
+                                                            
+                                                            
+
+  0000+          ;*                                                              *
+  0000+          ;*  Z3BASE.LIB -- Base Addresses for ZCPR 3.3/Z-System          *
+  0000+          ;*                                                              *
+  0000+          ;*      Segments:                                               *
+  0000+          ;*                                                              *
+  0000+          ;*      Segment         Function                                *
+  0000+          ;*      -------         --------                                *
+  0000+          ;*      ZSDOS           ZSDOS 1.1                               *
+  0000+          ;*      CBIOSZ          ZDS BIOS with additional                *
+  0000+          ;*                      ZCPR3 initialization routines           *
+  0000+          ;*      ZCPR3           Echelon Z80 Command Processor           *
+  0000+          ;*                      Replacement, Version 3.3 (ZCPR3)        *
+  0000+          ;*      *.ENV           All Environment Descriptors             *
+  0000+          ;*      *.FCP           All Flow Command Packages               *
+  0000+          ;*      *.NDR           All Named Directory Definition Files    *
+  0000+          ;*      *.RCP           All Resident Command Packages           *
+  0000+          ;*      *.IOP           All Input/Output Packages               *
+  0000+          ;*                                                              *
+  0000+          ;*                                                              *
+  0000+          ;* Memory Map of System (for CCP EQU 0BC00H):                   *
+  0000+          ;*                                                              *
+  0000+          ;*      Address Range     Size  Function                        *
+  0000+          ;*      -------------   ------- --------                        *
+  0000+          ;*          0 -   FF    256 b   Standard CP/M Buffers except    *
+  0000+          ;*        100 - C2FF    ~48 K   Transient Program Area          *
+  0000+          ;*       C200 - C9FF      2 K   ZCPR 3.3 Command Processor      *
+  0000+          ;*       CA00 - D7FF    3.5 K   ZSDOS                           *
+  0000+          ;*       D800 - E1FF    2.5 K   BIOS with disk buffers          *
+  0000+          ;*       E200 - E9FF      2 K   Resident Command Package        *
+  0000+          ;*       0000 - 0000    1.5 K   Input/Output Package            *
+  0000+          ;*       EA00 - EBFF     .5 K   Flow Command Package            *
+  0000+          ;*       EC00 - ECFF    256 b   Environment Descriptor          *
+  0000+          ;*                              Bytes 00H-7FH:  Z3 Parameters   *
+  0000+          ;*                              Bytes 80H-FFH:  Z3 TCAP         *
+  0000+          ;*       ED00 - ED7F    128 b   ZCPR3 Shell Stack               *
+  0000+          ;*       ED80 - EDCF     80 b   ZCPR3 Message Buffers           *
+  0000+          ;*       EDD0 - EDF3     36 b   ZCPR3 External FCB              *
+  0000+          ;*       EDF4 - EDFE     11 b   ZCPR3 External Path             *
+  0000+          ;*       EDFF             1 b   Wheel Byte                      *
+  0000+          ;*       EE00 - EEFF    256 B   Memory-Based Named Directory    *
+  0000+          ;*       EF00 - EFCF    208 B   Multiple Command Line Buffer    *
+  0000+          ;*       EFD0 - EFFF     48 b   ZCPR3 External Stack            *
+  0000+          ;****************************************************************
+  0000+          
+  0000+          ; include       macro   filename
+  0000+          ;
+  0000+          ;        if     zas
+  0000+          ;       .in             filename
+  0000+          ;        else   ;slr assembler
+  0000+          ;       include filename
+  0000+          ;        endif  ;zas
+  0000+          ;
+  0000+          ;        endm
+  0000+          
+  0000+          ; FALSE equ     0
+  0000+          ; TRUE  equ     NOT FALSE
+ZAS Relocating Macro Assembler (v3.05                             page    4
+                                                            
+                                                            
+
+  0000+          
+  0021+=         Z3REV   EQU     33      ; ZCPR3 REV NUMBER
+  0000+          ; MSIZE EQU     54      ; SIZE OF CPM SYSTEM
+  0000+          
+  0000+=         BASE    EQU     0
+  0000+          
+  0000+          ; CCP   EQU     0BC00H  ; ZCPR3 COMMAND PROCESSOR
+  0000+          
+  E200+=         SEG1    EQU     ZBUFBAS ; where the things starts
+  0000+          
+  0000+          ;
+  0000+          ; RCP definition.  Set RCPS to 0 to eliminate RCP
+  0000+          ;
+  0000+          
+  0010+=         RCPS    EQU     16              ; 16 128-byte Blocks (2K bytes)
+  0000+          
+  0000+                   IF     RCPS NE 0
+  E200+=         RCP     EQU     SEG1            ; RESIDENT COMMAND PACKAGE
+  0000+                   ELSE
+  0000+          RCP     EQU     0
+  0000+                   ENDIF
+  0000+          
+  EA00+=         SEG2    EQU     SEG1+(RCPS*128)
+  0000+          
+  0000+          ;
+  0000+          ; IOP definition.  Set IOPS to 0 to eliminate IOP
+  0000+          ;
+  0000+          ; IOPS  EQU     12              ; 12 128-byte Blocks (1.5K bytes)
+  0000+=         IOPS    EQU     0               ; 12 128-byte Blocks (1.5K bytes)
+  0000+          
+  0000+                   IF     IOPS NE 0
+  0000+          IOP     EQU     SEG2            ; REDIRECTABLE I/O PACKAGE
+  0000+                   ELSE
+  0000+=         IOP     EQU     0
+  0000+                   ENDIF
+  0000+          
+  EA00+=         SEG3    EQU     SEG2+(IOPS*128)
+  0000+          
+  0000+          ;
+  0000+          ; FCP definition.  Set FCPS to 0 to eliminate FCP
+  0000+          ;
+  0000+          
+  0004+=         FCPS    EQU     4       ; 4 128-byte Blocks (0.5K bytes)
+  0000+          
+  0000+                   IF     FCPS NE 0
+  EA00+=         FCP     EQU     SEG3
+  0000+                   ELSE
+  0000+          FCP     EQU     0
+  0000+                   ENDIF
+  0000+          
+  E838+=         ZDSSTPR EQU     (FCP-ZDSSTSZ)   ; Z80 Darkstar P2DOS Stamper
+  0000+          
+  EC00+=         SEG10   EQU     SEG3+(FCPS*128)
+  0000+          
+  0000+          ;
+  0000+          ; The ZCPR3 External Environment Descriptor is mandatory for ZCPR 3.3.
+ZAS Relocating Macro Assembler (v3.05                             page    5
+                                                            
+                                                            
+
+  0000+          ; Echelon recommends you work this out so that your ENV begins at address
+  0000+          ; FE00h, but this is only a recommendation and not mandatory.
+  0000+          ;
+  0000+          
+  EC00+=         Z3ENV   EQU     SEG10   ; ENVIRONMENT DESCRIPTORS
+  0002+=         Z3ENVS  EQU     2       ; SIZE OF ENVIRONMENT DESCRIPTOR IN 128-BYTE BLOCKS
+  0000+          
+  ED00+=         SEG4    EQU     SEG10+(Z3ENVS*128)
+  0000+          
+  0000+          ;
+  0000+          ; Shell Stack definition.  Set SHSTKS to 0 to eliminate Shell Stack
+  0000+          ;
+  0000+          
+  0004+=         SHSTKS  EQU     4       ; NUMBER OF SHSIZE-BYTE SHELL STACK ENTRIES
+  0020+=         SHSIZE  EQU     32      ; SIZE OF A SHELL STACK ENTRY
+  0000+                                  ;   (STACK SIZE = SHSTKS * SHSIZE)
+  0000+                   IF SHSTKS NE 0
+  ED00+=         SHSTK   EQU     SEG4
+  0000+                   ELSE
+  0000+          SHSTK   EQU     0
+  0000+                   ENDIF
+  0000+          
+  ED80+=         SEG5    EQU     SEG4+(SHSTKS*SHSIZE)
+  0000+          
+  0000+          ;
+  0000+          ; The ZCPR3 Message Buffers are mandatory for ZCPR 3.3.
+  0000+          ;
+  ED80+=         Z3MSG   EQU     SEG5            ; ZCPR3 MESSAGE BUFFER
+  0000+          
+  EDD0+=         SEG6    EQU     SEG5+80
+  0000+          
+  0000+          ;
+  0000+          ; The ZCPR3 External FCB is mandatory for ZCPR 3.3.
+  0000+          ;
+  0000+          
+  EDD0+=         EXTFCB  EQU     SEG6            ; ZCPR3 EXTERNAL FCB
+  0000+          
+  EDF4+=         SEG7    EQU     SEG6+36
+  0000+          
+  0000+          ;
+  0000+          ; The Path is mandatory for ZCPR 3.3.  No more than 5 path elements can be
+  0000+          ; used with this Z3BASE.LIB file.
+  0000+          ;
+  0000+          
+  EDF4+=         EXPATH  EQU     SEG7            ; EXTERNAL PATH
+  0005+=         EXPATHS EQU     5               ; 5 2-byte Path Elements
+  0000+                                          ;  (PATH SIZE = EXPATHS*2 + 1)
+  0000+          
+  EDFF+=         SEG8    EQU     SEG7+(EXPATHS*2)+1
+  0000+          
+  0000+          ;
+  0000+          ; The ZCPR3 Wheel Byte is mandatory for ZCPR 3.3.
+  0000+          ;
+  0000+          
+  EDFF+=         Z3WHL   EQU     SEG8            ; WHEEL BYTE ADDRESS
+  0000+          
+ZAS Relocating Macro Assembler (v3.05                             page    6
+                                                            
+                                                            
+
+  EE00+=         SEG9    EQU     SEG8+1
+  0000+          
+  0000+          ;
+  0000+          ; ZCPR3 Named Directory Buffer definition.  Set Z3NDIRS to 0 to eliminate
+  0000+          ; the named directory buffer.  If Z3NDIRS is changed, also change the seg11
+  0000+          ; equate below.
+  0000+          ;
+  001C+=         Z3NDIRS EQU     28              ; 28 18-byte Named Directory Elements permitted
+  0000+                                          ;   (NDIR SIZE = Z3NDIRS*18 + 1 for trailing 0)
+  0000+                   IF     Z3NDIRS NE 0
+  EE00+=         Z3NDIR  EQU     SEG9            ; ZCPR3 NAMED DIRECTORY AREA
+  0000+                   ELSE
+  0000+          Z3NDIR  EQU     0
+  0000+                   ENDIF
+  0000+          
+  EF00+=         SEG11   EQU     SEG9+256        ; add 512 for 28-entry NDR
+  0000+                                          ; add 256 for 14-entry NDR ("standard")
+  0000+                                          ; add 0 if Z3NDIRS is set to 0
+  0000+          
+  0000+          ;
+  0000+          ; The ZCPR3 External Command Line Buffer is mandatory for ZCPR 3.3.
+  0000+          ;
+  0000+          
+  EF00+=         Z3CL    EQU     SEG11   ; ZCPR3 COMMAND LINE BUFFER
+  00D0+=         Z3CLS   EQU     208     ; SIZE OF COMMAND LINE BUFFER
+  0000+          
+  EFD0+=         SEG12   EQU     SEG11+Z3CLS
+  0000+          
+  0000+          ;
+  0000+          ; The ZCPR3 External Stack is mandatory for ZCPR 3.3.
+  0000+          ;
+  0000+          
+  EFD0+=         EXTSTK  EQU     SEG12   ; ZCPR3 EXTERNAL STACK
+  0000+          
+  0000+          ; end of Z3BASE.LIB
+  0000+          
+  0000+                  MACLIB  SYSENV
+  0000+          ; LIBRARY:  SYSENV.LIB
+  0000+          ; AUTHOR:  Richard Conn
+  0000+          ; Version:  1.0
+  0000+          ; Date:  18 May 84
+  0000+          ; Previous Versions:  None
+  0000+          
+  0000+          ;
+  0000+          ;       SYSENV is the definition for my ZCPR3 environment.
+  0000+          ;
+  0000+          
+  0000+          sysenv  macro
+  0000+          ;
+  0000+          ;  Environment Descriptor
+  0000+          ;       If inline, there is a leading JMP just before this
+  0000+          ;
+  0000+          envorg1:
+  0000+                  db      'Z3ENV'         ; Environment ID
+  0000+                  db      2               ; class 2 environment (internal)
+  0000+          
+ZAS Relocating Macro Assembler (v3.05                             page    7
+                                                            
+                                                            
+
+  0000+                  dw      expath          ; external path address
+  0000+                  db      expaths         ; number of 2-byte elements in path
+  0000+          
+  0000+                  dw      rcp             ; RCP address
+  0000+                  db      rcps            ; number of 128-byte blocks in RCP
+  0000+          
+  0000+                  dw      iop             ; IOP address
+  0000+                  db      iops            ; number of 128-byte blocks in IOP
+  0000+          
+  0000+                  dw      fcp             ; FCP address
+  0000+                  db      fcps            ; number of 128-byte blocks in FCP
+  0000+          
+  0000+                  dw      z3ndir          ; NDR address
+  0000+                  db      z3ndirs         ; number of 18-byte entries in NDR
+  0000+          
+  0000+                  dw      z3cl            ; ZCPR3 Command Line
+  0000+                  db      z3cls           ; number of bytes in Command Line
+  0000+          
+  0000+                  dw      z3env           ; ZCPR3 Environment Descriptor
+  0000+                  db      z3envs          ; number of 128-byte blocks in Descriptor
+  0000+          
+  0000+                  dw      shstk           ; Shell Stack address
+  0000+                  db      shstks          ; number of shsize-byte entires in Shell Stack
+  0000+                  db      shsize          ; size of a Shell Stack entry
+  0000+          
+  0000+                  dw      z3msg           ; ZCPR3 Message buffer
+  0000+          
+  0000+                  dw      extfcb          ; ZCPR3 External FCB
+  0000+          
+  0000+                  dw      extstk          ; ZCPR3 External Stack
+  0000+          
+  0000+                  db      0               ; quiet flag (1=quiet, 0=not quiet)
+  0000+          
+  0000+                  dw      z3whl           ; address of Wheel Byte
+  0000+          
+  0000+                  db      4               ; Processor Speed in MHz
+  0000+          
+  0000+                  db      'P'-'@'         ; maximum disk
+  0000+                  db      15              ; maximum user
+  0000+          
+  0000+                  db      1               ; 1=OK to accept DU, 0=not OK
+  0000+          
+  0000+                  db      0               ; CRT selection (0=CRT 0, 1=CRT 1)
+  0000+                  db      0               ; Printer selection (n=Printer n)
+  0000+          
+  0000+                  db      80              ; width of CRT 0
+  0000+                  db      24              ; number of lines on CRT 0
+  0000+                  db      22              ; number of lines of text on CRT 0
+  0000+          
+  0000+                  db      132             ; width of CRT 1
+  0000+                  db      24              ; number of lines on CRT 1
+  0000+                  db      22              ; number of lines of text on CRT 1
+  0000+          
+  0000+                  db      80              ; width of Printer 0
+  0000+                  db      66              ; number of lines on Printer 0
+  0000+                  db      58              ; number of lines of text on Printer 0
+ZAS Relocating Macro Assembler (v3.05                             page    8
+                                                            
+                                                            
+
+  0000+                  db      1               ; form feed flag (0=can't formfeed, 1=can)
+  0000+          
+  0000+                  db      102             ; width of Printer 1
+  0000+                  db      66              ; number of lines on Printer 1
+  0000+                  db      58              ; number of lines of text on Printer 1
+  0000+                  db      1               ; form feed flag (0=can't formfeed, 1=can)
+  0000+          
+  0000+                  db      80              ; width of Printer 2
+  0000+                  db      66              ; number of lines on Printer 2
+  0000+                  db      58              ; number of lines of text on Printer 2
+  0000+                  db      0               ; form feed flag (0=can't formfeed, 1=can)
+  0000+          
+  0000+                  db      102             ; width of Printer 3
+  0000+                  db      66              ; number of lines on Printer 3
+  0000+                  db      58              ; number of lines of text on Printer 3
+  0000+                  db      0               ; form feed flag (0=can't formfeed, 1=can)
+  0000+          
+  0000+                  db      'SH      '      ; shell variable filename
+  0000+                  db      'VAR'           ; shell variable filetype
+  0000+          
+  0000+                  db      '        '      ; filename 1
+  0000+                  db      '   '           ; filetype 1
+  0000+          
+  0000+                  db      '        '      ; filename 2
+  0000+                  db      '   '           ; filetype 2
+  0000+          
+  0000+                  db      '        '      ; filename 3
+  0000+                  db      '   '           ; filetype 3
+  0000+          
+  0000+                  db      '        '      ; filename 4
+  0000+                  db      '   '           ; filetype 4
+  0000+          
+  0000+                  ds      80H-($-envorg1+3)       ; make exactly 80H bytes long
+  0000+                                                  ; (+3 compensates for leading JMP)
+  0000+          ;
+  0000+          ; Terminal Capabilities Data
+  0000+          ;
+  0000+          envorg2:
+  0000+                  DB      'Z80DarkStar     '      ;Name of Terminal
+  0000+                  DB      'E'-'@'                 ;Cursor UP
+  0000+                  DB      'X'-'@'                 ;Cursor DOWN
+  0000+                  DB      'S'-'@'                 ;Cursor RIGHT
+  0000+                  DB      'D'-'@'                 ;Cursor LEFT
+  0000+                  DB      10                      ;CL Delay
+  0000+                  DB      05                      ;CM Delay
+  0000+                  DB      00                      ;CE Delay
+  0000+                  DB      0ch,0                   ;CL String
+  0000+                  DB      '%r',1bh,'%+ %+ ',0     ;CM String
+  0000+                  DB      0fh,0                   ;CE String
+  0000+                  DB      1bh,1bh,0dh,0           ;SO String
+  0000+                  DB      1bh,1ch,0dh,0           ;SE String
+  0000+                  DB      0ch,0                   ;TI String
+  0000+                  DB      0                       ;TE String
+  0000+          
+  0000+                  ds      80H-($-envorg2)         ; make exactly 80H bytes long
+  0000+          
+ZAS Relocating Macro Assembler (v3.05                             page    9
+                                                            
+                                                            
+
+  0000+          ;
+  0000+          ;  End of Environment Descriptor
+  0000+          ;
+  0000+                  endm
+  0000           
+  0000           ;
+  0000           ;  Include Environment Descriptor
+  0000           ;
+  0100                   org     100H            ; origin
+  0100 C30000            jp      0               ; leading JMP
+  0103           
+  0103                   SYSENV
+  0103           ;
+  0103           ;  Environment Descriptor
+  0103           ;       If inline, there is a leading JMP just before this
+  0103           ;
+  0103           envorg1:
+  0103 5A33454E56        db      'Z3ENV'         ; Environment ID
+  0108 02                db      2               ; class 2 environment (internal)
+  0109           
+  0109 F4ED              dw      expath          ; external path address
+  010B 05                db      expaths         ; number of 2-byte elements in path
+  010C           
+  010C 00E2              dw      rcp             ; RCP address
+  010E 10                db      rcps            ; number of 128-byte blocks in RCP
+  010F           
+  010F 0000              dw      iop             ; IOP address
+  0111 00                db      iops            ; number of 128-byte blocks in IOP
+  0112           
+  0112 00EA              dw      fcp             ; FCP address
+  0114 04                db      fcps            ; number of 128-byte blocks in FCP
+  0115           
+  0115 00EE              dw      z3ndir          ; NDR address
+  0117 1C                db      z3ndirs         ; number of 18-byte entries in NDR
+  0118           
+  0118 00EF              dw      z3cl            ; ZCPR3 Command Line
+  011A D0                db      z3cls           ; number of bytes in Command Line
+  011B           
+  011B 00EC              dw      z3env           ; ZCPR3 Environment Descriptor
+  011D 02                db      z3envs          ; number of 128-byte blocks in Descriptor
+  011E           
+  011E 00ED              dw      shstk           ; Shell Stack address
+  0120 04                db      shstks          ; number of shsize-byte entires in Shell Stack
+  0121 20                db      shsize          ; size of a Shell Stack entry
+  0122           
+  0122 80ED              dw      z3msg           ; ZCPR3 Message buffer
+  0124           
+  0124 D0ED              dw      extfcb          ; ZCPR3 External FCB
+  0126           
+  0126 D0EF              dw      extstk          ; ZCPR3 External Stack
+  0128           
+  0128 00                db      0               ; quiet flag (1=quiet, 0=not quiet)
+  0129           
+  0129 FFED              dw      z3whl           ; address of Wheel Byte
+  012B           
+  012B 04                db      4               ; Processor Speed in MHz
+ZAS Relocating Macro Assembler (v3.05                             page   10
+                                                            
+                                                            
+
+  012C           
+  012C 10                db      'P'-'@'         ; maximum disk
+  012D 0F                db      15              ; maximum user
+  012E           
+  012E 01                db      1               ; 1=OK to accept DU, 0=not OK
+  012F           
+  012F 00                db      0               ; CRT selection (0=CRT 0, 1=CRT 1)
+  0130 00                db      0               ; Printer selection (n=Printer n)
+  0131           
+  0131 50                db      80              ; width of CRT 0
+  0132 18                db      24              ; number of lines on CRT 0
+  0133 16                db      22              ; number of lines of text on CRT 0
+  0134           
+  0134 84                db      132             ; width of CRT 1
+  0135 18                db      24              ; number of lines on CRT 1
+  0136 16                db      22              ; number of lines of text on CRT 1
+  0137           
+  0137 50                db      80              ; width of Printer 0
+  0138 42                db      66              ; number of lines on Printer 0
+  0139 3A                db      58              ; number of lines of text on Printer 0
+  013A 01                db      1               ; form feed flag (0=can't formfeed, 1=can)
+  013B           
+  013B 66                db      102             ; width of Printer 1
+  013C 42                db      66              ; number of lines on Printer 1
+  013D 3A                db      58              ; number of lines of text on Printer 1
+  013E 01                db      1               ; form feed flag (0=can't formfeed, 1=can)
+  013F           
+  013F 50                db      80              ; width of Printer 2
+  0140 42                db      66              ; number of lines on Printer 2
+  0141 3A                db      58              ; number of lines of text on Printer 2
+  0142 00                db      0               ; form feed flag (0=can't formfeed, 1=can)
+  0143           
+  0143 66                db      102             ; width of Printer 3
+  0144 42                db      66              ; number of lines on Printer 3
+  0145 3A                db      58              ; number of lines of text on Printer 3
+  0146 00                db      0               ; form feed flag (0=can't formfeed, 1=can)
+  0147           
+  0147 5348202020        db      'SH      '      ; shell variable filename
+  014F 564152            db      'VAR'           ; shell variable filetype
+  0152           
+  0152 2020202020        db      '        '      ; filename 1
+  015A 202020            db      '   '           ; filetype 1
+  015D           
+  015D 2020202020        db      '        '      ; filename 2
+  0165 202020            db      '   '           ; filetype 2
+  0168           
+  0168 2020202020        db      '        '      ; filename 3
+  0170 202020            db      '   '           ; filetype 3
+  0173           
+  0173 2020202020        db      '        '      ; filename 4
+  017B 202020            db      '   '           ; filetype 4
+  017E           
+  017E 0000              ds      80H-($-envorg1+3)       ; make exactly 80H bytes long
+  0180                                                   ; (+3 compensates for leading JMP)
+  0180           ;
+  0180           ; Terminal Capabilities Data
+ZAS Relocating Macro Assembler (v3.05                             page   11
+                                                            
+                                                            
+
+  0180           ;
+  0180           envorg2:
+  0180 5A38304461        DB      'Z80DarkStar     '      ;Name of Terminal
+  0190 05                DB      'E'-'@'                 ;Cursor UP
+  0191 18                DB      'X'-'@'                 ;Cursor DOWN
+  0192 13                DB      'S'-'@'                 ;Cursor RIGHT
+  0193 04                DB      'D'-'@'                 ;Cursor LEFT
+  0194 0A                DB      10                      ;CL Delay
+  0195 05                DB      05                      ;CM Delay
+  0196 00                DB      00                      ;CE Delay
+  0197 0C00              DB      0ch,0                   ;CL String
+  0199 25721B252B        DB      '%r',1bh,'%+ %+ ',0     ;CM String
+  01A3 0F00              DB      0fh,0                   ;CE String
+  01A5 1B1B0D00          DB      1bh,1bh,0dh,0           ;SO String
+  01A9 1B1C0D00          DB      1bh,1ch,0dh,0           ;SE String
+  01AD 0C00              DB      0ch,0                   ;TI String
+  01AF 00                DB      0                       ;TE String
+  01B0           
+  01B0 0000000000        ds      80H-($-envorg2)         ; make exactly 80H bytes long
+  0200           
+  0200           ;
+  0200           ;  End of Environment Descriptor
+  0200           ;
+  0200                   endm
+  0200           
+  0200                   end
+
+**** Symbol table ****
+BASE            0000 BDOS            CA06 BDOSB           CA00
+BIAS            8E00 BIOREAS         0A00 BIOS            D800
+BIOSTDS         0600 CCP             C200 CR              000D
+ENVORG1         0103 ENVORG2         0180 EXPATH          EDF4
+EXPATHS         0005 EXTFCB          EDD0 EXTRABIAS       1200
+EXTSTK          EFD0 FALSE           0000 FCP             EA00
+FCPS            0004 FF              000C HASEDS          FFFF
+IDISK1          0024 IDISK2          0024 IDISK3          0001
+IDISK4          0001 INTRON          0000 IOP             0000
+IOPS            0000 IUSER1          0024 IUSER2          000F
+IUSER3          0024 IUSER4          000F LF              000A
+MSIZE           003C RCP             E200 RCPS            0010
+RESROOM         0400 SEG1            E200 SEG10           EC00
+SEG11           EF00 SEG12           EFD0 SEG2            EA00
+SEG3            EA00 SEG4            ED00 SEG5            ED80
+SEG6            EDD0 SEG7            EDF4 SEG8            EDFF
+SEG9            EE00 SHSIZE          0020 SHSTK           ED00
+SHSTKS          0004 STMPP2          FFFF STMPZS          0000
+SYSENV          FE05 TRUE            FFFF VERS            0016
+Z3CL            EF00 Z3CLS           00D0 Z3ENV           EC00
+Z3ENVS          0002 Z3MSG           ED80 Z3NDIR          EE00
+Z3NDIRS         001C Z3REV           0021 Z3WHL           EDFF
+ZBUFBAS         E200 ZDSSTPR         E838 ZDSSTSZ         01C8
+ZFLOPKG         0200 ZIOPKG          0000 ZRESPKG         0800
+ZSTDOVR         0400
+UE            F

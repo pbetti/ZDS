@@ -1,0 +1,135 @@
+Note for Howard Goldstein from Rick Charnes regarding problems 
+with aborting PPIP with ^C entered at the keyboard while inside 
+ZEX403
+
+Way too late, Nov. 18, 1988
+
+Howard, this is the strangest thing I've ever seen.  I mean the 
+absolute strangest.
+
+I finally traced down why I wasn't able to get a ^C entered at 
+the keyboard while in a ZEX file to abort PPIP.  Here it is: 
+because I run the program PROTECT.COM just previous to PPIP.  
+WHAT????, you say.  What the hell does that have to do with the 
+price of tea in China?  I know, I know.  My sentiments exactly.  
+I still can't figure it out, but it seems to be true.  Have 
+ZEX403 patched to XSUB OFF (my other settings are:
+
+MSUP ON
+PSUP OFF
+IPSUP ON
+QUIET ON
+
+if they are relevant) and try two tiny ZEX scripts, one 
+consisting of one line only:
+
+PPIP A*.* BACKUP: /AE      ; (I assume any DIR: is OK)
+
+and the other should be only two lines long:
+
+PROTECT //
+PPIP A*.* BACKUP: /AE
+
+That's all.  The PROTECT command can have any parameter; it can 
+be protecting some file(s) or not, but oddly enough even just 
+running its help message seems to be enough to get it to do its 
+weird stuff.
+
+Now run both scripts on some directory where you have a couple of 
+files beginning with A, and try to abort the PPIP run.  You won't 
+believe your eyes.  The first script aborts PPIP fine and the 
+second one doesn't.
+
+It's completely impossible but I have no other explanation.  The 
+simple running of PROTECT.COM seems to trigger something 
+somewhere that prevents ZEX from feeding the ^C to PPIP.  Well, 
+actually I don't know for sure that that's the correct 
+explanation; I may be assuming something.  I'll say only that the 
+running of PROTECT.COM seems to keep PPIP from being able to be 
+aborted while both are in a ZEX file.
+
+And it only happens inside ZEX.  If you run the same two commands 
+on the command line, or from inside an alias, PPIP aborts fine 
+after PROTECT.COM is run.  And PROTECT.COM has also to be run 
+from inside the ZEX file for the abort to fail.  If you run 
+PROTECT simply from the command line, then run the ZEX file with 
+nothing in it but PPIP, then PPIP aborts fine!  One last 
+strangeness: if any (third) command -- even a resident! -- is 
+issued between PROTECT and PPIP in the ZEX file then PPIP _will_ 
+abort properly.  TOTALLY bizarre!
+
+It reminds me of something I saw in FOGHORN the other day.  I 
+quote at length from November 1988 FOGHORN, an article entitled 
+_WordStar 4 Revisited_ by one Steven Wilcox:
+
+       Since reviewing WordStar 4 in the January 1988 
+       issue of FOGHORN, I feel compelled to do a brief 
+       follow-up after reading other reviews and comments 
+       over the past few months.
+
+       I read with interest Robert Highley's instructions 
+       in the June, 1988 issue of FOGHORN ("Invoking 
+       Proportionally Spaced Printing with WordStar") 
+       concerning proportional printing with WS4.
+
+       [My interest in h]is article was prompted by my 
+       observation of WorStar's inconsistency in 
+       producing proportionally spaced text; sometimes it 
+       would work, but other times it would output the 
+       bizarre right-ragged format described in Robert's 
+       article.  Significantly, these differences in 
+       output would show up on exactly the same file from 
+       one day to the next, and occasionally even during 
+       the same session.
+
+       I scoured the manual to ensure I was setting the 
+       dot commands and printer correctly - and I was.
+
+       After a week or two I finally realized that proper 
+       output occurred after using (now get this!) the 
+       file utility NSWEEP during a computing session.  I 
+       didn't necessarily have to use it on the file 
+       being printed, or even that file's disk.  In fact, 
+       I didn't have to do anything with NSWEEP; only run 
+       it, exit from it, then run WordStar.
+
+       This doesn't mean NSWEEP holds magic powers over 
+       WS [typical computer users' secular rationalism - 
+       rc], but rather that NSWEEP is probably 
+       initializing a critical memory location.  Remember 
+       that both WordStar and NSWEEP occupy or overlap 
+       the same memory locations while running.  When one 
+       program ends and the next starts, the latter is 
+       written over the first in memory.
+
+       If the second program fails to initialize a 
+       particular byte in memory, it ends up using 
+       whatever the first program left there.  After 
+       power-up, this supposed unitialized location in WS 
+       would contain a zero.  After running NSWEEP, it's 
+       undoubtedly something else that works.  Programs 
+       other than NSWEEP may produce that same results, 
+       but I haven't had the time or interest to explore 
+       that possibility.
+
+Sounds pretty much like what's going on with me, eh wot?  Except 
+I have the added ZEX403 factor.
+
+Anyway, you come up with your own explanation.  All I know is it's 
+the strangest thing I've seen this side of the U.S. public's 
+political attitudes.
+
+A quick solution, of course, before we (who?) do the dirty and 
+fun work of finding out exactly what's going on, will be for me 
+to replace PROTECT.COM with any of the more recent utilities such 
+as SFA or Carson's FA.  However, I mourn that many of our newer, 
+DOS-based utilities have dropped the feature that so many of 
+Conn's classics had of accepting a file list parameter.  That's 
+why I used PROTECT in the first place.  In the BACKUP.ZEX that I 
+use all this for I always set some files to "archived" because 
+for various reasons I don't want PPIP to back them up, and 
+PROTECT's file list abilities work very well for that.  Now I'll 
+have to reinvoke FA for each file I want not archived.
+
+Anyway, happy ZEXing...
+

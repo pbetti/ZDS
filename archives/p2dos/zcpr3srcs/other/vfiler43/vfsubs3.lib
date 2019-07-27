@@ -1,0 +1,369 @@
+;===========================================================================
+;
+; VFSUBS3.Z80 - file name and mask processing
+;
+;===========================================================================
+
+
+; Get file name from user and process into FCB pted to by DE
+;	returns:	B = disk number
+;			C = user number
+
+filename:
+	push	de		; Save fcb ptr
+	call	getfspec	; Get file specification from user
+	jr	z,fnamer	; Exit on null input line.
+	pop	de		; Restore fcb ptr.
+	call	fname		; Call syslib routine.
+	ld	a,(hl)		; Get terminating character.
+	cp	' '		; Terminated by space?
+	ret	z
+	or	a		; Terminated by null?
+	ret	z
+fnamer:
+	call	erclr		; Clear error message line.
+	jp	loop		; Error - restart command.
+
+
+;---------------------------------------------------------------------------
+
+; Get File specification/Command line from user
+;	On exit - HL -> first character in command line
+;		  A   = first character in command line
+;		  Z   = Z if null command line,
+;			NZ if significant characters.
+
+getfspec:			; Get file specification
+	ld	b,64		; Length of file specification
+	jr	getline		; Get line from user.
+
+getzcmd:			; Get zcpr3 command
+	ld	b,253		; Length of zcpr3 command line
+
+getline:			; Common code - user line input
+	ld	hl,(cmdbuf)	; Get command line location
+	ld	(hl),b		; Set command line length
+	inc	hl		; Init actual count.
+	ld	(hl),0
+	push	hl		; Save ptr to actual count.
+	ex	de,hl		; De pts to buffer
+	dec	de		; Beginning
+	ld	c,rdbuf		; Read line from user
+	call	bdos
+
+	pop	hl		; Pt to actual count.
+	ld	e,(hl)		; Get actual count in de
+	ld	d,0		; (zero high-order offset)
+
+	inc	hl		; Pt to first char
+	push	hl		; Save current ptr for later
+	add	hl,de		; Pt to end of string
+	ld	(hl),0		; Store ending zero
+
+	pop	hl		; Pt to first char of command line
+	call	sksp		; Ignore leading spaces.
+	ld	a,(hl)		; Get 1st character.
+	or	a		; Test for empty line.
+	ret
+
+
+;---------------------------------------------------------------------------
+
+; FILEMASK - GET/PUT File Selection mask (in system file 4 or on stack)
+;	on entry, A = 0 to PUT file mask from FCB.
+;		 otherwise GET file mask to FCB.
+
+filemask:
+
+	 if	usestk		; If using stack for file mask
+
+	push	af		; Save get/put flag
+
+	call	getsh2		; Get data on shell stack
+	ld	de,19		; Offset into stack entry
+	add	hl,de
+
+	ld	de,fcb+1	; Pt to fcb
+	ld	b,11		; Repeat for 11 characters
+
+	pop	af		; Restore get/put flag
+	or	a		; See if get or put
+	jr	z,putmask
+
+getmask:
+	call	jchk		; Check for no file spec and set pointer
+getmask1:
+	ld	a,(hl)		; Get next character in source name
+	inc	hl		; Increment pointer
+	and	7fh		; Strip off flag bit
+	ld	(de),a		; Save in destination
+	inc	de
+	djnz	getmask1
+	ret
+
+putmask:
+	ex	de,hl		; HL now has the FCB as source
+	call	jchk		; Check for no file spec and set pointer
+putmask1:
+	ld	a,(de)		; Get current option flag (high bit of char)
+	and	80h
+	ld	c,a		; Save result in C
+	ld	a,(hl)		; Get new filename character
+	inc	hl		; Increment the pointer
+	and	7fh		; Clear high bit
+	or	c		; OR in the option flag
+	ld	(de),a		; Copy to destination
+	inc	de
+	djnz	putmask1
+	ret
+	
+jchk:
+	ld	a,(hl)		; Check first character of source file name
+	cp	' '		; Is it blank?
+	jr	z,jchk1
+	cp	'/'		; Help specifier?
+	ret	nz		; Neither, then leave pointer as it is
+jchk1:
+	ld	hl,joker	; Else, use joker '????????.???' as file
+	ret
+
+	  else	; not usestk
+
+	push	af		; Save get/put flag
+
+	call	getfn2		; Pt to first system file name
+	ld	de,11*3		; Pt to 4th file name
+	add	hl,de
+	ld	de,fcb+1	; Pt to fcb
+
+	pop	af		; Restore get/put flag
+	or	a		; Test it.
+
+	jr	nz,fmask1	; Br if get.
+	ex	de,hl		; Swap pointers for put.
+
+fmask1:
+	ld	b,11		; 11 bytes
+	call	moveb
+
+	ld	hl,joker	; Treat as '*.*' with 'joker'..
+	ld	b,11		; # of characters to move
+	ld	a,(de)		; Get first char of file name
+	cp	' '		; If space, fill with *.*
+	call	z,moveb		; Set file id to *.*
+
+	ld	a,(de)		; Get first char of file name
+	cp	'/'		; If opt, fill with *.*
+	call	z,moveb
+	ret
+	
+	 endif	; usestk
+
+;---------------------------------------------------------------------------
+
+; VFY$D$U - Resolve DU or DIR and verify Access
+;	on entry, HL -> file specification
+;	on exit,  HL is unchanged
+;		  BC =	DU for DU/DIR
+;		  Z  = Z if DU/DIR resolution error,
+;		       NZ if DU/DIR resolved ok.
+;		  C  = C if access denied,
+;		       NC if no password or password OK
+
+	 if	dupswd
+	extrn	dutdir		; Get dir: for du:
+	 endif
+
+vfy$d$u:
+	push	hl		; Save file spec pointer.
+	ld	a,1		; Look for dir:, then du:
+	call	dnscan		; Resolve dir: or du: form and return du
+	jr	nz,vfydu1	; Br if resolved.
+	pop	hl		; Restore file spec pointer.
+	scf			; Not resolved - return with z, nc
+	ccf
+	ret
+
+vfydu1:
+	call	getmdisk	; Get maximum disk (a=1)
+	dec	a		; Offset to du format (drive a = 0)
+	cp	b		; Compare to requested drive.
+	jr	c,vfydu4	; Br if access denied by env.
+
+	call	getmuser	; Get maximum disk (0-31)
+	cp	c		; Compare to requested user.
+	jr	c,vfydu4	; Br if access denied by env.
+
+	 if	dupswd
+	call	dutdir		; Get dir: for du:
+	jr	z,vfydu3	; Ok if no dir (or password)
+	ld	de,8		; Pt to password
+	add	hl,de
+	ld	a,(hl)		; Get 1st char of password
+	cp	' '		; No password?
+	jr	z,vfydu3	; Br if no check required.
+
+	push	bc		; Save du:
+	push	hl		; Save ptr to valid password.
+	call	cprmpt		; Prompt to get du: password
+	db	'Password: ',0
+
+	ld	hl,pswdbuf	; Get password buffer location
+	ld	b,8		; Get password length
+	ld	(hl),b		; Get command line length
+	inc	hl
+	inc	hl
+	call	fill		; Initialize buffer to blanks.
+
+	ld	de,pswdbuf	; Get password buffer location again
+	ld	c,rdbuf		; Console read-buffer function
+	call	bdos
+
+	ld	hl,pswdbuf+2	; Point to password.
+	ld	b,8		; 8 chars in password.
+vfydu2:
+	ld	a,(hl)		; Capitalize character.
+	call	caps
+	ld	(hl),a		; Put back into buffer
+	inc	hl		; Point at character to capitalize
+	djnz	vfydu2		; Loop
+
+	ld	de,pswdbuf+2	; Point to password.
+	pop	hl		; And to valid password.
+	ld	b,8		; 8 chars in password.
+	call	cmpstr		; Compare for exact match
+	pop	bc		; Restore du:
+	jr	nz,vfydu4	; Access denied - invalid password.
+	 endif
+
+vfydu3:
+	pop	hl		; Restore file spec pointer.
+	or	0ffh		; Resolved ok, access allowed.
+	ret			; Return with nz, nc
+
+vfydu4:
+	pop	hl		; Restore file spec pointer.
+	or	0ffh		; Access denied - return with nz, c
+	scf
+	ret
+
+;---------------------------------------------------------------------------
+
+; Get pointer to system file name #2
+
+sysfn2:
+	call	getfn2		; Get address of system file #1
+	ld	de,11
+	add	hl,de		; Now HL points to file #2
+	ret
+
+;---------------------------------------------------------------------------
+
+; Record current file pointer and options settings
+
+putopt:
+	ld	a,(initflag)	; If initflag set, do not save
+	or	a		; ..file pointer
+	jr	nz,putopt0
+
+	call	sysfn2		; Get pointer to system file #2
+	ex	de,hl		; Put pointer into DE
+	ld	hl,(ringpos)	; Point to current file
+	inc	hl		; Increment pointer to file name position
+	ld	b,11		; Copy 11 bytes
+	call	movea
+	ld	a,0ffh		; Fool system into using system file #2
+	ld	(initflag),a	; ..as the pointer on next screen update
+
+putopt0:
+
+	 if	usestk		; If using shell stack to store file mask
+
+	call	getsh2		; Get pointer to shell stack
+	ld	de,19		; Offset into stack entry
+	add	hl,de
+	ld	de,options	; We must copy new options into stored name
+	ld	b,nopt		; Number of options to store
+putopt1:
+	ld	a,(hl)		; Get file name character
+	and	7fh		; Clear flag bit
+	ld	c,a		; Save it in C
+	ld	a,(de)		; Get option flag
+	and	80h		; Isolate high bit
+	or	c		; Combine with character
+	ld	(hl),a		; Save it
+	inc	hl		; Increment pointers
+	inc	de
+	djnz	putopt1		; Loop through (up to) 11 flags
+	ret
+
+	 else	; not usestk (using stack only for flag byte)
+
+	call	getsh2		; Get data on shell stack
+	dec	de
+	add	hl,de		; HL points to last byte in stack entry
+	ex	de,hl		; Now it is in DE
+	ld	b,nopt		; Number of options to copy
+	ld	hl,options	; Start at beginning of options
+	xor	a		; Initialize flags byte
+putopt1:
+	ld	c,(hl)		; Get next option flag
+	rl	c		; Move one bit into carry
+	rl	a		; Move that bit into the flag byte
+	inc	hl		; Point to next option
+	djnz	putopt1
+	ld	(de),a		; Put byte into shell entry
+	ret
+
+	 endif	; usestk
+
+;---------------------------------------------------------------------------
+
+; Retrieve current options settings
+
+getopt:
+
+	 if	usestk
+
+	call	getsh2
+	ld	de,19
+	add	hl,de		; HL points to last byte in stack entry
+	ex	de,hl		; Now it is in DE
+	ld	b,nopt		; Number of options to copy
+	ld	hl,options	; Point to first option
+getopt1:
+	ld	a,(de)		; Get filename character
+	and	80h		; Test high bit
+	rla			; A is 0 and CY has condition
+	jr	nc,getopt2	; If no carry, leave A=0
+	cpl			; Else change to FF
+getopt2:
+	ld	(hl),a		; Set option
+	inc	hl		; Bump pointers
+	inc	de
+	djnz	getopt1
+	ret
+
+	 else	; not usestk
+
+	call	getsh2		; Get data on shell stack
+	dec	de
+	add	hl,de		; HL points to last byte in stack entry
+	ex	de,hl		; Now it is in DE
+	ld	b,nopt		; Number of options to copy
+	ld	hl,options+nopt-1	; Start at end of options
+	ld	a,(de)		; Get flag byte from shell stack
+	ld	c,a
+getopt1:
+	xor	a		; Preset for reset flag
+	sra	c		; Shift flag bit into carry
+	jr	nc,getopt2	; No carry -> leave the 0
+	cpl			; Else turn the 0 into FF
+getopt2:
+	ld	(hl),a		; Set the option flag byte
+	dec	hl		; Back up one option
+	djnz	getopt1		; Loop through options
+	ret
+
+	 endif
+                                                                                                                       

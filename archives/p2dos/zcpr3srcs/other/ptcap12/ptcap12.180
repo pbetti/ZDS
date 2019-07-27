@@ -1,0 +1,689 @@
+title PTCAP TCAP Modifier for PBBS
+;=========================================================================
+; PTCAP  
+;
+; Written by: 	Terry Pinto
+;		Access Programming RAS
+;		14385 SW Walker Rd. B3
+;		Beaverton, OR  97006
+;		
+;		(503) 646-4937  (300/1200  24 hours/day)
+;		(503) 644-0900  Voice ==> 6:00pm to 10:00pm ONLY
+;
+; This program was designed to make the updateing of the TCAP entry
+; file easier. At present, each time a new TCAP file is released, 
+; all of the user entries must be updated by hand, or each caller 
+; must go in and reselect his/her terminal identifier. This can be
+; a large undertaking in the case of better known boards that have 
+; a large user base. This makes the changeover to new TCAP's sluggish.
+; Many sysop's are not installing the new versions of TCAP because of 
+; this drawback. Gentlemen, we have computers to do the jobs we don't
+; want to or don't have time to do. Lets get the show on the road!
+;
+; PTCAP reads the index list of both the current and new TCAP's into
+; memory. Then the PBBS user base (USERS.PBS) is opened and each user 
+; record is examined. The terminal code is taken from the user record   
+; and is used to get the current terminal id string. This string is
+; compared against the new TCAP file. When a match is found, a new  
+; index number is calculated and stored in the user record. If no      
+; match is found, it is assumed that support for the previous entry 
+; has been dropped. The user record is then updated to reflect the 
+; (None requested) selection. This entry will force the user through
+; selection process on his/her next call. 
+;
+; PTCAP was written to assemble with SLR180p, however it will also
+; work with M80. In either case it must be linked with SYSLIB36.REL 
+; and Z3LIB13.REL
+;
+; If you have any problems, fixes or suggestions, please report them to
+; me on either Russ Pencin's board, "Dallas Connection" (415) 964-4356,   
+; Ben Grey's board, "Cedar Mill Z-Node 24" (503) 644-4621, or my board,
+; "Access Programming RAS" (503) 644-0900.
+;
+; Writting this program would not have been possible if it were not 
+; for the help and patience of Ben Grey, sysop of Cedar Mill Z-Node 24 
+; and co-sysop of Access Progrmaming RAS. Thank you Ben.
+;
+; HISTORY - 
+;
+;	Version 1.2	05/16/87	Re-work display routines to
+;					enhance program speed.	[tlp]
+;
+;	Version 1.1	05/01/87	Fix problem with the update of
+;					users with terminals no longer
+;					supported.		[tlp]
+;
+;	Version 1.0	04/02/87	Original release	[tlp]
+;
+;=========================================================================
+;
+;
+	yes	equ	1
+	no	equ	not yes
+;
+; Version and revision number. The only official releases are those that
+; have been approved by the Access Programming RAS. Any other versions Š; or revisions are not official and will not be supported by me. Please
+; send any updates or revisions to me at the above address or by modem   
+; to my system.  
+;
+	ver	equ	1	; version number
+	vers	equ	2	; revision number
+;
+	tab	equ	09h	; tab character
+	cr	equ	0dh	; carriage return
+	lf	equ	0ah	; line feed
+	bell	equ	07h	; bell character
+	tbuf	equ	80h	; default DMA
+;
+; If you do not use a ZCPR3x operating system, set the Z3ENV to 0.
+;
+	z3env	equ	0d000h	; z3 environment descriptor
+	dfcb1	equ	05ch	; default fcb1
+	dfcb2	equ	06ch	; default fcb2
+;
+; The clear screen defined below will use your TCAP's code
+; if you have a Z3ENV defined above. If you do not operate
+; within a Z3 environment, you have been provided with six
+; bytes to define a clear screen and home cursor sequence.
+; The seventh byte is a terminator, DO NOT CHANGE!
+;
+	 if	z3env ne 0
+	cls	equ	z3env+97h ; clear screen code
+	 else
+	cls	db	0,0,0,0,0,0  
+		db	0	  ; terminator - DO NOT CHANGE
+	 endif
+;
+; The following equates should be set the same as they are in the PBBS
+; header file. THIS IS IMPORTANT.
+;
+	totusr	equ	400	; maximum users set in PBBSHDR
+;
+; The system drive and user areas reflect the DU where your 
+; USERS.PBS and the 'old' and 'new' Z3TCAPxx.TCP files are
+; located. Usually A14:. 
+;
+	sysdrv	equ	0	; system drive A=0 B=1...  
+	sysusr	equ	14	; system user area
+	version	equ	yes 	; show version number 1=yes 0=no
+	credits	equ	yes	; show author name    1=yes 0=no
+;
+; The following declares any external subroutines necessary
+; for assembly. These routines are all defined in SYSLIB36.REL.
+;
+	ext	f$open, f$close, f$read, r$write, f$exist, r$read
+	ext	setdma, compbc, initfcb, scanner, divhd, instr
+	ext	epstr, pfn1, putud, getud, logud, crlf, padc
+	ext	z3init, phl4hc, phlfdc, phldc, mulhd, cout             
+	ext	fi0$open, fo0$open, fi0$close, fo0$close, f0$get, f0$put
+;
+	org	100h
+;
+; Standard Z3 Header for all Z system programs.
+;
+	 if	z3env ne 0
+; 
+; External ZCPR3 Environment Descriptor
+;
+	jp	start 
+	db	'Z3ENV'
+	db	1
+z3eadr:	dw	z3env
+start:	ld	hl,(z3eadr)
+	 else
+;
+; Internal ZCPR3 Environment Descriptor
+;
+	MACLIB 	Z3BASE		; get ZCPR3 system equates
+	MACLIB	SYSENV
+;
+z3eadr:	jp	start 
+	SYSENV
+start:	ld	hl,z3eadr
+	 endif
+;
+; Standard initialization for PBBS programs. Save the system stack for
+; re-entry to operating system. Load the drive/user areas defined in
+; the header file as the system drive/user area. This is where we will
+; find the files we will want to look at.
+;
+	ld	(system),sp	; save stack
+	ld	sp,system	; point to stack
+;
+; Environment Definition
+;
+	call	z3init		; initialize z3 environment
+ 	call	putud 		; save current drive/user area
+ 	ld	b,sysdrv	; defined system drive
+ 	ld	c,sysusr	; defined system user area
+ 	call	logud 		; log into defined drive/user area
+;
+; Initialize all FCB's
+;
+	ld	de,fcb1		; point to fcb1
+	call	initfcb		; initialize
+	ld	de,fcb2		; point to fcb2
+	call	initfcb		; initialize
+	ld	de,fcb3		; point to fcb3
+	call	initfcb		; initialize
+	ld	de,fcb4		; point to fcb4
+	call	initfcb		; initialize
+;
+; Sign-on message
+;
+	ld	hl,cls		; point to clear screen message
+	call	epstr		; clear screen
+	ld	hl,signon	; point to signon message
+  	call	epstr		; print signon message
+cmdln:	
+	ld	hl,tbuf  	; point to command line     
+      	ld	a,(hl)		; put first character of command line in A
+	cp	0		; 0 = no command tail
+	jp	z,help0 	; if yes, give syntax error and help
+	ld	hl,dfcb1+1	; point to first filename
+	ld	de,fcbn1	; point to internal fcb1
+	ld	bc,8		; number of bytes to transferŠ	ldir			; move to internal FCB1
+	ld	hl,dfcb2+1	; point to second filename
+       	ld	a,(hl)		; put first character in A
+       	cp 	' '  		; 0 means no filename specified
+	jp	z,option  	; if so - use internally defined filename
+	ld	de,fcbn2	; point to internal fcb2
+	ld	bc,8		; number of bytes to transfer
+	ldir			; move to internal FCB2
+option:	
+	ld	hl,fcbn1	; point to first character in fcb1
+	ld	a,(hl)		; place character in A
+	cp	'?'		; is it a '?'
+	jp	z,help 		; yes - give help
+	cp	'/' 		; is it z3 system help - '/'
+	jp	z,help 		; yes - give help
+;
+; initialize buffers for opening of files
+;
+	ld	de,fcb1		; open new TCAP file   
+	call	fopen		              
+	ld	de,fcb2		; open old TCAP file  
+	call	fopen		                
+	ld	de,fcb3		; open PBBS user file
+	call	uopen		             
+	ld	de,fcb4		; open new PBBS user file
+	call	nopen
+;
+; Read TCAP index files into memory - the terminal id string is 16 bytes long
+; and each terminal is listed in the beginning of the TCAP file in an index.
+; The last entry in the index is a space followed by the version number of
+; the TCAP listing.
+; 
+; Read new TCAP into memory
+;
+	ld	de,fcb1		; point to current FCB
+	ld	(fcb),de	; save it
+	ld	de,buf1		; point to current buffer
+	ld	(buffer),de	; save it
+	call	tid   		; read TCAP into memory
+;
+; Read old TCAP into memory
+;
+	ld	de,fcb2		; point to current FCB
+	ld	(fcb),de	; save it
+	ld	de,buf2		; point to current buffer
+	ld	(buffer),de	; save it
+	call	initrd		; read TCAP into memory
+	call	crlf		; new line
+	call	crlf		; another new line
+next:
+	call	user		; read user record into memory
+;
+; Process user record
+;
+	ld	hl,pcmsg	; point to processing message
+	call	epstr		; print message
+	ld	hl,(nlrec)	; get record number
+	ld	de,totusr	; get maximum number of users
+	sbc	hl,de		; have we reached the end?
+	jp	nc,norec	; skip processing, just write record
+	ld	hl,(nlrec)	; get record number again
+	call	phldc		; print record number
+	ld	hl,unamef	; point to user name
+	ld	a,(hl)		; is there a name here?
+	cp	' '		; a space means no name
+	jp  	z,norec		; get next user record
+	cp	0		; is the record used     
+	jp  	z,norec		; no - get next record
+	ld	de,name		; point to internal buffer
+	ld	bc,30		; length of user name field
+	ldir			; transfer name to internal buffer
+	ld	a,(tcodef)	; get terminal code into A 
+	ld	(tcode2),a 	; put into internal buffer
+	dec	a		; decrement pointer
+	ld	l,a		; put A in L
+	ld	h,0		; zero H
+	ld 	de,16		; number of bytes per entry
+	call    mulhd		; multiply HL by DE
+	ld	de,buf2		; start address of old TCAP file
+	add	hl,de		; add in offsetŠ	ld	de,term2 	; point to internal buffer
+	ld	bc,16		; length of id string
+	ldir			; transfer to internal buffer
+	ld	hl,buf1		; string to scan 
+	ld	de,term2 	; string to scan for
+	call	instr		; scan for termid in new buffer
+	jp    	nz,sc$err	; indicate scan error
+	ld	(buf),hl	; save string start address
+	ld 	de,buf1		; get start address of new TCAP file
+	sbc	hl,de		; offset into buffer
+	ld	de,16		; number of bytes per entry
+	call	divhd		; calculate new terminal code number 
+	ld	a,l		; put terminal code in A
+	ld	(tcode1),a 	; save terminal code
+	inc	a		; bump pointer
+	ld	a,(tcode1)	; get new terminal code
+	ld	l,a		; put in L
+	ld	h,0		; zero H
+	ld	de,16		; number of bytes per entry
+	call	mulhd		; multiply HL by DE
+	ld	de,buf1		; get start address of new TCAP buffer
+	add	hl,de		; add in offset
+	ld	de,term1	; point to internal buffer
+	ld	bc,16		; length of terminal string
+	ldir			; transfer to internal buffer
+errtn:
+	call	pwrt		; write record to USER file
+	jp	next		; get next user record
+;
+; Copy blank record to user file so as not to contaminate USER index.
+;
+norec:
+	call	nowrt		; write blank record to USER file
+	jp	next		; get next record
+;
+; Read USER record into memory
+;
+user:	             
+	ld	b,100		; number of bytes in user record
+	ld	c,0		; zero C
+	ld	hl,(nlrec)	; get record counter
+	inc	hl		; bump counter
+	ld	(nlrec),hl	; save logical record number in buffer
+	ld	de,totusr+4	; number of records to load in buffer
+	sbc	hl,de		; check for end of file
+	jp	z,exit		; if EOF, then exit
+	ld	hl,tbuf		
+get:
+	call	f0$get		; read block into memory
+	call	nz,fop$err	; file read error routines
+	ld	(hl),a		; put character in buffer
+	inc	hl		; increment pointer
+	djnz	get		; get next character
+	ret
+;
+; Subroutine to write record to USER file
+;
+pwrt:
+ 	ld	a,(tcode1)	; get new terminal code
+	inc	a		; increment value of terminal code
+ 	ld	(tcodef),a	; put in USER record
+nowrt:
+	ld	b,100		; number of bytes in user record
+	ld	c,0		; zero C
+	ld	hl,tbuf		; point to buffer
+put:
+	ld	a,(hl)		; put character from buffer into A
+	call	f0$put		; write character to file
+	call	nz,fop$err	; file write error routines
+	inc	hl		; increment pointer
+	djnz	put		; get next character
+	ret
+;
+; Subroutine to read TCAP into memory
+;
+tid:
+	ld	hl,tcapid	; point to status message
+	call	epstr		; print message
+initrd:
+	ld	hl,(buffer)  	; point to internal buffer
+	ld	(buf),hl	; save internal buffer address
+rtcap: 
+	ld	hl,tbuf		; point to default DMA
+	call	setdma		; set DMA address
+	ld	de,(fcb)	; get FCB address
+ 	call	f$read		; read record into TBUF
+ 	jp	nz,rf$err	; read error routines
+	ld	hl,tbuf		; point to tbuf
+	ld	de,(buf)	; point to buf
+	ld  	bc,128		; number of bytes to transfer
+	ldir			; transfer to internal buffer
+	ld	(buf),de	; save new buffer address
+	ld	hl,tbuf  	; point to default buffer
+	ld	de,term		; point to terminator descriptor
+	ld	b,128		; number of bytes in buffer
+	ld	c,1		; number of bytes to look for
+	call	scanner		; search for DE in HL
+	or	a		; set flags
+	jr	nz,rtcap 	; get next record
+	ld	hl,(buf)	; point to current buffer
+	ld	bc,16		; size of terminal id string
+rep: 	
+	sbc	hl,bc		; subtract 16 from buffer pointer
+	ld	a,(hl)		; put first character of buffer in A
+	cp	' '		; is it a space?
+	inc	hl		; advance buffer pointer
+	jr	nz,rep 		; if no, repeat until find
+	dec	hl		; retard pointer againŠ	ld	(buf),hl	; save temporary buffer
+	ld	de,(buffer)	; get start address of buffer
+	sbc	hl,de		; subtract end address to get length of buffer
+	ld	de,16		; set divisor
+	call	divhd		; divide HL by DE
+	ld	(cnt),hl	; store in buffer
+	ld	hl,(buf)	; restore temporary buffer
+	ld	de,versn	; point to destination for version number
+	ld	bc,4		; number of bytes to transfer
+	ldir			; transfer version number to internal buffer
+	ld	hl,tcver	; point to VERSION
+	call	epstr		; print message
+	ld	hl,versn+1	; get version number of TCAP   
+	call	epstr		; print version number
+	ld	hl,(cnt)	; get number of terminals in TCAP
+	call	phldc		; display number of terminals
+	ld	hl,entry	; point to TERMINALS message
+	call	epstr		; print message
+	ret
+;	   
+; open files
+;
+fopen:
+	call	f$exist		; does file exist?
+	jp  	z,fnf$err	; file not found error routine
+	call	f$open		; open file
+	or	a		; set flags
+	call	nz,op$err	; open error routines
+	ret
+uopen:	
+	call	f$exist		; does file exist?
+	jp	z,fnf$err	; file not found error routines
+	call	fi0$open	; open file
+	or	a		; set flags
+	call	nz,fop$err	; open error routines
+	ret
+nopen:
+	call	fo0$open	; create and open file
+	or 	a		; set flags
+	call	nz,fop$err	; open error routines
+	ret
+exit:
+	call	crlf		; new line
+	ld	hl,dpmsg	; point to terminals dropped message
+	call	epstr		; print message
+	ld	a,(drop)	; get number of users without support
+	call	padc 		; print number
+  	call	crlf		; new line
+	ld	hl,comp	 	; point to operation completed message
+	call	epstr		; print message
+	ld	de,fcb1		; point to old TCAP file
+	call	f$close		; close file
+	call	nz,cl$err	; close file error routines
+	ld	de,fcb2		; point to new TCAP file
+	call	f$close		; close file
+	call	nz,cl$err	; close file error routines
+	ld	de,fcb3		; point to PBBS user file
+	call	fi0$close	; close file
+	call	nz,fop$err	; close error routines
+	ld	de,fcb4		; point to new USER file
+	call	fo0$close	; close file
+	call	nz,fop$err	; close error routines
+ext2:
+	call	getud		; restore original drive/user area
+	ld	sp,(system)	; restore old stack pointer
+	ret
+;
+; Error routines
+;
+fop$err:
+	push	hl		; save HL on stack
+	push	de		; save DE on stack
+	ld	hl,err		; point to ERROR
+	call	epstr		; print ERROR
+	cp	1
+	jp	nz,ferr2
+	ld	hl,foerr1
+	jp	prerr
+ferr2:	cp	2
+	jp	nz,ferr3
+	ld	hl,foerr2
+	jp	prerr
+ferr3:	cp	3
+	jp	nz,ferr4
+	ld	hl,foerr3
+	jp	prerr
+ferr4:	cp	4
+	jp	nz,ferr5
+	ld	hl,foerr4
+	jp 	prerr
+ferr5:	cp	5
+	jp	nz,ferr6
+	ld	hl,foerr5
+	jp	prerr
+ferr6:	cp	6
+	jp	nz,ferr7
+	ld	hl,foerr6
+	jp	prerr
+ferr7:	cp	7
+	jp	nz,rerr9
+	ld	hl,foerr7
+	jp	prerr
+rf$err:	Š	push	hl		; save HL on stack
+	push	de		; save DE on stack
+	ld	hl,err		; point to ERROR
+	call	epstr		; print ERROR
+	cp	1		; was it read error 1
+	jp	nz,rerr2	; if yes, show error
+	ld	hl,rderr1
+	jr	prerr	
+rerr2:	cp	2		; was it read error 3
+	jp	nz,rerr9	; if yes, show error
+	ld	hl,rderr2
+	jr	prerr
+rerr9:	ld	hl,rderr9
+prerr:	call	epstr		; print error message
+	call	crlf		; print cr lf
+	pop	de		; restore stack
+	pop	hl		; restore stack
+	jp 	exit
+eof$err:
+	ld	hl,err		; point to ERROR 
+	call	epstr		; print ERROR
+	ld	hl,eoferr	; point to error message
+	call	epstr		; print error message
+	call	crlf		; print CRLF
+	jp	exit
+op$err:
+	ld	hl,err		; point to ERROR
+	call	epstr		; print ERROR
+	ld	hl,operr	; point to error message
+	call	epstr		; print error message
+	inc	de		; point to FCB+1
+	call	pfn1		; print filename
+	call	crlf		; print CRLF
+	dec	de		; restore DE
+	ret    
+cl$err:
+	ld	a,(fnf)		; get file not found flag
+	cp	0		; was the file found?
+	ret	z 		; if not - skip error messages
+	ld	hl,err		; point to ERROR
+	call	epstr		; print ERROR
+	ld	hl,clerr	; point to error message
+	call	epstr		; print error message
+	inc	de		; point to FCB+1
+	call	pfn1		; print filename
+	call	crlf		; print CRLF
+	dec 	de		; restore DE
+	ret    
+fr$err:	
+	ld	hl,err		; point to ERROR
+	call	epstr		; print ERROR
+	ld	hl,frerr	; point to error message
+	call	epstr		; print error message
+	call	crlf		; print CRLF
+	jp	exitŠfnf$err:
+	ld	hl,0		; flag for file not found
+	ld	(fnf),hl	; set flag
+	ld	hl,err		; point to ERROR
+	call	epstr		; print ERROR
+	ld	hl,fnferr	; point to error message
+	call	epstr		; print error message
+	inc	de		; point FCB+1
+	call	pfn1		; print filename
+	call	crlf		; print CRLF
+	dec 	de		; restore DE
+	jp     	ext2	
+sc$err:
+	ld	a,(drop)	; get number of terminals dropped
+	inc	a 		; increment number
+	ld	(drop),a	; save in buffer
+	ld	a,0   		; put terminal 0 in A
+	ld	(tcode1),a	; save in internal buffer
+	jp 	errtn		; get next name
+help0:
+	ld	hl,err		; point to ERROR
+	call	epstr		; print ERROR
+	ld	hl,hperr	; point to error message
+	call	epstr		; print error message
+	call	crlf		; print CRLF
+	call	crlf		; print CRLF 
+	jp 	ext2		; exit
+help:
+	ld	hl,hlpmsg
+	call	epstr		; print follwoing message
+ 	jp	ext2		; exit
+hlpmsg:
+	db	'PTCAP',ver+'0',vers+'0',' - Help File',cr,lf,lf
+	db	'Syntax:  PTCAP newfile [oldfile] [? or /]',cr,lf,lf
+	db	'         Where newfile = name of new TCAP file.',cr,lf
+	db	'               oldfile = name of old TCAP file. ',cr,lf,lf
+	db	'               If no filename is specified for the',cr,lf
+	db	'               OLD TCAP file, Z3TCAP is used.  The',cr,lf
+	db	'               default filetype for the TCAP files',cr,lf
+	db	'               is .TCP and is not specified on the',cr,lf
+	db	'               command line.',cr,lf,lf
+	db	'         PTCAP ? or / Prints this help file.',cr,lf
+	db	0
+signon:	
+	db	'PTCAP - PBBS TCAP Entry Modifier',cr,lf
+	 if	version
+	db	'Version ',ver+'0','.',vers+'0'
+	db	' - 05/16/87',cr,lf
+	 endif
+	 if	credits
+	db	'Written by Terry Pinto ',cr,lf
+ 	 endif
+	db	cr,lf,0Štcapid:	db	'Loading Z3TCAP  ',0          
+tcver:  db	'Version ',0
+entry:	db	' Terminals',cr,lf,tab,tab,0  
+pcmsg:	db	cr,'Processing Record #',0
+dpmsg:	db	'Terminals no longer supported: ',0      
+comp:	db	cr,lf,'Installation Complete... ',0
+;
+; Error messages
+;
+foerr1:	db	'GET or PUT Attempt On Unopened File',0
+foerr2:	db	'Disk Full',0
+foerr3:	db	'Input File Not Found',0
+foerr4:	db	'Attempt to Read Past EOF',0
+foerr5:	db	'Directory Full',0
+foerr6:	db	'Error In Closing File',0
+foerr7:	db	'Attempt to Open File Already Opened',0
+rderr1:	db	'Read Past End Of File',0
+rderr2:	db	'Reading Unwritten Data',0
+rderr9:	db	'Unknown Error Occurred - ABORT!',0
+eoferr:	db	'Read Past End Of File',0
+frerr:	db	'Reading Unwritten Data',0
+operr:	db	'Unable to Open File -> ',0
+clerr:	db	'Unable to Close File -> ',0
+err:	db	cr,lf,bell,'ERROR - ',0
+fnferr:	db	'File Not Found -> ',0
+hperr:	db	'New TCAP File Not Specified',0
+;
+; Buffer space
+;
+; File control block for NEW TCAP file
+;
+fcb1:	db	0		; disk drive 0=default drive
+fcbn1:	db	'        '	; filename filled by parse from input
+fcbt1:	db	'TCP'		; default filetype
+	ds	24		; balance of FCB filled by INITFCB
+;
+; File control block for OLD TCAP file. If you current TCAP
+; has a different name, you should specify it on the command
+; line. The specified name will be parsed into this FCB.
+;
+fcb2:	db	0		; disk drive 0=default drive
+fcbn2:	db	'Z3TCAP  '	; default filename if none specified in input
+fcbt2:	db	'TCP'		; default filetype
+	ds	24		; balance of FCB filled by INITFCB
+;
+; File control block for PBBS User file
+;
+fcb3:	db	0		; disk drive 0=default drive
+fcbn3:	db	'USERS   '	; filename
+fcbt3:	db	'PBS'		; filetype
+	ds	24
+;
+; File control block for new PBBS User file
+;
+fcb4:	db	0		; disk drive 0=default drive
+fcbn4:	db	'USERS   '	; filename
+fcbt4:	db	'NEW'		; filetype
+	ds	24
+;
+term1:	db	'                '
+	db	0
+term2: 	db	'                '
+	db	0
+name:	db	'                              '
+	db	0Šversn:	db	'    ',0       	; TCAP version number (terminated with 0)
+drop:	ds	1		; number of terminals not supported
+rec:	db	0		; record storage
+buf:	ds	2		; buffer address
+fcb:	ds	2 		; selected fcb
+buffer:	ds	2		; starting address for selected TCAP
+nlrec:	db	0		; new logical record
+term:	db 	0		; terminator descriptor
+tcode1:	db	0     		; new terminal code
+tcode2:	db	0     		; old terminal code
+cnt:	ds	2		; total entries in TCAP file
+fnf:	db	0		; file not found flag  0=not found
+;
+; User file buffer
+;
+usrec	equ	tbuf
+availf	equ    	usrec		; record availability  00=free record
+unamef	equ	availf+1	; user name field
+citstf	equ	unamef+30	; city and state
+pswrdf	equ	citstf+20	; password
+phonef	equ	pswrdf+10	; telephone
+tmsonf	equ	phonef+12	; number of times on system
+lstonf	equ	tmsonf+2	; date last on system
+acessf	equ	lstonf+3	; access level
+mailf	equ	acessf+1	; mail waiting flag
+intarf	equ	mailf+1	 	; area to bump user to after signon
+nnullf	equ	intarf+1	; number of nulls needed
+bdcdef	equ	nnullf+1	; baudrate code (last signon)
+upldsf	equ	bdcdef+1	; upload count
+dnldsf	equ	upldsf+2	; download count
+usrmpf	equ	dnldsf+2	; userarea map
+drvmpf	equ 	usrmpf+2	; drive map
+tcodef	equ	drvmpf+2	; terminal identifier code  
+totmef	equ	tcodef+1	; total time on-line on day basis
+himsgf	equ	totmef+1	; highest message read folder-1
+ufaccf	equ	himsgf+2	; mail folder access byte
+lengf	equ	ufaccf+2	; terminal line length
+;
+buf1	equ	($/128)*128+128   
+	ds	2048
+buf2	equ	buf1+2048
+	ds	2048
+;
+	ds	64
+system	dw	0
+	end
+  

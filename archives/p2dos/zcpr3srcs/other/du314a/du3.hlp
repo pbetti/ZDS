@@ -1,0 +1,1132 @@
+;
+                         -- DU3 --
+
+                    GENERAL INFORMATION
+         1 - Invoking DU3 and DU3 Installation
+         2 - DU3 Command Summary
+         3 - The DU3 Editor
+         4 - Examples of Command Use
+         5 - Interpreting the DU3 Directory Display
+
+                      COMMAND DETAILS
+      A - Logging Disks and Examining Disk Parameters
+      B - Positioning and Reading Data
+      C - Searching for Data
+      D - Saving and Restoring Data
+      E - Viewing Data
+      F - Altering Data
+      G - Manipulating Macros and the @ Command
+      H - Miscellanea
+:1
+
+     DU3 is invoked by a command line of the following form:
+
+                         DU3 <text>
+
+where <text> is any valid DU3 command sequence. If the first 
+two   characters   of  <text>   are   '/?',   the   built-in 
+documentation  is displayed and the user is returned to  the 
+OpSys, as per the TOOLSET Convention.
+
+  Examples:
+
+   DU3 /?
+     -- Display Built-in Documentation
+
+   DU3 lb,g0,e
+     -- Execute  commands to Log in Drive B,  goto Group  0, 
+and enter editor at the first Block of Group 0
+
+
+     DU3  is  designed  to be installed with  a  minimum  of 
+trouble.  In  fact,  in almost all cases,  no changes to the 
+source  file should be necessary to get DU3 up and  running. 
+This is because DU3 uses the disk parameter block of CP/M to 
+determine the characteristics of the disk environment.
+
+     DU≥ iÛ installe‰ b˘ runninÁ thÂ ZCPR≥ utilit˘ Z3IN” †oÓ ç
+iÙ (noÙ neede‰ witË ZCP“ 3.3)Æ  AlÏ DU≥ needÛ tÔ perforÌ itÛ ç
+functionÛ iÛ · pointeÚ tÔ thÂ ZCPR≥ EnvironmenÙ †DescriptorÆ  ç
+DU≥ iÛ assemble‰ witË VLIB¨ Z3LIB¨ an‰ SYSLIB3.
+
+     DU3 is intended for use on a ZCPR3 system.
+
+     This HLP file describes DU3 in some detail.  The screen 
+displays  included  are  very close  to  the  actual  screen 
+displays the user will see on his terminal when he runs DU3.  
+The differences will be cosmetic in nature.
+
+:2
+
+                      COMMAND SUMMARY
+
+     A  command  line may consist of only one command  or  a 
+series of commands separated by commas.  In the latter form, 
+the commands are executed sequentially.  The only exceptions 
+to  this  rule  are  the :ntext command  (which  stores  the 
+command  line  away as a macro) and the *nn  command  (which 
+repeats the command line).
+
+     Commands shown in the following screens are in order of 
+frequency of use as shown by experience.
+
+                     ---- Editing ----
+E    Invoke Editor
+                   ---- Positioning ----
+Tn   Position to Track n (dec)     Sn   Position to Sec n
+Gn   Position to Group n (hex)     G    Show position
++n   Advance to Next Sector        -n   Back up to Last Sec
+
+                    ---- Displaying ----
+An-n ASCII Dump                    Hn-n Hex Dump
+Dn-n ASCII and Hex Dump            Vn   View n Blocks
+M    Display Disk Map              Mn   Display File in Group n
+
+                ---- Data Modification ----
+CAn text  Enter Text               CAn1-n2 char  Enter Char over Range
+CHn vals  Enter Binary Values      CHn1-n2 val   Enter Value over Range
+
+                 ---- Disk Read/Write ----
+R    Read Current Block            W    Write Current Block
+
+                   ---- Exiting DU3 ----
+X    Exit to ZCPR3                 ^C   Exit to ZCPR3
+
+                        ---- Macros ----
+ n    Exec Macro (0<=n<=9)          :nt  Define Macro n w/str t
+ :Pn  Print Macro n                 :PA  Print All Macros
+ :P@  Print Prev Command
+
+               ---- Block/Group Queueing ----
+ <    Save Current Block in Temp    >    Get Saved Block
+ <B   Save Current Block on Queue   >B   Get Block from Queue
+ <G   Save Current Group on Queue   >G   Get Current Group
+ <Gn  Save Group N on Queue         >Gn  Get Group N
+
+                  ---- Queue Control ----
+ Q    Print Queue Statistics        QZ   Zero (Empty) Queue
+ QSfile    Save Queue as File
+
+
+                  ---- Data Searching ----
+Ff   Find File f                   =string   Search for String
+Un   Set User Area for Find
+
+                 ---- Login/Disk Reset ----
+Ld   Log in Disk                   N         New Disk Reset
+
+                  ---- Printer Output ----
+P    Toggle Printer
+
+               ---- Command Manipulation ----
+@    Exec Prev Command             *nn  Repeat Command Line
+
+                 ---- Statistics/Help ----
+#    Display Disk Stats            ?    Display Help Info
+
+                    ---- Halt/Sleep ----
+!    Halt and Wait for User        Zn   Sleep n Seconds
+
+:A
+
+     The following commands are discussed in this section of 
+the HELP file:
+
+          L -- Log in Disk
+          N -- New Disk (Reset Disk System)
+          M -- Map Disk Directory
+          U -- Select User Number
+          # -- Print Disk and Queue Statistics
+
+
+
+                              L[d]
+
+     The simple "L" command re-logs in the current disk. The 
+user may pull out a disk,  put in a new, and "L" just to log 
+it in.  The form "Ld", where d is a valid drive letter (like 
+"LB"), is used to log in a specific disk and permit the user 
+to work on that particular disk from this time foreword.
+
+     Example (actual DU3 session):
+
+DU3  B1? l
+
+DU3  B1? la
+
+DU3  A1? lb
+
+
+                                N
+
+     This  tells DU3 that the user just put in a  new  disk. 
+For   those  BIOS  implementations  that  need  to  be  told 
+specifically (Reset) that a disk change has been  made,  use 
+this  command  every  time a disk is changed  while  DU3  is 
+running.
+
+     Example:
+
+DU3  B1? n
+
+     Note:   There was a significant delay before the prompt 
+returned.  A complete disk system reset took place.
+
+
+
+                              M[n]
+
+     Dumps  a  map of the group allocations  for  files.  Mn 
+shows which file is allocated to group "n".
+
+     Example (actual DU3 session, edited):
+
+DU3  B1? m
+0010-0010  07 STD     .MSG 00 	 0011-0011  07 TALK    .SUM 00 
+0012-0012  07 Z2CON   .WSH 00 	 0013-0013  00 LDIR    .C   00 
+0014-0014  00 COMMAND .LBR 01 	 0015-0015  00 LDIR    .C   00 
+     < Detail Left Out >
+004B-004B  08 MASTER  .CAT 03 	 004C-0050  00 COMMAND .LBR 05 
+0051-0051  00 COMMAND .LBR 07	 0052-0052  00 UNERA15 .COM 00 
+0053-0053  08 MENU    .CPR 00	 0054-0057  00 COMMAND .LBR 07 
+Type Any Character to Continue or ^C to Abort - 
+DU3  B1? m54
+0054-0057  00 COMMAND .LBR 07 
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+     The entries are divided as follows:
+
+0010-0010  07 STD     .MSG 00 : 0011-0011  07 TALK    .SUM*00 
+  ^        ^    ^          ^				  ^
+  |        |    Filename   Extent			  |
+  |        User Number					  Two files have been
+  Group Range						  assigned allocation
+							  group 11.  This  is
+							  a   serious   error 
+							  requiring   erasure 
+							  of one file.
+
+                               Uu
+
+     Logs user 'u' for next F (Find File) command.
+
+     Example (actual DU3 session):
+
+DU3  B1? u7
+
+DU3  B7? u1
+
+                                #
+
+     Prints the disk parameters:
+
+. Current Disk Drive          . Number of Tracks on Disk
+. Size of Group in Blocks     . Number of Sectors Per Track
+. Number of Groups on Disk    . Number of Directory Entries
+. Number of System Tracks
+
+     Prints the queue statistics:
+
+. Size of Queue               . Space Available
+
+:B
+
+     The following commands are discussed in this section of 
+the HELP file:
+
+          G -- Position to Group
+          S -- Position to Sector
+          T -- Position to Track
+          R -- Read Block
+          W -- Write Block
+          + -- Advance to Next Logical Sector
+          - -- Backup to Last Logical Sector
+
+
+
+                              G[nn]
+
+     Position  to group nn and read block.   If the form  is 
+simply "G", show the current position.
+
+     Example (actual DU3 session):
+
+DU3  B1? g0
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B1? g4
+Group = 0004:00, Track = 122, Sector = 129, Physical Sector = 129
+
+DU3  B1? g
+Group = 0004:00, Track = 122, Sector = 129, Physical Sector = 129
+
+DU3  B1? g0
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+
+                           Tnn and Snn
+
+     "Tnn"  does  a  seek to track nn but does  not  read  a 
+block.   "Snn"  positions to sector nn on the current  track 
+and reads the block there.  Example (actual DU3 session):
+
+DU3  B1? t124
+Group = 0015:00, Track = 124, Sector = 1, Physical Sector = 1
+
+DU3  B1? s24
+Group = 0015:17, Track = 124, Sector = 24, Physical Sector = 24
+
+
+                             R and W
+
+     R  reads the block currently positioned to into memory. 
+Note R (Read) is implicit in the G,  +,  and - commands, but 
+NOT in the S and T commands.
+
+     W writes back the current block (NOTE:  may not be used 
+after an F command, as CP/M was used to find the file in the 
+directory).
+
+     Examples:
+
+DU3  B1? r
+
+DU3  B1? w
+
+
+                         +[nn] and -[nn]
+
+     "+" advances 1 sector (if below track 2,  this advances 
+to next numerical sector and if 2 or more, advances based on 
+the system's sector skewing algorithm,  i.e.  so + will  get 
+the  next  logical sector of the file).   "-" backups  up  1 
+sector in the same sense.
+
+     Note + and - may take an amount: for example, +15 steps 
+in  15  sectors.  Note  also that "-" issued  at  the  first 
+logical  sector  of the disk will wrap back to the last  and 
+"+" issued at last sector will wrap forward to the first.
+
+     Examples (actual DU3 session):
+
+DU3  B1? g0
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B1? d
+00  07535444 20202020  204D5347 00000002  |.STD     MSG....|
+10  10000000 00000000  00000000 00000000  |................|
+20  004C4449 52202020  20432020 00000038  |.LDIR    C  ...8|
+30  13001500 00000000  00000000 00000000  |................|
+40  0843504D 55472020  20434154 01000046  |.CPMUG   CAT...F|
+50  1C001E00 38003D00  41004300 45000000  |....8.=.A.C.E...|
+60  00434F4D 4D414E44  204C4252 01000080  |.COMMAND LBR....|
+70  14001600 17001800  19001A00 1B001D00  |................|
+
+DU3  B1? +d
+Group = 0000:01, Track = 122, Sector = 2, Physical Sector = 2
+00  0754414C 4B202020  2053554D 00000049  |.TALK    SUM...I|
+10  11002300 24000000  00000000 00000000  |..#.$...........|
+20  00554E45 52413135  2041534D 00000060  |.UNERA15 ASM...`|
+30  3E003F00 40000000  00000000 00000000  |>.?.@...........|
+40  075A3249 4E532020  20575348 0000002A  |.Z2INS   WSH...*|
+50  21002500 00000000  00000000 00000000  |!.%.............|
+60  075A3243 4F4E2020  20575348 0000003F  |.Z2CON   WSH...?|
+70  12002200 00000000  00000000 00000000  |..".............|
+
+DU3  B1? +d
+Group = 0000:02, Track = 122, Sector = 3, Physical Sector = 3
+00  07445532 20202020  2042414B 00000057  |.DU3     BAK...W|
+10  26002800 29000000  00000000 00000000  |&.(.)...........|
+20  04535441 52545550  20C3CF4D 0000001E  |.STARTUP COM....|
+30  27000000 00000000  00000000 00000000  |'...............|
+40  00434F4D 4D414E44  204C4252 03000080  |.COMMAND LBR....|
+50  1F002000 30003100  32003300 34003500  |.. .0.1.2.3.4.5.|
+60  00434F4D 4D414E44  204C4252 05000080  |.COMMAND LBR....|
+70  36003700 39004C00  4D004E00 4F005000  |6.7.9.L.M.N.O.P.|
+
+DU3  B1? +2
+Group = 0000:04, Track = 122, Sector = 5, Physical Sector = 5
+
+
+DU3  B1? d
+00  084D4153 54455220  20434154 01000080  |.MASTER  CAT....|
+10  2D002F00 3A003B00  3C004200 44004600  |-./.:.;.<.B.D.F.|
+20  00464958 54455820  2041534D 0100001E  |.FIXTEX  ASM....|
+30  65006600 69006B00  6C000000 00000000  |e.f.i.k.l.......|
+40  00554E45 52413135  20434F4D 00000007  |.UNERA15 COM....|
+50  52000000 00000000  00000000 00000000  |R...............|
+60  084D454E 55202020  20C35052 00000008  |.MENU    CPR....|
+70  53000000 00000000  00000000 00000000  |S...............|
+
+DU3  B1? -3d
+Group = 0000:01, Track = 122, Sector = 2, Physical Sector = 2
+00  0754414C 4B202020  2053554D 00000049  |.TALK    SUM...I|
+10  11002300 24000000  00000000 00000000  |..#.$...........|
+20  00554E45 52413135  2041534D 00000060  |.UNERA15 ASM...`|
+30  3E003F00 40000000  00000000 00000000  |>.?.@...........|
+40  075A3249 4E532020  20575348 0000002A  |.Z2INS   WSH...||
+50  21002500 00000000  00000000 00000000  |!.%.............|
+60  075A3243 4F4E2020  20575348 0000003F  |.Z2CON   WSH...?|
+70  12002200 00000000  00000000 00000000  |..".............|
+:C
+
+     The commands for searching for data on the disk are:
+
+       Ffilename.typ  -- find all dir entries for file
+
+       =string        -- find next occurrence of string
+
+
+
+                       Ffilename.typ
+
+     PrinÙ director˘ foÚ filÂ "filename.typ"Æ  ThiÛ †comman‰ ç
+presentÛ †thÂ †director˘ †entrieÛ foÚ †alÏ †extentÛ †oÊ †thÂ ç
+indicate‰ filÂ aÙ thÂ currenÙ useÚ areaÆ  SeÂ thÂ sectioÓ oÓ ç
+"InterpretinÁ thÂ DU≥ Director˘ Display¢ foÚ infÔ oÓ ho˜ †tÔ ç
+interpreÙ thÂ informatioÓ presented.
+
+     Example (actual DU3 session):
+
+DU3  B1? fz80.mac
+40  015A3830 20202020  204D4143 0000000E  |.Z80     MAC....|
+50  9A000000 00000000  00000000 00000000  |................|
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B1? ftest.txt
+++ File Not Found ++
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+
+                             =string
+
+     This command performs a search for the indicated  ASCII 
+text,  starting at current sector. <xx> hex may be imbedded, 
+or  used alone:   To find "IN 0FEH":  =<db><fe>.   Bit 7  is 
+ignored unless <xx> is used.   Note that, due to the parsing 
+scheme of DU3,  forms such as "+=string", which positions to 
+the  next  sector and then starts the search,  are  allowed.  
+Forms  like "+2=string" are equally permitted.   The  search 
+may be aborted by a ^C.  Example:
+
+DU3  B1? g0
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B1? =DU3
+= at 24
+Group = 0000:0E, Track = 122, Sector = 15, Physical Sector = 15
+
+
+DU3  B1? d
+00  07533130 30202020  20545854 0000000C  |.S100    TXT....|
+10  0C010000 00000000  00000000 00000000  |................|
+20  07445532 20202020  2042414B 00000068  |.DU3     BAK...h|
+30  2A006100 6D007800  00000000 00000000  ||.a.m.x.........|
+40  015A3830 20202020  204D4143 0000000E  |.Z80     MAC....|
+50  9A000000 00000000  00000000 00000000  |................|
+60  E5444953 4B4F5554  20434F4E 00000020  |eDISKOUT CON... |
+70  60000000 00000000  00000000 00000000  |`...............|
+
+DU3  B1? +=DU3
+Group = 0000:0F, Track = 122, Sector = 16, Physical Sector = 16
+= at 64
+Group = 0000:10, Track = 122, Sector = 17, Physical Sector = 17
+
+
+DU3  B1? d
+00  075A3243 4F4E2020  20575320 05000080  |.Z2CON   WS ....|
+10  3D013E01 3F014001  41014201 43014401  |=.>.?.@.A.B.C.D.|
+20  075A3243 4F4E2020  20575320 06000077  |.Z2CON   WS ...w|
+30  45014601 47014801  00000000 00000000  |E.F.G.H.........|
+40  E5444953 4B4F5554  20434F4E 00000020  |eDISKOUT CON... |
+50  97000000 00000000  00000000 00000000  |................|
+60  07445532 20202020  20484C50 01000006  |.DU3     HLP....|
+70  98009900 9B009C00  9D000000 00000000  |................|
+
+
+DU3  B1? +=DU3,d
+Group = 0000:11, Track = 122, Sector = 18, Physical Sector = 18
+= at 24
+Group = 0000:11, Track = 122, Sector = 18, Physical Sector = 18
+00  E547454E 494E5320  204D4143 01000080  |eGENINS  MAC....|
+10  D700EF00 F000F400  F500F600 F700F800  |W.o.p.t.u.v.w.x.|
+20  E5445532 20202020  2041534D 01000080  |eDU3     ASM....|
+30  EC00ED00 EE00FA00  07010B01 0E011301  |l.m.n.z.........|
+40  04445532 20202020  20C3CF4D 0000004E  |.DU3     COM...N|
+50  F100F200 F3000000  00000000 00000000  |q.r.s...........|
+60  E547454E 494E5320  204D4143 02000039  |eGENINS  MAC...9|
+70  F9000F01 00000000  00000000 00000000  |y...............|
+
+:D
+
+     The following commands are discussed in this section of 
+the HELP file:
+
+          <  -- Save Current Block
+          >  -- Restore Saved Block
+          <B -- Save Current Block at Tail of Queue
+          >B -- Load Current Block from Head of Queue
+          <G -- Read and Save Group at Tail of Queue
+          >G -- Copy Group from Head of Queue and Write
+          Q  -- Print Queue Statistics
+          QZ -- Zero (Clear) Queue
+          QS -- Save Queue as a File
+  
+
+
+                             < and >
+
+     "<"  saves  current block in an internal  save  buffer.  
+">"  copies the internal save buffer into the current  block 
+area (but does NOT write it out to disk).
+
+                            <B and >B
+
+     "<B"  saves the current block onto the tail of the  DU3 
+Queue.   This  Queue,  a  FIFO  (First  In-First  Out)  data 
+structure,  can  be used to collect a number of  blocks  for 
+later copy to a disk file or explicit placement somewhere on 
+the  disk.   ">B" extracts the block at the head of the  DU3 
+Queue and places it into the working buffer area.
+
+                        <G[nn] and >G[nn]
+
+     "<G"  reads the current group and saves it on  tail  of 
+the  DU3  Queue.   The size of a group is dependent  on  the 
+format  of  the disk,  and DU3 automatically adjusts to  the 
+proper  group  size without the user having to  worry  about 
+what  it is.   ">G" copies the group at the head of the  DU3 
+Queue  onto  disk.   If  nn is specified (as  in  "<Gnn"  or 
+">Gnn"),  then  the indicated group is read from or  written 
+to.   If  nn  is  not given,  then the  group  the  user  is 
+currently positioned to is affected.
+
+                        Q, QZ, and QSfile
+
+     Q reports the status of the DU3 Queue,  namely how many 
+blocks  are  stored in it and how much  space  remains.   QZ 
+zeroes  (clears) the DU3 Queue.   "QSfilename.typ" saves the 
+DU3 Queue on disk in the current user area as the  indicated 
+file.
+     Examples (actual DU3 session):
+
+DU3  B1? g0
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B1? d
+00  07535444 20202020  204D5347 00000002  |.STD     MSG....|
+10  10000000 00000000  00000000 00000000  |................|
+20  004C4449 52202020  20432020 00000038  |.LDIR    C  ...8|
+30  13001500 00000000  00000000 00000000  |................|
+40  0843504D 55472020  20434154 01000046  |.CPMUG   CAT...F|
+50  1C001E00 38003D00  41004300 45000000  |....8.=.A.C.E...|
+60  00434F4D 4D414E44  204C4252 01000080  |.COMMAND LBR....|
+70  14001600 17001800  19001A00 1B001D00  |................|
+
+DU3  B1? <
+
+DU3  B1? ch0-7f e5
+
+DU3  B1? d
+00  E5E5E5E5 E5E5E5E5  E5E5E5E5 E5E5E5E5  |eeeeeeeeeeeeeeee|
+10  E5E5E5E5 E5E5E5E5  E5E5E5E5 E5E5E5E5  |eeeeeeeeeeeeeeee|
+20  E5E5E5E5 E5E5E5E5  E5E5E5E5 E5E5E5E5  |eeeeeeeeeeeeeeee|
+30  E5E5E5E5 E5E5E5E5  E5E5E5E5 E5E5E5E5  |eeeeeeeeeeeeeeee|
+40  E5E5E5E5 E5E5E5E5  E5E5E5E5 E5E5E5E5  |eeeeeeeeeeeeeeee|
+50  E5E5E5E5 E5E5E5E5  E5E5E5E5 E5E5E5E5  |eeeeeeeeeeeeeeee|
+60  E5E5E5E5 E5E5E5E5  E5E5E5E5 E5E5E5E5  |eeeeeeeeeeeeeeee|
+70  E5E5E5E5 E5E5E5E5  E5E5E5E5 E5E5E5E5  |eeeeeeeeeeeeeeee|
+
+DU3  B1? >,d
+00  07535444 20202020  204D5347 00000002  |.STD     MSG....|
+10  10000000 00000000  00000000 00000000  |................|
+20  004C4449 52202020  20432020 00000038  |.LDIR    C  ...8|
+30  13001500 00000000  00000000 00000000  |................|
+40  0843504D 55472020  20434154 01000046  |.CPMUG   CAT...F|
+50  1C001E00 38003D00  41004300 45000000  |....8.=.A.C.E...|
+60  00434F4D 4D414E44  204C4252 01000080  |.COMMAND LBR....|
+70  14001600 17001800  19001A00 1B001D00  |................|
+
+
+DU3  B1? q
+** Queue Status Summary **
+0 Blocks in Queue
+249 Blocks Left in Queue
+Address of Head of Queue: 3E00 Hex
+Address of Tail of Queue: 3E00 Hex
+
+DU3  B1? <g
+Reading from Group 0000
+32 Blocks in Queue
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B1? g1
+Group = 0001:00, Track = 122, Sector = 33, Physical Sector = 33
+
+DU3  B1? <g
+Reading from Group 0001
+64 Blocks in Queue
+Group = 0001:00, Track = 122, Sector = 33, Physical Sector = 33
+
+
+DU3  B1? q
+** Queue Status Summary **
+64 Blocks in Queue
+185 Blocks Left in Queue
+Address of Head of Queue: 3E00 Hex
+Address of Tail of Queue: 5E00 Hex
+
+DU3  B1? qsdir.sys
+Queue Saved in File
+
+DU3  B1? qz
+** Queue Status Summary **
+0 Blocks in Queue
+249 Blocks Left in Queue
+Address of Head of Queue: 3E00 Hex
+Address of Tail of Queue: 3E00 Hex
+
+DU3  B1? g0
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+
+DU3  B1? <b
+1 Blocks in Queue
+
+DU3  B1? +<b
+Group = 0000:01, Track = 122, Sector = 2, Physical Sector = 2
+2 Blocks in Queue
+
+DU3  B1? +<b
+Group = 0000:02, Track = 122, Sector = 3, Physical Sector = 3
+3 Blocks in Queue
+
+DU3  B1? +<b
+Group = 0000:03, Track = 122, Sector = 4, Physical Sector = 4
+4 Blocks in Queue
+
+DU3  B1? +2<b
+Group = 0000:05, Track = 122, Sector = 6, Physical Sector = 6
+5 Blocks in Queue
+
+:E
+
+                              V[nn]
+
+     V  views  the current block as ASCII  characters.   The 
+form "Vnn" views the indicated number of blocks starting  at 
+the current one.
+
+                           A, D, and H
+
+     D   displays  a  block  or  portion  thereof  in   both 
+hexadecimal notation and as ASCII characters.   A displays a 
+block or portion thereof as ASCII characters, and H displays 
+a  block  or portion thereof as  hexadecimal  numbers.   All 
+three commands accept a range, such as the following:
+
+	D0-#7F	is the same as just D
+	D3-5
+	A20-#3F
+
+     See next section for examples.
+:F
+
+                            CH and CA
+
+     CH  allows  the  user  to change the  contents  of  the 
+current  block  by  specifying  new  values  as  hexadecimal 
+numbers.    CA  allows  the  same  by  specifying  an  ASCII 
+character string.
+
+CHaddr val val val...
+     Change Hex data values in block
+
+CAaddr char string...ä     Change ASCII data values in block
+
+     NOTE that <xx> may be hex imbedded in the ASCII: 
+          ca0 OK<d><a><1a>
+
+     Use W to write changes to disk.
+
+     Ranges may be specified:
+
+CHaddr-addr byte or CAaddr-addr byte
+     Changes a range of bytes to the same value
+
+     Examples (actual DU3 session):
+
+DU3  B7? g0
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B7? d
+00  07535444 20202020  204D5347 00000002  |.STD     MSG....|
+10  10000000 00000000  00000000 00000000  |................|
+20  004C4449 52202020  20432020 00000038  |.LDIR    C  ...8|
+30  13001500 00000000  00000000 00000000  |................|
+40  0843504D 55472020  20434154 01000046  |.CPMUG   CAT...F|
+50  1C001E00 38003D00  41004300 45000000  |....8.=.A.C.E...|
+60  00434F4D 4D414E44  204C4252 01000080  |.COMMAND LBR....|
+70  14001600 17001800  19001A00 1B001D00  |................|
+
+
+DU3  B7? d0-#f
+00  07535444 20202020  204D5347 00000002  |.STD     MSG....|
+
+DU3  B7? h0-#f
+00  07535444 20202020  204D5347 00000002  
+
+DU3  B7? a0-#f
+00  |.STD     MSG....|
+
+DU3  B7? fdu2.hlp
+20  07445532 20202020  20484C50 01000039  |.DU3     HLP...9|
+30  28009800 99009B00  9C009D00 00000000  |(...............|
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B7? g28
+Group = 0028:00, Track = 125, Sector = 273, Physical Sector = 273
+
+
+DU3  B7? d
+00  496E766F 6B696E67  20445533 20616E64  |Invoking DU3 and|
+10  20445533 20496E73  74616C6C 6174696F  | DU3 Installatio|
+20  6E0D0A44 55332043  6F6D6D61 6E642053  |n..DU3 Command S|
+30  756D6D61 72790D0A  436F6D6D 616E6473  |ummary..Commands|
+40  20666F72 204C6F67  67696E67 20446973  | for Logging Dis|
+50  6B732061 6E642045  78616D69 6E696E67  |ks and Examining|
+60  20446973 6B205061  72616D65 74657273  | Disk Parameters|
+70  0D0A436F 6D6D616E  64732066 6F722050  |..Commands for P|
+
+DU3  B7? v
+Invoking DU3 and DU3 Installation
+DU3 Command Summary
+Commands for Logging Disks and Examining Disk Parameters
+Commands for P
+Group = 0028:00, Track = 125, Sector = 273, Physical Sector = 273
+
+
+DU3  B7? v3
+Invoking DU3 and DU3 Installation
+DU3 Command Summary
+Commands for Logging Disks and Examining Disk Parameters
+Commands for Positioning and Reading Data
+Commands for Searching for Data
+Commands for Saving and Restoring Data
+Commands for Viewing data
+Commands for Altering Data
+Commands for Manipulating Macros and the @ Command
+Miscellanea
+Examples of command use
+Interpret
+Group = 0028:02, Track = 125, Sector = 275, Physical Sector = 275
+
+
+DU3  B7? g28
+Group = 0028:00, Track = 125, Sector = 273, Physical Sector = 273
+
+DU3  B7? d
+00  496E766F 6B696E67  20445533 20616E64  |Invoking DU3 and|
+10  20445533 20496E73  74616C6C 6174696F  | DU3 Installatio|
+20  6E0D0A44 55332043  6F6D6D61 6E642053  |n..DU3 Command S|
+30  756D6D61 72790D0A  436F6D6D 616E6473  |ummary..Commands|
+40  20666F72 204C6F67  67696E67 20446973  | for Logging Dis|
+50  6B732061 6E642045  78616D69 6E696E67  |ks and Examining|
+60  20446973 6B205061  72616D65 74657273  | Disk Parameters|
+70  0D0A436F 6D6D616E  64732066 6F722050  |..Commands for P|
+
+
+DU3  B7? ch0-10 0
+
+DU3  B7? d
+00  00000000 00000000  00000000 00000000  |................|
+10  00445533 20496E73  74616C6C 6174696F  |.DU3 Installatio|
+20  6E0D0A44 55332043  6F6D6D61 6E642053  |n..DU3 Command S|
+30  756D6D61 72790D0A  436F6D6D 616E6473  |ummary..Commands|
+40  20666F72 204C6F67  67696E67 20446973  | for Logging Dis|
+50  6B732061 6E642045  78616D69 6E696E67  |ks and Examining|
+60  20446973 6B205061  72616D65 74657273  | Disk Parameters|
+70  0D0A436F 6D6D616E  64732066 6F722050  |..Commands for P|
+
+DU3  B7? ca11 This is a test
+
+DU3  B7? d0-#1f
+00  00000000 00000000  00000000 00000000  |................|
+10  00546869 73206973  20612074 6573746F  |.This is a testo|
+
+:G
+
+                           Macros
+
+     A Macro is a short-hand the user can employ to define a 
+command  sequence.   Rather than having to type an  involved 
+command over and over again,  the DU3 macro facility  allows 
+the  user to assign this command sequence to a number (0  to 
+9) and then execute it by simply presenting this number as a 
+command.   The  following commands are associated with  this 
+facility.
+
+                        :ntext and n
+
+     ":n<text>"  defines the text following the digit 'n' to 
+be a Macro.   As always, 0 <= n <= 9.  The macro definitions 
+may  be  created  and redefined at will.   If  a  macro  has 
+already  been defined for the indicated number,  it will  be 
+overwritten by the execution of this command.   "n", where 0 
+<= n <= 9, executes the indicated macro.
+
+
+                        :Pn and :PA
+
+     ":Pn",  where  0 <= n <= 9,  prints the text  of  Macro 
+Number n.  ":PA" prints the text of all 10 macros.
+
+                         @ and :P@
+
+     "@"  executes  the previous command line that  did  not 
+contain  the  "@"  Command.   This provides an easy  way  to 
+repeat the last command line typed.  For example:
+
+     g0             <-- go to Group 0
+     ch0-7f e5,<    <-- Initialize the first block and Save
+     >,w,+          <-- Read in the Saved Block, Write it 
+                         out to disk, and advance to next
+                         logical block
+     @              <-- Do the Previous Command Again
+     @              <-- And Again
+
+
+     ":P@"  prints the previous command line (and  does  not 
+change it).
+
+     Examples (edited DU3 session):
+
+DU3  B7? g0
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B7? :1+,d0-#1f
+
+DU3  B7? :p1
+Macro Definitions --
+1: +,d0-#1f
+
+DU3  B7? 1
+Group = 0000:01, Track = 122, Sector = 2, Physical Sector = 2
+00  0754414C 4B202020  2053554D 00000049  |.TALK    SUM...I|
+10  11002300 24000000  00000000 00000000  |..#.$...........|
+
+
+DU3  B7? 1
+Group = 0000:02, Track = 122, Sector = 3, Physical Sector = 3
+00  07444953 4B4F5554  20434F4E 00000000  |.DISKOUT CON....|
+10  00000000 00000000  00000000 00000000  |................|
+
+DU3  B7? 1
+Group = 0000:03, Track = 122, Sector = 4, Physical Sector = 4
+00  04584449 52202020  20C3CF4D 00000054  |.XDIR    COM...T|
+10  2C002E00 48000000  00000000 00000000  |,...H...........|
+
+DU3  B7? g0,d0-#1f
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+00  07535444 20202020  204D5347 00000002  |.STD     MSG....|
+10  10000000 00000000  00000000 00000000  |................|
+
+DU3  B7? 1
+Group = 0000:01, Track = 122, Sector = 2, Physical Sector = 2
+00  0754414C 4B202020  2053554D 00000049  |.TALK    SUM...I|
+10  11002300 24000000  00000000 00000000  |..#.$...........|
+
+
+DU3  B7? :pa
+Macro Definitions --
+0: 
+
+1: +,d0-#1f
+
+2: 
+
+     < Detail Left Out >
+
+9: 
+
+
+DU3  B7? g0,d0-#1f,1,1,1
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+00  07535444 20202020  204D5347 00000002  |.STD     MSG....|
+10  10000000 00000000  00000000 00000000  |................|
+Group = 0000:01, Track = 122, Sector = 2, Physical Sector = 2
+00  0754414C 4B202020  2053554D 00000049  |.TALK    SUM...I|
+10  11002300 24000000  00000000 00000000  |..#.$...........|
+Group = 0000:02, Track = 122, Sector = 3, Physical Sector = 3
+00  07444953 4B4F5554  20434F4E 00000000  |.DISKOUT CON....|
+10  00000000 00000000  00000000 00000000  |................|
+Group = 0000:03, Track = 122, Sector = 4, Physical Sector = 4
+00  04584449 52202020  20C3CF4D 00000054  |.XDIR    COM...T|
+10  2C002E00 48000000  00000000 00000000  |,...H...........|
+
+
+DU3  B7? @
+
+Command --
+g0,d0-#1f,+,d0-#1f,+,d0-#1f,+,d0-#1f
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+00  07535444 20202020  204D5347 00000002  |.STD     MSG....|
+10  10000000 00000000  00000000 00000000  |................|
+Group = 0000:01, Track = 122, Sector = 2, Physical Sector = 2
+00  0754414C 4B202020  2053554D 00000049  |.TALK    SUM...I|
+10  11002300 24000000  00000000 00000000  |..#.$...........|
+Group = 0000:02, Track = 122, Sector = 3, Physical Sector = 3
+00  07444953 4B4F5554  20434F4E 00000000  |.DISKOUT CON....|
+10  00000000 00000000  00000000 00000000  |................|
+Group = 0000:03, Track = 122, Sector = 4, Physical Sector = 4
+00  04584449 52202020  20C3CF4D 00000054  |.XDIR    COM...T|
+10  2C002E00 48000000  00000000 00000000  |,...H...........|
+
+:H
+
+                             ?
+
+     "?¢ †produceÛ †DU3'Û †internaÏ †help¨ †givinÁ †· †brieÊ ç
+summar˘ ÔÊ alÏ commands.
+
+
+                           *[nn]
+
+     "*nn"  repeats the current command line (as entered  so 
+far) nn times.   This command defaults to "forever" if nn is 
+not specified. 'nn' may be 2 to 65535.
+
+
+                             !
+
+     "!"   halts   processing  of   commands,   displays   a 
+continuation message to the user,  and waits for the user to 
+type any key.  Typing a Control-C aborts command processing.  
+This command is useful in stopping loops to give the user as 
+much time as he wants to review the display.
+
+
+                             P
+
+     "P"  toggles the printer switch on and off.   It allows 
+the  user  to turn on and off a recording  of  your  console 
+output.
+
+                             X
+
+     "X" exits back to ZCPR3.
+
+
+                           Z[nn]
+
+     "Znn" causes the program to sleep, or pause, and may be 
+used to look at a dump quickly in a looping command line.  Z 
+is  1  sec.   Znn  is nn seconds on  an  n  MHz  8080.   The 
+processor  speed  is specified within the ZCPR3  Environment 
+Descriptor.
+
+
+                             ^C
+
+     "^C" exits to ZCPR3 and Warm Boots.
+
+     Examples (actual DU3 session):
+
+
+DU3  B7? g0
+Group = 0000:00, Track = 122, Sector = 1, Physical Sector = 1
+
+DU3  B7? d0-#f,+,!,*
+00  07535444 20202020  204D5347 00000002  |.STD     MSG....|
+Group = 0000:01, Track = 122, Sector = 2, Physical Sector = 2
+
+Type Any Character to Continue or ^C to Abort - 
+00  0754414C 4B202020  2053554D 00000049  |.TALK    SUM...I|
+Group = 0000:02, Track = 122, Sector = 3, Physical Sector = 3
+
+Type Any Character to Continue or ^C to Abort - 
+00  07444953 4B4F5554  20434F4E 00000000  |.DISKOUT CON....|
+Group = 0000:03, Track = 122, Sector = 4, Physical Sector = 4
+
+Type Any Character to Continue or ^C to Abort - 
+00  04584449 52202020  20C3CF4D 00000054  |.XDIR    COM...T|
+Group = 0000:04, Track = 122, Sector = 5, Physical Sector = 5
+
+Type Any Character to Continue or ^C to Abort - 
+
+DU3  B7? g1
+Group = 0001:00, Track = 122, Sector = 33, Physical Sector = 33
+
+DU3  B7? d0-#f,+,*3
+00  E5482020 20202020  2042414B 00000004  |eH       BAK....|
+Group = 0001:01, Track = 122, Sector = 34, Physical Sector = 34
+00  E5535542 32202020  2042414B 0100007B  |eSUB2    BAK...{|
+Group = 0001:02, Track = 122, Sector = 35, Physical Sector = 35
+00  E5434420 20202020  204D4143 00000047  |eCD      MAC...G|
+Group = 0001:03, Track = 122, Sector = 36, Physical Sector = 36
+
+DU3  B7? ^C
+B7>
+
+:3
+
+     DU3 contains a built-in,  screen-oriented editor.  This 
+editor derives its screen-oriented functions from the  ZCPR3 
+TCAP,  so  the  DU3 Editor should be invoked only  on  ZCPR3 
+Systems  which  are supporting a valid TCAP for  the  user's 
+terminal.
+
+
+                             E
+
+     The  command  "E"  invokes the editor.   If  any  other 
+commands  follow  E on the same  line,  these  commands  are 
+flushed.   The  DU3 Editor is a complete subsystem under DU3 
+in  its own right.   It provides a variety of  user-friendly 
+editing  features  for the manipulation of data  within  the 
+current sector (block) as well as allowing the user to issue 
+any  DU3 command line he desires,  returning to  the  editor 
+when it is completed.
+
+
+     The  DU3  Editor presents a screen display to the  user 
+which  is structured to include a line showing the  contents 
+of  the  sector at the cursor,  several lines  of  hex/ASCII 
+(similar  to the D command output) which display the  entire 
+sector, a menu of commands, a cursor (which initially points 
+to the first byte in a sector), and a command prompt.
+
+     The  user  may  employ  the  WordStar  cursor  movement 
+commands  to  move the cursor about in the  current  sector.  
+These commands are:
+
+                       ^E = Cursor UP
+                             ^
+        ^S = Cursor LEFT   <-+->   ^D = Cursor RIGHT
+                             v
+                      ^X = Cursor DOWN
+
+     ^R refreshes the screen display.
+
+
+     The following commands are also available under the DU3 
+Editor:
+
+     A = Enter ASCII Text into block starting at cursor
+     H = Enter Hex/Dec Numbers into block starting at cursor
+
+. or + = Advance to Next Logical Sector and Edit
+, or - = Backup to Last Logical Sector and Edit
+
+    ^W = Write the Current Sector to Disk
+
+     C = Issue Any DU3 Command Line
+
+     X = Exit to DU3
+    ^C = Exit to ZCPR3
+
+
+     All  of these commands are self-explanatory except  for 
+the A and H commands.
+
+     The  A  command is used to enter ASCII  text  into  the 
+sector starting at the cursor position.  In response to this 
+command,  the DU3 Editor will prompt the user for input.  He 
+may  then  type  any  text he wishes  followed  by  striking 
+RETURN.  This text is entered literally into the sector.  If 
+it overflows the end of the sector, it is truncated.  If the 
+user  wishes  to  embed  hexadecimal  values,  like  0D  for 
+Carriage Return, he may use the form "<hh>".  Example:
+
+          this is a test<0D><0A>
+
+
+     The  H command is used to enter a group of  hexadecimal 
+and  decimal values into the sector starting at  the  cursor 
+position.   Numbers  separated by spaces are typed in by the 
+user.   If the user wishes to enter a value in decimal,  the 
+form "#nn" is used.  Example:
+
+          1 2 3 3A b7 #25
+
+
+     The  Editor  is one of the most  powerful  capabilities 
+within  DU3.    It  is  highly  recommended  that  the  user 
+experiment   with   it  and  become  acquainted   with   its 
+capabilities. 
+
+:4
+                          Examples
+
+
+     Multiple commands may be separated by ",".
+
+     Any valid command string may be placed as an operand of 
+the original DU3 command, i.e.:
+
+	 A>DU3 G0,D,G2,=OK<D><A><1A>,D
+
+
+     Example:  the following commands will erase the B  disk 
+directory to all E5's:
+
+	lb		log in b drive
+	g0		position to dir.
+	ch0-7f e5	fill with e5
+	<		save the sector
+	>,w,+,/16	restore, write, next,
+			repeat 16
+
+     This could be shortened to:
+
+	lb,g0,ch0-7f e5,<
+	>,w,+,/16
+
+
+     The following two macros can be defined:
+
+   Macro 0 --
+     :0g0,ch0-7f e5,<
+   Macro 1 --
+     :1>,w,+,/16
+
+     For  the  user to initialize the directory on Drive  A: 
+and  then  on  Drive B:,  the following  commands  could  be 
+issued:
+
+     la,0      <-- Log in A and Initialize first block
+     1         <-- Perform write
+     lb,0      <-- Log in B and Initialize first block
+     1         <-- Perform write
+     n,0       <-- Declare New Disk and Initialize first 
+                    block
+     1         <-- Perform write
+
+:5
+     Interpretation of Directory Data Presented by DU3
+
+     The  following explains the format of a CP/M  directory 
+entry  as  shown by DU3,   using either the  F  (Find  File) 
+command,   or  just doing D (Dump) of the directory sectors, 
+which  are  located in groups 0 and 1 on  a  single  density 
+disk.  Sample result of "FSID.COM" command:
+
+First	    40	00534944 20202020 20434F4D  0000003A  |.SID	COM...:|
+line	    ||	|||			 |  ||	  ||	|	  |
+	    ||	||^----hex file name-----^  ||	  ||	^file name^
+	    ||	||			    ||	  ||	 in ASCII
+	    ||	||		     extent-^^	  ||
+	    ||	||				  ||
+	    ||	||	     file size in sectors-^^
+	    ||	||
+	    ||	^^-00 = file active
+	    ||	   E5 = file erased
+	    ^^-displacement of line in directory sector
+
+
+Second	    50	33343536 3738393A  00000000 00000000  |3456789:........|
+line		|				   |
+		^---allocation group numbers-------^
+
+
+

@@ -1,0 +1,93 @@
+;	TITLE	"SGRR - Syslib 4.0"
+	NAME	('GETRR')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SGRR.Z80 Ver 1.1 by Richard Conn
+; Date    : 4 Jul 89
+; Version : 1.3
+; Module  : SGRR
+; Abstract: This module provides two two functions: GETRR and
+;	GETFS.  With the file FCB pted to by DE, GETRR gets the
+;	random record number of the last record read or written
+;	sequentially from the file.  GETFS gets the file size
+;	of the file in terms of records.  The FCB passed to
+;	these two routines is not affected.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		GETRR, GETFS
+
+;  External References
+
+	EXT		@BDOSA
+
+;  Definitions
+
+GFS	EQU	35		; Get file size command
+SRR	EQU	36		; Set Random Record command
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - GETFS - Get the file size (in records) of the
+;		  specified file.
+; Entry: DE - Address of File Control Block (FCB)
+; Exit :  A = 0 and Zero flag Set (Z) if Ok
+;	      A = 1 and Zero flag Reset (NZ) if overflow
+;	 HL - Contains file size in records
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+GETFS:	LD	A,GFS		; Get File Size Function
+	JR	GET1		; ..continue on with common code
+
+;===============================================================
+; NAME - GETRR - Get number of the last record read from
+;		  or written to the specified file.
+; Entry: DE - Address of File Control Block (FCB)
+; Exit :  A = 0 and Zero flag Set (Z) if OK
+;	      A = 1 and Zero flag Reset (NZ) if overflow
+;	 HL - Contains Record number
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+GETRR:	LD	A,SRR		; Set random record number
+GET1:	PUSH	DE		; Save Registers
+	PUSH	BC
+	PUSH	AF		; ..save BDOS command
+	LD	HL,LFCB		; Setup Local FCB
+	LD	BC,36		; 36 Bytes
+	PUSH	HL		; Save ptr to FCB
+	EX	DE,HL		; Exchange source and destination
+	LDIR			; Move the FCB
+	POP	DE		; Get ptr to FCB
+	POP	AF		; ..restore BDOS command
+	CALL	@BDOSA
+	LD	HL,33		; Offset to random record number
+	ADD	HL,DE
+	LD	E,(HL)		; Get Random record number in HL
+	INC	HL
+	LD	D,(HL)
+	INC	HL
+	LD	A,(HL)		; Overflow
+	EX	DE,HL		; Number in HL
+	POP	BC		; Restore registers
+	POP	DE
+	OR	A		; Set error code
+	RET
+
+;+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+;  Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+LFCB:	DEFS	36		; Local FCB Copy
+
+	END
+

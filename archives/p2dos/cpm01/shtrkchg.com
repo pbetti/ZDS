@@ -1,0 +1,1 @@
+../shtrkchg.bin

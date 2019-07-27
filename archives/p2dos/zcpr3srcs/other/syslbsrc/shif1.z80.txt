@@ -1,0 +1,75 @@
+;	TITLE	"SHIF1 - Syslib 4.0"
+	NAME	('HIF1')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SHIF1.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SHIF1
+; Abstract: This module contains the single routine HIF1 which is
+;	an arithmetic IF facility.  A key value is passed in the
+;	DE register pair and a test value is passed in the HL pair.
+;	A table of three addresses to be executed immediately follow
+;	the call to HIF1 to be executed depending on whether the
+;	expression evaluates to less than, equal, or greater than.
+;	The routine is used as:
+;
+;	  LD	DE,5	; key value
+;	  LD	HL,TEST	; test value
+;	  CALL	HIF1
+;	  DEFW	HLTD	; go here if HL < DE
+;	  DEFW	HEQD	; go here if HL = DE
+;	  DEFW	HGTD	; go here if HL > DE
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+
+	PUBLIC		HIF1
+
+	.Z80
+	CSEG
+;=========================================================================
+; NAME - HIF1
+; Entry: HL - Address of Test Value
+;	 DE - Key value
+; Exit : - No values returned
+; Uses : - None.  (all values preserved for destination routine)
+; Special Requirements:  None
+;=========================================================================
+
+HIF1:	EX	(SP),HL		; get return address
+	LD	(RETURN),HL
+	EX	(SP),HL
+	LD	(HLSAVE),HL	; save HL
+	PUSH	DE		; save regs
+	PUSH	AF
+	OR	A		; Compare by subtraction
+	SBC	HL,DE
+	LD	DE,0		; ..prepare for "less than"
+	JR	C,GOTO		; Jump if "less"
+	LD	DE,4		; ..prepare for "greater than"
+	JR	NZ,GOTO		; Jump if "greater"
+	LD	DE,2		; ..else set up for "equal"
+GOTO:	LD	HL,(RETURN)	; get return address
+	ADD	HL,DE		; add in offset
+	LD	A,(HL)		; get low
+	INC	HL
+	LD	H,(HL)		; get high
+	LD	L,A		; HL = address to return to
+	POP	AF		; restore regs
+	POP	DE
+	EX	(SP),HL		; set return address on stack
+	LD	HL,(HLSAVE)	; restore HL
+	RET
+
+; Save buffers
+
+	DSEG			; Put these in Data Segment
+
+HLSAVE:	DEFS	2	; original HL
+RETURN:	DEFS	2	; original return address
+
+	END
+

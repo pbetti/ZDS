@@ -1,0 +1,524 @@
+BUSH.DOC	Documentation for BUSH, the BackUp SHell
+
+(Much of this information is duplicated in the program itself on the various 
+Help and Introduction menu items).
+
+General Description
+
+BUSH, the BackUp SHell, is an integrated disk backup & restoration utility 
+for use under ZCPR3.  It provides a convenient, single-program manager for 
+the control of full or partial disk backups, and for full or selective 
+restoration of the archived files.  A variety of file selection options are 
+available, both during the backup and when restoring files.  A backup 
+operation may be interrupted at any time and resumed later from the same 
+point, with the same file selections still in effect.  Miscellaneous options 
+such as printer logging and read-after-write verification are also available.  
+Extensive in-context help is available at all levels of operation.
+
+In its backup function, BUSH backs up one or more disks to a single drive.  
+The most common use will be to back up one or more of the logical drives on 
+your hard disk to floppy disks on one of your physical floppy drives.  
+Runtime selections of any or all drives, all user areas or a single user 
+area, skipping files with the archive (T3') bit set, and whether the archive 
+bit is set as each file is backed up are made for each backup.  An indexed 
+list of the files on the backup disks may be sent to the system list device. 
+Optional read-after-write CRC verification of the data written to the backup 
+disk may be selected.  The backup process may be interrupted at any time and 
+resumed later from the same point, with the same file selections still in 
+effect.  A specific use of this capability while running the system allows 
+you to interrupt the backup process to format additional backup disks, and 
+then resume the backup procedure.
+
+The restoration function of BUSH allows files to be restored from backup 
+disks to the original source disk.  Complete flexibility of file selection is 
+provided, from a single file in a single user area, through all files in a 
+given user area or all files matching a particular ambiguous file name in one 
+or all user areas, to all files in all user areas on the disk.
+
+BUSH relies heavily on the facilities of the Z System.  As a minimum, the 
+following Z System modules must be present in your installation:
+
+	Command Line Buffer
+	Shell Stack
+	External File Control Block (EXTFCB)
+	Environment Descriptor, including TCAP segment
+
+Since these are standard components in most ZCPR3 implementations, BUSH 
+should run on your system with no requirement for modifications.
+
+Due to the amount of code required to provide the advanced capabilities of 
+BUSH, the program is made up of a main driver program, BUSHG.COM (or BUSHN or 
+BUSHH.COM), and a series of 'subroutines', called BUSH!x.COM, where 'x' is a 
+number or letter.  These files must all be located either in a specified DU 
+(which may be selected by patching the BUSH.COM file--see the section on 
+Configuration), or they may be located anywhere along the current path (all 
+in the same DU, please), and BUSH will find them there.  BUSH will load the 
+'subroutine' files as it needs them, as long as they can be found in one of 
+the two locations listed.  These 'subroutine' programs pass control back to 
+BUSH via the shell stack.  The 'subroutine' programs perform those functions 
+which require that as much TPA as possible be available, such as reading the 
+directory of the disk, sorting the list of files to be backed up, and doing 
+the actual disk reading and writing for the backup process.  BUSH provides 
+most user interfacing and orchestrates the overall operation of the program 
+suite.
+
+BUSH started, believe it or not, as an update to Kim Leavitt's excellent BU 
+utility, and the backup function retains much of the user interface and 
+display format of that program.  Those who, like me, used BU as their main 
+disk backup utility should feel right at home.
+
+The Backup Function
+
+The Backup function of BUSH allows you to back up one or more disks (usually 
+one or more of the logical drives on your hard disk) to another disk, which 
+will typically be one of your physical floppy drives.  You may select any 
+combination of source drives, and may back up files from all user areas or a 
+single user area that you select.  You will be asked several questions about 
+how you want the backup done, including the source and destination drive 
+letters, which user areas to back up, and various optional items such as 
+printer logging of the backup and the use of read-after-write CRC 
+verification of the data written to the backup disk.  After all questions are 
+answered, BUSH will search the specified disks and user areas and build a 
+file containing the names and locations of all the file to be backed up.  
+After the file list is built, BUSH will start copying the specified files to 
+the backup drive.  As each backup floppy fills, you will be given the chance 
+to interrupt the process, in case you need to format more blank disks, or 
+simply wish to stop.  An interrupted backup procedure may be resumed later at 
+the same point where it was stopped, and will use the remainder of the file 
+list built during the original run.
+
+Unlike most previous CP/M-compatible backup utilities, BUSH has the 
+capability to back up files of almost any size, including files larger than 
+the capacity of the floppy disks used for the backup media.  When BUSH finds 
+such a file, it will break up the file into pieces, using a modified version 
+of the original filename for the fragments.  As an example, if a file named 
+'DATA.FIL' were broken up into three fragments to fit on the backup floppies, 
+the fragments would be called 'DATA--01.FIL', 'DATA--02.FIL', and 
+'DATA--03.FIL'.  If the filename of the file is longer than six characters, 
+part of the name will be overwritten by the fragment number.  For filenames 
+with less than six characters, the space between the name and the fragment 
+number will be filled with hyphens, as shown.  Both names are shown in the 
+printed file list.  The first part of the file list, showing which files were 
+backed up, lists the unmodified name of the source file.  The second part of 
+the list, which shows the names of the files on each backup disk, shows the 
+modified name used for the fragment of the file placed on that backup disk.  
+The file restoration function of BUSH will reassemble these file fragments 
+into a duplicate of the original file.
+
+BUSH may also be used for incremental backups.  When backing up files, BUSH 
+may be instructed to set the CP/M 'Archive' attribute bit in the file type 
+specification on the disk (T3').  During subsequent backups, it may be 
+instructed to skip those files that have this attribute bit set when building 
+its list of files to back up.  This allows you to do a full backup, setting 
+the archive bit on all files backed up, and then later do incremental 
+backups.  During these partial backups, only those files that have been 
+changed since the full backup was done will be included in the list of files 
+to process.
+
+BUSH can produce an indexed list of the files backed up during each operation 
+on the system list device.  This list consists of two parts.  The first part 
+is a master list of all the files that were backed up during the procedure, 
+sorted by source disk and user area, and alphabetically within each user 
+area.  The second part of the list is a list of which files are on each of 
+the backup disks, again listed by the user area in which they were placed, 
+and sorted alphabetically within each user area.  These lists provide you 
+with a handy master list of your disk backup system, and allow you to quickly 
+determine where any specified file may be found.  If you do not want this 
+list to be printed, or do not have a printer attached to your system and want 
+to be able to back up your disks without hanging the system, you may elect to 
+not produce the printout.
+
+You can abort the printout of either part of the index by typing a Ctrl-T 
+during the backup operation.  If you type Ctrl-T while the first part of the 
+index is being printed, BUSH will skip the rest of that part of the index, 
+and resume printing with the list of files on each backup disk.  If you type 
+Ctrl-T while the actual backup is in progress, BUSH will stop printing the 
+second part of the index.  The backup will continue as if you had selected 
+'no printout' initially.  If you interrupt the backup and restart later from 
+the same point, the printout will resume (using the 'stop now and restart 
+later' choice, that is.  If you use the 'system command' option, BUSH will 
+remember that you had aborted the printout).
+
+The Restoration Function
+
+The file restoration function of BUSH will restore files from backup disks 
+created by the backup function to the disk and user number from which they 
+were originally backed up.  You may select an individual file or all files 
+matching an ambiguous file name in a particular user #, or all user numbers 
+on the backup disk.  You may also elect to restore only files which have been 
+modified since the last backup.  If the source file was broken up into 
+multiple fragments spread across more than one backup disk, BUSH will 
+recombine the fragments into the original file.
+
+	Selecting Files to be Restored
+
+Restoration User/Filename specifications are of the form
+
+     U:FILENAME.TYP
+
+where
+
+     U is the user number (one or two DECIMAL digits) from which to restore
+       the files.  If U is not specified, the current user # will be used.  
+       You may enter '?' for U to restore files from all user areas on the
+       backup disk.
+
+     FILENAME and TYP are the filename and type of the file(s) to restore.
+       Wildcard characters ('*' or '?') may be used in any position.
+
+Examples:
+
+  To restore the single file JUNK.DAT from user area 3 on the backup disk,
+  enter
+       3:JUNK.DAT
+  To restore all PROG files from user area 7, enter
+       7:PROG.*   (or 7:PROG.???)
+  To restore all .TXT files from all user areas, enter
+       ?:*.TXT    (or ?:????????.TXT)
+  To restore all files on the backup disk (must have been a major disaster!),
+  enter
+       ?:*.*
+
+(Using a form like these last two examples will not be confused with entering 
+a single '?' to ask for help).
+
+You may elect to only restore any files that have been modified since the 
+backup was done.  This will allow you to restore the source disk to the same 
+condition that existed at the end of the backup (plus any new files created 
+since then) without spending time copying a lot of files that have not been 
+modified since the backup was done.  This option is based on your having 
+specified that BUSH was to set the archive (T3') bit during the backup.  If a 
+file on the backup disk that meets your selection criteria has a matching 
+file on the target disk that still has the archive bit set (indicating that 
+it has not been modified since the backup was done), that file will not be 
+copied from the backup disk.
+
+BUSH will automatically restore fragmented files produced by the backup 
+function, recombining them into the original file, using the following logic: 
+If an UNAMBIGUOUS file name specified for restoration is not found on the 
+backup disk, BUSH will convert the filename to what it would look like as the 
+first fragment of that file if it were broken up by the backup function, and 
+attempt to find a file by that name.  If it is successful, it will tell you 
+that it could not find the specified file, but found a file fragment that 
+looks like a match, and is restoring it instead.  If a file is found on the 
+backup disk that matches the pattern of an AMBIGUOUS file name selection, 
+BUSH will also inform you that it has found a fragmented file and is 
+processing it as such.  In this case, BUSH will tell you what name it will 
+use for the resulting recombined file, and give you a chance to change it to 
+something else.
+
+Getting Help from within BUSH
+
+Specific help with most questions may be obtained by inputting '?' in answer 
+to that question.  Questions which require very simple answers, such as those 
+asking for a drive designator letter, or 'Yes or No' questions where the 
+response is obvious, do not have this assistance available.  More detailed 
+information on the operation of each of the functions may be obtained by 
+selecting the 'Introduction' choice from the menu for that function.  
+Additional information on some of the specific areas within each function, or 
+the program as a whole, is available by selecting from the choices provided 
+on the menu of the 'Help' function.  You may review the program introductory 
+information by selecting the 'Introduction' entry on the Help function menu.
+
+BUSH incorporates extensive error checking for invalid user input.  In most 
+cases, an illegal input (invalid disk or user area, incorrect format) will 
+produce an error message, and BUSH will ask for the input again.  In some of 
+the simple cases described above, BUSH will simply ignore the input, and will 
+wait for you to provide a valid response before continuing.  So, if BUSH 
+seems to be ignoring your answer, check that you are providing a response 
+that is legal on your system.
+
+Configuring BUSH for your system
+
+Configuration of BUSH for a particular printer, for the specific disk system, 
+and for personal preferences is provided.  Configuration of BUSH for your 
+printer and disk system may be done in three ways.  In sequence from easiest 
+to least convenient, these methods are:
+
+   1) Using the 'Configuration' menu selection to use BUSH to patch 
+      itself with the appropriate values.
+   2) Patching the BUSH.COM file using a debugger, with addresses from the
+      assembly listing fragment provided as BUSHCNF.LST
+   3) Modifying the source file and reassembling the BUSH.MAC file (Note:  
+      the source for the BUSH system will be provided with the release of
+      Version 1.0.  Due to the size of the source code, it will be released
+      in a separate library).
+
+Obviously, Method 1 is the recommended way to configure BUSH.
+
+BUSH's configuration function allows you to set several different values in 
+the program code.  Items which may be configured fall into the following 
+categories:
+
+   Printer Configuration - Allows you to set up the program to properly
+       set your printer for condensed print mode and condensed line spacing,
+       and to reset it to normal mode when complete.
+
+   BUSH Locations - You may specify the disk/user (DU) where the various
+       component programs of BUSH reside.  BUSH will look in this DU before
+       it searches the path, thus speeding up the operation.
+
+   Miscellaneous Items - These configuration items include the types of files
+       you want to be skipped during the backup operation, the types of files 
+       to crunch before backing them up, and the maximum amount of space to
+       be left blank on a backup disk if the next file is too large to fit
+       in the remaining free space.
+
+Note that, when configuring BUSH from within itself using the 'Configuration' 
+function, the configuration menu items listed above (Printer, Location, and 
+Miscellaneous) do NOT modify the copy of BUSH stored on the disk.  These  
+items simply modify the values stored in the configuration module.  This 
+allows you to go through the configuration process again as necessary until 
+everything is exactly as you want it.  When all configuration is completed, 
+select the 'Self-Configuration' menu selection.  After verifying that you 
+want to permanently change the configuration of BUSH, the program will find 
+itself on the disk (first looking in the DU you have specified, then along 
+the path if that is unsuccessful), and, if the BUSH file is found on the 
+disk, that file will be modified with the configuration information you have 
+selected.  The 'subroutine' programs will also have the configuration 
+information installed.  Then, all future runs of the program (including the 
+current run, if you go from configuration into backup or restoration while 
+still within the program) will use the new configuration data.
+
+Note: All the above references to the 'BUSH.COM' file name will find BUSH by 
+whatever name you use when you run it.  Like all good little ZCPR3 shells, 
+BUSH gets its own name from the external FCB, and that is the name it looks 
+for when configuring itself.  That is also the name it puts on the shell 
+stack when it passes control to one of the subroutine programs.  So, you can 
+rename the version of BUSH that you will use from BUSHG/N/H to BUSH (or 
+anything else), and it will always find itself by the correct name.  For 
+users of ZCPR3.0 who do not have the external FCB implemented,
+  1) You should.
+  2) The default name BUSH will look for is 'BUSH.COM' for all versions.
+
+	Printer Configuration
+
+To configure BUSH for your printer, you will need the following codes:
+
+   The code to set the printer to condensed print mode (the condensed print
+      mode must have at least 13.5 CPI for the lists to fit on a standard
+      8.5-inch-wide sheet of paper).
+   The code to set it to a line spacing of 8 lines per inch.
+   The code to return the printer to your desired default settings
+      for character width and line spacing.
+
+Printer control codes will be entered by typing the CHARACTER that is to be 
+sent to the printer.  This does not mean to type the hexadecimal or decimal 
+value that corresponds to the code.  Thus, to enter an ESCape character into 
+the output string, press the ESCape key.  The normal CP/M line editing 
+functions such as Control-X and Backspace, and the Control-C abort, are 
+disabled during input of the control strings.  If you need to include a 
+Carriage Return in the string, use a Backslash ('\') before it.  Likewise, to 
+enter a Backslash into the string, type it twice ('\\').  End the setup 
+string with a <Return>.  To keep the current value shown, simply press 
+<Return> when asked for the new value.  You will be asked to verify each 
+string before going on to the next, so you will have a chance to correct 
+errors in entering the string at that time.  NOTE: When entering the string 
+to reset the printer to its initial settings, DO NOT include a formfeed to 
+get it to the top of the page.  Many printers set the current position as the 
+new TOF when their reset command is received, so BUSH will issue a formfeed 
+prior to sending the 'reset' command string.
+
+	Location Configuration
+
+The various component programs of the BackUp SHell may be located in any user 
+area of any disk, as long as they can be found by searching along the path.  
+However, BUSH will operate faster if it can go directly to the DU containing 
+the component programs of the system.  You may configure BUSH to look in the 
+specific DU where it and its subroutine programs are stored.  The BUSH 
+programs come with the default DU of A15:.
+
+You may also specify the disk where BUSH will place the list of files to back 
+up, and other temporary files.  If you have a memory disk in your system, 
+this will speed up the operation of BUSH backups significantly. If you do not 
+specify a disk, user area 15 of disk A will be used.
+
+	Miscellaneous Configuration
+
+The following miscellaneous items may be configured to your individual 
+specifications:
+
+   The types of files that will be skipped during the backup.
+   The types of files that will be automatically compressed if they
+      are found in the list of files to be backed up.
+   The maximum amount of blank space that will be left on the backup
+      disk if the next file in the list will not fit.
+
+You probably do not want to have certain types of files copied to the backup 
+disks during your routine backups.  These file types include those that are 
+intermediate or temporary files, such as HEX, PRN, BAD, TMP, and $$$ file 
+types, and those that you maintain on separate backup disks, like LBR and 
+ARC/ARK files.  You can configure BUSH to eliminate files with these types 
+from the list of files to back up.  This can save a significant amount of 
+space on the backup disks.
+
+BUSH has the capability to recognize that certain selectable file types may 
+be very large files, and to use CRUNCH.COM to compress them to a more 
+economical (in terms of storage space) size.  Such files as MAC, Z80, and ASM 
+assembler source files, other language files (BAS, PAS), and data base files 
+(DBF), are candidates for compression.  You may configure BUSH with the 
+specific file types to be compressed before being backed up.  BUSH will only 
+crunch the files matching your specified file types if the file is at least 
+24 records (3K) long.  This avoids spending a lot of time crunching very 
+small files that will still take up the same number of allocation groups on 
+the backup disk.  The file list will be rebuilt after all compressions are 
+complete.  CRUNCH.COM must have that name and must be located somewhere along 
+your path.
+
+IMPORTANT NOTE: It is vital to know that, to ensure that the original 
+uncompressed source file is not included in the file list again, THE ORIGINAL 
+SOURCE FILE IS ERASED after the compression is complete.  So, you should use 
+this capability carefully, and only after ensuring other backup arrangements, 
+until you are familiar with its operation.  Don't let BUSH backups cause lost 
+files!  This is necessary, rather than just setting some attribute bit and 
+skipping files with that attribute set, to avoid the possibility of filling 
+up the disk during the crunch step, due to having both an uncrunched and a 
+crunched version of an unspecified, potentially large, number of files.
+
+When BUSH shows you the current list of types to be skipped or compressed, it 
+will show the currently-defined types, and print hyphens ('---') in the spots 
+that are not defined.  To change one of the types in the list, simply type 
+the new type over it.  To add a type, overwrite the first '---' entry with 
+the new type.  Typing a '-' as the first character of a type will delete that 
+entry and all subsequent entries from the list.  Each entry must be three 
+characters long, exactly as it will appear in the file specification.  So, to 
+add C language source files to the crunch list, you would have to skip to the 
+first '---' entry (using <Return>), and type 'C<space><space>' over the 
+hyphens.  Once you are in the 'change' mode (entered by typing anything 
+except ESC when BUSH showed you the list), you can enter <Return> to skip to 
+the next field in the list.  Entering more than 3 characters for an entry 
+will also skip you to the next field.  Backspace or Del may be used to change 
+a character typed in error.  You exit the 'change' mode by entering ESC at 
+any point, or by 'running off the end' of the list with any character.
+
+BUSH tries to minimize the amount of wasted space on the backup disk.  If the 
+next file to be backed up is larger than the amount of free space remaining 
+on the disk, but that free space is larger than a particular value, BUSH will 
+break up the file into fragments and will put the first fragment on the disk 
+in the remaining free space.  If the remaining free space is smaller than the 
+selected amount, BUSH will go on to the next disk to start the file.  You may 
+select the maximum amount of 'wasted' space to leave on the backup disks. 
+The default value of the 'wasted space' parameter is 16K bytes.
+
+After you have completed all desired configuration selections, you may make 
+your settings permanent by modifying the BUSH program stored on disk to 
+include your desired configuration.  BUSH will look for itself first in the 
+disk/user area you have selected, and, if not found there, it will search 
+along the path.  You will be informed where the copy of BUSH that is being 
+configured was found, and will be given a chance to stop configuration of 
+that file if you do not want it changed.
+
+Interrupting BUSH Backups
+
+BUSH backups may be interrupted after each backup disk fills up.  If BUSH is 
+in the middle of a fragmented file, your only choice is to cancel the backup 
+entirely.  If it is between files (which will be most of the time), you may 
+also choose to stop the backup for the time being, or you may choose to run a 
+Z system command line (which may contain multiple commands).  If you select 
+the 'system command' interruption, the BUSH Backup will be resumed upon exit 
+from your command string.  Your command line should not cause any characters 
+to be sent to the list device if you are having a printed report generated, 
+since BUSH will assume that everything is the way it left it when it resumes 
+the backup.  An obvious use of this capability is to run your disk format 
+utility to format more backup disks before continuing the backup.
+
+If you choose the 'stop for now' option, you may resume the backup from the 
+same point at any time by simply restarting BUSH.  If the 'BUSH!FIL.LST' file 
+is on a memory drive, you should copy it to drive A user area 15 for more 
+permanent storage.  BUSH will find it in either location when restarted.
+
+A BUSH backup operation may also be aborted in the middle of a disk by typing 
+a Ctrl-C.  BUSH will ask to make sure you really want to cancel the backup.
+If you say that you do, it will cancel the backup and erase the file list 
+file.
+
+Versions of BUSH
+
+There are three versions of BUSH, each with different video options:
+
+   BUSHG.COM - Uses Echelon's GRWLIB/GRXLIB Pull-down menus for function
+      and option selection, and windows for help and error messages.
+      Requires that your system support the TCAP Version 3.3 needed by
+      GRWLIB.
+   BUSHNx.COM - Does not use any GRWLIB routines.  Uses conventional menus
+      and standard ASCII pseudo-graphic displays.  Only requires TCAP
+      support for standard cursor-positioning, clear-to-end-of-line,
+      clear screen, and non-embedded dim/reverse video.
+   BUSHHx.COM - a 'hybrid' version which uses the speedier, more flexible
+      conventional menus for function and option selection, and uses the
+      more convenient and attractive window format for help and error
+      messages.  Requires TCAP 3.3 support.
+
+The 'N' and 'H' versions are further divided into two types, 'D' and 'R', for 
+DIM and REVERSE video, as the terminal's STANDOUT mode (that's the 'x' in the 
+names above).  BUSHG only comes in a DIM video version, because the Echelon 
+GRWLIB Pull-down menu routines are set up for DIM video, and don't look very 
+good in REVERSE video.
+
+Which one(s) to use?  If you don't have a terminal supported by a Version 3.3 
+TCAP, the choice is easy.  Pick the version of BUSHNx.COM that matches your 
+preferred, or only, standout mode, and enjoy.
+
+If you have a TCAP 3.3 terminal (WYSE-50/50+, TVI 955, probably others), it 
+depends on personal preference and terminal speed.  The window routines do a 
+LOT of reading from and writing to the screen, so a high terminal data rate 
+is important.  Below 9600 BPS, the window delays become fairly painful 
+(actually, it's kind of neat the first few times to watch the windows being 
+drawn, cleared, filled, and closed at these low data rates.  But the 
+fascination wears off quickly).  Even at 9600, it's slow.  At 19200 or 38400 
+BPS, the window version is easily reasonable (although still clearly slower 
+than the non-window version running one or two notches lower in terminal data 
+rate), and the windows ARE prettier.
+
+I found the Pull-down menus a little tiring after a while, due to the large 
+amount of moving around with the cursor keys required, so I added the 
+'hybrid' version, using windows for help and error messages, but using the 
+conventional menus, where the next function is always exactly one keypress 
+away, for function and option selection.
+
+So, play with each of them, then pick the one you like most as your 
+primary-use version.  Since BUSH gets its own name from the external FCB, you 
+can rename the version you select to BUSH.COM, or anything else you want to 
+call it.
+
+Since configuration of BUSH will not be done very frequently, the BUSH 
+Configuration Module only comes in one version--non-graphic, set up for DIM 
+video.  It looks okay on a REVERSE video terminal.
+
+In Case of Trouble
+
+The only known problem with BUSH right now is that the shell stack gets mixed 
+up if you run Z/VFILER or VMENU from within BUSH (via the 'System Command' 
+menu selection), and then run a system command from within Z/VFILER/VMENU.  
+In this case, you will sometimes be returned to BUSH rather than to the other 
+shell.  Interestingly, you can run system programs from within the other 
+shells (via the normal VMENU operation, or by Z/VFILER's 'macro' capability) 
+with no problems.  You just can't run them with the Z/VFILER 'Z' command, or 
+the corresponding VMENU selection.  If this happens, you will be returned to 
+BUSH, sometimes with the 'invalid shell invocation parameter' error message 
+from BUSH.  This error will not affect further operation of BUSH, but it is 
+an irritation, and I am trying to find what causes it.
+
+The Restoration Function also causes ZRDOS 1.7 to reallocate blocks on the 
+disk when recombining some fragmented files.  This is an intermittent 
+problem, and seems to be a function of the number of fragments the file was 
+broken up into and the size of the fragments.  I have not tested this on the 
+standard CP/M BDOS, or on other versions of ZRDOS.  Echelon has been informed 
+of the problem, and I hope they are working on a fix.
+
+Other error messages, and the various error status returns from the 
+subroutine programs, should be self-explanatory.  If you receive the 'invalid 
+shell invocation parameter' error under other conditions, or get error 
+messages that don't seem to match what is going on, please send me any 
+information available at the below-listed numbers.
+
+Please forward any bug reports, suggestions for improvements or additional 
+features, or any other useful comments, to me.  BUSH is definitely still in 
+the development stage, and I want to make it as useful as possible to the Z 
+community.
+
+Steve Dirickson		20 Nov 87
+Seattle's 'downspout' (ZNode #12): 206-325-1325
+ZNode Central:                     408-948-6656
+Voice: 206-697-1270
+

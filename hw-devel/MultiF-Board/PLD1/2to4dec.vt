@@ -1,0 +1,123 @@
+// Jed2vlog, ispLEVER version 1.07 
+// Header :
+//    File Name :
+//       2to4dec 
+//    Circuit Name :
+//       2to4dec 
+//    Last Update :
+//       Sat Apr 26 17:40:52 2014
+//    Device Information :
+//       PLD Type P16V8AS
+//    Delay Model Selected :TYP
+//    Jedec Information :
+//	ispLEVER Classic 1.7.00.05.28.13 Lattice Semiconductor Corp.
+//	JEDEC file for: P16V8AS V9.0
+//	Created on: Sat Apr 26 17:40:51 2014
+//	
+//	2to4dec.bls 
+//	
+// endHeader
+
+
+// Delay Assigments
+`timescale 1ns /100ps
+//----------------------------------------------------------------------//
+//                                                                      //
+//              MAIN PLD NETLIST MODULE                                 //
+//                                                                      //
+//----------------------------------------------------------------------//
+
+module 2to4dec(B,A,EN,PIN04,PIN05,PIN06,PIN07,PIN08,PIN09,PIN10,PIN11,PIN12,
+             PIN13,PIN14,Y1,Y0,PIN17,Y3,Y2,PIN20);
+	output Y1, Y0;
+	inout PIN12,PIN13,PIN14,PIN17, Y3, Y2;
+	input B, A, EN, PIN04, PIN05, PIN06, PIN07, PIN08, PIN09, PIN10, PIN11
+             , PIN20;
+	supply0 GND;
+	supply1 PWR;
+
+//Pin Assignments:
+//        PIN01 = B;
+//        PIN02 = A;
+//        PIN03 = EN;
+//        PIN15 = Y1;
+//        PIN16 = Y0;
+//        PIN18 = Y3;
+//        PIN19 = Y2;
+
+// Delay Parameters:
+//   TYP delay used
+parameter tpLH09 = 0:0:0;
+parameter tpHL09 = 0:0:0;
+parameter tpLH12 = 0:0:0;
+parameter tpHL12 = 0:0:0;
+parameter tpLH03 = 0:0:0;
+parameter tpHL03 = 0:0:0;
+parameter tpLH05 = 0:0:0;
+parameter tpHL05 = 0:0:0;
+parameter tpLH_inco_lump = 3:7:10;
+parameter tpHL_inco_lump = 3:7:10;
+parameter tpLH_oe = 10:10:10;
+parameter tpHL_oe = 10:10:10;
+parameter tpLH_oe_pterm = 10:10:10;
+parameter tpHL_oe_pterm = 10:10:10;
+
+//   Input Buffer:
+	andinv_2to4dec  INBUF01( INBUF01_o, INBUF01_ob, B);
+	andinv_2to4dec  INBUF02( INBUF02_o, INBUF02_ob, A);
+	andinv_2to4dec  INBUF03( INBUF03_o, INBUF03_ob, EN);
+	andinv_2to4dec  INBUF04( INBUF04_o, INBUF04_ob, PIN04);
+	andinv_2to4dec  INBUF05( INBUF05_o, INBUF05_ob, PIN05);
+	andinv_2to4dec  INBUF06( INBUF06_o, INBUF06_ob, PIN06);
+	andinv_2to4dec  INBUF07( INBUF07_o, INBUF07_ob, PIN07);
+	andinv_2to4dec  INBUF08( INBUF08_o, INBUF08_ob, PIN08);
+	andinv_2to4dec  INBUF09( INBUF09_o, INBUF09_ob, PIN09);
+	andinv_2to4dec  INBUF11( INBUF11_o, INBUF11_ob, PIN11);
+	andinv_2to4dec  INBUF12( INBUF12_o, INBUF12_ob, PIN12);
+	andinv_2to4dec  INBUF13( INBUF13_o, INBUF13_ob, PIN13);
+	andinv_2to4dec  INBUF14( INBUF14_o, INBUF14_ob, PIN14);
+	andinv_2to4dec  INBUF17( INBUF17_o, INBUF17_ob, PIN17);
+	andinv_2to4dec  INBUF18( INBUF18_o, INBUF18_ob, Y3);
+	andinv_2to4dec  INBUF19( INBUF19_o, INBUF19_ob, Y2);
+
+//   Product Terms (AND array):
+	and  #(tpLH03,tpHL03) PT000_0( PT000_0_o, INBUF02_ob, INBUF01_o, INBUF03_ob);
+	and  #(tpLH03,tpHL03) PT008_256( PT008_256_o, INBUF02_ob, INBUF01_ob, INBUF03_ob);
+	and  #(tpLH03,tpHL03) PT024_768( PT024_768_o, INBUF02_o, INBUF01_o, INBUF03_ob);
+	and  #(tpLH03,tpHL03) PT032_1024( PT032_1024_o, INBUF02_o, INBUF01_ob, INBUF03_ob);
+
+//   Sum Terms (OR arrray):
+	or  #(tpLH_inco_lump,tpHL_inco_lump) ST015( ST015_o, PT032_1024_o);
+	or  #(tpLH_inco_lump,tpHL_inco_lump) ST016( ST016_o, PT024_768_o);
+	or  #(tpLH_inco_lump,tpHL_inco_lump) ST018( ST018_o, PT008_256_o);
+	or  #(tpLH_inco_lump,tpHL_inco_lump) ST019( ST019_o, PT000_0_o);
+
+//   Macro Cells:
+
+//   Feedback Node:
+
+//   Output Buffer:
+	notif1  #(tpLH09,tpHL09) OUTBUF12( PIN12, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF13( PIN13, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF14( PIN14, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF15( Y1, ST015_o, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF16( Y0, ST016_o, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF17( PIN17, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF18( Y3, ST018_o, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF19( Y2, ST019_o, PWR);
+endmodule
+/************************************************************************
+*                                                                       *
+*   MODULE: ANDINV                                                      *
+*     Input Buffer with dual outputs.                                   *
+*                                                                       *
+*************************************************************************/
+module andinv_2to4dec(out,outb,in);
+output out,outb;
+input  in;
+parameter tpLH_iob = 0:0:0; 
+parameter tpHL_iob = 0:0:0; 
+        
+   and #(tpLH_iob,tpHL_iob) n1(out,in);
+   not #(tpLH_iob,tpHL_iob) n2(outb,in);
+endmodule

@@ -1,0 +1,53 @@
+	TITLE	"Z3MSGH - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3MSGH.Z80 Ver 1.1 by Richard Conn
+; Date    : 1 May 92
+; Version : 1.3
+; Module  : Z3MSGH
+; Abstract: This module contains the routine PUTSHM which sets
+;	the value of a specified shell message register with a
+;	given value.  The Register value must be in 0..2.
+; Revision:
+;  1.3 -  2 May 92 - Abort if No ENV/Message Buffer.		HFB
+;  1.2 - 15 Mar 87 - Original Ver 4 Release.			HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		PUTSHM
+
+;  External References
+
+	EXT		GETMSG, @PUT1
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PUTSHM
+; Entry:  B - Contains value of Shell Register (0..2)
+;	  A - Contains value to place in "B" shell register
+; Exit : - None, the specified register is changed
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+PUTSHM:	PUSH	HL		;save HL
+	PUSH	DE		;save DE
+	PUSH	AF		;save value
+	CALL	GETMSG		;get ptr to messages
+	JR	Z,PUTSHX	;1.3 ..quit if No ENV/Msg Buffer
+	LD	DE,13		;offset to registers
+	ADD	HL,DE
+	LD	E,B		;get register number
+	JP	@PUT1		; ..Offset and save byte
+
+PUTSHX:	POP	AF		;1.3 Restore Regs
+	POP	DE		;1.3
+	POP	HL		;1.3
+	RET			;1.3 ..and return to caller
+
+	END
+

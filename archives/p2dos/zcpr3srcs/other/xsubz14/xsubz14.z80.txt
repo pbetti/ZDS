@@ -1,0 +1,806 @@
+
+; XSUBZ VER 1.4
+
+;	Version 1.4 has been converted to ZILOG MNEUMONICS and will
+; assemble with Z80ASM & ZAS. Assemble to a .COM file with Z80ASM or
+; assemble to a .HEX file with ZAS, then use MLOAD. The file XSUBZ.COM
+; included in XSUBZ14.LBR loads to 100h, & XSUBZ8.COM loads to 8000H.
+;
+;	The bios vector is NO LONGER MODIFIED; the bios jump table is
+; modified instead. This will hopefully no longer cause problems for
+; .RSX programs & others which depend on an absolute address at 0001H.
+; A disk reset has been added to the warm boot emulator for those who
+; depend on a warm boot to provide a disk reset.
+;
+;	The $$$.SUB fcb inside ZCPR33 is utilized if it can be found;
+; else, drive A: is assumed. Also, the subquiet and subecho flags are
+; tested to determine the way XSUBZ echoes the command line & prompt.
+; In addition, an internal quiet option is available to eliminate the
+; assorted 'Xsubz ...' messages for those who prefer a less noisy
+; program. Just patch a 0FFH into the byte at 'entry'+ 0DH.(EG: at
+; 010DH for a program starting at the normal tpa address.)
+;
+;	The 'R' macro method of creating a bitmap has been retained
+; because I find it easier to use & more versatile than the methods
+; used in either ZEX (uses RELS.UTL & multiple assembler passes) or Z8E
+; (op code interpreter). With the 'R' macro, you can select only those
+; bytes which need the relocation offset added leaving imbedded data areas
+; & buffers untouched. If the use of this bitmap causes anyone a problem,
+; this code is PUBLIC DOMAIN & may be freely used, abused, or modified by
+; anyone with a text editor & assembler. (The preceeding sentence is
+; not a condemnation of some who have protested the use of this macro;
+; it is a suggestion to more experienced and/or proficient programmers
+; that I would welcome any improvements which anyone would care to make.)
+;
+;	Should anyone using this program experience any problems with
+; system crashes or incompatability with other self-relocating programs
+; which also modify the bios and/or bdos vectors; I would appreciate
+; any information which you could leave on the Sage Z-Node, Echelon's
+; Z-Node central, or Compuserve (73347,145).
+;
+;	Thanks to Howard Goldstein, Jay Sage, et al for the suggestions
+; for improvemants. (Note to Howard, I am working on the code to properly
+; intercept read console calls as well as the read console buffer call.)
+;
+;				Royce Shofner....6/17/87
+
+
+;	Version 1.2 adds support for ZCPR33'S xsub redirection flag
+; located at z3msg+2ch. (This feature was not available on the beta
+; test version of ZCPR33 which I was using when XSUBZ was written.)
+;
+;	Specifically, the relocated xsub processor will monitor the
+; ZCPR33 xsub redirection flag, and will not intercept read console
+; buffer calls if the flag contains a value of 2.
+;
+;	Both the quiet flag and the xsub flag are monitored to determine
+; whether or not to display a '[XSUBZ]' prompt at the beginning of the
+; current submit command line. If quiet flag is on or the xsub flag has
+; a value of 1 or 2, the prompt will be inhibited.
+;
+;	Also, if XSUBZ is already active & is invoked with a command
+; line option of 'R' or 'S', an internal redirection flag will be
+; 'R'eset or 'S'et. This will allow xsub redirection to be selectively
+; controlled by the submit file being processed by including the  command
+; 'XSUBZ S' or 'XSUBZ R' at the appropriate places.
+;
+;	Added some bullet proofing to the system vector restore routines
+; and added code to prevent invoking XSUBZ from the command line when a
+; submit file is not active. (XSUBZ will now only operate from within a
+; submit file, not manually from the keyboard.)
+;
+;				Royce Shofner....6/4/87
+
+;
+; This program is a replacement for DRI'S XSUB for use on systems
+; using ZCPR ver 3.3. Features include always look in A0: for the
+; $$$.SUB file, support for environment type 3, test for existence
+; of another memory resident program which has modified the bdos
+; vector, inclusion of bios jump vectors so that programs that do
+; direct bios calls don't go off the deep end, and automatic removal
+; of itself when $$$.SUB file is empty.
+;
+;				Royce Shofner....5/10/87
+	PAGE
+
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+
+CPMBASE	EQU	0
+BOOT	EQU	CPMBASE
+BDOS	EQU	BOOT+5
+TFCB	EQU	BOOT+5CH
+TBUFF	EQU	BOOT+80H
+TPA	EQU	BOOT+100H
+CTRL	EQU	' '-1		;CTRL CHAR MASK
+CR	EQU	CTRL AND 'M'
+LF	EQU	CTRL AND 'J'
+
+ORGADD	EQU	TPA		;CHANGE THIS IF YOU WISH TO
+				;HAVE AN INITIAL LOAD ADDRESS
+				;IN HIGH MEMORY
+
+DEFDMA	EQU	TBUFF
+
+;
+; Macro Definitions
+;
+
+OVERLAY	DEFL	FALSE	;(initially)
+
+;	Generate a label of the form ??Rnn to tag an
+;	address requiring relocation:
+
+RTAG	MACRO	LBL,VAL
+??R&LBL	EQU	VAL
+	ENDM
+
+;	Flag <INST> as a 3 byte relocatable instruction
+;	<INST> is of the form: <MNE	OP1[,OP2]>
+;	Examples: <LD  (FLAG),A>, <CALL  ROUTINE>, <LD  HL,ADDRESS>
+
+R	MACRO	INST
+@RLBL	DEFL	@RLBL+1
+	RTAG	%@RLBL,%2+$-@BASE
+	INST
+	ENDM
+
+;	Flag <INST> as a 4 byte relocatable instruction
+;	<INST> is of the form: <MNE	OP1,OP2>
+;	Examples: <LD  (SPSAVE),SP>, <LD  DE,(POINTER)>
+
+R4	MACRO	INST
+@RLBL	DEFL	@RLBL+1
+	RTAG	%@RLBL,%3+$-@BASE
+	INST
+	ENDM
+
+; During bit map construction, get the next R-tagged
+; address value:
+
+NXTRLD	MACRO	NN
+@RLD	DEFL	??R&NN
+@NXTRLD	DEFL	@NXTRLD	+ 1
+	ENDM
+
+	PAGE
+
+;***************************************************
+; THIS PROGRAM IS LOADED INTO 'LOW' MEMORY FIRST,
+; THEN THE RELOCATABLE SEGMENT IS MODIFIED AND
+; MOVED TO THE AREA JUST UNDER THE ADDRESS AT 0006H.
+;***************************************************
+
+	ORG	ORGADD
+
+ENTRY:
+	JP	START
+	DB	'Z3ENV'		;STANDARD Z33 HEADER
+	DB	3
+Z3EADR:	DW	0
+	DW	ENTRY
+
+QTFLAG:
+	DB	0		;CHANGE TO 0FFH TO INHIBIT THE
+				;'Xsubz...' MESSAGES
+ZSUBMSG:
+	DB	CR,LF,'(Xsubz already loaded)$'
+
+RSTMSG:
+	DB	CR,LF,'(Xsubz is off)$'
+
+SETMSG:
+	DB	CR,LF,'(Xsubz is on)$'
+
+NOSUBMSG:
+	DB	CR,LF,'Xsubz requires an active submit file$'
+
+ZSUBHDR:
+	DB	'[XSUBZ]$'
+
+START:
+	LD	HL,(BDOS+1)
+	LD	DE,ZSUBHDR
+	INC	HL
+	INC	HL
+	INC	HL
+	LD	B,8
+CMPLOOP:			;TEST FOR XSUBZ ALREADY LOADED
+	LD	A,(DE)
+	CP	(HL)
+	JR	NZ,MOVLOOP	;IF NOT ALREADY LOADED
+	INC	HL
+	INC	DE
+	DJNZ	CMPLOOP
+
+	LD	A,(TFCB+1)	;IS THERE A CMD TAIL OPTION ?
+	CP	'R'		;RESET ?
+	JR	NZ,TSTSET	;IF NOT, TEST FOR SET OPT.
+	LD	(HL),2		;RESET XSUB REDIRECTION
+	LD	DE,RSTMSG
+
+PRINT:				;PRINT MESSAGE & ABORT
+	LD	A,(QTFLAG)	;GET QUIET MESSAGE FLAG
+	OR	A
+	RET	NZ		;DON'T PRINT MSG IF QTFLAG SET
+PRINT1:
+	LD	C,9
+	JP	BDOS
+
+TSTSET:
+	CP	'S'		;SET ?
+	JR	NZ,ZSUBABORT
+	LD	(HL),0		;SET XSUB REDIRECTION
+	LD	DE,SETMSG
+	JR	PRINT
+
+ZSUBABORT:
+	LD	DE,ZSUBMSG	;PRINT MESSAGE & ABORT
+	JR	PRINT
+
+MOVLOOP:
+	LD	A,(QTFLAG)	;get quiet message flag
+	LD	(QTFLG),A	;copy into relocated segment
+	LD	HL,(Z3EADR)	;get z3 environment
+	LD	DE,28H		;quiet flag offest= 28h
+	ADD	HL,DE
+	LD	(ZQFLAG),HL	;store quietflag addr
+	DEC	HL		;move pointer to z3msg addr
+	DEC	HL
+	DEC	HL
+	DEC	HL
+	DEC	HL
+	LD	D,(HL)		;D = z3msg hi byte
+	DEC	HL
+	LD	E,(HL)		;E = z3msg low byte
+	LD	HL,3
+	ADD	HL,DE		;HL = cmd status flag addr
+	LD	(HL),0		;set cmd status to normal
+	LD	HL,2CH		;xsubflag offset = 2ch
+	ADD	HL,DE		;HL = xsub flag pointer
+
+	LD	(HL),0		;enable xsub redirection
+	LD	(XSUBOFF),HL	;store xsub flag pointer
+
+	INC	HL		;point to running sub flag
+	LD	A,(HL)		;get submit flag
+	OR	A		;is it set ?
+	JR	NZ,XSUBMOV	;continue if $$$.SUB file active
+	LD	DE,NOSUBMSG	;else....
+	JR	PRINT1		;print no submit file message
+
+XSUBMOV:
+	CALL	GETSFCB		;get ZCPR33 $$$.SUB fcb address
+	JR	Z,XSMOV1	;if $$$.SUB fcb not found
+	LD	HL,SUBFCB	;point to internal $$$.SUB fcb
+	EX	DE,HL
+	LD	BC,12
+	LDIR			;Copy into internal buffer
+
+	CALL	GETCCP		;get addr of submit noise flag
+	LD	DE,9
+	ADD	HL,DE
+	BIT	2,(HL)		;subquiet mode ?
+	LD	A,7FH
+	JR	NZ,ECHOMODE	;if so, reset bit 7
+	BIT	3,(HL)		;subecho mode ?
+	JR	NZ,XSMOV1	;if so, we're ok
+	XOR	A		;else, reset the echo flag
+
+ECHOMODE:
+	LD	(SUBECHO),A
+
+XSMOV1:
+	LD	HL,BDOS+2	;find top of memory
+	LD	A,(BOOT+2)	;get bios page
+	SUB	(HL)		;compute distance from top to bios
+	CP	14		;14 pages is normal size of bdos
+	JR	Z,CCPOK		;if top of mem = bdos
+	LD	A,PAGES-8	;new offset if ccp not present
+	LD	(NPAGES),A
+
+CCPOK:
+	LD	A,(HL)		;page address
+				;Form destination...
+NPAGES	EQU	$+1
+	SUB	PAGES		;...address in
+	LD	D,A		;DE pair.
+	LD	E,0
+	PUSH	DE		;save on stack
+	LD	HL,@BASE		;source address
+	LD	BC,SEGLEN
+	LDIR
+
+	PAGE
+;The segment is now moved to high memory, but not
+;properly relocated.  The bit table which specifies
+;which addresses need to be adjusted is located
+;just after the last byte of the source segment,
+;so (HL) is now pointing at it.
+
+MOVDONE:
+	POP	DE		;beginning of newly moved code.
+	PUSH	DE		;save jump address
+	LD	BC,SEGLEN	;length of segment
+	LD	HL,BITMAP	;point to reloc bitmap
+	PUSH	HL		;save pointer to reloc info
+	LD	A,D		;offset page address
+	SUB	HIGH[@BASE]
+	LD	H,A
+
+;Scan through the newly moved code, and adjust any
+;page addresses by adding (H) to them.	The word on
+;top of the stack points to the next byte of the
+;relocation bit table.	Each bit in the table
+;corresponds to one byte in the destination code.
+;A value of 1 indicates the byte is to be adjusted.
+;A value of 0 indicates the byte is to be unchanged.
+;
+;Thus one byte of relocation information serves to
+;mark 8 bytes of object code.  The bits which have
+;not been used yet are saved in L until all 8
+;are used.
+
+FIXLOOP:
+	LD	A,B
+	OR	C		;test if finished
+	JR	Z,FIXDONE
+	DEC	BC		;count down
+	LD	A,E
+	AND	07H		;on 8-byte boundry?
+	JR	NZ,NEXTBIT
+
+;Get another byte of relocation bits
+
+NEXTBYT:
+	EX	(SP),HL
+	LD	A,(HL)
+	INC	HL
+	EX	(SP),HL
+	LD	L,A		;save in register L
+
+NEXTBIT	LD	A,L		;remaining bits from L
+	RLA			;next bit to CARRY
+	LD	L,A		;save the rest
+	JR	NC,NEXTADR
+
+;CARRY was = 1.  Fix this byte.
+	LD	A,(DE)
+	ADD	A,H		;(H) is the page offset
+	LD	(DE),A
+
+NEXTADR	INC	DE
+	JR	FIXLOOP
+
+;Finished.  Jump to the first address in the new
+;segment in high memory.
+;
+;First adjust the stack.  One garbage word was
+;left by fixloop.
+
+FIXDONE:
+	POP	BC		; discard relocation tbl addr
+	RET			; top of stack = relocated code
+
+;*************************************************
+; THE FOLLOWING CODE IS EXTRACTED FROM Z33LIB.REL
+;*************************************************
+
+GETSFCB:	
+	CALL	SUBON
+	RET	Z
+	PUSH	HL
+	CALL	GETECP
+	LD	DE,0BH
+	ADD	HL,DE
+	EX	DE,HL
+	XOR	A
+	DEC	A
+	POP	HL
+	RET
+SUBON:	
+	CALL	Z33CHK
+	JR	Z,SUBOPT
+	XOR	A
+	RET
+SUBOPT:	
+	PUSH	HL
+	PUSH	DE
+	CALL	GETCCP
+	LD	DE,9
+	ADD	HL,DE
+	BIT	0,(HL)
+	POP	DE
+	POP	HL
+	RET
+Z33CHK:	
+	PUSH	HL
+	PUSH	DE
+	CALL	GETCCP
+	PUSH	HL
+	INC	HL
+	INC	HL
+	INC	HL
+	LD	A,(HL)
+	POP	HL
+	SUB	18H
+	JR	NZ,Z33XIT
+	LD	DE,5
+	ADD	HL,DE
+	LD	A,(HL)
+	AND	0F0H
+	SUB	'0'
+Z33XIT:	
+	POP	DE
+	POP	HL
+	RET
+GETECP:	
+	PUSH	DE
+	PUSH	AF
+	CALL	GETCCP
+	LD	DE,19H
+	ADD	HL,DE
+	LD	E,(HL)
+	LD	D,0
+	INC	DE
+	INC	DE
+	INC	HL
+	XOR	A
+	SBC	HL,DE
+ECPLP:	
+	ADD	HL,DE
+	CP	(HL)
+	JR	NZ,ECPLP
+	INC	HL
+	INC	HL
+	POP	AF
+	POP	DE
+	RET
+GETCCP:	
+	PUSH	DE
+	LD	HL,(BOOT+1)
+	LD	DE,0E9FDH	;-5635
+	ADD	HL,DE
+	POP	DE
+	RET
+
+	PAGE
+
+;Align location counter to next page boundry
+	ORG	[$+0FFH] AND 0FF00H
+
+@BASE	EQU	$
+@RLBL	DEFL	0
+
+; The segment to be relocated goes here.
+; Any position dependent (3-byte) instructions
+; are handled by the "R" macro.
+; Any position dependent (4-byte) instructions
+; are handled by the "R4" macro.
+; For readability, the macro name "R" is placed in
+; column 2.  The preceding blank must be present to
+; distinguish it from a label.
+
+;***********************************************
+;THIS IS WHERE THE RELOCATABLE CODE GOES
+;***********************************************
+
+ R	<JP	XSUBLD>		;INITIAL ENTRY POINT
+	RET			;6 BYTE OFFSET IS TO MIMIC BDOS
+	NOP
+	NOP
+XSUBJP:				;PSEUDO BDOS ENTRY POINT
+ R	<JP	XSBDOS>
+
+XPROMPT:
+	DB	'[XSUBZ]$'
+
+ZSUBOFF:
+	DB	0			;XSUB REDIRECTION FLAG
+
+ACTMSG:
+	DB	CR,LF,'(Xsubz active)$'
+
+XSBOOT:					;EMULATE WARM BOOT
+ R	<LD	SP,LCLSTACK>
+
+QTFLG	EQU	$+1			;QUIET MESSAGE FLAG
+	LD	A,0
+	OR	A
+	JR	NZ,DMASET		;SKIP MSG IF QTFLG SET
+	LD	C,9
+ R	<LD	DE,ACTMSG>
+ R	<CALL	BDOSJP>
+
+DMASET:
+	LD	HL,DEFDMA
+ R	<LD	(DMASAV),HL>		;SET DEFAULT DMA ADDRESS
+	LD	C,13			;RESET DISK SUBSYSTEM
+ R	<CALL	BDOSJP>			;ALSO SETS DEFAULT DMA
+
+ R	<LD	HL,XSUBJP>		;REFRESH BDOS VECTOR
+	LD	(BDOS+1),HL
+
+RETSAV	EQU	$+1
+	JP	0
+
+XSUBLD:					;LOAD INITIAL ADDRESSES
+	LD	HL,(BOOT+1)		;GET BIOS WARM BOOT ADDR
+	INC	HL			;SKIP JUMP OP-CODE
+ R	<LD	BC,XSBOOT>		;NEW WARM BOOT ADDR IN BC
+	LD	E,(HL)
+	LD	(HL),C
+	INC	HL
+	LD	D,(HL)
+	LD	(HL),B
+ R4	<LD	(BIOSAV),DE>		;SAVE ORIGINAL WARM BOOT ADDR
+	LD	HL,(BDOS+1)
+ R	<LD	(BDOSJP+1),HL>
+ R	<LD	HL,XSUBJP>
+	LD	(BDOS+1),HL
+	POP	HL
+ R	<LD	(RETSAV),HL>
+	JP	(HL)
+
+BDOSJP:
+	JP	BDOS			;REAL BDOS, NOT ADDR AT 0006H
+
+XSBDOS:					;PSEUDO BDOS ENTRY POINT
+	LD	A,C
+	CP	10			;READ CONSOLE ?
+	JR	Z,XSTART
+	CP	13			;RESET DISK ?
+	JR	NZ,DMATST
+	LD	HL,DEFDMA		;SAVE DEFAULT DMA ADDR
+ R	<LD	(DMASAV),HL>
+	JR	BDOSJP			;& DO THE RESET
+DMATST:
+	CP	26			;SET DMA ?
+	JR	NZ,BDOSJP		;JUST DO BDOS FUNCTION
+
+SETDMA:
+ R4	<LD	(DMASAV),DE>		;SAVE THE DMA ADDRESS
+	JR	BDOSJP			;& LET BDOS DO IT
+NEWDMA:
+	LD	C,26			;SET NEW DMA ADDR
+ R	<LD	DE,XSUBDMA>
+ R	<CALL	BDOSJP>
+	RET
+OLDDMA:
+	LD	C,26			;RESTORE OLD DMA ADDR
+DMASAV	EQU	$+1
+	LD	DE,DEFDMA
+ R	<CALL	BDOSJP>
+	RET
+DISKOP:
+	PUSH	BC
+	PUSH	DE
+ R	<CALL	NEWDMA>
+	POP	DE
+	POP	BC
+ R	<CALL	BDOSJP>
+	PUSH	AF
+ R	<CALL	OLDDMA>
+	POP	AF
+	RET
+
+OPNFIL:
+	LD	C,15
+ R	<LD	DE,SUBFCB>
+ R	<CALL	DISKOP>
+	INC	A
+	RET
+
+XSTART:
+ R	<LD	A,(ZSUBOFF)>	; GET INTERNAL REDIR FLAG
+
+XSUBOFF	EQU	$+1		; XSUB FLAG ADDRESS
+	LD	HL,0		; GET XSUBFLAG TO HL
+	CP	2		; 2 = XSUB OFF
+	JR	Z,NOZSUB	; IF REDIRECTON OFF
+
+	LD	A,(HL)		; GET XSUB FLAG VALUE
+	CP	2		; 2 = XSUB OFF
+	JR	NZ,ZPROMPT	; TEST FOR QUIET FLAG & CONTINUE
+
+NOZSUB:
+	INC	HL		; POINT TO RUNNING SUB FLAG
+	LD	A,(HL)
+	OR	A		; IS SUBMIT FILE ACTIVE ?
+	JR	NZ,BDOSJP	; IF YES, JUST DO BDOS CALL
+
+	PUSH	BC		; ELSE, SAVE BDOS CALL INFO
+	PUSH	DE
+ R	<CALL	GETUSER>	; GET & SAVE CURRENT USER
+	POP	DE
+	POP	BC
+ R	<JP	EXIT1>		; & EXIT FROM XSUB
+
+ZPROMPT:
+	PUSH	DE
+	CP	1		; 1 = DON'T SHOW XSUBZ PROMPT
+	JR	Z,XSTART1
+
+SUBECHO	EQU	$+1		; FF= ECHO,7F= QUIETFLAG,0= NOECHO
+	LD	A,0FFH		; GET SUB ECHO FLAG
+	OR	A
+	JR	Z,XSTART1	; NO PROMPT IF NOT ECHO MODE
+	INC	A		; ECHO MODE ?
+	JR	Z,PROMPT
+
+ R	<CALL	QTEST>		; TEST QUIET FLAG
+	JR	NZ,XSTART1	; SKIP PROMPT IF QUIET SET
+
+PROMPT:
+ R	<LD	DE,XPROMPT>	; DISPLAY XSUBZ PROMPT
+	LD	C,9
+ R	<CALL	BDOSJP>
+
+XSTART1:
+ R	<CALL	GETUSER>	;SAVE CURRENT USER & SET USER 0
+ R	<LD	HL,SUBFCB+12>	;INIT FCB
+ R	<LD	DE,SUBFCB+13>
+	LD	BC,21
+	LDIR
+
+ R	<CALL	OPNFIL>
+	POP	DE
+	LD	C,10		; READ CONSOLE
+	JR	Z,EXIT1		; NO $$$.SUB FILE FOUND
+	PUSH	DE
+ R	<LD	A,(SUBFCB+15)>
+	OR	A
+ R	<JP	Z,EXIT3>	; ZERO LENGTH FILE
+	DEC	A
+ R	<LD	(SUBFCB+32),A>
+	LD	C,20		; READ NXT REC.
+ R	<LD	DE,SUBFCB>
+ R	<CALL	DISKOP>
+
+ R	<LD	A,(SUBECHO)>	; DO WE ECHO THE COMMAND LINE ?
+	OR	A
+	JR	Z,NOECHO
+	INC	A
+	JR	Z,CMDECHO
+ R	<CALL	QTEST>
+	JR	NZ,NOECHO
+
+CMDECHO:			; ECHO THE COMMAND LINE TO CONSOLE
+ R	<LD	HL,XSUBDMA>
+	LD	E,(HL)
+	LD	D,0
+	ADD	HL,DE
+	INC	HL
+;	MVI	M,CR
+;	INX	H
+;	MVI	M,LF
+;	INX	H
+	LD	(HL),'$'
+	LD	C,9		;PRINT $$$.SUB FILE LINE
+ R	<LD	DE,XSUBDMA+1>
+ R	<CALL	BDOSJP>
+
+NOECHO:
+	POP	HL		;GET THE CON: BUFFER ADDR BACK
+ R	<LD	DE,XSUBDMA>
+	LD	A,(DE)
+	CP	(HL)		;TEST FOR TOO MANY BYTES IN STRING
+	JR	C,MOVSUB	;IF OK, THEN MOVE IT TO CON: BUFFER
+	LD	A,(HL)		;ELSE, MAKE STRING COUNT = MAX COUNT
+	LD	(DE),A
+
+MOVSUB:
+	INC	HL		;GET PAST MAX COUNT BYTE
+	EX	DE,HL		;MOVE SUBDMA STRING TO CONBUF
+	LD	B,0
+	LD	C,(HL)		;NO OF BYTES TO MOVE
+	INC	BC		;ADD ONE FOR BYTE COUNT BYTE
+	LDIR
+
+	LD	C,16		;CLOSE FILE
+ R	<LD	DE,SUBFCB>
+	LD	HL,0EH
+	ADD	HL,DE
+	LD	(HL),0
+ R	<LD	A,(SUBFCB+32)>
+	DEC	A
+ R	<LD	(SUBFCB+15),A>
+	OR	A
+	JR	NZ,EXIT0
+EXIT:
+	LD	C,19		;DELETE FILE
+EXIT0:
+ R	<CALL	DISKOP>
+	JR	EXIT2
+EXIT1:
+ R	<LD	HL,XSUBJP>
+	LD	A,(BDOS+2)	;GET HIGH BYTE OF BDOS VECTOR
+	CP	H		;IS IT THE SAME PAGE ?
+	JR	NZ,EXIT4	;DON'T RESTORE VECTORS IF NOT
+
+	PUSH	DE		;RESTORE SYSTEM VECTORS
+BIOSAV	EQU	$+1
+	LD	DE,0		;DE = ORIGINAL WARM BOOT ADDR
+	LD	HL,(BOOT+1)
+	INC	HL		;SKIP PAST JUMP OP-CODE
+	LD	(HL),E		;RESTORE WARM BOOT ADDR
+	INC	HL
+	LD	(HL),D
+ R	<LD	HL,(BDOSJP+1)>	;RESTORE BDOS VECTOR
+	LD	(BDOS+1),HL
+	POP	DE
+
+EXIT4:
+ R	<CALL	BDOSJP>		;DO ORIGINAL BDOS CALL
+
+EXIT2:
+USRSAV	EQU	$+1		;RESTORE USER
+	LD	E,0
+	LD	C,32
+ R	<JP	BDOSJP>
+
+EXIT3:
+	PUSH	BC		;SAVE BDOS CALL TYPE
+ R	<CALL	EXIT>		;DELETE $$$.SUB
+	POP	BC
+	POP	DE
+	JR	EXIT1		;RESTORE SYSTEM VECTORS
+
+GETUSER:
+	LD	E,0FFH		; GET USER
+	LD	C,32
+ R	<CALL	BDOSJP>
+ R	<LD	(USRSAV),A>
+	LD	E,0		; SET USER 0
+	LD	C,32
+ R	<JP	BDOSJP>
+
+QTEST:				; TEST QUIET FLAG
+ZQFLAG	EQU	$+1		; QUIET FLAG ADDRESS
+	LD	A,(0)
+	OR	A		; QUIET FLAG ON ?
+	RET
+
+SUBFCB:
+	DB	1
+	DB	'$$$     SUB'
+	DS	0015H
+
+	PAGE
+
+OVERLAY	DEFL	$		;Bit table may start here
+
+XSUBDMA:
+	DS	128+3		;ROOM FOR DMA BUFF +CR,LF,NUL
+				;PLUS WHATEVER'S LEFT OVER
+
+	ORG	[$+0FFH] AND 0FF00H	; Org to next page boundry.
+LCLSTACK:
+
+;*************************************************
+;End of segment to be relocated.
+
+PAGES	EQU	[$-@BASE]/256+8;	CCP = 8 pages.
+
+	IF	OVERLAY	NE FALSE
+	;cause relocation map to slide down into
+	;unused DS area:
+
+SEGLEN	EQU	OVERLAY-@BASE
+	ORG	@BASE+SEGLEN
+	ELSE
+
+;relocation bit map starts here:
+
+SEGLEN	EQU	$-@BASE
+	ENDIF	;overlay
+
+BITMAP	EQU	$
+
+; Build the relocation information into a
+; bit map following the code.
+
+@X	DEFL	0
+@BITCNT	DEFL	0
+@RLD	DEFL	??R1
+@NXTRLD	DEFL	2
+	RTAG	%@RLBL+1,0FFFFH	;define one more symbol
+
+	REPT	SEGLEN+8
+	IF	@BITCNT>@RLD
+	NXTRLD	%@NXTRLD	;;next value
+	ENDIF
+	IF	@BITCNT=@RLD
+@X	DEFL	@X OR 1		;;set low bit
+	ENDIF
+@BITCNT	DEFL	@BITCNT	+ 1
+	IF	@BITCNT	MOD 8 =	0
+	DB	@X		;;DEFINE THE BYTE
+@X	DEFL	0		;;clear hold variable for more
+	ELSE
+@X	DEFL	@X SHL 1	;;not 8 yet. move over.
+	ENDIF
+	ENDM
+
+	END
+

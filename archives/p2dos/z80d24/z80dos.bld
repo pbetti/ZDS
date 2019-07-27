@@ -1,0 +1,239 @@
+{ The following was captured from the screen as an example }
+{ of how to build a Z80DOS system from a CP/M system.	   }
+{ Comments are in "{}" }
+
+{ First run TELL.COM and write down the address for beginning of BDOS: }
+
+A>tell
+
+This is a utility that tells you where
+your CCP starts, what your BDOS entry add-
+ress is, and where your CBIOS jump table
+begins, as well as other useful info.
+
+Your CCP starts at:			CD00H.
+Your BDOS entry address is:		D506H.	 { <-- write down }
+Your CBIOS jump table begins at:	E300H.
+
+{ Detail left out }
+
+List status routine:			F502H.
+Sector translate routine:		F601H.
+
+
+
+
+{ Next, edit and assemble Z80DOS.Z80 to a hex file: }
+
+A>z80asm z80dos/h
+
+Z80ASM Copyright (C) 1983-86 by SLR Systems Rel. 1.31 #SB1006
+
+ Z80DOS/H
+
+End of file Pass 1
+ 0 Error(s) Detected.
+ 3546 Absolute Bytes. 370 Symbols Detected.
+
+A>dir *.hex
+A: Z80DOS   HEX
+
+
+
+
+{ Use MOVCPM.COM to create an image of your operating system: }
+
+A>dir movcpm.*
+A: MOVCPM   COM
+
+A>movcpm 64 *
+CONSTRUCTING 64K CP/M VERS. 2.2
+READY FOR "SYSGEN" OR
+"SAVE 46 CPM64.COM"		{ <-- write down number after "SAVE" }
+A>
+A>save 46 cpm64.com
+A>
+A>dir cpm64.*
+A: CPM64    COM
+
+{ Write down the number (46 here) given by your MOVCPM.COM. }
+{ You will use it later to save the new image.		    }
+
+
+
+{ Now use DDT.COM to patch CPM.COM with Z80DOS.HEX: }
+
+A>ddt cpm64.com
+DDT VERS 2.2
+NEXT  PC
+2F00 0100
+
+{ First look for beginning of BDOS image.  Should be near 1500: }
+
+-d1470
+1470 DE 01 7A E3 CD A7 DC C3 86 E3 42 41 44 20 4C 4F ..z.......BAD LO
+1480 41 44 00 43 4F 4D CD 66 E0 CD 5E DE 3A CE E3 D6 AD.COM.f..^.:...
+1490 20 21 F0 E3 B6 C2 09 DE C3 82 DF 00 00 00 00 00  !..............
+14A0 00 00 00 00 00 00 00 00 00 00 00 00 00 24 24 24 .............$$$
+14B0 20 20 20 20 20 53 55 42 00 00 00 00 00 00 00 00	  SUB........
+14C0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+14D0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+14E0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+14F0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+1500 22 16 00 01 92 D0 C3 11 E4 00 00 99 E4 9E E4 A3 "...............
+1510 E4 EB 22 43 E7 EB 7B 32 D6 F1 21 00 00 22 45 E7 .."C..{2..!.."E.
+1520 39 22 0F E7 31 41 E7 AF 32 E0 F1 32 DE F1 21 74 9"..1A..2..2..!t
+
+{ "$$$	   SUB" denotes end of CCP and beginning of BDOS.  C3 "jump" }
+{  instruction at 1506 in this example is the actual start of BDOS.  }
+{ The numbers from 1500 to 1505 here are the CP/M serial number,     }
+{  which must be preserved.					     }
+
+{ Calculate end of BDOS image by adding E00 to start of serial number, }
+{  and write it down.						       }
+
+-h1500,e00
+2300 0700
+
+{ I got 2300 hex as the start of BIOS, and end of BDOS. }
+
+{ Take a look at end of BDOS: }
+
+-d2280
+2280 3A E0 F1 B7 CA 91 F1 77 3A DF F1 32 D6 F1 CD 45 :......w:..2...E
+2290 F0 2A 0F E7 F9 2A 45 E7 7D 44 C9 CD 51 F0 3E 02 .*...*E.}D..Q.>.
+22A0 32 D5 F1 0E 00 CD 07 EF CC 03 EE C9 E5 00 00 00 2...............
+22B0 00 80 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+22C0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+22D0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+22E0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+22F0 00 00 CD 06 F2 B7 CA F2 F1 CD 09 F2 FE 03 C0 C7 ................
+2300 C3 CE FC C3 58 F2 C3 20 F3 C3 AA F3 C3 CB F4 C3 ....X.. ........
+2310 F2 F4 C3 52 F5 C3 4C F5 C3 76 F5 C3 98 F5 C3 B3 ...R..L..v......
+2320 F5 C3 B8 F5 C3 BD F5 C3 C2 F5 C3 CD F5 C3 02 F5 ................
+2330 C3 01 F6 C3 4B F6 C3 1F F6 C3 2C F6 C3 38 F6 31 ....K.....,..8.1
+
+{ The series of C3 "jump" instructions at 2300 indicate the   }
+{  start of BIOS.  Now zero out the old BDOS from beginning   }
+{  of BDOS to just before BIOS (1506 to 22ff in this example) }
+
+-f1506,22ff,0
+
+{ Check your work: }
+
+-d1500,153f
+1500 22 16 00 01 92 D0 00 00 00 00 00 00 00 00 00 00 "...............
+1510 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+1520 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+1530 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+
+{ It's zeroed out except for the serial number }
+
+{ Now load in Z80DOS }
+
+-iz80dos.hex
+
+{ Calculate offset, using the beginning of the BDOS image in CPM.COM }
+{  and the beginning of actual BDOS from TELL.COM.  Write down the   }
+{  offset value (3100 here):					     }
+
+-h1506,e406
+F90C 3100
+
+{ Now read in Z80DOS.HEX using the offset: }
+
+-r3100
+NEXT  PC
+2F00 0000
+
+{ NEXT PC is the same as when CPM.COM read in, indicates }
+{ Z80DOS.HEX successfully read in.  Check our work:	 }
+
+-d1500
+1500 22 16 00 01 92 D0 C3 14 E4 00 00 81 E6 97 E6 86 "...............
+1510 E6 06 F2 03 79 32 7F F1 21 00 00 22 80 F1 AF 32 ....y2..!.."...2
+1520 82 F1 32 83 F1 ED 73 A1 F1 31 E3 F1 DD E5 D5 DD ..2...s..1......
+1530 E1 21 30 F1 E5 79 FE 69 CA 12 F1 FE 68 CA 1F F1 .!0..y.i....h...
+1540 FE 37 CA 28 F1 FE 36 CA DB F0 FE 29 D0 21 59 E4 .7.(..6....).!Y.
+1550 06 00 09 09 7E 23 66 6F E9 03 F2 AB E4 BA E4 BD ....~#fo........
+1560 E4 C2 E4 C6 E4 CA E4 E4 E4 E9 E4 C2 E5 17 E6 EE ................
+1570 E4 94 E7 98 E7 9C E8 FC EC 4C ED BC E7 E3 E7 EF .........L......
+1580 E7 B5 EE 13 EF DB ED FA E7 02 E8 09 E8 9D EA 0F ................
+1590 E8 00 EB 14 E8 19 E8 21 E8 26 E8 AB EE 08 EF 34 .......!.&.....4
+15A0 E8 3C E8 4C E8 B9 E4 B9 E4 08 EF CD 66 E5 CD A6 .<.L........f...
+15B0 E5 38 03 CD 0E E5 32 80 F1 C9 7B 18 51 CD 15 F2 .8....2...{.Q...
+
+{ Beginning of BDOS looks ok, check beginning of BIOS }
+
+-d22c0
+22C0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+22D0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+22E0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+22F0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+2300 C3 CE FC C3 58 F2 C3 20 F3 C3 AA F3 C3 CB F4 C3 ....X.. ........
+2310 F2 F4 C3 52 F5 C3 4C F5 C3 76 F5 C3 98 F5 C3 B3 ...R..L..v......
+2320 F5 C3 B8 F5 C3 BD F5 C3 C2 F5 C3 CD F5 C3 02 F5 ................
+2330 C3 01 F6 C3 4B F6 C3 1F F6 C3 2C F6 C3 38 F6 31 ....K.....,..8.1
+2340 F6 F6 1D F7 37 F7 C5 F9 F3 F9 F4 F9 F5 F9 F7 F9 ....7...........
+2350 AD F9 C3 E4 F2 C3 E0 F3 31 00 FC 11 00 FC D5 DD ........1.......
+2360 E1 01 1F 00 D3 F6 2A 1B 00 ED B0 FD 21 1D F7 DD ......*.....!...
+2370 36 02 02 DD 36 03 08 DD 36 0D 81 DD 36 06 DC CD 6...6...6...6...
+
+{ BIOS wasn't overwritten, so quit DDT and save the new image, }
+{ using the same number given by MOVCPM.COM above:	       }
+
+-g0
+A>
+A>save 46 z80dos.com
+A>
+A>dir z8*.*
+A: Z80DOS   COM
+
+
+
+{ Now write the image to the system tracks of a junk disk }
+
+A>sysgen z80dos.com
+SYSGEN VER 2.0 MD1.2
+DESTINATION DRIVE NAME (OR RETURN TO REBOOT)a
+DESTINATION ON A, THEN TYPE RETURN
+FUNCTION COMPLETE
+DESTINATION DRIVE NAME (OR RETURN TO REBOOT)
+A>
+
+
+
+{ Test the new operating system }
+
+{ Check reboot }
+
+A>^C
+A>
+
+{ Reboot okay, try some carriage returns }
+
+A>
+A>
+A>
+
+{ If carriage return crashes system, you may have overwritten }
+{  the serial number at the beginning of BDOS.		      }
+
+{ Try some commands }
+
+A>dir
+A: Z80DOS   COM : SYSGEN   COM
+
+A>zip
+ZIP?
+
+A>
+
+{ If reboot, carriage return and commands work, CCP, BDOS, and BIOS are   }
+{ all at least operational.  Test the new system for a couple of days	  }
+{ before relying heavily on it.  Use DU.COM's Map command on your new	  }
+{ system disk to check the directory tracks.  When you are satisfied that }
+{ the new system is safe, use SYSGEN as above to install Z80DOS on your   }
+{ regular system disks. }
+
+

@@ -1,0 +1,375 @@
+     ZRDOS Version 1.2 Additions and Modifications to ZRDOS
+
+
+                      ZRDOS 1.2 ERROR CODES
+
+     Inorder to make more efficent use of code space,  the  error
+messages  have been removed from ZRDOS 1.2 and replaced with  the
+error codes described below.
+
+
+ZRDOS Error 1 - A disk read error occured.
+
+     A  ZRDOS  error  1 message is given whenever  any  error  is
+detected  during the reading or writing of a sector on the  disk.
+After the message is given, the Z-System waits for console input.
+If <ENTER> is pressed the bad sector is ignored and the operation
+continues. If <CTL-C> is pressed, the operation (and the program)
+is  aborted,  a warm boot is done,  and the system returns to the
+command level.
+
+     NOTE: In the case of a write operation, pressing <ENTER> can
+jeopardize  the integrity of data on the diskette  being  written
+to.
+                   ---------------------------
+
+ZRDOS Error 2 - A drive selection error occured.
+
+     A  ZRDOS error 2 message is given when an attempt is made to
+select  a  drive  which is not valid on  the  system.  After  the
+message  is  given, a warm boot will occur and  the  system  will
+return to the command level.
+
+                   ---------------------------
+
+ZRDOS Error 3 - A read only disk error occured.
+
+     A  ZRDOS error 3 message is given when an attempt is made to
+write on a disk that has been set to "read only" status.  A  disk
+can  be set to "read only" status with the SRO utility program or
+a standard system call.  After a error 3 message is given, a warm
+boot will occur and the system will return to the command level.
+
+                   ---------------------------
+
+ZRDOS Error 4 - A read only file error occured.
+
+     A  ZRDOS error 4 message is given when an attempt is made to
+write to,  rename, or erase a file that is marked as "read only".
+Once  the  message is given,  a warm boot occurs and  the  system
+returns to the command level.
+
+     NOTE:  A  warm  boot has no effect on a file that  has  been
+tagged as "read only".
+
+.pa
+
+ZRDOS Error 5 - A disk changed error occured.
+
+     A  ZRDOS error 5 message is given when an attempt is made to
+write  to  a file on a disk that has been changed while the  file
+was still open on the previous disk.  After a error 5 message  is
+given,  a  warm boot will occur and the system will return to the
+command level.
+
+                   ---------------------------
+
+ZRDOS Error 6 - A wheel protect file error occured.
+
+     A  ZRDOS error 6 message is given when an attempt is made to
+write to,  rename,  set file attributes,  or erase a file that is
+marked  as  "wheel protected" and the Z-System wheel byte is  not
+set.   Once  the  message is given,  a warm boot occurs  and  the
+system returns to the command level.
+
+     NOTE:  A  warm  boot has no effect on a file that  has  been
+tagged as "wheel protected".  The wheel protect file attribute of
+a wheel protected file can only be changed when the wheel byte is
+set.
+
+                   ---------------------------
+
+     The  above information is also available online thru the use
+of  the ZRDOS 1.2 utility DOSERR.COM.  To display the information
+for a given dos error type:
+
+     DOSERR n
+
+     Where 'n' is the ZRDOS error number you wish to review.
+
+.pa
+
+                        PUBLIC USER AREAS
+
+     ZRDOS  1.2 uses bytes 126 and 127 (the last 2  bytes  before
+Z3TCAP)  of  the  Z3  environment discriptor as  mask  bytes  for
+setting  PUBLIC  user areas.  Byte 126 is the mask byte  for  the
+drives that are to be allowed to contain public user areas.  Byte
+127  contains  the mask byte for the declared public user  areas.
+Public  user areas can be on drives A - H and can be assigned  to
+user  areas  1 - 8.  Any file kept in a public user area  can  be
+accessed  directly from any other user area on the same drive  as
+long as the fcb specifying the file contains no wild  cards.  The
+mask bytes are as follows:
+
+          Drive Byte (126)             User Byte (127)
+
+   Bit    7 6 5 4 3 2 1 0              7 6 5 4 3 2 1 0
+          | | | | | | | |              | | | | | | | |
+   Drive  H G F E D C B A   User Area  8 7 6 5 4 3 2 1
+
+     The  setting and displaying of these bytes is done with  the
+ZRDOS 1.2 utility, PUBLIC.COM (see section on ZRDOS 1.2 Utilities
+for more details).
+
+     A  PUBLIC  user area is a handy place to keep  the  overlays
+used  by programs such as WordStar,  dBASE II,  and SuperCalc  as
+well  as many other commercially available  programs.  With  some
+programs, like WordStar (which first try to load the overlay from
+the current drive/user then default to drive A) the overlay files
+can  be kept in a PUBLIC user area on drive A and be accessed  by
+the program from any other drive and/or user area. Other programs
+such  as dBASE II and SuperCalc require that the overlays  be  on
+the  currently logged in drive,  but if declared PUBLIC any  user
+area.
+
+     A PUBLIC user area could also be assigned to basic files for
+Mbasic.  For example lets say we want to use drive B user area  6
+as  a PUBLIC user area for our basic programs and that we want to
+keep  Mbasic on drive A.  As long as we are logged onto  drive  B
+(any user area) Mbasic can access our programs as follows:
+
+B1>MBASIC MYPROG       -   User  is on same drive  but  different
+                           user area.
+
+     or
+
+C3>MBASIC B:MYPROG     -   User  is  on different drive and  user
+                           area but specifies drive.
+
+     As can be seen from above this allows the user a great  deal
+of  flexablity  and  can  be used to better  organize  files  and
+disk/user areas.
+.pa
+
+                   ZRDOS Version 1.2 Utilities
+
+     Besides  the standard ZRDOS utilities several new  utilities
+have  been  added to manipulate and support the  PUBLIC  feature.
+These utilities are as follows:
+
+     PUBLIC.COM     - Allows user to set, clear or display PUBLIC
+                      user status.
+
+     DIR.COM        - This version of the ZCPR3 directory utility
+                      supports  the  displaying  of  PUBLIC  user
+                      areas.
+
+     DOSERR.COM     - This  utility,   as  previously  described,
+                      displays   information  pertaining  to  the
+                      error codes generated by ZRDOS 1.2.
+
+     VTYPE.COM      - A  full screen video oriented file  display
+                      utility.
+
+.pa
+
+                       THE PUBLIC UTILITY
+
+     The utility PUBLIC.COM is the utility used to manipulate the
+PUBLIC feature of ZRDOS 1.2. A sample use session follows.
+
+     In  the first sample we display PUBLIC.COM's built  in  help
+information.
+
+B0:WORK>PUBLIC //
+PUBLIC Version 1.0
+Syntax:
+        PUBLIC
+or      PUBLIC /oooo...
+Options:
+        Cc - Clear PUBLIC declarations
+         c=A Clear All PUBLIC declarations
+         c=D Clear PUBLIC User Area Drive
+         c=U Clear PUBLIC User
+        Dd - Declare Drive=d, PUBLIC
+        Uu - Declare User=u, PUBLIC
+
+B0:WORK>
+
+     In the following example we will setup user areas 4 and 8 on
+drive A as PUBLIC user areas.
+
+
+B0:WORK>PUBLIC /CA,DA,U4,U8    ; Here we first clear any existing
+                                 settings, then declare drive 'A'
+                                 user '4' and '8' to be public.
+
+                                 Note: The commas are optional.
+
+     PUBLIC  then preforms the requested operation  and  displays
+the results as follows:
+
+PUBLIC Version 1.0
+
+Public User Area Drive(s): A
+Public User Area(s): 4, 8
+
+B0:WORK>
+
+     If  we  only want to display the current settings,  we  only
+need enter the program name as follows:
+
+B0:WORK>PUBLIC
+PUBLIC Version 1.0
+
+Public User Area Drive(s): A
+Public User Area(s): 4, 8
+
+B0:WORK>
+.pa
+
+
+                        VTYPE VERSION 2.0
+
+
+An Introduction to VTYPE
+
+     VTYPE  is  a  bi-directional  video  oriented  file  display
+utility  that allows the user to brows through a file in much the
+same  manner he would a book.  VTYPE has the ability to find  and
+display user selected text strings. VTYPE quickly moves around in
+a text file with simple Wordstar like control commands.
+
+     VTYPE  uses  the  ZCPR3 environmental and  Z3TCAPS  data  to
+determine  the  chacteristics of your terminal.  Displayed  lines
+which  exceed  the length of your terminal are truncated.  A  hi-
+lighted  +  is displayed at the end of the line to indicate  this
+condition.
+
+     The form of the VTYPE command is as follows:
+
+          VTYPE DU:ufn
+
+
+The VTYPE Command Menu
+
+
+                  <<<<< VTYPE Version 2.0 >>>>>
+
+                          Command Menu
+
+           SCREEN COMMANDS               FIND COMMANDS
+     ^R -- Backup one screen       ^F -- Find String
+     ^C -- Advance one screen      ^N -- Find again
+     ^S -- Backup n screens
+     ^D -- Advance n screens              OPTIONS
+                                    P -- Printer on/off
+           LINE COMMANDS            R -- Scroll Rate: 0
+     ^W -- Backup one line          S -- Status Line on/off
+     ^Z -- Advance one line         T -- Tab Size: 8
+     SP -- Scroll start/stop        V -- ZCPR3 Video Mode on/off
+                                    W -- WS Mode on/off
+           FILE COMMANDS            / -- Menu/Text
+     ^T -- Go to top of file
+     ^B -- Go to bottom of file     X -- Exit
+
+.pa
+
+                         SCREEN COMMANDS
+
+
+Control-R Backup one screen        Moves display back one screen.
+
+Control-C Advance one screen       Advances to the next screen.
+
+Control-S Backup n screens         Prompts  - NUMBER OF  SCREENS?
+                                   and pages the display backward
+                                   the number of screens entered.
+
+Control-D Advance n screens        Prompts  - NUMBER OF  SCREENS?
+                                   and  pages the display forward
+                                   the number of screens entered.
+
+
+                   ---------------------------
+
+
+                          LINE COMMANDS
+
+
+Control-W Backup one line          Moves display back one line.
+
+Control-Z Advance one line         Advances display by one line.
+
+SPACE Scroll start/stop            Starts   and   stops    screen
+                                   scrolling.
+
+
+                   ---------------------------
+
+
+                          FILE COMMANDS
+
+
+Control-T Go to top of file        Reads  in and  displays  first
+                                   full screen of file.
+
+Control-B Go to bottom of file     Reads  in  and  displays  last
+                                   full screen of file.
+
+
+.pa
+
+                          FIND COMMANDS
+
+
+Control-F Find String      Prompts  FIND? and accepts a string of
+                           up  to  80  characters.  Then  prompts
+                           IGNORE  CASE (Y/N)?.  Where N  is  the
+                           default.  A  'Y'  responce will  cause
+                           VTYPE  to find any string in the  file
+                           that   matchs   the   entered   string
+                           regardless of case. Any other responce
+                           will cause VTYPE to match only strings
+                           which match in both context and case.
+
+Control-N Find again       Finds  the next occurance of the  last
+                           found string.
+
+
+     Found strings are displayed in hi-lighted video.
+
+                   ---------------------------
+
+
+                             OPTIONS
+
+P Printer on/off                   Toggles output to list  device
+                                   on and off.
+
+R Scroll Rate                      Prompts SCROLL RATE (0-9)? and
+                                   accepts  a numeric entry  that
+                                   controls  the  speed at  which
+                                   characters  are  sent  to  the
+                                   screen  during scrolling.  The
+                                   larger  the number the  slower
+                                   the display.
+
+S Status Line on/off               Toggles  the  display   Status
+                                   Line on and off.
+
+T Tab Size                         Prompts TAB SIZE?  and accepts
+                                   a  numeric entry from 0 to  99
+                                   that determines the  expansion
+                                   size of tabs.
+
+V ZCPR3 Video Mode on/off          Toggles  the ZCPR3 Video  Mode
+                                   on  and off.  ZCPR3 Video Mode
+                                   causes characters bracketed by
+                                   ^A and ^B to be hi-lighted.
+
+W WS Mode on/off                   Toggles  Wordstar Mode on  and
+                                   off.  Wordstar mode causes all
+                                   Wordstar  control codes to  be
+                                   displayed  as '^char'  in  hi-
+                                   lighted video.
+.pa
+
+/ Menu/Text                        Toggles  between the text  and
+                                   the command menu.
+
+X Exit                             Exits VTYPE.
+
+
+

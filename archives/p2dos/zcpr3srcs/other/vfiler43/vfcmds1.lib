@@ -1,0 +1,630 @@
+;===========================================================================
+;
+; VFCMDS1.Z80 -- Command Branch Tables, Screen Display Commands, and
+;		 File-Pointer Movement Commands
+;
+;===========================================================================
+
+
+; CTABLE - Command Table
+
+; The command branch table entries have the form:
+;	db	character to recognize
+;	db	wheel flag (0ff = any user / 00 = wheel only)
+;	dw	address of code to perform function
+
+ctable:
+	db	0		; User cursor positioning
+	db	0ffh		; (safe)
+	dw	up
+
+	db	0
+	db	0ffh		; (safe)
+	dw	down
+
+	db	0
+	db	0ffh		; (safe)
+	dw	forward
+
+	db	0
+	db	0ffh		; (safe)
+	dw	reverse
+
+ctab1:
+		; Ring top and bottom
+
+	db	ctrlb		; Jump to bottom of ring
+	db	0ffh		; (safe)
+	dw	ringbot
+
+	db	ctrlt		; Jump to top of ring
+	db	0ffh		; (safe)
+	dw	ringtop
+
+		; Screen top and bottom
+
+	db	ctrlc
+	db	0ffh		; (safe)
+	dw	locbot		; Jump to bottom of screen
+
+	db	ctrlr
+	db	0ffh		; (safe)
+	dw	loctop		; Jump to top of screen
+
+		; Vertical cursor movement
+
+	db	ctrle
+	db	0ffh		; (safe)
+	dw	up
+
+	db	ctrlx
+	db	0ffh		; (safe)
+	dw	down
+
+		; Next file
+
+	db	ctrld
+	db	0ffh		; (safe)
+	dw	forward
+
+	db	cr		; Nop
+	db	0ffh		; (safe)
+	dw	forward
+
+	db	' '		; Go forward
+	db	0ffh		; (safe)
+	dw	forward
+
+		; Previous file
+
+	db	ctrls
+	db	0ffh		; (safe)
+	dw	reverse
+
+	db	bs		; Back up?
+	db	0ffh		; (safe)
+	dw	reverse
+
+		; Next screen
+
+	db	'+'		; Jump forward
+	db	0ffh		; (safe)
+	dw	jumpf
+
+	db	ctrlf
+	db	0ffh
+	dw	jumpf
+
+	db	'.'
+	db	0ffh		; (safe)
+	dw	jumpf
+
+	db	'>'
+	db	0ffh		; (safe)
+	dw	jumpf
+
+		; Previous screen
+
+	db	'-'		; Jump backward
+	db	0ffh		; (safe)
+	dw	jumpb
+
+	db	ctrla
+	db	0ffh
+	dw	jumpb
+
+	db	','
+	db	0ffh		; (safe)
+	dw	jumpb
+
+	db	'<'
+	db	0ffh		; (safe)
+	dw	jumpb
+
+		; Non-cursor commands
+
+	db	'A'		; Alphabetize?
+	db	0ffh		; (safe)
+	dw	alphasw
+
+	db	'C'		; Copy a file?
+	db	0		; (wheel)
+	dw	fcopy
+
+	db	'D'		; Delete a file?
+	db	0		; (wheel)
+	dw	fdel
+
+	db	'F'		; Show file size?
+	db	0ffh		; (safe)
+	dw	fsize
+
+	db	'G'		; Group operation?
+	db	0ffh		; (safe)
+	dw	group$op
+
+	db	'J'		; Jump to a file?
+	db	0ffh		; (safe)
+	dw	goto
+
+	db	'M'		; Group operation?
+	db	0		; (wheel)
+	dw	move		; Move files
+
+	db	'P'		; Output file to 'list' device?
+	db	0		; (wheel)
+	dw	flist
+
+	db	'Q'		; Unsqueeze a file?
+	db	0		; (wheel)
+	dw	fusq
+
+	db	'R'		; Rename?
+	db	0		; (wheel)
+	dw	rename
+
+	db	'T'		; If tag, put tagch in..
+	db	0ffh		; (safe)
+	dw	tag		; Front of cursor.
+
+	db	'U'		; Remove tagch from..
+	db	0ffh		; (safe)
+	dw	untag		; In front of cursor?
+
+	db	'V'		; 'view' file at console?
+	db	0ffh		; (safe)
+	dw	fview
+
+	db	'W'		; Wild card tag/untag?
+	db	0ffh		; (safe)
+	dw	wtag
+
+	db	'Y'		; Retag
+	db	0ffh		; (safe)
+	dw	yank
+
+;---------------------------------------------------------------------------
+
+; Commands available with ring empty
+
+ctab2:
+	db	'E'		; Screen refresh?
+	db	0ffh		; (safe)
+	dw	runsh4
+
+	db	'H'		; External help?
+	db	0ffh		; (safe)
+	dw	exthelp
+
+	db	'N'		; New directory/mask?
+	db	0ffh		; (safe)
+	dw	logdir
+
+	 if	optcmd		; Optional command for setting options
+	db	'O'
+	db	0ffh		; (safe)
+	dw	setopt		; Set options
+	 endif	;optcmd
+
+	db	'S'		; Free bytes on..
+	db	0ffh		; (safe)
+	dw	dstat		; Requested drive?
+
+	db	'X'		; If exit, then to opsys
+	db	0ffh		; (safe)
+	dw	os$ccp
+
+	db	esc		; Escape also exits
+	db	0ffh
+	dw	os$ccp
+
+	db	'Z'		; Run zcpr3 command
+	db	0ffh		; (safe)
+	dw	runzcpr3
+
+	db	dircmd		; New directory/mask? (alternate)
+	db	0ffh		; (safe)
+	dw	logdir
+
+	 if	bihelp		; Built-in help?
+
+	db	'?'		; Help
+	db	0ffh		; (safe)
+	dw	help
+
+	db	'/'		; Help also
+	db	0ffh		; (safe)
+	dw	help
+
+	 else
+
+	db	'?'		; Help
+	db	0ffh		; (safe)
+	dw	exthelp
+
+	db	'/'		; Help also
+	db	0ffh		; (safe)
+	dw	exthelp
+
+	 endif			; Bihelp
+
+	db	0		; End of table
+
+;---------------------------------------------------------------------------
+
+; Screen Display Commands: previous-screen (-), next-screen (+),
+;			   alphabetization (A)
+
+
+; * * *  COMMAND: - (Previous Screen)
+
+jumpb:
+	ld	hl,(ringcnt)	; Get # files in ring.
+	ld	de,eps		; And maximum number that can be displayed.
+	call	cmpdehl
+	jp	nc,loop		; Done if all files will be displayed.
+
+	ld	hl,curhome	; Set cursor home
+	ld	(curat),hl
+	ld	hl,(ring)	; At front?
+	ex	de,hl
+	ld	hl,(locbeg)
+	call	cmpdehl
+	jr	z,jumpbw	; Back up and wrap around
+	ld	(locend),hl	; Old beginning is new end
+	ld	de,-eps*eltsiz	; Back up one full screen
+	add	hl,de
+	ld	(locbeg),hl	; New beginning
+	ld	(ringpos),hl	; New position
+	jp	runsh4
+
+jumpbw:
+	ld	hl,(locbeg)	; At first screen?
+	ex	de,hl
+	ld	hl,(ring)	; Pt to first element of ring
+	call	cmpdehl
+	jr	z,jbw0		; Advance to end
+	ld	hl,-eps*eltsiz	; Back up
+	add	hl,de		; First element of new local ring
+	jr	jfw0
+
+jbw0:
+	ld	de,eps*eltsiz	; Pt to next screen
+	add	hl,de
+	ex	de,hl
+	ld	hl,(ringend)
+	call	cmpdehl
+	ex	de,hl
+	jr	z,jbw1
+	jr	c,jbw0
+
+jbw1:
+	ld	de,-eps*eltsiz
+	add	hl,de		; Pt to first element of new local ring
+	jr	jfw0
+
+
+; * * *  COMMAND: + (Next Screen)
+
+jumpf:
+	ld	hl,(ringcnt)	; Get # files in ring.
+	ld	de,eps		; And maximum number that can be displayed.
+	call	cmpdehl
+	jp	nc,loop		; Done if all files will be displayed.
+	ld	hl,curhome	; Set cursor to home
+	ld	(curat),hl
+	ld	hl,(locend)	; See if local end <= ring end
+	ex	de,hl
+	ld	hl,(ringend)
+	call	cmpdehl
+	jr	z,cmdloop
+	ld	hl,(locend)	; New screen starting at locend
+
+; JFW0 - Reset RING Position to HL
+
+jfw0:
+	call	setscr1		; Reset ringpos on ...
+	jp	runsh4
+
+; CMDLOOP - Reset to Beginning of RING and Resume Command Looping
+
+cmdloop:
+	call	setscr		; Reset all screen pointers
+	jp	runsh4
+
+
+;---------------------------------------------------------------------------
+
+
+; File-Pointer Movement Commands: J (jump), ^R, ^C, ^T, ^B, SP, CR, ^D, ^F,
+;				  BS, ^S, ^A, up-arrow, down-arrow
+
+
+; * * * COMMAND: J
+
+goto:
+	call	cprmpt		; Entry point for 'J' command
+	db	'Jump to Filename: ',0
+	ld	de,d$fcb	; Pt to fcb
+	call	filename	; Get file name & init fcb.
+	ld	hl,d$fcb+1	; Replace blanks in fcb by '?'
+	ld	c,'?'
+	ld	b,11		; Scan 11 characters
+goto0:
+	ld	a,(hl)		; Get present character
+	cp	' '		; Is it a space?
+	jr	nz,goto0a	; If not, skip
+	ld	(hl),c		; Otherwise, replace by '?'
+goto0a:
+	inc	hl		; Advance to next character
+	djnz	goto0
+
+goto1:
+	ld	hl,(ringpos)	; Old ring position
+	ld	(sringpos),hl	; Save it in case of error
+	ld	hl,(ring)	; Beginning of ring
+	ld	de,-eltsiz
+	add	hl,de		; Back up one
+	ld	(ringpos),hl
+	call	clrcur		; Clear the cursor for a start
+	ld	hl,(locbeg)	; Get local beginning
+	push	hl		; Save it on the stack
+got0:
+	ld	hl,(ringpos)
+	ld	de,eltsiz	; One element
+	add	hl,de		; Next
+	ld	(ringpos),hl
+	ex	de,hl		; Ring pointer to DE
+	ld	hl,(ringend)
+	call	cmpdehl		; End of ring?
+	jr	z,goterr	; Yes, quit
+	ld	hl,d$fcb	; User's filespec
+	call	fmatch		; Do we have a match?
+	jr	nz,got0		; No, try again
+
+; We found it
+
+	call	findscr		; Set LOCBEG and CURAT according to RINGPOS
+	ld	hl,(locbeg)	; New beginning
+	pop	de		; Old beginning
+	call	cmpdehl		; Same?
+	jr	nz,gotex0	; Rebuild the screen if not
+	ld	a,(initflag)	; See if this is initial setup
+	or	a
+	jr	z,gotex		; If not, skip rebuild
+gotex0:
+	call	rebuild
+gotex:
+	xor	a		; Reset initflag
+	ld	(initflag),a
+	call	setcur		; Display the cursor
+	jp	loopfn		; Display current file and get next command
+goterr:
+	pop	hl		; Adjust stack
+	ld	hl,(sringpos)	; Get saved ring position
+	ld	(ringpos),hl	; Restore old ring position
+	ld	a,(initflag)	; Is this initial pointer setting
+	or	a		; ..a program startup?
+	call	z,fnf1		; If not, say we can't find file
+	jr	gotex0		; Rebuild and quit
+
+
+; * * *  COMMAND: - ^R  Jump to beginning of local screen
+
+loctop:
+	call	clrcur		; Clear the cursor
+	ld	hl,(locbeg)	; First entry of this screen
+	ld	(ringpos),hl	; New ring position
+	call	cur$first	; Position the cursor
+	call	setcur		; Print it
+	jp	loopfn		; Print new current file and continue
+
+
+; * * *  COMMAND: - ^C  Jump to end of local screen
+
+locbot:
+	call	clrcur		; Clear the cursor
+	call	cur$last	; Position the cursor
+	call	setcur		; Print it
+	ld	hl,(locend)	; End of current screen
+	ld	de,-eltsiz	; Element size
+	add	hl,de		; Back up to last
+	ld	(ringpos),hl	; New ring position
+	jp	loopfn		; Print new current file and continue
+
+
+; * * *  COMMAND: - ^T  Jump to beginning of ring
+
+ringtop:
+	call	clrcur		; Clear cursor
+	ld	hl,(locbeg)	; Current beginning
+	push	hl		; Save it
+	ld	hl,(ring)	; Beginning of ring
+	ld	(ringpos),hl	; New ring position
+	call	findscr		; Set LOCBEG
+	ld	hl,(locbeg)	; (New?) beginning
+	pop	de		; Old beginning
+	call	cmpdehl		; Same?
+	call	nz,rebuild	; No
+ringtx:
+	call	setcur		; Print it
+	jp	loopfn		; Print new current file and continue
+
+
+; * * *  COMMAND: - ^B  Jump to end of ring
+
+ringbot:
+	call	clrcur		; Clear the cursor
+	ld	hl,(locend)	; Current end
+	push	hl		; Save it
+	ld	hl,(ringend)	; End of the ring
+	ld	de,-eltsiz	; One element
+	add	hl,de		; Back up
+	ld	(ringpos),hl	; New ring position
+	call	findscr		; Find new screen
+	ld	hl,(locend)	; New LOCEND
+	pop	de		; Old locend
+	call	cmpdehl		; Same screen?
+	call	nz,rebuild	; No
+ringbx:
+	call	setcur		; Print it
+	jp	loopfn		; Print new current file and continue
+
+
+; * * *  COMMAND: SP, CR, ^D, ^F
+
+forward:
+	call	clrcur		; Clear cursor
+	call	for0		; Position on screen and in ring
+	call	setcur		; Set cursor
+	jp	loopfn
+
+
+; * * *  COMMAND: BS, ^S, ^A
+
+reverse:
+	call	clrcur		; Clear cursor
+	call	rev0		; Position on screen and in ring
+	call	setcur		; Set cursor
+	jp	loopfn
+
+
+; * * *  COMMAND: Up-Arrow
+
+up:
+	call	clrcur		; Clear cursor
+	call	toc		; Top of column?
+	jr	c,up2		; Wrap around
+	ld	b,fcols		; Back up 4 or 5 entries
+
+up1:
+	push	bc		; Save count
+	call	rev0		; Back up in ring and on screen (no print)
+	pop	bc		; Get count
+	djnz	up1
+	jr	down1a		; Set cursor and quit
+
+up2:
+	call	boc		; Bottom of column?
+	jr	c,up3		; Yes
+	ld	(ringpos),hl	; New ring position
+	ld	hl,(curat)	; Advance cursor
+	inc	h		; Next line
+	ld	(curat),hl
+	jr	up2
+
+; Top of column check (return carry if at top, return new ring position in DE)
+
+toc:
+	ld	hl,(ringpos)	; See if wrap around
+	ld	de,-eltsiz*fcols ; 4 or 5 entries
+	add	hl,de
+	ex	de,hl
+	ld	hl,(locbeg)	; Beginning of local screen
+	call	cmpdehl
+	ret
+
+; Bottom of column check (return carry if at bottom, HL with new ring position)
+
+boc:
+	ld	hl,(ringpos)	; Current position
+	ld	de,eltsiz*fcols
+	add	hl,de		; Down 1
+	ld	de,(locend)
+	dec	de		; Ensure carry if at or past end
+	call	cmpdehl
+	ret
+
+up3:
+	call	rev0		; Move back one column
+	call	boc		; Check if bottom of this column
+	jr	c,down1a	; Yes, quit.  Else fall DOWN
+
+
+; * * *  COMMAND: Down-Arrow
+
+down:
+	call	clrcur		; Clear cursor
+	call	boc		; Bottom of column?
+	jr	c,down2		; Wrap around
+	ld	b,fcols		; Forward 4 or 5 entries
+
+down1:
+	push	bc		; Save count
+	call	for0		; Advance in ring and on screen (no print)
+	pop	bc		; Get count
+	djnz	down1
+
+down1a:
+	call	setcur		; Set cursor
+	jp	loopfn		; Display current file and LOOP
+
+down1b:
+	ld	hl,(curat)	; Current cursor
+	ld	a,l		; Column to A
+	add	a,entsiz	; One entry
+	cp	entsiz*[fcols-1]+2 ; Last column?
+	ld	b,1		; Just in case
+	jr	c,down1		; Move forward one position, else..
+	ld	hl,(locbeg)	; Beginning of local screen..
+	ld	(ringpos),hl	; To ring position and..
+	call	cur$first	; Cursor to top left
+	jr	down1a		; Quit
+
+; Move to top of current column
+
+down2:
+	call	toc		; Top of column?
+	jr	c,down1b	; Yes
+	ex	de,hl		; New ring position
+	ld	(ringpos),hl
+	ld	hl,(curat)	; Current cursor
+	dec	h		; Up one
+	ld	(curat),hl
+	jr	down2		; Try again
+
+; FOR0 - advance routine
+
+for0:
+	ld	hl,(ringpos)	; At end of loop yet?
+	ld	de,eltsiz	; I.e., will we be at end of loop?
+	add	hl,de
+	ex	de,hl
+	ld	hl,(locend)
+	call	cmpdehl		; Compare 'present' to 'end'
+	jr	nz,forw		; To next print position
+	call	cur$first	; Position cursor
+	ld	hl,(locbeg)	; Set position pointer to beginning and..
+	ld	(ringpos),hl
+	ret
+
+forw:
+	ld	hl,(ringpos)	; Advance in ring
+	ld	de,eltsiz
+	add	hl,de
+	ld	(ringpos),hl	; New position
+	jp	psn$next	; Position cursor
+
+; REV0 - Back Up Routine
+
+rev0:
+	ld	hl,(locbeg)
+	ex	de,hl
+	ld	hl,(ringpos)	; See if at beginning of ring
+	call	cmpdehl
+	jr	nz,rev1		; Skip position pointer reset if not..
+	call	psn$last	; End of local ring
+	ld	hl,(locend)	; Set to end +1 to backup to end
+	ld	de,-eltsiz
+	add	hl,de
+	ld	(ringpos),hl
+	ret
+
+rev1:
+	call	psn$back	; Back up 1
+	ld	hl,(ringpos)
+	ld	de,-eltsiz	; One ring position..
+	add	hl,de		; Backwards.
+	ld	(ringpos),hl
+	ret
+                                                                                    

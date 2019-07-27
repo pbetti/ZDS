@@ -1,0 +1,756 @@
+;=============================================================================
+
+;			S U B R O U T I N E S
+
+;-----------------------------------------------------------------------------
+
+;		CHARACTER RETRIEVAL WITH FORMAT CHECK
+
+; This routine attempts to get the next character from the script.
+; If we are at the end of the script, we fall through to BADFORM.
+; Otherwise, the capitalized character is returned in the accumulator.
+
+getchc:	call	GETCH		; Get a character
+	jp	nz,CAPS		; Capitalize and return if char found
+				; ..else fall through to BADFORM
+
+;-----------------------------------------------------------------------------
+
+;		BAD SCRIPT FORMAT WARNING MESSAGE
+
+; This routine sends a message to the screen to report a badly formatted
+; script line and then aborts operation of ARUNZ.
+
+BADFORM:
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	BELL
+	db	'warning -- script line format error',CR,LF,0
+	jp	ERRQUIT
+
+;-----------------------------------------------------------------------------
+
+;		CONDITIONALLY TURN UP A NEW LINE
+	
+; This routine prints a CRLF the first time it is called and does
+; nothing otherwise.
+	
+CONDCRLF:
+	ld	a,(NLFLAG)	; Test "new line" flag
+	or	a
+	ret	z		; Return if flag not set
+	xor	a
+	ld	(NLFLAG),a	; Else clear flag
+	jp	CRLF		; ..and go print CRLF
+
+;-----------------------------------------------------------------------------
+
+;		COPY STRINGS OF VARIOUS LENGTHS FROM HL TO DE
+
+; Copy 8 characters for file name
+
+PUTN:
+	ld	b,8		; 8 chars
+	jr	PUTC
+
+; Copy 3 characters for file type
+
+PUTT:
+	ld	b,3		; 3 chars
+
+; Copy number of characters in B but ignore spaces
+
+PUTC:
+	ld	a,(hl)		; Get next char
+	cp	' '		; Skip if space
+	jr	z,PUTC1
+
+	call	PUTCH		; Store character
+
+PUTC1:
+	inc	hl		; Pt to next char in system file
+	djnz	PUTC		; Count down
+	ret
+
+;-----------------------------------------------------------------------------
+
+PUTNUM:
+	ld	b,10		; Compute 10's
+	ld	c,'0'
+PMU1:
+	sub	b		; Subtract 10's
+	jr	c,PMU2
+	inc	c		; Increment 10's
+	jr	PMU1
+PMU2:
+	add	a,b		; Add B back in
+	add	a,'0'		; Convert to ASCII
+	ld	b,a		; 10's in C, 1's in B
+	ld	a,c
+	cp	'0'		; No leading 0's
+	call	nz,PUTCH	; Store character
+	ld	a,b		; Get 1's
+	jp	PUTCH		; Store character and return
+
+;-----------------------------------------------------------------------------
+
+;		CHECK FOR ALIAS NAME MATCH
+
+; This routine scans a new line in the ALIAS.CMD file for a match to the
+; first token on the command line that invoked ARUNZ.  Several special
+; features have been incorporated.
+;
+; 1) If the alias name begins with a colon, it will be taken as a match to
+;    any requested name.  Thus it will be selected as the default script.
+;    Obviously, such an alias name should be the last one in the file, since
+;    no more names will be scanned after it.
+; 2) If the alias name has the wildcard character (WILDCHAR, default "_"), it
+;    will be taken as a match for any existing character in the requested alias.
+;    Thus the alias name '_DIR' will match requests for 'SDIR' or 'XDIR' etc.
+; 3) If the alias name has the option character (OPTCHAR, default ","), then
+;    any characters after that must match the requested alias only if
+;    characters are present in the requested alias.  Thus the alias name
+;    'XD,IR' will match 'XD', 'XDI', or 'XDIR' but not 'XDD' or 'XDIRS'.
+; 4) Multiple names may be associated with a given script by using the form
+;    NAME1=NAME2=...=NAMEn SCRIPT.  The alias name string terminates with a
+;    space or tab, so there cannot be any imbedded spaces.
+; 5) If the alias name begins with '>' then the rest of the alias name is
+;    compared only to the file type in the command verb.
+;
+; If a match is found, the ALIAS.CMD file is read until the space or tab
+; character before the script has been read (or the end of line or file has
+; been reached).  On return from this routine, the zero flag is set if a match
+; was found.
+
+COMPN:
+	xor	a		; Reset
+	ld	(OPTFLAG),a	; ..optional match flag
+	ld	(TYPEFLAG),a	; ..and type-only-match flag
+	ld	hl,(TAILBUF)	; Point to name of alias in tail buffer
+	ld	c,DEFLTCHAR	; Default alias name character
+
+COMPN1:
+	ld	a,(hl)		; Get next character of requested name
+	inc	hl		; Point to next char in name
+	ld	d,a		; Save character in D
+	call	ENDTEST		; See if end of token (and branch)
+
+	call	GOPCH	; Get next character from ALIAS.CMD
+	jr	z,COMPN5	; If eof, eot, or eol, no match
+	call	CAPS		; Convert to upper case
+	ld	b,a		; Save char in B
+	cp	c		; Match to default character?
+	jr	z,COMPN4	; If so, assume match, flush rest of name
+
+	inc	c		; See if C = FF (not first char in alias name)
+	jr	z,COMPN2	; If so, skip code for type-only checking
+	ld	a,(TYPEFLAG)	; See if comparing only file type
+	or	a
+	ld	a,b		; Restore fetched character
+	jr	z,COMPN2	; If not type-only, proceed normally
+
+FLUSHNAME:			; Flush verb name; point to verb type (if any)
+	ld	a,d		; Get current character into A
+	ld	d,(hl)		; ..and next character into D
+	inc	hl		; Point to character after that
+	CALL	ENDTEST1	; Test for end of command verb
+	JR	Z,FLUSH		; No filetype, so quit now
+	cp	'.'		; If current character is not dot
+	jr	nz,FLUSHNAME	; ..process next character
+	ld	a,d
+	CALL	ENDTEST1	; Does verb end in "."?
+	JR	NZ,GOTTYP	; No, go test filetype character(s)
+	LD	A,(OPTFLAG)	; Did alias name begin with ">,"
+	OR	A		; ..(allow null filetype)?
+	JR	Z,FLUSH		; No, so no match
+GOTTYP:	LD	A,B		; Restore fetched ALIAS.CMD character
+
+COMPN2:
+	ld	c,0FFh		; Set C to FF so test done only
+				; ..on first char of name in ALIAS.CMD
+	cp	'='		; Do we have another name on the line?
+	jr	z,COMPN	; If so, start over
+
+	cp	WILDCHAR	; Is there a wildcard in name?
+	jr	z,COMPN1	; If so, take as match and continue
+	cp	d		; Match to char in specified name?
+	jr	z,COMPN1	; If so, continue comparing
+
+				; Match to this name failed, skip to next name
+				; on line if any -- if none, return with
+				; non-zero set
+
+FLUSH:
+	call	GETCH		; Read another character from file
+	jr	z,COMPN5	; If end of line/text/file, no match
+	cp	' ' + 1		; If space or less, no match
+	jr	c,COMPN5
+	cp	'='		; If another name on line
+	jr	z,COMPN	; ..start over
+	jr	FLUSH		; ..else continue flushing
+
+				; Reached end of specified alias name
+
+COMPN3:
+	call	GOPCH	; Get next character in alias.cmd
+	ret	z		; If eof, eot, or eol, call it a match
+	cp	'='		; If equal sign. call it a match and
+	jr	z,COMPN4	; ..go flush rest of name string
+	call	ISSP
+	ret	z		; If space or tab, call it a match
+	ld	a,(OPTFLAG)	; See if option flag set
+	or	a
+	jr	z,FLUSH		; If not, flush rest of name and continue
+
+				; Case of default alias
+
+COMPN4::
+				; Flush rest of default alias name
+	call	GETCH
+	ret	z		; Return if eof, eot, or eol
+	call	ISSP
+	ret	z		; Return if space or tab
+	jr	COMPN4	; Else continue flushing characters
+
+				; Reached eof, eot, or eol in alias.cmd
+
+COMPN5::
+	xor	a		; Force non-zero flag to
+	dec	a		; ..show no match
+	ret
+; Test for end of command verb token.  Return if not.  Otherwise pop the
+; return address off the stack and jump to COMPN3 (no match)
+
+ENDTEST:
+	call	ENDTEST1
+	ret	nz
+	pop	af
+	jr	COMPN3
+
+ENDTEST1:
+	or	a		; If null
+	ret	z		; ..we have end
+	call	ISSP		; Ditto if space or tab
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		ERROR TERMINATION PROCESSING
+
+; This routine checks to see if ARUNZ was invoked as an extended command
+; processor.  If not, we just quit.  If so, we set the error status flag
+; and return to the CCP for normal error handling.  Messages are also
+; displayed to indicate the nature of the ZCPR3 processing error.  These
+; messages are under the control of the quiet flag.
+
+ERRQUIT:
+	call	GETCST		; Get command status flag value
+	and	100b		; Isolate ECP BIT
+	xor	100b		; Reverse sense for internal/external flag
+	ld	b,ECECPERR	; Command not found error
+	call	INVERROR	; Set up for error handler invokation
+	jp	QUIT
+
+;-----------------------------------------------------------------------------
+
+;		FIND THE NAMED ALIAS SCRIPT
+
+; This routine scans through the ALIAS.CMD file looking for the alias named
+; as the first token in the command tail.  If the end of the ALIAS.CMD file
+; is reached, this code jumps to the NOALAIS error code.
+
+FINDALIAS:
+	call	COMPN		; Compare first name
+	ret	z		; If found, return
+	call	SKIPLINE	; Skip to next line
+	jr	z,FINDALIAS	; If new line found, continue looking
+	jp	NOALIAS		; If end of file, jump to message
+
+;-----------------------------------------------------------------------------
+
+;		FIND ALIAS.CMD FILE
+
+; This routine finds the ALIAS.CMD file.  It will search the path, either
+; entirely or the root only, or go directly to a specified DU area depending
+; on the setting of flag bytes stored just before label START.  If the file
+; cannot be found and opened, then the code here branches to error messages.
+; The flag SCANCUR determines whether or not the current directory will be
+; included in the search.
+
+FINDFILE:
+	ld	a,(PATHF)	; Check path flag
+	or	a
+	jr	z,NOPATH	; If zero, use specified directory
+
+	ld	a,(ROOTF)	; Check root-only flag
+	or	a
+	jr	z,USEPATH	; If zero, use the entire path
+
+				; Determine the root directory on the path
+
+	call	GETPATH		; HL points to path, zero flag set if no path
+	jr	z,NOPATH	; If path not implemented, use specified du
+	ld	a,(hl)		; Make sure the path is not empty
+	or	a
+	jr	z,NOPATH	; If empty, use the fixed directory
+PATHLOOP:
+	dec	a		; Adjust drive (a=0)
+	jp	m,LOGIN		; If end of path, branch
+	ld	b,a		; Drive in b
+	inc	hl
+	ld	c,(hl)		; User in C
+	inc	hl
+	ld	a,(hl)		; Get next path element
+	jr	PATHLOOP		; ..and loop
+
+				; Use path for search
+
+USEPATH:
+	ld	de,IOFCB	; Point to file control block
+	call	INITFCB		; Initialize it for search
+	ld	a,(SCANCUR)	; Determine whether to include current DU
+	call	PFIND		; Try to find the file
+	jp	z,NOFILE	; Jump if not found
+	jr	LOGIN
+
+				; Go directly to default drive/user area
+
+NOPATH:
+	ld	hl,(CMDDRV)	; Get drive/user value
+	ld	b,l		; ..into BC
+	ld	c,h
+
+LOGIN:
+	ld	(CMDDIR),bc	; Save in memory for when needed again
+	call	LOGUD		; Log into DU: with the file
+
+				; Open the input file
+
+	ld	de,IOFCB	; Open the input file
+	call	INITFCB
+	call	F$OPEN
+	jp	nz,NOFILE	; If not there, go to error code
+	ld	(BUFPTR),a	; Low byte of buffer pointer = 0
+	ld	(EOFLAG),a	; EOF flag = 0
+	inc	a
+	ld	(SECNT),a	; SECNT= 1 forces buffer load
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		GET NEXT CHARACTER FROM ALIAS.CMD
+
+; This routine reads another character from ALIAS.CMD.  If the end of file
+; is reached or if the characters is end-of-text or a carriage return (end
+; of line), then the routine returns with the zero flag set.  Otherwise it
+; returns with the character in A and the zero flag reset.
+;
+; At the special entry point GOPCH, if the character is the option
+; character (OPTCHAR, default ','), OPTFLAG is set, and another character is
+; read.  If the character is the file-type-only character (TYPECHAR,
+; default '>'), then the TYPEFLAG flag is set.
+
+GOPCH:
+	call	GETCH		; Get next character
+	ret	z		; If eof, eot, or eol, return now
+	cp	OPTCHAR		; Is it the option character?
+	jr	nz,GOPCH1
+	ld	(OPTFLAG),a	; If so, set OPTFLAG
+	jr	GOPCH		; ..and read another character
+GOPCH1:
+	cp	TYPECHAR	; Is it the type-only match character
+	ret	nz		; If not, return NZ
+	ld	(TYPEFLAG),a	; If so, set the TYPEFLAG
+	jr	GOPCH		; ..and read another character
+
+GETCH::
+	call	GETBYT		; Get next character from file
+
+	ret	z		; Done if end of file
+	cp	CR		; Done if end of line
+	ret	z
+	cp	EOT		; Done if end of text
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY BUILT-IN HELP SCREEN
+
+; This routine tests to see if the built-in help has been requested.  This
+; is signaled explicitly with a single or double slash in the tail or
+; implicitly by having no alias name in the command tail.  If the command
+; is not a help request, the signon message is displayed under the control
+; of the quiet flag.
+
+HELPCHK:			; Test for help request
+	ld	hl,(TAILBUF)	; Examine command line tail
+	ld	a,(hl)		; Get first character
+	or	a		; See if end of command tail
+	jr	z,HELP		; Show help screen if no alias name
+	cp	'/'		; Explicit slash?
+	jr	nz,HELPCHK1	; If not, proceed to signon
+	inc	hl		; Check next character
+	ld	a,(hl)
+	or	a		; End of tail?
+	jr	z,HELP		; Show help screen
+	cp	'/'		; Second slash?
+	jr	nz,HELPCHK1	; If not, proceed to signon
+	inc	hl		; Check for third character
+	ld	a,(hl)
+	or	a		; End of tail?
+	jr	z,HELP		; If so, show help screen
+				; Else fall through
+
+				; not a request for help
+
+HELPCHK1:
+	ld	a,(QUIETF)	; Check quiet flag
+	and	00000001b	; Isolate signon msg bit
+	call	nz,SIGNON	; If bit set, display signon
+	ret
+
+HELP:
+	call	SIGNON
+	call	PRINT
+	db	'  Syntax: ARUNZ NAME [PARAMETERS]'
+	db	CR,LF
+	db	'  Runs alias script NAME from text file ALIAS.CMD'
+	db	CR,LF,0
+
+	jp	QUIT
+
+;-----------------------------------------------------------------------------
+
+; If the Z flag is set on entry, the flag pointed to by HL is reset to 0.
+; Otherwise it is set to 0FFH.
+
+INITFLAG:
+	ld	(hl),0		; reset flag
+	ret	z		; ..and return if bit not set
+	dec	(hl)		; Else, set flag
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY MESSAGE WHEN NAMED ALIAS NOT FOUND
+
+; This routine displays a message indicating the name of the alias that
+; could not be found.  The display is under control of the quiet flag.
+
+NOALIAS:
+
+	ld	a,(QUIETF)	; See if quiet flag set
+	and	00001000b	; Isolate alias name not found bit
+	jr	z,JPERRQT	; If off, skip the message
+
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	'Alias "'
+	db	0
+
+	call	PRTNAME		; Display the alias name
+
+	call	PRINT
+	db	'" Not Found'
+	db	CR,LF,0
+
+	jr	JPERRQT
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY MESSAGE WHEN ALIAS.CMD CANNOT BE FOUND
+
+; This routine displays (under control of the quiet flag) a message if the
+; alias.cmd file cannot be found.
+
+NOFILE:
+
+	ld	a,(QUIETF)
+	and	00000100b	; Isolate cmd file error msg
+	jr	z,JPERRQT	; If off, quit without msg
+
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	'ALIAS.CMD File Not Found'
+	db	CR,LF
+	db	0
+JPERRQT:
+	jp	ERRQUIT
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY ALIAS-RUNNING MESSAGE
+
+PRTALIAS:
+	ld	a,(QUIETF)
+	and	00000010b	; Isolate alias name display bit
+	ret	z		; If off, omit display
+
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	'Running Alias "'
+	db	0
+
+	call	PRTNAME
+
+	call	PRINT
+	db	'"',CR,LF,0
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY THE NAME OF THE ALIAS REQUESTED
+
+; This routine displays the name of the requested alias as passed as the
+; first token in the command tail.
+
+PRTNAME:
+	ld	hl,(TAILBUF)	; Point to tail to get name of alias
+PRTNAME1:
+	ld	a,(hl)		; Get character in alias name
+	or	a		; If end of tail, quit
+	ret	z
+;	cpi	' '+1			;see if space or control character
+;	rc				;if so, quit
+	call	ISSP		; Done if space or tab
+	ret	z
+	cp	' '		; See if control character
+	call	c,PRTCARET	; If so, print a leading caret
+	call	COUT		; Otherwise, display the character
+	inc	hl		; Point to next one
+	jr	PRTNAME1
+
+PRTCARET:
+	push	af		; Save original character
+	ld	a,'^'		; Print leading caret
+	call	COUT
+	pop	af		; Restore original character
+	add	a,40h		; Convert to printing character
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		DISPLAY SIGNON MESSAGE
+
+SIGNON:
+	call	CONDCRLF	; Turn up a new line if necessary
+	call	PRINT
+	db	'ARUNZ, Version '
+	db	VERSION$UNIT
+	db	'.'
+	db	VERSION$TENTH
+	db	VERSION$LETTER
+	db	'  '
+	db	0
+
+	ld	a,(TYPE)
+	ld	hl,ENTRY
+	call	PRTTYPE
+
+	call	CRLF
+
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		SKIP TO NEXT LINE IN ALIAS.CMD
+
+; This routine reads characters from the file ALIAS.CMD until it reaches
+; a linefeed -- in which case it returns with the zero flag set -- or until
+; it reaches the end of the file or end of text -- in which case it returns
+; with the zero flag reset.
+
+SKIPLINE:
+	call	GETBYT		; Get next character from file
+	jr	z,SKIPLINE2	; Jump if error in read
+	cp	EOT		; End of text
+	jr	z,SKIPLINE2
+	cp	LF		; End of line?
+	ret	z		; If so, return with sero flag set
+	jr	SKIPLINE	; If not, keep reading
+
+SKIPLINE2:
+	dec	a		; Reset the zero flag
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		GET A CHARACTER FROM FILE
+
+; The following routine was borrowed from LBREXT and modified slightly.
+; It requieres that the buffer begin and end on a page bounary.
+
+; "a" <-- next byte from ("physical") input stream.
+;	  returns with zero flag set on eof.
+
+GETBYT:
+	push	hl
+	ld	hl,(BUFPTR)
+	ld	a,l		; Pointer to next avail char
+	and	7fh		; See if 00h or 80h
+	call	z,POSRLD	; "possibly reload" the buffer if 00 or 80h
+	ld	a,(hl)		; Get byte to return (garbage if eof)
+	inc	hl		; Advance input pointer
+	ld	(BUFPTR),hl
+	pop	hl
+	ret
+
+POSRLD:				; "possibly reload" the input buffer
+	ld	a,(SECNT)	; Decr sector count (for this buffer)
+	dec	a
+	ld	(SECNT),a
+	ret	nz		; return if buffer not empty
+
+; reload  the input buffer, & reset hl to point to the beginning of it.  as-
+; sumes  input bfr starts page boundary and is of page multiple  length.
+;
+RELOAD:
+	ld	a,(EOFLAG)
+	or	a		; was eof reached on last reload?
+	jr	nz,ZEREAD	; set flag and return if so
+
+	push	bc
+	push	de
+	ld	b,FBUFSIZE	; loop counter, buffer length in pages
+	ld	hl,(BUFADR)	; Beg of buffer
+	push	hl		; Save for later
+	ld	c,0		; Will count sectors actually read
+	ld	de,IOFCB
+
+RLDLP:	ld	l,0		; Lo byte of current dma
+	call	RDSEC		; Read in 128 bytes (1/2 page)
+	jr	nz,RLDRTN	; (return if eof enecountered)
+	inc	c		; Incr "sectors read" count
+	ld	l,80h		; To read in the next half page
+	call	RDSEC		; Do that
+	jr	nz,RLDRTN	; As above
+	inc	c
+	inc	h		; Next page
+	djnz	RLDLP		; Loop till done
+RLDRTN:
+	ld	(EOFLAG),a
+	ld	a,c		; Put count of sectors read into "secnt"
+	ld	(SECNT),a
+	pop	hl		; Reset input pointer to beg of input buffer
+	pop	de
+	pop	bc		; Restore regs
+	and	a		; Clear zero flag if any data read
+	ret
+
+ZEREAD:	xor	a		; Set flg indicating no sectors were read (eof)
+	ret
+
+RDSEC:
+	call	SETDMA
+	jp	F$READ
+
+;-----------------------------------------------------------------------------
+
+;		SAVE COPY OF THE COMMAND TAIL
+
+; This routine copies the command tail up to the ending null into a buffer
+; whose address is stored at TAILBUF.  This is done because the path searching
+; code overwrites the tail.  A leading colon is not copied.  This allows the
+; ZCPR33 command form ":VERB etc." to skip resident commands and add the
+; current directory to the path search and still include the possibility of
+; looking for alias VERB in ALIAS.CMD.
+
+SAVETAIL:
+	ld	hl,TBUFF+1	; HL points to command tail
+	ld	de,(TAILBUF)	; DE points to tail buffer
+
+	call	SKSP		; Skip over leading spaces
+	ld	a,(hl)
+	cp	':'		; Is first non-space a colon?
+	jr	nz,COPYTAIL	; If so, get on with copy
+	inc	hl		; Otherwise, skip over colon
+
+COPYTAIL:
+	ld	a,(hl)		; Get byte of tail
+	ldi			; Save it in buffer
+	or	a		; See if end of buffer
+	jr	nz,COPYTAIL
+	ret
+
+;-----------------------------------------------------------------------------
+
+;		SKIP OVER PARAMETERS
+
+; This routine is entered with the number of the desired token in the A
+; register, and it skips over tokens until the desired one is reached.
+
+SKIPPARAM:
+	inc	a		; Shift one because of predecrement test
+	ld	b,a		; ..name in tail
+	ld	a,(TABFLAG)	; If tab allowed as separater, this flag
+	ld	c,a		; ..will contain 9
+	ld	hl,(TAILBUF)	; Pt to input line
+SKIP1:
+	call	SKSP		; Skip to non-blank
+	ld	a,(hl)		; Check for done
+	or	a
+	ret	z
+	dec	b		; Count down number of parameters
+	ret	z		; Return if we have desired prameter
+
+				; skip over this parameter
+
+SKIP2:
+	ld	a,(hl)		; Skip to EOL or just past space
+	or	a		; EOL?
+	ret	z
+	inc	hl		; Pt to next
+	cp	' '		; Was previous one a space?
+	jr	z,SKIP1		; If so, back to check param count
+	cp	c		; If tab allowed as separator
+	jr	z,SKIP1		; ..go back on tab as well
+	jr	SKIP2		; Else continue skipping
+
+
+;=============================================================================
+
+;			D A T A    S P A C E
+
+	DSEG
+
+DUSAVE:
+	ds	2		; Logged user and drive
+
+CMDDIR:
+	ds	2		; User and drive where ALIAS.CMD file is
+
+CLBFR:
+	ds	2		; Pointer to command line
+
+	 IF	PINPUT
+ZEXFL:
+	ds	1		; Place to keep ZEX input redirection flag
+	 ENDIF	; PINPUT
+
+OPTFLAG:
+	ds	1		; Flag to show truncation matching
+
+TYPEFLAG:			; Flag to show testing for command
+	ds	1		; ..filetype only
+
+RFLAG:
+	ds	1		; Place to keep recursion flag
+
+BUFADR:
+	ds	2		; Start address of file buffer
+
+BUFPTR:
+	ds	2		; Ptr to next character in file buffer
+
+SECNT:
+	ds	1		; Sectors read counter
+
+EOFLAG:
+	ds	1		; End of file flag
+
+	ds	60		; Room for 30 local stack entries
+STACK:
+	ds	2		; Place to keep old stack pointer
+
+	end
+                                                                                 

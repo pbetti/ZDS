@@ -1,0 +1,239 @@
+;	Program:  CLEANDIR
+
+;	Function: Sorts the directory of a disk into increasing or decreasing
+;		  order.  Checks for the following conditions:
+
+;			Duplicate directory entries
+;			User # > 31
+;			Extent # > 31
+;			Illegal characters in the filename
+;			Record count > 80h
+;			Same allocation group assigned to multiple files, or
+;			to the same file twice
+
+;		  Deletes 0-length files other than those with names starting
+;		  with a '-'or a space, as used by some disk catalog programs.
+
+;		  Reports the names of all 0-length files
+
+;		  Removes all erased entries from the directory, writing
+;		  continuous 'e5' (hex) bytes from after the last active
+;		  directory entry to the end of the directory.
+
+;		  May be invoked in a 'Check' mode, such that it does all of
+;		  the above checks, but does not write the modified directory
+;		  back to the disk.
+
+;	Modification History:
+
+; Version 1.8   Steve Dirickson  14 June 87
+
+; None of the main-line routines except RDDIR and WRDIR could properly handle
+; an empty disk.  This caused the program to crash the system when it tried
+; to clean a disk with no directory entries (specifically, the SWAP routine
+; junked up the entire first 64K of memory, clobbering the operating system,
+; but none of the other routines would have handled this situation properly
+; either).  Rather than have each routine perform a separate check for an
+; empty disk, the RDDIR routine checks, and skips directly to the write
+; routine if there are no active entries in the packed directory.
+
+; Version 1.7   Steve Dirickson   7 June 87
+
+; Fixed an error in the directory write routine that caused the program to 
+; write too many sectors if there were less than 4 active directory entries
+; on the disk being cleaned.  Tightened up the code a little and redid the
+; storage space allocation.
+
+; Version 1.6   Steve Dirickson   25 May 87
+
+; Several changes, some major, some minor.
+;     Major Modifications:
+;          1) Changed the directory-read routine completely, using an
+;	      incremental-read procedure I developed while working on my
+;	      RESTORE utility.  The directory is read in, one 128-byte
+;	      sector at a time, and erased entries are skipped over as the
+;	      directory is read in.  This makes the program able to read in
+;	      the directory of any disk that has no more active directory
+;	      entries than will fit in the available space.  Thus, the
+;	      maximum # of directory entries the disk can hold (DRM) no
+;	      longer has any effect on the operation of the program.  This
+;	      eliminates the problem for which Pete Lyman's '841201'
+;	      modification provided a partial solution.  All checks for
+;	      erased entries in the other sections of the code (packing,
+;	      filename checking) were deleted, since erased entries never
+;	      make it into the directory.
+;	   2) Corrected a serious error in the disk read/write routines.
+;	      The sector selection was not taking any sector translation
+;	      into consideration.  The sectors on each track were being
+;	      selected using the BIOS SETSEC routine, but the entering
+;	      sector numbers always started at 1, and were not translated.
+;	      This would work fine for most systems, since few disk formats
+;	      have a physical sector 0 (and since the same error was made on
+;	      the disk write that was made on the read.  In this case, two
+;	      wrongs do make a right!).  But, for those that do, it caused
+;	      the first physical sector on the disk to be skipped, resulting
+;	      in the first 4 entries in the directory being missed, and caused
+;	      problems at the end of the track, when the BIOS was told to
+;	      read or write a non-existent sector.  The new version always
+;	      starts the track at logical sector #0, calls the SECTRN routine
+;	      to convert this to a physical sector #, and selects that sector
+;	      for the data transfer.
+;	   3) Fixed a bug in the allocation checking routine that caused it
+;	      to only check the first block allocated to all directory entries
+;	      after the first one against the rest of the directory.  This
+;	      resulted in probably 30-40% of all duplicate allocation problems
+;	      being missed by the program.
+;     Minor changes:
+;          1) Removed the 'NOBOOT' variable and all references to it.  This
+;	      seems to be left over from some earlier version that did not
+;	      rewrite the directory if it was already sorted.  The way it
+;	      was used in Version 1.5, it always rewrote the directory
+;	      anyway, since the variable was never set to skip the write.
+;	   2) The program error flag was not being set for the condition where
+;	      the same allocation group was assigned to two different files,
+;	      IF the disk had more than 255 allocation groups (DSM > 255).
+;	   3) Added code to automatically log in the modified directory if
+;	      no errors are found by calling ZRDOS function 37, if the system
+;	      is ZRDOS 1.5 or later.  This code is assembled conditionally
+;	      based on the flag 'ZRD15'.  If you are using an earlier version
+;	      of ZRDOS and don't need this log in (or are using CP/M's BDOS,
+;	      where function 37 doesn't always work correctly), change the
+;	      definition of ZRD15 to 'FALSE'.  If you are using the CP/M BDOS,
+;	      you MUST make this change, or suffer the consequences!
+;	   4) Incorporated a routine developed by Joe Wright to swap the s2
+;	      and extent bytes before and after the sort.  This allows the
+;	      directory to be sorted in 'really' increasing order for disks
+;	      with files larger than 512K.
+;	   5) Restructured the program as real inline routines rather than
+;	      a 'main loop' that consisted only of a bunch of calls to sub-
+;	      routines that only got executed once each.
+
+; Version 1.5   Steve Dirickson   15 Feb 87
+
+; Fixed a bug I discovered in working with my RESTORE disk restoration
+; utility.  RESTORE was giving people problems by telling them that their
+; directory was not sorted.  I discovered that, for files larger that 512K,
+; CP/M starts reusing extent numbers, and uses the s2 field of the directory
+; entry as an auxiliary record counter.  I fixed RESTORE, but found that
+; CLEANDIR gave me 'Duplicate Directory Entry' error messages on the disk.
+; The fix was the same as for RESTORE:  make the comparison routine check
+; the first 15 characters in the entry, rather than the first 13.  The
+; routine at PACK1A: was modified, and it works fine now.  Also, the check for
+; an extent > 31 was using a 'cp  1fh' and jumping to the error routine if 
+; no carry resulted.  This caused the program to ALWAYS report this error for
+; any file which had an extent number 31, i.e., any file > 496K (guess most
+; people, like me, just don't have that many files that big).
+; Since the modification history at the beginning of the file was getting so
+; long, I moved it into a separate .HIS file, and added a short description
+; to the start of the source file instead.
+
+; Version 1.4 by David McCord 11/20/86.  Minor changes so that source
+; would assemble properly with ZAS.  No code changes.
+
+;	TITLE	CLEANDIR  --  Version 1.3B, with directory checking
+
+; Program:  CLEANDIR
+; Derivation:  SAP 3.8 (see following history for authors)
+; Derivation By:  Richard Conn
+; Version: 1.1
+; Date:  28 November 1984
+; Previous Versions: 1.0 (20 June 84)
+
+; Checking features added -- Michael Bate
+
+; Version 1.3B - 4/3/86
+
+; Bug fixes -
+
+;  (1) Incorporated from SAP39 (Last directory entry not participating
+;				in sort)
+;  (2) Incorporated from SAP44 (Flag bits sometimes moved from one file
+;				to another - because swapping during
+;				sort began after mismatch found)
+;    THANKS for above to Bill Duerr
+
+;  (3) '@' flagged as a "bad" character if used in file name.
+
+;  (4) Bug in PACK procedure -- missing duplicate directory entries
+
+; Version 1.2B - 2/25/86
+
+; Bug fix -- Wrong file name reported when same allocation block used
+;		in a single file.
+
+; Checks directory for:
+;	Duplicate entries (same filename, user#),
+;	Same allocation block # used more than once,
+;	Extent # > 31 (1Fh)
+;	Record Count > 80h
+;	Illegal characters in filename
+;	User # > 31
+
+; Sets ZCPR3 error flag if any of the above, else resets flag to zero.
+; Also reports zero-length files whose name does not start with
+; '-' or space.  (Erases these files).  Reports total number of ALL
+; zero-length files (of whatever name).
+
+; Possible to invoke for check-only.
+
+; This version uses Z80 code.
+
+; bug fix ;841201	Peter T Lyman
+; Version 1.1P
+
+;	Search for ';841201' to locate the code
+
+;	CLEANDIR can and does wipe out the operating system
+;	(also known as a crash) whenever the maximum size of
+;	the directory (DRM) exceeds the available memory....
+
+;	Maybe that is a good feature, since you at least don't
+;	hurt the disk...
+
+;	However on my hard disk I have two platters with
+;	DRM equal to 2048....  In this case CLEANDIR crashes...
+
+;	The fix that I have added (I did this with an early version
+;	of SAP) gives you a choice....  If DRM is greater than
+;	the space available betwwen BUF and BDOS,  you are given
+;	a choice with proceeding if the actual number of directory
+;	entries is less than or equal to the space available....
+;	If not you ABORT.....
+
+;	The down side risk of this modification is that if you
+;	proceed ("Y") when the actual number of files exceeds
+;	the space available,  you lose all the directories entries
+;	which don't fit in the available space....
+
+;	With out the fix the system crashes and you cannot clean the
+;	directory...  With the fix you can clean the directory, but
+;	you can lose files if you don't pay attention....
+
+; v3.8 SORT AND PACK CP/M DISK DIRECTORY - 10/16/83
+
+; THIS PROGRAM READS THE DISK DIRECTORY TRACKS, SORTS THEM ALPHABETICALLY
+; THEN REPLACES THEM ON THE DISK.  ALL UNUSED OR ERASED AREAS ON THE DIR-
+; ECTORY TRACK ARE REFORMATTED WITH CONTINUOUS 'E5' CHARACTERS.  (THIS
+; ERASES PREVIOUS FILE NAMES WHICH HAVE BEEN DEACTIVATED.)  SORTING THE
+; DIRECTORY IN THIS MANNER OFFERS MANY ADVANTAGES.  SOME OF THEM ARE:
+
+;	1)  ALLOWS 'DIR' TO SHOW AN ALPHABETIZED LISTING
+;	2)  ELIMINATES POTENTIAL PROBLEMS WITH "UNERASE" PROGRAMS
+;	3)  SPEEDS UP ACCESS VIA 'SD' AND OTHER SPECIAL PROGRAMS
+;	4)  ASSISTS ON WORKING DIRECTLY ON THE DISK WITH 'DUU', ETC.
+;	5)  REMOVES FILES FROM THE DISK SOMEBODY ELSE COULD RECOVER
+
+;				- Notes by Irv Hoff W6FFC
+
+; 1977	Written by L. E. Hughes.  Modified extensively since by Bruce
+;	Ratoff, Keith Petersen, James Prest, Ron Fowler, Frank Gaude',
+;	Irv Hoff and likely others.
+
+; 10/16/83 Now using a Shell-Metzner sort which speeds the sorting time
+;	   considerably, especially on large directories. (SFK)
+
+; 07/27/83 Shows an error flag for MP/M and CP/M+ both.  Rewrites dir-
+;	   tory even if previously sorted, to insure erased programs at
+;   v3.7   end of directory are properly cleared.
+;					- Irv Hoff
+

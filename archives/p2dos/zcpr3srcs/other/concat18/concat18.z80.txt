@@ -1,0 +1,1610 @@
+; CONCAT.Z80
+;
+Vers	equ	18		; version number
+SubVers	equ	' '		; modification level
+;
+; Concatenates or appends two or more source files into a destination file.
+; For ZCPR3 and Z3Plus only.
+;
+; For complete usage information, see the accompanying documentation file.
+;
+; For version history, see the accompanying history file.
+;
+; To report bugs or make suggestions:
+;	Gene Pizzetta
+;	481 Revere St.
+;	Revere, MA 02151
+;
+;	Voice:  (617) 284-0891
+;	Newton Centre Z-Node:  (617) 965-7259
+;	Ladera Z-Node Central:  (310) 670-9465
+;
+; System addresses . . .
+;
+Bdos	equ	05h		; BDOS entry vector
+CpmFcb	equ	5Ch		; default file control block
+CpmDma	equ	80h		; default DMA buffer
+StpBuf	equ	CpmDma		; file stamp buffer
+;
+; Bdos functions . . .
+;
+CpmVer	equ	12		; get CP/M version
+FRead	equ	20		; read sequential file
+FWrite	equ	21		; write sequential file
+SetDma	equ	26		; set DMA address
+;
+; ASCII characters . . .
+;
+CtrlC	equ	03h		; ^C
+BEL	equ	07h		; bell
+TAB	equ	09h		; tab
+LF	equ	0Ah		; line feed
+CtrlK	equ	0Bh		; ^K
+FF	equ	0Ch		; form feed
+CR	equ	0Dh		; carriage return
+CtrlS	equ	13h		; ^S
+CtrlX	equ	18h		; ^X
+CpmEOF	equ	1Ah		; ^Z (end-of-file)
+;
+	.request	zslib,dslib,z3lib,syslib
+;
+	ext	timini,rclock,gstamp,pstamp			; DSLIB
+	ext	eatspc,mtimx3,gcomnam,comnam,hvon,hvoff,hvtinit	; ZSLIB
+	ext	hvdinit,dstrmo,mafhc,mstr,mout
+	ext	z3init,zsyschk,gzmtop,puter2,inverror,zfname	; Z3LIB
+	ext	z3log,getquiet,getcrt,getprt
+	ext	f$exist,f$open,f$make,f$rename,f$delete,f$close	; SYSLIB
+	ext	f$appl,initfcb,logud,retud,eprint,epstr,pfn2
+	ext	crlf,cout,condin,cin,rin,pafdc,phlfdc,dparams
+	ext	dfree,getfs1,@fncmp,sdiv,ccout,lout,pout,ma2hc
+	ext	isalnum,codend
+;
+	jp	Start
+;
+	db	'Z3ENV'
+	db	1
+Z3EAdr:	dw	0		; address of environment descriptor
+;
+; Configuration area . . .
+;
+	dw	0		; filler
+	db	'CONCAT'	; for ZCNFG
+	db	Vers/10+'0',Vers mod 10+'0'
+;
+QtFlag:	db	0		; 0=verbose, FFh=quiet
+AppFlg:	db	0		; 0=concatenate, FFh=append
+ObjFlg:	db	0		; 0=text, FFh=object (binary)
+SpcFlg:	db	0		; 0=check disk space, FFh=don't
+StpFlg:	db	0		; 0=transfer datestamp, FFh=don't
+FltFlg:	db	0		; 0=no filter, FFh=filter
+PagFlg:	db	0		; 0=paging, FFh=no paging (RO only)
+DatFmt:	db	1		; 1=American date, 2=European, 4=Japanese
+TimFmt:	db	0		; 0=civilian time, FFh=military
+ECFlag:	db	0FFh		; 0=lower-case, FFh=upper-case
+LFFlag:	db	0		; 0=CR only, FFh=CRLF (CON: input)
+AbtErr:	db	0		; 0=abort no error, FFh=abort is error
+AuxEOF:	db	01Ah		; end-of-file character for AUX I/O
+;
+; Date and time prefix string (20 characters maximum)
+TmStr1:	db	'^M^J--- [ '
+	db	0,0,0,0,0,0,0,0,0,0
+	db	0		; null terminator
+;
+; Date and time suffix string (20 characters maximum)
+TmStr3:	db	' ] ---^M^J^M^J'
+	db	0,0,0,0,0,0
+	db	0		; null terminator
+;
+; Default divider string
+DivStr:	db	'^M^J----^M^J'
+	db	0,0,0,0,0,0,0,0
+	db	0,0,0,0,0,0,0,0,0,0
+	db	0,0,0,0,0,0,0,0,0,0
+	db	0,0,0,0,0,0,0,0,0,0
+	db	0,0,0,0,0,0,0,0,0,0
+	db	0,0,0,0,0,0,0,0,0,0
+	db	0,0,0,0,0,0
+	db	0		; null terminator
+;
+; Start of program . . .
+;
+Start:	ld	hl,(Z3EAdr)	; set up environment
+	call	zsyschk		; is this a z-system?
+	ret	nz		; (no, let's quit)
+	call	z3init
+	ld	(Stack),sp	; save old stack pointer
+	ld	sp,Stack	; ..and set up new stack
+	call	gzmtop		; get top of memory
+	ld	(MemTop),hl	; store it
+;
+	call	codend		; set buffer addresses
+	ld	(InBuf),hl
+	ld	de,128		; add 1 sector for output buffer address
+	add	hl,de
+	ld	(OutBuf),hl
+	add	hl,de		; add another sector for stack
+	ex	de,hl		; put buffer address in DE
+	ld	hl,(MemTop)	; get top of memory
+	or	a		; reset the carry flag
+	sbc	hl,de		; subtract
+	jp	c,NoMem		; (not enough memory)
+	ld	de,128		; put divisor in DE
+	call	sdiv
+	ex	de,hl		; put quotient in HL
+	sub	a
+	cp	h		; maximum memory?
+	jr	nz,Start1	; (yes)
+	cp	l		; at 1 sector?
+	jp	z,NoMem		; (no)
+	ld	a,l		; use number of sectors in L
+	dec	a		; ..less 1
+	ld	(BufSiz),a
+	jr	Start2
+;
+Start1:	ld	a,255		; set output buffer size
+	ld	(BufSiz),a
+Start2:	sub	a		; initialize option flags
+	ld	b,GetFlg-OpDFlg
+	ld	hl,OpDFlg
+InitLp:	ld	(hl),a
+	inc	hl
+	djnz	InitLp
+	ld	hl,DftNam
+	call	gcomnam		; get disk name
+	call	getquiet	; is ZCPR quiet flag set?
+	rra			; make it 0 or FFh
+	sbc	a,a
+	jr	nz,Start3	; (yes)
+	ld	a,(QtFlag)	; no, get quiet config byte
+Start3:	ld	(OpQFlg),a	; ..and store in Q option flag
+	ld	hl,AppFlg	; move defaults for options A, O, S,
+	ld	de,OpAFlg	; ..F, H and P to option flags
+	ld	bc,6		; move space and stamp defaults
+	ldir
+
+	call	retud		; get and store default disk and user
+	ld	(DftUsr),bc
+	call	hvtinit		; initialize terminal
+
+	ld	c,CpmVer	; get CP/M version
+	call	Bdos
+	ld	a,l
+	cp	30h
+	jr	c,Start4	; (not Z3Plus)
+	ld	(Z3Plus),a	; set the Z3Plus flag
+
+Start4:	ld	a,(CpmDma)	; see if there's a tail
+	or	a
+	jp	z,Usage		; (no, so tell 'em how to use this)
+	ld	bc,128		; move command tail to storage
+	ld	hl,CpmDma
+	ld	de,CTail
+	ldir
+;
+	call	GetOpt		; get options, if any
+	call	ChkOpt		; resolve conflicting options
+
+	ld	a,(OpFFlg)	; file stamp transfer?
+	or	a
+	call	z,timini	; (yes, initialize it)
+	ld	hl,CTail+1	; get output filename from tail
+	call	eatspc		; eat any spaces
+	jp	z,Usage		; (no filename)
+	cp	'/'		; is it a slash?
+	jp	z,Usage		; (yes, no filename)
+	cp	'='		; is it an equal sign?
+	jp	z,NoOut		; (yes, no filename)
+; Check for redirected output and, if so, skip following output file code.
+	ld	(TailPt),hl
+	ld	a,(CpmFcb+1)	; an output filename?
+	cp	' '
+	call	z,ChkRO		; (no, check for output redirection)
+	jr	z,NoWMsg	; (if so, skip the outfile stuff)
+	ld	de,OutFcb	; parse filespec to OutFcb
+	xor	a		; DIR before DU
+	call	zfname		; parse filename
+	jp	nz,AmbOFn	; (ambiguous)
+	ld	a,(OutFcb+15)	; check for valid directory
+	inc	a
+	jp	z,BdODir
+	call	Chk1st
+	ld	a,(OpAFlg)	; check for append mode
+	or	a
+	jr	nz,NoTmp	; (yes, no temporary file)
+	ld	hl,OutFcb+1
+	ld	de,OutNam+1
+	ld	bc,11
+	ldir
+	ld	hl,TmpTyp
+	ld	de,OutFcb+9
+	ld	bc,3
+	ldir
+NoTmp:	ld	de,OutFcb
+	call	z3log		; log into output directory
+	call	retud		; get output DU
+	ld	(OutUsr),bc	; ..and store it
+	ld	a,(OpSFlg)	; checking disk space?
+	or	a
+	call	z,ChkSpc	; (yes, go do it)
+	call	OpnOut		; open output file
+	call	CkAbrt		; check for user abort
+	ld	a,(OpQFlg)	; quiet option?
+	or	a
+	jr	nz,NoWMsg	; (yes, don't print anything)
+	ld	a,(OpAFlg)	; append mode?
+	or	a
+	ld	de,OutNam+1	; assume new file
+	jr	z,WrtMsg	; (no, print name of new file)
+	ld	de,OutFcb+1	; print name of append file
+WrtMsg:	call	eprint
+	db	'Writing to ',0
+	call	PrtFn		; print target filename
+;
+NoWMsg:	call	GetLns		; get lines for screen/printer paging
+;
+; The following 7 lines are the main input loop that is repeated for
+; each source file.  Redirected input is trapped and handled by SETIN,
+; which returns after setting up the next actual source file, if there
+; is one.
+;
+FileLp:	call	CkAbrt		; check for console abort request
+	call	SetIn		; set up next input file
+	jr	z,NoMore	; (we're through)
+	call	FilOpt		; do file-related options
+	call	RdLoop		; read and write files
+	call	ClsIn		; close input file
+	jr	FileLp
+;
+NoMore:	ld	a,(ROFlag)	; is output redirected?
+	or	a
+	jr	z,Done		; (no)
+	bit	1,a		; output to AUX: or CON:?
+	jr	z,NotLst	; (yes)
+	ld	a,CR
+	call	lout		; send carriage return to printer
+	ld	a,(OpPFlg)
+	or	a
+	ld	a,FF
+	call	z,lout		; if paging, send form feed
+	jr	Finish
+;
+NotLst:	bit	2,a		; check for AUX: output
+	ld	a,(AuxEOF)
+	call	nz,pout		; (yes, send final EOF to AUX:)
+	jr	Finish		; ..we can skip closing the output, etc.
+
+Done:	call	FinOut		; close output file
+	ld	a,(OpAFlg)	; append mode?
+	or	a
+	jr	nz,Finish	; (yes, skip date stamping and renaming)
+	ld	a,(OpFFlg)	; transferring file stamp?
+	or	a
+	call	z,PutStp	; (yes, move it)
+	ld	hl,BakTyp
+	ld	de,OutFcb+9
+	ld	bc,3
+	ldir
+	ld	de,OutFcb	; blind erase any existing BAK file
+	call	f$delete
+	ld	de,OutNam	; point to old XXX name
+	ld	hl,OutFcb	; point to new BAK name
+	call	f$rename	; ..and blind rename file
+	ld	hl,TmpTyp	; rename temporary $$$ file
+	ld	de,OutFcb+9	; ..to output filename
+	ld	bc,3
+	ldir
+	ld	hl,OutNam	; point to new XXX name
+	ld	de,OutFcb	; point to old $$$ name
+	call	f$rename	; ..and rename output file
+;
+Finish:	ld	a,(OpQFlg)	; quiet option?
+	or	a
+	ld	a,0		; reset error flag
+	jr	nz,Exit		; (yes)
+	call	eprint
+	db	'Done.',0
+Exit:	call	hvdinit		; de-initialize terminal
+	ld	b,a		; put error code in B for error handler
+	call	puter2		; and store in flag
+	or	a
+	call	nz,inverror	; if error, call error handler
+	ld	sp,(Stack)	; restore stack pointer
+	ret			; ..and exit
+;
+; Error Exits . . .
+;
+NoSpc:	ld	a,11		; error code
+	call	eprint
+	db	'Insufficient disk space.',0
+	jr	Exit
+;
+NoDlm:	ld	a,4		; error code
+	call	eprint
+	db	'Command line: "=" expected.',0
+	jr	Exit
+;
+OutFNF:	ld	de,OutFcb+1	; print filename
+	call	pfn2
+	ld	a,10		; error code
+	call	eprint
+MsgFNF:	db	' file not found.',0
+	jr	Exit
+;
+InFNF:	ld	de,InFcb+1	; print filename
+	call	pfn2
+	ld	a,10		; error code
+	ld	hl,MsgFNF	; file not found
+	call	epstr
+	jp	SAbort
+;
+AmbOFn:	ld	de,OutFcb+1	; print filename
+	call	pfn2
+	ld	a,8		; error code
+	call	eprint
+MsgAmb:	db	' ambiguous filename.',0
+	jp	Exit
+;
+NoOut:	ld	a,8		; error code
+	call	eprint
+	db	'No output file.',0
+	jp	Exit
+;
+NoMem:	ld	a,12		; error code
+	call	eprint
+	db	'Not enough memory.',0
+	jp	Exit
+;
+BdODir:	ld	a,2		; error code
+	call	eprint
+	db	'Invalid output directory.',0
+	jp	Exit
+;
+BdIDir:	ld	a,2		; error code
+	call	eprint
+	db	'Invalid source directory.',0
+	jr	SAbort
+;
+NoIn:	ld	a,8		; error code
+	call	eprint
+	db	'Missing source filename.',0
+	jr	SAbort
+;
+AmbIFn:	ld	a,(OpSFlg)	; disk space mode?
+	or	a
+	call	z,crlf		; (yes, new line)
+	ld	de,InFcb+1	; print filename
+	call	pfn2
+	ld	a,8		; set error flag
+	ld	hl,MsgAmb	; ambiguous input filename
+	call	epstr
+;
+SAbort:	ld	b,a		; save error code
+	ld	a,(OpSFlg)	; space check mode?
+	or	a
+	ld	a,b		; restore error code
+	jp	z,Exit		; (yes)
+;
+Abort:	push	af		; save error code
+	call	ClsOut		; close output file
+	ld	a,(OpAFlg)	; append mode?
+	or	a
+	call	z,f$delete	; (unless append, erase output file)
+	pop	af		; recover error code
+	jp	Exit
+;
+; Subroutines . . .
+;
+; RIOpt -- Executes options that must be done for each redirected input
+; source.
+;
+RIOpt:	ld	a,(FFirst)	; check first file flag
+	or	a
+	jr	nz,FRest1	; (not the first, so divider only)
+	dec	a
+	ld	(FFirst),a	; reset the flag
+	jr	FilOp1		; do date and divider
+;
+; FilOpt -- Executes options that must be done for each source file, or
+; must be done for some source files and not others.
+;
+FilOpt:	ld	a,(FFirst)	; check first file flag
+	or	a
+	jr	nz,FRest	; (it's not the first source file)
+	dec	a
+	ld	(FFirst),a	; reset the flag
+	ld	a,(OpFFlg)	; file stamp transfer?
+	or	a
+	call	z,GetStp	; (yes, get it)
+FilOp1:	ld	a,(OpDFlg)	; are we inserting the date?
+	or	a
+	call	nz,PutDat	; (yes, go do it)
+	ld	a,(OpAFlg)	; append mode?
+	or	a
+	ret	z		; (no, no divider)
+	jr	FRest1		; yes, insert divider if needed
+;
+FRest:	ld	a,(OpFFlg)	; file stamp transfer?
+	or	a
+	call	z,ChkStp	; (yes, check it for match)
+FRest1:	jp	PutDiv		; insert divider, if needed, and return
+;
+; SetIn -- Get input filename and set up for input.  Z flag set if no
+; more files.
+;
+SetIn:	call	GetIn		; search for next input file
+	ret	z		; (none)
+	push	af		; save flags
+	call	OpnIn		; open file
+	ld	a,(OpQFlg)	; quiet mode?
+	or	a
+	jr	nz,SetIn2	; (yes, don't print anything)
+	ld	hl,MsgAdd	; print filename we're reading
+	ld	a,(OpAFlg)	; appending?
+	or	a
+	jr	z,SetIn1	; (no, use "adding" message)
+	ld	hl,MsgApd	; yes, use "appending" message
+SetIn1:	call	epstr
+	ld	de,InFcb+1
+	call	PrtFn		; print filename
+SetIn2:	pop	af
+	ret
+;
+MsgApd:	db	' Appending ',0
+MsgAdd:	db	'    Adding ',0
+;
+; GetIn -- Get next input filename from command line
+;
+GetIn:	ld	bc,(DftUsr)	; log default DU for parser
+	call	logud
+	ld	hl,(TailPt)	; recover command tail pointer
+	call	eatspc
+	ret	z		; (no more files)
+	cp	','		; got comma?
+	jr	nz,GetIn1	; (no)
+	inc	hl		; get past it
+	call	eatspc
+	ret	z		; (no more files)
+GetIn1:	cp	'/'
+	ret	z		; (no more files)
+;
+; Initialize input file control block
+;
+	ld	(PrevPt),hl	; save pointer
+	ld	de,InFcb	; point to input FCB
+	xor	a		; DIR before DU
+	call	zfname		; ..and parse filespec
+	jp	nz,AmbIFn	; (ambiguous filename)
+	ld	(TailPt),hl	; save command tail pointer
+	ld	a,(InFcb+1)	; is there a filename?
+	cp	' '
+	call	z,ChkRI		; (no, check for redirected input)
+	jr	z,GetIn		; (after redirected input, start over)
+	ld	a,(InFcb+15)	; check valid directory
+	or	a
+	call	nz,crlf
+	jp	nz,BdIDir	; (bad directory)
+	call	z3log		; log into DU
+	call	retud		; get DU
+	ld	(InUsr),bc	; ..and store it
+	xor	a		; reset Z flag
+	inc	a
+	ret
+;
+; OpnIn -- open input file.  Already logged to DU.
+;
+OpnIn:	ld	a,128		; initialize pointer
+	ld	(GetPtr),a
+	sub	a		; initialize end-of-file flag
+	ld	(GetFlg),a
+	ld	de,InFcb
+	call	initfcb
+	call	f$open
+	ret	z		; (all okay)
+	ld	a,(OpAFlg)	; append mode?
+	or	a
+	call	nz,FinOut	; (yes, write buffer)
+	jp	InFNF
+;
+; OpnOut -- open output file.
+;
+OpnOut:	sub	a		; initialize counters
+	ld	(PutCnt),a
+	ld	(PutSec),a
+	ld	hl,(OutBuf)	; initialize buffer pointer
+	ld	(PutPtr),hl
+	ld	de,OutFcb
+	call	initfcb		; initialize FCB
+	call	OutDU
+	ld	a,(OpAFlg)	; append mode?
+	or	a
+	jr	nz,OpnApd	; (yes)
+	call	f$make
+	ret	z		; (okay)
+	ld	a,11		; error code
+	call	eprint
+	db	'No directory space.',0
+	jp	Exit
+;
+; Open for append mode
+;
+OpnApd:	push	de		; save FCB pointer
+	ld	de,(OutBuf)	; put DMA address in DE
+	ld	c,SetDMA	; ..and set DMA address
+	call	Bdos
+	pop	de		; recover FCB address
+	call	f$appl		; read append file
+	or	a		; any errors?
+	jr	nz,ApdErr	; (yes)
+	ld	a,(OpOFlg)	; object file mode?
+	or	a
+	jr	nz,ApdObj	; (yes)
+	ld	hl,(PutPtr)	; point to output buffer
+	ld	a,(PutCnt)	; get counter to B
+	ld	b,a
+ApdLp:	ld	a,(hl)		; get character
+	cp	CpmEof		; end of file?
+	jr	z,ApdEnd	; (end)
+	inc	hl		; increment pointer
+	inc	b		; increment counter
+	ld	a,b
+	cp	128		; end of sector?
+	jr	z,ApdObj	; (yes, no ^Z)
+	jr	ApdLp		; continue
+;
+ApdEnd:	ld	a,b		; store current counter position
+	ld	(PutCnt),a
+	ret
+;
+ApdObj:	ld	a,128		; set counter for full sector
+	ld	(PutCnt),a
+	ret
+;
+ApdErr:	cp	3		; file empty?
+	ret	z		; (yes, but who cares?)
+	cp	2		; file full?
+	jp	nz,OutFNF	; (no, just not found)
+	ld	a,4		; error code
+	call	eprint
+	db	'Output file is full.',0
+	jp	Exit
+;
+; RdLoop -- reads and writes until end of file
+;
+RdLoop:	call	GetC		; get a character
+	jr	c,RdErr		; (read error)
+	ret	z		; (end of file)
+	cp	CpmEof		; end of file?
+	call	z,ChkEof	; (yes, check mode)
+	ret	z		; (yes)
+	call	PutC		; write character
+	jr	c,WrtErr	; (write error)
+	jr	RdLoop
+;
+RdErr:	ld	a,4		; error code
+	call	eprint
+	db	'Read error.',0
+	jp	Abort
+;
+WrtErr:	ld	a,11		; error code
+	call	eprint
+	db	'Disk full.',0
+	jp	Abort
+;
+; ChkEof -- checks for Option O and, if so, ignores end-of-file character
+;
+ChkEof:	ld	b,a		; save character in B
+	ld	a,(OpOFlg)	; get object flag
+	or	a
+	ld	a,b		; get character back in A
+	ret
+;
+; ClsIn -- close input file
+;
+ClsIn:	call	InDU		; close input file
+	ld	de,InFcb
+	jp	f$close		; ..and return to caller
+;
+; FinOut -- writes buffer and closes output file
+;
+FinOut:	ld	a,(OpOFlg)	; check option O flag
+	or	a
+	jr	nz,WrLst	; (object file transfer, skip EOF)
+	ld	a,CpmEof	; put end-of-file character
+	call	PutC
+	ld	a,(PutCnt)	; check pointer
+	or	a
+	jr	z,WrLst		; (sector finished)
+	ld	b,a
+	ld	a,128		; fill rest of sector with ^Z
+	sub	b
+	ld	b,a
+FillZ:	ld	a,CpmEof
+	push	bc
+	call	PutC
+	pop	bc
+	djnz	FillZ
+	jr	WrLst
+;
+WrLst:	ld	de,(OutBuf)	; get beginning buffer address to DE
+	ld	hl,PutPtr	; HL -> buffer pointer
+	ld	a,e		; is pointer at zero?
+	cp	(hl)
+	jr	nz,WrLst2	; (no)
+	ld	a,d
+	inc	hl
+	cp	(hl)
+	jr	nz,WrLst2	; (no)
+	ld	a,(PutCnt)	; is counter at zero?
+	or	a
+	jr	nz,WrLst2	; (no)
+	jr	ClsOut		; nothing to write, so close it
+;
+WrLst2:	call	FWrt		; write what's left
+	or	a		; check for error
+	jr	nz,WrtErr	; (yes, abort)
+;
+ClsOut:	call	OutDU		; close output file
+	ld	de,OutFcb
+	call	f$close
+	ret	z		; (okay)
+	ld	a,4		; error code
+	call	eprint
+	db	'Close error.',0
+	jp	Exit
+;
+; PrtFn -- Prints drive/user and filename on console.  Assumes we're
+; logged into correct DU.
+;
+PrtFn:	call	retud		; get DU
+	call	hvon
+	ld	a,b		; get drive
+	add	a,'A'		; make it printable
+	call	cout		; ..and print it
+	ld	a,c		; get user
+	call	pafdc		; ..and print it
+	ld	a,':'
+	call	cout
+	call	pfn2		; print filename
+	call	hvoff
+	jp	crlf		; new line and return to caller
+;
+; OutDU -- sets default drive and user for output file
+;
+OutDU:	ld	bc,(OutUsr)	; B=drive, C=user
+	jp	logud		; set it and return to caller
+;
+; InDU -- sets default drive and user for input file
+;
+InDU:	ld	bc,(InUsr)	; B=drive, C=user
+	jp	logud		; set it and return to caller
+;
+; GetC -- returns character from file.  Assumes file has been
+; successfully opened.  Returns character or ^Z (end-of-file) in
+; A.  Zero set (Z) on end of file.  Carry set (C) if error.
+;
+GetC:	ld	a,(GetFlg)	; check end-of-file flag
+	or	a
+	jr	nz,GetEof	; (yes)
+	ld	a,(GetPtr)	; get pointer
+	cp	128		; done with buffer?
+	jr	c,GetChr	; (no, get a character)
+	call	CkAbrt		; check for user abort
+	ld	de,(InBuf)
+	ld	c,SetDMA	; set DMA address
+	call	Bdos
+	call	InDU		; set DU
+	ld	de,InFcb
+	ld	c,FRead		; read more file
+	call	Bdos
+	cp	1		; return code?
+	jr	z,GetEof	; (end of file)
+	jr	nc,GetErr	; (a problem)
+	ld	(GetPtr),a	; put 0 in pointer
+;
+GetChr:	ld	hl,(InBuf)	; point to DMA buffer
+	ld	e,a		; put pointer in DE
+	ld	d,0
+	add	hl,de		; add it to HL
+	ld	a,(hl)		; get next character
+	ld	hl,GetPtr	; increment pointer
+	inc	(hl)
+	scf
+	ccf			; clear carry, leave Z flag alone
+	ret
+;
+GetEof:	ld	a,CpmEof
+	ld	(GetFlg),a	; set end-of-file flag
+	scf
+	ccf			; clear carry, leave Z flag alone
+	ret
+;
+GetErr:	ld	a,CpmEof
+	ld	(GetFlg),a
+	scf			; set carry
+	ret
+;
+; PutC -- Writes character to file.  Assumes file has been successfully
+; opened.  Expects character in A.  Returns carry set (C) on error.
+;
+PutC:	ld	c,a		; save character in C
+	ld	a,(OpHFlg)
+	or	a
+	jr	nz,PutF
+PutC1:	ld	a,(ROFlag)
+	or	a
+	jp	nz,PrtC
+	ld	a,(PutCnt)	; get counter
+	cp	128		; buffer full?
+	jr	c,PutChr	; (no, so do it)
+	push	bc		; the character is threatened from all sides
+	ld	a,(BufSiz)	; get buffer size
+	ld	b,a		; ..and put it in B
+	ld	a,(PutSec)	; get sector count
+	cp	b		; end of buffer?
+	jr	z,PutC2		; (yes, we need to write it)
+	inc	a		; increment sector count
+	ld	(PutSec),a	; ..and store it
+	ld	hl,(PutPtr)	; get current sector pointer
+	ld	de,128		; ..add 128 to it
+	add	hl,de
+	ld	(PutPtr),hl	; ..and store it
+	xor	a		; make A = 0
+	jr	PutC3
+;
+PutC2:	call	FWrt		; write buffer to disk
+	push	af
+	ld	hl,(OutBuf)	; reset buffer pointer
+	ld	(PutPtr),hl
+	xor	a		; reset sector counter
+	ld	(PutSec),a
+	pop	af
+;
+PutC3:	pop	bc		; get back output character
+	or	a		; return code?
+	jr	nz,PutErr	; (problem)
+	ld	(PutCnt),a	; reset counter to 0
+;
+PutChr:	ld	hl,(PutPtr)	; point to current DMA buffer
+	ld	e,a		; move counter to DE
+	ld	d,0
+	add	hl,de		; ..and add it to HL
+	ld	(hl),c		; write character
+	ld	a,(PutCnt)
+	inc	a		; increment counter
+	ld	(PutCnt),a
+	sub	a		; clear carry
+	ret
+;
+PutErr:	scf			; set carry
+	ret
+;
+; Mask high bits and eliminate most control characters
+;
+PutF:	ld	a,c		; character to A
+	and	7Fh		; reset high bit
+	ld	c,a		; return character to C
+	cp	' '		; control character?
+	jr	nc,PutC1	; (no)
+	cp	CR		; carriage return?
+	jr	z,PutC1
+	cp	LF		; line feed?
+	jr	z,PutC1
+	cp	TAB		; tab?
+	jr	z,PutC1
+	cp	FF		; form feed?
+	jr	z,PutC1
+	cp	CpmEOF		; ^Z?
+	jr	z,PutC1
+	sub	a		; for other controls, clear carry
+	ret			; ..and return, doing nothing
+;
+; FWrt -- write output buffer to disk
+;
+FWrt:	call	OutDU
+	ld	a,(PutSec)	; get buffer sector count
+	ld	b,a		; put it in B
+	ld	de,(OutBuf)	; point to beginning of buffer
+FWrt2:	push	bc		; save sector count
+	push	de		; save DMA address
+	call	WrtSec		; write the sector
+	pop	hl		; DMA address recovered in HL
+	pop	bc		; get back sector count
+	or	a		; write error?
+	ret	nz		; (yes)
+	cp	b		; end of buffer?
+	ret	z		; (yes)
+	dec	b		; decrement sector count
+	ld	de,128		; increment DMA address
+	add	hl,de
+	ex	de,hl
+	jr	FWrt2
+;
+WrtSec:	ld	c,SetDma	; set DMA address
+	call	Bdos		; drive/user already is set
+	ld	de,OutFcb	; ..write sector
+	ld	c,FWrite	; (drive/user already is set)
+	jp	Bdos		; ..and return to caller
+;
+; PrtC -- Sends character to screen, printer, or auxiliary output,
+; depending on IOFlg.
+;
+PrtC:	bit	1,a		; printer output?
+	jr	nz,LstC		; (yep)
+	bit	2,a		; auxiliary output?
+	jr	nz,AuxC		; (uh huh)
+	ld	a,c		; assume console output
+	call	cout		; print character
+	and	7Fh		; reset high bit
+	cp	LF
+	jr	nz,PrtC2	; (not line feed)
+	ld	a,(OpPFlg)	; paging?
+	or	a
+	jr	nz,PrtC1	; (no)
+	ld	a,(LinCnt)	; decrement line counter
+	dec	a
+	jr	nz,PrtC1	; (not zero, so continue)
+	call	eprint
+	db	'[more]',0
+	call	cin		; wait for key press
+	call	eprint
+	db	CR,'      ',CR,0
+	call	CkAbt1		; check for user abort
+	ld	a,(MaxLns)	; re-initialize line counter
+PrtC1:	ld	(LinCnt),a
+	call	condin
+	call	nz,CkPaus	; check for pause (or abort) request
+PrtC2:	or	a		; return no carry
+	ret
+;
+LstC:	ld	a,c		; character to A
+	call	lout
+	and	7Fh		; reset high bit
+	cp	LF
+	jr	nz,LstC2	; (not end of line)
+	ld	a,(OpPFlg)
+	or	a
+	jr	nz,LstC1
+	ld	a,(LinCnt)
+	dec	a
+	jr	nz,LstC1	; (not end of page)
+	ld	a,FF
+	call	lout		; send form feed
+	ld	a,(MaxLns)	; re-initialize line counter
+LstC1:	ld	(LinCnt),a
+	call	CkAbrt		; check for user abort
+LstC2:	or	a		; return no carry
+	ret
+;
+AuxC:	ld	a,c		; character to A
+	call	pout
+	ret
+;
+CkPaus:	cp	CtrlS		; ^S?
+	call	z,cin		; if so, wait for any character
+	jp	CkAbt1		; ..and check for user abort
+;
+; PutDiv -- Sends divider string to output file
+;
+PutDiv:	ld	a,(OpIFlg)	; are we inserting divider?
+	or	a
+	ret	z		; (no)
+	ld	a,(ECFlag)	; initialize case flag
+	ld	(CasFlg),a
+	ld	hl,(OpIAdr)	; a command line divider string?
+	ld	a,h
+	or	a
+	jr	nz,Echo		; (yes)
+	dec	a		; make A = FFh
+	ld	(CasFlg),a
+	ld	hl,DivStr	; point to divider string
+	jr	Echo		; send it and return to caller
+;
+; PutDat -- Sends date and time string to output file
+;
+PutDat:	ld	a,0FFh
+	ld	(CasFlg),a	; initialize case flag to FFh
+	ld	hl,TmStr1	; send the prefix
+	call	Echo
+	dec	a		; A=FFh
+	ld	(CasFlg),a
+	ld	hl,TmStr2	; send the date and time
+	call	Echo
+	dec	a		; A=FFh
+	ld	(CasFlg),a
+	ld	hl,TmStr3	; send the suffix and return to caller
+;
+; Echo -- unashamedly adapted from Carson Wilson's RCPECHO.
+;
+Echo:	call	GetDC		; get character
+	ret	z		; (end of string)
+	cp	'^'		; control character prefix?
+	jr	nz,Echo1	; (no)
+	call	GetDC		; yes, get next character
+	ret	z		; (end of string)
+	and	1Fh		; convert to control character
+	jr	Echo5		; ..and write it it
+;
+Echo1:	cp	'%'		; escape prefix?
+	jr	nz,Echo5	; (no, normal echo)
+	call	GetDC		; yes, get next character
+	ret	z		; (end of string)
+	cp	'<'		; up-shift?
+	jr	z,Echo2		; (yes, store non-zero in case flag)
+	cp	'>'		; down-shift?
+	jr	nz,Echo3	; (no)
+	xor	a		; yes, clear case flag
+Echo2:	ld	(CasFlg),a
+	jr	Echo		; continue
+;
+Echo3:	cp	'S'		; semi-colon request?
+	jr	nz,Echo4	; (no)
+	ld	a,';'		; yes, write semi-colon
+	jr	Echo5
+;
+Echo4:	cp	'D'		; delete character request?
+	jr	nz,Echo5	; (no)
+	ld	a,07Fh		; yes, write DEL
+;
+Echo5:	call	EOut		; write character and continue
+	jr	Echo
+; Write character based on CasFlg.
+EOut:	ld	c,a		; save character in C
+	cp	'A'		; less than 'A'?
+	jr	c,EOut1		; (yes, leave as is)
+	cp	'Z'+1		; greater than 'Z'?
+	jr	nc,EOut1	; (yes, leave as is)
+	add	20h		; convert to lower
+EOut1:	ld	d,a		; save lower-case version in D
+	ld	a,(CasFlg)	; check case
+	or	a
+	ld	a,c		; assume upper-case
+	jr	nz,EOut2	; (yes, it's upper)
+	ld	a,d		; no, get lower-case version
+EOut2:	push	hl
+	push	bc
+	call	PutC		; write character in A
+	jp	c,WrtErr
+	pop	bc
+	pop	hl
+	ret
+; Return character from string buffer.  Z flag set on end of string.
+GetDC:	ld	a,(hl)		; get character
+	inc	hl		; point to next one
+	or	a		; set zero flag if null
+	ret
+;
+; ChkSpc -- checks free space on target drive and compares it with the
+; total of the filesizes of the input files.  Aborts if space is
+; insufficient.
+;
+ChkSpc:	dec	a		; make A = FFh
+	ld	(SCkFlg),a	; flag space checking in progress
+	ld	hl,(TailPt)	; save pointer
+	push	hl
+	call	OutDU		; select output drive
+	call	dparams
+	call	dfree		; get free space
+	ld	(DskSpc),de	; ..and store it
+	ld	a,(OpQFlg)	; quiet mode?
+	or	a
+	jr	nz,NoFree	; (yes, no messages)
+	call	eprint
+	db	'Free ',0
+	ex	de,hl		; get disk space into HL
+	call	phlfdc
+	call	eprint		; let them know we're working
+	db	'k, needed ',0
+NoFree:	ld	hl,0		; initialize accumulating counters
+	ld	(FilSiz),hl	; ..filesize
+	ld	(FilRem),hl	; ..and remainder
+ChkSp1:	call	GetIn		; check for input files
+	jr	z,ChkDne	; (done)
+	ld	de,InFcb
+	call	f$exist
+	call	z,crlf
+	jp	z,InFNF
+	call	getfs1		; get file size
+	call	Div8		; convert to kilobytes
+	push	hl
+	ld	hl,(FilSiz)	; add to total file size
+	add	hl,de
+	ld	(FilSiz),hl
+	ld	hl,(FilRem)	; add remainder
+	pop	de
+	add	hl,de
+	ld	(FilRem),hl
+	jr	ChkSp1
+;
+ChkDne:	ld	hl,(FilRem)	; convert remainder to kilobytes
+	ld	a,(OpDFlg)	; insert date option?
+	or	a
+	jr	z,ChkDn0	; (nope)
+	inc	hl		; yep, add another record
+ChkDn0:	ld	a,(OpIFlg)	; insert divider option?
+	or	a
+	jr	z,ChkDn1	; (nope)
+	inc	hl		; yep, add another record
+ChkDn1:	call	Div8
+	xor	a
+	ld	(SCkFlg),a	; cancel in progress flag
+	cp	l		; check for remainder
+	jr	z,ChkDn2	; (none)
+	inc	de
+ChkDn2:	ld	hl,(FilSiz)	; add to file size
+	add	hl,de
+	ld	(FilSiz),hl
+	ld	a,(OpQFlg)	; quiet mode?
+	or	a
+	jr	nz,NoNeed	; (yes, no messages)
+	call	phlfdc
+	ld	a,'k'
+	call	cout
+	call	crlf
+NoNeed:	ex	de,hl		; put total file size in DE
+	ld	hl,(DskSpc)	; get free space in HL
+	or	a		; reset carry flag
+	sbc	hl,de		; subtract DE from HL
+	jp	c,NoSpc		; (not enough disk space)
+	ld	bc,(DftUsr)	; relog default DU
+	call	logud
+	pop	hl		; restore tail pointer
+	ld	(TailPt),hl
+	ret
+;
+; GetOpt -- checks command tail for user supplied options and sets
+; appropriate option flags.  Invalid options are ignored.
+;
+GetOpt:	ld	hl,CTail	; point to command tail
+	ld	a,(hl)		; anything there?
+	or	a
+	ret	z		; (no)
+	ld	b,a		; yes, put number of chars in B
+	inc	hl		; ..and increment pointer
+ScnDLp:	ld	a,(hl)		; get character
+	cp	'/'		; delimiter?
+	jr	z,ScnOpt	; (yes)
+	ld	d,a		; save character
+ScnDL2:	inc	hl		; no, keep looking
+	djnz	ScnDLp
+	ret			; (none found, return)
+;
+ScnOpt:	push	af		; save current character
+	ld	a,d		; get back previous character
+	pop	de		; put current character in D
+	cp	' '		; was previous char a space?
+	jr	nz,ScnDL2	; (no)
+	jr	ScnOp2
+;
+ScnOLp:	call	ScnTbl
+	ex	de,hl		; point back to options
+ScnOp2:	inc	hl
+	djnz	ScnOLp		; loop through options
+	ret
+;
+ScnTbl:	ld	c,(hl)		; put option in C
+	ld	de,OptTbl	; point DE to option table
+ScnTLp:	ld	a,(de)		; get table option
+	or	a		; end of table?
+	jr	z,NoMat		; (yes, no match)
+	inc	de		; no, keep looking
+	cp	c		; match?
+	jr	z,TMatch	; (yes)
+	inc	de		; move pointer to next entry
+	inc	de
+	jr	ScnTLp		; ..and keep looking
+;
+NoMat:	ex	de,hl		; no match
+	ld	a,c		; get back option
+	cp	' '		; was it a space?
+	ret	z		; (that's okay)
+	cp	'/'		; was it a slash?
+	ret	z		; (that's okay too)
+	ld	a,19		; error code
+	call	eprint
+	db	'Invalid option.',0
+	jp	Exit
+;
+TMatch:	push	hl		; save option pointer
+	ld	a,(de)		; put address from table into HL
+	ld	l,a
+	inc	de
+	ld	a,(de)
+	ld	h,a
+	pop	de		; recover option pointer in DE
+	ld	a,0FFh		; set option flag by jumping to
+	jp	(hl)		; ..table routine and returning
+;
+; OptTbl -- Option Jump Table
+;
+OptTbl:	db	'A'		; A = append files
+	dw	OptA
+	db	'C'		; C = concatenate files
+	dw	OptC
+	db	'D'		; D = time and date in file
+	dw	OptD
+	db	'F'		; F = file date stamps
+	dw	OptF
+	db	'I'		; I = insert divider
+	dw	OptI
+	db	'O'		; O = object (binary) files
+	dw	OptO
+	db	'Q'		; Q = toggle quiet mode
+	dw	OptQ
+	db	'S'		; S = toggle space checking and date stamping
+	dw	OptS
+	db	'T'		; T = text files
+	dw	OptT
+	db	'P'		; P = paging
+	dw	OptP
+	db	'H'		; H = filter high bits
+	dw	OptH
+	db	0		; end of option jump table
+;
+; Option setting routines.  A=0FFh on entry.  DE and B must be preserved.
+;
+OptC:	inc	a		; reset flag
+;
+OptA:	ld	(OpAFlg),a	; or set it
+SkpOpt:	ret
+;
+OptD:	ld	(OpDFlg),a	; set flag
+	call	timini		; initialize clock routine
+	jr	z,OpDEr		; (error, no clock)
+	push	bc
+	push	de
+	ld	hl,TimStr	; point to BCD time string buffer
+	call	rclock		; read clock
+	jr	nz,OpDEr	; (error, bad clock)
+	ld	hl,TimStr	; ->BCD time/date string
+	ld	de,TmStr2	; ASCII time/date buffer
+	call	Dates3		; create date string
+	ld	a,' '		; insert 2 spaces between date and time
+	call	mout
+	call	mout
+	ld	a,(TimFmt)
+	call	mtimx3		; create time string
+	xor	a		; stuff in a final null byte
+	ld	(de),a
+	pop	de
+	pop	bc
+	ret
+;
+OpDEr:	ld	a,4		; error code
+	call	eprint
+	db	'No clock.',0
+	jp	Exit
+;
+OptT:	inc	a		; reset flag
+;
+OptO:	ld	(OpOFlg),a	; or set it
+	ret
+;
+OptI:	ld	(OpIFlg),a	; set flag
+	ld	l,e		; copy address to HL
+	ld	h,d
+	inc	hl		; point to option + 1
+	dec	b
+	ld	a,(hl)		; character is delimiter
+	or	a		; ..or end of command line
+	jr	z,NoIStr	; (it's the end)
+	call	isalnum		; a legal delimiter?
+	jr	z,OpIErr	; (nope)
+	ld	c,a		; save delimiter in C
+	inc	hl		; point to option + 2
+	dec	b
+	ld	a,(hl)		; this character could be..
+	or	a		; ..end of command line
+	jr	z,NoIStr
+	cp	c		; ..another delimiter
+	jr	z,OpIDun
+	ld	(OpIAdr),hl	; ..or the beginning of string (store address)
+OptILp:	inc	hl
+	dec	b		; loop through the string, looking for..
+	ld	a,(hl)
+	or	a		; ..the end of the command line
+	jr	z,OpIDun
+	cp	c		; ..or a second matching delimiter
+	jr	z,OpIDun
+	jr	OptILp
+;
+OpIDun:	xor	a		; push a null at end of string
+	ld	(hl),a
+	ex	de,hl		; end-of-string pointer to DE
+	cp	b		; B = 0?
+	ret	nz
+	inc	b		; B has to be at least 1
+	ret
+;
+NoIStr:	ld	b,1		; tell the scanner there's no more
+	ret
+;
+OpIErr:	ld	a,19		; error code
+	call	eprint
+	db	'Illegal string delimiter.',0
+	jp	Exit
+;
+OptF:	ld	hl,OpFFlg	; F flag
+	jr	TogOpt
+;
+OptQ:	ld	hl,OpQFlg	; Q flag
+	jr	TogOpt
+;
+OptS:	ld	hl,OpSFlg	; S flag
+	jr	TogOpt
+;
+OptP:	ld	hl,OpPFlg	; P flag
+	jr	TogOpt
+;
+OptH:	ld	hl,OpHFlg	; H flag
+;
+TogOpt:	ld	a,(hl)		; get flag byte
+	cpl			; flip it
+	ld	(hl),a		; store it
+	ret
+;
+; ChkOpt -- check for and resolve conflicting options
+;
+ChkOpt:	ld	a,(Z3Plus)	; check Z3Plus flag
+	or	a
+	call	nz,ChkOp2	; (under Z3Plus, turn off option F)
+	ld	a,(OpOFlg)	; object file option?
+	or	a
+	jr	z,ChkOp1	; (no)
+	xor	a
+	ld	(OpDFlg),a	; yes, cancel D option
+	ld	(OpIFlg),a	; ..and I option
+ChkOp1:	ld	a,(OpAFlg)	; append on?
+	or	a
+	ret	z		; (no)
+ChkOp2:	ld	a,0FFh		; yes, turn off F option
+	ld	(OpFFlg),a
+	ret
+;
+; Chk1st -- Checks command line to be sure there is a source file, and
+; stores pointer to the filespec.  Expects HL to address following output
+; filename.
+;
+Chk1st:	call	eatspc
+	cp	'='		; equal sign after filename?
+	jp	nz,NoDlm	; (no, that's a problem)
+	inc	hl		; get past delimiter
+	call	eatspc
+	jp	z,NoIn		; (no, input file)
+	cp	'/'
+	jp	z,NoIn
+	ld	(TailPt),hl	; save command tail pointer
+	ret
+;
+; Usage -- Print usage screen.
+;
+Usage:	call	hvon
+	call	eprint
+DftNam:	db	'CONCAT    Version '
+	db	Vers/10+'0','.',Vers mod 10+'0',SubVers,0
+	call	hvoff
+	call	eprint
+	db	CR,LF,'Usage:',CR,LF,'   ',0
+	ld	hl,comnam
+	call	epstr		; print the name we're called by
+	call	eprint
+	db	' {dir:}outfile = {dir:}infile {{dir:}infile {...}}'
+	db	' {/options}',CR,LF
+	db	'Concatenates or appends infiles to outfile.',CR,LF
+	db	'Output may be redirected to CON:, LST:, or AUX:.',CR,LF
+	db	'Input may be redirected from CON: and AUX:.',CR,LF
+	db	'Options:',CR,LF
+	db	'   A    Append to existing file',0
+	ld	a,(AppFlg)
+	or	a
+	call	nz,PrtDft
+	call	eprint
+	db	CR,LF
+	db	'   C    Concatenate to new file',0
+	call	z,PrtDft
+	call	eprint
+	db	CR,LF
+	db	'   O    Object (binary) files',0
+	ld	a,(ObjFlg)
+	or	a
+	call	nz,PrtDft
+	call	eprint
+	db	CR,LF
+	db	'   T    Text files',0
+	call	z,PrtDft
+	call	eprint
+	db	CR,LF
+	db	'   D    Insert system date and time',CR,LF
+	db	'   I"s" Insert divider string',CR,LF
+	db	'   H    High bit and control filter',0
+	ld	a,(FltFlg)
+	or	a
+	call	nz,PrOff
+	call	eprint
+	db	CR,LF
+	db	'   Q    Quiet mode',0
+	ld	a,(OpQFlg)	; check quiet mode
+	or	a
+	call	nz,PrOff
+	call	eprint
+	db	CR,LF
+	db	'   S    Space checking',0
+	ld	a,(SpcFlg)	; check space check mode
+	or	a
+	call	z,PrOff
+	ld	a,(Z3Plus)	; check Z3Plus flag
+	or	a
+	jr	nz,SkipF1	; (Z3Plus, so don't mention F option)
+	call	eprint
+	db	CR,LF
+	db	'   F    File stamp transfer',0
+	ld	a,(StpFlg)	; check file stamping mode
+	or	a
+	call	z,PrOff
+SkipF1:	call	eprint
+	db	CR,LF
+	db	'   P    Screen and printer paging',0
+	ld	a,(PagFlg)
+	or	a
+	call	z,PrOff
+	xor	a		; reset error flag
+	call	eprint
+MsgUs8:	db	CR,LF
+	db	'Option O turns off D and I.',0
+	ld	a,(Z3Plus)	; check Z3Plus flag
+	or	a
+	jr	nz,SkipF2	; (Z3Plus, don't mention F option)
+	call	eprint
+	db	'  Option A turns off F.',0
+SkipF2:	call	eprint
+	db	CR,LF
+	db	'Option I requires string delimiters even if a string '
+	db	'is not included.',0
+	xor	a		; return no error
+	jp	Exit
+;
+PrtDft:	call	eprint
+	db	'  [ default ]',0
+	ret
+;
+PrOff:	call	eprint
+	db	' off',0
+	ret
+;
+; CkAbrt -- Check for user abort (^C).  Ignore if in Append mode.
+;
+CkAbrt:	ld	a,(OpAFlg)	; check append flag
+	or	a
+	ret	nz		; (yes, return)
+	call	condin		; do we have a key?
+	ret	z		; (no)
+CkAbt1:	and	1Fh		; reset bits 5, 6, and 7
+	cp	CtrlC		; ^C (or C or c)?
+	jr	z,DoAbrt
+	cp	CtrlK		; ^K (or K or k)?
+	jr	z,DoAbrt
+	cp	CtrlX		; ^X (or X or x)?
+	ret	nz		; (no)
+DoAbrt:	call	eprint
+	db	'Aborted.',0
+	ld	a,(ROFlag)
+	or	a
+	ld	a,(AbtErr)	; error code (or 0)
+	jp	nz,Exit		; (if redirected output)
+	jp	Abort
+;
+; ChkRI -- Checks for redirected input on command line and gets it, or,
+; if disk space checking is in progress, merely returns.  Must return
+; with zero flag set (Z).
+;
+ChkRI:	ld	hl,(PrevPt)	; point again to filespec
+	ld	de,ConIO
+	call	IOMat
+	jr	z,GetCon
+	ld	hl,(PrevPt)
+	ld	de,AuxIO
+	call	IOMat
+	call	nz,crlf
+	jp	nz,NoIn		; (no filename, no redirect either)
+	ld	(TailPt),hl
+	ld	a,(SCkFlg)
+	inc	a
+	ret	z		; (space checking in progress)
+	call	RIOpt		; do appropriate file-related options
+	ld	a,(OpQFlg)
+	or	a
+	jr	nz,GALoop
+	call	eprint
+	db	'Inputting from AUX:',CR,LF,0
+	ld	a,(AuxEOF)
+	ld	c,a		; C = termination character
+GALoop:	ld	b,128		; get 128 bytes per loop
+GALp1:	call	rin		; get a character
+	cp	c
+	ret	z		; we're through
+	push	bc		; BC must be preserved throughout loops
+	call	PutC		; output the character
+	pop	bc
+	jp	c,WrtErr	; (an output problem)
+	djnz	GaLp1		; loop for a record's worth
+	push	bc
+	call	CkAbrt		; check for user abort
+	pop	bc
+	jr	GALoop		; ..and start a new record
+;
+GetCon:	ld	(TailPt),hl
+	ld	a,(SCkFlg)
+	inc	a
+	ret	z		; (space checking in progress)
+	call	RIOpt		; do appropriate file-related options
+	call	eprint
+	db	BEL,'Inputting from CON: (^Z to end)',CR,LF,0
+GCLoop:	call	cin
+	cp	CpmEOF
+	ret	z
+	push	af
+	call	ccout
+	call	PutC
+	jp	c,WrtErr
+	pop	af
+	cp	CR
+	jr	nz,GCLoop
+	ld	a,(LFFlag)
+	or	a
+	jr	z,GCLoop
+	ld	a,LF
+	call	cout
+	call	PutC
+	jp	c,WrtErr
+	jr	GCLoop
+;
+; ChkRO -- Checks for redirected output on command line and sets ROFlag,
+; if so.  Otherwise, returns no destination filename error.  ROFlag is
+; set according to output destination:  1 = console, 2 = printer, 3 =
+; auxiliary (punch).
+;
+ChkRO:	ld	de,ConIO
+	call	IOMat
+	ld	b,00000001b
+	jr	z,ChkRO2
+	ld	hl,(TailPt)
+	ld	de,LstIO
+	call	IOMat
+	ld	b,00000010b
+	jr	z,ChkRO1
+	ld	hl,(TailPt)
+	ld	de,AuxIO
+	call	IOMat
+	ld	b,00000100b
+	jp	nz,NoOut	; (no filename, no redirect either)
+	ld	a,(OpQFlg)
+	or	a
+	jr	nz,ChkRO2
+	call	eprint
+	db	'Output to AUX:',CR,LF,0
+	jr	ChkRO2
+;
+ChkRO1:	ld	a,(OpQFlg)
+	or	a
+	jr	nz,ChkRO2
+	call	eprint
+	db	'Output to LST:',CR,LF,0
+;
+ChkRO2:	ld	a,b		; RO flag to A
+	ld	(ROFlag),a	; ..and store it
+	call	Chk1st
+	ld	a,b		; get back flag
+	bit	0,a
+	ld	a,0FFh
+	jr	z,ChkRO3
+	ld	(OpQFlg),a	; turn on quiet flag for console output
+ChkRO3:	ld	hl,OpSFlg	; for all redirected output
+	ld	(hl),a		; ..turn off space checking and date transfer
+	ld	(hl),a
+	inc	a
+	ld	(OpAFlg),a	; ..and append mode
+	ret			; return with Z flag set
+;
+IOMat:	ld	b,4		; check four characters
+	jp	@fncmp		; ..and return
+;
+; GetLns -- get number of lines for screen or printer paging.  Auxiliary
+; output always ignores this.
+;
+GetLns:	ld	a,(ROFlag)
+	or	a
+	ret	z		; (not needed)
+	bit	0,a		; console?
+	jr	z,GetPrn	; (no, printer or auxiliary)
+	call	getcrt
+	inc	hl
+	ld	a,(hl)		; get console lines
+	dec	a		; ..less one
+	ld	(MaxLns),a
+	ld	(LinCnt),a
+	ret
+;
+GetPrn:	call	getprt
+	inc	hl
+	inc	hl
+	ld	a,(hl)		; get printer lines
+	ld	(MaxLns),a
+	ld	(LinCnt),a
+	ret
+;
+; Div8 -- divide HL by 8
+;
+Div8:	ld	de,8		; divisor = 8
+	call	sdiv
+	ret
+;
+;==========================
+	INCLUDE	CONDATE.INC	; file stamping and date formatting routines
+;==========================
+;
+; Initialized data
+;
+ConIO:	db	'CON:'
+LstIO:	db	'LST:'
+AuxIO:	db	'AUX:'
+;
+BakTyp:	db	'BAK'		; for BAK file
+TmpTyp:	db	'$$$'		; for temporary filename
+;
+	DSEG
+;
+; Uninitialized storage . . .
+;
+InFcb:	ds	36		; input file fcb
+OutFcb:	ds	36		; output file fcb
+;
+MaxLns:	ds	1		; maximum screen (or page) lines
+LinCnt:	ds	1		; current line count (decremented)
+OpQFlg:	ds	1		; quiet flag
+; Following 6 bytes are a structure
+OpAFlg:	ds	1		; append option flag
+OpOFlg:	ds	1		; binary file flag
+OpSFlg:	ds	1		; space check and date stamp flag
+OpFFlg:	ds	1		; file stamp flag
+OpHFlg:	ds	1		; filter flag
+OpPFlg:	ds	1		; paging flag (redirected output)
+; Following data group is initialized to nulls
+OpDFlg:	ds	1		; date flag
+OpIFlg:	ds	1		; insert divider flag
+Z3Plus:	ds	1		; non-zero = Z3Plus (CP/M 3)
+FFirst:	ds	1		; non-zero = processing source file after first
+CasFlg:	ds	1		; case flag for ECHO
+ROFlag:	ds	1		; redirected output flag
+SCkFlg:	ds	1		; FFh = space checking in progress
+OpIAdr:	ds	2		; address of CL divider string or zero
+TimStr:	ds	6		; BCD time/date string
+TmStr2:	ds	30		; ASCII time/date string
+StpTmp:	ds	5		; new create date
+OutNam:	ds	12		; output filename
+;
+GetFlg:	ds	1		; GetC end-of-file flag
+GetPtr:	ds	1		; GetC pointer
+PutCnt:	ds	1		; PutC counter
+PutPtr:	ds	2		; PutC pointer
+PutSec:	ds	1		; PutC sector counter
+InBuf:	ds	2		; input buffer address
+OutBuf:	ds	2		; output buffer address
+DftUsr:	ds	1		; default user area
+DftDsk:	ds	1		; default drive
+InUsr:	ds	1		; input file user
+InDrv:	ds	1		; input file drive
+OutUsr:	ds	1		; output file user
+OutDrv:	ds	1		; output file drive
+DskSpc:	ds	2		; disk free space
+FilSiz:	ds	2		; total file size (kilobytes)
+FilRem:	ds	2		; file size remainders (records)
+BufSiz:	ds	1		; output buffer size
+MemTop:	ds	2		; top of memory address
+TailPt:	ds	2		; command tail index pointer
+PrevPt:	ds	2		; command tail previous index
+CTail:	ds	128		; command tail storage
+	ds	128		; stack
+Stack:	ds	2		; old stack pointer
+;
+
+	end
+

@@ -1,0 +1,46 @@
+;	TITLE	"SISCTRL - Syslib 4.0"
+	NAME	('ISCTRL')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SISCTRL.Z80 Ver 1.1 by Richard Conn
+; Date    : 28 Jul 89
+; Version : 1.3
+; Module  : SISCTRL
+; Abstract: This module contains only the routine ISCTRL which
+;	evaluates the character in the A register to see if it
+;	is a Control-Char (< 20H or = 7FH).  If so, the Zero Flag
+;	is Set (Z), otherwise the Zero flag is Reset (NZ).  No
+;	other registers are affected.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+	
+PUBLIC		ISCTRL
+
+	.Z80
+	CSEG
+;=========================================================================
+; NAME - ISCTRL
+; Entry: A = Character to evaluate
+; Exit : A = Character, Zero Set (Z) if in range of 0..1FH or equals 7FH
+;		 Zero flag is Reset (NZ) if NOT
+; Uses : F
+; Special Requirements:  None
+;=========================================================================
+ISCTRL:	PUSH	BC		; Save BC
+	LD	C,A		; Save char in C
+	AND	7FH		; Mask out MSB
+	CP	' '		; Less than Space?
+	JR	C,YES
+	CP	7FH		; Delete?
+	JR	Z,YES
+	DEFB	0F6H		; Set NO flag with "OR  0AFH"
+YES:	XOR	A		; Set Flag
+	LD	A,C		; Get char
+	POP	BC		; Restore BC
+	RET
+
+	END
+

@@ -1,0 +1,513 @@
+;===========================================================================
+;
+; VFMAIN.Z80 - Main Code Block
+;
+;===========================================================================
+
+
+; ZCPR3 Program Header
+
+	 if	z3env ne 0	; External environment
+
+	jp	start
+	db	'Z3ENV'		; This is a zcpr3 utility
+	db	1		; External environment descriptor
+z3eadr:	dw	z3env
+
+	 else			; Internal environment
+
+	MACLIB	Z3BASE.LIB
+	MACLIB	SYSENV.LIB
+
+z3eadr:
+	jp	start
+	sysenv
+
+	 endif	; z3env ne 0
+
+;---------------------------------------------------------------------------
+
+; Configuration and reference data
+
+	dw	ctab1		; Addresses of command tables for reference
+	dw	ctab2
+	dw	gtable
+
+	db	'CONFIG'	; Marker in code
+
+leadadr:
+	db	mleadin		; Macro leadin character here
+npause:
+	db	tdelay		; Delay time on screen refresh after macro error
+macfladr:
+	db	macflag		; Allow immediate execution of macros 0..9
+
+
+OPTIONS:			; Begin options configurable with 'O' cmd
+				; DO NOT CHANGE ORDER
+
+qryrepa:			; #1
+	db	qryrep		; Single file replace query option
+qrygrpa:			; #2
+	db	qrygrp		; Multiple file replace query option
+qryarca:			; #3
+	db	qryarc		; Query on archive replacement
+qryvfya:			; #4
+	db	qryvfy		; Verify query option
+vflag:				; #5
+	db	vfydflt		; Verify default if no query or no answer
+nosysa:				; #6
+	db	nosys		; Supress display of SYS files
+defalfa:			; #7
+	db	defalpha	; Initial file sorting mode (FF for name)
+
+shwait:				; Flag also saved on stack with options
+	db	0
+
+nopt	equ	$ - options	; Number of option flags to save/restore
+
+;---------------------------------------------------------------------------
+
+; Initialization Code
+
+	 if	z3env ne 0	; External environment
+
+start:
+	ld	hl,(z3eadr)	; Pt to zcpr3 environment
+
+	 else			; Internal environment
+
+start:
+	ld	hl,z3eadr	; Pt to zcpr3 environment
+
+	 endif	; z3env ne 0
+
+	call	z3vinit		; Initialize the zcpr3 env and the vlib env
+	call	tinit		; Initialize the terminal.
+
+; For ZRDOS 1.3 and later, we disable the PUBLIC facility for
+; the duration of VFILER.  It is re-enabled in OS$CCP exit.
+
+	ld	de,126		; Offset to ZRDOS public bytes
+	add	hl,de		; (Note: HL value preserved above)
+	ld	de,pubyts	; Point to save area
+	ld	a,(hl)		; Drives
+	ld	(de),a		; Save it
+	ld	(hl),0		; Clear it
+	inc	hl
+	inc	de
+	ld	a,(hl)		; Users
+	ld	(de),a		; Save it
+	ld	(hl),0		; Clear it
+
+
+	ld	a,0ffh		; Set initflag to show first time through
+	ld	(initflag),a
+
+	 if	not warmboot	; Set opsys stack pointer
+	ld	(stack),sp
+	 endif			; Not warmboot
+
+	call	idu		; Log in original and requested directories
+
+
+;---------------------------------------------------------------------------
+
+;  Once Environment is Initialized, One of Two Major Functions will be
+;  performed:
+;
+;	1.  VFILER will be installed as a Shell if invoked explicitly
+;		by user command
+;
+;	2.  The VFILER Function will be performed if VFILER is invoked
+;		by ZCPR3 as a Shell and ZEX is not Running
+
+
+; Check to see if VFILER was invoked as a shell
+
+	call	qshell		; Get and test message from zcpr3
+	jr	z,funct2	; If shell invocation, branch to function 2
+
+
+;---------------------------------------------------------------------------
+
+; FUNCTION 1:  User Invocation -- Set Up VFILER as a Shell
+
+
+funct1:
+	call	shtest		; Test for adequate system support
+	call	getefcb		; Determine name of program
+	jr	z,shgo1		; Name not given, so use default
+
+	inc	hl		; Pt to name
+	ld	de,filercmd	; Define name of program
+	ld	b,8
+	call	moveb		; Copy name
+
+shgo1:
+	ld	hl,filercmd	; Establish shell
+	call	shpush		; Push onto shell stack
+	jr	z,shgo2		; Branch if OK
+
+	call	vprint
+	db	'Shell Stk Full',0
+	ret
+
+		; Establish File Selection
+
+shgo2:
+	xor	a		; 0 = put system mask.
+	ld	(shwait),a	; Turn off shell wait flag on user invocation
+	call	filemask	; Set system file spec.
+
+		; Establish Initial File Pointer
+
+	call	sysfn2		; Get pointer to system file #2
+	ld	de,joker	; Copy in *.*
+	ex	de,hl
+	ld	b,11
+	call	movea
+
+		; Save initial options on stack
+
+	call	putopt
+
+		; Initialize Shell message.
+
+	xor	a		; No wait
+	ld	(shwait),a
+
+		; Shell Successfully installed
+
+	 if	instmsg
+	call	vprint
+	db	' VFILER Installed',0
+	 endif
+
+		; Check for pending command or ZEX or SUBMIT running
+
+	call	getcl2		; See if any more commands pending
+	jr	nz,goccp	; If so, return to CCP
+	call	getzrun		; See if ZEX is running
+	jr	nz,goccp	; If so, return to CCP
+	call	z33chk		; See if ZCPR33 is present
+	jr	nz,runsh	; If not, no way to check for SUBMIT
+	call	getsrun		; See if SUBMIT is running
+	jr	z,runsh		; If not, start running the shell now
+
+		; Command pending. Start execution via return to CCP.
+
+goccp:
+	jp	chain2		; Set idu into command line and go
+
+
+;---------------------------------------------------------------------------
+
+; FUNCTION 2: Shell Invocation -- Run VFILER and Perform Main Function
+
+runsh:
+funct2:
+	xor	a		; Set no shell message
+	call	putcst
+	call	setup		; Init buffers and pointers
+	call	stackset	; Setup stack
+	call	getopt		; Restore option flags
+
+		; Process Initial Help if Available and Requested
+
+	 if	bihelp		; Built-in help available?
+	ld	a,(fcb+1)	; Check for initial help
+	cp	'/'
+	jr	nz,runsh1
+	call	vcls		; Clear screen first
+	call	helpmsg		; Print help message
+	call	sak		; Strike any key to continue
+	jr	runsh2
+runsh1:
+	 endif			; Bihelp
+
+		; Check for SAK Delay Before Resuming VFILER
+
+	ld	a,(shwait)
+	or	a
+	call	nz,sak		; Pause for input
+	xor	a
+	ld	(shwait),a
+
+		; Begin VFILER Processing
+
+runsh2:
+	call	fileload	; Load files, return CANFLG in A
+	push	af
+	call	setscr		; Set up screen display variables
+	pop	af
+	jr	z,runsh4	; Continue if ok
+
+; No files in current DIR
+;	- (or not enough Storage to hold them)
+;	- Build new screen
+
+runsh2e:
+	call	rebuild		; Rebuild entire screen
+	call	filelerr	; Report whatever error
+	jr	loop		; Get next command
+
+; Entry Point for Command Processing
+; Build and Display Screen and Input/Process Command
+
+runsh4:
+	call	ringempt	; Check ring empty
+	jr	z,runsh2e	; Tell the user
+	ld	a,(initflag)	; See if first time here
+	or	a
+	jr	z,runsh4a	; If not, skip setting pointer from sys file 2
+setptr:
+	call	sysfn2		; Get pointer to system file #2
+	ld	de,d$fcb+1	; DE points to file name in FCB
+	ld	b,11		; Move 11 bytes
+	call	movea
+	jp	goto1		; Use goto (J) command
+runsh4a:
+	call	rebuild		; Rebuild entire screen display
+	jr	loopfn		; Continue
+
+; Entry Point for Command Return
+; Refresh and Display Screen and Input/Process Command
+
+runsh5:
+	call	refresh		; Update file portion of display.
+	call	setcur		; Ensure cursor is displayed.
+
+; Display Current File and Input/Process Command
+
+loopfn:
+	call	dispcfn		; Display current file name
+
+; Input/Process Command
+
+loop:
+	call	stackset	; Reset stack
+	call	atcmd		; Position at command prompt
+	call	dkeyin		; Wait for character from keyboard
+	ld	b,a		; Save it in B
+	call	erclr		; Clear any old error line
+	call	atcmd		; Reposition to command prompt
+	ld	a,(leadadr)	; Get macro leadin character into B
+	cp	b		; Is char the immediate macro invocation char?
+	jr	z,loop2		; If so, branch
+
+	ld	a,mnote		; Is char macro help invocation char?
+	cp	b
+	jr	z,macpro
+
+	ld	a,(macfladr)	; See if direct processing of 0..9 macros
+	or	a		; ..is allowed
+	jr	z,loop1		; If not, branch
+
+	ld	a,b		; Get user char into A
+	cp	'0'
+	jr	c,loop1		; Branch if less than '0'
+	cp	'9'+1
+	jr	c,macpro	; If '9' or less, process macro
+
+loop1:
+	call	erclr		; Clear error message line
+	call	ctproc		; Process possible table command; if we return
+				; ..the command was invalid
+
+	call	ermsg
+	db	bel,'Invalid Cmd: ',0
+	call	dispchar	; Display bad cmd char (in B)
+	jr	loop		; Continue
+
+loop2:				; We have a macro request
+	call	vprint
+	db	' Macro: ',0
+	call	dkeyin		; Get key for macro
+	call	caps
+	cp	' ' + 1		; If control char or space, back to beginning
+	jr	c,loop
+	ld	b,a		; Move character to B
+
+macpro:
+	ld	a,b		; Get char back into A
+	call	cout		; Display choice
+	call	erclr		; Clear error message line
+	ld	a,b		; Get macro char back again
+	call	cmacro		; Process macro command
+				; If we return, macro was not found
+	ld	b,a		; Save command
+	call	ermsg
+	db	bel,'No User Function: ',0
+	call	dispchar	; Display the character (in B)
+	ld	a,(noteflag)	; See if macro help screen was displayed
+	or	a
+	jp	z,loop		; If not, just go back to loop
+
+				; Pause before refreshing screen
+	call	getspeed	; Get processor speed
+	ld	b,a		;   into B
+	ld	hl,(npause)	; Get pause time in 0.1 secs
+	ld	h,0		; Use only the low byte
+	call	pause
+	jp	runsh4a		; Back to loop with refresh
+
+dispchar:			; Display bad char in B
+	ld	a,b		; Get char
+	cp	' '		; Expand if less than space
+	jr	nc,dispchar1
+	ld	a,'^'		; Control
+	call	cout
+	ld	a,b		; Get byte
+	add	a,'@'		; Convert to letter
+dispchar1:
+	jp	cout		; Display and return
+
+;---------------------------------------------------------------------------
+
+; E X I T  (return to CCP; entry point for VFILER exit)
+
+os$ccp:
+	call	shpop		; Clear shell stack
+	 if	exitcls
+	call	vcls		; Clear screen on exit.
+	 else
+	ld	hl,cpmadr	; Command line
+	call	gotoxy		; Position the cursor
+	 endif			; Exitcls
+
+; Entry point for command line exec
+
+os$ccp1:
+	call	resdma		; Reset dma address
+	ld	bc,(du$orig)	; Get and set original du:
+	call	logud
+
+	ld	hl,(z3eadr)	; Environment address
+	ld	de,126		; Offset to ZRDOS public bytes
+	add	hl,de
+	ex	de,hl		; To DE
+	ld	hl,pubyts	; Point to save area
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	ld	a,(hl)
+	ld	(de),a		; Public reinstated
+
+	 if	warmboot
+	jp	os$base
+	 endif			; Warmboot
+
+	 if	not warmboot
+	ld	hl,(stack)	; Restore stack pointer
+	ld	sp,hl
+	ret			; Return to ccp
+	 endif			; Not warmboot
+
+
+;---------------------------------------------------------------------------
+
+; CTPROC - Process command from table
+
+ctproc:
+	call	ringempt	; Check ring empty
+	ld	hl,ctab2	; In case it is
+	jr	z,ctpr1		; Only ctab2 commands available
+	ld	hl,ctable	; Pt to table
+	ld	a,(hl)		; Any cursor commands?
+	or	a
+	jr	nz,ctpr1
+	ld	hl,ctab1
+
+; Command table scanner
+;	HL = Table
+;	B  = Command Letter
+
+ctpr1:
+	ld	a,(hl)		; Get table command char
+	or	a		; End of table?
+	ret	z		; Done if so
+	cp	b		; Match?
+	inc	hl		; -> command wheel flag
+	jr	z,ctpr2		; Br if command found.
+
+	inc	hl		; Skip to next entry
+	inc	hl
+	inc	hl
+	jr	ctpr1
+
+ctpr2:
+	 if	remote
+	call	getwhl		; Get current wheel status
+	or	(hl)		; Combine status and command wheel flag.
+	jr	nz,ctpr3	; Continue if wheel or safe command.
+	call	ermsg		; Tell user bad news
+	db	'NOT Wheel!',0
+	jp	loop
+ctpr3:
+	 endif
+
+	inc	hl		; -> command address
+	ld	a,(hl)		; Get low command addr byte.
+	inc	hl
+	ld	h,(hl)		; Get high
+	ld	l,a
+	ex	(sp),hl		; Address on stack
+	ret			; "jump" to routine
+
+;---------------------------------------------------------------------------
+
+; Tests for Adequate System Support
+
+shtest:
+		; Check for Presence of Shell Stack
+
+	call	getsh2		; Get shell stack data
+	jr	nz,shtest2	; On to test 2 if OK
+
+	pop	af		; Clear stack
+	call	vprint
+	db	'No Shell Stk',0
+	ret
+
+		; Check for Adequate Shell Stack Size
+
+shtest2:
+	 if	usestk		; Get required length less one into A
+	ld	a,30-1
+	 else
+	ld	a,20-1
+	 endif
+
+	cp	e
+	jr	c,shtest3	; Branch to test 3 if OK
+
+	pop	af		; Clean up stack
+	call	vprint
+	db	'SH STK too small',0
+	ret			; Return to operating system
+
+
+		; Check for Presence of Command Line
+
+shtest3:
+	call	getcl1		; Get command line data
+	jr	nz,shtest4	; Branch to test 4 if OK
+
+	pop	af		; Clear stack
+	call	vprint
+	db	'No Cmd Buf',0
+	ret
+
+		; Check for TCAP
+
+shtest4:
+	call	cls		; Try to clear screen
+	ret	nz		; Return if OK
+
+	pop	af		; Clean up stack
+	call	vprint
+	db	'Bad TCAP',0
+	ret
+                                                                    

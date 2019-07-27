@@ -1,0 +1,503 @@
+;
+;  SAMPLE IOP for study
+;  by Richard Conn
+;  7/14/85
+;
+iop	equ	0EC00H	;base address of IOP
+;
+ctrls	equ	'S'-'@'	;^S
+ctrlz	equ	'Z'-'@'	;^Z
+;
+	org	iop
+
+;
+;  The IOP jump table
+;
+	jmp	status
+	jmp	select
+	jmp	namer
+	jmp	init
+;
+	jmp	const
+	jmp	conin
+	jmp	conout
+	jmp	list
+	jmp	punch
+	jmp	reader
+	jmp	listst
+;
+	jmp	patch
+;
+	jmp	copen
+	jmp	cclose
+	jmp	lopen
+	jmp	lclose
+;
+;  IOP ID (required for LDR)
+;
+	db	'Z3IOP'
+
+;
+;  The following is the IOP Status Table
+;
+ioptable:
+con:	db	5,0	;5 consoles, select console 0
+rdr:	db	1,0	;1 reader, select reader 0
+pun:	db	1,0	;1 punch, select punch 0
+lst:	db	2,0	;2 lists, select list 0
+
+;
+;  The status routine
+;	Return the address of the IOP Status Table in HL
+;	Return the IOP number in A
+;	This IOP supports recording, so set MSB of A
+;
+status:
+	lxi	h,ioptable	;pointer to table
+	mvi	a,82h		;IO Recorder supported, IOP 2
+	ora	a		;set NZ flag
+	ret
+
+;
+;  The select routine
+;	On input, B=logical device and C is driver
+;	On output, A=0 and zero flag set if error
+;
+select:
+	lxi	h,ioptable	;pt to IOP table
+	mov	a,b		;double B so offset is 0,2,4,6
+	cpi	4		;make sure in range 0-3
+	jnc	selerr
+	add	b
+	mov	e,a		;DE = offset
+	mvi	d,0
+	dad	d		;HL now points to device in IOP
+	mov	a,m		;get max number of devices
+	cmp	c		;check for driver error
+	jz	selerr		;error if C = count
+	jc	selerr		;error if C > count
+	inx	h		;point to selected device byte
+	mov	m,c		;select the device
+	mvi	a,0ffh		;set OK return code
+	ora	a
+	ret
+selerr:
+	xra	a		;set error return code
+	ret
+
+;
+;  The Namer Routine
+;	On input, B = logical device and C = driver
+;	On output, HL = address of name string
+;	On output, A=0 and Zero Flag Set if error
+;
+namer:
+	lxi	h,ioptable	;check to see that C is
+	mov	a,b		; in range ... begin by
+	cpi	4		; doubling B to 0,2,4,6
+	jnc	namerror	; after making sure in
+	add	b		; range 0-3
+	mov	e,a		;add offset to HL
+	mvi	d,0
+	dad	d		;HL now points to IOP Table
+	mov	a,m		;get max device count
+	cmp	c
+	jz	namerror	;error if C = count
+	jc	namerror	;error if C > count
+	lxi	h,iopdnames	;get address of logical
+	dad	d		; name table
+	mov	e,m
+	inx	h
+	mov	d,m
+	xchg			;HL now points to logical
+	mov	a,c		; name table - double C
+	add	c		; to get device driver name
+	mov	e,a
+	mvi	d,0		;DE = offset
+	dad	d		;HL now points to driver name
+	mov	e,m		; address - get string address
+	inx	h		; in DE
+	mov	d,m
+	xchg			;HL now has string name address
+	mvi	a,0ffh		;set no error
+	ora	a
+	ret
+namerror:
+	lxi	h,errmsg	;pt to some message
+	xra	a		;set error code
+	ret
+errmsg:
+	db	'Name Error',0
+
+;
+;  This table gives the addresses of the address
+;  tables for each of the logical devices
+;
+iopdnames:
+	dw	connames
+	dw	rdrnames
+	dw	punnames
+	dw	lstnames
+;
+;  These tables give the addresses of each of the
+;  logical device name strings
+;
+connames:
+	dw	conn1		;there are 5 consoles
+	dw	conn2		; (see IOPTABLE above)
+	dw	conn3
+	dw	conn4
+	dw	conn5
+rdrnames:
+	dw	rdrn1		;there is 1 reader
+punnames:
+	dw	punn1		;there is 1 punch
+lstnames:
+	dw	listn1		;there are 2 lists
+	dw	listn2
+;
+;  These are the actual text strings returned by NAMER
+;
+conn1:	db	'CRT ',0
+conn2:	db	'MODEM ',0
+conn3:	db	'CRTMOD CRT and Modem in Parallel',0
+conn4:	db	'CRTPRT CRT in and CRT/Printer out',0
+conn5:	db	'TEST CRT by default',0
+;
+rdrn1:	db	'MODEM ',0
+;
+punn1:	db	'MODEM ',0
+;
+listn1:	db	'PRINTER ',0
+listn2:	db	'MODEM ',0
+
+;
+; This routine initializes the devices in the IOP
+;
+init:
+	mvi	a,0	;set no IO Recording active
+	sta	crec	;console off
+	sta	lrec	;list off
+	ret
+
+;
+;  This system has three pieces of hardware connected:
+;	1. a CRT
+;	2. a modem
+;	3. a printer
+;  All devices are hypothetical
+;  The following are the simple device drivers for them
+;
+
+;
+;  1. CRT
+;
+crtdata	equ	0F800H+3F8H	;CRT data port
+crtstat	equ	0F800H+3F9H	;CRT status port
+crtrda	equ	4	;RDA bit
+crttbe	equ	8	;TBE bit
+
+;  Return input status in A (A=0 means no char available)
+crtistat:
+	lda	crtstat	;check input status
+	cma		;status is inverted
+	ani	crtrda	;mask for RDA
+	rz		;0 if no char pending
+	mvi	a,0ffh	;return 0FFH if char pending
+	ret
+;  Return output status in A (A=0 means not ready for output)
+crtostat:
+	lda	crtstat	;check output status
+	cma		;status is inverted
+	ani	crttbe	;mask for TBE
+	rz		;0 if not ready
+	mvi	a,0ffh	;0FFH if ready
+	ret
+;  Return input byte in A (A=byte)
+crtin:
+	call	crtistat	;wait for input
+	jz	crtin
+	lda	crtdata	;get byte
+	cma		;data is inverted
+	ani	7fh	;mask
+	ret
+;  Output byte in C to device
+crtout:
+	call	crtostat	;wait for ready
+	jz	crtout
+	mov	a,c	;get char from C
+	cma		;invert data
+	sta	crtdata	;put byte
+	ret
+
+
+;
+;  2. Modem
+;
+moddata	equ	80H	;Modem data port
+modstat	equ	81H	;Modem status port
+modrda	equ	2	;RDA bit
+modtbe	equ	1	;TBE bit
+
+;  Return input status in A (A=0 means no char available)
+modistat:
+	in	modstat	;check input status
+	ani	modrda	;mask for RDA
+	rz		;0 if no char pending
+	mvi	a,0ffh	;return 0FFH if char pending
+	ret
+;  Return output status in A (A=0 means not ready for output)
+modostat:
+	in	modstat	;check output status
+	ani	modtbe	;mask for TBE
+	rz		;0 if not ready
+	mvi	a,0ffh	;0FFH if ready
+	ret
+;  Return input byte in A (A=byte)
+modin:
+	call	modistat	;wait for input
+	jz	modin
+	in	moddata	;get byte
+	ret
+;  Output byte in C to device with simple XON/XOFF Processing
+modout:
+	call	modistat	;see if char pending
+	jz	modout1		;continue if not
+	call	modin		;get char
+	cpi	ctrls		;see if ^S
+	jnz	modout1		;continue if not
+	call	modin		;wait for any next char
+modout1:
+	call	modostat	;wait for ready
+	jz	modout
+	mov	a,c	;get char from C
+	out	moddata	;put byte
+	ret
+
+
+;
+;  3. Printer
+;
+prtdata	equ	20H	;Printer data port
+prtstat	equ	25H	;Printer status port
+prtrda	equ	1	;RDA bit
+prttbe	equ	20H	;TBE bit
+
+;  Return input status in A (A=0 means no char available)
+prtistat:
+	in	prtstat	;check input status
+	ani	prtrda	;mask for RDA
+	rz		;0 if no char pending
+	mvi	a,0ffh	;return 0FFH if char pending
+	ret
+;  Return output status in A (A=0 means not ready for output)
+prtostat:
+	in	prtstat	;check output status
+	ani	prttbe	;mask for TBE
+	rz		;0 if not ready
+	mvi	a,0ffh	;0FFH if ready
+	ret
+;  Return input byte in A (A=byte)
+prtin:
+	call	prtistat	;wait for input
+	jz	prtin
+	in	prtdata	;get byte
+	ret
+;  Output byte in C to device
+prtout:
+	call	prtostat	;wait for ready
+	jz	prtout
+	mov	a,c	;get char from C
+	out	prtdata	;put byte
+	ret
+
+;
+;  The following are the device selection routines
+;
+const:
+	lxi	h,tconst	;point to driver table
+	mvi	b,0		;CON device
+	jmp	drvrun		;run driver
+conin:
+	lxi	h,tconin
+	mvi	b,0
+	jmp	drvrun
+conout:
+	call	crecord		;send char to recorder if on
+	lxi	h,tconout
+	mvi	b,0
+	jmp	drvrun
+list:
+	call	lrecord		;send char to recorder if on
+	lxi	h,tlist
+	mvi	b,3		;LST device
+	jmp	drvrun
+punch:
+	lxi	h,tpunch
+	mvi	b,2		;PUN device
+	jmp	drvrun
+reader:
+	lxi	h,treader
+	mvi	b,1		;RDR device
+	jmp	drvrun
+listst:
+	lxi	h,tlistst
+	mvi	b,3		;LST device
+;
+;  The following routine selects the desired driver
+;	On input, B=logical device number
+;	IOPTABLE is used to find the current driver
+;	On input, HL=address of driver table
+;	Driver table contains address of all drivers
+;		which can be selected
+;
+drvrun:
+	push	h		;save ptr to driver table
+	lxi	h,ioptable	;get selected driver number
+	mov	a,b		;double B for offset
+	add	b
+	mov	e,a
+	mvi	d,0
+	dad	d		;HL pts to IOPTABLE entry
+	inx	h		;HL pts to selected driver
+	mov	b,m		;get selected driver in B
+	mov	a,b		; (C not used because it can
+	add	b		; contain a character if output
+	mov	e,a		; driver is being called)
+	mvi	d,0
+	pop	h		;HL pts to driver table
+	dad	d		;HL pts to desired driver address
+	mov	e,m
+	inx	h
+	mov	d,m
+	xchg			;HL pts to driver
+	pchl			;run the driver
+
+;
+;  These are the device driver tables
+;
+tconst:
+	dw	crtistat	;selected driver 0 is CRT
+	dw	modistat	;selected driver 1 is Modem
+	dw	crtmodist	;selected driver 2 is CRT/Modem
+	dw	crtistat	;selected driver 3 is CRT in, Printer out
+patistat:			;patch point for PATCH routine
+	dw	crtistat	;selected driver 4 is CRT
+;
+tconin:
+	dw	crtin
+	dw	modin
+	dw	crtmodin
+	dw	crtin
+patin:				;patch point for PATCH routine
+	dw	crtin
+;
+tconout:
+	dw	crtout
+	dw	modout
+	dw	crtmodout
+	dw	crtprtout
+patout:				;patch point for PATCH routine
+	dw	crtout
+;
+tlist:
+	dw	prtout		;selected driver 0 is Printer
+	dw	modout		;selected driver 1 is Modem
+;
+treader:
+	dw	modin		;selected driver 0 is Modem
+;
+tpunch:
+	dw	modout		;selected driver 0 is Modem
+;
+tlistst:
+	dw	prtostat	;selected driver 0 is Printer
+	dw	modostat	;selected driver 1 is Modem
+
+;
+;  This is the driver set for the combination CRT/Modem Device
+;  and the combination CRT/Printer Output Device
+;
+crtmodist:
+	call	crtistat	;see if char available on CRT
+	rnz			;return if so
+	call	modistat	;see if char available on Modem
+	ret
+crtmodin:
+	call	crtistat	;look for CRT char
+	jnz	crtin		;get char from CRT
+	call	modistat	;look for Modem char
+	jnz	modin		;get char from Modem
+	jmp	crtmodin	;continue until CRT or Modem gives char
+crtmodout:
+	call	crtout		;send to CRT
+	call	modout		;send to Modem
+	ret
+crtprtout:
+	call	crtout		;send to CRT
+	call	prtout		;send to Printer
+	ret
+;
+;  These are the drivers for the recorder output device
+;
+crecord:
+	lda	crec		;check flag
+	ora	a		;0 means not recording
+	rz
+	call	modout		;send char to modem to record
+	ret
+lrecord:
+	lda	lrec		;check flag
+	ora	a		;0 means not recording
+	rz
+	call	modout		;send char to modem to record
+	ret
+;
+;  These are the routines which turn on and off device recording
+;  For this IOP, Console and Printer recording amounts to sending
+;	characters to the modem
+;
+copen:
+	mvi	a,0ffh		;set flag
+	sta	crec
+	ret
+cclose:
+	mvi	a,0		;clear flag
+	sta	crec
+	mvi	c,ctrlz		;send ^Z to modem
+	call	modout
+	ret
+lopen:
+	mvi	a,0ffh		;set flag
+	sta	lrec
+	ret
+lclose:
+	mvi	a,0		;clear flag
+	sta	lrec
+	mvi	c,ctrlz		;send ^Z to modem
+	call	modout
+	ret
+;
+crec:	ds	1		;flag buffer
+lrec:	ds	1		;flag buffer
+
+;
+;  This is the patch routine
+;  It sets the 5th device driver (driver select 4) to the drivers
+;	whose jump table is pointed to by HL; HL points to a table
+;	like the following:
+;		JMP	ISTAT
+;		JMP	INPUT
+;		JMP	OUTPUT
+;
+patch:
+	shld	patistat	;set address of input status
+	lxi	d,3		;offset of 3
+	dad	d
+	shld	patin		;set address of input char
+	dad	d
+	shld	patout		;set address of output char
+	ret
+
+	end
+

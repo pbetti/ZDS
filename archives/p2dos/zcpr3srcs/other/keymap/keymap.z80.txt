@@ -1,0 +1,156 @@
+;
+;-----Keymap----A function key generator------
+;---Assemble with your favorite z80 assembler, link with syslib.
+;
+;---Set the following three values to match your system requirements,
+;---The routine auto-installs in your iop, processing your keystrokes.
+;---The offset value governs exactly where in the iop this routine
+;---will load.
+;
+iop	equ	0ec00h
+offset	equ	60h
+trigger equ	22	;control-V is the trigger key
+;
+keymap	equ	iop + offset
+cr	equ	13
+lf	equ	10
+	ext	instr,print
+	db	'Z3ENV',1
+z3ptr:	dw	0
+start:	call print
+	db	'Welcome to Keymap--',0
+	ld	hl,keymap
+	ld	de,teststr
+	call	instr
+	jr	nz,keepgoin
+	call	print
+	db	7,'Keymap already installed--New version overlaid',cr,lf,0
+	jr	beenhere
+keepgoin:	call	print
+	db	'initial installation',cr,lf,0
+	ld	hl,codbeg
+	ld	de,keymap
+	ld	bc,codend-codbeg
+	ldir
+	ld	hl,(iop + 10h)
+	ld	(coninad),hl
+	ld	hl,(iop + 0dh)
+	ld	(constad),hl
+	ld	hl,top
+	ld	(iop + 10h),hl
+	ld	hl,newstat
+	ld	(iop + 0dh),hl
+	ret
+beenhere:	ld	hl,codbeg+11
+	ld	de,keymap+11
+	ld	bc,codend-codbeg-11
+	ldir
+	ld	hl,top
+	ld	(iop + 10h),hl
+	ld	hl,newstat
+	ld	(iop + 0dh),hl
+	ret
+teststr:	db	'KEYMAP',0
+codbeg:	.phase	keymap
+	db	'KEYMAP',0
+coninad:	dw	0
+constad:	dw	0
+top:	ld	a,(pend)
+	and	a	;chars pending?
+	jr	z,nopend
+	ld	hl,(chrptr)	;yes, get the char in b
+	ld	b,(hl)
+	inc	hl	;update pointer
+	ld	(chrptr),hl
+	ld	a,(hl)	;check out next char
+	and	a
+	jr	z,strend	;end of string if null
+	ld	a,b
+	ret		;and return with character in a
+strend: ld	(pend),a
+	ld	a,b
+	ret
+nopend:
+	call conin
+	push af
+	xor a
+	ld (pend),a
+	ld a,(map)
+	and a	;mapped?
+	jr nz,mapped
+	pop af
+	cp trigger
+	jr z,mappit; if the trigger char, set the map bit
+	ret	;not mapped, this is our usual exit, char in a
+mappit:	ld a,1
+	ld (map),a
+kk:	call const
+	jr	z,kk
+	jr nopend ;set map bit, get next incoming char
+mapped: xor a
+	ld (map),a ;clear map bit
+	pop af
+	ld	d,a	;save char in d
+	cp	27	;is it a control char?
+	jr	nc,kaps	;no.
+	add	a,40h	;make control char->capital letter
+	jr	ok
+kaps:	call	caps	;lower->upper case,if nec.
+ok:	ld	bc,(number)	;# of hot keys
+	ld	hl,strlist-1 ;end of keylist
+	cpdr
+	ld	a,d	;restore char, you might need it
+	ret	nz	;just send character
+	ld	hl,strlist
+	add	hl,bc
+	add	hl,bc
+	ld	a,(hl)
+	ld	(chrptr),a
+	inc	hl
+	ld	a,(hl)
+	ld	(chrptr+1),a
+	ld	a,1
+	ld	(pend),a
+	jr 	top		;pending expanded string ready to go!
+caps:	cp	61H	;usual lo-to up routine.
+	ret	c
+	cp	7bh
+	ret	nc
+	sub	20h
+	ret
+newstat:	call const
+	ret	nz	;chars in queue, leave as is
+	ld	a,(pend)
+	and	a
+	ret	z	;no pending chars, zero return
+	or	255
+	ret		;end just like const does
+conin:	ld	hl,retnhere
+	push	hl
+	ld	hl,(coninad)
+	jp	(hl)
+const:	ld	hl,retnhere
+	push	hl
+	ld	hl,(constad)
+	jp	(hl)
+retnhere:	ret
+number:	dw	strlist-number-2
+	db	'567890CMQB`'
+strlist: dw	s5,s6,s7,s8,s9,s0,cs,ms,qs,bs,tilde
+s5:	db	'\(*',0		;greek precursor
+s6:	db	'\*d',0		;start subscript
+s7:	db	'\*D',0		;end   subscript
+s8:	db	'\*u',0		;start superscript
+s9:	db	'\*U',0		;end   superscript
+s0:	db	26,'%+&',cr,0	;run current program in background
+cs:	db	'cls',cr,0
+ms:	db	' mex t',cr,0
+qs:	db	lf,'ecpm',cr,0
+bs:	db	'black',cr,0
+tilde:	db	'~/',0
+chrptr:	dw	0
+pend:	db	0
+map:	db	0
+	.dephase
+codend:	end	start
+

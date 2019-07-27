@@ -1,0 +1,28 @@
+;==============================================================================
+        
+;       code to be included in ccp and/or bios warmboot to refresh ZRDOS
+;       public directory mask bytes from a "hidden" public directory mask
+;       "stash" buffer.
+ 
+;==============================================================================
+
+;       the tag ZRDPMASK should be equated to the location of your 
+;       two byte stash buffer. it is defaulted in this file to the
+;       last two user definable zcpr message bytes. the ifndef allows
+;       you to define it elsewhere prior to the INCLUDE of this file
+;       (in Z3BASE.LIB, for example) without need to edit this.
+
+    ifndef  zrdpmask
+zrdpmask    equ     z3msg+4eh       ; public area mask stash buffer (2 bytes)
+    endif
+
+;       if this is not the ZRDPUB replacement for PUBLIC.COM, assemble the
+;       public mask refresh instructions here also.
+
+    ifndef  zrdpub
+            ld      hl,(zrdpmask)   ; get stashed public directory mask
+            ld      (z3env+126),hl  ;     and put it where ZRDOS knows about it
+    endif
+
+;       end of ZRDPUB.LIB
+

@@ -1,0 +1,83 @@
+	TITLE	"Z33SYSCK - Z3lib 4.3"
+	NAME	('Z33SYS')
+;=================================================================
+;    Copyright (C) 1989 by Jay Sage.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Jay Sage.
+; Date    : 7 Oct 90
+; Version : 1.1
+; Module  : Z33SYSCK
+; Abstract: This module contains the routine ZSYSCHK which tries to
+;	assure that the program is running in a Z-System environment.
+;	It checks a passed value against a valid Z3ENV by checking
+;	for consistency with the ENV address stored at offset 1BH.
+;	It also checks for the 'Z3' at offset 3.  If the test passes,
+;	it will return flags so indicating, otherwise, it will display:
+;		'Program Requires Z System',BELL
+;	This routine will provide the most secure test if the value
+;	passed to it is the one passed to the program in the HL  reg-
+;	ister on load.  Of course, this will exclude ZCPR 3.0 systems,
+;	which do not pass the ENV address in HL.  It will detect BGii
+;	and all versions of ZCPR3 since 3.3.
+; Revision:
+;  1.0 - 15 Apr 88 - Original Release.  Jay Sage
+;  1.1 -  7 Oct 90 - Use BDOS to print message to avoid stack problems
+;	when executed from limited CCP stack.		H.F.Bower
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		ZSYSCHK
+
+; Definitions
+
+BELL	EQU	07H		; ASCII Bell Character
+BDOS	EQU	0005		; Bdos Entry Point
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - ZSYSCHK
+; Entry: HL - Points to a candidate Z3ENV to evaluate
+; Exit :  A = 0, Zero Flag Set (Z) if HL points to valid Z3ENV
+;	      A <> 0, Zero Clear (NZ) if Invalid Environment
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+ZSYSCHK: PUSH	HL
+	PUSH	DE
+	EX	DE,HL		; Test ENV address into DE
+	LD	HL,3		; Offset to 'Z3ENV'
+	ADD	HL,DE
+	LD	A,(HL)
+	CP	'Z'
+	JR	NZ,NOZSYS
+	INC	HL
+	LD	A,(HL)
+	CP	'3'
+	JR	NZ,NOZSYS
+	LD	HL,1BH		; Offset to ENV address in ENV
+	ADD	HL,DE
+	LD	A,(HL)		; Check low byte
+	CP	E
+	JR	NZ,NOZSYS
+	INC	HL
+	LD	A,(HL)		; Check high byte
+	SUB	D
+	JR	Z,ZSYSC1	; Return with A=0 and Z flag set if OK
+
+NOZSYS:	LD	DE,MSG		; Print this message
+	PUSH	BC
+	LD	C,9
+	CALL	BDOS		; ..using DOS to avoid stack overflow
+	POP	BC
+	OR	0FFH		; Clear Z and set A=FF
+ZSYSC1:	POP	DE
+	POP	HL
+	RET
+
+MSG:	DEFB	'Program Requires Z System',BELL,'$'
+
+	END
+

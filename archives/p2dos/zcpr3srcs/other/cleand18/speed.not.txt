@@ -1,0 +1,36 @@
+A note on the speed of the new version of CLEANDIR:
+
+Basically, this version takes about twice to three times as long as versions
+before 1.6.
+
+Sorry about that, but it is because all versions before 1.6 did not really 
+check all allocation map entries.  Specifically, they would only find a 
+duplicated allocation block if it met one of the following:
+   1) Duplicated one of the blocks allocated to the first (after sorting)
+      entry in the directory,
+   2) Duplicated the FIRST block allocated to any other directory entry, or
+   3) Duplicated a block allocated in the SAME directory entry.
+You can verify this yourself.  Save a junk file that has at least two extents.  
+Use DUU, DU3, PATCH, etc. to look at the first extent of the file.  Note one 
+of the allocation group #s in the right half of the display.  Then find the 
+entry for the next extent of the file, and change one of the allocation group 
+#s, not the first one in the map, to be the same as the # you found in the 
+first extent.  Write the modified extent back to the disk, and exit.  Run 
+CLEANDIR Version 1.5 or earlier in the 'C'heck mode.  It will not tell you 
+about any duplicate allocations.  Now run Version 1.8.  It WILL find the 
+duplicated allocation group.
+
+Some specifics:  on my 9.216 MHz SB180, Version 1.8 takes 49 seconds to do 
+allocation checking on a directory with 1000 groups allocated (a little less 
+than 4 Megabytes).  Since the procedure is completely compute-bound, you can 
+calculate how long it will take to check your disk by scaling this figure for 
+your processor speed and the number of groups allocated in your directory 
+(remember, the maximum number of entries the disk can have, called 'DRM', no 
+longer means anything.  Only active directory entries are seen by CLEANDIR).  
+So don't panic when it seems to take forever compared to the previous 
+versions.  It is doing a lot of comparisons (anybody know offhand the value of 
+999! ?).  As a worst-case example, a 2 MHz Z80 checking the directory of a 
+filled 8 Meg disk would take almost 7 minutes!
+
+Steve Dirickson		14 June 1987
+

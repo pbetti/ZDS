@@ -1,0 +1,117 @@
+	TITLE	"Z3IOMA - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3IOMA.Z80 Ver 1.1 by Richard Conn
+; Date    : 8 Mar 87
+; Version : 1.2
+; Module  : Z3IOMA
+; Abstract: This module contains the routine IOMATCH which
+;	matches a null-terminated character string with the name
+;	of a device in the IO Package.  The device number is
+;	returned if found
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		IOMATCH
+
+;  External References
+
+	EXT		GETIOS, GETION, CAPS
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - IOMATCH
+; Entry: HL - Points to Null or Space-terminated char string
+;	  B - Contains Logical device number
+; Exit :  C - Device Number if no error
+;	  A <> 0, Zero Flag Reset (NZ) if match
+;	      A = 0, Zero Flag Set (Z) on error or no natch
+; Uses : AF,BC
+; Special Requirements: None
+;===============================================================
+
+IOMATCH: PUSH	HL		; save regs
+	PUSH	DE
+	PUSH	BC
+	LD	(TARGET),HL	; save ptr to target name
+	CALL	GETIOS		; get ptr to the status table
+	JR	Z,IOMEX		; exit with zero flag set
+	LD	C,B		; get counter in C
+	INC	C		; increment for following decrement
+
+IOM1:	DEC	C		; count down
+	JR	Z,IOM2
+	INC	HL		; pt to next device
+	INC	HL
+	JR	IOM1
+
+IOM2:	LD	C,(HL)		; get number of devices in C
+	LD	A,C		; check for no devices
+	OR	A
+	JR	Z,IOMEX		; exit with zero flag set
+
+IOM3:	CALL	IOMAT		; do match for device C-1
+	JR	Z,GOTIT
+	DEC	C		; count down
+	JR	NZ,IOM3
+
+IOMEX:	POP	BC		; restore regs and exit with error flag in PSW
+	POP	DE
+	POP	HL
+MATCH:	XOR	A		; insure error flag (or match from IOMTEND)
+	RET
+
+GOTIT:	DEC	C		; get device number as 1 less
+	LD	A,C		; save reg C
+	POP	BC		; restore regs
+	POP	DE
+	POP	HL
+	LD	C,A		; number in C
+	JR	IOFLG		; Set Flags for OK return
+
+;.....
+;  I/O Match Routine
+;	Match the device B, C-1 to the TARGET
+;	Return with Z if match
+
+IOMAT:	PUSH	BC		; don't affect C
+	DEC	C		; device number
+	CALL	GETION		; get name
+	EX	DE,HL		; name in DE
+	LD	HL,(TARGET)	; target in HL
+
+IOMTCH:	LD	A,(DE)		; get char in name
+	CP	' '+1		; done if less than space
+	JR	C,IOMTEND
+	CALL	CAPS		; capitalize
+	LD	B,A		; char in B
+	LD	A,(HL)		; get target
+	INC	HL		; pt to next
+	INC	DE
+	CALL	CAPS		; capitalize
+	CP	B		; compare
+	JR	Z,IOMTCH
+	POP	BC		; no match
+	RET
+
+IOMTEND: POP	BC		; get BC
+	LD	A,(HL)		; check for end of target string
+	CP	' '+1
+	JR	C,MATCH
+IOFLG:	OR	0FFH		; NZ and no match
+	RET
+
+
+;  Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+TARGET:	DEFS	2		; ptr to target string
+
+	END
+

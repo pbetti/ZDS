@@ -1,0 +1,204 @@
+
+
+
+
+
+.PN 1
+.FO                                5-#
+5. Extensions to the Original IOP Concept
+
+     Somå  proposaló havå beeî madå concerninç changeó tï thå IOĞ 
+standarä whicè promiså tï (1© enhancå thå capabilitieó oæ thå IOĞ 
+anä  (2© makå inter-systeí portabilitù possiblå withouô thå  neeä 
+tï reassemblå thå IOP®  Thió sectioî discusseó theså proposals.
+
+5.1. Internally Naming an IOP
+
+     Á  namå  maù bå placeä withiî aî IOĞ afteò  thå  Z3IOĞ  texô 
+withouô  impactinç  thå  functioî  oæ thå IOĞ  oò  affectinç  thå 
+operatioî oæ tooló whicè interacô witè thå IOP®   Thió namå ió  á 
+strinç  oæ  ASCIÉ  characteró terminateä bù á  nulì  (binarù  0)®  
+Tooló  maù  reaä thió namå tï determinå iæ á specifiã  IOĞ  whicè 
+theù arå designeä tï interacô witè haó beeî loaded®   Thå olä anä 
+ne÷ IOĞ structureó arå compared:
+.uj 0
+
+          Old IOP        New IOP        Comments
+          JMP xxx        JMP xxx          | standard
+          ...            ..             <-| jump
+          JMP xxx        JMP xxx          | table
+          DB 'Z3IOP'     DB 'Z3IOP'     <-- IOP identifier
+          code           DB 'NAME',0    <-- CHANGE: IOP Name
+.uj 1
+
+     Discussionº  Thió extensioî doeó noô impacô thå operatioî oæ 
+anù  IOĞ  tooì whicè manipulateó aî IOĞ iî thå  standarä  fashioî 
+(thaô is¬  onlù througè thå JMĞ table)®   Nï impacô oî anù oæ thå 
+standarä  ZCPR³  tooló haó beeî identified®   Thió  extensioî  ió 
+advantageous:
+          1®  Special-purposå  tooló caî bå createä tï  worë 
+     witè special-purposå IOPs.
+          2®  Thå  functionalitù oæ special-purposå IOPó caî 
+     bå greatlù extendeä witè thå abilitù tï adopô standardó 
+     foò  speciaì buffeò areaó whicè follo÷ thå  name®   Foò 
+     example¬  aî IOĞ witè thå namå oæ TIMÅ maù bå  designeä 
+     wherå thå byteó followinç thå "DÂ 'TIME',0¢ contaiî thå 
+     current time in some format.
+
+     Conclusionº  Thió  extensioî ió á gooä ideá anä ió  adopted®  
+Nï impacô oî anù existinç softwarå ió made.
+     Acknowledgment: Thanks to Joe Wright for this proposal.
+
+5.2. Using Device Drivers in the BIOS
+
+     Thå basiã philosophù oæ aî IOĞ ió thaô iô removeó alì devicå 
+driveró foò thå CON:¬  RDR:¬  PUN:¬ anä LSTº logicaì deviceó froí 
+withiî  thå BIOS®   Situationó exist¬  however¬  iî whicè  iô  ió 
+desirablå  tï  leavå thå devicå driveró iî thå BIOÓ anä havå  thå 
+IOĞ  simplù  acô aó á front-enä tï them®   Thå  BIOÓ  jumğ  tablå 
+entrieó brancè intï thå IOP¬  thå IOĞ performó somå preprocessinç 
+functioî (sucè aó I/Ï redirectioî intï á disë file)¬ anä theî thå ŠIOĞ  brancheó bacë intï thå BIOÓ iî ordeò tï perforí thå originaì 
+intendeä functioî (sucè aó consolå output)®   Thå devicå  driveró 
+foò thå logicaì deviceó arå alì oò partiallù iî thå BIOS¬ anä thå 
+IOP'ó  purposå  ió  tï (1© intercepô thå BIOÓ  calló  beforå  thå 
+devicå  driveró  iî  thå BIOÓ procesó theí anä (2©  perforí  somå 
+front-enä function.  Pictorially:
+
+          BIOS Call originated by code external to BIOS
+                              |
+                              V
+                BIOS Jump Table Vectors into IOP
+                              |
+                              V
+                 IOP Performs Front-End Function
+                              |
+                              V
+      IOP Vectors Back into BIOS for Device Driver Function
+
+
+     Á  standard¬  transportablå methoä oæ accessinç  thå  devicå 
+driveró withiî thå BIOÓ ió required®   Thaô is¬  aî IOĞ musô kno÷ 
+ho÷  tï finä thå requireä devicå driveró oncå iô ió loaded®   Thå 
+following proposal is made:
+
+     1®  Aî  internaì jumğ table“ musô bå placeä withiî thå  BIOS®  
+Thå  addresseó  iî  theså JMPó arå thå addresseó  oæ  thå  devicå 
+driveró residinç iî thå BIOS®  Notå thaô thå ordeò oæ thå JMPó ió 
+thå  samå aó thå ordeò oæ thå JMPó followinç thå Warí Booô JMĞ iî 
+thå BIOÓ jumğ table®   Iî thió example¬  thå baså addresó oæ  thå 
+BIOÓ ió aô thå labeì BIOS¬ anä thå baså addresó oæ thå IOĞ buffeò 
+ió  aô  thå  labeì  IOP®   Thå addresó oæ  thå  labeì  IOPREÔ  ió 
+somewherå  withiî  thå  BIOÓ  afteò thå  BIOÓ  jumğ  table®   Thå 
+followinç  figurå compareó thå internaì jumğ tablå witè thå  BIOÓ 
+jumğ table.
+.uj 0
+
+     Internal Jump Table           BIOS Jump Table
+                                   BIOS:
+                                        JMP  COLD$BOOT
+     IOPRET:                            JMP  WARM$BOOT
+          JMP  CONST                    JMP  IOP+12    ;CONST
+          JMP  CONIN                    JMP  IOP+15    ;CONIN
+          JMP  CONOUT                   JMP  IOP+18    ;CONOUT
+          JMP  LIST                     JMP  IOP+21    ;LIST
+          JMP  PUNCH                    JMP  IOP+24    ;PUNCH
+          JMP  READER                   JMP  IOP+27    ;READER
+          JMP  LISTST                   JMP  IOP+30    ;LISTST
+                                   < more JMPs for Disk I/O >
+.uj 1
+
+     2®  Sincå  thå devicå driveró arå alreadù iî thå  BIOS¬  thå 
+colä  booô  routinå  wilì initializå thå IOĞ areá  tï  uså  theså 
+drivers®  Thå followinç jumğ tablå anä codå ió copieä bù thå BIOÓ 
+colä  booô routinå intï thå IOĞ buffeò aô thå baså addresó oæ thå 
+IOĞ  buffer®   Á  copù  operatioî  likå thió  woulä  bå  donå  tï 
+initializå thå IOĞ jumğ tablå foò anù IOĞ implementation.
+.paŠ.uj 0
+         Initial IOP Jump Table (Installed at Cold Boot)
+
+ Offset
+From IOP  Code                Comments
+          IOP:
+     0         XRA  A         ; RETURN "NOT IMPLEMENTED" VALUE
+               RET            ; OCCUPIES 3 BYTES IN PLACE OF A JMP
+               NOP
+     3         XRA  A         ; THERE ARE FOUR BEGINNING JUMPS
+               RET
+               NOP
+     6         XRA  A         ; JMP 3
+               RET
+               NOP
+     9         XRA  A         ; JMP 4
+               RET
+               NOP
+    12         JMP  IOPRET    ;CONST ROUTINE WITHIN THE BIOS
+    15         JMP  IOPRET+3  ;CONIN
+    18         JMP  IOPRET+6  ;CONOUT
+    21         JMP  IOPRET+9  ;LIST
+    24         JMP  IOPRET+12 ;PUNCH
+    27         JMP  IOPRET+15 ;READER
+    30         JMP  IOPRET+18 ;LISTST
+    33         DB   0,0,0     ;3 NOPS TO REPLACE REMAINING JMPS
+    36         DB   0,0,0
+    39         DB   0,0,0
+    42         DB   0,0,0
+    45         XRA  A         ; NOT IMPLEMENTED
+               RET
+               NOP
+    48         DB   'Z3IOP'
+.uj 1
+
+
+     Thå  JMPó  aô offsetó 12-3° brancè bacë intï thå  BIOS®   Nï 
+otheò IOĞ functionó arå implemented.
+
+     3®  Durinç  thå  executioî oæ thå  Colä  Booô  routine¬  thå 
+addresó  oæ  thå JMĞ aô BIOÓ wilì bå seô tï thå valuå oæ  IOPRET®  
+Two instructions are required to do this:
+.uj 0
+
+          LXI  H,IOPRET  ;GET ADDRESS OF IOPRET
+          SHLD BIOS+1    ;STORE IT IN BIOS JMP TABLE
+.uj 1
+
+     Thå onlù timå thaô mosô systemó transfeò controì tï thå  JMĞ 
+aô  BIOÓ ió aô power-oî oò reset®   Thió changå iî thå BIOÓ  jumğ 
+tablå  (thå JMĞ tï COLD$BOOÔ no÷ jumpó tï IOPRET¬  whicè iî  turî 
+jumpó  tï  CONST©  shoulä havå nï effecô oî  mosô  systems®   Thå 
+benefiô ió thaô aî IOĞ caî no÷ looë aô thå addresó aô BIOS+±  anä 
+determinå  wherå thå IOPREÔ jumğ tablå is®   Witè thió knowledge¬ 
+thå IOĞ caî accesó thå routineó iî thå IOPREÔ jumğ tablå foò  thå 
+supporô iô requires.
+     IOPó  caî bå moveä froí systeí tï systeí withouô thå neeä tï 
+bå reassembled®  Aî IOĞ generatioî prograí caî obtaiî thå addresó 
+oæ  thå  IOĞ  buffeò froí thå ZCPR³  Environmenô  Descriptoò  anä 
+generatå aî IOĞ whicè wilì executå correctlù wheî placeä iî  thaô Šbuffer®    SPÒ   (Systeí  Pagå  Relocatable©  formató  oò   otheò 
+relocatioî   techniqueó  caî  bå  used®    Oncå  thå  IOĞ  beginó 
+executing¬  iô  caî determinå thå addresó oæ thå BIOÓ  anä  indeø 
+intï thå jumğ tablå aô IOPREÔ aó required.
+
+     Discussionº   Thå  onlù  possiblå  probleí  whicè  haó  beeî 
+identifieä ió thaô thå originaì colä booô addresó maù bå requireä 
+foò somå purposå uniquå tï á particulaò system®  Thió proposaì ió 
+reasonablå  anä  permitó  thå  transportabilitù oæ  IOPó  aô  thå 
+binarù level®   Severaì IOPó (sucè aó PKEY© havå beeî implementeä 
+usinç  thió  techniquå  sincå thió  proposaì  waó  made¬  anä  nï 
+problemó havå beeî detecteä tï mù knowledge.
+     Carå  musô  bå takeî tï uså IOPó designeä tï  obtaiî  devicå 
+driveò  supporô  froí thå addresó aô thå BIOÓ colä  booô  routinå 
+ONLÙ oî systemó whicè havå beeî installeä aó indicateä above®  Iæ 
+thió ió noô done¬  thå I/Ï supporô foò á systeí wilì fail®  Iô ió 
+suggesteä  thaô thå IOĞ generatoò bå writteî tï contaiî á tesô tï 
+insurå  thaô thå BIOÓ colä booô addresó pointó tï aî IOPREÔ  jumğ 
+table®   Thió tesô maù bå aó simplå aó checkinç tï seå thaô therå 
+arå seveî JMĞ instructionó startinç aô IOPRET.
+
+     Conclusionº   Thió  proposaì  doeó  noô  impacô  thå   basiã 
+philosophù   oæ  thå  IOĞ  desigî  iî  anù  way®    Thå  originaì 
+functionalitù  oæ thå IOĞ concepô ió retaineä anä extendeä iî  aî 
+upward-compatiblå fashion®  Thå propeò safeguardó shoulä bå takeî 
+iî thå desigî oæ thå IOĞ generators.
+     Thió extensioî ió approveä anä adopted.
+     Acknowledgmentº Thankó tï Joå Wrighô foò thió proposal.
+
+

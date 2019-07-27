@@ -1,0 +1,48 @@
+;	TITLE	"SGETMTOP - Syslib 4.0"
+	NAME	('GETMTO')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+; Date    : 17 Sep 89
+; Version : 1.0
+; Module  : SGETMTOP
+; Abstract: This module contains the routine GETCCP which returns
+;	the value of the top of the TPA.  The routine compares the
+;	value of the DOS vector at locations 6 & 7 to the computed
+;	base of the CCP at BIOS base - 1603H.  If the DOS vector is
+;	below that value, it assumes RSX(s) are in place and returns
+;	to that value, else it returns the computed base of the CCP.
+;	The routine assumes standard 2K CCP and 3.5K DOS.
+;  Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		GETMTOP
+
+; Definitions		
+
+BDOS	EQU	0005H		; Address of the DOS entry vector
+WBOOT	EQU	0000H		; Address of the BIOS Warm Boot vector
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - GETMTOP
+; Entry: - None
+; Exit : HL - Contains page addr of top of TPA (protecting CCP)
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+GETMTOP: LD	HL,(BDOS+1)	; Get DOS entry address
+	LD	L,0		; ..and set the result to page boundary
+	LD	A,(WBOOT+2)	; Now get the BIOS page
+	SUB	16H		; ..subtracting DOS + CCP Size
+	CP	H		; Is the DOS vector below CCP?
+	RET	NC		; ..return if so
+	LD	H,A		; Else return the calculated CCP base page
+	RET
+
+	END
+

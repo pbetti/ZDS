@@ -1,0 +1,150 @@
+;	TITLE	('EPSON 62421 clock driver for ZSDOS - 8 Jun 88')
+;====================================================================
+; 62421CLK.
+;
+;  ZSDOS clock interface module for the EPSON 62421 Clock/Calendar
+;  Integrated Circuit.  This module reads the chip without stopping
+;  the count registers, so it will function with the write line
+;  disconnected for security and tamper protection.
+;
+;					Harold F. Bower,  8 Jun 88
+; Version 06/08/88-1
+;====================================================================
+
+VER	EQU	01
+
+;  General equates
+
+	COMMON	/_CLK_/
+BASE:				; Base address from linker
+	CSEG
+
+YEAR10	EQU	11		; EPCON 62421 Years*10 register
+COMND	EQU	15		; EPSON 62421 Command register
+
+BSYBIT	EQU	0010B		; Mask to test for busy bit
+HLDBIT	EQU	0001B		; Bit to set hold mode
+
+;-------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+	JP	RDCLK		; Jump to Read Clock
+	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+RDCLK:	PUSH	HL		; Save time string start address
+LOOP:	LD	HL,BUFR		; First clock read to buffer
+	CALL	RDIT		; ..and do the read
+	POP	HL		; Restore destination time addr
+	PUSH	HL		; ..and keep on stack
+	CALL	RDIT		; Second read to real string
+
+;  Clock has been read twice.  Now compare both reads to see if it
+;  held steady, or was incrementing registers.  Must compare 6 bytes
+;  (12 digits) in date & time string.
+
+	LD	D,6		; Compare 6 bytes in both reads
+	LD	BC,BUFR		; Set first string..
+	POP	HL		; ..and second
+	PUSH	HL		; ...keeping copy on stack
+LOOP0:	LD	A,(BC)		; Get byte from one string
+	CP	(HL)		; ..compare with other string
+	JR	NZ,LOOP		; Repeat whole read if bytes differ
+	INC	BC		; Else advance to next byte
+	INC	HL		; ..in both strings
+	DEC	D		; Count down
+	JR	NZ,LOOP0	; ..and loop til all done
+	DEC	HL		; Back up byte in time string
+	POP	BC		; Clear stack
+OKRET:	XOR	A		; Set return code for OK
+	INC	A		; ..1 = Ok
+	RET			; ..and return
+
+;.....
+;  Actual read routine from 62421 chip.  It reads 12 registers without
+;  stopping the chip, and does not require use of the Write line which
+;  may be disconnected to prevent accidental or deliberate changing of
+;  the time.
+
+RDIT:	LD	BC,BASE+YEAR10	; Offset clock addr from COMMON to yrs * 10
+	LD	B,12		; Do 12 nybbles of reads
+RDLOOP:	LD	A,B		; Check counter
+	CP	6		; Is it for HRs * 10 (12/24)
+	IN	A,(C)
+	JR	NZ,NOT24	; Jump if Not
+	AND	03H		; ..else strip 12/24 bit
+NOT24:	RLD			; Rotate nybble into memory addr
+	DEC	B		; Count down the counter
+	DEC	C		; Odd/even count of nybbles
+	BIT	0,B
+	JR	NZ,RDLOOP	; ..jump if just one nybble done
+	LD	A,B		; Check for the end
+	OR	A
+	RET	Z		; ..exit if so
+	INC	HL		; Else advance pointer
+	LD	E,(HL)		; ..preserving previous buffer contents
+	JR	RDLOOP
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+WRCLK:	LD	BC,BASE+COMND	; Set C to Command Register port
+	LD	A,00000111B	; Power Up reset
+	OUT	(C),A
+	XOR	00000001B	; Toggle reset bit
+	OUT	(C),A
+	DEC	C		; Back down
+	DEC	C		; ..to Control register port (13)
+	LD	B,5		; Loop to prevent lockups (arbitrary)
+HLDLOP:	LD	A,HLDBIT	; Try to stop the clock
+	OUT	(C),A
+	IN	A,(C)		; Check the busy bit
+	AND	BSYBIT
+	JR	Z,SETCK0	; Do it if clock is stopped
+	XOR	A		; ..else turn back on
+	OUT	(C),A
+	DJNZ	HLDLOP		; Count down and loop if not OK
+	XOR	A		; If end, set error status
+	DEC	A		; ..of FFH
+	RET			; ...and quit
+
+SETCK0:	DEC	C		; Back down to Years*10's register
+	DEC	C		; ..(11)
+	LD	B,6		; Output 12 values (6 bytes) to the chip
+OUTLOP:	RLD			; Rotate high nybble to low part of A
+	OUT	(C),A		; ..and send High
+	DEC	C		; Lower output port address
+	RLD			; Rotate low nybble to low part of A
+	OUT	(C),A		; ..and send low
+	DEC	C		; Bump port addr
+	RLD			; ..restore string byte
+	INC	HL		; ...and advance to the next byte
+	DJNZ	OUTLOP		; Count down and loop if more to do
+
+	LD	BC,BASE+COMND	; Point C to command register (15)
+	LD	A,0100B		; Change to 0100B to set 24-hour mode
+	OUT	(C),A
+	INC	A		; Set data to 0101B for 1 sec, No interrupts
+	DEC	C		; ..to port 14
+	OUT	(C),A
+	XOR	A		; Turn clock Off
+	DEC	C		; ..by sending to CTRL Port (13)
+	OUT	(C),A
+	JR	OKRET		; Jump to set Ok status and return
+
+;----------------- D a t a    A r e a -----------------
+
+; Data Storage needed in module
+
+BUFR:	DEFS	6		; Storage for read time
+
+	END
+

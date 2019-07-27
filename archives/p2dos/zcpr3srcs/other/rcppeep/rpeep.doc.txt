@@ -1,0 +1,88 @@
+;=============================================================================
+;
+;		P E E P    C O M M A N D
+;
+;============================================================================
+
+; +++++++	NOT an official RCP segment for Z33RCP.Z80
+;		This is a hacker's module intended to work with Z33RCP.
+
+; Command:	PEEP
+; Function:	Text File Browser and Lister
+; Comments:	The CRT protocol has to be hard coded into this module.
+;		If the TCAP were used, PEEP would not be practical.
+;		PEEPSECURE equate determines where the file is loaded.
+; Author: 	Rob Friefeld, 4607 Colorado St., Long Beach, CA 213-434-7338
+; Date:		23 Aug 1987 Version 1.0
+
+;----------------------------------------------------------------------------
+; Usage:	Hands rest on the home row of keys.  Left hand moves ahead
+;		through text, right hand moves back.
+;                                                            ---
+;                                              Go To Marker | 0 |
+;                                                            ---
+;                      Read More                     Init    Set    Print
+;                  (if memory full)                 Printer Marker (from mark)
+;                         ---                         ---    ---    ---
+;                        | R |                       | I |  | O |  | P |
+;                         ---                         ---    ---    ---
+;    ---    ---    ---    ---    ---    ---    ---    ---    ---    ---
+;   | A |  | S |  | D |  | F |  | G |  | H |  | J |  | K |  | L |  | ; |
+;    ---    ---    ---    ---    ---    ---    ---    ---    ---    ---
+;    End   Scan   Next   Next    Find   Rpt    Prev   Prev  R/Scan  Top
+;  Screen         Line  Screen         Find   Screen  Line         Screen
+;
+;
+;  X - Exit   <sp> - Hop 10 lines   <cr> - Next Screen (F)  </,?> - File Name
+;----------------------------------------------------------------------------
+
+The text movement commands should be self-demonstrating.  I hope with a
+minute or two practice, they become easy enough to use.
+
+If the entire file will not fit in memory, a message is printed.  The 'R'
+command will then read in the next TPA sized chunk of the file with one
+screen of overlap.  If there is no more to be read, you can start over at
+the beginning.
+
+The 'O' command sets a place marker to the top of the current screen.  You can
+return to it with a '0'.  The marker is also used as the start of the block
+to be listed with the 'P' command.  The end of the block is the bottom of the
+current screen.  A prompt will ask if you really want to do a listing to
+1) give you a chance to recover from an accidental key strike, 2) make sure
+the printer is on, 3) think one last time about where the marker is:  it
+is initialized to the start of the text.  A printer initialization string
+can be installed if desired.
+
+Sorry about not using the TCAP video.  Aside from the problem of no "insert
+line" sequence, the access routines would make PEEP unwieldy.  (Since I only
+have one terminal, I prefer to customize the routine rather than do without.)
+
+The CRT requirements are:
+
+	COMMAND		DEFAULT
+	-------		-------
+	CLS		1A
+	EREOL		ESC,'T'
+	GOTOXY		ESC,'=',row+32,col+32
+	INSERT LINE	ESC,'E'
+	HOME CURSOR	1E
+	STAND OUT	ESC,')'		;optional
+	STAND END	ESC,'('		;optional
+
+The source file contains instructions for setting up the video sequences.
+
+;
+; PEEP EQUATES
+;
+
+PEEPGO	EQU	NO		; Insert jump instruction to PEEP at 100h
+
+The text is normally read into the TPA at 100h.  If an object file were
+read, (the display would be garbage), one could exit and execute the file
+with a GO command.  If there is some reason to avoid this possibility,
+PEEPGO	EQU  YES  inserts a jump instruction to the PEEP code in the RCP
+and then reads the text to 103h and above.  So a GO will only restart PEEP.
+
+
+END PEEP.DOCtion to the PEEP code in the RCP
+and then reads the 

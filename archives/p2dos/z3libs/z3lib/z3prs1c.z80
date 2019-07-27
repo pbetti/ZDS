@@ -1,0 +1,328 @@
+;	TITLE	"Z3PRS1C - Z3lib 4.0"
+	NAME	('@SCAN1')
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3PRS1.Z80 Ver 1.1 by Richard Conn
+; Date    : 14 Jul 91
+; Version : 1.4
+; Module  : Z3PRS1C
+; Abstract: This module contains the routine @SCAN1 which parses
+;	a Command Line for DU: or DIR: form of Drive/User spec.
+; Revision:
+;  1.5 -  5 Aug 91 - Fixes per Howard Goldstein.	     HFB
+;  1.4 - 14 Jul 91 - Added check for Valid Drive w/Valid Drive
+;		Word if Extended Env.			     HFB
+;  1.3 - 12 Aug 89 - Original Release.			     HFB
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		@SCAN1
+
+; From SYSLIB Get..
+
+	EXT		RETUD, CAPS
+
+; From Z3LIB Get..
+
+	EXT		GETMDISK, GETMUSER, GETND0, GETDUOK
+	EXT		@SDELM, @IFCB, @DIGCK, ENVPTR		;1.4
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - @SCAN1
+; Enter: HL - Points to next char
+;	 DE - Points to FCB
+;	  A = DU First Flag (0=DIR before DU, <>0=DU before DIR)
+; Exit : HL - Points to delimiter after token
+;	  A = # of "?" in Name/Type, Zero Flag set accordingly
+; Uses : AF,BC,DE,HL
+; Effects: FCB+15 set to 0FFH if error parsing DIR:/DU:, else 0
+; Special Requirements: None
+;===============================================================
+
+@SCAN1:	LD	(DUFIRST),A	; Save DU first flag
+	CALL	RETUD		; Get current default DU
+	INC	B		; .making Drive base A=1
+	LD	(DU),BC		; ..and save
+	CALL	SCANF8		; Place 1st Token (8-bytes) in Name Field
+	CP	':'		; Is the delimiter a Colon?
+	LD	A,0		; .(prepare Status Flag for Ok DU/DIR)
+	JR	NZ,SCAN1	; ..and jump if we only have a File Name
+	INC	HL		; Pt to char after colon
+
+	LD	A,(DUFIRST)	; Get DU First flag
+	OR	A		; Are we scanning DU First?
+	JR	Z,SCN1		; ..jump if DIR first
+
+; Check for DU first, then DIR if No DU
+
+	CALL	DUSCAN		; Else Check for DU: form
+	CALL	NZ,DIRSCAN	; .Check for DIR: form if No DU
+	JR	SCN0		; ..jump to Check status
+
+; Check for DIR first, then DU if No DIR
+
+SCN1:	CALL	DIRSCAN		; Check for DIR: form
+	CALL	NZ,DUSCAN	; .Check for DU: form if no DIR
+SCN0:	PUSH	AF		; Preserve Error Flag for exit
+
+	LD	A,B		; Get Drive designator
+	LD	(DE),A		; ..and save in FCB
+	LD	A,C		; Get User Number
+	LD	(DU),A		; ..and save for later
+
+	PUSH	DE		; Save FCB pointer
+	INC	DE		; Pt to FN field
+	CALL	@IFCB		; Only partial init (17 Bytes total)
+	POP	DE		; ..restore FCB pointer
+
+	CALL	SCANF8		; Store File Name field  (8-bytes) in FCB
+	POP	AF		; ..and restore Error Flag
+
+; Skip to file type field
+;   HL pts to next char, DE pts to DN field of FCB
+
+SCAN1:	PUSH	AF		; Save Error Flag for exit
+	EX	DE,HL
+	LD	BC,8		; Pt to before file type field of FCB
+	ADD	HL,BC
+	EX	DE,HL
+
+; Extract filetype field
+
+	LD	B,3		; Prepare to extract file type
+	LD	A,(HL)		;-- Get the delimiter char
+	CP	'.'		; Is it '.'?
+	JR	NZ,SCAN2	; ..jump if we have No type
+	INC	HL		; Else Point to char after '.'
+	CALL	SCANF		; ..and get FCB file type
+
+SCAN2:	INC	DE		; We Point to last chat of FN..go to T1
+	INC	DE		; .advance to T2
+	INC	DE		; ..T3
+	INC	DE		; ...EXM
+	INC	DE		; ....and S1
+	LD	A,(DU)		; Get User Number
+	LD	(DE),A		; ..Store it here at FCB+13 (S1)
+	INC	DE		; Advance to offset 14 (S2)
+	INC	DE		; .and 15
+
+	POP	AF		; Restore Error Flag
+	LD	(DE),A		; ..and stuff it here in FCB+15
+
+	LD	A,(QMCNT)	; Get Number of question marks in FN.FT
+	OR	A		; ..and set Zero Flag
+	RET
+
+;.....
+; Scan token pointed to by HL for a max of B Bytes.  Start with clear
+; Question Mark counter and Place token into File Name Field addressed
+; by DE, expanding and interpreting wild cards of "*" and "?".
+
+SCANF8:	XOR	A		; Get a 0
+	LD	(QMCNT),A	; ..and clear Question Mark Counter
+	LD	B,8		; Scan for up to 8 chars
+			;..fall thru to main Scan routine..
+
+; Scan token pted to by HL for a max of B Bytes.  Place it into File
+; Name field pointed to by DE.  Expand and interpret wild cards of
+; "*" and "?".  Exit with HL pointing to terminating delimiter.
+
+SCANF:	PUSH	DE		; Preserve FCB address
+SCANF0:	INC	DE		; Pt to next byte in FCB
+	CALL	@SDELM		; Is this a delimiter?
+	JR	Z,SCANF2	; ..jump if so
+	INC	HL		; Point to next char
+	CP	'*'		; Is (DE) a wild card?
+	JR	NZ,SCANF1	; ..continue if not
+	DEC	HL		; Else back up to same char
+	LD	A,'?'		; ..and expand with "?"
+SCANF1:	LD	(DE),A
+	CP	'?'		; Is it wild?
+	JR	NZ,SCNOQ	; ..jump if Not
+	PUSH	HL		; Else save HL
+	LD	HL,QMCNT	; Point to Count storage
+	INC	(HL)		; ..and Increment
+	POP	HL		; Restore HL
+SCNOQ:	DJNZ	SCANF0		; ..loop til Done
+	INC	DE		; Then advance to next FCB char
+
+; Flush to next delimiter
+
+SCANF3:	CALL	@SDELM		; 8 chars or more - skip until delimiter
+	JR	Z,SCANFX	; ..Exit w/Zero flag set if delim found
+	INC	HL		; Pt to next char in command line
+	JR	SCANF3
+
+; Preserve present char, and fill any remaining chars in field w/spaces
+
+SCANF2:	PUSH	AF		; Save char
+SCANFA:	LD	A,' '		; .store this char
+	LD	(DE),A		; ..in FCB field
+	INC	DE		; Point to next
+	DJNZ	SCANFA		; Loop til done
+	POP	AF		; Restore char
+SCANFX:	POP	DE		; .FCB address
+	RET			; ..and exit
+
+;.....
+; Scan for and extract Disk/User info assuming DU: form
+; Enter: DE - Points to first byte of FCB containing possible DU form
+; Exit : Zero flag clear means OK and DU variable set
+
+DUSCAN:	PUSH	HL		; Save regs
+	PUSH	DE
+	CALL	GETDUOK		; OK for DU form?
+	JR	Z,ERROR		; ..Abort w/Error if not
+	LD	BC,(DU)		; Get current DU to BC
+;1.5	LD	L,C		; .(prepare for error vector)
+	INC	DE		; Point to first char of Name
+	LD	A,(DE)		; ..and get a character
+	CP	' '+1		; Legal char?
+	JR	C,DUSOK		; ..jump w/Current DU if only delim
+	CALL	CAPS		; ..in uppercase
+	SUB	'A'		; Convert possible drive spec to number
+	JR	C,DUS1		; ..If less than 'A', must be digit
+
+; Set disk number (A=0)
+
+	LD	B,A		; Save Drive in B
+	INC	B		; Change to A=1 base
+	INC	DE		; Point to next input char
+	LD	A,(DE)		; Get next char
+	CP	' '+1		; End of string?
+	JR	C,DUCHEK	; ..jump to check limits if so
+
+;  Set user number
+
+DUS1:	LD	HL,2*256+0	; Get up to 2 digits, start w/Zero
+DUS1A:	LD	A,(DE)		; Is it a delimiter?
+	CP	' '+1
+	JR	C,DUS2		; ..jump to end if so
+	CALL	@DIGCK		; Check for Ascii digit, convert to binary
+	JR	C,ERROR		; ..jump error if not a digit
+	LD	C,A		; ..and save
+	LD	A,L		; Mult current value by 10
+	ADD	A,A		; *2
+	ADD	A,A		; *4
+	ADD	A,L		; *5
+	ADD	A,A		; *10
+	ADD	A,C		; Add in new digit
+	LD	L,A		; ..and save
+	INC	DE		; Point to next char
+	DEC	H		; .count down
+	JR	NZ,DUS1A	; ..loop if more to go
+	LD	A,(DE)		; Get the next char
+DUS2:	CP	' '		; Is it the proper delimiter?
+	JR	NZ,ERROR	; ..jump to take Error Exit if Not
+	LD	C,L		; Save good User in exit reg
+
+; BC Now has parsed DU.  Ok if same as the current DU, then check legality
+
+DUCHEK:	LD	HL,(DU)		; Get currently logged DU
+	OR	A
+	SBC	HL,BC		; Same as that parsed?
+	JR	Z,DUSOK		; ..take good exit if so
+
+	CALL	GETMDISK	; Get Maximum allowable Drive #
+	CP	B		; .and compare to what we have
+	JR	C,ERROR		; ..jump error if Not legal
+	CALL	GETMUSER	; Get maximum good user #
+	CP	C		; Is this legal?
+	JR	C,ERROR		; ..jump error if not
+
+CKDVVC:	LD	HL,(ENVPTR)	;1.4 Point to the ENV
+	LD	A,H		;1.4
+	OR	L		;1.4 Is it legal?
+	JR	Z,DUSOK		;1.4 ..quit Ok if Not
+	LD	DE,8		;1.4
+	ADD	HL,DE		;1.4 Offset to Extended flag
+	BIT	7,(HL)		;1.4 Is it Extended Env?
+	JR	Z,DUSOK		;1.4 ..Exit Ok if Not
+	LD	DE,2CH		;1.4 Set offset to Valid Drives from Version
+	ADD	HL,DE		;1.4
+	LD	A,(HL)		;1.4 Fetch Valid Drives Word
+	INC	HL		;1.4
+	LD	H,(HL)		;1.4
+	LD	L,A		;1.4
+	LD	A,16+1		;1.4 .(B=drive where A=1...P=16)
+	SUB	B		;1.4 Compute # shifts to check drive
+DUCHL:	DEC	A		;1.4 Count down
+	ADD	HL,HL		;1.4 .shifting bits
+	JR	NZ,DUCHL	;1.4 ..til done (Carry has drive bit)
+	JR	NC,ERROR	;1.4 Jump Error if Drive Not valid
+
+DUSOK:	XOR	A		; Set Ok Return status
+DUSEX:	POP	DE		; Restore regs
+	POP	HL
+	RET
+
+ERROR:	OR	0FFH		; Set Error Return status
+	LD	BC,(DU)		; .and return Current DU
+	JR	DUSEX		; Jump to restore regs
+
+;.....
+; Scan for DIR form
+; Enter: DE - Points to FCB containing name for which to check
+; Exit : Zero flag Clear (NZ)  if Found, Else Set (Z) for Not Found
+;	 BC = Drive (B) / User (C) if Found
+
+DIRSCAN: PUSH	HL		; Save regs
+	PUSH	DE
+
+	CALL	GETND0		;1.5 Pt to Named DIR
+	JR	Z,ERROR		; ..Abort if none
+	EX	DE,HL		; Ptr in HL
+	INC	HL		; Pt to FN
+
+DIRS1:
+;1.5	LD	BC,(DU)		; Get currently-logged Drive/User to BC
+	LD	A,(DE)		; Get next char
+	OR	A		; End of DIR?
+	JR	Z,ERROR		; ..jump Error if so
+;1.5	CP	'$'		; Is it the Current Drive?
+;1.5	JR	Z,DIRS1A	; ..jump if so
+	LD	B,A		; ..and save
+;1.5DIRS1A:
+	INC	DE		; Point to User #
+	LD	A,(DE)		; .and get
+;1.5	CP	'$'		; Is it the Current User?
+;1.5	JR	Z,DIRS1B	; ..jump if so
+	LD	C,A		; Else save the vale
+;1.5DIRS1B:
+	INC	DE		; Pt to DIR name
+	PUSH	BC		; Preserve DU
+	PUSH	HL		; .ptr to file name
+	PUSH	DE		; ..and ptr to DIR entry
+	LD	B,8		; Match?
+
+DIRS2:	LD	A,(DE)		; Get byte
+	CP	(HL)		; Compare
+	JR	NZ,DIRS3	; ..exit if No match
+	INC	HL		; Else Pt to next
+	INC	DE
+	DJNZ	DIRS2		; Count down
+
+DIRS3:	POP	DE		; Restore regs
+	POP	HL
+	POP	BC		; ..and DU
+	JR	Z,CKDVVC	;1.5 Jump to check Drive Vector if Match
+	EX	DE,HL		; ..else advance to next entry
+	LD	BC,16		; 8 bytes for name + 8 bytes for password
+	ADD	HL,BC
+	EX	DE,HL
+	JR	DIRS1		; ..and loop to check Next entry
+
+; !!!!!!!!!!!!!!!!  D A T A   S T O R A G E  !!!!!!!!!!!!!!!!
+
+	DSEG			; Put unitialized data in DSEG
+
+DUFIRST: DEFS	1	; DU first = 0FFH, DIR first = 0
+QMCNT:	 DEFS	1	; Question mark count
+DU:	 DEFS	2	; Temporary User Number & Drive storage
+
+	END
+

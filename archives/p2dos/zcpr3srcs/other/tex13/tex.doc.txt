@@ -1,0 +1,190 @@
+                        TEX Documentation
+                       ------------------- 
+
+   The  major use of real-time clocks until now,  in  ZCPR3-based 
+computers  at  least,  has been time and date stamping of  files. 
+There have been several approaches to this, including DateStamper 
+and Z80DOS.  One possibility that seems to have been neglected is 
+time-scheduling of programs and real-time control. 
+
+   TEX represents my solution to this problem. It allows entry of 
+entire command lines with associated absolute execution times and 
+optional  repeat intervals.  The maximum number of command  lines 
+allowable  is  at present 20,  but this can be  changed  with  an 
+equate   in  the  source  code,   supplied  with   this   library 
+(naturally!). TEX operates as a ZCPR3 shell, whose function is to 
+determine when a command line should be executed and to put it in 
+ZCPR3's Multiple Command Line Buffer when it is due.  This allows 
+the  programmer  to concentrate on writing application  programs, 
+and allow the operator to schedule them as required. 
+
+   The only requirements for TEX are a Z80-based computer running 
+ZCPR3 or ZCPR33, and equipped with a real-time clock. The TEX.COM 
+file  included with this library is designed for use with  Z80DOS 
+and  other compatible BDOS replacements which contain a  function 
+to retrieve system time using BDOS function 105.  If your  system 
+differs  from  this,  you  can still run TEX  by  re-writing  the 
+GETTIME  function  in TEX.MAC.  Instructions are included  within 
+this routine,  and should present little difficulty. TEX will run 
+even  faster if you have a RAM disk or hard disk,  but these  are 
+not necessary. 
+
+   Since  TEX  is  a shell,  you should note  that  it  can  only 
+schedule  and run programs when it is itself  running:  that  is, 
+when all other programs have terminated. You can use the computer 
+normally  while  TEX is running,  with a short delay  after  each 
+program  is  run while TEX reloads itself and loads its  variable 
+file,  but programs scheduled for execution while other  programs 
+are  running will not be executed until TEX is entered after  the 
+first program terminates. TEX is not a multi-tasking system.
+
+   When  TEX executes a program,  all current commands and  their 
+time  information are saved in a disk file  called  TEX.VAR.  The 
+distribution   version  of  TEX  saves  this  file  in  the  root 
+directory,  but either a re-assembly,  or your favourite patcher, 
+will allow any other drive/user area combination to be used. 
+
+   Uses for TEX are up to you. Unless you have a RAM disk or hard 
+disk to carry TEX.COM and its variable file,  it usually takes  a 
+few  seconds  after  a program terminates until  the  TEX  prompt 
+appears. This may or may not be acceptable when you are trying to 
+use  the computer,  but it usually doesn't matter if you  aren't. 
+For  example,  you  can make what is probably one of the  world's 
+biggest alarm clock programs using TEX and SAK alone: 
+
+!X 06:30 !R /1;SAK /B WAKE UP! 
+
+schedules SAK to ring the console bell continuously every day  at 
+6:30  am!   (See  below  for  meaning  of  TEX  commands).  Other 
+possibilities   include  control  of  appliances  such  as  video 
+recorders  when you're not home.  If you can write a  program  to 
+control it, TEX can schedule it! 
+
+
+                     TEX Command Line Format
+                     ----------------------- 
+
+   The general format of a TEX command line is: 
+
+TEX commands;required command line;other commands as normal
+
+   Note  the  semicolon between the TEX commands and the  command 
+line.  This  is required to separate the two:  TEX will  flag  an 
+error if this is omitted. 
+
+   There  are presently three TEX commands which can be  included 
+in the command line to specify execution details: 
+
+!X [dd:mm:yy] hh:mm[:ss]
+          - Specifies  an absolute execution time.  The date  and 
+          seconds are optional,  as indicated by the brackets. If 
+          the date is not supplied, execution will proceed on the 
+          current day.  If no !X command is  supplied,  execution 
+          commences immediately. 
+
+!R [/days] hh:mm[:ss]
+          - Specifies a time period for repeated execution of the 
+          command line.  Days and seconds are optional.  If no !R 
+          command  is  entered,  the program is run once  at  the 
+          specified time, then deleted from the execution list. 
+
+!P number
+          - Specifies a priority for the command,  in the range 1 
+          to  254,  where  1 is the highest priority.  If  no  !P 
+          command is entered,  the default priority (99) is used. 
+          Priority  can  be  specified  to ensure  that  a  given 
+          program executes before another,  if they are scheduled 
+          at the same time. 
+
+   The order of the three command types is unimportant. 
+
+Examples:  See the SAK example above. Another is: 
+
+!R /2 10:5:3 !X 15/3/88 12:04;SEND NEATPROG.WOW;SAK /BP10 SENT
+>> IT!;MAKE COFFEE 
+
+   which would schedule the program SEND at 12:04 pm on March 15, 
+1988 with the parameter NEATPROG.WOW,  then schedule SAK to  ring 
+the  console  for  10 seconds and type SENT IT!,  then  make  the 
+coffee (!).  Finally the whole sequence would be re-scheduled  to 
+occur  again  2 days,  10 hours,  5 minutes and 3 seconds  later. 
+(Never mind why you'd want to do all this!) 
+
+
+                           Running TEX
+                           ----------- 
+
+   TEX is invoked with 
+
+TEX [command file] /options 
+
+   where  <command  file>  is an  optional  file  containing  TEX 
+commands as above (these can be prepared using a text editor, and 
+can be useful for often-used commands).  Default filetype is .TEX 
+if  none is specified.   The only option at present is /C,  which 
+deletes  any  current TEX.VAR file and thus starts  TEX  with  no 
+embedded commands. 
+
+   After  loading,  TEX  will  install  itself  as  a  shell  (if 
+possible),  then read any specified input file.  It will then try 
+to  read a TEX.VAR file (unless disabled with the /C  option)  to 
+load any pending commands.  It will then display the user prompt, 
+which  is  similar  to the standard ZCPR3 prompt  (including  any 
+named directory information),  but preceded by the current  time, 
+e.g. [21:55] B0:WORK> 
+
+   This time is updated once each minute, to demonstrate that TEX 
+hasn't fallen over. 
+
+   At  this point normal commands and TEX commands can be  typed. 
+Note  that  even a simple directory change requires reloading  of 
+TEX after completion:  all commands (except control-C) are loaded 
+into  the  Multiple Command Line Buffer and control is passed  to 
+the  CCP.  There  are also some control  functions  performed  by 
+single keys, as follows: 
+
+Control keys:
+   - Line-feed gives a short help display.
+   - ESCAPE  will  cause TEX to terminate (the  current  commands 
+     will be saved in the TEX.VAR file).
+   - Control-D gives a display of current commands.
+   - Control-E  will  allow commands to be deleted.  The user  is 
+     prompted  with  a  request for the  number  of  the  command 
+     (obtained  with the Control-D command),  the command line is 
+     displayed,  and  the user asked for confirmation before  the 
+     line is deleted. 
+
+
+                    Location of TEX.VAR File
+                    ------------------------
+
+   As  noted  above,  the  temporary file TEX uses  to  save  the 
+current commands can either be placed in the ROOT:  directory  or 
+in  a  user-specified  directory.  The  distribution  version  of 
+TEX.COM places it in the ROOT: directory, but this can be changed 
+either  by  modifying the source code at the  rootfl:  and  nrdu: 
+labels  (comments in the source will assist),  or by using a file 
+patcher (or even DDT/SID, if you must). To assist this, there are 
+two  "signposts" just after the beginning of the code (at 0110h). 
+The  byte after the ROOT> signpost should be set to 0ffh  if  the 
+ROOT:  directory is required.  If not, this byte should be set to 
+zero,  and the bytes after the following signpost (DU:>) modified 
+to  the required drive and user area (drive first, (A = 0),  then 
+user area 0-15 (16-31 might work; who knows?)). If you have a RAM 
+disk or hard disk,  it's probably better to force the use of this 
+as TEX will load and save the TEX.VAR file more quickly.
+
+
+                          Final Remarks
+                          ------------- 
+
+   I hope you will find TEX useful. Feel free to direct comments, 
+bug reports etc. to me at: 
+
+   Z-Node 62
+   Perth, Western Australia
+   (061+) 09-450-0200 
+
+                        - Ron Murray
+                          6 May, 1988
+

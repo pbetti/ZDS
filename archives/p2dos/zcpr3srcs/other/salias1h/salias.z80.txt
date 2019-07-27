@@ -1,0 +1,2084 @@
+; Program:	SALIAS - SCREEN ORIENTED ALIAS EDITOR
+; Author:	Rob Friefeld
+; Version:	1.0
+; Date: 	5 Sept 1987
+; Assembly:	SLR Systems assembler and linker (180SLR, SLRNK)
+;		(Link command: SLRNK /D:2500,SA-10E,SALIAS/N/E)
+;
+; ALIAS.LIB from VALIAS by Jay Sage
+;   A VALIAS1-type alias is used as a local template.  The recursion feature
+;   of these aliases is supported.
+;
+;----------------------------------------------------------------------------
+; COPYRIGHT NOTICE
+; This program is copyrighted 1987 by Rob Friefeld.  It may be copied and
+; modified freely for personal use but may not be sold or distributed
+; for a fee either alone or as part of a package without the written consent
+; of the author.
+; Phone 213-434-7338 (voice)
+;----------------------------------------------------------------------------
+
+vers	equ	10		; Main version number
+
+; The revision history of SALIAS is in the file SALIAS.FOR
+
+; Basic facts
+true	equ	-1
+false	equ	0
+
+beta	equ	false		; Test versions
+tstrev	equ	'h'		; Test revision
+helpon	equ	FALSE		; Help screen inclusion
+;helpon	equ	TRUE
+
+
+; LIBRARY NEEDS
+	.REQUEST vlib,z3lib,syslib
+; VLIB
+	EXT	tinit,dinit,cls,at,ereol,z3vinit,stndout,stndend
+; Z3LIB
+	EXT	getcl1,getcrt,getvid,getwhl,zfname
+; SYSLIB
+
+
+; SALIAS equates
+asize	equ	8		; Record count of local alias file
+arecs	equ	4		; Records of alias to read (only need CL)
+z3loc	equ	9		; Z3ENV offset in z3-tool
+floc	equ	0ch		; Flag offset for valias1.com file
+clloc	equ	1eh		; Offset of command line in local template
+cmdsep	equ	';'		; Command separator
+plus	equ	'+'+80h		; Special char to concatenate commands
+
+crtwid	equ	80		; CRT width
+width	equ	crtwid-2	; Useable line width
+loffset	equ	3		; Alias script displayed starting at line 3
+
+dim	equ	1		; For vprint
+bright	equ	2
+
+	INCLUDE SA-EQU.LIB	; Standard BDOS and ASCII equates
+
+;
+; PROGRAM START
+;
+;	jp	start		; supplied by linker
+
+; ZCPR3 TOOL IDENT
+	db	'Z3ENV'
+	db	1
+z3eadr:
+	dw	0fe00h		; Or wherever
+
+
+start:
+	ld	(stksav),sp	; Save ccp sp
+	ld	sp,stack	; Set local stack
+
+; Initialize to ZCPR3 env and exit if problem
+	call	initenv
+
+; Print help info on command line request ('?' or '/ ' or '//')
+	call	helpreq
+	jp	z,signoff	; Help requested
+
+; Load up the alias and start editing
+restart:
+	call	a$start
+main:	call	pscreen		; Display initial screen
+	jp	edit		; Go to work
+
+a$start:
+	call	readalias	; Read in specified alias file
+	call	initbuf		; Clear edit buffer
+	call	loadbuf		; Load edit buffer from command line buffer
+	ret
+
+;
+; INITIALIZE ENVIRONMENT
+;
+initenv:
+
+	ld	hl,(z3eadr)	; Install alias template with env pointer
+	ld	(alias+z3loc),hl
+
+	call	z3vinit		; Initialize library routines
+	call	getvid		; TCAP installed?
+	jp	z,notcap
+	call	getwhl		; Require wheel status
+	jp	z,nowhl
+
+
+	call	getcrt		; Check crt width
+	ld	a,(hl)
+	cp	crtwid
+	jp	c,cerror	; Too small
+	inc	hl		; Check crt lines
+	ld	a,(hl)
+	cp	6		; Allows 2 lines of alias script
+	jp	c,cerror	; Too small
+	ld	(prrow),a	; Last row is prompt row
+	sub	4
+	ld	(n$txtlns),a	; Text lines 4 less
+
+	ld	hl,crtwid	; Compute and store buffer size
+	ld	de,crtwid
+;	ld	a,(n$txtlns)
+	ld	b,a
+	add	hl,de
+	djnz	$-1
+	ld	(bufsize),hl	; Size = crtwid * textlines
+
+	call	getcl1		; Load command line size
+	ld	(clsize),a
+
+	call	tinit		; Initialize terminal
+
+	jp	defusr		; Save caller's user number now
+
+
+; FATAL INITIALIZATION PROBLEMS
+
+cerror:	call	vprint
+cmsg:	db	'NEED 80 COLUMN SCREEN',0
+	jr	initerr
+
+notcap:	call	vprint
+	db	'INSTALLATION/TCAP ERROR',0
+	jr	initerr
+
+nowhl:	call	vprint
+	db	'NEED WHEEL STATUS',0
+
+initerr:
+	jp	exit
+
+;
+; FULL SCREEN EDITOR
+;
+; CONSTANTS:
+;	crtwid	= 80 (can be more)
+;	width	= crtwid-2 is useable line width  (78)
+;	txtlns	= crtlines-4  (20)
+;	loffset = 3 (text starts on line 3)
+;	prrow	= last crt line, prompt row (24)
+; VARIABLES:
+;	linptr - pointer to start of current line (contains char count)
+;	nline  - current line #
+; BUFFER STRUCTURE:
+;	array [crtwid] chars by [txtlns] lines
+; LINE STRUCTURE:
+;	|5|H|E|L|L|O|0|...|0|
+;	 |  \______/  \
+;	count  text    terminating 0's
+;
+; This version uses a "pseudo-tab": a set number of spaces marked with
+; high bit set and treated as a block.	There are no tab stops.
+
+tspace	equ	' '+80h		; Tab char
+tsize	equ	3		; Tab size
+
+insflg:	db	true		; Insert Flag: T = Insert, F = Overwrite
+
+; EDIT ENTRY
+edit:
+	call	eprompt		; Show edit mode
+	call	topline		; Initialize pointers to first line
+	call	online		; Edit current line
+	jp	ecmd		; Get a command
+
+; EDIT EXIT
+editx:
+	jp	filecmd		; To FILE MODE
+
+; EDIT COMMAND LOOP
+ecmd:
+	call	report		; Update whatever displays need it
+	call	getc		; Next char?
+
+ecmd1:	cp	del		; This control char > text chars
+	jp	z,delft
+	cp	20h		; Character input
+	jp	nc,enter
+
+	call	case		; Scan command list of control chars
+
+	db	ctla	;back word
+	dw	bwrd
+	db	ctlc	;bottom screen
+	dw	bscreen
+	db	ctld	;forward space
+	dw	fsp
+	db	ctle	;previous line
+	dw	pvline
+	db	ctlf	;forward word
+	dw	fwrd
+	db	ctlg	;delete char
+	dw	delete
+	db	ctlh	;back space
+	dw	bsp
+	db	ctli	;tab
+	dw	tabulate
+	db	ctlj
+ if helpon
+	dw	help
+ else
+	dw	linend
+ endif
+	db	ctlk	;k menu trigger
+	dw	kmenu
+	db	ctll	;repeat find/replace
+	dw	rptf$r
+	db	ctlm	;cr
+	dw	cartn
+	db	ctln	;insert line break
+	dw	iline
+	db	ctlp	;control char trigger
+	dw	ctlchar
+	db	ctlq	;q menu trigger
+	dw	qmenu
+	db	ctlr	;top screen
+	dw	tscreen
+	db	ctls	;backspace
+	dw	bsp
+	db	ctlt	;delete word
+	dw	delwrd
+	db	ctlv	;toggle insert mode
+	dw	instog
+	db	ctlx	;next line
+	dw	nxline
+	db	ctly	;delete line
+	dw	dline
+	db	esc	;exit to file mode
+	dw	editx
+	db	0		; Table delimiter
+	jp	ecmd		; No match, loop
+
+menuinp:
+	call	getc		; Get next char for sublist
+	call	upcase
+	cp	20h
+	ret	nc
+	add	'@'		; Convert control char
+	ret
+
+qmenu:
+	call	menuinp
+qmenu1:
+	call	case
+	db	'F'
+	dw	find
+	db	'A'
+	dw	replace
+	db	'D'
+	dw	linend1
+	db	'S'
+	dw	linbeg
+	db	'Y'
+	dw	deleol
+	db	'Z'
+	dw	zap
+	db	0
+	jp	ecmd
+
+kmenu:
+	call	menuinp
+kmenu1:
+	call	case
+	db	'S'
+	dw	sav$res		; Save edit, return to editor
+	db	'D'
+	dw	sav$new		; Save edit, clear editor
+	db	'X'
+	dw	sav$ex		; Save edit, exit to OS
+	db	'Q'
+	dw	nosav$ex	; Quit to OS, no save
+	db	'N'
+	dw	k$rename	; Name change
+	db	'R'
+	dw	k$load		; Read a file
+	db	'F'
+	dw	k$format
+	db	'I'
+	dw	k$indent
+	db	'M'
+	dw	k$mode
+	db	'U'
+	dw	k$undo
+	db	'P'
+	dw	k$print
+	db	0
+	jp	ecmd
+
+
+;::: ON LINE ROUTINES, EDITING CURRENT LINE
+
+; WHILE ON LINE:
+;	B = CHAR COUNT (0..width) C = CURSOR POSITION (0..char count)
+;	HL = MEM POSITION   A, DE = SCRATCH
+
+; BACKSPACE
+bsp:	xor	a
+	cp	c		; Cursor position
+	jr	z,bspp		; At beginning of line, bsp to prev line
+	call	bsp1		; Do the backspace
+	jp	ecmd
+
+bspp:	call	pvline1		; Backspace to previous line
+	jp	linend1		; Position at end
+
+; return Z = backspace not done, NZ = all OK
+bsp1:	xor	a
+	cp	b
+	jr	z,bsp0		; 0 length line
+	cp	c
+	jr	z,bsp0		; At start
+	dec	hl		; Decrement memory and cursor position
+	dec	c
+	ld	a,ctlh		; Screen bsp
+	call	conout
+	ld	a,tspace	; On tab?
+	cp	(hl)
+	call	z,bsp2		; Yes, keep going
+	or	0ffh
+bsp0:	ret
+
+bsp2:	ld	e,tsize		; Backspace tsize spaces
+	ld	a,ctlh
+bsp21:	dec	e
+	ret	z
+	dec	hl
+	dec	c
+	call	conout
+	jr	bsp21
+
+; FORWARD SPACE
+fsp:
+	ld	a,b
+	cp	c		; Compare line count to cursor position
+	jp	z,nxline	; At eoln, next line
+	ld	a,(hl)		; Screen fsp, just reprint the char
+	call	pctl
+	inc	hl		; Inc memory and cursor pos
+	inc	c
+	ld	a,tspace	; On tab?
+	cp	(hl)
+	call	z,fsp2		; Yes, keep going
+fsp0:	jp	ecmd
+
+fsp2:	ld	e,tsize		; Forward space tsize spaces
+	ld	a,' '
+fsp21:	dec	e
+	ret	z
+	inc	hl
+	inc	c
+	call	conout
+	jr	fsp21
+
+; FORWARD WORD
+fwrd:
+	ld	a,b		; How much room left?
+	sub	c
+	jp	z,nxline	; None
+	push	bc		; Must preserve BC while ON LINE
+	ld	b,a		; Try from here to EOLN
+fwrd1:	ld	a,(hl)
+	call	wrdsep		; Are we on a word separator?
+	jr	z,fwrd3		; Yes
+	call	fwrd4		; No, advance until we find one
+	djnz	fwrd1
+
+fwrd0:	ld	a,c		; Update pointers and exit
+	pop	bc
+	ld	c,a
+	jp	ecmd
+
+fwrd3:	call	fwrd4		; Word sep found, advance 1 more space
+	ld	a,(hl)		; Are we on a blank?
+	cp	' '
+	jr	z,fwrd31	; Yes, keep going
+	cp	tspace		; Tab?
+	jr	z,fwrd31
+	jr	fwrd0		; Done
+fwrd31:	djnz	fwrd3		; Keep going forward
+	jr	fwrd0
+
+fwrd4:	ld	a,(hl)		; Advance 1 char
+	call	pctl
+	inc	hl
+	inc	c
+	ret
+
+
+; BACK WORD 
+bwrd:	ld	a,c
+	or	a
+	jr	z,bwrd2		; At line beginning, go to prev line
+
+bwrd1:	call	bsp1
+	jr	z,bwrd0
+	ld	a,(hl)
+	cp	' '
+	jr	z,bwrd1		; Backspace over blanks
+	cp	tspace
+	jr	z,bwrd1		; Backspace over tabs
+	dec	hl		; Now backspace until next blank wordsep
+	ld	a,(hl)
+	inc	hl
+	call	wrdsep
+	jr	z,bwrd0
+	jr	bwrd1
+
+bwrd0:	jp	ecmd
+
+
+bwrd2:	call	pvline1
+	jp	z,ecmd		; No previous line
+	jp	linend1
+
+; DEFINE WORD SEPARATORS
+wrdsep:	cp	' '
+	ret	z
+	cp	tspace
+	ret	z
+	cp	','
+	ret	z
+	cp	';'
+	ret	z
+	cp	'.'
+	ret	z
+	cp	':'
+	ret	z
+	cp	'/'
+	ret
+
+; DELETE CHAR
+delete:
+	call	dele
+	jp	ecmd
+
+dele:
+	call	delmem		; In memory
+	call	delscr		; On screen
+	ld	a,tspace	; Keep going for tab
+	cp	(hl)
+	jr	z,dele
+dele0:	ret
+
+delmem:
+	ld	(hl),0		; Terminal 0 or char to be deleted
+	ld	a,b
+	sub	c
+	ret	z		; At eoln, no char
+	dec	b
+	ret	z		; Single char line
+	dec	a
+	ret	z		; On last char
+delmem1:
+	inc	a		; To move terminal 0 in
+	push	bc
+;	push	hl
+;	pop	de		; Dest, current position
+	push	hl
+	ld	d,h
+	ld	e,l
+	inc	hl		; Source, terminal 0
+	ld	c,a		; Count, line tail
+	ld	b,0
+	ldir			; Block move
+	pop	hl
+	pop	bc
+	ret
+
+delscr:
+	push	hl
+	call	print1
+	ld	a,' '		; Wipe out char
+	call	conout
+	pop	hl
+	call	movcrs		; Return cursor
+	ret
+
+; DELETE CHAR LEFT
+delft:
+	xor	a
+	cp	c
+	jp	z,delline	; At beginning of line, append to previous
+	call	bsp1
+	ld	a,b
+	cp	1
+	jp	nz,delete
+	ld	bc,0
+	push	hl
+	call	vprint
+	db	' ',bs,0
+	pop	hl
+delft0:	jp	ecmd
+
+; DELETE WORD RIGHT
+delwrd:
+	ld	a,(hl)
+	call	wrdsep
+	jr	z,delw1
+	ld	a,b
+	cp	c
+	jr	z,delw0
+	call	dele
+	jr	delwrd
+
+delw0:	jp	ecmd
+
+delw1:	call	dele
+
+	jr	delw0
+
+; DELETE TO EOLN
+deleol:
+	ld	a,c
+	or	a
+	jp	z,dline
+	call	deleol1
+	jp	ecmd
+
+deleol1:
+	call	ereol
+	ld	a,b
+	sub	c
+	ret	z		; Should not happen
+	push	hl
+	ld	b,a
+	ld	(hl),0
+	inc	hl
+	djnz	$-3
+	pop	hl
+	ld	b,c
+	ret
+
+; INSERT TABSIZE BLOCK OF TABSPACES
+tabulate:
+	call	tab1
+	jp	ecmd
+
+tab1:	ld	a,tsize		; Counter
+tab2:	push	af
+	ld	a,tspace
+	push	af		; Need char in IX
+	pop	ix
+	call	insert
+	pop	af
+	dec	a
+	jr	nz,tab2
+	ret
+
+
+; INSERT/OVERWRITE TOGGLE
+
+instog:	ld	a,(insflg)	; Flag 0 -> owrt
+	cpl
+	ld	(insflg),a
+	or	a
+	push	hl
+	call	ioprompt	; Update message
+	pop	hl
+	call	movcrs		; Return to position
+	jp	ecmd
+
+; ENTER A CHAR
+enter:	call	enter1
+	jp	ecmd
+
+enter1:	push	af		; Char in a
+	pop	ix		; Save in ix
+	ld	a,b		; At eoln?
+	sub	c
+	jr	z,ovrwrt	; Yes, no need for insert mode
+	ld	a,(insflg)	; Which mode are we in?
+	or	a		; 0 = overwrite, nz = insert
+	jr	nz,insert
+
+
+; ENTER CHAR IN OVERWRITE MODE
+ovrwrt:
+	ld	a,b		; Line full?
+	cp	width
+	jr	c,ovr1		; No
+	sub	c		; At eoln?
+	ret	z		; Line full AND eoln, accept no input
+ovr1:	push	ix		; Recover char from ix
+	pop	af
+	call	owrt		; Write it
+	ret
+
+
+owrt:	ld	(hl),a		; Put char in place
+	call	pctl		; Print it
+	inc	hl		; Next position
+	inc	c		; Next crs postion
+	ld	a,b		; Char count -> a
+	cp	c
+	jr	c,owrt1		; We are inside of line
+	ret			; No need to incr char count
+owrt1:	inc	b
+	ret
+
+; ENTER CHAR IN INSERT MODE
+insert:
+	ld	a,b		; Line full?
+	cp	width
+	ret	nc		; Yes, accept no input
+	push	ix		; Recover char in ix
+	pop	af
+	call	insrt
+	ret
+
+insrt:
+	push	af		; Save char
+	ld	a,b		; At eoln?
+	sub	c		; A = # chars to eoln
+	jr	z,insrt2	; Yes, really want overwrite
+	call	insmem		; Push chars down to make room
+	pop	af
+	ld	(hl),a		; Place char in line
+	call	pctl		; Print it
+	ld	a,width		; Line full?
+	cp	b
+	jr	z,insrt1	; This one did it, so don't inc char count
+	inc	b
+insrt1:	inc	c		; Next crs pos
+	inc	hl		; Next mem pos
+
+insrt11:
+	push	hl		; Print line tail
+	call	print1
+	pop	hl
+	call	movcrs		; Go back to pos in c
+
+	ret
+
+insrt2:	pop	af
+	jp	owrt
+
+insmem:
+	push	bc		; Make room for char in line
+	ld	c,a		; Bc = # chars to move
+	ld	b,0
+	add	hl,bc		; Dest is new eoln
+;	push	hl
+;	pop	de		; Now in de
+	ld	d,h
+	ld	e,l
+	dec	hl		; Source is current eoln
+	lddr			; Tail move
+	pop	bc		; Recover char count, crs pos info
+	inc	hl		; Hl to next char
+	ret
+
+; LINE END/START TOGGLE
+linend:				; Go to eoln or, if there, to start of line
+	ld	a,b
+	cp	c
+	jr	z,linbeg
+
+linend1:
+	call	linend11
+	jp	ecmd
+linend11:
+	ld	hl,(linptr)	; Eoln routine
+	inc	hl		; HL -> first char
+	ld	e,b		; Add line count
+	ld	d,0
+	add	hl,de		; HL -> eoln
+	ld	c,b
+	jp	movcrs		; Cursor to eoln
+
+linbeg:
+	call	linbeg1
+	jp	ecmd
+linbeg1:
+	ld	c,0		; Start of line routine
+	ld	hl,(linptr)
+	inc	hl
+	ld	a,cr
+	jp	conout
+
+
+; CONTROL CHAR INPUT
+ctlchar:
+	call	getctl		; Get control char
+	call	is$lower	; ...or lower case char
+	cp	'+'		; Line append trigger
+	jr	nz,ctlcx
+	or	80h
+ctlcx:	jp	enter
+
+
+;
+; FIND/REPLACE ROUTINES
+;
+; For purposes of SALIAS, the search is case insensitive.
+
+fr$len	equ	15		; Length of strings
+
+; DEFINE BUFFERS
+
+fdata:	db	fr$len
+fcnt:	ds	1
+fstring:
+	ds	fr$len
+
+rdata:	db	fr$len
+rcnt:	ds	1
+rstring:
+	ds	fr$len
+
+fptr:	dw	0		; Local position keeper
+mflag:	ds	1		; Mode flag: 'F' or 'R'
+
+; GET "FIND" STRING
+getfind:
+	ld	hl,fdmsg
+	call	prmcrs
+	ld	de,fdata
+	call	rds
+	ret
+fdmsg:	db	1,'Find: ',2,0
+
+; GET "REPLACE" STRING
+getrepl:
+	ld	hl,rpmsg
+	call	vprint1
+	ld	de,rdata
+	call	rds
+	ret
+rpmsg:	db	'  ',1,'Replace With: ',2,0
+
+; SAVE EDIT ENVIRONMENT
+savpos:
+	ld	(memptr),hl	; Position pointer
+	ld	(crssav),bc	; Line count and cursor
+	call	offline
+	ld	(linsav),hl	; Linptr
+	ld	a,(nline)	; Line number
+	ld	(nsav),a
+	ret
+
+; RESTORE EDIT STATUS
+rstpos:
+	ld	hl,(memptr)
+	ld	bc,(crssav)
+	call	movcrs
+	ret
+
+; FIND COMMAND ENTRY
+find:
+	ld	a,'F'		; Set mode
+	ld	(mflag),a
+	call	savpos		; Save editing position
+	call	getfind		; Read string to find
+	call	eprompt
+
+; OTHER MODES ENTRY
+infind:
+	ld	a,(fcnt)	; Check returned char count
+	or	a
+	jp	z,findx		; Empty string, quit
+
+; SEARCH FOR FIRST CHAR
+	call	online		; Make sure b count is ok
+	ld	hl,(memptr)
+	inc	hl		; Start ahead of current position
+find1:	ld	ix,fstring	; Match pointer
+find11:	ld	a,(hl)		; Look at current char
+	or	a
+	jr	z,feoln		; Hit eoln
+	call	upcase
+	cp	(ix)
+	jr	z,find2		; Check remainder for match
+	inc	hl
+	jr	find11		; Keep looking
+
+; HANDLE EOLN
+feoln:
+	call	incline		; Go to next line
+	inc	hl		; Point to first char
+	jr	nz,find1	; Start over on new line
+
+; OUT OF LINES ... NOT FOUND
+nofind:
+	ld	hl,nfmsg
+	call	prmcrs
+	call	getc
+	call	eprompt
+	ld	hl,(linsav)	; Go back where we came from
+	ld	(linptr),hl
+	ld	a,(nsav)
+	ld	(nline),a
+	call	rstpos
+	jr	fexit		; Done
+nfmsg:	db	1,'Not Found ',2,0
+
+; FIRST CHAR FOUND, DOES REST OF STRING MATCH?
+find2:
+	ld	(fptr),hl	; Save this position
+	ld	a,(fcnt)
+	ld	c,a		; Counter for number of chars to check
+find21:	dec	c		; Remaining count
+	jr	z,fnew		; Success, load new position in text
+	inc	hl		; Look at next pair of chars
+	inc	ix
+	ld	a,(hl)
+	call	upcase
+	cp	(ix)
+	jr	nz,find1	; Failure, resume search
+	jr	find21		; So far, so good
+
+
+; SUCCESS. UPDATE POINTERS TO NEW POSITION
+fnew:
+	ld	hl,(fptr)	; This was start of match
+	ld	(memptr),hl
+	ld	hl,(linptr)
+	ld	b,(hl)		; Line char count
+	ld	de,(fptr)	; Compute cursor offset
+	xor	a
+	ex	de,hl		; Hl -> new pos, de -> holn
+	sbc	hl,de		; Result always < width
+	dec	l
+	ld	c,l
+	ld	(crssav),bc	; Keep updated crs pos
+
+findx:
+	call	rstpos
+
+
+; END OF FIND.	CHECK MODE.
+	ld	a,(mflag)
+	cp	'R'
+	jr	z,rep1		; We are doing a replace, so continue
+fexit:	jp	ecmd		; Done!
+
+; REPLACE MODE, ON LINE.
+; FIRST DELETE STRING
+rep1:
+	ld	a,(fcnt)	; Get char count
+	or	a
+	push	af
+	call	nz,ereol
+	pop	af
+rep11:	jr	z,rep2		; Continue
+	push	af
+	call	delmem
+	pop	af
+	dec	a
+	jr	rep11
+
+; INSERT REPLACEMENT
+rep2:	ld	de,rstring
+	ld	a,(rcnt)
+	or	a
+	jr	z,rep22
+rep21:	jr	z,fexit		; Done!
+	push	af
+	push	de
+	ld	a,(de)		; Get char
+	call	insrt
+	pop	de
+	pop	af
+	inc	de
+	dec	a
+	jr	rep21
+rep22:
+	call	insrt11
+	jr	fexit
+
+; ENTRY FOR REPLACE COMMAND.
+replace:
+	ld	a,'R'		; Set mode flag
+	ld	(mflag),a
+	call	savpos
+	call	getfind		; Get find string
+	call	getrepl		; Get replace string
+	call	eprompt
+	jp	infind		; To find rountine
+
+
+; REPEAT FIND/REPLACE.	MODE FLAG WILL TELL US WHAT TO DO.
+rptf$r:
+	call	savpos
+	jp	infind
+
+
+;
+; LINE MANIPULATION ROUTINES, EDITOR MOVES BETWEEN LINES
+;
+
+; FIRST TIME ON NEW LINE.  INITIALIZE HL,BC TO EDIT MODE, CURSOR AT START
+online:
+	ld	hl,(linptr)
+	ld	b,(hl)		; Current char count
+	inc	hl		; First char
+	ld	c,0		; Start of line pos
+	jp	movcrs
+
+; LEAVING A LINE. SAVE COUNT, ZERO OUT TAIL
+offline:
+	ld	hl,(linptr)
+	ld	(hl),b
+	jp	zline
+
+; GO TO NEXT LINE. RETURN HL -> START, NZ=OK,Z=NO MORE
+nxline:
+	call	nxline1
+	jp	ecmd
+nxline1:
+	call	offline
+	call	incline
+	jr	online
+
+; GO TO PREVIOUS LINE. RETURN HL -> START, NZ=OK,Z=NO MORE
+pvline:
+	call	pvline1
+	jp	ecmd
+pvline1:
+	call	offline
+	call	decline
+	jr	online
+
+; CARRIAGE RETURN. IF INSERT MODE, BREAK LINE, ELSE GO TO NEXT LINE
+cartn:
+	ld	a,(insflg)
+	or	a
+	jp	nz,iline	; Insert
+	ld	a,cr
+	call	conout
+	jp	z,nxline	; Overwrite
+
+; INSERT A LINE
+iline:
+
+	ld	a,c		; At start of line?
+	or	a
+	jr	nz,iline2	; No, break line
+	call	iline1		; Yes, insert blank line
+	jp	ecmd
+
+iline1:
+	call	offline		; Save
+	ld	bc,(n$txtlns)
+	ld	a,c		; Maxlines
+	cp	b
+	jr	z,iline0	; At max
+	ld	(nline),a	; Move to max
+	call	linadr
+	ld	(linptr),hl
+
+iline11:
+	push	bc		; From end, move each line 1 higher
+	ld	de,(linptr)
+	call	decline
+	ld	bc,crtwid
+	ldir
+	pop	bc
+	ld	a,(nline)
+	cp	b
+	jr	z,iline0	; At current line
+	jr	iline11
+iline0:
+	ld	hl,(linptr)	; Blank it in mem
+	ld	(hl),0
+	call	zline
+
+	call	cr$clr		; Update screen
+	call	prteos
+	jp	online
+
+
+
+; BREAK LINE
+iline2:
+	call	savtail		; Save the remainder of line in buffer
+	call	deleol1		; Delete the remainder
+	call	nxline1		; Advance to next line
+	jr	z,iline3	; No next line
+	call	iline1		; Insert a blank line
+	call	rstail		; Restore the remainder to new line
+	call	online
+	push	hl
+	call	print1		; Print it
+	pop	hl
+	ld	a,cr
+	call	conout
+iline3:	jp	ecmd
+
+; FIND ADDR OF LINE N.	ENTER A = N. RETURN HL -> START.  NO EFFECT ON BC
+linadr:
+	ld	hl,buf
+	ld	de,crtwid
+	or	a
+linadr1:
+	ret	z
+	add	hl,de
+	dec	a
+	jr	linadr1
+
+
+savtail:
+	ld	a,b
+	sub	c
+	ld	(tcnt),a	; Tail count
+	ret	z		; At eoln
+
+	push	hl		; Preserve position
+	push	bc
+	ld	c,a
+	ld	b,0
+	ld	de,tail
+savt1:	ldir
+	pop	bc
+	pop	hl
+	ret
+
+rstail:
+	ld	a,(tcnt)
+	or	a
+	ret	z		; No tail
+
+	dec	hl		; Back up to count info
+	ld	(hl),a		; Store count
+	inc	hl
+rst1:	ex	de,hl
+	ld	hl,tail
+	ld	c,a		; BC=A
+	ld	b,0
+	ldir
+	ret
+
+tcnt:	ds	1
+
+
+; DELETE A LINE
+dline:
+	call	dline1
+	jp	ecmd
+
+dline1:
+	call	offline		; Save char count
+	ld	bc,(n$txtlns)
+	push	hl
+	push	bc
+
+dline2:
+	ld	de,(linptr)
+	call	incline
+	jr	z,dline0
+	ld	bc,crtwid
+	ldir
+	jr	dline2
+dline0:
+	xor	a
+	ld	(de),a
+	call	zline
+	pop	bc
+	pop	hl
+	ld	(linptr),hl
+	ld	(n$txtlns),bc
+	call	cr$clr
+	call	prteos
+	jp	online
+
+; AT START OF LINE.  APPEND IT TO PREVIOUS LINE.
+delline:
+	call	savtail		; Line to buffer
+	call	dline1		; Delete it
+	call	pvline1		; To prev line
+	call	linend11	; To end
+	ld	de,tail
+	ld	a,(tcnt)
+	or	a
+	jr	z,dellx		; 0 length
+	add	b		; Prevent line overflow
+	cp	width+1
+	jr	c,dell1
+	ld	a,width
+	sub	b
+	jr	dell2
+dell1:	ld	a,(tcnt)
+dell2:	push	bc
+	push	hl
+	call	rst1		; Code for block move
+	pop	hl
+	pop	bc
+	add	b		; Increase line count
+	ld	b,a
+	push	hl
+	call	print1		; Screen
+	pop	hl
+	call	movcrs
+dellx:	jp	ecmd
+
+
+; TOP LINE
+tscreen:
+	call	topline
+tscr0:	call	online
+	jp	ecmd
+
+; BOTTOM LINE
+bscreen:
+	call	topline
+bscr1:	ld	a,(hl)		; Find first empty line
+	or	a
+	jr	z,tscr0
+	call	incline
+	jr	z,tscr0
+	jr	bscr1
+
+
+; SAVE EDIT ENVIRONMENT: HL, BC, LINPTR, NLINE
+savenv:	ld	(memptr),hl
+	ld	hl,(linptr)
+	ld	(hl),b
+	ld	(linsav),hl
+	ld	(crssav),bc
+	ld	a,(nline)
+	ld	(nsav),a
+	ret
+
+; RECOVER EDIT ENVIRONMENT
+rstenv:	ld	a,(nsav)
+	ld	(nline),a
+	ld	bc,(crssav)
+	ld	hl,(linsav)
+	ld	(linptr),hl
+	ld	hl,(memptr)
+	jp	movcrs
+
+
+; DISPLAY FREE SPACE
+report:
+	call	savenv
+	call	prtuse
+	jp	rstenv
+
+
+; EDIT MODE PROMPT
+eprompt:
+	ld	a,(prrow)
+	ld	(iorow),a
+	ld	hl,eprmsg
+	call	prmcrs
+
+	ld	a,(insflg)
+	or	a
+ioprompt:
+	push	af
+	call	at
+iorow:	db	24		; Loaded from INITENV
+iocol:	db	76
+	pop	af
+	jr	z,oprom
+	call	vprint
+	db	1,'ON ',2,0
+	ret
+oprom:
+	call	vprint
+	db	1,'OFF',2,0
+	ret
+
+eprmsg:	db	1
+	db	'<ESC> - FILE MENU'
+	db	'                '
+	db	'--  EDITING  --'
+	db	'                    '
+	db	'INSERT ',0
+
+
+; PRINT LINES FROM CURRENT LINE NUMBER TO END
+prteos:
+	ld	bc,(n$txtlns)
+	dec	c
+prteos1:
+	ld	a,b
+	call	linadr
+	inc	hl
+	call	ereol
+	call	print1
+	call	crlf
+	ld	a,b
+	cp	c
+	ret	z
+	inc	b
+	jr	prteos1
+
+
+; THESE ROUTINES PERMIT ACCESS TO FILE MODE COMMANDS FROM WITHIN THE EDITOR
+
+sav$res:
+	call	sav$fil
+	jp	edit
+
+
+sav$new:
+	call	sav$fil
+	jp	z,edit	
+	call	clear1
+	call	zname		; Clear name from fcb
+	jp	edit
+
+sav$ex:
+	call	sav$fil
+	jp	z,edit
+	jp	exit0
+
+sav$fil:
+	call	reload
+	call	loadcl
+	jp	nz,save1
+	call	rerror	
+	xor	a		; Error exit flag
+	ret
+
+nosav$ex:
+	ld	hl,nsxmsg
+	call	prmcrs
+	call	getc
+	and	5fh
+	cp	'N'
+	jp	z,edit
+	jp	exit0
+
+nsxmsg:	db	1,'Quit? (Y/n) ',2,0
+
+k$rename:
+	call	rename1
+	jp	edit
+
+k$load:
+	ld	hl,fcb		; Save fcb
+	ld	de,savfcb
+	ld	bc,36
+	ldir
+
+	call	getname		; What file is wanted
+	jp	z,edit		; No name, abort
+
+	call	reload		; Save current edit
+	ld	hl,(edsize)	; Is there anything here?
+	ld	a,l
+	or	h
+	jp	z,restart	; Buffer empty, start fresh
+	call	initbuf		; Append file to current one
+	call	loadbuf
+
+	call	read1		; Read specified file
+	jp	z,k$lx		; Nothing useful read, abort
+	ld	(k$ptr),hl	; HL -> command line of read
+
+	call	topline		; Find first blank line
+k$l1:	ld	a,(hl)
+	or	a
+	jr	z,k$l2
+	call	incline
+	jr	z,k$lerr2
+	jr	k$l1
+
+k$l2:	ex	de,hl		; Set up buffer position for loader
+	push	de
+	pop	iy
+	inc	de
+	ld	hl,(k$ptr)	; Source line
+	call	load1
+	call	pscr
+
+k$lx:	ld	hl,savfcb
+	ld	de,fcb
+	ld	bc,36
+	ldir
+	call	savusr		; [H] rev.
+	call	logusr		; [H] rev.
+	jp	edit
+
+
+k$lerr2:
+	call	cr$clr
+	call	vprint
+	db	1,'Need more room. ',2,0
+	call	getc
+	call	pscr
+	jr	k$lx
+
+k$ptr:	dw	0
+
+zap:
+	ld	hl,zapmsg
+	call	prmcrs
+	call	getc
+	and	5fh
+	cp	'N'
+	call	nz,clear1
+zapx:	jp	edit
+
+zapmsg:	db	1,'Clear? (Y/n) ',2,0
+
+k$format:
+	call	format1
+	jp	edit
+k$indent:
+	call	indent1
+	jp	edit
+
+k$mode:
+	call	savenv
+	call	mode1
+	call	rstenv
+	jp	ecmd
+
+k$print:
+	call	aprint1
+	jp	edit
+
+k$undo:
+	call	undo1
+	jp	edit
+
+;
+; LINE AND BUFFER UTILITY ROUTINES
+;
+
+; SET UP ON FIRST LINE OF EDIT BUFFER (HL @BUF, LINPTR @BUF, NLINE=0)
+topline:
+	ld	hl,buf
+	ld	(linptr),hl
+	xor	a
+	ld	(nline),a
+	ret
+
+; LOAD COMMAND LINE BUFFER --> EDIT BUFFER
+; USE ONE LINE PER COMMAND UNTIL OUT OF LINES, THEN FILL LAST LINE
+loadbuf:
+	call	topline		; Set pointers for INCLINE procedure
+	ld	hl,clbuf	; Command line buffer
+
+; ENTRY FOR LOAD SOURCE OTHER THAN CLBUF
+
+ldbuf1:	ld	iy,buf		; -> char count of 1st line
+	ld	de,buf+1	; -> first char of 1st line
+	ld	ix,counter	; Running counter
+load1:	ld	(ix),0		; Init counter
+load2:
+	ld	a,(hl)		; Get a command
+	cp	cmdsep
+	jr	z,load3		; End of command
+load21:	or	a
+	jr	z,load5		; End of alias
+	call	is$lower	; If lower case, mark with high bit
+	ld	(hl),a		; And keep it lower case
+	ld	a,(ix)		; Check line size
+	cp	width
+	jr	nc,load4	; count >= width, no more room
+	ldi			; Move clbuf -> edit buf
+	inc	(ix)		; Inc counter
+	jr	load2
+
+load3:	call	load5		; Update count, find next line
+	jr	nz,load1	; Get next line
+	dec	hl		; No next line, back up to ';'
+	ld	a,(hl)		; Keep loading commands
+	jr	load21
+
+load4:
+	call	load51		; Line full, finish it here
+	jr	z,lderr		; Last line full, no more room
+	ld	a,plus		; Start new line with marker
+	ld	(de),a
+	inc	de
+	ld	(ix),1		; Count is 1
+	jr	load2
+
+
+load5:	ld	a,(ix)		; Load line count
+	inc	hl		; Past CMDSEP
+load51:	ld	(iy),a
+	ex	de,hl		; Save position
+	ld	(hl),0		; Insert terminating 0 in buffer
+	call	incline		; Returns hl->next line
+	ex	de,hl		; Load it in de
+	ret	z		; No more lines
+	push	de
+	pop	iy		; And iy
+	inc	de		; 1st byte is count
+	ret
+
+; Screen overflow, truncate alias
+lderr:
+	ld	(iy),width	; Line count is max
+	ld	hl,ldrmsg	; Warn user
+	call	prmcrs
+	call	getc
+	ret			; Done with routine
+
+ldrmsg:	db	'ALIAS CHOPPED ',0
+
+
+; RELOAD EDIT BUFFER --> COMMAND LINE BUFFER
+reload:
+	CALL	ZEROCL		; Zero alias command line
+
+	ld	de,clbuf	; Destination
+	call	topline		; Source at start of buffer
+rload1:
+	ld	a,(hl)		; Get char count
+	or	a
+	jr	z,rload2	; Blank line, skip
+	ld	b,a		; Counter
+	inc	hl
+
+rloadr:	ld	a,(hl)
+	cp	tspace		; Ignore tab-space characters
+	jr	z,rldr1
+	CP	PLUS		; Keep marker
+	JR	Z,RLDR01
+	call	upcase
+	and	7fh		; Mask high bit (lower case chars)
+RLDR01:
+	ld	(de),a
+	inc	de
+rldr1:	inc	hl
+	djnz	rloadr
+
+	ld	a,cmdsep
+	ld	(de),a
+	inc	de
+rload2:
+	call	incline
+	jr	nz,rload1
+
+rload3:	xor	a		; 0 remainder of cline
+	dec	de		; Delete trailing cmdsep
+	ld	(de),a
+	or	0ffh		; NZ = all ok
+	ret
+
+; LOAD COMMAND LINE IN CLBUF --> ALIAS
+; RETURN Z = OVERFLOW
+loadcl:
+	call	size		; Does it fit?
+	ret	z		; Overflow
+; Entry to skip size check
+loadcl1:
+	ld	hl,clbuf
+	ld	de,alias+clloc
+	ld	bc,(clsize)	; Command line size to C, trash to B
+	ld	b,0
+LCL1:	LD	A,PLUS
+LCL2:	CP	(HL)
+	JR	Z,LCL3
+	LDI
+	JP	PE,LCL2
+	or	-1		; Done = NZ
+	ret
+
+LCL3:	INC	HL		; Skip over marker
+	DEC	DE		; Back up a char in alias
+	LD	A,(DE)		; Is it a cmdsep?
+	CP	CMDSEP
+	JR	Z,LCL1		; Yes, overload it
+	INC	DE
+	JR	LCL1		; No (shouldn't happen)
+
+; COMPUTE CHAR COUNT OF ALIAS SCRIPT
+; This routine runs every time a char is entered.
+; Scan each line until its 0 terminator and inc a counter for each char
+; skipping tabs and pluses.  The line count is also counted as a char, but
+; that accounts for the command separator.  Depends on line count never =
+; tspace (A0h) or plus (ABh).
+
+size:
+	ld	hl,buf
+	ld	de,crtwid
+	ld	a,(n$txtlns)
+	ld	b,a		; Loop counter, # of lines
+	ld	ix,0		; Initialize counter
+size01:
+	push	hl		; Buffer pointer at start of line
+size1:	ld	a,(hl)
+	or	a
+	jr	nz,size2	; Something here
+	pop	hl
+	add	hl,de		; Start of next line
+	djnz	size01
+	jr	size3		; All lines scanned
+
+size2:	inc	hl		; Next char
+	cp	tspace		; Don't count this
+	jr	z,size1
+	cp	plus
+	jr	z,size1
+	inc	ix		; Bump counter
+	jr	size1
+
+size3:
+	push	ix		; Compute room left
+	pop	de		; Total count to DE
+	ld	(edsize),de	; Save for possible later use
+	ld	hl,(clsize)	; CLSIZE to L
+	xor	a
+	ld	h,a		; 0 to H
+	sbc	hl,de
+	ld	(clrem),hl	; Save remnant = clsize-char count
+	jr	c,size4
+	or	0ffh		; Nz = ok
+	ret
+
+size4:	xor	a		; Z = not ok
+	ret
+
+edsize:	ds	2		; Total size
+
+
+; RELOAD ERROR - COMMAND LINE TOO LONG
+rerror:
+	ld	hl,rermsg
+	call	prmcrs
+	ld	de,(clrem)	; Compute overflow (negate clrem)
+	ld	hl,0
+	or	a
+	sbc	hl,de
+	call	phlfdc
+	call	vprint
+	db	' CHARS ',0
+	call	getc
+	ret
+
+rermsg:	db	'CL OVERFLOW  ',0
+
+
+; GO TO NEXT LINE.  RETURN HL -> NEXT LINE, NZ=OK.  AFFECT ONLY HL,AF REGS
+; LOAD LINPTR AND NLINE
+incline:
+	push	bc
+	push	de
+	ld	bc,(n$txtlns)
+	ld	a,c
+	dec	a
+	cp	b
+	jr	z,incl0		; At max
+	inc	b
+	ld	(n$txtlns),bc
+	ld	hl,(linptr)
+	ld	de,crtwid
+	add	hl,de
+	ld	(linptr),hl
+	or	0ffh
+incl0:	pop	de
+	pop	bc
+	ret
+
+; GO TO PREVIOUS LINE RETURN HL -> NEXT LINE, NZ=OK.  AFFECT ONLY HL,AF.
+; LOAD LINPTR AND NLINE
+decline:
+	push	bc
+	push	de
+	ld	a,(nline)	; Line number
+	or	a
+	jr	z,decl0		; At min
+	dec	a
+	ld	(nline),a
+	xor	a
+	ld	hl,(linptr)
+	ld	de,crtwid
+	sbc	hl,de
+	ld	(linptr),hl
+	or	0ffh
+decl0:	pop	de
+	pop	bc
+	ret
+
+
+; ZERO LINE TAIL. ENTER WITH LINPTR ON CURRENT LINE AND COUNT UPDATED.
+; CHANGE ONLY AF
+zline:
+	push	hl
+	push	bc
+	ld	hl,(linptr)	; Start of line
+	ld	c,(hl)		; Char count
+	ld	b,0
+	add	hl,bc
+	inc	hl		; Hl->eoln
+	ld	a,crtwid
+	sub	c
+	dec	a
+	jr	z,zline0
+	ld	b,a		; # of 0's
+zline1:
+	ld	(hl),0
+	inc	hl
+	djnz	zline1
+zline0:	pop	bc
+	pop	hl
+	ret
+
+; ZERO EDIT BUFFER
+initbuf:
+
+	ld	bc,(bufsize)
+	ld	hl,buf
+	ld	(linptr),hl
+init1:
+	ld	(hl),0
+	inc	hl
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,init1
+	ret
+
+	 if	helpon
+	INCLUDE SA-HELP.LIB	; Help screen
+	 endif
+;
+; END OF EDITOR
+;
+
+
+;
+; FILE MODE COMMAND LOOP (MENU DRIVEN FILE OPERATIONS)
+;
+filecmd:
+	call	fprompt		; Display prompt text
+fcmd:	call	fcrs		; Cursor to prompt position
+	call	getc
+	call	upcase
+	call	case
+	db	'C'
+	dw	clear
+	db	'E'
+	dw	edit
+	db	'F'
+	dw	format
+	db	'I'
+	dw	indent
+	db	'L'
+	dw	load
+	db	'M'
+	dw	mode
+	db	'P'
+	dw	aprint
+	db	'R'
+	dw	rename
+	db	'S'
+	dw	save
+	db	'U'
+	dw	undo
+	db	'X'
+	dw	exit0
+	db	esc
+	dw	main
+	if	helpon
+	db	ctlj
+	dw	hlpscr
+	endif
+	db	0		; Table delimiter
+	jr	fcmd		; No match, loop
+
+fprompt:
+	ld	hl,fprmpt
+	call	prmcrs		; To prompt row and clear it
+	ret
+
+fprmpt:	db	1,'CMD ('
+	db	'Clear  '
+	db	'Edit  '
+	db	'Format  '
+	db	'Indent  '
+	db	'Load  '
+	db	'Mode  '
+	db	'Print  '
+	db	'Rename  '
+	db	'Save  '
+	db	'Undo  '
+	db	'eXit'
+	db	')',2,0
+
+fcrs:
+	ld	a,(prrow)
+	ld	(frow),a
+	call	at
+frow:	db	24	; Loaded at run time
+fcol:	db	79
+	ret
+
+
+; CLEAR - ZERO EDIT BUFFER AND FCB
+clear:
+	call	clear1
+	jp	fcmd
+
+clear1:
+	call	initbuf
+	call	zname		; Clear name from fcb
+	call	prtuse
+	call	prtname
+	jp	pscr
+
+; FORMAT - LOAD EDIT BUFFER, DISPLAY FORMATTED EDIT
+format:
+	call	format1
+	jp	filecmd
+format1:
+	call	reload		; Edit buffer -> command line buffer
+	call	initbuf
+	call	loadbuf
+	call	topline
+	call	pscr
+	ret
+
+; AUTOMATIC INDENT OF IF LEVELS
+indent:
+	call	indent1
+	jp	filecmd
+indent1:
+	call	format1
+
+	xor	a		;start with if level = 0
+	ld	(iflev),a
+	call	topline		;pointers to start of text
+ind1:
+	call	online
+	xor	a		;check line count
+	cp	b
+	jr	z,ind6		;blank line, skip it
+	ld	a,width-tsize	;is line almost full?
+	cp	b
+	jr	c,ind6		;skip it, no room to add tabs
+	ld	iy,iflev
+	ld	ix,FI$STR	;look for FI
+	call	match
+	jr	nz,ind12	;no
+	ld	a,(iy)
+	or	a
+	jr	z,ind12		;avoid level <0
+	dec	(iy)		;dec level now
+
+ind12:	ld	ix,ZIF$STR	;look for ZIF
+	call	match
+	jr	nz,ind2		;no match
+	ld	(iy),0		;ZIF exits IF
+
+ind2:
+;	call	ereol
+;	ld	a,(iy)		;check level in ix
+;	or	a
+;	jr	nz,ind3		;indent
+;	call	print1		;else, print the line
+;	jr	ind4
+
+	ld	a,(iy)
+	or	a
+	jr	z,ind4
+
+
+ind3:	push	af		;indent tab*level
+	call	tab1		;editor routine
+	pop	af
+	dec	a
+	jr	nz,ind3
+
+ind4:	call	offline		;update line pointers
+	call	online
+ind41:	ld	a,(hl)
+	cp	tspace
+	jr	nz,ind5
+	inc	hl
+	jr	ind41
+
+ind5:	ld	ix,if$str
+	call	match
+	jr	z,ind7
+	ld	ix,colif$str
+	call	match
+	jr	z,ind7
+
+ind6:	call	incline
+	jr	nz,ind1
+	ret
+
+ind7:	ld	iy,iflev
+	inc	(iy)
+	jr	ind6
+
+IF$STR:	db	3,'IF '
+COLIF$STR:
+	db	4,':IF '
+FI$STR:	db	3,'FI',0
+ZIF$STR:
+	db	4,'ZIF',0
+
+iflev:	ds	1
+
+; match string @hl with string @ix. Return Z = match, NZ = no match
+; case insensitive on hl, no effect on hl,bc,de
+match:
+	push	hl		; The editor needs these preserved
+	push	bc
+	ld	b,(ix)
+mat1:	inc	ix
+	ld	a,(hl)
+	call	upcase
+	cp	(ix)
+	jr	nz,matchx
+	inc	hl
+	djnz	mat1
+matchx:
+	pop	bc
+	pop	hl
+	ret
+
+; LOAD - GET NAME OF NEW FILE AND RESTART
+load:
+	call	getname
+	jr	z,loadx		; Function aborted by user
+	call	a$start		; Restart program
+	call	pscreen		; Print the alias screen
+loadx:	jp	filecmd
+
+lmsg:	db	1,'Alias Name: ',2,0
+
+; MODE - TOGGLE NORMAL OR RECURSIVE MODE
+mode:
+	call	mode1
+	jp	fcmd
+mode1:
+	ld	hl,alias+floc	; Get mode flag
+	ld	a,(hl)
+	cpl			; Flip it
+	ld	(hl),a
+	jp	prtmode		; Show status
+
+; APRINT - SEND ALIAS SCRIPT TO LIST
+aprint:	call	aprint1
+	jp	filecmd
+
+aprint1:
+	ld	hl,aprmsg	; Make sure printer on
+	call	prmcrs
+	call	getc
+	and	5fh
+	cp	'N'
+	ret	z
+
+	ld	hl,apr$id	; List alias name
+	call	lprint1
+	ld	hl,fcb
+	ld	b,8
+apr1:	inc	hl
+	ld	a,(hl)
+	call	listc
+	djnz	apr1
+
+	call	lcrlf
+	call	topline
+apr2:
+	ld	a,(hl)
+	or	a
+	jr	z,apr3		; Skip blank lines
+	inc	hl
+	call	lprint1
+	call	lcrlf
+apr3:
+	call	incline
+	ret	z
+	jr	apr2
+
+aprmsg:	db	1,'Printer on? (N=Abort) ',2,0
+apr$id:	db	'Alias: ',0
+
+; RENAME - ACCEPT NEW NAME FOR CURRENT FILE
+rename:
+	call	rename1
+	jp	filecmd
+
+rename1:
+	ld	hl,lmsg
+	call	prmcrs
+	call	fcbget
+	jp	prtname
+
+; SAVE - LOAD BUFFER INTO ALIAS IMAGE, WRITE TO DISK, DISPLAY
+save:
+	call	reload
+	call	loadcl
+	jr	z,saverr	; OVFL
+	call	initbuf		; Display what was saved
+	call	loadbuf
+	call	prtuse
+	call	pscr
+	call	save1
+savx:	jp	filecmd
+
+saverr:
+	call	rerror
+	call	prtuse
+	jr	savx
+
+save1:
+	ld	a,(fcb+1)	; UFN specified yet?
+	cp	' '
+	jr	z,save3		; No
+	call	ambig?
+	jr	z,save3
+save2:	jp	writealias
+
+save3:	call	getname		; Get a file spec
+	ret	z		; User abort
+	call	prtname		; Show status
+	jr	save2
+
+
+; UNDO - RELOAD EDIT BUFFER FROM ALIAS
+undo:	call	undo1
+	jp	fcmd
+
+undo1:
+	call	initbuf
+	call	topline
+	ld	hl,alias+clloc	; Command line in alias
+	call	ldbuf1
+	call	prtuse
+	jp	pscr
+
+
+; PRINT SCREEN (except for bottom line)
+pscreen:
+	call	cls
+	call	vprint
+	db	1,'SALIAS '	; Header
+	db	vers/10+'0','.',vers mod 10 + '0'
+	 if	beta
+	db	tstrev
+	 endif
+	db	2,0
+	call	prtmode		; Mode display
+	call	prtuse		; Room remaining display
+	call	prtname		; File name display
+	call	prtdiv		; Upper divider
+	call	pscr		; Alias script
+	jp	prtdiv		; Lower divider
+
+; PSCREEN subroutines
+; Display edit buffer
+pscr:
+	call	at
+	db	loffset
+	db	1
+	call	topline		; Set up on first buffer line
+pscr1:
+	call	ereol
+	inc	hl
+	call	print1
+pscr2:	call	incline
+	ret	z
+	call	crlf
+	jr	pscr1
+
+prtmode:
+	call	at
+	db	1,19
+	call	vprint
+	db	1,'Mode: ',0
+	ld	hl,alias+floc	; Get flag
+	ld	a,(hl)
+	or	a
+	jr	nz,prtm1
+	call	vprint
+	db	'Normal',2,'   ',0
+	ret
+prtm1:	call	vprint
+	db	'Recursive',2,0
+	ret
+
+prtuse:
+	call	at
+	db	1,38
+	call	vprint
+	db	1,'Free:     ',bs,bs,bs,bs,0
+	call	size
+	jr	z,prtuse1
+	ld	hl,(clrem)	; Command line char count
+	call	phlfdc
+	jp	stndend
+
+prtuse1:
+	call	vprint		; Compute overflow and display it
+	db	2,'-',0		; Will be normal video for contrast
+	ld	de,(clrem)
+	ld	hl,0
+	xor	a
+	sbc	hl,de
+	jp	phlfdc
+
+prtname:
+	call	at
+	db	1,55
+	call	ereol
+	ld	hl,lmsg
+	call	vprint1
+	jp	pname
+
+; SHOW EDITOR MODE HELP SCREEN
+	if	helpon
+hlpscr:
+	call	help1
+	jp	filecmd
+	endif
+
+
+	INCLUDE SA-FILE.LIB
+
+;
+; STORAGE - Should be linked to 2500h, well above code.
+;
+	dseg
+
+stack:	equ	$		; Stack space down from here
+stksav:	ds	2		; Incoming stack pointer
+counter:
+	ds	1		; Temp byte
+clrem:	ds	2		; Command line remainder
+clsize:
+	ds	1		; Command line size from env
+; Keep these two together.  They are double loaded into BC.
+n$txtlns:
+	ds	1		; Text lines derived from env
+nline:	ds	1		; Current line number
+;
+linptr:	ds	2		; Pointer to current line
+
+bufsize:
+	ds	2		; Edit buffer size computed at run time
+
+
+memptr:	ds	2		; Save hl
+crssav:	ds	2		; Save bc
+linsav:	ds	2		; Save line pointer
+nsav:	ds	1		; Save line number
+
+savfcb:	ds	36		; Temp fcb storage
+tail:	ds	crtwid		; Line tail buffer
+clbuf:	ds	200h		; Command line buffer, should be plenty
+scratch:
+	ds	arecs * 128	; Scratch buffer space
+buf:	equ	$		; Edit buffer starts here
+
+	cseg
+
+
+; BLANK ALIAS INCLUDED HERE.
+alias	.phase	tpa
+
+	INCLUDE SA-ALIAS.LIB
+
+	.dephase
+
+	END	START	
+

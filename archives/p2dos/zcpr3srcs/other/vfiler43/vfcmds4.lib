@@ -1,0 +1,377 @@
+;===========================================================================
+;
+; VFCMDS4.Z80 - Print and View Commands and Code (P, V)
+;
+;===========================================================================
+
+
+; * * * COMMAND: V
+
+; Type file to console with pagination set to 'lps' from ENV
+;	<space>		single-line scroll using
+;	<ctrl-C>	cancel operation
+;	<ctrl-X>	go to next file
+;	other		scroll one page
+
+fview:
+	xor	a		; Set flags
+	ld	(first$m),a	; First view
+	ld	(mflag),a	; Not a mass view
+	call	view		; View file at ringpos
+	jp	runsh4		; Rebuild screen and continue user input
+
+
+;  VIEW - View file at RINGPOS
+
+view:
+	call	vcls
+	call	vprint
+	db	cr,lf,dim,'<CTRL-X> Skips, <CTRL-C> Cancels, '
+	db	'<SP> Turns Up One Line, '
+	db	'Others Page',bright,cr,lf,lf,0
+	ld	a,3		; Initialize..
+	ld	(lpscnt),a	; Lines-per-screen counter
+	ld	a,wrcon		; Get conout bdos function
+	jr	current		; To common i/o processing
+
+
+; * * * COMMAND: P
+
+; Send file to logical list device (any keypress cancels)
+
+flist:
+	xor	a		; Set flags
+	ld	(first$m),a	; Set for prompt for print
+	ld	(mflag),a	; Not a mass print
+	call	lstfile		; Print file at ringpos
+	call	erclr		; Clear error message line.
+	jp	loop		; Return for next command.
+
+
+; LISTFILE - Print file at RINGPOS
+
+lstfile:
+	ld	a,(first$m)	; Bypass prompt if already issued.
+	or	a
+	jr	nz,lstskip
+
+	call	cprmpt
+	db	'Print (Y/N)? ',0
+	call	keyin		; Get response
+	cp	'Y'
+	jp	nz,loop		; Refresh screen & continue
+	ld	(first$m),a	; Bypass prompt next file print.
+
+lstskip:
+	ld	hl,0		; Initialize page number
+	ld	(pagenum),hl
+	call	ermsg
+	db	'Printing ',0
+	ld	hl,(ringpos)	; Pt to file name
+	inc	hl
+	call	prfnskip	; Print it
+	xor	a
+	ld	(eoflag),a	; File not completed yet.
+	ld	a,2		; Initialize lines-per-page counter
+	ld	(lpscnt),a
+	ld	a,list		; Get listout bdos function and fall thru
+
+; output character for console/list processing
+
+current:
+	ld	(con$lst),a	; Save bdos function
+
+; output file to console/list
+
+	call	ringfcb		; Position name to 'fcb'
+	call	fi0$close	; Close input file if previously opened.
+	ld	de,s$fcb	; Get fcb with file id.
+	call	fi0$open	; Open file for byte i/o.
+	jr	z,zerocr	; If okay, bypass error message.
+
+endfnf:
+	cp	4		; See if fi0$open end-of-file.
+	jr	nz,fnf		; Br if not. assume file not found.
+
+;  Empty File Error
+
+endf:
+	call	endf1		; Print 'empty file' message.
+	jr	fnfxit		; Exit after user prompt.
+
+;  File Not Found Error
+
+fnf:
+	call	fnf1		; Print 'file not found' message
+fnfxit:
+	call	bottom		; Wait for user to respond.
+	ld	a,(mflag)	; Mass operation?
+	or	a
+	ret	nz		; Group operation - continue.
+	jp	runsh4a		; Single file - refresh screen & continue
+
+;  Print File Not Found Message
+
+fnf1:
+	call	ermsg
+	db	'File NOT Found',0
+	ret
+
+;  Print Empty File Message
+
+endf1:
+	call	ermsg
+	db	'Empty File',0
+	ret
+
+; Continue
+
+zerocr:
+	xor	a
+	ld	(s$fcb+32),a	; Zero file 'current record' field
+	 if	exptab
+	ld	(charcnt),a	; Zero char count for tabbing
+	 endif
+	call	usqhdr		; Check for squeezed file.
+	call	phead		; Print heading
+
+readlp:		; Get next character (squeezed or not)
+
+	ld	a,(usqflg)	; Squeezed file?
+	or	a
+	jr	nz,rdlp1	; Br if not.
+	call	usqnxt		; Unsqueeze next char.
+	jr	rdlp2		; Continue.
+rdlp1:
+	call	f0$get		; Get a character
+
+rdlp2:
+	jr	nz,curdone	; Finished on physical eof.
+
+	and	7fh		; Force to ascii
+	cp	eofchar		; See if end-of-file
+	jr	z,curdone	; Back to ring loop if 'eof'
+
+	call	dspchr		; Output to list/console (char in E on return)
+	call	pager		; Check for 'lf'.
+	ld	e,get		; Get status or char
+	ld	c,dircon	; Console status function
+	call	bdos		; Status?
+	and	7fh		; If character there, then abort..
+	call	nz,canview	; Already got char
+	jr	readlp		; If not, continue with next character.
+
+; EOF reached (if 'view', wait for user before returning to command mode)
+
+curdone:
+	ld	a,(con$lst)	; Console?
+	cp	wrcon
+	jp	z,bottom	; Prompt for user
+	ld	(eoflag),a	; Force final form feed
+	jr	formfd		; Complete processing this file.
+
+pager:
+	ld	a,e		; (character in e-reg)
+	cp	lf
+	ret	nz
+	 if	exptab
+	xor	a		; Zero char count
+	ld	(charcnt),a
+	 endif
+	ld	a,(con$lst)	; Printer or console?
+	cp	list		; Check for printer
+	jr	z,pagep
+	ld	a,(ctpp)	; Get number of lines of text per screen
+	ld	b,a		; ..in B
+	ld	a,(lpscnt)	; Check for lines-per-screen limit
+	inc	a
+	ld	(lpscnt),a
+	cp	b
+	ret	c		; If not, return
+	xor	a		; Else, initialize for next screenful
+	ld	(lpscnt),a
+	call	vprint
+	db	'  ',dim,'[View More...]',bright,cr,0 ; Show msg line
+	call	dkeyin		; Wait for keyboard input
+	cp	' '		; See if <space> bar..
+	push	af
+	ld	b,16		; Print 16 spaces and CR
+	call	prtspac		;   to clear above msg line
+	ld	a,cr
+	call	cout
+	pop	af
+	jr	nz,canview	; If not, see if cancel.
+	ld	a,(ctpp)	; Set for single line
+	dec	a
+	ld	(lpscnt),a	; Scroll and..
+	ret			; Return for one more line.
+
+; Check for new page on printer
+
+pagep:
+	ld	a,(ltpp)	; Get number of lines of text per page
+	ld	b,a		; ..in B
+	ld	a,(lpscnt)	; Is counter at limit of lines-per-page
+	inc	a
+	ld	(lpscnt),a
+	cp	b
+	ret	c		; If not, return; else, fall thru to formfd
+
+; Print Form Feed
+
+formfd:
+	ld	a,(lpscnt)	; Get lines printed already into B
+	ld	b,a
+	ld	a,(lppp)	; Get total lines per physical page
+	sub	b		; Compute lines to skip
+	ret	z		; If zero, we are done already
+	ld	b,a		; Else, move count into B
+	ld	a,2		; Reinitialize lines-per-screen counter
+	ld	(lpscnt),a
+	ld	a,(lffeed)	; Form feed available?
+	or	a		; 0=no
+	jr	nz,prfeed
+
+		; No formfeed capability available in printer
+
+	ld	c,list		; Lst output
+pagelst:
+	call	lcrlf		; New line on lst
+	djnz	pagelst
+	jr	ffhdrck		; Print heading and continue.
+
+		; Printer has formfeed capability
+
+prfeed:
+	call	lcrlf		; New line
+	ld	a,ff		; Send form feed char
+	call	lout
+
+ffhdrck:
+	ld	a,(eoflag)	; End of current file?
+	or	a
+	ret	nz		; No heading after final form feed.
+	jr	phead		; Print header and done
+
+canview:
+	cp	ctrlc		; ^c?
+	jp	z,runsh4	; Quit to command prompt
+	cp	ctrlx		; Cancel this file
+	ret	nz		; No. return for next page
+	pop	bc		; Yes. return one level higher
+	ret
+
+;	Print Heading
+
+phead:
+	ld	hl,headmsg	; Pt to heading
+	ld	b,6		; Get length.
+	call	phead3a		; Print string.
+
+	ld	hl,s$fcb+1	; Pt to file name
+	call	pheadfn		; Print file name in heading
+
+	ld	a,(usqflg)	; Squeezed file?
+	or	a
+	jr	nz,phead2	; Br if not.
+
+	ld	hl,usqsep	; Pt to usq file name separator.
+	ld	b,5		; Get length.
+	call	phead3a		; Print string.
+
+	ld	hl,d$fcb+1	; Pt to original file name
+	call	pheadfn		; Print file name in heading
+
+phead2:
+	ld	a,(con$lst)
+	cp	list
+	jr	nz,phead2a	; If not printing, skip page number display
+
+	ld	hl,pagehdr	; Print 'Page' header
+	ld	b,8
+	call	phead3a
+	ld	hl,(pagenum)	; Get last page number
+	inc	hl		; Increment to current page
+	ld	(pagenum),hl	; Save it
+	ld	a,80h		; Select printer output
+	ld	(sctlfl),a	; ..for 'switched' output routine
+	call	shlfdc		; Print current page number
+	ld	a,1		; Restore selection of console output
+	ld	(sctlfl),a	; ..for 'switched' output
+
+phead2a:
+	ld	hl,headskp	; New line, blank line
+	ld	b,4		; 4 chars
+
+phead3a:
+	ld	c,0		; Display all chars
+	jr	phead3
+phead3b:
+	ld	c,' '		; Skip spaces
+phead3:
+	ld	a,(hl)		; Get char
+	push	bc
+	cp	c		; Is it char to skip?
+	call	nz,dspchr	; If not, output to list/console
+	pop	bc		; Restore regs.
+	inc	hl		; Pt to next
+	djnz	phead3
+	ret
+
+; Print a file name in heading, suppressing imbedded spaces.  Called with
+; HL pointing to name in FCB.
+
+pheadfn:
+	ld	b,8		; 8 chars
+	call	phead3b
+	ld	a,'.'		; Dot
+	call	dspchr
+	ld	b,3		; 3 more chars
+	jr	phead3b
+
+; Output character to list/console (return character in E register)
+
+dspchr:
+	push	hl
+	ld	e,a		; Put character for 'bdos' call in E reg
+	push	de
+	ld	a,(con$lst)	; Get function for list/console output
+	ld	c,a
+
+	 if	exptab
+
+	ld	a,e		; Check char
+	cp	tab		; Tabulate?
+	jr	nz,notab
+
+	ld	e,' '		; Space over
+tabl:
+	push	bc		; Save key regs
+	push	de
+	call	bdos
+	pop	de		; Get key regs
+	pop	bc
+	ld	hl,charcnt	; Increment char count
+	inc	(hl)
+	ld	a,(hl)		; Get new count
+	and	7		; Check for done at every 8
+	jr	nz,tabl
+	jr	tabdn
+notab:
+	call	bdos		; Send character
+	ld	hl,charcnt	; Increment char count
+	inc	(hl)
+tabdn:
+	pop	de		; Get char in e in case pager is called
+	pop	hl
+	ret
+
+	 else	; not exptab
+
+	call	bdos		; Send character
+	pop	de		; Get char in e in case pager is called
+	pop	hl
+	ret
+
+	 endif	; exptab
+                                                                                  

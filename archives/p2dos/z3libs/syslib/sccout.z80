@@ -1,0 +1,53 @@
+;	TITLE	"SCCOUT - Syslib 4.0"
+	NAME	('CCOUT')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SCCOUT.Z80 by Richard Conn
+; Date    : 11 Jun 89
+; Version : 1.3
+; Module  : SCCOUT
+; Abstract: This module contains the routine CCOUT which outputs
+;	characters with control character processing.  All control
+;	characters except for NULL, BEL, BS, LF and CR are printed
+;	as "^" followed by the character offset by 40H. (i.e. 02H
+;	is printed as "^B").
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		CCOUT
+
+;  External References
+
+	EXT		@CCCHK, COUT
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - CCOUT
+; Entry:  A = Character to be printed
+; Exit : - Nothing returned.  The character is printed on CON:
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+CCOUT:	CALL	@CCCHK		; Check for control chars (masking MSBs)
+	JP	Z,COUT		; Print normally if Char or..
+				; ..<NULL>, <BEL>, <BS>, <LF>, <CR>
+;  Print others as Ctrl-Char
+
+	PUSH	AF		; Save A
+	PUSH	AF
+	LD	A,'^'		; Up Arrow
+	CALL	COUT		; Print to CON:
+	POP	AF		; Get char
+	ADD	A,40H		; Convert to char
+	CALL	COUT		; Print to CON:
+	POP	AF		; Restore Registers
+	RET
+
+	END
+

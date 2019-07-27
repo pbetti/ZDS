@@ -1,0 +1,116 @@
+// Jed2vlog, ispLEVER version 1.07 
+// Header :
+//    File Name :
+//       simpletoggle 
+//    Circuit Name :
+//       simpletoggle 
+//    Last Update :
+//       Sat Jun 14 19:55:09 2014
+//    Device Information :
+//       PLD Type P16V8AS
+//    Delay Model Selected :TYP
+//    Jedec Information :
+//	ispLEVER Classic 1.7.00.05.28.13 Lattice Semiconductor Corp.
+//	JEDEC file for: P16V8AS V9.0
+//	Created on: Sat Jun 14 19:54:58 2014
+//	
+//	simpletoggle.bls 
+//	
+// endHeader
+
+
+// Delay Assigments
+`timescale 1ns /100ps
+//----------------------------------------------------------------------//
+//                                                                      //
+//              MAIN PLD NETLIST MODULE                                 //
+//                                                                      //
+//----------------------------------------------------------------------//
+
+module simpletoggle(R,T,PIN03,PIN04,PIN05,PIN06,PIN07,PIN08,PIN09,PIN10,PIN11,PIN12,
+             PIN13,PIN14,PIN15,PIN16,PIN17,Q0,Q1,PIN20);
+	output PIN15, PIN16;
+	inout PIN12,PIN13,PIN14,PIN17, Q0, Q1;
+	input R, T, PIN03, PIN04, PIN05, PIN06, PIN07, PIN08, PIN09, PIN10
+             , PIN11, PIN20;
+	supply0 GND;
+	supply1 PWR;
+
+//Pin Assignments:
+//        PIN01 = R;
+//        PIN02 = T;
+//        PIN18 = Q0;
+//        PIN19 = Q1;
+
+// Delay Parameters:
+//   TYP delay used
+parameter tpLH09 = 0:0:0;
+parameter tpHL09 = 0:0:0;
+parameter tpLH12 = 0:0:0;
+parameter tpHL12 = 0:0:0;
+parameter tpLH03 = 0:0:0;
+parameter tpHL03 = 0:0:0;
+parameter tpLH05 = 0:0:0;
+parameter tpHL05 = 0:0:0;
+parameter tpLH_inco_lump = 3:7:10;
+parameter tpHL_inco_lump = 3:7:10;
+parameter tpLH_oe = 10:10:10;
+parameter tpHL_oe = 10:10:10;
+parameter tpLH_oe_pterm = 10:10:10;
+parameter tpHL_oe_pterm = 10:10:10;
+
+//   Input Buffer:
+	andinv_simpletoggle  INBUF01( INBUF01_o, INBUF01_ob, R);
+	andinv_simpletoggle  INBUF02( INBUF02_o, INBUF02_ob, T);
+	andinv_simpletoggle  INBUF03( INBUF03_o, INBUF03_ob, PIN03);
+	andinv_simpletoggle  INBUF04( INBUF04_o, INBUF04_ob, PIN04);
+	andinv_simpletoggle  INBUF05( INBUF05_o, INBUF05_ob, PIN05);
+	andinv_simpletoggle  INBUF06( INBUF06_o, INBUF06_ob, PIN06);
+	andinv_simpletoggle  INBUF07( INBUF07_o, INBUF07_ob, PIN07);
+	andinv_simpletoggle  INBUF08( INBUF08_o, INBUF08_ob, PIN08);
+	andinv_simpletoggle  INBUF09( INBUF09_o, INBUF09_ob, PIN09);
+	andinv_simpletoggle  INBUF11( INBUF11_o, INBUF11_ob, PIN11);
+	andinv_simpletoggle  INBUF12( INBUF12_o, INBUF12_ob, PIN12);
+	andinv_simpletoggle  INBUF13( INBUF13_o, INBUF13_ob, PIN13);
+	andinv_simpletoggle  INBUF14( INBUF14_o, INBUF14_ob, PIN14);
+	andinv_simpletoggle  INBUF17( INBUF17_o, INBUF17_ob, PIN17);
+	andinv_simpletoggle  INBUF18( INBUF18_o, INBUF18_ob, Q0);
+	andinv_simpletoggle  INBUF19( INBUF19_o, INBUF19_ob, Q1);
+
+//   Product Terms (AND array):
+	and  #(tpLH03,tpHL03) PT000_0( PT000_0_o, INBUF02_ob, INBUF01_o, INBUF18_o);
+	and  #(tpLH03,tpHL03) PT008_256( PT008_256_o, INBUF02_ob, INBUF19_o);
+
+//   Sum Terms (OR arrray):
+	or  #(tpLH_inco_lump,tpHL_inco_lump) ST018( ST018_o, PT008_256_o);
+	or  #(tpLH_inco_lump,tpHL_inco_lump) ST019( ST019_o, PT000_0_o);
+
+//   Macro Cells:
+
+//   Feedback Node:
+
+//   Output Buffer:
+	notif1  #(tpLH09,tpHL09) OUTBUF12( PIN12, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF13( PIN13, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF14( PIN14, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF15( PIN15, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF16( PIN16, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF17( PIN17, GND, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF18( Q0, ST018_o, PWR);
+	notif1  #(tpLH09,tpHL09) OUTBUF19( Q1, ST019_o, PWR);
+endmodule
+/************************************************************************
+*                                                                       *
+*   MODULE: ANDINV                                                      *
+*     Input Buffer with dual outputs.                                   *
+*                                                                       *
+*************************************************************************/
+module andinv_simpletoggle(out,outb,in);
+output out,outb;
+input  in;
+parameter tpLH_iob = 0:0:0; 
+parameter tpHL_iob = 0:0:0; 
+        
+   and #(tpLH_iob,tpHL_iob) n1(out,in);
+   not #(tpLH_iob,tpHL_iob) n2(outb,in);
+endmodule

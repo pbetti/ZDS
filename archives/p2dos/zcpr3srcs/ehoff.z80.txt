@@ -1,0 +1,33 @@
+; PROGRAM: EHOFF
+; VERSION: 0.1
+; WRITTEN: Bruce McIntosh
+;
+; This is a VERY primitive, quick-and-dirty utility to shut off the
+; error handlers under ZCPR3.3.  I wrote it becuase I couldn't get
+; ERRORX to function under ZCPR3.3.  It's actually the first real,
+; useful program I've written for my micro (bring out the party
+; favors and celebrate *grin* )!
+
+; This program is public domain.  Do whatever you like with it.
+;
+	org	100h              ;absolute load at 100h
+;
+ehoff	jp	start
+	db	'Z3ENV'           ;Get ZCPR3.3 to feed me the address of 
+        db	1                 ; the external environment descriptor
+env	defw	0F600h            ; and put it here.
+;
+start	ld	hl,(env)          ;get address of environment descriptor
+	ld	de,0022h          ;offset into E.D. for address of Z3MSG
+	add	hl,de             ;point to address of Z3MSG
+	ld	e,(hl)            ;get lo byte of Z3MSG address
+	inc	hl                ;point to hi byte of Z3MSG address
+	ld	d,(hl)            ;get hi byte of Z3MSG address
+	ex	de,hl             ;put address of Z3MSG into HL
+	ld	de,0010h          ;offset into Z3MSG for er. hand. cmd
+	add	hl,de             ;point to error handler command
+	ld	(hl),00h          ;zero out the first byte (shut off)
+	jp	0000h             ;all done, bail out to warm boot
+;	
+	end	ehoff
+

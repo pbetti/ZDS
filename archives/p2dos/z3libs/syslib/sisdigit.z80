@@ -1,0 +1,45 @@
+;	TITLE	"SISDIGIT - Syslib 4.0"
+	NAME	('ISDIGI')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SISDIGIT.Z80 Ver 1.1 by Richard Conn
+; Date    : 28 Jul 89
+; Version : 1.3
+; Module  : SISDIGIT
+; Abstract: This module contains only the routine ISDIGIT that
+;	evaluates the character in the A register to determine
+;	whether it is an ASCII digit.  If so, it returns the
+;	Zero Flag Set (Z), otherwise the Zero Flag is Reset (NZ).
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+
+	PUBLIC		ISDIGIT
+
+	.Z80
+	CSEG
+;=========================================================================
+; NAME - ISDIGIT
+; Entry: A = Character to evaluate
+; Exit : A = Char, Zero Flag Set (Z) if digit ("0".."9"), else Reset (NZ)
+; Uses : F
+; Special Requirements:  None
+;=========================================================================
+
+ISDIGIT: PUSH	BC		; Save BC
+	LD	C,A		; Save char in C
+	AND	7FH		; Mask out MSB
+	CP	'0'		; Less than 0?
+	JR	C,NO
+	CP	'9'+1		; Less than or equal to 9?
+	JR	C,YES		; ..jump if so
+NO:	DEFB	0F6H		; Set NO with "OR  0AFH"
+YES:	XOR	A		; Set flag
+	LD	A,C		; Get char
+	POP	BC		; Restore BC
+	RET
+
+	END
+

@@ -1,0 +1,727 @@
+PLF CHIT CHAT 'N' MISCELLANEA
+-----------------------------
+
+I have had the idea for writing this for maybe six months.  A year or so 
+after the introduction of the LZW crunching algorithm we in the CP/M- 
+compatible world still have no all-purpose library utility with a 
+"sweep" mode (NULU's superb advance over LU) that can read crunched 
+files the way NULU does for squeezed files.  When we get such a utility 
+PLF will self-destruct; there will be no need for it.  I have been 
+especially surprised we have nothing that will extract crunched text 
+files directly to the list device; in PLF I try to deal with this 
+problem, admittedly in a roundabout (but rather enjoyable, for me!) way. 
+This whole series of aliases that Frank Gaude' and I have been writing -- 
+GLF, TLF and now PLF -- are all attempts to deal with this fundamental 
+deficiency in our library toolset.
+
+When I use NULU -- to operate inside libraries containing no crunched 
+members -- I ALWAYS use it in its F)ilesweep mode, which gives the user 
+the highest degree of facility and flexibility in various library 
+operations.  Its fundamental advantage is the ability to VIEW the 
+library directory, perform a library operation and then once again be 
+presented with the library directory once the operation terminates.  The 
+fundamental advance made initially by Frank's GLF retained this feature 
+of NULU; it incorporated LLF and LGET so that you were first presented 
+with a directory and then BASED ON THAT could make a decision as to what 
+file to extract.  With PLF I have retained this advantage of NULU.  A 
+listing of the library directory returns to you after ANY operation, 
+waiting again for your input.
+
+It is because of this feature that even when John Poplett produced the 
+excellent ZLBR.COM I was still unsatisfied.  I am always unsure of 
+exactly what operation I wish to perform on what file unless I have the 
+library directory in front of me, and with ZLBR one has to constantly do 
+a 'DIR' command to attain this.  PLF solves this problem.
+
+PLF not only combines the functions of the previous two aliases Get 
+Library Files and Type Library Files but adds a third function as well, 
+that of printing.  It operates through a series of nine (PLF.CMD) or 
+eleven (PLF-RAMD) separate nested aliases to be placed in one's 
+ALIAS.CMD file.
+
+I have deviated here, however, from the fundamental toolset that Frank 
+and I had been using in our previous aliases.  Rather than using GETVAR 
+as we had previously to "get" and then carry the name of the library 
+member, I have here taken advantage of the extraordinary file parsing 
+ability of ARUNZ.  Using the "user prompt" technique available through 
+ARUNZ's $" and $' symbols and then carrying the response in parameters 
+to a new alias, one may simulate what GETVAR does in actuality.  As will 
+be seen in the technique I use for printing compressed files, ARUNZ's 
+ability to return the file type of a parameter is of tremendous value.
+
+I might add that I began writing this alias before Dreas Nielsen 
+produced GETVAR12 which has the ability to abort with CTL-C.  It was 
+precisely for the PLF alias on which I was then working that I had asked 
+him to write it.  The only way the user had at the time to abort from 
+the GETVAR prompt was through the very time-consuming technique of 
+invoking a separate 'EXIT' alias.  With GETVAR12 this problem is 
+eliminated.
+
+I enjoyed developing the technique I've implemented to print compressed 
+files in the RAM- and hard-disk version of PLF, (PLF-RAMD.CMD).  (The 
+following discussion applies only to this version.  Since it involves 
+several re-loads of nested aliases I thought it better to leave out of 
+the floppy version which should execute more quickly.)  I thought about 
+it for days: how can I print a compressed file the real name of which I 
+don't as of yet know?  (I have only the name of its compressed form, 
+"*.?z?" or "*.?q?" still in the library.)  The solution I came up with 
+uses one of those many lovely "first generation" shell utilities that so 
+few people seem to use besides shell stalwarts like Dreas Nielsen and 
+myself, SHVAR.  (The others being of course SH, SHDEFINE, and SHFILE.) 
+If the filetype equals, for instance, 'ZZ0' or 'ZQ0' ('IF EQ $.2 Z?0') 
+then we define the shell variable 'P' -- again kept as short as possible 
+-- to be 'Z80', and print accordingly.  I took a sampling of as many 
+"standard" crunched filetypes as was reasonably possible, and made shell 
+variables out of their uncrunched counterparts.  We save space by simply 
+defining the filetype variable for these possibles, and THEN and only 
+then execute our PRINT XXXXXX command.  Note that this saves a 
+tremendous amount of command line buffer space over any method not using 
+shell variables.  The last several lines, already long as they are, 
+would be totally infeasible without it.  If I had tried:
+
+if eq $.2 Z?0;print $:2.Z80;else;if eq $.2 d?c;print $:2.DOC...etc...
+
+it would have overflowed faster than you can say Jackie Robinson.  
+
+I like to use this technique whenever possible in aliases.
+
+Note, by the way, my use here of RESOLVE (RS) in front of both the PRINT 
+and ERA commands to resolve the 'P' shell variable, thus completing our 
+adventure into the shell world.
+
+Of course there are always going to be many crunched and squeezed 
+filetypes which I have not been able to include in this "table."  I have 
+included: L?B (LIB), M?C (MAC), D?C (DOC), I?F (INF), Z?0 (Z80), U?D 
+(UPD), N?T (NOT), M?G (MSG), H?S (HIS) and ZZZ (no filetype), but you 
+will undoubtedly come across others not in this list.  If as noted above 
+LT is patched to ignore all popular binary file types, our rather 
+primitive PRINT.COM is most certainly not.  (It is so primitive in fact 
+that it does not even provide a "FILE NOT FOUND" error message if it 
+cannot find the filename parameter!)  Hence we have to provide some way 
+of ensuring that we don't give a .COM or .REL file to PRINT for 
+printing!  So I try as best as I can to provide accurate filetypes to 
+it.  I have made provision for filetypes not included in our table in a 
+very nice way, I feel.
+
+Any time PLF _does_ find the provided filetype in its table, it will set 
+register 1 to a non- zero value.  When we have exhausted the filetype 
+table but before getting to the 'RESOLVE/PRINT/ERA' command, register 1 
+is tested.  If it is a non-zero value, variable P has the value found in 
+the table.  If register 1 is 0, SHVAR then defines P as the string '* 
+I'.  Why this string?  Well, we have a problem.  Actually, since PLF 
+prints and then erases our file, we have two problems.  If we don't have 
+the exact name of the file, we can rely on the ability of PRINT.COM and 
+ERA.COM to accept unambiguous/wildcarded filename parameters.  We can do 
+'PRINT Z80DOS.*' and often get quite decent and reasonable results.  So 
+we can get SHVAR to send a '*' in place of any specific, known filetype.
+
+But what if, as is often the case, the file we're printing has the same 
+name as the library (.LBR file) from which it came?  Or suppose there is 
+a .REL file or .COM file or any other, non-printable files of the same 
+fileNAME as the file in question?  We certainly don't want PRINT.COM to 
+be trying to print Z80DOS.LBR!!  So --- we get SHVAR to store an 'I' for 
+"Inspect mode" along with the '*' in the variable.  It just so happens 
+that PRINT and ERA both use this "I" as an option switch, which works 
+absolutely wonderfully, since we certainly don't want to erase anything 
+unnecessarily either!  Our variable becomes '* I' and our full command 
+line becomes:
+
+         print z80dos.* i;era z80dos.* i
+
+(ARUNZ resolves '$$|' into '$' which RESOLVE.COM then resolves into a 
+semicolon, ';'.)
+
+Well, take a look at the resultant command line.  Suppose our file was 
+'Z80DOS.BZD', and therefore our unknown filetype would be 'BZD'.
+
+         rs print $:2.%p$$|era $:2.%p
+
+would therefore resolve into:
+
+         print z80dos.* i;era z80dos.* i
+
+This works perfectly.  In case we have picked up some unwanted 
+Z80DOS.??? files we are put into inspect mode for PRINT, and we next can 
+decide if we indeed want to erase whatever file(s) we are presented.
+
+In P8 we use the Z33 flow control (IF COmpressed) to test if the user's 
+file is indeed crunched or squeezed.  I create a 'dummy' filename of 'x' 
+since there's no reason to waste precious buffer space with the real 
+filename!  If it is not crunched, we have no problem and PRINT.COM will 
+take care of it no sweat.  Only if it is will it pass it on to P7 for 
+further processing.
+
+The 'IF GT $2 ??' in the P3 alias is my ingenious way of distinguishing 
+whether the user entered a file name, in which case I want PLF to run 
+LT, or a '/E' or '/P' in which case he wants to extract or print and PLF 
+uses LEX.  It tests specifically for whether the string entered as the 
+first token (to later become $2) at the PLF prompt has more than two 
+characters.  Since virtually all genuine file names meet this condition, 
+we can assume that any entered string NOT meeting this condition is 
+either a '/E' or '/P'.
+
+You'll notice a large number of aliases.  After much experimenting I 
+realized this was the only way to deal with the situation of a 
+potentially very large command line.  If the user is processing
+three files the command line will push the buffer to the limit.  You 
+want to be really careful about overflowing your buffer here, and I 
+think I've made some pretty good, well-reasoned and necessary 
+compromises between speed (sacrificed with multi-aliases) and space.  
+You might find some places where you'll be tempted to wonder, "Why 
+didn't he combine this with the previous alias?"  You can rest assured 
+that I did consider that and was paid a visit by our good friend 'Ovfl' 
+after a long user input string.
+
+I additionally had to contend with the fact that we surprisingly don't 
+have a utility for typing crunched files from libraries, with all the 
+standard Z features such as DIR: and a possible file list.  
+
+I don't know if all the '$zzif' (buffer-flushing and 'zif') at the 
+beginning and 'zif' at the end of EVERY alias is really necessary.  When 
+you're in the process of writing aliases like these, however, and upon 
+exit you're always finding your IF state set to some damn level or 
+another, your tendency is to pull out your heavy ammo and go for broke; 
+these guarantee to smash any IF level that dares to rear its wooly head.
+
+I have noticed a bug in BackGrounder ii v1.13 with the IF EXIST test.
+When that option is not enabled in the resident FCP so the testing is 
+automatically passed by the FCP to COMIF (IF.COM), then IF EXIST does 
+not operate properly if no DU: or DIR: specification precedes the 
+filename.  Aliases that I had on my system with the traditional Z-System 
+opening syntax:
+
+    IF EX $1; ... [commands] ....;ELSE;echo $1 doesn't exist
+
+would always seem to return "$1 doesn't exist"!!  I couldn't figure out 
+why until I brought it to the attention of Jay Sage who tested and 
+confirmed the bug.  He noticed that if a DU: or DIR: is given it works 
+properly and that if IF.COM is invoked directly it works fine as well!  
+The way I have solved this problem -- and I have incorporated this 
+solution into PLF -- is by changing all my alias beginnings from 
+'IF EX $1' to 'IF EX $D1$U1:$.1.$.1 or whatever is appropriate.  The 
+latter form ensures that when the alias is expanded and sent to the 
+command line buffer the current DU: is included in the parameter.  If in 
+PLF if I had used only 'IF EX $1.LBR', then if the user was logged on to 
+the same directory as the library in question and therefore did not 
+include a DU: or DIR: spec, what would be sent to the command would not 
+have a DU:/DIR: reference and would be tested incorrectly by BGii1.13.  
+Using the form 'IF EX $D1$U1:$:1.LBR' instead forces the logged drive to 
+to be appended to the beginning of the expansion.
+
+You will notice, by the way, that throughout the various PLF aliases I 
+have often used this '$d1$u1:.....' form rather than the seemingly 
+shorter and more simple '$1'.  This is actually to save space in the 
+command line buffer, though a visual impression of the alias gives the 
+complete opposite impression!  Suppose we have a 'LETTERS' directory 
+associated with C4:  If a user has entered
+
+                'LETTERS:MICROPRO.LTR'
+
+in response the PLF prompt, and our aliases uses the '$1' form, the full 
+20-character token will be sent to the buffer.  If however, we use
+'$d1$u1:$:1.$.1', what is sent to the buffer will only be
+
+                  'C4:MICROPRO.LTR'
+
+thus saving 4 bytes, which should always be a consideration for us -- in 
+Jay Sage's words -- "super-alias hackers."
+
+                        *    *    *
+
+Creation of this alias would have been easier if:
+
+(1) LBREXT could accept parameters separated by spaces rather than only 
+a file list separated by commas; or,
+
+(2) We had a Z-System version of LT that would accept a NDR: reference.
+
+    I think/hope these are soon to come.
+
+
+Thoughts on Aliases and Other ZCPR33 Miscellanea
+------------------------------------------------
+
+I have spent a lot of time developing a satisfactory technique to loop 
+back and forth between two different commands one of which is an alias.  
+One of the major purposes for which I want this is for ongoing 
+development of my ALIAS.CMD.  One's ALIAS.CMD file is one's most 
+precious possession.  It is the most concrete and personal expression of 
+one's creativity in Z-System, the purified essence of our love of Z, the 
+shining gemstone of our OS.  What I find myself often doing is looping 
+between editing (usually with VDE) an alias I'm developing in ALIAS.CMD, 
+and EXECUTING it.  For instance, as I was developing PLF, I must have 
+performed the two sequences:
+
+        PLF DIR:TESTLIB   ;   VDE A15:ALIAS.CMD
+
+2 1/2 million times.  How nice it would be for software to automate this 
+loop.  I would run PLF, test it out in all its hundreds of permutations, 
+then immediately upon exit VDE would automatically load ALIAS.CMD.  Upon 
+VDE exit, I would be queried as to whether I wish to repeat the loop, 
+and the system would respond accordingly.
+
+Note, of course, that 'PLF DIR:TESTLIB' is itself a VERY long and 
+complex sequence of multiple command lines, so we are not talking here 
+about "two commands."
+
+Sure, you one can use HSH or whatever and simply recall the previous 
+line.  But the whole purpose of computers is to automate operations.  It 
+is much cleaner, more elegant, and fun -- of course the most important 
+REAL use of computers -- to have the computer automatically execute the 
+next operation in the loop.
+
+In private conversation Jay Sage and others have suggested making the 
+sequence "PLF DIR:LIBNAME;VDE A15:ALIAS.CMD" an alias in itself, called
+say, "PLF-LOOP".  I would then have a separate 'RECURSE' alias (actually 
+a two-alias sequence) like those Jay has put into his ALIAS.CMD or 
+illustrated in his The Computer Journal #28 article (to which magazine, 
+by the way, all Z-System users should subscribe at $16 per year to 190 
+Sullivan Crossroad, Columbia, Montana 59912):
+
+RECURSE recurse2 $*
+        fi
+ 
+RECURSE2 fi
+         $*
+         echo run "$1" again?
+         if in
+         $0 $*
+
+This would run my alias "LOOP" consisting of my two command sequences, 
+then ask me if I want to run "LOOP" again, and respond accordingly.
+
+There are two faults I find with this technique.  First and foremost, 
+it's inconvenient and inelegant to have to make a separate alias each 
+time you do something like this.  If I had to make either a standalone 
+alias with V/B/SALIAS or an alias entry in ALIAS.CMD each time I was 
+doing this looping I'd go crazy.  This is/should be a spontaneous, 
+automated process.  
+
+The second problem cuts a bit deeper and more philosophical: it cannot 
+be used, as I most often wish to do, if either of the command sequences 
+in question is a nested alias using the '$z' symbol.  Once the 'RECURSE' 
+alias encounters a single '$z' in any alias that is running inside of 
+it, the command line buffer is completely flushed and all processing is 
+halted.  Any nesting that any of my PLF aliases want to do is prevented 
+and we are returned to the command line.
+
+I realized that I almost always was using these looping techniques 
+with a single and "fixed" first command line: "VDE A15:ALIAS.CMD", so I 
+set up developing them based on this.  There are three methods I came up 
+with, the first two of which I have found not fully satisfactory and the 
+last of which pretty much does the trick but needs some work.  From the 
+beginning:
+
+(1)  An alias similar to Jay's RECURSE, simply:
+
+     LOOP vde a15:alias.cmd;$*;if in repeat loop?; LOOP $*;fi
+
+     Very simple and very useful for me --- except under one 
+     circumstance, my most common one, the same as that under which 
+     Jay's RECURSE will not work:  if the command sequence in question 
+     is itself a recursive alias using the '$z' symbol.  In other words: 
+     no PLF again.
+
+(2)  Actually my favorite: using SHSET and CMD.  That is:
+
+         SHSET VDE A15:ALIAS.CMD;new sequence;CMD
+
+     This is great to use, and a lot of fun.  There are two problems 
+     with it.  Number one, your entire command line above cannot exceed 
+     32 characters, the size of a single shell stack entry.  I 
+     temporarily dealt with this problem in an interesting way: I 
+     changed my shell stack system to having 2 entries of 64 bytes each 
+     rather than 4 of 32.  Easy to do.  Either load a new SYS.ENV 
+     configured thusly or even more simply, just POKE FE20 02 40.  FE20 
+     on MOST systems holds the number of shell stack entries and FE21 
+     the size of each.  Now it's 2 of 64 and the above command line 
+     works fine.  Except for problems number two and three.  Yeah, you 
+     guessed number two: no aliases with '$z' allowed.  So much for 
+     that.  But the third is most interesting.
+
+     Read Jay's description of the SHELLIF option in the Z33 Users Guide 
+     to get a taste of the whole issue.  I use the shell utilities 
+     (SH.COM, SHVAR.COM, RESOLVE.COM, GETVAR.COM, etc.) frequently and 
+     disagree with Jay regarding the value of using flow control in 
+     custom-created shells; I think it's a great idea and would like to 
+     do it more, but of course mine is a user's perspective and I have 
+     no idea of the coding involved.  With the Z30 command processor 
+     doing so was impossible.  With Z33 it's discouraged and difficult.  
+     Jay has explained that you can have flow control inside of custom 
+     shells or you can have flow control in your regular commands, but 
+     not both.  
+
+     A true solution will require two different flow control systems, 
+     one for shells and one for regular command-line use.  Turning 
+     SHELLIF on in Z33 allows it in shells and therefore disallows it 
+     generally, so forget that solution.
+
+     Dreas Nielsen has come up with a solution, however, in the form of 
+     a straightforward little program CLRCST.COM, contained in his 
+     FORNXT2.LBR.  It simply clears the console status flag, about which 
+     I unfortunately know very little.  It seems to do something similar 
+     to what turning on SHELLIF does, but manually, only on a per-alias 
+     basis.  Simply put CLRCST as the very first command in an alias 
+     containing flow control, and it will run properly under SHSET or 
+     other shells.
+
+     But this technique's inability to process '$z'-fied aliases rules 
+     in out for me.
+    
+     It's interesting, by the way, 
+
+
+     So what does that leave us with?  The biggie:
+
+3)   ZEX.  "Have more sex with ZEX!"  How's that for an advertising 
+     slogan for this wonderful but misaligned, misunderstood and 
+     generally feared ZCPR3 utility?  ZEX has a '^:' control directive 
+     that lends it perfectly to this kind of looping.  It has no problem 
+     with '$z' aliases.  It runs quickly, as the entire command sequence 
+     is placed in memory, unlike with ALIAS.CMD aliases where ARUNZ has 
+     to re-run each time the looping is performed.  An easy patch, 
+     provided by Jay, is made to VDE that turns off ZEX processing once 
+     VDE loads, then the simple ZEX file is executed:
+
+     vde a15:alias.cmd
+     $1 $2 $3
+     ^"
+     SAK /p3
+     ^:
+
+     and you're home free.  The ^: tells ZEX to rerun its command stream 
+     from the beginning; just what we want.  I guess because it operates 
+     in its own area of memory outside the regular ZCPR3 command line 
+     buffer area (in very highest TPA just below the CP, completely 
+     separate from the other ZCPR3 buffers), ZEX doesn't seem to be 
+     bothered by ARUNZ's '$z' COMMAND-LINE BUFFER-flushing.  I'm quite 
+     pleased with how this is working.  Additionally, the major 
+     complaint I have had with ZEX for a year or so -- that before 
+     running each command it displays the command line prompt which 
+     clutters up the screen and gives the whole operation an unaesthetic 
+     and overly busy appearance -- can be fixed with judicious and 
+     accurate use of the new control directives in Jay's superb NZEX-C.
+
+     The complete LOOP.ZEX I use, of which the above is only a skeleton, 
+     is included in this library, but is reproduced below:
+
+^-^< *=&:)(Going to source script...)( ^>
+^.vde a15:alias.cmd
+^-^< *=&0)(Now running cmdline: ($1 $2 $3... ))(^|^|^>
+^.$1 $2 $3
+^"
+sak /p2
+^:
+
+     The ^- directive turns off all console output so the command prompt 
+     doesn't display (looks nice and clean).  The ^<..display text...^> 
+     directive turns on ZEX's 'echo' mode.  The strange escape sequences 
+     you see inside the display text are standard ADM-3A cursor control 
+     commands to place the text in a visually pleasing location on the 
+     screen.  Then with the ^. directive we change the "console display 
+     state" to "display console output but don't echo commands" just 
+     before running our commands.  
+
+     The only part that's a little awkward is the ^" directive that we 
+     need to turn off ZEX while inside our "$1 $2 $3" command line.  
+     (The extra '$3' is just in case we have more than three tokens in 
+     our command; in 'PLF DIR:TESTLIB' I only have two.  Jay is working 
+     on a cleaner solution to this.  The way ZEX is set up now, if any 
+     of the programs included in the alias do NOT have code in them to 
+     turn off ZEX, then we must include the ^" directive in our ZEX file 
+     to do it manually for us.  Otherwise, we could be in the middle of 
+     any of our programs and right in front of our eyes ZEX will start 
+     spewing out the remaining ZEX commands right into our program.  I 
+     have actually had problems with MU312 loaded at 8000h inside my 
+     alias; for some reason, even with the ^" ZEX still pokes its nose 
+     and its command stream into MU3 and halts the alias.  I don't know 
+     why this particular program gave me problems.  (Conflicts with the 
+     ZEX monitor in high TPA?  I don't know.)  Jay has developed a patch 
+     that can be applied to any program internally to turn off ZEX while 
+     it's loaded thus making an explicit ^" directive in the ZEX file 
+     unnecessary, but until all programs have this it's best to include 
+     it in each ZEX file.
+
+     For instance after I patched VDE I thought, "Oh, great, now I don't 
+     have to include ^" in the ZEX file.  I pleasantly loaded up PLF and 
+     started viewing a file.  LT started to do the job nicely for me and 
+     displayed the first screen's worth of my file.  Hit CTL-C and 
+     waited to get back to the PLF prompt.  Surprise!  There I was 
+     unceremoniously exited out of PLF and looking at a ZCPR3 prompt.  
+     Why?  Because since LT wasn't turning ZEX off, my CTL-C that was 
+     intended for LT got intercepted by ZEX as an "abort-ZEX" command.  
+     This used to happen to VDE until I patched it.
+
+     Jay is intending, I believe with NZEX-D, to solve this problem with 
+     a technique that WITHIN ZEX will automatically turn off ZEX 
+     redirection inside ALL programs.  This will be especially nice since 
+     a ^" directive complicates ZEX scripts in that after the ^" is 
+     reached in the command stream all ZEX processing appears to halt.  
+     The user's screen is dead.  At this point if one hits a <CR> 
+     everything resumes again, but this shouldn't be necessary and 
+     detracts from the smoothness and "feel" of the whole operation.
+
+So that's how I've solved my "looping" problem -- for now.  NZEX-C as 
+Jay has implemented it is a beautiful, very powerful program.  There's 
+no reason for anyone to shy away from it.  Just take out your manual, 
+and as Frank says, study, study, study, study, study, study, study.
+
+However, one crucial part of this discussion remains -- how to best 
+implement recursive and nested aliases.  Is there no way we can do 
+looping methods numbers (1) and (2) above with very long alias 
+sequences, considering that the flushing of the command line with the 
+'$z' symbol seems to prohibit this?  
+
+I hope everyone subscribes to The Computer Journal, because Jay Sage's Z- 
+SIG column in there is immensely useful and chock full of information 
+not available elsewhere.  One of the most intriguing columns for me was 
+in issue #28 in which Jay brings to the readers' attention a letter sent 
+the magazine by Dreas Nielsen in regard to techniques for alias 
+recursion.  Jay implemented his method originally in VALIAS and carried 
+the same technique over to ARUNZ with the '$z' symbol.  Dreas wrote in 
+and suggested another way to deal with one specific aspect of creating 
+recursive aliases -- a way OTHER THAN flushing the command line buffer 
+as Jay's technique does: their tendency to pile up 'FI's at the end.  
+Without any intervention here an alias will then incorrectly exit with 
+an IF level set.  While the buffer-flushing technique deals with this by 
+simply clearing out the 'FI's (along with everything else) from the 
+command line, Dreas' technique takes a different tack and deliberately 
+enters the alias in question from a second alias, an IF level therefore
+already in effect.  Our main alias begins with a 'FI' and therefore 
+returns us to a zero IF level.
+
+But I have been confused by this discussion, because it seems to only 
+deal with the issue of IF level overflow, and not common line overflow.  
+Unless I am misunderstanding something (and I hope I am) Dreas' 
+technique doesn't seem to offer a solution to this latter problem.  The 
+only answer to this seems to still be the '$z' symbol.  I hope this is 
+not the case because I would like my two looping techniques described 
+above, as well as Jay's RECURSE and RECURSE2 aliases printed in the TCJ 
+article, to work with recursive aliases themselves.
+
+
+SHELL TALK
+----------
+
+I've always been surprised at how few people use shell variables and the 
+"non-menu" shell utilities -- SHVAR.COM, RESOLVE, GETVAR, FOR and PERFORM 
+-- inside aliases.  I understand there's a general reluctance on the 
+grounds that "theoretically" shells and aliases don't mix.  Though an 
+admitted hard-core theoretician in several fields of human endeavor, 
+that doesn't seem to bother me.  Frank Gaude' first hit upon the idea of 
+using the by-now famous GETVAR/RESOLVE combination in his GLF alias, but 
+besides Dreas Nielsen's superb work I've been surprised at how little 
+public discussion (use?) there is of these utilities.
+
+I've found combinations of SHVAR, RESOLVE and shell variables to be of 
+inestimable value inside aliases.  I think my use inside PLF is a 
+perfect example.  I've also found it very interesting to use them to 
+save command line buffer space in aliases that would otherwise overflow.  
+For instance, suppose we have an alias segment:
+                                  
+               mu3  ; to 'peek' inside the alias before it runs
+               if eq $1 $2
+               echo running: cmd1 $2 $3 $4
+               cmd1 $2 $3 $4
+               else
+               if eq $1 $3
+               echo running: cmd2 $2 $3 $4
+               cmd2 $2 $3 $4
+               else
+               if eq $1 $4
+               echo running: cmd3 $2 $3 $4
+               cmd3 $2 $3 $4
+               zif
+
+If our four parameters are of any significant size, such as long 
+filenames with DIR: specs, this alias will overflow so quickly it 
+wouldn't even be funny.  We might hope that the parameters would only 
+expand in those parameter symbols occupying the portions of the alias 
+where the flow state is true at any given execution of the alias, but 
+this is not the case.  If you use the trick of beginning every alias 
+that you want to really peer inside of with a 'MU3;', it'll give you a 
+window through which you can analyze exactly what's going on.  In an 
+alias like the above, which is an only slightly exaggerated version of 
+what most of us do -- or would do -- frequently, you'll be amazed at how 
+much space is wasted by parameters expanding where they don't really 
+need to --- when the flow state is false.  Of course, they have no other 
+way to work!  It's just too bad because they take up precious buffer 
+space that we need for the flow-state-is-true part of our command line, 
+the area where the alias is working for us.  The many parameters in the 
+two flow-state-is-false sections of the above alias would expand and 
+take up so much space the alias would overflow instantly.  What to do 
+about this?
+
+Shell variables to the rescue.  A simple command line at the beginning 
+of the alias:
+
+              shvar f $2 $3 $4
+
+would take care of it.  The assigns the entire string with our 3 
+parameters to the shell variable "f".  Rename RESOLVE permanently to RS 
+as I have done, and our alias can now be:
+                   
+                   mu3
+                   shvar f $2 $3 $4
+                   if eq $1 $2
+                   rs echo running: cmd1 %f
+                   rs cmd1 %f
+                   else
+                   if eq $1 $3
+                   rs echo running: cmd2 %f
+                   rs cmd2 %f
+                   else
+                   if eq $1 $4
+                   rs echo running: cmd3 %f
+                   rs cmd3 %f
+                   zif
+
+This can fit into our 200-character limit with no problem.  If you look 
+inside with MU3 you will see that the '%f''s do not expand until RESOLVE 
+gets at them.  I'm a little confused about this because I know that 
+shells such as RESOLVE ultimately do place their product into the 
+command line buffer (of course), but what I think happens is that all 
+commands preceding any particular invocation of RESOLVE have already 
+started moving out of the buffer, so they're not competing for the same 
+space at the same time.  This is the opposite of what happens when 
+parameters expand, which they do all at the same time, at the very 
+initial invocation of the command line, thereby all taking up the same 
+space.  
+
+As an experiment, I defined six shell variables, the letters 'a', 'b', 
+'c', 'd', 'e' and 'f' to definitions of approximately 50 characters in 
+length.  Any string of text will do.  You can use GETVAR, SHVAR or that 
+wonderful but utterly neglected program SHDEFINE.   Then try an alias 
+such as:
+
+echo this is a test of shell variables in the cmdline.
+rs echo %a
+rs echo %b
+echo well, how did the partial test come out?
+rs echo %c$$|echo %d
+rs echo %e$$|echo %e
+echo the end!
+
+You will be utterly surprised at the results.  This will NOT produce an 
+overflow.  You will produce a text display of perhaps 400 characters on 
+the screen --- all with a single alias!  Who said we only have a 200- 
+character buffer?  What is the trick?  Again, at the time the alias is 
+invoked we've fit quite well into our 200 characters, as above, with 
+nothing expanded.  As the shell variables expand, the preceding commands 
+have already emptied out and there is no problem.
+
+By the way, for those puzzled by the '$$|' you are seeing up there, 
+RESOLVE can resolve two variables in a pass without having to reload 
+itself.  This is done by separating the two commands with a '$|' symbol, 
+which acts as RESOLVE's own internal multiple-command-line separator.  
+When RESOLVE does its work, it transforms this symbol into ZCPR3's ';' 
+semicolon.
+
+And ARUNZ, of course, requires that a single '$' be produced with two 
+'$'s, hence '$$|' in ALIAS.CMD equals RESOLVE's '$|'.
+
+Postscript: I lied above when I said you won't get a command line 
+overflow.  Once or twice you might.  But it won't be an command 
+processor/ARUNZ overflow; it'll be a RESOLVE overflow.  According to 
+what I read in the RESOLVE documentation, programs can not be passed a 
+command line tail of greater than 128 characters.  (Is this true still 
+in Z33?  I just tested ECHO and it seems to be true)  I'm a bit confused 
+about this, but I know I did occasionally get a message:
+
+              Command line overflow
+
+once or twice while playing around with these shell variable aliases, 
+and this message is distinct from the standard command processor 'Ovfl' 
+message to which we're all by now so accustomed.  I'm not quite sure 
+under what conditions this RESOLVE overflow occurs.  I have never had it 
+overflow on me in my regular use of it, only when I am experimenting and 
+testing its limits.  Experiment and find out.  (One more thing to ask 
+Dreas.)
+
+Another thought came to me as I was creating PLF.  I noticed how often I 
+was using the string 'LLF $1; P2 $1' in the various nested aliases.  
+This of course Lists Library Files of the command line parameter and 
+then sends control back to the beginning of the alias, a procedure that 
+PLF performs after every operation.  So naturally it would be used a 
+lot.  But it took up so much buffer space!  How to deal with this?  
+
+I experimented with the obvious.  First I put a 
+
+              shvar x $1
+
+command at the very beginning of the alias.  If on the command line I 
+had entered:
+
+              plf letters:joeltr
+
+then the string 'LETTERS:JOELTR' would be stored to the shell variable 
+'x'.  Then instead of 'LLF $1; P2 $1', which expands to 37 characters 
+(count 'em) I could then save space with simply:
+
+              rs llf %x$$| p2 %x
+
+which takes up 17 bytes of space.  
+
+But I thought some more.  The utility to do what I want doesn't yet 
+exist, but it seems straightforward enough.  A shell utility that can 
+accept and store a multiple-command line FROM THE COMMAND LINE.  It's a 
+pretty obvious and simple concept.  In this way I could assign the 
+entire string 'LLF $1; P2 $1' to a single variable.  Why not?  
+
+GETVAR and SHDEFINE can both do it, manually, which are of no use from 
+an alias.  With both of these programs a user can assign the above 
+command line to a single variable, but it must be done as conscious user 
+input; no alias or even ZEX file can do it.  If one cares to do it in 
+this manner, however, before running the alias, the above sequence, 
+occupying 37 bytes if done in the 'normal' manner, would be reduced to 4 
+characters!  Hmmm...maybe I can get Dreas to write something...
+
+REGISTERS
+---------
+
+Another way I saved command line buffer space in PLF is through the use 
+of the ZCPR3 registers.  They also seem to be an underutilized feature 
+of Z-System, at least in what I see publically.  They are excellent in 
+CREATING FILENAMES.  What?  Registers creating filenames?  Sure, why 
+not?  If the filename contains -- or could be created to contain -- 
+digits, they're perfect for this use.
+
+I had an example in PLF very much like the above alias with all the 
+parameters.  I solved it differently.  Let's look at it again.  I'll lay 
+the solution side by side with the problem; 'BEFORE' on the left, 
+'AFTER' on the right.
+
+BEFORE                                 AFTER
+                                  
+mu3                                    mu3
+if eq $1 $2                            if eq $1 $2
+echo running: cmd1 $2 $3 $4            reg s0 1
+cmd1 $2 $3 $4                          else
+else                                   if eq $1 $3
+if eq $1 $3                            reg s0 2
+echo running: cmd2 $2 $3 $4            else
+cmd2 $2 $3 $4                          if eq $1 $4
+else                                   reg s0 3
+if eq $1 $4                            zif
+echo running: cmd3 $2 $3 $4            rs echo running: cmd$$r0 $2 $3 $4
+cmd3 $2 $3 $4                          rs cmd$$r0 $2 $3 $4
+zif
+
+The string 'cmd$$r0' above actually resolves to 'cmd1' if register 0 is 
+set to 1.  It resolves to 'cmd2' if register 0 is set to 2, and to 
+'cmd3' if set to 3.  Again, note the double '$$' in 'cmd$$r0' which is 
+so RESOLVE can properly be sent the parameter '$r0' by ARUNZ so the 
+former can return to us the value of register 0.  
+
+Works beautifully!
+
+-----------
+
+Using registers and shell variables in this way greatly enhances the 
+possibilities for aliases, adding much to the pleasure, enjoyment and 
+variety we experience in this most wonderful operating environment of 
+ZCPR3.  We have infinite oceans to explore, many deep seas and 
+multicolored coral reefs in which to dive for our beautiful Z-System
+pearls.  Exploration is the order of the day!
+
+                                       - Rick Charnes, San Francisco

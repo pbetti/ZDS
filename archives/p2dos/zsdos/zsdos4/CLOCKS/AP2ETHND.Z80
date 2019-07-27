@@ -1,0 +1,274 @@
+	TITLE	"Apple 2e/2+ w/Thunder or Mountain Clock - (AP2E-THUNDR)"
+	SUBTTL	"Description of Clock Module"
+;-------------------------------------------------------------
+; Translated for Z80ASM/ZSDOS 06/11/88 from version of 7/05/85
+; Ver 0.9 current as of 16 Oct 88
+;-------------------------------------------------------------
+
+VERS	EQU	09
+	.Z80
+	NAME AP2ETH
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	BCDYR		; Ptr to statyr
+
+CLKNAM:	DEFB	'Ap2e/2+ Thun/Mtn Softcrd'	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'  Apple 2e & 2+ Thunder or Mountain Hardware Clock',CR,LF
+	DEFB	'  with Premium Softcard or Softcard II',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		; Dummy parameters
+	DEFW	0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Apple ii/2+ Thndr/Mntn, Sftcard"
+
+; Premium SoftCard IIE RAM is independent of 6502 RAM.
+; Use 6502 BIOS calls to access 6502 RAM.
+
+; Thunder Clock Addresses
+
+RDTCP	EQU	0C008H		; 6502 read-clock addr, slot 0
+WTTCP	EQU	0C00BH		; 6502 write-clock addr, slot 0
+
+;ID0MTN EQU			;unknown
+;ID1MTN EQU			;unknown
+ID2MTN	EQU	02CH
+
+ID0THN	EQU	008H		; Bytes 0,1,2 of Thunderclock+ board
+ID1THN	EQU	078H
+ID2THN	EQU	028H
+
+FMTBYTE	EQU	00		; Mtn hwe format control byte
+
+SLTPAD	EQU	005F8H		; 6502 slot scratchpad memory for slot 0
+
+GETLN	EQU	0200H		; 6502 input line buffer
+MTNLN	EQU	0293H		; 6502 buffer for mtn hwe clock string
+				; This is the end of buffer
+
+X6502	EQU	40H		; Tranfer addr to call 6502
+BYTVAL	EQU	45H		; Byte to write
+XREG	EQU	46H
+YREG	EQU	47H
+CMD	EQU	49H		; 6502 bios command
+ADDR	EQU	4AH		; 6502 subr$ addr (subptr equ addr)
+
+SLOTTBL	EQU	0F3B9H-1
+
+SLOT	EQU	7
+
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+PRGBAS:
+GETTIM:	PUSH	HL		; Save buffer ptr
+	LD	A,FMTBYTE	; Set type of format
+	LD	(BYTVAL),A	; Data byte to poke
+
+; select mtn hwe clock format (p4-2)
+; (this is a thunderclock code)
+
+YSELCT	EQU	$+1
+	LD	DE,SLTPAD+SLOT	; Where to poke it
+	LD	A,2		; Write memory cmd (p101 is wrong)
+	CALL	CAL6502
+
+; read the clock by calling card rom
+; data is put in $0200 getln buffer (thunder clock)
+; or, in REVERSE order, in mtnln (mountain clk)
+
+YREAD	EQU	$+1
+	LD	DE,RDTCP	; Addr of subroutine
+	XOR	A		; Call subr$ cmd (aequ0)
+	CALL	CAL6502
+
+	POP	HL		; Caller's buffer ptr
+BCDYR	EQU	$+1
+	LD	A,CURYR		; Static yr - configured by dsconfig
+	LD	(HL),A
+	INC	HL		; Point at mo in caller's buffer
+
+	LD	B,5		; Mo,da,hr,mi,sec
+YBUFAD	EQU	$+1
+	LD	DE,GETLN	; 6502 buffer addr
+
+GETB:	LD	C,(HL)		; Save caller's byte
+	CALL	GETBYT		; Get ascii byte
+	RLD
+	CALL	GETBYT		; Get low ascii digit
+	RLD
+	INC	HL		; Bump buffer ptr
+
+; if mtn, make this "DEC HL"
+
+YINXD1:	INC	DE		; Skip delimiter in source string
+	DJNZ	GETB
+
+	LD	E,C		; E equ caller's seconds
+	DEC	HL		; Hl-> seconds
+	LD	A,01		; ..Set Ok return value
+	RET			; A equ seconds
+
+GETBYT:	LD	A,1		; Readmem cmd (p102 is wrong)
+
+; enter A EQU cmd
+;	DE EQU (addr) value
+;	with other parameters set up
+; exit: A EQU (45h)
+;	DE++ (but DE-- if Mtn clock)
+
+CAL6502:LD	(CMD),A
+	LD	(ADDR),DE		; Where to get byte
+	PUSH	HL		; Save z80 registers
+	PUSH	DE
+	PUSH	BC
+	CALL	X6502
+	POP	BC
+	POP	DE
+	POP	HL
+
+; if mtn make this "DEC DE"
+
+YINXD2:	INC	DE		; Bump to next time de++
+	LD	A,(BYTVAL)	; Returned byte value, if any
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	RET
+
+	DEFB	0,0,0		; Filler
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; Slot-finding code calls machine-specific code, so it must NOT be in
+; in the _POST_ Relocation Base, or it will be executed by SETUPCLK on
+; other machines.  Execute to insure valid clock is installed.
+; Enter: DE points to Clock Start address
+
+	COMMON	/_PRE_/
+
+DCXD	EQU	1BH		; "DEC DE" opcode
+
+TSTSLT:	JR	TSTSL0		; Jump around address store
+
+	DEFW	TSTSLT		; ORG location of the code
+
+; find and set slot, B EQU slot #
+
+TSTSL0:	LD	(RMODAD),DE	; Store relocated clock addr in code
+	LD	DE,SLOTTBL+7
+	LD	B,7		; Check 7 slots
+$$LP:	CALL	GETBYT
+	CP	01
+	JR	Z,$$TIM
+$$NO:	DEC	DE		; Undo DE++
+	DEC	DE		; Check previous slot
+	DJNZ	$$LP
+	JP	BAD
+
+; Set offset value to relocated clock module
+
+SETADD:	PUSH	DE		; Preserve registers
+RMODAD	EQU	$+1
+	LD	DE,0000		; Module address stored inline here
+	ADD	HL,DE		; ..offset in HL equals addr in HL
+	POP	DE
+	RET
+
+; found an "unknown type" board in slot (B)
+
+$$TIM:	LD	DE,0C702H	; Check byte #2
+	LD	A,D		; Or in slot equ equ page
+	OR	B
+	LD	D,A
+	CALL	GETBYT		; C700 (Z80) -> E700 (6502)
+	CP	ID2THN
+	JR	Z,$$THND
+	CP	ID2MTN
+	JR	NZ,BAD
+
+; Found the Mountain Hardware clock board
+; it stores string in REVERSE order
+
+$$MTN:	LD	HL,YINXD1	; Mtn string stored in Reverse
+	CALL	SETADD
+	LD	(HL),DCXD
+	LD	HL,YINXD2
+	CALL	SETADD
+	LD	(HL),DCXD
+	LD	HL,MTNLN	; End of buffer string
+	JR	$$SLOT
+
+; Found the Thunder clock board
+
+$$THND:	LD	HL,GETLN	; Set clock data buffer addr
+
+$$SLOT:	PUSH	HL		; Save Buffer address for a while
+	LD	HL,YREAD+1	; Set Page byte address
+	CALL	SETADD
+	LD	(HL),D		; ..and store Slot page
+	LD	HL,YSELCT	; Set address for Format Slot #
+	CALL	SETADD
+	LD	A,B		; B equ slot # from here on
+	ADD	A,0F8H		; Set for Mountain Hardware format
+	LD	(HL),A		; ..and store low byte
+
+	POP	DE		; Restore buffer addr in DE
+	LD	HL,YBUFAD	; Set offset address
+	CALL	SETADD
+	LD	(HL),E		; ..and store addr
+	INC	HL
+	LD	(HL),D
+
+	LD	DE,(RMODAD)	; Restore relocated clock address
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

@@ -1,0 +1,146 @@
+	TITLE	"Kenmore-Kaypro Clock - (KENMOR-ZTIM)"
+	SUBTTL	"Description of Clock Module"
+;=========================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from ver of 7/28/85
+; Vers 0.5 current as of 18 Oct 88
+;=========================================================
+
+VERS	EQU	05
+	.Z80
+	NAME KCT
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID/
+
+DESCST:	DEFW	0		; Thisyr
+
+CLKNAM:	DEFB	'Kenmore ZTIME-I         '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'   Kenmore - MM58167',CR,LF
+	DEFB	'   (Year in $1 Secs latch) (Kenmore Computer Technologies)',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	NPARAMS		; # of parameters
+	DEFW	STRS
+
+NP0:
+XPORT	EQU	$+1
+	DEFB	BYTE
+	DEFW	PORT
+NPARAMS	EQU	($-NP0)/3
+
+STRS:	DEFB	'Clock Data Port ',0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Kenmore Clock for Kaypro"
+
+PORT	EQU	0E0H		; Default port for clock registers
+
+SECONDS	EQU	002H
+YEAR	EQU	009H		; Sub seconds used for year
+
+REGMSK	EQU	01001000B	; Yr,thsec,mon,day,daywk,hr,min,sec
+				; 9  8	   7   6   5	 4  3	2
+
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	PUSH	HL		; Save entry buffer addr
+RETRY:	POP	HL
+	PUSH	HL		; Restore pointer
+
+YSECS	EQU	$+1
+	IN	A,(PORT+SECONDS) ; Read second register
+	PUSH	AF		; Save it
+
+	LD	A,REGMSK
+YYEAR	EQU	$+1
+	LD	BC,256*YEAR + (PORT +YEAR)
+
+LOOP:	SCF
+	RLA
+	JR	C,SKIP		; Skip thousands seconds
+
+	LD	E,(HL)		; Get old memory for possible Restore
+	INI			; Get next reading
+	INC	B		; Compensate for auto
+SKIP:	DEC	C		; Next port down
+	DJNZ	LOOP		; Carry on if not finished
+
+; Check Rollover
+
+	POP	AF		; Get original minute back
+	DEC	HL		; Point back to seconds
+	CP	(HL)		; Have we rolled over
+	POP	BC
+	LD	A,01		;== Set Ok return code in case good
+	RET	Z		; Ok, no rollover
+
+	PUSH	BC
+	LD	(HL),E		; Restore
+	JR 	RETRY		; Else do it again
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	SETBYT XPORT,
+	LD	B,A
+	LD	A,SECONDS
+	ADD	A,B
+	SETBYT	,YSECS
+	LD	A,YEAR
+	ADD	A,B
+	SETBYT	,YYEAR
+	RET
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

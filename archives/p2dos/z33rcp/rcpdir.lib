@@ -1,0 +1,109 @@
+	page
+
+; RCP-DIR.Z80	'DIR' Command
+
+;=============================================================================
+;
+;	D I R E C T O R Y    D I S P L A Y    C O M M A N D
+;
+;=============================================================================
+
+; Command:	DIR
+; Function:	Display a directory of the files on disk
+; Syntax:	DIR <afn>	Displays the DIR files
+;		DIR <afn> S	Displays the SYS files
+;		DIR <afn> A	Display both DIR and SYS files
+;		DIR /S		Equivalent to DIR *.* S
+;		DIR /A		Equivalent to DIR *.* A
+
+dir:
+	call	retsave		; Save return address and set stack
+
+; See if FCB should be made wild (all '?')
+
+	ld	hl,fcb1+1	; Point to file name in FCP
+	ld	a,(hl)		; Get first character of filename
+
+	 if	slashchk	; Allow "DIR /S" and "DIR /A" formats
+	cp	'/'		; If name does not start with '/'
+	jr	nz,dir01	; ..branch and process normally
+	inc	hl		; Point to second character
+	ld	a,(hl)		; Get option character after slash
+	ld	(fcb2+1),a	; ..and put it into second FCB
+	dec	hl		; Back to first character
+	ld	a,' '		; Simulate empty FCB
+	 endif	;slashchk
+
+dir01:
+	ld	b,11		; Prepare to fill FCB name and type with '?'
+	cp	' '		; See if no file spec given
+	ld	a,'?'		; Get ready to fill with '?'
+	call	z,fillp		; ..carry out fill
+
+	 if	nosys		; Suppress-SYS-file-if-no-wheel option
+	ld	a,(z3whl)	; Get wheel byte
+	or	a
+	jr	z,dirnly	; If wheel off, ignore options
+	 endif
+
+	ld	a,(fcb2+1)	; Get first char of 2nd file name
+	ld	b,1		; Set for both dir and sys files
+	cp	allflag		; SYS and DIR flag specifier?
+	jr	z,dirpr		; Got system specifier
+	dec	b		; B=0 for sys files only
+	cp	sysflag		; SYS only?
+	jr	z,dirpr
+
+dirnly:	ld	b,80h		; Must be dir-only selection
+
+; DIRECTORY PRINT ROUTINE; ON ENTRY, B REG IS SET AS FOLLOWS:
+;	0 FOR ONLY SYSTEM FILES, 80H FOR ONLY DIR FILES, 1 FOR BOTH
+;
+dirpr:
+	ld	a,b		; Get systst flag
+	call	getdir		; Load and sort directory
+	jp	z,prfnf		; Print no file message
+	ld	e,4		; Count down to 0
+;
+; ENTRY PRINT LOOP; ON ENTRY, HL PTS TO FILES SELECTED (TERMINATED BY 0)
+;	AND E IS ENTRY COUNTER
+;
+dir3:
+	ld	a,(hl)		; Check for done
+	or	a
+	 if	dirsp and spaceon
+	jp	z,spaexit	; Show space when done
+	 else
+	jp	z,exit		; Exit if done
+	 endif			; Dirsp and spaceon
+	ld	a,e		; Get entry counter
+	or	a		; Output <crlf> if 4 entries printed in line
+	jr	nz,dir3a	; Continue
+	call	crlf		; New line
+	ld	e,4		; Reset entry count
+	ld	a,e		; Get entry count
+dir3a	cp	4		; First entry?
+	jr	z,dir4
+	call	print
+;
+	 if	wide
+;
+	db	'  '		; 2 spaces
+	db	fence		; Then fence char
+	db	' '+80h		; Then 1 more space
+;
+	 else
+;
+	db	' '		; Space
+	db	fence+80h	; Then fence char
+;
+	 endif			; Wide
+;
+dir4:
+	call	prfn		; Print file name
+	call	break		; Check for abort
+	dec	e		; Decrement entry counter
+	jr	dir3
+
+; End RCP-DIR.Z80
+

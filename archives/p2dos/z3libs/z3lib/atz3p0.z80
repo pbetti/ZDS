@@ -1,0 +1,58 @@
+;	TITLE	"ATZ3P0 - Z3LIB 4.0"
+	NAME	('@PUT0')
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+; Date    : 27 Jul 89
+; Version : 1.3
+; Module  : ATZ3P0
+; Abstract: This module contains the routines @PUT0 and @PUT1
+;	which are elements of common code extracted from several
+;	modules in Z3LIB.  They set a given byte at a specified
+;	offset value.  @PUT0 calculates the offset from the value
+;	stored in the ENVPTR global variable, while @PUT1 assumes
+;	both the base and offset are already loaded.  They are
+;	consolidated here for greater efficiency
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		@PUT0, @PUT1
+
+; External References
+
+	EXT		ENVPTR
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - @PUT0
+; Entry: DE - Contains offset from starting value in ENVPTR
+; Exit : - None.  Values restored to Caller's status
+; Uses : - None
+; Special Requirements: Assumes that AF, DE and HL have been
+;		previously saved
+;===============================================================
+
+@PUT0:	LD	HL,(ENVPTR)	; Load ENVPTR starting address
+			; ..and fall thru
+;===============================================================
+; NAME - @PUT1
+; Entry: DE - Contains offset from starting value in ENVPTR
+;	 HL - Contains base address
+; Exit : - None.  Values restores to Caller's status
+; Uses : - None
+; Special Requirements: Assumes that AF, DE and HL have been
+;		previously saved
+;===============================================================
+
+@PUT1:	ADD	HL,DE		; Add base and offset
+	POP	AF		; Restore previously saved byte
+	LD	(HL),A		; ..and save it
+	POP	DE		; Restore previously saved regs
+	POP	HL
+	RET			; ..and return to caller
+
+	END
+

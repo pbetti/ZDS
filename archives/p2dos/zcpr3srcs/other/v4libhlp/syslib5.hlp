@@ -1,0 +1,245 @@
+  The L, M, P, and S Output Routines
+  Sample Outputs
+ Output A as 2 Hexadecimal Chars              - xA2HC
+ Output A as 3 Decimal Chars                  - xA3DC
+ Output A as 1-3 Dec. Chrs w/Leading Spaces   - xADC
+ Output A as 1-3 Decimal Chars                - xAFDC
+ Output HL as 4 Hexadecimal Chars             - xHL4HC
+ Output HL as 5 Decimal Chars                 - xHL5DC
+ Output HL as 1-5 Dec. Chrs w/Leading Spaces  - xHLDC
+ Output HL as 1-5 Decimal Chars               - xHLFDC
+:         The L, M, P, and S Output Routines 
+
+The numeric output routines described here are used to output
+either the HL register pair or the A register in a variety of
+forms.  These forms are as hexadecimal characters, as decimal
+characters, as decimal characters with leading spaces, and as
+decimal characters with no leading zeroes or spaces.
+
+In addition, each ofthese routines has a prefix to their names:
+L, M, P, or S.  These prefixes indicate the output destination.
+L indicates the LST: device (or printer), M indicates memory,
+P indicates the console (print the output), and S indicates a
+switched output to nothing, the console, the printer, or both.
+
+For example, PADC sends A as decimal characters with leading
+spaces to the console, while LADC sends A as decimal characters
+with leading spaces to the printer.
+
+The S-series of routines is different from the other series in
+that the S-series uses an external data byte to determine where
+the output is to be routed.  This byte is referred to as SCTLFL
+(S Control Flag), and its switching function is illustrated in
+the following table:
+
+	 ---- SCTLFL -----
+	 Binary        Hex       Outputs to
+
+	00000000B      00H       Nothing
+	00000001B      01H       Console
+	10000000B      80H       Printer
+	10000001B      81H       Console and Printer
+
+If you do not initialize the SCTLFL variable before using the
+S-routine, output will go to the console (the default is 01H).
+
+
+  An example of code using S-routines is:
+
+	EXT	SCTLFL,SADC	; SCTLFL flag, SADC routine
+	...
+	LD	A,81H		; enable printer and console
+	LD	(SCTLFL),A
+	...
+	LD	A,32		; print number 32
+	CALL	SADC
+	...
+	LD	A,80H		; enable printer only
+	LD	(SCTLFL),A
+	...
+	LD	A,150		; print number 150
+	CALL	SADC
+	...
+
+:Sample Outputs
+
+The following tables illustrate how values will be output by
+the various routines.  The underscore character (_) indicates
+a space.
+
+	Value     xA2HC     xA3DC     xADC      xAFDC
+
+	   0        00       000       __0       0
+	  10        0A       010       _10       10
+	 255        FF       255       255       255
+
+	Value     xHL4HC    xHL5DC    xHLDC     xHLFDC
+	    0      0000      00000    ____0     0
+	   10      000A      00010    ___10     10
+	  100      0064      00100    __100     100
+	 1000      03E8      01000    _1000     1000
+	65535      FFFF      65535    65535     65535
+
+:LA2HC, PA2HC, SA2HC - Print A as Two Hex Characters
+
+  ENTER: A = Value to be converted and printed
+  EXIT : None
+  USES : None
+
+ Usage:  These routines may be used whenever a byte must be
+  printed as two hexidecimal characters on LST: (LA2HC), CON:
+  (PA2HC), or switched output (SA2HC).
+
+ MA2HC - Store A as two Hex Characters in Memory
+
+  ENTER:  A = Value to be converted and stored
+	 DE = Pointer to start of 2-byte buffer
+  EXIT : DE - Points to byte after string
+  USES : DE
+
+ Usage:  This routine may be used whenever a byte must be
+  stored as two (2) hexadecimal characters in memory.
+
+:LA3DC, PA3DC, SA3DC - Print A as three Decimal Digits
+
+  ENTER: A = Binary value to convert and print
+  EXIT : None
+  USES : None
+
+ Usage:  These routines may be used whenever a byte (0..255)
+  must be printed as three (3) decimal characters in a fixed
+  length space on LST: (LA3DC), CON: (PA3DC), or switched
+  output (SA3DC).
+
+ MA3DC - Store A as three Decimal Digits in Memory
+
+  ENTER:  A = Binary value to convert and store
+	 DE = Pointer to 3-byte buffer
+  EXIT : DE - Points to the byte after the buffer
+  USES : DE
+
+ Usage:  This routine may be used when a byte must be stored
+  as three (3) decimal digits in memory
+
+:LADC, PADC, SADC - Print byte as up to three Decimal Digits
+
+  ENTER: A = Binary value to convert and print
+  EXIT : None
+  USES : None
+
+ Usage:  This routine may be used whenever a byte must be
+  printed in variable format with leading spaces (right justi-
+  fied) on LST: (LADC), CON: (PADC), or switched output (SADC).
+
+ MADC - Store a byte as up to three digits in memory
+
+  ENTER:  A = Binary value to convert and store
+	 DE = Pointer to 3-byte memory buffer
+  EXIT : DE - Points to byte after the buffer
+  USES : DE
+
+ Usage:  This routine may be used whenever a byte must be
+  stored in a fixed three character buffer as up to three (3)
+  decimal characters with leading spaces.
+
+:LAFDC, PAFDC, SAFDC - Print A as 1 to 3 digits (variable)
+
+  ENTER: A = Binary value to be converted and printed
+  EXIT : None
+  USES : None
+
+ Usage:  These routines may be used at any time to print a byte
+  as one to three decimal characters with no leading spaces on
+  LST: (LAFDC), CON: (PAFDC), or switched output (SAFDC).
+
+ MAFDC - Store A as 1 to 3 digits (variable) in memory
+
+  ENTER:  A = Value to be converted and stored
+	 DE = Pointer to a 3-byte buffer
+  EXIT : DE - Points to the byte after the last one saved
+  USES : DE
+
+ Usage:  This routine may be used at any time to store a byte
+  as up to three (3) decimal digits in a 3-byte memory buffer.
+
+:LHL4HC, PHL4HC, SHL4HC - Print 16-bit value as four Hex chars
+
+  ENTER: HL = 16-bit value to print
+  EXIT : None
+  USES : None
+
+ Usage:  These routines may be used at any time to print HL
+  as four (4) hexadecimal characters on LST: (LHL4HC), CON:
+  (PHL4HC), or switched output (SHL4HC).
+
+ MHL4HC - Save 16-bit value as four Hex characters
+
+  ENTER: HL = 16-bit value to convert and save
+	 DE = Pointer to 4-byte buffer
+  EXIT : DE - Points to byte after buffer
+  USES : DE
+
+ Usage:  This routine may be used at any time to store HL as
+  four (4) hexadecimal characters in a 4-byte memory buffer.
+
+:LHL5DC, PHL5DC, SHL5DC - Print 16-bit value as 5 Decimal chars
+
+  ENTER: HL = 16-bit value to print
+  EXIT : None
+  USES : None
+
+ Usage:  These routines may be used at any time to print HL as
+  five (5) decimal characters on LST: (LHL5DC), CON: (PHL5DC),
+  or switched output (SHL5DC).
+
+ MHL5DC - Save 16-bit value as 5 Decimal characters
+
+  ENTER: HL = Value to be converted and stored
+	 DE = Pointer to 5-byte buffer
+  EXIT : DE - Points to byte after buffer
+  USES : DE
+
+ Usage:  This routine may be used at any time to store HL as
+  five (5) decimal characters in a 5-byte memory buffer.
+
+:LHLDC, PHLDC, SHLDC - Print 16-bit value as 1-5 Decimal Digits
+
+  ENTER: HL = Value to be printed
+  EXIT : None
+  USES : None
+
+ Usage:  These routines may be used at any time to print HL
+  as one to five decimal digits with leading spaces on LST:
+  (LHLDC), CON: (PHLDC), or switched output (SHLDC).
+
+ MHLDC - Store 16-bit value as 1-5 Decimal Digits in Memory
+
+  ENTER: HL = Value to convert and store
+	 DE = Pointer to five byte memory buffer
+  EXIT : DE - Points to byte after buffer
+  USES : DE
+
+ Usage:  This routine may be used at any time to convert and
+  store HL as one to five decimal characters with leading
+  spaces in a 5-byte memory buffer.
+
+:LHLFDC, PHLFDC, SHLFDC - Print HL as 1 to 5 Decimal Digits
+
+  ENTER: HL = Value to be printed
+  EXIT : None
+  USES : None
+
+ Usage:  These routines may be used at any time to print HL as
+  one to five decimal digits with no leading spaces on LST:
+  (LHLFDC), CON: (PHLFDC), or switched output (SHLFDC).
+
+ MHLFDC - Store HL as 1 to 5 Decimal Digits in Memory
+
+  ENTER: HL = Value to convert and store
+	 DE = Pointer to 5-byte memory buffer
+  EXIT : DE - Points to byte after last one stored
+  USES : DE
+
+ Usage:  This routine may be used at any time to convert and
+  store HL as one to five decimal digits in a 5-byte buffer.
+

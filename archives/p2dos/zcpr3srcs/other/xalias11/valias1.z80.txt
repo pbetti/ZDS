@@ -1,0 +1,520 @@
+;
+; Program: VALIAS1
+; Author: Jay Sage
+; Version: 1.0
+; Date: 09 August 1985
+; Previous Versions:  ALIAS1 V1.1 by Richard Conn
+;
+version	equ	10
+
+;
+;	The purpose of VALIAS1 is to load the Command Line Buffer with
+; a command line stored within ALIAS1, extracting parameters using the
+; SUBMIT file convention ($n) as they are referenced in the new command
+; line.  VALIAS1 differs from ALIAS1 in that it contains a flag that
+; selects one of two modes.  Normal mode is identical to ALIAS; the
+; alias command line is substituted for the alias command, and any tail
+; in the command line buffer is appended to it.  In recursive mode, any
+; tail in the command line is purged.  This mode, as the name implies,
+; is useful when an alias is going to call itself recursively, and the
+; command tail could build up to the point of overflowing.
+;
+;	The mode flag is placed just before the label START, where it can
+; easily be found.  It is preceeded by a byte of 'F' so that VALIAS0 can
+; determine when it reads in an alias file whether the alias is of the new
+; type or the old type.  The character 'F' is unlikely to occur by
+; accident in an internal environment descriptor.  If the environment is
+; external, then the byte before the flag would otherwise be the high byte
+; of the address of the environment descriptor.  This would not be likely
+; to be as small as 46H (value of 'F').
+
+;
+; Macros
+;
+	MACLIB	Z3BASE.LIB
+
+;
+; Basic Equates
+;
+tbuff	equ	80h
+
+;
+; External References
+;
+	ext	z3init,getefcb,getcl1,getenv,getfn2
+	ext	eprint,codend,sksp,retud,caps
+
+;
+; Environment Definition
+;
+	if	z3env ne 0
+;
+; External ZCPR3 Environment Descriptor
+;
+	jp	start
+	db	'Z3ENV'		;This is a ZCPR3 Utility
+	db	1		;External Environment Descriptor
+z3eadr:
+	dw	z3env
+
+	db	'F'		;byte to identify VALIAS aliases
+rflag:	db	0		;0=normal alias / ff=recursive alias
+				;recursive alias clears old command line
+start:
+	ld	hl,(z3eadr)	;pt to ZCPR3 environment
+;
+	else
+
+	*** ERROR *** file too long with internal environment
+
+	endif
+
+;
+; Start of Program -- Initialize ZCPR3 Environment
+;
+	call	z3init		;initialize the ZCPR3 Env and the VLIB Env
+	jp	start1		;skip command line buffer
+;
+; ALIAS ID at START+9
+;
+	db	'Z3 ALIAS'
+;
+; Internal Command Line Buffer
+;	This buffer address can be determined from START+17, where the
+; value of START is obtained from the 2nd and 3rd bytes of ALIAS1.
+;
+clbuf:
+	db	0		;set to empty
+	ds	255		;allow 256 bytes
+;
+; Resume ALIAS1
+;
+start1:
+	call	codend		;pt to free space in which to build new line
+	ld	de,clbuf	;pt to buffer
+	ex	de,hl		;HL pts to target line, DE pts to buffer
+;
+; Process Next Char from Target Command Line
+;
+nxtchar:
+	ld	a,(hl)		;get next char
+	or	a		;end of line?
+	jp	z,done
+	cp	'$'		;possible passed parameter?
+	jp	z,param
+	ld	(de),a		;store next char
+	inc	hl		;pt to next
+	inc	de
+	jp	nxtchar
+;
+; Process Possible Parameter
+;
+param:
+	ld	bc,nxtchar	;establish return address
+	push	bc		;... on stack
+	inc	hl		;get parameter char
+	ld	a,(hl)
+	call	caps		;capitalize
+	cp	'*'		;entire tail?
+	jp	z,paraml
+	cp	'D'		;current disk?
+	jp	z,paramd
+	cp	'U'		;current user?
+	jp	z,paramu
+	cp	'F'		;System Filename.Typ?
+	jp	z,paramf
+	cp	'N'		;System Filename?
+	jp	z,paramn
+;	cpi	'T'	;System Typ?
+;	jz	paramt
+	sub	'0'		;convert
+	jp	c,noparam
+	cp	10		;range?
+	jp	nc,noparam
+	or	a		;parameter 0 = original name
+	jp	z,oname
+	ld	b,a		;count in B (1 or more)
+	inc	hl		;pt to next char
+	push	hl		;save ptr
+	ld	hl,tbuff+1	;pt to input line
+;
+; Advance to Desired Parameter
+;
+param1:
+	call	sksp		;skip to non-blank
+	ld	a,(hl)		;check for done
+	or	a
+	jp	z,paramx
+	dec	b		;count down
+	jp	z,param3	;got it
+;
+; Skip Over This Parameter
+;
+param2:
+	ld	a,(hl)		;skip to space or EOL
+	inc	hl		;pt to next
+	cp	' '		;space
+	jp	z,param1
+	or	a		;EOL
+	jp	z,paramx
+	jp	param2		;continue
+;
+; Extract Parameter Into Target Buffer
+;
+param3:
+	ld	a,(hl)		;get char
+	cp	' '+1		;done?
+	jp	c,paramx
+	ld	(de),a		;store char
+	inc	hl		;advance
+	inc	de
+	jp	param3
+;
+; Resume Processing of Target Command
+;
+paramx:
+	pop	hl		;restore ptr to next char
+	ret			;resume at next char
+;
+; Parameter is for System Filename.typ
+;
+paramf:
+	call	getfnum		;get file number
+	ret	z		;resume if error
+	push	hl		;save ptr to next char
+	call	ptfn		;set ptr to file name
+	call	putn		;put file name
+	ld	a,'.'		;dot
+	ld	(de),a
+	inc	de
+	call	putt		;put file type
+	pop	hl		;restore ptr
+	ret
+;
+; Parameter is for System Filename
+;
+paramn:
+	call	getfnum		;get file number
+	ret	z		;resume if error
+	push	hl		;save ptr to next char
+	call	ptfn		;set ptr to file name
+	call	putn		;put file name
+	pop	hl		;restore ptr
+	ret
+;
+; Parameter is for System Typ
+;
+;paramt:
+;	call	getfnum	;get file number
+;	jz	nxtchar	;resume if error
+;	push	h	;save ptr to next char
+;	call	ptfn	;set ptr to file name
+;	mvi	a,8	;add 8 to get to file type
+;	add	l
+;	mov	l,a
+;	mov	a,h
+;	aci	0
+;	mov	h,a
+;	call	putt	;put file type
+;	pop	h	;restore ptr
+;	jmp	nxtchar
+
+;
+; Get File Number (1 to 4)
+;	If valid number, return with value in A and HL pting to next char
+;	If not valid, return with Z and HL pting to next char (the number)
+;
+getfnum:
+	inc	hl		;pt to number
+	ld	a,(hl)		;get char
+	sub	'1'		;convert
+	jp	c,getfne	;error if less
+	cp	4		;range?
+	jp	nc,getfne	;error if more
+	inc	hl		;pt to next char
+	ret			;NZ from CPI 4
+getfne:
+	xor	a		;return Z
+	ret
+;
+; Pt to File Name whose Number (1-4) is in A
+;
+ptfn:
+	ld	b,a		;number in B
+	call	getfn2		;pt to file name 2
+	push	de		;save DE
+	ld	a,b		;file 0?
+	or	a
+	jp	z,ptfnx
+	ld	de,11		;size of file name and type
+ptfn1:
+	add	hl,de		;pt to next
+	dec	b		;count down
+	jp	nz,ptfn1
+ptfnx:
+	pop	de		;restore DE
+	ret
+;
+; Put File Name pted to by HL
+;
+putn:
+	ld	b,8		;8 chars
+	jp	putc
+;
+; Put File Type pted to by HL
+;
+putt:
+	ld	b,3		;3 chars
+;
+; Copy chars from HL to DE for up to 8 bytes - flush if space
+;
+putc:
+	ld	a,(hl)		;get next char
+	cp	' '		;skip spaces
+	jp	z,putc1
+	ld	(de),a		;put next char
+	inc	de		;pt to next
+putc1:
+	inc	hl		;pt to next
+	dec	b		;count down
+	jp	nz,putc
+	ret
+;
+; Parameter is for Disk Letter
+;
+paramd:
+	call	retud		;get DU in BC
+	ld	a,b		;get disk letter
+	add	'A'		;convert to ASCII
+	ld	(de),a		;store char
+	inc	de		;pt to next
+	inc	hl		;pt to next char
+	ret
+;
+; Parameter is for User Number
+;
+paramu:
+	call	retud		;get DU in BC
+	ld	a,c		;get user number
+	ld	b,10		;compute 10's
+	ld	c,'0'
+pmu1:
+	sub	a,b		;subtract 10's
+	jp	c,pmu2
+	inc	c		;increment 10's
+	jp	pmu1
+pmu2:
+	add	a,b		;add B back in
+	add	'0'		;convert to ASCII
+	ld	b,a		;10's in C, 1's in B
+	ld	a,c
+	cp	'0'		;no leading 0's
+	jp	z,pmu3
+	ld	(de),a		;store char
+	inc	de		;pt to next
+pmu3:
+	ld	a,b		;get 1's
+	ld	(de),a		;store char
+	inc	de		;pt to next
+	inc	hl		;pt to next char
+	ret
+;
+; Parameter is command line tail
+;
+paraml:
+	inc	hl		;pt to char after parameter letter
+	push	hl		;save ptr to parameter
+	ld	hl,tbuff+1	;pt to tail
+paramt1:
+	ld	a,(hl)		;copy tail into line
+	or	a		;end of tail?
+	jp	z,paramt2
+	ld	(de),a		;store char
+	inc	hl		;pt to next
+	inc	de
+	jp	paramt1
+paramt2:
+	pop	hl		;pt to next char in script
+	ret			;continue processing
+;
+; Form assumed to be $$
+;
+noparam:
+	ld	a,'$'		;store '$'
+	ld	(de),a
+	inc	de		;pt to next chars
+	inc	hl
+	ret
+;
+; $0 - ALIAS Command Name
+;
+oname:
+	inc	hl		;pt to next char
+	push	hl		;save ptr
+	call	getefcb		;pt to FCB
+	jp	z,paramx	;skip if no external FCB
+	inc	hl		;pt to first char
+	ld	b,8		;at most 8 chars
+on1:
+	ld	a,(hl)		;copy into output line
+	cp	' '		;done if space
+	jp	z,paramx
+	ld	(de),a		;store char
+	inc	hl		;pt to next
+	inc	de
+	dec	b		;count down
+	jp	nz,on1
+	jp	paramx
+
+;
+; Done -- Buffer is Loaded
+;
+done:
+	xor	a		;store ending 0
+	ld	(de),a
+	call	codend		;pt to buffer
+	ld	a,(hl)		;skip if empty line
+	or	a
+	ret	z
+
+	push	hl		;save ptr to line
+;
+; Get command line data from environment descriptor
+;
+	call	getcl1		;get command line data
+	ld	b,a		;save command line max length
+	ld	a,h		;check for no command line
+	or	l
+	jp	z,0		;if none, warm boot
+	ld	a,b		;restore char count
+	or	a		;check for no chars
+	jp	z,0		;if cl length is 0, warm boot
+;
+; Store Command Line
+;
+done1:
+	pop	de		;DE pts to line
+	call	putcl		;store in command line
+	ret	nz		;return to ZCPR3 for processing if OK
+	call	eprint
+	db	'Ovfl',0
+	ret
+;
+;	PUTCL stores a command line in the ZCPR3 command line buffer.
+; This command line is pted to by DE.  CL Buffer is pted to by HL.
+; Size in A. On return, A=0 and Zero
+; Flag Set if command line overflow is possible (no change to command line).
+;
+putcl:
+	ld	(clbfr),hl	;save ptr to command line buffer
+	or	a		;any command line?
+	jp	z,nocl
+	ld	b,a		;char count in B
+	ex	de,hl		;HL pts to new line
+	push	hl		;save ptr to new line
+pcl2:
+	ld	a,(hl)		;go to end of line
+	or	a		;at end?
+	jp	z,pcl3
+	inc	hl		;pt to next
+	dec	b		;count down
+	jp	nz,pcl2
+	pop	hl		;clear stack
+;
+; Command Line Buffer Overflow
+;
+nocl:
+	xor	a		;error return
+	ret
+;
+; At End of New Command Line (ptr on stack)
+;	Ptr to first char of new command line on stack
+;	HL pts to ending 0 of new command line
+;	B = number of chars remaining before overflow of Z3 command line
+;
+pcl3:
+	push	hl		;save ptr to last byte in case of error
+	ld	hl,(clbfr)	;pt to tail of command line
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl		;HL pts to command line tail
+
+	ld	a,(rflag)	;see if in recursive mode
+	or	a
+	jp	z,pc13a		;if not skip
+	ld	(hl),0		;else, flush old command line
+pc13a:
+
+	pop	de		;restore ptr to last byte of command line
+	push	de
+	ld	a,(hl)		;get first char of tail
+	cp	';'		;continuation?
+	jp	z,pcl4
+	or	a		;done?
+	jp	z,pcl4
+	ld	a,';'		;set continuation char
+	ld	(de),a
+	inc	de
+	dec	b		;count down
+	jp	z,pcl5		;overflow
+;
+; Copy tail onto end of new command line
+;
+pcl4:
+	ld	a,(hl)		;get next char
+	ld	(de),a		;store it
+	inc	hl		;pt to next
+	inc	de
+	or	a		;done?
+	jp	z,pcl6
+	dec	b		;count down
+	jp	nz,pcl4
+;
+; Command Line too Long
+;
+pcl5:
+	pop	hl		;get ptr to end of old line
+	ld	(hl),0		;store ending 0
+	pop	af		;clear stack
+	jp	nocl
+;
+; New Command Line OK
+;
+pcl6:
+	pop	af		;clear stack
+	ld	hl,(clbfr)	;pt to command line buffer
+	ld	de,4		;pt to first char in buffer
+	ex	de,hl
+	add	hl,de
+	ex	de,hl
+	ld	(hl),e		;store address
+	inc	hl
+	ld	(hl),d		;DE pts to first char of buffer
+	pop	hl		;HL pts to first char of new line
+;
+; Copy New Command Line into Buffer
+;
+pcl7:
+	ld	a,(hl)		;copy
+	ld	(de),a
+	inc	hl
+	inc	de
+	or	a		;EOL?
+	jp	nz,pcl7
+;
+; Exit with OK Code
+;
+	xor	a		;set NZ
+	dec	a
+	ret
+
+;
+; Buffers
+;
+clbfr:
+	ds	2		;ptr to command line
+
+	end
+
+

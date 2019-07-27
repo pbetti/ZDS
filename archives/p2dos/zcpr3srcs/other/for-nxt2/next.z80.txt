@@ -1,0 +1,472 @@
+; NEXT.Z80
+;			A ZCPR3 Utility
+;
+; This program reads one line from the beginning of the file
+; 'FORFILES.SYS' and stores that line in the shell variable
+; specified as the first parameter.  The 'FORFILES.SYS' file is 
+; written out without the first line.
+;
+; Invocation syntax is:
+;
+;		NEXT <varname>
+;
+; The input file 'FORFILES.SYS' is looked for only in the current directory.
+; The shell variable file is looked for first in any directory named 'ROOT'
+; and, if not found there, in the directory at the root of the path.
+;
+; The only option is help, which is exclusive.
+;
+; Error codes:  If the program cannot find the file 'FORFILES.SYS' it will
+; return an error code corresponding to 'file not found.'  Note that after
+; the last line of the file has been read and stored in a variable, when
+; an attempt is made to read the file again, it will fail.  The shell
+; variable will be set to null (that is, the name will exist, but will 
+; evaluate to nothing).  Thus, when used in a loop, as it is intended, the 
+; possible exit conditions for the loop are:
+;	-  absence of the file-list (IF ~EXIST FORFILES.SYS),
+;	-  a program error (IF ERROR),
+;	-  an empty variable name (IF NUL <varname>).
+;
+; This program must be linked with Z3VARLIB.REL.
+; The libraries Z3LIB.REL and SYSLIB.REL must be searched.
+;
+; Author:  Dreas Nielsen
+; History:
+;   4/18/86	1.0	Created.  RDN
+;   7/12/86		Modified to use 'Z3VARLIB' routines.  RDN
+;   5/25/87	1.1	Modified to set variable to null if file not found. RDN
+;
+;================[  Equates and External Routines  ]================
+;
+VERS	EQU	11
+;
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+;
+DEBUG	EQU	FALSE
+;
+CR	EQU	0DH
+LF	EQU	0AH
+BELL	EQU	7
+CTRLZ	EQU	1AH
+EOF	EQU	1AH
+BDOS	EQU	5
+INFERR	EQU	1	;error code for "can't open input file"
+OFERR	EQU	2	;error code for "can't open output file"
+RDERR	EQU	3	;error code for "can't read input file"
+WRTERR	EQU	4	;error code for "can't write output file"
+CLZERR	EQU	5	;error code for "can't close output file"
+PARMFL	EQU	'/'
+CMDLIN	EQU	080H
+SYSFCB	EQU	05CH
+BUFSIZ	EQU	32	;32 128-byte sectors (4k) for I/O buffers
+FCBLEN	EQU	36
+BSZOFF	EQU	0	;offset of buffer size indicator from I/O ctl block
+BADOFF	EQU	6	;offset of buffer addr indic. from I/O ctl block start
+FCBOFF	EQU	8	;offset of fcb from I/O ctl block start
+;
+	EXT	CODEND,QPRINT,PRINT,SKSP,PUTER2,PUTUD,FXI$OPEN,FXO$OPEN
+	EXT	FX$GET,FX$PUT,FXI$CLOSE,FXO$CLOSE,Z3INIT
+	EXT	ROOT,LOGUD,INITFCB,F$MAKE,GETUD,PFN2,CAPS,GETFN1
+	EXT	F$OPEN,F$WRITE,F$CLOSE,F$DELETE,F$RENAME,SFA
+;
+	EXT	VARLOAD,ADDVAR,WRTVAR,VARDEF
+;
+	IF	DEBUG
+	EXT	PHL4HC
+	ENDIF
+;
+;================[  Beginning of Program  ]================
+;
+	DB	'Z3ENV'
+	DB	1
+Z3ENV:	DW	00
+	DB	VERS
+;
+START:	LD	HL,(Z3ENV)
+	CALL	Z3INIT
+;
+; Reset error flag
+	XOR	A
+	CALL	PUTER2
+;
+; Save stack and set a new one
+	LD	(SAVESP),SP
+	LD	HL,STK
+	LD	SP,HL
+;
+; Print signon message
+	CALL	QPRINT
+	DB	'NEXT  v. ',[VERS / 10] + '0','.',[VERS MOD 10] + '0',CR,LF,0
+;
+; Check for no parameters or help
+	LD	A,(SYSFCB+1)
+	CP	' '
+	JP	Z,HELP
+	LD	HL,CMDLIN
+	LD	A,(HL)		;store null at end of cmdline
+	INC	A
+	LD	E,A
+	XOR	A
+	LD	D,A
+	ADD	HL,DE
+	LD	(HL),A
+	LD	HL,CMDLIN+1	;find 1st char
+	CALL	SKSP
+	LD	A,(HL)
+	CP	'?'
+	JP	Z,HELP
+	CP	PARMFL
+	JP	Z,HELP
+;
+; Save currently logged DU
+	CALL	PUTUD
+;
+; Allocate buffers for byte-oriented file I/O, first line of file, and
+; shell variable name.
+SETBUFS:
+	CALL	CODEND
+	LD	(FCBOUT),HL	;output fcb
+	LD	DE,36
+	ADD	HL,DE
+	LD	(FIRSTLIN),HL
+	LD	DE,300H		;should be enough room for a filename
+	ADD	HL,DE
+	LD	(INPLOC),HL
+	LD	B,BUFSIZ
+	CALL	FBINIT		;allocate I/O ctl buffer for input
+	LD	(OUTPLOC),HL
+	CALL	FBINIT		;allocate I/O ctl buffer for output
+;
+; Initialize the I/O control buffers with filenames
+	LD	HL,(INPLOC)
+	LD	DE,INFNAM
+	CALL	INITNAM
+	LD	HL,(OUTPLOC)
+	LD	DE,OFNAM
+	CALL	INITNAM
+;
+; Place Shell Variable into Buffer
+;
+	LD	HL,SHVAR	;first, clear buffer to blanks
+	LD	A,' '
+	LD	B,8
+FILLB:	LD	(HL),A
+	INC	HL
+	DJNZ	FILLB
+;
+	LD	HL,CMDLIN+1	;point to shell var name
+	CALL	SKSP
+	LD	DE,SHVAR	;pt to shell variable buffer
+	LD	B,8		;8 chars max
+EXPV1:
+	LD	A,(HL)		;get char
+	CALL	DELCK		;check for delimiter
+	JR	Z,EXPV3		;done if delimiter
+	LD	(DE),A		;save char
+	INC	HL		;pt to next
+	INC	DE
+	DJNZ	EXPV1
+;
+; Flush Overflow of Shell Variable
+;
+EXPV2:
+	LD	A,(HL)		;get char
+	INC	HL		;pt to next
+	CALL	DELCK		;check for delimiter
+	JR	NZ,EXPV2
+	DEC	HL		;pt to delimiter
+EXPV3:	   ;end of routine
+;
+;
+; Now...do the real work.  Try to open the input file.  If it can't be
+; opened, we're done.  Otherwise try to open the output file.  If this
+; can't be done an error code must be returned, and the user may be in
+; trouble if he/she can't distinguish between "can't open input file" and
+; "can't open output file" error codes.  If no errors have occurred, read
+; in the first line of the input file.  Write the rest of the input file
+; to the output file.  Do no format checking on the line read in (i.e., it
+; may not conform to a filename; this leaves an opportunity for other creative
+; uses of 'NEXT').  Then assign the input line to the appropriate shell
+; variable, creating the shell variable file if necessary.
+;
+; Try to open input file
+	LD	DE,(INPLOC)
+	CALL	FXI$OPEN
+	JR	NZ,OPN2
+NOINPT:	LD	A,INFERR	;set "input file error" code
+	CALL	PUTER2		;...this will be "normal" operation sometimes
+	LD	HL,(FIRSTLIN)
+	XOR	A		;Create null variable definition.
+	LD	(HL),A
+	IF	DEBUG
+	CALL	ERRADR
+	ENDIF
+	JP	VARFIL
+;
+; Try to open output file
+OPN2:	LD	DE,(OUTPLOC)
+	CALL	FXO$OPEN
+	JR	NZ,READNAM
+	LD	A,OFERR
+	CALL	PUTER2
+	CALL	PRINT
+	DB	'Can''t open output file',CR,LF,0
+	IF	DEBUG
+	CALL	ERRADR
+	ENDIF
+	JP	EXIT
+;
+; Read in first filename (or whatever it is)
+READNAM:
+	LD	HL,(FIRSTLIN)	;place to put characters
+	LD	DE,(INPLOC)
+RD3:	CALL	FX$GET		;see if file empty or leading eoln chars
+	JR	NZ,RD4		;read error must be physical eof
+	LD	A,INFERR	;set "input file error" code
+RD5:	CALL	PUTER2		;...this will be "normal" operation sometimes
+	CALL	FXI$CLOSE
+	CALL	DELINF		;delete the input file
+	IF	DEBUG
+	CALL	ERRADR
+	ENDIF
+	JP	EXIT
+RD4:	CALL	EOLN		;if it's the end of the line...
+	JR	Z,RD3		;...get another
+	CP	EOF		;if it's the end of the file...
+	JR	Z,RD5		;...quit and clean up
+	LD	(HL),A
+	INC	HL
+RD1:	CALL	FX$GET		;now get rest of line
+	JR	Z,RD2		;physical eof, but we've gotten at least 1 char
+	CALL	EOLN		;CR or LF?
+	JR	Z,RD2
+	CP	EOF		;...or EOF?
+	JR	Z,RD2		;if so, quit
+	LD	(HL),A
+	INC	HL		;else point to addr for next char
+	JR	RD1		;and get it
+;
+RD2:	XOR	A		;terminate the line
+	LD	(HL),A
+;
+; Copy remainder of input file to output file.
+;  First flush any remaining eoln chars from input file.
+COPY:	CALL	FX$GET
+	JR	Z,NOCHARS	;no more chars
+	CP	EOF
+	JR	Z,NOCHARS
+	CALL	EOLN
+	JR	Z,COPY
+;				;there's a legit char in A
+	LD	HL,(OUTPLOC)	;write it out
+	EX	DE,HL		;swap buffer pointers
+	CALL	FX$PUT
+	JR	Z,OUTERR	;can't write output file
+;				;now write the rest of the chars
+COPY1:	EX	DE,HL		;input ptr in DE
+	CALL	FX$GET
+	JR	Z,CLOSEM	;done
+	EX	DE,HL		;output ptr in DE
+	CALL	FX$PUT
+	JR	NZ,COPY1
+;
+OUTERR:	LD	A,WRTERR	;do this if error in writing
+	CALL	PUTER2
+	IF	DEBUG
+	CALL	ERRADR
+	ENDIF
+	CALL	PRINT
+	DB	'Can''t write output file',CR,LF,0
+;
+CLOSEM:	LD	DE,(INPLOC)	;do this if any chars written to output
+	CALL	FXI$CLOSE
+	LD	DE,(OUTPLOC)
+	CALL	FXO$CLOSE
+	JR	NZ,CHGNAM	;continue if no error
+	LD	A,CLZERR
+	CALL	PUTER2		;if can't close output file, set flag...
+	IF	DEBUG
+	CALL	ERRADR
+	ENDIF
+	CALL	PRINT		;...print err msg...
+	DB	'Can''t close output file',CR,LF,0
+	CALL	DELINF		;...delete input file,
+	JR	VARFIL		;and go try to change shell var
+;
+; If no chars written to output file, close just the input file
+; and erase it
+NOCHARS:
+	LD	DE,(INPLOC)
+	CALL	FXI$CLOSE
+	CALL	DELINF
+	JR	VARFIL		;go add shell variable
+;
+; Delete input file and rename output file to infilename
+CHGNAM:	CALL	DELINF
+	PUSH	DE		;save input fcb addr
+	LD	HL,(OUTPLOC)
+	LD	DE,FCBOFF
+	ADD	HL,DE
+	POP	DE
+	EX	DE,HL
+	CALL	F$RENAME
+;
+;
+; Modify shell variable file appropriately (using external routines)
+;
+VARFIL:	LD	HL,(VARLIST)	;point to location of beginning of list
+	CALL	VARLOAD
+	LD	HL,SHVAR	;point to variable name
+	LD	DE,(FIRSTLIN)	;point to variable definition
+	CALL	ADDVAR
+	CALL	WRTVAR		;done!
+;
+; Return to ZCPR3
+;
+EXIT:
+	CALL	GETUD
+	LD	HL,(SAVESP)
+	LD	SP,HL
+	RET
+;
+; Print help message and exit
+HELP:	CALL	PRINT
+	DB	'Syntax:',CR,LF
+	DB	'          NEXT <varname>',CR,LF
+	DB	'The shell variable named will contain the next filename read',CR,LF
+	DB	'from the file FORFILES.SYS in the current directory',CR,LF,0
+	JP	EXIT
+;
+;
+;================[  Subroutines  ]================
+;
+; Initialize file I/O control buffers.
+; Enter with  HL = first free address in memory
+;             B  = number of 128-byte sectors for the file buffer
+; Return:     HL = first free address after buffer
+;
+FBINIT:
+	PUSH	DE
+	PUSH	BC
+	LD	(HL),B
+	LD	DE,BADOFF	;loc of buf addr in I/O ctl block
+	ADD	HL,DE
+	PUSH	HL
+	LD	DE,[FCBLEN + FCBOFF - BADOFF]
+	ADD	HL,DE
+	EX	DE,HL
+	POP	HL
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D
+	EX	DE,HL		;get buf start addr in HL
+	LD	DE,128		;incr HL by buf len in bytes
+FBINI1:	ADD	HL,DE
+	DJNZ	FBINI1
+	POP	BC
+	POP	DE
+	RET
+;
+;----------------
+; Move filename into fcb of I/O ctl block.  Enter with HL = I/O ctl blk addr,
+; DE = addr of string to move.  Drive is set to current.
+INITNAM:
+	PUSH	BC
+	PUSH	DE		;save while adding fcb offset
+	LD	DE,FCBOFF
+	ADD	HL,DE		;point to input fcb
+	XOR	A		;set current drive
+	LD	(HL),A
+	INC	HL		;point to name field of fcb
+	POP	DE		;get source addr
+	EX	DE,HL		;put dest addr in DE, source in HL
+	LD	BC,11
+	LDIR
+	POP	BC		;restore original contents
+	RET
+;
+;----------------
+; Delete input file (file pointed to by INPLOC)
+DELINF:	LD	HL,(INPLOC)
+	LD	DE,FCBOFF
+	ADD	HL,DE
+	EX	DE,HL
+	CALL	F$DELETE
+	RET
+;
+;----------------
+; Check to see if char in A is a delimiter
+;	Return with Z if so
+;
+DELCK:
+	PUSH	HL		;pt to table
+	PUSH	BC		;save BC
+	CALL	CAPS		;capitalize char
+	LD	B,A		;char in B
+	LD	HL,DTABLE	;pt to delimiter table
+DELCK1:
+	LD	A,(HL)		;get delimiter
+	OR	A		;done?
+	JR	Z,NOTDEL
+	CP	B		;compare
+	JR	Z,YESDEL
+	INC	HL		;pt to next
+	JR	DELCK1
+NOTDEL:
+	LD	A,B		;get char
+	OR	A		;set Z if null, else NZ
+YESDEL:
+	LD	A,B		;restore char
+	POP	BC		;restore regs
+	POP	HL
+	RET	
+;
+; Delimiter Table
+;
+DTABLE:
+	DB	'<>;:,.=-_ ',0
+;
+;----------------
+; Check for end of line -- CR or LF.  Return Z if true.
+EOLN:	CP	CR
+	RET	Z
+	CP	LF
+	RET
+;
+;----------------
+	IF	DEBUG
+;
+; Write the return address on the console
+;
+ERRADR:	CALL	PRINT
+	DB	CR,LF,'Error at ',0
+	EX	(SP),HL
+	CALL	PHL4HC
+	EX	(SP),HL
+	RET
+;
+	ENDIF
+;
+;================[  Buffers  ]================
+;
+SAVESP:	DS	2
+FIRSTLIN:
+	DS	2
+FCBOUT:
+	DS	2
+VARLIST:			;list read in over I/O ctl buffers
+INPLOC:
+	DS	2
+OUTPLOC:
+	DS	2
+;
+SHVAR:	DB	'        '
+INFNAM:	DB	'FORFILESS','Y'+80H,'S'		;file should be system
+OFNAM:	DB	'FORFILES'
+OUTTYP:	DB	'$$$'
+STKBOT:	DS	36
+STK:	DS	2
+;
+	END	START
+

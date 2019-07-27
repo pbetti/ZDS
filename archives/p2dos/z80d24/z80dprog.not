@@ -1,0 +1,324 @@
+
+		       - Programming Notes for Z80DOS -
+
+			       October 1, 1987
+				      by
+				Carson Wilson
+
+
+
+				   CONTENTS
+
+
+	  1.  Format of date/time stamps under Z80DOS
+
+	  2.  Time stamping protocol of Z80DOS
+
+	  3.  Get Stamp and Use Stamp
+		  - General description
+		  - Z80DOS function 54 -- Get Stamp
+		  - Z80DOS function 55 -- Use Stamp
+
+	  4.  Using Get Stamp and Use Stamp
+		  - Programming example
+
+
+
+
+1.  Format of date/time stamps under Z80DOS
+
+
+     Z80DOS uses 10 bytes to represent date of file creation, date and time of
+last modification, and date and time of last file access.  This is the same
+format used by C. B. Falconer's DOS+25.  The format is as follows:
+
+     Byte      Meaning
+     ----      -------
+     1	       Low byte of date of creation
+     2	       High "	 "  "	"     "
+
+     3	       Low byte of date of last modification
+     4	       High "	 "  "	"    "	     "
+     5	       Hour	 "  "	"    "	     "	     in BCD.
+     6	       Minute	 "  "	"    "	     "	      "   "
+
+     7	       Low byte of date of last access
+     8	       High "	 "  "	"    "	   "
+     9	       Hour	 "  "	"    "	   "	in BCD.
+    10	       Minute	 "  "	"    "	   "	 "   "
+
+     Following a successful Open File, Search First, or Search Next BDOS call
+(see below), a call to function 55 (Get Stamp) returns a pointer in the HL
+register to a 10-byte buffer in the above format containing the full date and
+time stamp of the file referenced in the Open or Search call.  If the file had
+no time stamp, the buffer is filled with zeroes.
+
+     A ten-byte date and time code of the above format is maintained for each
+file by Z80DOS.  The code for each file is stored at the fourth entry of the
+directory sector containing the file's first directory extent.	The fourth
+directory entry of each sector is flagged for date and time stamping by
+setting the user-number field of the directory entry to 21 hex (INITDIR.COM
+performs this function).
+
+     For example, here is the directory sector for TIMEZCCP.EX, which was
+created on May 20, 1987 at 11:46 a.m.:
+
+     00  0054494D 4542494F  53455820 00000045  |.TIMEBIOSEX ...E|
+     10  7778797A 7B000000  00000000 00000000  |wxyz{...........|
+     20  0054494D 455A4343  50455820 0000000D  |.TIMEZCCPEX ....|
+     30  7C000000 00000000  00000000 00000000  ||...............|
+     40  0054494D 455A4350  52434F4D 0000005C  |.TIMEZCPRCOM...\|
+     50  144698A1 A2A50000  00000000 00000000  |.F.!"%..........|
+     60  2100630D 630D1307	 --> 630D630D  |!.c.c...c...c.c.|
+     70  1146630D 1146 <--  620D2232 620D2232  |.Fc..Fb.b."2b."2|
+
+The fourth entry of the directory sector contains the stamps for the files
+described by the previous three entries, in order.  The first byte of this
+entry is 21 hex.  Starting at the third byte of the third directory entry are
+the three date and time stamps of the files described by the previous three
+directory entries.
+
+     Between the arrows (added for clarity) are the date of creation, date and
+time of modification, and date and time of access for TIMEZCCP.EX,
+respectively.  In this example, the creation, modification, and access date
+stamps are all the same.  The date stamp bytes are 63h and 0Dh, because
+December 31, 1977 was exactly 0D63 hex days before May 20, 1987.  The time
+stamp bytes are 11h and 46h--the 24-hour time (11:53) in binary coded decimal.
+
+
+
+2.  Time stamping protocol of Z80DOS
+
+     By selectively modifying the three fields of a file's stamp, Z80DOS
+maintains an active record of when various operations were last performed on
+the file.  This is done by selectively updating fields of the stamp depending
+on which standard DOS function is being called by a program.  The three
+standard DOS functions which affect the stamps of files under Z80DOS are Make
+File (function 22), Open File (function 15), and Close File (function 16).
+The fields of the time stamp affected are as follows:
+
+
+		      Create	   Last Modified	Last Access
+
+     Make file		X		  X		    X
+     Open file						    X
+     Close file 			  X
+
+
+     All three fields are initialized when a file is created.  Each time a
+file is opened for reading or writing, its Last Access field is updated, while
+the Create and Last Modified fields remain the same.  Under Z80DOS, as with
+CP/M, the Close File call simply returns and has no effect if a file has not
+been modified.	Therefore calls to function 16 will update the Last Modified
+field only if the file has been written to, and the Create and Last Access
+fields will remain the same.
+
+     No other function calls affect a file's time and date stamp.  This means
+that files can be renamed or have their attributes changed without affecting
+file stamps.  In fact, even unerased files will retain their full time and
+date stamps.
+
+     When the fields of the file's stamp are being updated, Z80DOS normally
+gets the values to use from the system clock (i.e., the current real time and
+date).	Z80DOS' Use Stamp call instructs Z80DOS to access a dedicated internal
+buffer rather than the system clock for the next function call, allowing
+greater control over a file's time stamps for programs which copy files.
+
+
+
+3.  Get Stamp and Use Stamp
+
+3.1  General Description
+
+     The problem addressed by the Get Stamp and Use Stamp functions is that of
+preserving time and date stamps when files are copied.	Under CP/M, files are
+normally copied by creating a destination file of the same name as the source
+file on another disk or user area, and then copying the contents of the source
+file to the destination file.  As noted above, however, each time a file is
+created, all three fields of its time and date stamp are normally initialized
+to the current system time.  The result is that each time a file is copied,
+its actual dates of creation and last modification are lost.
+
+     The Get Stamp and Use Stamp functions of Z80DOS address this problem by
+allowing the calling program more control over the file stamping process.  By
+selective use of these two functions, programs can copy the creation date and
+modification time and date of the source file along with its contents.	The
+Get Stamp function is used following successful File Open, Search First, or
+Search Next calls to store the full time stamp of a file in an internal DOS
+buffer.  This buffer remains intact until the next call to Get Stamp or until
+the next system cold or warm boot.
+
+     The Use Stamp function is then used before functions affecting file
+stamping, and instructs the BDOS to substitute the values from its internal
+buffer during these functions.	The buffer values are initialized to zeroes
+after a warm boot or if the previous Get Stamp call referenced a file in an
+unstamped directory, and are initialized to the values of the file referenced
+in the previous Get Stamp call otherwise.
+
+     Because no buffering is required of the calling program, Get Stamp and
+Use Stamp can be implemented with little cost in terms of additional program
+code.  It is not necessary for the program to store the file's date and time
+stamps, or even to know whether time stamps are present for the file.
+
+     Because the Get Stamp and Use Stamp routines of Z80DOS are called as non-
+standard functions, programs which use them will remain downward compatible,
+i.e., compatible with operating systems which do not provide Get Stamp and Use
+Stamp.	As far as I know, no operating system in use for the Z80 (except
+possibly CP/M 3) uses DOS calls 54 and 55.  Therefore, programs can call these
+functions and still function properly under CP/M or ZRDOS.
+
+     Please note that functions 54 and 55 needn't remain exclusive to Z80DOS.
+Since these are unused function numbers under CP/M and ZRDOS, future operating
+systems such as ZOS might implement functionally equivalent routines using the
+same calls.  In this way, functions 54 and 55 may eventually become standard
+Get and Use Stamp calls for programs for the Z80 which recognize time and date
+stamping.
+
+
+
+ 3.2.  Z80DOS function 54 -- Get Stamp
+
+     This function loads the 10-byte date and time stamp of a file into a
+buffer in BDOS following a successful file open, file search, or file create
+call.  The buffer holds these values until the next cold or warm boot, or
+until Get Stamp is called again.  If no time stamps are present on the
+directory, the buffer is filled with zeroes.
+
+     As an additional service, Get Stamp returns a pointer in HL to the first
+byte of the ten byte dedicated buffer.	This allows programs such as directory
+programs to easily read a file's time stamp following a call to Search First,
+Search Next, or Open File (see DATEDEMO.Z80 for example).
+
+     At present, Z80DOS only provides a valid date and time stamp for the
+first extent of multiple-extent files.	Therefore, if a program is searching
+all extents of files (e.g., to get file sizes), measures must be taken to
+ensure that Get Stamp is called following searches for first extents only.
+Otherwise, possibly invalid time stamps from susequent extents will be stored.
+
+
+
+3.3  Z80DOS function 55 -- Use Stamp
+
+     The main purpose of Get Stamp is to load a file's date and time stamp for
+retrieval with Use Stamp.  When Use Stamp is called before a file is created,
+written to, or closed, Z80DOS retrieves the appropriate values stored by Get
+Stamp and substitutes them for the system time for date and time stamping.
+For example, if Use Stamp is called immediately before a call to Make File
+(function 22), the new file is stamped with the creation date value stored
+earlier by Get Stamp.
+
+     Z80DOS will automatically revert to the current system time following all
+BDOS calls except to Use Stamp.  This allows the smallest amount of program
+overhead, since no "Reset Stamp" call is required following the Use Stamp call
+to set the BDOS back to the current time.  However, Use Stamp must therefore
+be called IMMEDIATELY BEFORE Create, Write, or Close calls which are to use
+the stored stamp values.
+
+
+
+4.  Using Get Stamp and Use Stamp
+
+     The following pseudo code describes the general pattern for file copy
+programs using these Get Stamp and Use Stamp:
+
+     Open source File
+     If file open successful then
+	  Get Stamp
+	  Use Stamp
+	  Create destination file
+	  Repeat
+	       Read Sequential from source file
+	       Use Stamp
+	       Write Sequential to destination file
+	  Until end of source file reached
+	  Use Stamp
+	  Close destination file
+     Close source file
+
+Get Stamp need only be called once upon successfully opening the source file;
+from then on Use Stamp does all of the work.  When called before creating the
+destination file, Use Stamp causes Z80DOS to initialize all three time/date
+fields of the destination file to those of the source file.  Upon closing the
+destination file, Use Stamp is called again, this time causing Z80DOS to use
+the stored stamp of the source file in setting the destination file's last
+modified date and time.  Otherwise, the current system time would be used.
+
+     Use Stamp is also called before each write to the destination file.  This
+is necessary only when copying files with over one extent, and is due to the
+way CP/M's Write Sequential function is implemented.  Write Sequential calls
+to files of over one extent cause CP/M to Close a file's first extent before
+opening a new one for writing.	If the first extent of a file is closed
+without first calling Use Stamp, Z80DOS will stamp the first extent with the
+current system time.  Therefore, to ensure that the first extent of the copied
+file is marked with the proper stamp, it is necessary to call Use Stamp before
+each call to Write Sequential.
+
+
+     Most word processors for CP/M erase the source file and rewrite it to
+disk each a file is modified.  The Z80DOS environment will enable these
+programs to preserve the original file's time and date stamps as follows:
+
+     Reset file replaced flag
+     Search for file X
+     If file X found then
+	  Get Stamp
+	  Set file replaced flag
+     Delete file X
+     If replaced = true then
+	  Use Stamp
+     Create File X
+     Repeat
+	  If replaced = true then
+	       Use Stamp
+	  Write Sequential to file X
+     Until end of text
+     If replaced = true then
+	  Use Stamp
+     Close file X
+
+This procedure is nearly as simple as the file copy procedure, but does
+require that the calling program maintain a record of whether a file is being
+replaced or created anew.
+
+
+
+4.1.  Programming Example
+
+The following assembly language example illustrates the use of functions 54
+and 55 to copy the date of creation from the source file to the destination
+file in a file copy program:
+
+
+GetStp	equ	54		; Store file's date and time stamp
+UseStp	equ	55		; Use stored stamp for write/close
+
+	....
+
+; Open source file
+
+	call	initfcb2
+	ld	c,15		; Open source file
+	call	bdos
+	inc	a		; Check for error
+	jp	z,prfnf 	; Branch if file not found
+;
+	ld	c,54		; Save source's stamp
+	call	bdos
+	....
+
+; Create destination file
+
+	ld	c,55		; Use stored stamp
+	call	bdos		; ..for destination file
+;
+	ld	de,fcb1 	; Point to destination FCB
+	ld	c,22		; BDOS make-file function
+	call	bdos
+	inc	a		; Test for error (no directory space)
+	....
+
+
+For other programming examples, see files RCPCP.LIB, DATEDEMO.Z80, and
+SAVESTMP.Z80 in this library.
+
+

@@ -1,0 +1,197 @@
+;
+		SALIAS 1.0 - SCREEN ORIENTED ALIAS EDITOR
+
+
+
+	1 - General information
+
+	2 - FILE mode commands
+
+	3 - EDIT mode commands
+
+	4 - Messages
+
+	5 - Misc. Notes
+:1
+PURPOSE:
+	Create and modify alias files with convenience of full screen editing.
+
+SYNTAX:
+	SALIAS [ [du: or dir:]aliasname ]
+	Everything in [] is optional.  SALIAS always assumes all files are
+	type COM.  If the file does not exist or is not an alias, a new alias
+	will be created with the specified "aliasname".
+
+SYSTEM REQUIREMENTS:
+	TCAP support for CLS, EREOL, and addressable cursor.  The CRT in use
+	must have at least 80 columns by 6 lines.  Standout mode must not use
+	space on the screen.  WHEEL status is required.
+
+RECURSIVE ALIASES:
+	SALIAS uses an internal alias template of the VALIAS1 type created by
+	Jay Sage.  These aliases may be optionally Normal or Recursive.
+	A recursive alias flushes the remainder of the command line when 
+	invoked, giving a clean start each time.  (Note that nothing can follow
+	the alias name on the command line.)  Use these to loop through a
+	sequence, such as an edit-assemble cycle, until an exit condition is
+	satisfied.
+:2
+     				    FILE MODE
+ 				  ---------
+    C	CLEAR  - Clear editor.  The alias is not changed.  (UNDO recovers)
+
+    E	EDIT   - Enter edit mode.
+ 
+    F	FORMAT - Redisplay edit buffer as it would be written to an alias.
+
+    I	INDENT - Format and redisplay with indentation of IF levels.
+
+    L	LOAD   - Load a file for editing.  The user is prompted for an
+		 unambiguous file name (.COM type is assumed).
+
+    M	MODE   - Select Normal or Recursive mode (toggle).
+
+    R	RENAME - Select a new name (or just DU:) for the current edit.
+
+    P	PRINT  - Send the alias script to the list device.
+
+    S	SAVE   - Format and WRITE the alias to disk.
+
+    U	UNDO   - Reload edit buffer from memory image of alias.
+:3
+                                    EDIT MODE
+------------------------------------------------------------------------------
+ CURSOR:                                |   INSERTION:
+              ^R - top of screen        |      ^V - toggle insert/overwrite
+              ^E - line up              |    <CR> - insert line (insert mode)
+                                        |      ^N - insert line
+ ^S - char       ^       ^D - char      |   DELETION:
+ ^H - char    <  $  >                   |      ^G - delete char under cursor
+ ^A - word       v       ^F - word      |     DEL - delete char left
+                                        |      ^T - delete word right
+              ^X - line down            |      ^Y - delete line
+              ^C - first blank line     |     ^QY - delete to EOLN
+                                        |   FIND/REPLACE:
+ ^QS, ^QD - cursor to SOLN/ EOLN        |     ^QF - find string
+ ^J - EOLN, SOLN toggle (see below)     |     ^QA - find and replace string
+ TAB - insert a block of high bit marked|      ^L - repeat last find/replace
+    blanks.  Ignored on formatting.     |   CONTROL CHAR ENTRY:
+<ESC> - Exit to FILE mode               |    ^P^n - ^n is ctl char or letter
+------------------------------------------------------------------------------
+ ^KN - Change Name   ^KR - Read (append) file.  ^KP - Print  ^QZ - Zap (clear) 
+ ^KD - Save & Clear  ^KS - Save & Resume  ^KX - Save & Quit  ^KQ - Quit
+ ^KF - Format        ^KI - Format & Indent IF's  ^KU - Undo  ^KM - Toggle Mode
+------------------------------------------------------------------------------
+Sample Screen:
+
+SALIAS 1.0       Mode: Normal        Free: 148         Alias Name: A15:START
+-------------------------------------------------------------------------------
+ROOT:
+LDR SYS.ENV,SYS.RCP,SYS.FCP,SYS.NDR
+PATH TOP ROOT
+
+
+
+
+------------------------------------------------------------------------------
+<ESC> - FILE MENU                 -- EDITING --                      INSERT ON
+
+Editing the alias START.COM with commands displayed one per line.  This is a
+normal rather than recursive alias.  There is room for another 148 characters
+in the command line buffer.  (The character count includes the ";" command
+separators although they are not shown.)  The editor is in "insert" rather
+than "overwrite" mode.  Pressing <ESC> key will show the single letter
+command options described for "File Mode".  (Another <ESC> returns to "Edit
+Mode" and repaints the screen.)
+
+Notes:
+
+1. Alias script can be entered in upper or lower case.  Formatting upcases it.
+
+2. TAB is intended for visual formatting, e.g. to indent IF levels.  There
+   are no tab stops.  Note that tabs are not counted in the "Free" display.
+   FORMAT strips tabs out.  Commands may start with real blanks.
+
+3. Control character entry uses the ^P trigger.  Lower case letters can also
+   be deliberately entered this way.  The character entered is displayed in
+   standout video mode.
+
+   Example:  To enter ^P, use ^P^P (or ^PP).  To enter "a", ^Pa.
+   ^P@ (null) is not accepted because it is used as a string terminator.
+
+4. Find/Replace can be used to replicate a string.
+
+   Example: < ^Q^A, <cr>, IF ~NU > sequence will put string "IF ~NU" at the
+   cursor.  Every ^L will produce another copy.
+
+5. ^J gets a help screen if running the help version of SALIAS.  Otherwise, it
+   is used as a convenient toggle to end-of-line/start-of-line.
+
+6. ^P+ at the start of a line appends it to the previous line without a command
+   separator (";").  Use this to build long single commands.  When SALIAS
+   reads a file with long commands, it automatically formats them this way.
+
+   Example:  MCOPY WORK:=FILE1,FILE2,FILE3,FILE4
+	     +,FILE5,FILE6
+   would load as:
+	     MCOPY WORK:=FILE1,FILE2,FILE3,FILE4,FILE5,FILE6
+
+:4
+				    MESSAGES
+				  --------
+Messages which require no response will remain until any key is pressed.
+
+CL OVERFLOW n CHARS:
+	The command line is too long by n characters.  SAVE aborted.
+
+NOT AN ALIAS:
+	The specified file is not an alias at all.  If the file is the one
+being edited, a SAVE will destory the original file.
+
+DESTINATION DISK FULL/ DIRECTORY FULL:
+	Unable to SAVE alias on full disk.  QUIT or RENAME to a new disk.
+
+... xxxx? (Y/n):  or ... xxxx? (y/N):
+	The letter in caps is the default choice.  Any response other than
+the alternate choice will do xxxx.
+
+ALIAS CHOPPED:
+	The alias file has too many commands to fit on the screen.  Could
+happen when using a smaller screen or with an alias created with another
+program.
+:5
+				  MISC NOTES
+				----------  
+1)  Examples of syntax:
+
+SALIAS -> Program comes up with blank alias.  On SAVE, a filename is demanded.
+SALIAS ROOT:START -> Edit the START.COM alias in the ROOT: directory.
+SALIAS A* -> On command line only, can load ambiguous file with leading letter.
+
+2)  The display format is one command per line.  When there are no more lines,
+the last line is filled.  If there are still more commands, they will be lost.
+
+3)  The following sequence will "clone" SALIAS with new default modes.
+(It is distributed in insert mode, normal alias.)
+
+>SALIAS		; call it up
+  ^V		; toggle insert
+  ESC		; exit edit mode
+  M		; toggle mode
+  X		; exit SALIAS
+>SAVE 28 SALIAS10.COM	; keep the change ... OR
+>SAVE 32 SA10-HLP.COM	; help screen version
+
+------------------------------------------------------------------------------
+ 				COPYRIGHT NOTICE
+  SALIAS is copyrighted 1987 by Rob Friefeld.  Comments can be sent to the
+  author by electronic mail at the Ladera Z-Node in Los Angeles (213-670-9465).
+
+  SALIAS is released through the Z-system users group Z-SIG.  Source code
+  requests should be directed to ZSIG at the Lillipute Z-Node in Chicago
+  (312-649-1730) or to Bruce Morgen, North American One-Eighty Group, P.O. Box
+  2781, Warminster, PA  18974.
+------------------------------------------------------------------------------
+oup, P.O. Box
+  2781, Warminster, PA  18974.
+----------------------------------------------------------

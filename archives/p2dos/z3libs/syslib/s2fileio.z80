@@ -1,0 +1,169 @@
+;	TITLE	"S2FILEIO - Syslib 4.0"
+	NAME	('FIO2')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;      Derived from S2FILEIO.Z80 V 1.2 by Al Dunsmuir/Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.3
+; Module  : S2FILEIO
+; Abstract:  This module contains the routines FI2$OPEN, F2$GET,
+;	FI2$CLOSE, FO2$OPEN, F2$PUT, and FO2$CLOSE which implement
+;	a character-oriented IO capability.  Input and Output file
+;	capability can be individually assigned, and are inter-
+;	nally controlled.
+; NOTE: This module CAN'T be placed in ROM because of data in CSEG
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Module Entry Points
+
+	PUBLIC		FI2$OPEN, F2$GET, FI2$CLOSE
+	PUBLIC		FO2$OPEN, F2$PUT, FO2$CLOSE
+
+; External References
+
+	EXT		FI$OPEN, F$GET, FI$CLOSE
+	EXT		FO$OPEN, F$PUT, FO$CLOSE
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - FI2$OPEN
+; Entry: DE - Points to FCB for requested file
+; Exit : AF - A = 0 and Zero Flag Set (Z) if Ok
+;		 A = Error Code and Zero Flag Reset (NZ) if Error
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+FI2$OPEN: PUSH	HL		; Save user Regs
+	CALL	SIBUFR		; Get FI2 table address.
+	CALL	FI$OPEN		; Perform Open function
+	POP	HL		; Restore entry HL
+	RET	NZ		; ..return if error condition
+	CPL			; Else change 00 to FF
+	LD	(FIFLG),A	; Save it locally
+	CPL			; ..return back to 0 status
+	RET			; ...and quit
+
+;===============================================================
+; NAME - FO2$OPEN
+; Entry: DE - Points to FCB for requested file
+; Exit : AF - A = 0 and Zero Flag Set (Z) if Ok
+;		 A = Error Code and Zero Flag Reset (NZ) if Error
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+FO2$OPEN: PUSH	HL		; Save user REG
+	CALL	SOBUFR		; Get FO2 table address.
+	CALL	FO$OPEN		; Perform Open function
+	POP	HL		; Restore entry HL
+	RET	NZ		; ..return if error condition
+	CPL			; Else change 00 to FF
+	LD	(FOFLG),A	; Save it locally
+	CPL			; ..return back to 0 status
+	RET			; ...and quit
+
+;===============================================================
+; NAME - F2$GET
+; Entry: - None
+; Exit : AF - A = Input Character and Zero Flag Set (Z) if Ok
+;		 A = Error Code and Zero Flag Reset (NZ) if Error
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+F2$GET:	PUSH	HL		; Save user REG
+	CALL	SIBUFR		; Get FI2 table address & set flag
+	JP	F$GET		; Perform function
+
+;===============================================================
+; NAME - F2$PUT
+; Entry:  A - Contains the character to Put to the file
+; Exit : AF - A = 0 and Zero Flag Set (Z) if Ok
+;		 A = Error Code and Zero Flag Reset (NZ) if Error
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+F2$PUT:	PUSH	HL		; Save user REG
+	PUSH	AF		; Save character
+	CALL	SOBUFR		; Get FO2 table address & set flag
+	POP	AF		; Restore character
+	JP	F$PUT		; Perform function
+
+;===============================================================
+; NAME - FI2$CLOSE
+; Entry: - None
+; Exit : AF - A = 0 and Zero Flag Set (Z) if Ok
+;		 A = Error Code and Zero Flag Reset (NZ) if Error
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+FI2$CLOSE: PUSH	HL		; Save user REG
+	CALL	SIBUFR		; Get FI2 table address & set flag
+	CALL	NZ,FI$CLOSE	; Perform function if so
+	POP	HL		; Restore entry HL
+	RET	NZ		; ..return if error
+	LD	(FIFLG),A	; Else clear file active flag
+	RET			; ..and quit
+
+;===============================================================
+; NAME - FO2$CLOSE
+; Entry: - None
+; Exit : AF - A = 0 and Zero Flag Set (Z) if Ok
+;		 A = Error Code and Zero Flag Reset (NZ) if Error
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+FO2$CLOSE: PUSH	HL		; Save user REG
+	CALL	SOBUFR		; Get FO2 table address & set flag
+	CALL	NZ,FO$CLOSE	; Perform function if so
+	POP	HL		; Restore entry HL
+	RET	NZ		; ..return if error
+	LD	(FOFLG),A	; Else clear file active flag
+	RET			; ..and quit
+
+;.....
+; Set up pointers and transfer local flags to DSEG buffers
+
+SIBUFR:	LD	HL,FI2$TBL	; Get FI2 table address.
+	LD	A,(FIFLG)	; Get local file open flag
+	LD	(HL),A		; ..and initialize DSEG buffer
+	OR	A		; Is File Open?
+	RET
+
+SOBUFR:	LD	HL,FO2$TBL	; Get FO2 table address.
+	LD	A,(FOFLG)	; Get Output status flag
+	LD	(HL),A		; ..and set in DSEG
+	OR	A		; Is File Open?
+	RET
+
+;==== Init Table and Buffers for F2 Routines ====
+
+FIFLG:	DEFB	0		; Input file active flag in CSEG
+FOFLG:	DEFB	0		; Output file active flag in CSEG
+
+	DSEG			; Tables here and init w/code
+
+FI2$TBL:
+I2$FLG:	DEFS	1		; Input file opened flag (0=NO)
+I2$CNT:	DEFS	1		; Input char count
+I2$PTR:	DEFS	2		; Input char ptr
+I2$FCB:	DEFS	36		; Input file FCB
+I2$BUF:	DEFS	128		; Input Buffer
+
+FO2$TBL:
+O2$FLG:	DEFS	1		; Output file opened flag (0=NO)
+O2$CNT:	DEFS	1		; Output char count
+O2$PTR:	DEFS	2		; Output char ptr
+O2$FCB:	DEFS	36		; Output file FCB
+O2$BUF:	DEFS	128		; Output Buffer
+
+	END
+

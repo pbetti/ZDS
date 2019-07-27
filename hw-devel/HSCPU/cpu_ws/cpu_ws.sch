@@ -1,0 +1,363 @@
+EESchema Schematic File Version 4
+EELAYER 26 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title "CPU Wait State Generator"
+Date "2019-02-25"
+Rev "1.0"
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L 74xx:74LS165 U1
+U 1 1 5C742914
+P 3800 4550
+F 0 "U1" H 3800 5628 50  0000 C CNN
+F 1 "74LS165" H 3800 5537 50  0000 C CNN
+F 2 "" H 3800 4550 50  0001 C CNN
+F 3 "http://www.ti.com/lit/gpn/sn74LS165" H 3800 4550 50  0001 C CNN
+	1    3800 4550
+	1    0    0    -1  
+$EndComp
+$Comp
+L Device:R_Network10 RN1
+U 1 1 5C742AD5
+P 2650 5700
+F 0 "RN1" H 2070 5654 50  0000 R CNN
+F 1 "1000" H 2070 5745 50  0000 R CNN
+F 2 "Resistor_THT:R_Array_SIP11" V 3225 5700 50  0001 C CNN
+F 3 "http://www.vishay.com/docs/31509/csc.pdf" H 2650 5700 50  0001 C CNN
+	1    2650 5700
+	1    0    0    1   
+$EndComp
+$Comp
+L Switch:SW_DIP_x08 SW1
+U 1 1 5C742C1F
+P 1700 4450
+F 0 "SW1" H 1700 5117 50  0000 C CNN
+F 1 "SW_DIP_x08" H 1700 5026 50  0000 C CNN
+F 2 "" H 1700 4450 50  0001 C CNN
+F 3 "" H 1700 4450 50  0001 C CNN
+	1    1700 4450
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	1400 4050 1400 4150
+Connection ~ 1400 4150
+Wire Wire Line
+	1400 4150 1400 4250
+Connection ~ 1400 4250
+Wire Wire Line
+	1400 4250 1400 4350
+Connection ~ 1400 4350
+Wire Wire Line
+	1400 4350 1400 4450
+Connection ~ 1400 4450
+Wire Wire Line
+	1400 4450 1400 4550
+Connection ~ 1400 4550
+Wire Wire Line
+	1400 4550 1400 4650
+Connection ~ 1400 4650
+Wire Wire Line
+	1400 4650 1400 4750
+Connection ~ 1400 4750
+Wire Wire Line
+	1400 4750 1400 5000
+$Comp
+L power:GND #PWR?
+U 1 1 5C742CFF
+P 1400 5000
+F 0 "#PWR?" H 1400 4750 50  0001 C CNN
+F 1 "GND" H 1405 4827 50  0000 C CNN
+F 2 "" H 1400 5000 50  0001 C CNN
+F 3 "" H 1400 5000 50  0001 C CNN
+	1    1400 5000
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:VCC #PWR?
+U 1 1 5C742D6C
+P 2150 5400
+F 0 "#PWR?" H 2150 5250 50  0001 C CNN
+F 1 "VCC" H 2167 5573 50  0000 C CNN
+F 2 "" H 2150 5400 50  0001 C CNN
+F 3 "" H 2150 5400 50  0001 C CNN
+	1    2150 5400
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	2150 5400 2150 5500
+Wire Wire Line
+	2000 4750 2250 4750
+Wire Wire Line
+	2000 4650 2350 4650
+Wire Wire Line
+	2000 4550 2450 4550
+Wire Wire Line
+	2000 4350 2650 4350
+Wire Wire Line
+	2000 4250 2750 4250
+Wire Wire Line
+	2000 4050 2950 4050
+$Comp
+L power:VCC #PWR?
+U 1 1 5C74339F
+P 3300 3800
+F 0 "#PWR?" H 3300 3650 50  0001 C CNN
+F 1 "VCC" H 3317 3973 50  0000 C CNN
+F 2 "" H 3300 3800 50  0001 C CNN
+F 3 "" H 3300 3800 50  0001 C CNN
+	1    3300 3800
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	3300 3800 3300 3950
+Wire Wire Line
+	2250 5500 2250 4750
+Connection ~ 2250 4750
+Wire Wire Line
+	2250 4750 3300 4750
+Wire Wire Line
+	2350 5500 2350 4650
+Connection ~ 2350 4650
+Wire Wire Line
+	2350 4650 3300 4650
+Wire Wire Line
+	2450 5500 2450 4550
+Connection ~ 2450 4550
+Wire Wire Line
+	2450 4550 3300 4550
+Wire Wire Line
+	2550 5500 2550 4450
+Wire Wire Line
+	2000 4450 2550 4450
+Connection ~ 2550 4450
+Wire Wire Line
+	2550 4450 3300 4450
+Wire Wire Line
+	2650 5500 2650 4350
+Connection ~ 2650 4350
+Wire Wire Line
+	2650 4350 3300 4350
+Wire Wire Line
+	2750 5500 2750 4250
+Connection ~ 2750 4250
+Wire Wire Line
+	2750 4250 3300 4250
+Wire Wire Line
+	2850 5500 2850 4150
+Wire Wire Line
+	2000 4150 2850 4150
+Connection ~ 2850 4150
+Wire Wire Line
+	2850 4150 3300 4150
+Wire Wire Line
+	2950 5500 2950 4050
+Connection ~ 2950 4050
+Wire Wire Line
+	2950 4050 3300 4050
+Wire Wire Line
+	3050 5500 3050 5450
+NoConn ~ 3050 5450
+NoConn ~ 4300 3950
+$Comp
+L power:GND #PWR?
+U 1 1 5C74539F
+P 3300 5400
+F 0 "#PWR?" H 3300 5150 50  0001 C CNN
+F 1 "GND" H 3305 5227 50  0000 C CNN
+F 2 "" H 3300 5400 50  0001 C CNN
+F 3 "" H 3300 5400 50  0001 C CNN
+	1    3300 5400
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	3300 5250 3300 5400
+$Comp
+L 74xx:74LS165 U2
+U 1 1 5C745F36
+P 7450 4550
+F 0 "U2" H 7450 5628 50  0000 C CNN
+F 1 "74LS165" H 7450 5537 50  0000 C CNN
+F 2 "" H 7450 4550 50  0001 C CNN
+F 3 "http://www.ti.com/lit/gpn/sn74LS165" H 7450 4550 50  0001 C CNN
+	1    7450 4550
+	1    0    0    -1  
+$EndComp
+$Comp
+L Device:R_Network10 RN2
+U 1 1 5C745F3C
+P 6300 5700
+F 0 "RN2" H 5720 5654 50  0000 R CNN
+F 1 "1000" H 5720 5745 50  0000 R CNN
+F 2 "Resistor_THT:R_Array_SIP11" V 6875 5700 50  0001 C CNN
+F 3 "http://www.vishay.com/docs/31509/csc.pdf" H 6300 5700 50  0001 C CNN
+	1    6300 5700
+	1    0    0    1   
+$EndComp
+$Comp
+L Switch:SW_DIP_x08 SW2
+U 1 1 5C745F42
+P 5350 4450
+F 0 "SW2" H 5350 5117 50  0000 C CNN
+F 1 "SW_DIP_x08" H 5350 5026 50  0000 C CNN
+F 2 "" H 5350 4450 50  0001 C CNN
+F 3 "" H 5350 4450 50  0001 C CNN
+	1    5350 4450
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	5050 4050 5050 4150
+Connection ~ 5050 4150
+Wire Wire Line
+	5050 4150 5050 4250
+Connection ~ 5050 4250
+Wire Wire Line
+	5050 4250 5050 4350
+Connection ~ 5050 4350
+Wire Wire Line
+	5050 4350 5050 4450
+Connection ~ 5050 4450
+Wire Wire Line
+	5050 4450 5050 4550
+Connection ~ 5050 4550
+Wire Wire Line
+	5050 4550 5050 4650
+Connection ~ 5050 4650
+Wire Wire Line
+	5050 4650 5050 4750
+Connection ~ 5050 4750
+Wire Wire Line
+	5050 4750 5050 5000
+$Comp
+L power:GND #PWR?
+U 1 1 5C745F57
+P 5050 5000
+F 0 "#PWR?" H 5050 4750 50  0001 C CNN
+F 1 "GND" H 5055 4827 50  0000 C CNN
+F 2 "" H 5050 5000 50  0001 C CNN
+F 3 "" H 5050 5000 50  0001 C CNN
+	1    5050 5000
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:VCC #PWR?
+U 1 1 5C745F5D
+P 5800 5400
+F 0 "#PWR?" H 5800 5250 50  0001 C CNN
+F 1 "VCC" H 5817 5573 50  0000 C CNN
+F 2 "" H 5800 5400 50  0001 C CNN
+F 3 "" H 5800 5400 50  0001 C CNN
+	1    5800 5400
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	5800 5400 5800 5500
+Wire Wire Line
+	5650 4750 5900 4750
+Wire Wire Line
+	5650 4650 6000 4650
+Wire Wire Line
+	5650 4550 6100 4550
+Wire Wire Line
+	5650 4350 6300 4350
+Wire Wire Line
+	5650 4250 6400 4250
+Wire Wire Line
+	5650 4050 6600 4050
+$Comp
+L power:VCC #PWR?
+U 1 1 5C745F6A
+P 6950 3800
+F 0 "#PWR?" H 6950 3650 50  0001 C CNN
+F 1 "VCC" H 6967 3973 50  0000 C CNN
+F 2 "" H 6950 3800 50  0001 C CNN
+F 3 "" H 6950 3800 50  0001 C CNN
+	1    6950 3800
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	6950 3800 6950 3950
+Wire Wire Line
+	5900 5500 5900 4750
+Connection ~ 5900 4750
+Wire Wire Line
+	5900 4750 6950 4750
+Wire Wire Line
+	6000 5500 6000 4650
+Connection ~ 6000 4650
+Wire Wire Line
+	6000 4650 6950 4650
+Wire Wire Line
+	6100 5500 6100 4550
+Connection ~ 6100 4550
+Wire Wire Line
+	6100 4550 6950 4550
+Wire Wire Line
+	6200 5500 6200 4450
+Wire Wire Line
+	5650 4450 6200 4450
+Connection ~ 6200 4450
+Wire Wire Line
+	6200 4450 6950 4450
+Wire Wire Line
+	6300 5500 6300 4350
+Connection ~ 6300 4350
+Wire Wire Line
+	6300 4350 6950 4350
+Wire Wire Line
+	6400 5500 6400 4250
+Connection ~ 6400 4250
+Wire Wire Line
+	6400 4250 6950 4250
+Wire Wire Line
+	6500 5500 6500 4150
+Wire Wire Line
+	5650 4150 6500 4150
+Connection ~ 6500 4150
+Wire Wire Line
+	6500 4150 6950 4150
+Wire Wire Line
+	6600 5500 6600 4050
+Connection ~ 6600 4050
+Wire Wire Line
+	6600 4050 6950 4050
+Wire Wire Line
+	6700 5500 6700 5450
+NoConn ~ 6700 5450
+NoConn ~ 7950 3950
+$Comp
+L power:GND #PWR?
+U 1 1 5C745F8E
+P 6950 5400
+F 0 "#PWR?" H 6950 5150 50  0001 C CNN
+F 1 "GND" H 6955 5227 50  0000 C CNN
+F 2 "" H 6950 5400 50  0001 C CNN
+F 3 "" H 6950 5400 50  0001 C CNN
+	1    6950 5400
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	6950 5250 6950 5400
+Text GLabel 1050 6450 0    50   Input ~ 0
+CLOCK*
+Wire Wire Line
+	1050 6450 3150 6450
+Wire Wire Line
+	3150 6450 3150 5150
+Wire Wire Line
+	3150 5150 3300 5150
+Wire Wire Line
+	3150 6450 6850 6450
+Wire Wire Line
+	6850 6450 6850 5150
+Wire Wire Line
+	6850 5150 6950 5150
+Connection ~ 3150 6450
+$EndSCHEMATC

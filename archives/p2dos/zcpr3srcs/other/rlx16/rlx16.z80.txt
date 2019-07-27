@@ -1,0 +1,982 @@
+;
+;  PROGRAM: RLX
+;  AUTHOR: RICHARD CONN
+;  VERSION: 1.0
+;  DATE: 10 Aug 85
+;
+vers	equ	16	; Modified for compatability with ZCPR33 by using
+			; code from LX15. LX15 still has problems if the
+			; .LBR file is not found, (for instance if WDU is
+			; enabled in zcpr33 & wheel is off) since none of the
+			; code from LX13/LX14 was included. I have therefore
+			; tentatively changed the name of the wheel protected
+			; versions of LXnn to RLXnn. This is to indicate it's
+			; usefullness on a remote access system. I have kept
+			; the version no's the same as for standard LXnn, &
+			; have left the history information intact, so that
+			; all credit to previous contributers/authors will
+			; be shown. In this manner those who have no need
+			; for wheel protection do not have to have this code
+			; in their programs, but those in a remote access (or
+			; office) environment can have it available.
+			; In addition, there is a provision to inhibit the
+			; second default library search. Just patch a 0 in the
+			; first byte of the second library name field or
+			; define the label 'twolibs' as false & reassemble.
+			; Also, since some linkers have problems producing
+			; dseg code properly, I have included an equate to
+			; allow conditional assembly with dseg (usedseg).
+			; Removed the internal COUT routine since it crashed
+			; both my Xerox & Kaypro every time I invoked the
+			; program (I did't try it from Wordstar..I couldn't
+			; get that far).
+			;
+			; 8 June 1987 - Royce Shofner
+
+;vers	equ	15	; Adapted to coexist as an ECP with error
+			; handling under ZCPR 3.3 and BGii 1.13 or
+			; later.  Also extended Michael's auto-
+			; install code to properly initialize the
+			; copy routine for Z33 type 2 COMfiles
+			; (origin other than 100H).  Bumped versions
+			; past 1.3 & 1.4, which seem to be of interest
+			; mainly to Z-Node sysops (no offense, Royce,
+			; just a personal opinion - b/m).  Note that
+			; there is a problem regarding SYSLIB's
+			; CODEND routine and the use of DSEG as
+			; recommended for the upcoming Z80 versions
+			; of the Conn *LIBs.  The old approach (the
+			; $MEMRY buffer in CSEG) has been recommended
+			; to the LIBs revision team.  All modifiable
+			; LX data buffers are now in DSEG, including
+			; the (now runtime-initialized) ARGV argument
+			; table.  While I was at  it, I got rid of the
+			; unecessary self-modifying code at COPY$CODE.
+			; Remember, we won't be able to get away with
+			; such kludges with the Z280, so we might as
+			; well start getting rid of our bad habits now.
+			; Note that LX now carries its own COUT routine
+			; to enable showing an error or a help screen
+			; under the WordStar "R" command without
+			; crashing anyone's system to a fare-thee-well.
+			; Bruce Morgen @15:03:03 April 24, 1987
+
+;vers	equ	14	; Fixed bug which caused system hang if default
+			; .LBR file is not found.
+			; 3 March 1987 - Royce Shofner
+
+;vers	equ	13	; Installed the capability to search for two
+			; default command libraries. The 1st,COMMAND.LBR
+			; does not require the wheel byte. The 2nd,
+			; SYSCMD.LBR does require the wheel byte, as
+			; do any librarys explicitly accessed.
+			; With this arrangement, any program stored in
+			; COMMAND.LBR is available for 'public' use but,
+			; programs stored in other .LBR files can only
+			; be executed by a 'wheel'.
+			; 9 January 1987 - Royce Shofner
+
+;vers	equ	12	; Auto-installs ZCPR3 utilities.  There is no
+			; need to run Z3INS on utilities run by LX
+			; since, after loading and before executing,
+			; LX looks for "Z3ENV" at the beginning.  If
+			; present, LX inserts the address of the
+			; environment descriptor.  Both concept and
+			; code are based on Jay Sage's experimental CCP.
+			; 3 September 1986 - Michael Bate
+
+;vers	equ	11	; Extracted ARGV from syslib36 and included
+			; it here, modified so that '=' is also an
+			; argument delimiter if it occurs after
+			; a non-space (sknsp:).  27 Feb 86  jww
+;
+;vers	equ	10	; Release version
+
+z3env	equ	0F400h	; My Z3 environment location
+
+;
+;	LX is like the old LRUN tools in that it looks at its arguments
+; as a command line to be executed.  LX locks onto a library file, searches
+; for the command verb COM file in it, extracts the COM file into memory
+; at 100H, and sets up the various buffers to look like the COM file was
+; executed by the ZCPR3 command processor.
+;
+;	Unlike the other LRUN tools I've seen and heard of (with the
+; possible exception of LRUNZ), LX truly acts as the ZCPR3 command
+; processor, parsing the command line as ZCPR3 itself would.  Named
+; directory references are allowed, the External FCB is loaded if
+; available, etc.  Any ZCPR3 tool executed by LX sees the environment
+; as it would if ZCPR3 itself executed the tool.
+;
+;	For security, no directory references are allowed (they are
+; ignored) for any arguments if the wheel byte is not set.
+;
+
+;
+;  TEST flag for testing
+;
+false	equ	0
+true	equ	not false
+test	equ	false
+
+;
+;  Externals
+;
+	ext	z3init,codend
+	ext	eprint,retud,putud,logud,getud,pfn1
+	ext	initfcb,f$exist,pstr
+	ext	getefcb,zprsfn,z3log,pfind,getwhl
+	ext	luinit,luopen,luread
+	ext	getcst,putcst	; b/m, April 24, 1987
+
+
+;
+;  Equates
+;
+cr	equ	0dh
+lf	equ	0ah
+bdose	equ	5
+fcb1	equ	5ch
+fcb2	equ	6ch
+tbuff	equ	80h
+tpa	equ	100h
+lnsize	equ	40		; Number of chars allowed for library name
+twolibs	equ	true		; if true search for two default libraries
+usedseg	equ	true		; some linkers have problems with dseg
+				; set usedseg to false if yours does.
+;
+; External ZCPR3 Environment Descriptor
+;
+	jp	start
+z3ename:
+	db	'Z3ENV'		; This is a zcpr3 utility
+	db	1		; External environment descriptor
+z3eadr:
+	dw	z3env
+;
+;  Name of Library File(s)
+;
+libname:
+	db	'COMMAND:COMMAND.LBR',0	; or whatever you need
+	ds	lnsize-[$-libname]
+libnam2:
+	if	not twolibs
+	db	0
+	else
+	db	'COMMAND:SYSCMD.LBR',0	; again your own filename
+	endif
+	ds	lnsize-[$-libnam2]
+;
+;  Beginning of code; set buffer definitions here
+;
+start:
+	ld	hl,(z3eadr)	; Pt to zcpr3 environment
+;
+	call	z3init		; Init zcpr3 environment
+start1:
+	ld	a,(bdose+2)	; Get bdos base page
+	sub	a,9		; 9 pages below bdos is 1 page below ccp
+	ld	(tpaend),a	; Set end of tpa
+	call	codend		; Get free space ptr
+	ld	(gbuff),hl	; Set ptr
+	ld	de,128		; 128 bytes
+	add	hl,de
+	ld	(lfcb),hl	; Set ptr to local fcb
+	add	hl,de
+	ld	(cmdline),hl	; Set ptr to command line
+	add	hl,de
+	ld	(scratch),hl	; Free space ptr
+	ld	hl,tpa
+	ld	(cpytpa),hl
+;
+;  Set status of twolib search
+;
+	ld	a,(libnam2)	; if byte at libnam2 is 0, then
+	ld	(lbr$flg),a	; the second default search is inhibited
+
+;
+;  Save original command line
+;
+	ld	hl,tbuff+1	; Copy from tbuff
+	ld	de,(cmdline)
+	ld	bc,128		; 128 bytes
+	ldir
+;
+;  Save home directory
+;
+	call	putud
+;
+;  First parse of command line to determine if help needed, name of library
+;
+	ld	hl,(cmdline)	; Pt to command line
+	ld	de,args		; Pt to argument table
+	ld	a,4		; Init. for four arguments
+	ld	(de),a		; so table can be in DSEG
+	xor	a		; Do not delimit tokens (A=0)
+	call	argv		; Generate vector
+	ld	a,(argc)	; Check count
+	ld	b,a		; Save arg count in b
+	or	a		; Help if no args
+	jr	z,help
+	ld	hl,(argv1)	; Get ptr to first arg
+	ld	a,(hl)		; Get first char of first arg
+	cp	'/'
+	jp	nz,go1		; Skip help if not /
+;
+;  Print Help Message
+;
+help:
+	call	eprint
+	db	' Remote LX, Version '
+	db	[vers/10]+'0','.',[vers	mod 10]+'0'
+	db	cr,lf,' Syntax: LX command_line'
+	db	cr,lf,' or      LX -dir:library command_line',0
+
+	ld	a,(libname)
+	cp	' '+1
+	ret	c
+	call	eprint
+	db	cr,lf
+	db	cr,lf,' Default library is ',0
+	ld	hl,libname	; get first default library
+	call	pstr
+	ld	a,(libnam2)
+	cp	' '+1
+	ret	c
+	call	getwhl
+	ret	z
+	call	eprint
+	db	cr,lf,' Secondary search library is ',0
+	ld	hl,libnam2
+	call	pstr
+	ret
+;
+;  Continue processing; check for and process library reference
+;
+go1:
+	ld	de,argv1	; Set pointer for first token
+	cp	'-'		; Library reference?
+	jr	nz,go2
+	dec	b		; Reduce argument count by 1
+	jp	z,help		; Library name by itself is not enough
+;
+;  Extract and store library reference
+;
+	ld	(lbr$flg),a	; Remember that lbr name was explicit
+	push	bc		; Save arg count
+	ld	de,libname	; Set library name
+	inc	hl		; Pt to name
+	ld	bc,lnsize	; Size of buffer
+	ldir
+	ld	hl,libname	; Terminate name with zero
+lnscan:
+	ld	a,(hl)		; Get next char
+	cp	' '		; Done?
+	jr	z,lnscan1
+	or	a
+	jr	z,lnscan1
+	inc	hl		; Pt to next
+	jr	lnscan
+lnscan1:
+	ld	(hl),0
+	ld	de,argv2	; Set ptr to first token
+	pop	bc		; Get arg count
+;
+;  DE pts to first token of command line
+;  Store command line (next token) into TBUFF
+;
+go2:
+	push	de		; Save ptr to first token
+	djnz	go3		; See if any tokens follow the command name
+				; If no more tokens, then zero gbuff
+	ld	hl,(gbuff)	; Store empty command line into gbuff
+	ld	(hl),0
+	inc	hl
+	ld	(hl),0
+	jp	cline
+;
+;  Save command line tail into GBUFF
+;
+go3:
+	inc	de		; Pt to next token
+	inc	de
+	ld	a,(de)		; Get address
+	ld	l,a
+	inc	de
+	ld	a,(de)
+	ld	h,a		; Hl pts to first token of command line tail
+	ld	de,(gbuff)	; Pt to command line buffer
+	inc	de		; Pt to char after
+	ld	a,' '
+	ld	(de),a		; Store leading space
+	inc	de
+	ld	b,1		; Set char count to 1
+cltsave:
+	ld	a,(hl)		; Get next char
+	ld	(de),a		; Store it
+	or	a		; Eol?
+	jr	z,cltsdone
+	inc	hl		; Pt to next
+	inc	de
+	inc	b		; Increment count
+	jr	cltsave
+cltsdone:
+	ld	a,b		; Get count
+	ld	hl,(gbuff)	; Pt to local buffer
+	ld	(hl),a		; Set count
+cline:
+	call	retud		; C=current user
+	call	getefcb		; Clear external fcb
+	call	nz,clrfcb
+	ld	hl,fcb1		; Clear fcb1
+	call	clrfcb
+	ld	hl,fcb2		; Clear fcb2
+	call	clrfcb
+	pop	hl		; Get ptr to first token
+	ld	a,(hl)		; Get address
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		; Hl pts to first token
+	ld	de,args		; Use same argument vector table
+	ld	a,0ffh		; Null-terminate arguments
+	call	argv
+	ld	c,0		; Up to 3 tokens to obtain
+	ld	de,argv1	; Pt to first token
+	ld	a,(argc)	; Get argument count
+	cp	4		; Range?
+	jr	c,go4
+	ld	a,3		; Set 3 tokens
+go4:
+	ld	b,a		; In c
+;
+;  There are three tokens (max) to be extracted:
+;	Program name (external FCB)
+;	FCB 1
+;	FCB 2
+;
+go5:
+	push	bc		; Save counters
+	call	namebld		; Build token
+	pop	bc		; Get counters
+	inc	c		; Increment token id
+	djnz	go5
+	call	getefcb		; Set file type to com for external fcb
+	jr	z,go6		; No external fcb
+	ld	de,9		; Offset
+	add	hl,de
+	ld	de,comtyp	; File type
+	ex	de,hl
+	ld	bc,3		; 3 bytes
+	ldir
+;
+;  Locate LBR file
+;
+go6:	call	lbr$tst		; test for explicit lbr reference
+	call	z,getwhl	; test for wheel if explicit
+	jp	z,no$whl	; abort if not wheel
+	call	find$lf		; else search for library
+	push	af		; save search status
+	call	lbr$tst		; is lbr$flg = to '-'
+	jr	z,last$lbr	; if so, that's our last chance
+	or	a		; is lbr$flg a zero ?
+	jr	z,last$lbr	; 0 means two library search is off
+
+	pop	af		; get lbr search result
+	jr	nz,go7
+	call	loadcom
+	jr	nz,autoin	; Do Z3 install if successful
+go7:
+	call	lbr$tst		; ok to continue ?
+	jr	z,lx$abort
+	or	a
+	jr	z,lx$abort
+	call	getwhl
+	jp	z,no$whl	; wheel required for SYSCMD access
+	ld	hl,libnam2	; move 2nd lbr name into
+	ld	de,libname	; libname buffer
+	ld	bc,lnsize
+	ldir
+
+	ld	a,'-'		; set 2nd pass flag
+	ld	(lbr$flg),a
+	call	find$lf		; search for 2nd library
+	push	af
+
+last$lbr:	;no more lbr searches
+	pop	af		; get status of lbr search
+	jr	z,get$lbr
+
+lx$abort:
+	call	getcst		; Get Cmd. Status Flag (again)
+	bit	2,a		; Are we the ECP?
+	jp	z,getud		; All done if not
+	set	1,a		; Otherwise set error bit
+	call	putcst		; Put it in CSF and we're done,
+	jp	getud		; return via Z3LIB routine
+
+
+;
+;  Load Command from Library into Memory Above LRUN
+;
+get$lbr:
+	call	loadcom
+	jr	z,lx$abort	; Abort if memory full
+;
+;  Perform Auto-Install if this is a ZCPR3 utility
+;
+
+autoin:
+	ld	ix,(scratch)
+	ld	de,z3ename	; DE -> "Z3ENV" in this program
+	ld	b,5		; compare 5 bytes
+instal0:
+	ld	a,(de)		; Compare "Z3ENV" with location in
+	cp	(ix+3)		; the loaded program that would have it
+	jr	nz,install	; jump if no match - NOT a ZCPR3 utility
+	inc	de
+	inc	ix		; index through the 5 bytes
+	djnz	instal0
+	ld	de,(z3eadr)	; This is a ZCPR3 utility
+	ld	(ix+4),e	; Store the environment address
+	ld	(ix+5),d
+	ld	a,(ix+3)	; Get environment type byte
+	cp	2		; Check for type < 1
+	jr	c,install	; Branch if standard-TPA tool
+	ld	e,(ix+6)	; Runtime address into DE
+	ld	d,(ix+7)
+	ld	(cpytpa),de	; Initialize data for copy
+				; routine and fall through
+
+install:
+
+;
+;  Set up TBUFF area
+;
+	push	hl		; save address of next block after load
+	ld	hl,(gbuff)	; Ptr to local buffer
+	ld	de,tbuff	; Ptr to tbuff
+	ld	bc,128		; 128 bytes
+	ldir
+	pop	de		; Get address of next block after load
+;
+;  Set up to Copy command down and execute
+;  DE = next block after load
+;
+	call	copyset		; Place copy routine in high memory
+	call	getud		; Return to home directory
+	ld	hl,tbuff	; Set default dma address
+	call	setdma
+;
+	 if	test
+	call	testpr
+	ret
+	 endif
+;
+;  Ready to copy program down and transfer to it
+;  The original return address is on the top of the stack
+;
+	ld	a,(tpaend)	; Get address in hl
+	ld	h,a
+	ld	l,0
+	jp	(hl)		; Process copy command
+
+;
+;  Clear FCB pted to by HL
+;  Current user area is in C
+;
+clrfcb:
+	ld	(hl),0		; Current disk
+	inc	hl		; Pt to name
+	ld	b,11		; 11 bytes
+	ld	a,' '		; Space fill
+	call	fill
+	ld	(hl),0		; Null
+	inc	hl
+	ld	(hl),c		; User area (byte 13)
+	inc	hl
+	ld	b,4		; Number of bytes
+	ld	a,0		; Fill with zeroes
+	call	fill
+	ret
+;
+;  Fill B bytes pted to by HL with A
+;
+fill:
+	ld	(hl),a		; Fill
+	inc	hl		; Pt to next
+	djnz	fill
+	ret
+;
+;  Build name of token whose address is pted to by DE
+;  On input, C=flag:
+;	0	Name of program
+;	1	FCB 1
+;	2	FCB 2
+;
+namebld:
+	ld	a,(de)		; Get address of token in hl
+	ld	l,a
+	inc	de
+	ld	a,(de)
+	ld	h,a
+	inc	de
+	push	de		; Save ptr to next
+	ld	a,c		; Check flag
+	cp	1		; Middle value
+	jr	c,namexfcb	; External fcb if 0
+	ld	de,fcb1		; Assume fcb
+	jr	z,nameb1	; Fcb 1 if 1
+	ld	de,fcb2		; Else fcb2
+	jr	nameb1
+namexfcb:
+	ex	de,hl		; Save hl
+	call	getefcb		; Get ptr to external fcb
+	ex	de,hl		; Hl pts to token, de pts to external fcb
+	jr	nz,nameb1	; Proceed if external fcb exists
+	pop	de		; External fcb does not exist, so quit
+	ret
+;
+;  DE pts to FCB to build into, HL pts to token
+;
+nameb1:
+	push	de		; Save fcb ptr
+	ld	de,(lfcb)	; Pt to local fcb
+	ld	a,0		; Dir before du
+	call	zprsfn		; Parse into local fcb
+	call	getwhl		; Check wheel byte
+	jr	nz,nameb2	; Continue with name build if wheel
+;
+;  User is not a wheel, so force all directory references to current dir
+;
+	call	retud		; Get current user in c
+	ld	hl,(lfcb)	; Pt to fcb
+	ld	(hl),0		; Set current disk
+	ld	de,13		; Offset to user
+	add	hl,de
+	ld	(hl),c		; Set current user into lfcb
+;
+;  Store FCB data into FCB
+;
+nameb2:
+	pop	de		; Get ptr to target fcb
+	ld	hl,(lfcb)	; Pt to fcb
+	ld	bc,17		; Copy 17 bytes
+	ldir
+	pop	de		; Get ptr to next token
+	ret
+;
+;  Place copy routine in high memory
+;  COM file runs from (SCRATCH) to DE
+;
+copyset:
+	ld	hl,(scratch)	; Get start
+	ex	de,hl
+	or	a		; Clear carry
+	sbc	hl,de		; Hl=hl-de=size of load
+	ld	(copy$count),hl	; Set count in copy routine
+	ld	a,(tpaend)	; Set de to location of copy routine
+	ld	d,a
+	ld	e,0		; Page boundary
+	ld	hl,copy$code	; Copy code
+	ld	bc,copy$size	; Number of bytes
+	ldir			; Place copy routine
+	ret
+;  Copy routine - this will be placed in High Memory
+;  The 2-byte values at COPY$STRT, COPY$DEST, COPY$COUNT
+;  and COPY$TPA are set by COPYSET (above) and AUTOIN
+
+copy$code:
+	ld	hl,(scratch)	; Start address
+	ld	de,(cpytpa)	; Destination address
+	push	de
+	ld	bc,(copy$count)	; Number of bytes
+	ldir			; Do copy
+	pop	hl
+	jp	(hl)
+copy$size equ	$-copy$code
+
+;
+;  Abort with message if wheel byte required
+;
+
+no$whl:
+	call	eprint
+	db	'Wheel byte required', 0
+	ret
+
+;
+;  Test for explicit library file reference
+;
+
+lbr$tst:
+	ld	a,(lbr$flg)
+	cp	'-'		; was lbr name explicit ?
+	ret			; zero flag set if explicit
+
+;
+;  Locate Library File
+;  On exit, A=0 if library file found
+;
+find$lf:
+	ld	hl,libname	; Parse library file name
+	ld	de,lud$fcb
+	ld	a,0		; Dir before du
+	call	zprsfn
+	ld	de,lud$fcb+9	; Set library file type
+	ld	hl,lbrtyp	; Default file type
+	ld	bc,3		; 3 bytes
+	ldir
+;
+;  SET SPECIFIED DIRECTORY AS DEFAULT
+;
+	ld	de,lud$fcb	; Pt to fcb
+	call	z3log		; Log into it for default
+;
+;  LOOK INTO DIRECTORY PTED TO BY USER (OR CURRENT IF USER DID NOT SPEC ONE)
+;
+	ld	de,lud$fcb	; Pt to fcb
+	call	initfcb		; Reset fcb
+	call	retud		; Get home location
+	call	f$exist		; Is file there?
+	jr	nz,find$lf2
+;
+;  LOOK ALONG PATH FROM CURRENT DIR (NOT INCLUDING CURRENT)
+;
+	ld	de,lud$fcb	; Pt to fcb
+	xor	a		; Don't search current dir also
+	call	pfind		; Search for file
+	jr	nz,find$lf2	; File found, so process
+;
+;  FILE NOT FOUND
+;
+find$lf1:
+	call	lbr$tst		; Only print error message
+	jr	z,pr$nolbr
+	or	a
+	jr	nz,no$lbr	; if last library search
+pr$nolbr:
+	call	eprint
+	db	' Library File ',0
+	ld	de,lud$fcb+1	; Print file name
+	call	pfn1
+	call	eprint
+	db	' Not Found',0
+no$lbr:	or	0ffh		; Error code
+	ret
+
+;
+;  FILE FOUND
+;
+find$lf2:
+	call	logud		; Log into directory
+	ld	de,lud		; Pt to lud
+	call	luinit		; Read to use library
+	jr	nz,find$lf1	; Error
+	ret
+
+;
+;  LOAD COM FILE INTO MEMORY
+;  ON EXIT, NZ IF OK and HL = NEXT BLOCK
+;
+loadcom:
+	ld	de,argv1	; Pt to command name string
+	ld	a,(de)		; Get address in hl
+	ld	l,a
+	inc	de
+	ld	a,(de)
+	ld	h,a
+	ld	de,(lfcb)	; Pt to fcb
+	ld	a,0		; Dir before du
+	call	zprsfn		; Parse into fcb
+	ld	hl,9		; Set type of file to 'com'
+	add	hl,de
+	ld	de,comtyp	; File type
+	ex	de,hl
+	ld	bc,3		; 3 bytes
+	ldir
+	ld	de,lud		; Pt to lud
+	ld	hl,(lfcb)	; Pt to fcb
+	inc	hl		; Pt to file name
+	call	luopen		; Open file
+	ld	hl,(scratch)	; Pt to buffer
+	jr	z,lcom		; Load command if no error
+	call	getcst		; Get Cmd. Status Flag
+	bit	2,a		; Are we the ECP?
+	jr	nz,noprnt	; Skip msg. if so
+	call	lbr$tst		; Only print error message
+	jr	z,pr$nofil
+	or	a
+	jr	nz,noprnt	; if last library search
+
+pr$nofil:
+	call	eprint
+	db	' File ',0
+	ld	de,(lfcb)	; Pt to file name
+	inc	de
+	call	pfn1
+	call	eprint
+	db	' Not Found in Library ',0
+	ld	de,lud$fcb+1	; Pt to library file name
+	call	pfn1
+noprnt:	xor	a		; Error
+	ret
+lcom:
+	call	setdma		; Set dma address
+	ld	a,(tpaend)	; Check against end page of tpa
+	cp	h		; If at same page, yes
+	jr	z,lcomerror
+	ld	de,lud		; Pt to lud
+	call	luread		; Read block
+	ret	nz
+	ld	de,128		; Pt to next block
+	add	hl,de
+	jr	lcom
+lcomerror:
+	call	eprint
+	db	' Memory Full',0
+	ld	a,'-'
+	ld	(lbr$flg),a	; Kill second lbr search
+	xor	a		; Error code
+	ret
+
+;
+;  Set DMA Address to that pted to by HL
+;
+setdma:
+	push	hl		; Save hl
+	ex	de,hl
+	ld	c,26		; Set dma function
+	call	bdose
+	pop	hl		; Restore hl
+	ret
+
+;
+; SYSLIB Module Name: SARGV
+; Author: Richard Conn
+; SYSLIB Version Number: 3.6
+; Module Version Number: 1.1
+
+;	public	argv
+
+;
+;	ARGV is a UNIX-style ARGC/ARGV string parser.  It is passed
+; a null-terminated string in HL and the address of a token pointer
+; table in DE as follows:
+;
+;		LXI	H,STRING
+;		LXI	D,ARGV$TABLE
+;		MVI	A,0		; do not mark token end
+;		CALL	ARGV
+;		JNZ	TOKEN$OVFL	; indicates more tokens than allowed
+;		...
+;	ARGV$TABLE:
+;		DB	MAX$ENT ; max number of entries permitted
+;		DS	1	; number of entries stored by ARGV
+;		DS	2	; pointer to token 1
+;		DS	2	; pointer to token 2
+;		...
+;		DS	2	; pointer to token MAX$ENT
+;
+;	Tokens are delimited by spaces and tabs.
+;	As well as '='.  27 Feb 86  jww
+;	On input, if A=0, the end of each token is not marked with a null.
+; If A<>0, a null is placed after the last byte of each token.
+;	If all went well, return with A=0 and Zero Flag set.  If there
+; are possibly more tokens than pointers, return with A=0FFH and NZ.
+;
+argv:
+	push	bc	; save regs
+	push	de
+	push	hl
+	ld	c,a	; save mark flag
+	ex	de,hl
+	ld	b,(hl)	; get max entry count
+	push	hl	; save address of max entry count
+	inc	hl	; pt to token count
+	inc	hl	; pt to first pointer
+;
+; On each loop, DE = address of next char in string and HL = address of
+; next pointer buffer; B = number of pointer buffers remaining and C =
+; mark flag (0 = no mark)
+;
+loop:
+	call	sksp	; skip spaces and tabs in string pted to by DE
+	or	a	; end of string?
+	jr	z,done
+	ld	(hl),e	; store low
+	inc	hl
+	ld	(hl),d	; store high
+	inc	hl
+	dec	b	; count down
+	jr	z,loop2
+	call	sknsp	; skip until end of token
+	or	a	; done?
+	jr	z,done
+	ld	a,c	; get mark flag
+	or	a	; 0=no mark
+	jr	z,loop1
+	xor	a	; mark with null
+	ld	(de),a	; store null
+	inc	de	; pt to next char
+loop1:
+	ld	a,b	; check count
+	or	a
+	jr	nz,loop	; continue on
+loop2:
+	call	sknsp	; skip over token
+	call	sksp	; any tokens left?
+	or	a
+	jr	z,done	; none if EOL
+	or	0ffh	; make A = 0FFH to indicate more to come
+done:
+	pop	hl	; get address of max token count
+	push	af	; save return flags
+	ld	a,(hl)	; get max token count
+	sub	b	; subtract counter
+	inc	hl	; pt to return count
+	ld	(hl),a	; set return count
+	pop	af	; get return flag
+	pop	hl	; restore regs
+	pop	de
+	pop	bc
+	ret
+;
+;  Skip over space or tab characters
+;
+sksp:
+	ld	a,(de)	; get char
+	and	7fh	; mask
+	inc	de	; pt to next
+	cp	' '	; continue if space
+	jr	z,sksp
+	cp	9	; continue if tab
+	jr	z,sksp
+	dec	de	; pt to character
+	ret
+;
+;  Skip over non-space and non-tab characters
+;  Added '=' so that A:=B: construct yields two arguments.  v1.1  jww
+;
+sknsp:
+	ld	a,(de)	; get char
+	and	7fh	; mask
+	ret	z		; done if null
+	cp	' '
+	ret	z		; done if space
+	cp	9
+	ret	z		; done if tab
+	cp	'='
+	ret	z	; new delimiter
+	inc	de	; pt to next
+	jr	sknsp
+
+;	end
+;  End of argv inclusion
+
+;
+;  Test print routine
+;
+	 if	test
+	ext	epstr,pafdc,bout,phl4hc
+testpr:
+	call	eprint
+	db	'External FCB: ',0
+	call	getefcb		; Pt to external fcb
+	ex	de,hl
+	call	pfn
+	call	eprint
+	db	cr,lf,'    FCB1: ',0
+	ld	de,fcb1
+	call	pfn
+	call	eprint
+	db	cr,lf,'    FCB2: ',0
+	ld	de,fcb2
+	call	pfn
+	call	eprint
+	db	cr,lf,'    TBUFF: ',0
+	ld	hl,tbuff+1	; Pt to it
+	call	epstr
+	call	eprint
+	db	cr,lf,'    LIBRARY NAME: ',0
+	ld	hl,libname
+	call	epstr
+	call	eprint
+	db	cr,lf,'PROGRAM START ADDRESS: ',0
+	ld	hl,(copy$strt)
+	call	phl4hc
+	call	eprint
+	db	cr,lf,'        SIZE:          ',0
+	ld	hl,(copy$count)
+	call	phl4hc
+	call	eprint
+	db	cr,lf,'COPY ROUTINE AT: ',0
+	ld	a,(tpaend)
+	ld	h,a
+	ld	l,0
+	call	phl4hc
+	ret
+pfn:
+	ld	a,(de)		; Get disk
+	add	a,'@'		; Convert to letter
+	call	bout
+	ld	hl,13		; Offset to user
+	add	hl,de
+	ld	a,(hl)		; Get user
+	call	pafdc		; Print as floating
+	ld	a,':'
+	call	bout
+	inc	de		; Pt to next
+	call	pfn1
+	ret
+	 endif
+;
+;  Buffers
+;
+lbrtyp:
+	db	'LBR'		; Default lbr file type
+comtyp:
+	db	'COM'		; Default com file type
+
+;	Data Area
+
+	if	usedseg
+	dseg
+	endif
+
+args:
+	ds	1		; 4 allowed
+argc:
+	ds	1		; Argument count
+argv1:
+	ds	2		; First argument
+argv2:
+	ds	2*3		; 3 more arguments
+;
+lud:
+	ds	6		; Dummy used by lu* routines
+	ds	11		; Not of concern here
+lud$fcb:
+	ds	36		; Fcb containing library file data
+;
+tpaend:
+	ds	1		; Top page of tpa
+gbuff:
+	ds	2		; Command line save area
+lfcb:
+	ds	2		; Local fcb
+cmdline:
+	ds	2		; Saved command line buffer
+scratch:
+	ds	2		; Free space start
+lbr$flg:
+	ds	1		; library search mode flag
+
+;	For relocated COPY$CODE routine
+cpytpa:
+	ds	2		; COMfile runtime origin
+copy$count:
+	ds	2		; COMfile length in bytes
+
+	end
+
+

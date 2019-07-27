@@ -1,0 +1,1554 @@
+	.title	'Pack Disk'
+
+; 	FDC, 29 August 1987
+
+version	equ	10
+
+fcb1:	equ	5ch
+fcb2:	equ	6ch
+buff:	equ	80h
+
+lf:	equ	10
+cr:	equ	13
+ctrlz:	equ	26
+
+MAXLIN:	equ	128		; maximum input line length
+
+	extrn	print,cout,cin,condin,crlf,pfn2,pa2hc,phlfdc,phl4hc
+	extrn	caps,issp,sksp,compb,getcrt,getmdisk
+	extrn	z3init,z3log,getwhl,getefcb,retud,dnscan
+	extrn	f$open,f$read,f$close,bdos,bios
+	extrn	mulhd,divhd
+	public	$memry
+
+start:	jp	pack
+	db	'Z3ENV'
+	db	1		; external environment
+z3eadr	dw	0f000h		; environment address
+
+dirflg:	db	0		; always set C=1 on directory writes if non-zero
+
+pack:	ld	hl,(z3eadr)
+	call	z3init		; initialise z3lib routines
+	call	assign		; assign data areas
+	ld	c,12		; get cp/m version number
+	call	bdos
+	ld	a,h
+	or	a
+	jr	nz,badver
+	ld	a,l
+	cp	22h
+	jr	z,chkwhl
+badver:	call	pname
+	call	print
+	db	' requires CP/M 2.2 (or ZRDOS)',cr,lf,0
+quit:	rst	0
+chkwhl:	call	getwhl		; priviledged?
+	jr	z,quit		; silently deny access if not
+	ld	a,(fcb1+1)	; help requested?
+	cp	'/'
+	jr	z,ghelp
+	cp	' '
+	jr	nz,pack1
+ghelp:	call	help
+	rst	0		; warm boot
+
+pack1:	call	options		; process options
+	call	gnames		; read input file and build name tables
+	xor	a
+	ld	(fixmob),a
+	ld	hl,wild
+	call	fnam		; terminate mobile list with *:*.*
+	ld	de,fcb1
+	call	f$close
+	call	quitif		; quit if errors
+	ld	a,(verbose)
+	or	a
+	call	nz,showlist
+	call	maktab		; make group table
+	call	quitif		; quit if errors
+	ld	a,(verbose)
+	or	a
+	call	nz,showtab
+	ld	hl,0
+	ld	(rdcnt),hl	; clear counters
+	ld	(wrcnt),hl
+	ld	a,(stats)	; just statistics?
+	or	a
+	jr	nz,pack5
+	ld	a,(blshf)
+	ld	b,a
+	ld	hl,128
+pack2:	add	hl,hl		; find group size
+	djnz	pack2
+	ex	de,hl
+	call	getheap		; reserve 2 buffers
+	ld	(grp1),hl
+	call	getheap
+	ld	(grp2),hl
+	call	chkro		; check for read only disk
+	call	print
+	db	'Ready to pack disk ',0
+	ld	a,(disk)
+	add	'A'
+	call	cout
+	call	print
+	db	cr,lf,'Are you sure you wish to proceed? (y/n) - ',0
+pack3:	call	cin
+	and	5fh
+	cp	'Y'
+	jr	z,pack4
+	cp	'N'
+	jr	nz,pack3
+	rst	0
+pack4:	call	cout
+	call	crlf
+pack5:	call	sort		; sort groups
+	ld	a,(stats)
+	or	a
+	jr	nz,pack6
+	call	fixdir		; fix directory
+	call	resdrv		; reset drive
+	call	print
+	db	'Disk packed',cr,lf,0
+	rst	0
+pack6:	ld	hl,(rdcnt)
+	call	phlfdc
+	call	print
+	db	' group reads and ',0
+	ld	hl,(wrcnt)
+	call	phlfdc
+	call	print
+	db	' group writes required to pack disk.',cr,lf,0
+	rst	0
+
+assign:	pop	bc		; return address
+	ld	hl,($memry)
+	ld	de,128		; stack size
+	add	hl,de
+	ld	sp,hl		; assign stack above program
+	push	bc
+	ld	(inline),hl	; input line buffer
+	ld	de,MAXLIN
+	add	hl,de
+	ld	(heap),hl	; set top of heap
+	ret
+
+; Read input file and build fixed and mobile name tables
+gnames:	ld	hl,0
+	ld	(errors),hl	; no errors yet
+	ld	de,fcb1
+	call	z3log		; log in to file DU
+	call	f$open		; open it
+	jr	z,opok
+	call	print		; report file missing
+	db	'Can''t find ',0
+	inc	de
+	call	pfn2
+	call	crlf
+	rst	0		; and quit
+opok:	xor	a
+	ld	(fixmob),a	; initially expect mobile names
+	ld	h,a
+	ld	l,a
+	ld	(fixcnt),hl	; no fixed or
+	ld	(mobcnt),hl	;  mobile files yet
+	ld	hl,(heap)
+	ld	(fixpnt),hl	; this is where they go
+	ld	(mobpnt),hl
+	ld	hl,0
+	ld	(linnum),hl	; line number
+	ld	(bufcnt),a	; no bytes in buffer
+gnam1:	call	getlin		; get next input line
+	ret	z		; all done
+	ld	hl,(inline)	; point to line
+	call	sksp		; skip spaces
+	ld	a,(hl)
+	or	a		; empty line?
+	jr	z,gnam1		; ignore
+	cp	';'		; fixed / mobile spec?
+	jr	nz,gnam2
+	call	cmd		; process fixed / mobile spec
+	jr	gnam1
+gnam2:	call	fnam		; process filename
+	jr	gnam1
+
+; Process command line
+cmd:	inc	hl		; skip over ';'
+	call	sksp		; and spaces
+	ld	de,fixstr	; 'FIXED'
+	ld	b,5
+	call	compb
+	ld	a,1		; flag if fixed
+	jr	z,cmd1
+	ld	de,mobstr	; 'MOBILE'
+	ld	b,6
+	call	compb
+	ld	a,0		; flag if mobile
+	ret	nz
+cmd1:	ld	(fixmob),a	; set new flag value
+	ret
+
+; Extract filename from input line
+fnam:	call	gdir		; get directory
+	ret	nz		; ignore if error
+	push	hl		; save pointer to start of name
+	push	bc		;  and user number
+	ld	de,16
+	call	getheap		; extend heap
+	ld	hl,(mobcnt)
+	add	hl,hl		; x 2
+	add	hl,hl		; x 4
+	add	hl,hl		; x 8
+	add	hl,hl		; x 16 (size of mobile list)
+	ld	a,(fixmob)
+	or	a		; fixed or mobile?
+	jr	z,fnam2
+	ld	a,h
+	or	l		; empty?
+	jr	z,fnam1
+	ld	b,h
+	ld	c,l
+	ld	hl,(mobpnt)
+	dec	hl
+	add	hl,bc		; last byte of current location
+	ld	de,16		; offset
+	ex	de,hl
+	add	hl,de
+	ex	de,hl
+	lddr			; make space to expand fixed list
+fnam1:	ld	hl,(fixcnt)
+	inc	hl		; increment number of fixed files
+	ld	(fixcnt),hl
+	ld	hl,(mobpnt)
+	ld	de,16
+	ex	de,hl
+	add	hl,de		; shift mobile base up
+	ld	(mobpnt),hl
+	ex	de,hl		; address of next fixed entry in hl
+	jr	fnam3
+fnam2:	ld	de,(mobpnt)
+	add	hl,de		; address of next mobile entry
+	push	hl
+	ld	hl,(mobcnt)
+	inc	hl
+	ld	(mobcnt),hl
+	pop	hl
+fnam3:	pop	bc		; retrieve user number
+	ld	(hl),c		; and store it in list
+	inc	hl
+	pop	de		; retrieve pointer to name
+	ld	b,8		; max length of name part
+	call	cpyfn
+	ld	a,(de)
+	cp	'.'		; typ specified?
+	jr	nz,fnam4
+	inc	de
+	ld	b,3
+	call	cpyfn
+	jr	fnam5
+fnam4:	ld	b,3
+	call	cpyfsp		; blank typ
+fnam5:	ld	b,4
+	call	cpyf?		; any extents
+	ld	a,(de)		; valid end?
+	or	a
+	ret	z
+	cp	' '
+	ret	z
+	call	plnum
+	call	print
+	db	': invalid filename',cr,lf,0
+incerr:	ld	hl,(errors)
+	inc	hl		; increment error count
+	ld	(errors),hl
+	ret
+
+; copy part of filename from (de) to (hl), max b bytes
+cpyfn:	ld	a,(de)
+	or	a
+	jr	z,cpyfsp
+	cp	'.'
+	jr	z,cpyfsp
+	cp	' '
+	jr	z,cpyfsp
+	inc	de
+	cp	'*'
+	jr	z,cpyf?
+	ld	(hl),a
+	inc	hl
+	djnz	cpyfn
+	ret
+cpyfsp:	ld	a,' '
+	jr	cpyflp
+cpyf?:	ld	a,'?'
+cpyflp:	ld	(hl),a
+	inc	hl
+	djnz	cpyflp
+	ret
+
+; Analyse directory specified in file name
+
+; Possibilities are:
+;	none		- use default DU (as input file or option spec)
+;	*: or ?:	- all users on default D
+;	D:		- default DU, D must match default
+;	D*: or D?:	- all users on D (must be default)
+;	DU:		- DU, D must match default
+;	DIR:		- corresponding DU, D must match default
+
+; Entry: hl points to start of filespec
+; Exit:  hl points to start of filename
+;        c  contains user (0..31 or '?')
+;	 nz  means error detected (discard line)
+gdir:	ld	bc,9*256	; char and wildcard count
+	ld	de,dnbuf	; copy possible directory spec to buf
+	push	hl
+gdir1:	ld	a,(hl)
+	inc	hl
+	cp	':'
+	jr	z,gdir4
+	ld	(de),a
+	inc	de
+	cp	'?'
+	jr	z,gdir2
+	cp	'*'
+	jr	nz,gdir3
+gdir2:	inc	c		; count wildcards
+gdir3:	djnz	gdir1
+	ld	a,(user)	; no dir specified
+	ld	c,a
+	pop	hl
+	xor	a		; return with Z (ok)
+	ret
+gdir4:	xor	a
+	ld	(de),a
+	ld	de,dnbuf
+	ld	a,(de)
+	or	a
+	jp	z,baddn		; null - no good
+	ld	a,c		; any wildcards used?
+	or	a
+	jr	z,gdir8
+	ld	a,(de)
+	sub	'A'		; disk specified?
+	jr	c,gdir5
+	cp	'P'-'A'+1
+	jr	nc,gdir5
+	inc	de
+	push	hl
+	ld	hl,disk
+	cp	(hl)		; does disk match?
+gdir4a:	pop	hl
+	jr	z,gdir5
+	call	plnum
+	call	print
+	db	' specifies disk ',0
+	add	a,'A'
+	call	cout
+	call	print
+	db	', (',0
+	ld	a,(disk)
+	add	'A'
+	call	cout
+	call	print
+	db	' expected)',cr,lf,0
+	pop	hl
+	jp	incerr
+gdir5:	ld	a,(de)
+	cp	'*'
+	jr	z,gdir6		; expect just 1 wild card
+	cp	'?'
+	jr	nz,baddn
+gdir6:	inc	de
+	ld	a,(de)
+	or	a
+	jr	nz,baddn
+	ld	c,'?'		; wildcard user
+gdir7	pop	af		; discard start pointer
+	xor	a		; return with Z (ok)
+	ret
+gdir8:	ex	de,hl		; directory pointer to hl
+	xor	a		; DU before DIR
+	call	dnscan
+	ex	de,hl
+	jr	z,baddn
+	ld	a,b
+	push	hl
+	ld	hl,disk
+	cp	(hl)		; does disk match?
+	jr	nz,gdir4a
+	pop	hl
+	jr	gdir7
+baddn:	call	plnum
+	call	print
+	db	': can''t interpret directory specification',cr,lf,0
+	pop	hl
+	jp	incerr
+
+; get a line from the input file
+getlin:	ld	hl,(linnum)
+	inc	hl
+	ld	(linnum),hl	; increment line count
+	ld	hl,(inline)	; start of line
+	ld	bc,MAXLIN-1	; space left
+	call	getch		; get first input character
+	cp	ctrlz		; end of file?
+	ret	z
+getl1:	cp	ctrlz
+	jr	nz,getl2
+	ld	a,lf		; simulate eol
+getl2:	ld	(hl),a
+	inc	hl
+	cp	lf		; end of line?
+	jr	z,getl3
+	dec	bc
+	ld	a,b
+	or	c
+	jr	z,getl4
+	call	getch		; get next character
+	jr	getl1
+getl3:	ld	(hl),0		; terminate line
+	dec	hl
+	ld	a,(hl)
+	call	issp		; eliminate trailing whitespace
+	jr	z,getl3
+	or	1		; return with NZ
+	ret
+getl4:	call	plnum		; print line number
+	call	print
+	db	' too long: truncated.',cr,lf,0
+getl5:	call	getch		; skip rest of line
+	cp	lf
+	jr	z,getl3
+	cp	ctrlz
+	jr	z,getl3
+	jr	getl5
+
+; Get next input character
+getch:	push	hl
+	push	de
+	push	bc
+	ld	hl,bufcnt
+	ld	a,(hl)
+	or	a		; anything left in buffer?
+	jr	nz,getch1
+	ld	de,fcb1
+	call	f$read		; read sector
+	or	a		; end of file?
+	jr	nz,geteof
+	ld	a,128
+	ld	(hl),a		; 128 bytes available now
+getch1:	dec	(hl)		; decrement count
+	neg			; convert to address
+	ld	e,a
+	ld	d,0
+	ld	a,(de)		; pick up character
+	and	7fh
+	call	caps		; capitalize it
+	cp	ctrlz		; end of file?
+	jr	nz,getch2
+geteof:	ld	(hl),80h	; stick at eof
+	ld	a,ctrlz
+	ld	(80h),a
+getch2:	pop	bc
+	pop	de
+	pop	hl
+	ret
+	
+
+; Display input line number
+plnum:	push	hl
+	push	de
+	push	bc
+	push	af
+	call	print
+	db	'Line ',0
+	ld	hl,(linnum)
+	call	phlfdc
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; Make table of group numbers
+; Table format is:
+;
+;		+----------------+----------------+
+;    Index -> 0 | Current number | Position where |
+;               | of group which | group which is |
+;               | should go at   | currently here |
+;               | this position  | should go      |
+;               | on the disk    |                |
+;               |                |                |
+;                      :                 :
+;           dsm |                |                |
+;               +----------------+----------------+
+
+maktab:	ld	a,(disk)
+	ld	e,a
+	ld	c,14		; select disk via bdos
+	call	bdos
+	ld	c,e
+	ld	b,0
+	ld	a,9		; select disk via bios (to get dph)
+	call	bios
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; pick up sector table address
+	ld	(sectab),de
+	ld	de,9		; offset to dpb address
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl		; dpb address in hl
+	ld	de,dpb
+	ld	bc,15
+	ldir			; make a local copy of disk params
+	ld	hl,(dsm)
+	inc	hl
+	add	hl,hl		; table size is 4 * (dsm+1)
+	add	hl,hl
+	ex	de,hl
+	push	de		; save size
+	call	getheap		; get space for it
+	ld	(grptab),hl	; save base of group table
+	pop	bc		; size of table
+mtab1:	ld	(hl),-1		; clear table
+	inc	hl
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,mtab1
+	ld	hl,(alloc)	; initial allocation
+	ld	a,h
+	ld	h,l
+	ld	l,a		; get in right order
+	ld	de,0		; group number
+mtab2:	ld	a,h
+	or	l
+	jr	z,mtab3
+	call	fixgrp		; fix directory group
+	inc	de		; next group
+	add	hl,hl		; shift a bit out
+	jr	mtab2
+mtab3:	ld	hl,fixgrp
+	ld	(proc),hl	; what to do for each group
+	ld	hl,(heap)
+	ld	(mark),hl	; remember top of heap
+	ld	hl,(fixpnt)	; fixed file table
+	ld	bc,(fixcnt)	; how many
+mtab4:	ld	a,b
+	or	c
+	jr	z,mtab5
+	call	dofile		; do it for these files
+	ld	de,16		; size of file entry
+	add	hl,de
+	dec	bc
+	jr	mtab4
+mtab5:	ld	hl,-1
+	ld	(group),hl	; last group allocated
+	ld	hl,nxtgrp	; what to do for each group
+	ld	(proc),hl
+	ld	hl,(mobpnt)	; mobile file table
+	ld	bc,(mobcnt)	; how many
+mtab6:	ld	a,b
+	or	c
+	jr	z,mtab7
+	call	dofile
+	ld	de,16
+	add	hl,de
+	dec	bc
+	jr	mtab6
+mtab7:	ld	hl,(mark)
+	ld	(heap),hl	; reset heap
+	ret
+
+; Do proc for each group allocated to the files matching
+; the afn pointed to by hl
+dofile:	push	bc
+	push	de
+	push	hl
+	ex	de,hl
+	ld	bc,0		; first directory slot
+dof0:	call	getdir		; get next entry
+	jr	nz,dofend
+	inc	bc
+	call	match		; check match
+	jr	nz,dof0
+	push	bc		; save slot number
+	push	de		; and afn pointer
+	ld	de,16		; offset to group map
+	add	hl,de
+	ld	b,16		; size of map in bytes
+dof1:	ld	e,(hl)
+	ld	d,0
+	inc	hl
+	ld	a,(dsm+1)	; high byte of disk size
+	or	a
+	jr	z,dof2		; 1 byte group numbers
+	ld	d,(hl)
+	inc	hl
+	dec	b
+dof2:	ld	a,d
+	or	e		; assigned?
+	jr	z,dof3
+	push	hl
+	ld	hl,(proc)
+	call	ihl		; do procedure on this group
+	pop	hl
+dof3:	djnz	dof1
+	pop	de		; afn
+	pop	bc		; slot number
+	jr	dof0
+dofend:	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+; Indirect jump to (hl)
+ihl:	jp	(hl)
+
+; Get directory entry for slot bc
+; Return pointer to entry in hl or nz if no more entries
+getdir:	ld	hl,(drm)	; last directory entry
+	or	a
+	sbc	hl,bc
+	ret	c		; past end of directory
+	push	de
+	ld	h,b
+	ld	l,c
+	srl	h
+	rr	l
+	srl	h
+	rr	l		; required sector number
+	ld	(sector),hl
+	ld	hl,(heap)	; how many sectors are cached?
+	ld	de,(mark)
+	xor	a
+	sbc	hl,de		; bytes on heap
+	sla	l
+	rl	h
+	rla
+	ld	e,h
+	ld	d,a		; divide by 128
+	ld	hl,(sector)
+	sbc	hl,de
+	jr	nc,getd1	; must read if not (yet) on heap
+	ld	hl,(sector)
+	xor	a
+	srl	h
+	rr	l
+	ld	h,l
+	rra
+	ld	l,a		; multiply by 128
+	ld	de,(mark)
+	add	hl,de
+	jr	getd4
+getd1:	ld	hl,(heap)
+	ld	de,80h
+	add	hl,de
+	ex	de,hl
+	ld	hl,(6)
+	or	a
+	sbc	hl,de		; enough space on heap?
+	jr	nc,getd2
+	ld	hl,buff		; use temp buffer
+	jr	getd3
+getd2:	ld	de,80h
+	call	getheap
+getd3:	ld	a,c		; is it first slot in sector?
+	and	3
+	jr	nz,getd4
+	push	hl
+	ex	de,hl
+	call	getsec		; read sector
+	pop	hl
+	jr	z,getd4
+	call	print
+	db	'Can''t read directory',cr,lf,0
+	rst	0
+getd4:	ld	a,c
+	and	3		; which slot?
+	rrca
+	rrca
+	rrca
+	add	l
+	ld	l,a
+	ld	a,0
+	adc	h
+	ld	h,a		; point to directory entry
+	inc	hl
+	ld	a,(hl)		; 1st byte of filename
+	dec	hl
+	pop	de
+	cp	0e5h		; ever used?
+	jr	z,getd5
+	xor	a
+	ret
+getd5:	or	a
+	ret
+
+; Check if directory entry matches afn pattern
+match:	push	hl
+	push	de
+	push	bc
+	ld	b,16		; length to compare
+	ld	a,(hl)
+	cp	0e5h		; erased?
+	jr	nz,match1
+	or	a
+	jr	match3		; reject it
+match1:	ld	a,(de)
+	cp	'?'		; wild card?
+	jr	z,match2
+	ld	c,a
+	ld	a,(hl)
+	and	7fh		; mask off attributes
+	cp	c
+	jr	nz,match3
+match2:	inc	hl
+	inc	de
+	djnz	match1
+match3:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; Fix group position by setting up a 1-1 mapping
+; group number is in de
+fixgrp:	push	hl
+	ld	h,d
+	ld	l,e
+	call	makent		; make 1-1 entry
+	pop	hl
+	ret
+
+; Allocate the next free group to the one in de
+nxtgrp:	push	hl
+	push	bc
+	call	getnew		; has it already been given a position?
+	inc	hl
+	ld	a,h
+	or	l
+	jr	nz,ngrpe
+	push	de
+ngrp2:	ld	de,(group)	; where to start looking for a space
+ngrp3:	ld	hl,(dsm)
+	or	a
+	sbc	hl,de		; end of disk?
+	jr	nz,ngrp4
+	call	print
+	db	'Disk overflow (can''t happen!)',cr,lf,0
+	rst	0
+ngrp4:	inc	de
+	call	chkfre
+	jr	nz,ngrp3
+	ex	de,hl
+	ld	(group),hl	; remember where we got to
+	pop	de
+	call	makent		; make table entry to move de -> hl
+ngrpe:	pop	bc		; group already dealt with
+	pop	hl
+	ret
+
+; Make an entry in the group table
+; de is current group number, hl is desired group number
+makent:	push	af
+	push	de
+	push	hl
+	call	getadr		; desired group as index
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d		; assign current group
+	ex	de,hl
+	call	getadr		; current group as index
+	inc	hl
+	inc	hl
+	pop	de
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d		; assign desired group
+	ex	de,hl
+	pop	de
+	pop	af
+	ret
+
+; Get disk groups into the required order
+sort:	ld	hl,-1
+	ld	(group),hl	; scan from start of disk
+	xor	a
+	ld	(grpsel),a	; initialise selector switch
+	ld	(dirwr),a	; not writing directory yet
+sort1:	call	ctrlc?		; check for user interrupt
+	jp	z,abort
+	ld	hl,(group)
+	inc	hl		; next group
+	ld	(group),hl
+	ex	de,hl
+	ld	hl,(dsm)
+	or	a
+	sbc	hl,de		; end of disk?
+	ret	c
+	call	getold		; what should go here?
+	inc	hl
+	ld	a,h
+	or	l		; free?
+	ret	z		; done if so
+	dec	hl
+	ex	de,hl
+	push	hl
+	sbc	hl,de		; here already?
+	pop	hl
+	jr	z,sort1
+	call	getgrp		; get it into memory
+	jp	nz,abort
+sort2:	call	flip		; swap buffers
+	ex	de,hl
+	call	getnew		; where should present contents go?
+	inc	hl
+	ld	a,h
+	or	l
+	dec	hl
+	push	af
+	jr	z,sort3		; not needed?
+	pop	af
+	ex	de,hl
+	push	hl
+	call	getold
+	or	a
+	sbc	hl,de
+	pop	hl
+	ex	de,hl
+	push	af
+	call	nz,getgrp	; read if not already there
+sort3:	call	z,putgrp	; put if no read error
+	push	af		; save error flags
+	push	hl
+	ld	h,d
+	ld	l,e
+	call	getadr
+	ld	(hl),e		; adjust table to reflect disk contents
+	inc	hl
+	ld	(hl),d
+	pop	hl
+	pop	af
+	jp	nz,abort	; read/write error?
+	pop	af
+	jr	z,sort1		; end of chain?
+	jr	sort2
+
+; Make directory correspond to new order of groups on disk
+fixdir:	xor	a
+	ld	(grpsel),a	; initialise selector
+	ld	a,(dirflg)	; be pessimistic on dir writes?
+	or	a
+	ld	a,1
+	jr	z,fixd0
+	inc	a
+fixd0:	ld	(dirwr),a
+	ld	bc,(drm)	; directory size
+	ld	de,-1		; group number
+fixd1:	ld	a,b
+	or	c
+	ret	z		; finished?
+	inc	de		; next dir group
+	call	getgrp
+	push	bc
+	ld	a,(blshf)	; block shift factor
+	ld	b,a
+	ld	a,4
+fixd2:	add	a,a		; calculate entries per group
+	djnz	fixd2
+	pop	bc
+	push	af
+	ld	hl,(grp1)	; data location
+fixd3:	call	fixent		; fix entry
+	jr	z,fixd4		; finished?
+	pop	af
+	dec	a
+	push	af
+	jr	nz,fixd3
+fixd4:	pop	af
+	call	flip
+	call	putgrp		; write back
+	call	flip
+	jr	fixd1
+
+; Fix a directory entry
+fixent:	ld	a,b
+	or	c
+	ret	z		; any more?
+	inc	hl
+	ld	a,(hl)
+	dec	hl
+	cp	0e5h		; top of used area?
+	jr	nz,fixe0
+	ld	bc,0
+	ret
+fixe0:	dec	bc
+	ld	a,(hl)
+	push	bc
+	push	de
+	ld	b,16		; size of map
+	ld	de,16
+	add	hl,de		; point to group map
+	cp	0e5h		; erased entry?
+	jr	nz,fixe1
+	add	hl,de		; skip it
+	jr	fixe4
+fixe1:	ld	d,0
+	ld	e,(hl)
+	ld	a,(dsm+1)	; 2 byte numbers?
+	or	a
+	jr	z,fixe2
+	inc	hl
+	ld	d,(hl)
+	dec	hl
+fixe2:	push	hl
+	call	getnew		; where is group now?
+	ex	de,hl
+	pop	hl
+	ld	(hl),e
+	inc	hl
+	ld	a,(dsm+1)
+	or	a
+	jr	z,fixe3
+	ld	(hl),d
+	inc	hl
+	dec	b
+fixe3:	djnz	fixe1
+fixe4:	pop	de
+	pop	bc
+	or	1
+	ret
+
+; Use hl as index into group table
+getadr:	add	hl,hl
+	add	hl,hl
+	push	de
+	ld	de,(grptab)
+	add	hl,de
+	pop	de
+	ret
+
+; Check if entry for group in de is free
+; Z - yes, NZ - no
+chkfre:	push	hl
+	call	getold
+	inc	hl
+	ld	a,h
+	or	l
+	pop	hl
+	ret
+
+; Translate old (de) group number to new (hl)
+getold:	push	de
+	ex	de,hl
+	call	getadr
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl
+	pop	de
+	ret
+
+; Translate new (de) group number to old (hl)
+getnew:	push	de
+	ex	de,hl
+	call	getadr
+	inc	hl
+	inc	hl
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl
+	pop	de
+	ret
+
+; Flip group buffers
+flip:	push	af
+	push	hl
+	ld	hl,grpsel
+	ld	a,1		; flip buffers
+	xor	(hl)
+	ld	(hl),a
+	pop	hl
+	pop	af
+	ret
+
+; Get group de
+getgrp:	push	hl
+	push	de
+	push	bc
+	ld	hl,(rdcnt)
+	inc	hl		; increment counter
+	ld	(rdcnt),hl
+	ld	hl,(grp1)
+	ld	a,(grpsel)	; which buffer?
+	or	a
+	jr	z,ggrp1
+	ld	hl,(grp2)
+ggrp1:	ld	a,(stats)	; statistics only?
+	or	a
+	jr	nz,ggrp4
+	ex	de,hl
+	ld	a,(blshf)	; block shift factor
+	ld	b,a
+ggrp2:	add	hl,hl		; convert group to sector number
+	djnz	ggrp2
+	ld	(sector),hl
+	ld	a,(blmsk)	; block mask
+	inc	a		; number of sectors in group
+	ld	b,a
+ggrp3:	call	getsec
+	jr	nz,ggrp5	; error?
+	ld	hl,128
+	add	hl,de
+	ex	de,hl
+	djnz	ggrp3
+ggrp4:	xor	a
+ggrp5:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; Put group de
+putgrp:	push	hl
+	push	de
+	push	bc
+	ld	hl,(wrcnt)
+	inc	hl		; increment counter
+	ld	(wrcnt),hl
+	ld	hl,(grp1)
+	ld	a,(grpsel)	; which buffer?
+	or	a
+	jr	nz,pgrp1
+	ld	hl,(grp2)
+pgrp1:	ld	a,(stats)	; statistics only?
+	or	a
+	jr	nz,pgrp4
+	ex	de,hl
+	ld	a,(blshf)	; block shift factor
+	ld	b,a
+pgrp2:	add	hl,hl		; convert group to sector number
+	djnz	pgrp2
+	ld	c,2		; write unallocated data
+	ld	(sector),hl
+	ld	a,(blmsk)	; block mask
+	inc	a		; number of sectors in group
+	ld	b,a
+pgrp3:	ld	a,(dirwr)
+	cp	2		; pessimistic about dir writes?
+	jr	nz,pgrp30
+	ld	c,1
+pgrp30:	call	putsec
+	jr	nz,pgrp5	; error?
+	ld	c,0		; normal writes for rest of group
+	ld	a,(dirwr)	; writing to directory?
+	or	a
+	jr	z,pgrp3a
+	ld	a,b
+	cp	2		; last sector of directory group?
+	jr	nz,pgrp3a
+	ld	c,1		; signal directory write
+pgrp3a:	ld	hl,128
+	add	hl,de
+	ex	de,hl
+	djnz	pgrp3
+pgrp4:	xor	a
+pgrp5:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; Read sector
+getsec:	push	bc
+	push	de
+	push	hl
+	ld	a,2
+	ld	(curop),a
+	call	setsec
+	ld	a,13
+	call	bios
+	or	a
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+; Write sector
+putsec:	push	bc
+	push	de
+	push	hl
+	ld	a,3
+	ld	(curop),a
+	call	setsec
+	ld	a,14
+	call	bios
+	pop	hl
+	pop	de
+	pop	bc
+	or	a
+	ret
+
+; Prepare for sector read/write.  Data address is in de.
+setsec:	push	hl
+	push	de
+	push	bc
+	push	af
+	ld	b,d
+	ld	c,e
+	ld	a,12		; set dma address
+	call	bios
+	ld	hl,(sector)	; required sector
+	ld	de,(spt)	; sectors per track
+	call	divhd		; get relative track in hl
+	push	hl
+	ld	de,(toff)	; track offset
+	add	hl,de		; absolute track in hl
+	ld	b,h
+	ld	c,l
+	ld	a,10		; set track
+	call	bios
+	pop	hl
+	ld	de,(spt)
+	call	mulhd		; sector at start of this track
+	ex	de,hl
+	ld	hl,(sector)
+	inc	hl		; increment for next time
+	ld	(sector),hl
+	dec	hl
+	or	a
+	sbc	hl,de		; relative sector on track
+	ld	b,h
+	ld	c,l
+	ld	de,(sectab)
+	ld	a,d
+	or	e		; table defined?
+	jr	z,ssec1
+	ld	a,16		; translate logical to physical sector
+	call	bios
+	ld	b,h
+	ld	c,l
+ssec1:	ld	a,11		; set sector
+	call	bios
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; Prematurely terminate disk sort
+abort:	ld	a,(curop)	; reason for abort
+	ld	(whyab),a
+	ld	hl,(sector)	; sector if it was read/write
+	dec	hl		; correct for pre-increment
+	ld	(badsec),hl
+	ld	a,(stats)
+	or	a
+	jr	nz,ab0
+	call	fixtab		; make table reflect where we reached
+	call	fixdir		; update directory
+	call	resdrv		; reset drive
+ab0:	call	pname
+	ld	a,(whyab)
+	dec	a		; console interrupt?
+	jr	nz,ab1
+	call	print
+	db	' interrupted by user',cr,lf,0
+	rst	0
+ab1:	dec	a		; sector read?
+	jr	nz,ab2
+	call	print
+	db	' read',0
+	jr	ab3
+ab2:	call	print		; must be write
+	db	' write',0
+ab3:	call	print
+	db	' error at group ',0
+	ld	hl,(badsec)
+	ld	a,(blshf)
+ab4:	srl	h		; convert sector to group
+	rr	l
+	dec	a
+	jr	nz,ab4
+	call	phl4hc		; display group
+	ld	a,':'
+	call	cout
+	ld	a,(badsec)
+	ld	b,a
+	ld	a,(blmsk)
+	and	b
+	call	pa2hc		; and sector within group
+	call	crlf
+	rst	0
+
+; Restore consistancy  between two halves of group table
+fixtab:	ld	de,0		; first group
+fixt1:	ld	hl,(dsm)
+	or	a
+	sbc	hl,de		; finished?
+	ret	c
+	call	getold		; what were we going to move here?
+	push	hl
+	or	a
+	sbc	hl,de
+	pop	hl
+	inc	de
+	jr	z,fixt1		; no action if 1-1 or already moved
+	push	de
+	ld	d,h
+	ld	e,l
+	call	getadr		; table address of group which
+	inc	hl		;  not been moved
+	inc	hl
+	ld	(hl),e		; it is still where it started
+	inc	hl
+	ld	(hl),d
+	pop	de
+	jr	fixt1
+
+; Expand heap and check for overflow
+; entry: de is number of bytes needed
+; exit: hl is old top of heap (start of new space)
+getheap: ld	hl,(heap)
+	push	hl
+	push	de
+	add	hl,de
+	ld	(heap),hl
+	ex	de,hl
+	ld	hl,(6)
+	or	a
+	sbc	hl,de
+	pop	de
+	pop	hl
+	ret	nc
+	call	print
+	db	'Out of memory',cr,lf,0
+	rst	0
+
+; Process options
+options: xor	a
+	ld	(stats),a	; clear statistics option
+	ld	(verbose),a	;  and verbose flag
+	call	retud		; get default disk
+	ld	(user),bc
+	ld	a,(fcb1)	; input file on default disk?
+	or	a
+	jr	z,opt1
+	dec	a
+	ld	b,a		; default to specified disk
+opt1:	ld	a,b
+	ld	(disk),a	; default disk
+	ld	hl,fcb2+1	; point to option string
+opt2:	ld	a,(hl)
+	inc	hl
+	cp	' '+1		; any left?
+	ret	c
+	cp	'S'
+	jr	z,opts
+	cp	'V'
+	jr	z,optv
+	cp	'D'
+	jr	z,optd
+	cp	'/'		; ignore /
+	jr	z,opt2
+opterr:	call	print
+	db	'Option not recognized: ',0
+opter1:	call	cout
+	call	crlf
+	rst	0
+opts:	ld	a,1
+	ld	(stats),a
+	jr	opt2
+optv:	ld	a,1
+	ld	(verbose),a
+	jr	opt2
+optd:	call	getmdisk	; what is max available disk?
+	ld	b,a
+	ld	a,(hl)		; get disk
+	inc	hl
+	cp	' '		; specified?
+	jr	z,optdn
+	sub	'A'
+	jr	c,optde		; in range ?
+	cp	b
+	jr	nc,optde
+	ld	(disk),a
+	jr	opt2
+optde:	call	print
+	db	'No such disk: ',0
+	add	a,'A'
+	jr	opter1
+optdn:	call	print
+	db	'Disk specification missing',cr,lf,0
+	rst	0
+
+; quit if errors have occurred
+quitif:	ld	hl,(errors)
+	ld	a,h
+	or	l		; any errors?
+	ret	z
+	rst	0
+
+; Get vector bit corresponding to disk into de
+getbit:	ld	de,1
+	ld	a,(disk)
+gbit1:	or	a
+	ret	z
+	dec	a
+	ex	de,hl
+	add	hl,hl
+	ex	de,hl
+	jr	gbit1
+
+; Is disk set to read only?
+chkro:	ld	c,29		; get r/o vector
+	call	bdos
+	call	getbit		; get our disk's vector bit
+	ld	a,d
+	and	h		; are we r/o?
+	jr	nz,isro
+	ld	a,e
+	and	l
+	ret	z
+isro:	call	pname
+	call	print
+	db	': Disk ',0
+	ld	a,(disk)
+	add	'A'
+	call	cout
+	call	print
+	db	' is set read only',cr,lf,0
+	rst	0		; abort
+
+; Reset the drive we just packed
+resdrv:	call	getbit
+	ld	c,37		; reset drive
+	jp	bdos
+
+; Check for ^C at console
+ctrlc?:	xor	a
+	call	condin
+	cp	3
+	ret	nz
+	ld	a,1
+	ld	(curop),a
+	ret
+
+; Show lists
+showlist:
+	call	print
+	db	cr,lf,'Fixed filespecs:',cr,lf,0
+	ld	hl,(fixpnt)
+	ld	bc,(fixcnt)
+	call	showl
+	call	print
+	db	cr,lf,'Mobile filespecs:',cr,lf,0
+	ld	hl,(mobpnt)
+	ld	bc,(mobcnt)
+	call	showl
+	jp	crlf
+
+showl:	ld	a,b
+	or	c
+	ret	z
+	push	bc
+	ld	b,0
+	ld	a,(hl)		; user number
+	inc	hl
+	cp	'?'
+	jr	nz,showl1
+	call	cout
+	jr	showl4
+showl1:	cp	10
+	jr	c,showl2
+	inc	b
+	sub	10
+	jr	showl1
+showl2:	push	af
+	ld	a,b
+	add	'0'
+	cp	'0'
+	jr	nz,showl3
+	ld	a,' '
+showl3:	call	cout
+	pop	af
+	add	'0'
+showl4:	call	cout
+	ld	a,':'
+	call	cout
+	ld	b,15
+showl5:	ld	a,(hl)
+	inc	hl
+	call	cout
+	djnz	showl5
+	call	crlf
+	pop	bc
+	dec	bc
+	jr	showl
+
+; Show group number table
+showtab: call	getcrt
+	ld	a,(hl)		; crt width
+	and	0f0h
+	rept	4
+	rrca			; divide by 16
+	endm
+	ld	c,a		; groups per line
+	inc	hl
+	inc	hl
+	ld	b,(hl)		; text lines per screen
+	push	bc
+	ld	de,0		; start at the beginning
+showt1:	call	getold		; get entry
+	inc	hl
+	ld	a,h
+	or	l		; free?
+	jr	z,showt4
+	dec	hl
+	push	hl
+	or	a
+	sbc	hl,de		; 1 to 1?
+	pop	hl
+	jr	z,showt4
+	call	phl4hc
+	call	print
+	db	' --> ',0
+	ex	de,hl
+	call	phl4hc
+	ex	de,hl
+	dec	c
+	jr	z,showt2
+	ld	a,' '
+	call	cout
+	call	cout
+	call	cout
+	jr	showt4
+showt2:	call	crlf
+	dec	b
+	jr	nz,showt3
+	push	hl
+	call	print
+	db	'[pause]',0
+	call	cin
+	cp	3
+	jp	z,quit
+	call	print
+	db	cr,'       ',cr,0
+	pop	hl
+	pop	bc
+	push	bc
+	jr	showt4
+showt3:	ld	a,b
+	pop	bc
+	push	bc
+	ld	b,a
+showt4:	ld	hl,(dsm)
+	or	a
+	sbc	hl,de
+	inc	de
+	jr	nz,showt1
+	ld	a,c
+	pop	bc
+	cp	c
+	ret	z
+	call	crlf
+	ret
+
+; Display help info
+help:	call	crlf
+	call	pname		; print program name
+	call	print
+	db	' v',[version/10]+'0','.',[version mod 10]+'0'
+	db	'    --    Sort and pack disk allocation groups',cr,lf,lf,0
+	call	pname
+	call	print
+	db	' <list> <s>',cr,lf,lf
+	db	'<list> is a file specifying fixed files and the desired ',cr,lf
+	db	'order of mobile files.  If the option S is given, ',cr,lf
+	db	'statistics on the state of disorder of the disk are ',cr,lf
+	db	'produced, but no groups are moved.',cr,lf,0
+	ret
+
+; Display program name from efcb
+pname:	push	af
+	push	hl
+	call	getefcb
+	jr	z,pname3	; no efcb (not expected)
+	ld	b,8		; max length
+pname1:	inc	hl
+	ld	a,(hl)
+	cp	' '
+	jr	z,pname2
+	call	cout
+	djnz	pname1
+pname2:	pop	hl
+	pop	af
+	ret
+pname3:	call	print
+	db	'PACK',0	; default name
+	jr	pname2
+	
+fixstr:	db	'FIXED'
+mobstr:	db	'MOBILE'
+wild:	db	'*:*.*'
+
+proc	ds	2		; routine to do for each group
+errors:	ds	2		; error count while analysing file list
+dnbuf:	ds	9		; space for dn spec
+user:	ds	1		; default user number
+disk:	ds	1		; disk to be packed
+group:	ds	2		; last group to be allocated
+sectab:	ds	2		; pointer to sector translation table
+
+dpb:	equ	$		; disk parameters
+spt:	ds	2		; sectors per track
+blshf:	ds	1		; block shift factor
+blmsk:	ds	1		; block mask
+exmsk:	ds	1		; extent mask
+dsm:	ds	2		; disk size
+drm:	ds	2		; directory size
+alloc:	ds	2		; initial allocation
+chks:	ds	2		; checked directory sectors
+toff:	ds	2		; track offset
+
+inline:	ds	2		; input line address
+linnum:	ds	2		; line number in input file
+bufcnt:	ds	1		; bytes left in input buffer
+stats:	ds	1		; just display statistics if <> 0
+verbose: ds	1		; display debugging info
+fixmob:	ds	1		; fixed files if <> 0
+fixcnt:	ds	2		; fixed file count
+fixpnt:	ds	2		; base of fixed file list
+mobcnt:	ds	2		; mobile file count
+mobpnt:	ds	2		; base of mobile file list
+grptab:	ds	2		; base of group table
+sector:	ds	2		; relative sector number for getsec/putsec
+dirwr:	ds	1		; directory write flag
+grp1:	ds	2		; group buffer 1 address
+grp2:	ds	2		; group buffer 2 address
+grpsel:	ds	1		; =0 : get to 1, put from 2
+				; <>0: get to 2, put from 1
+rdcnt:	ds	2		; groups read
+wrcnt:	ds	2		; groups written
+curop:	ds	1		; current operation in case of abort
+whyab:	ds	1		; reason for abort
+				;  1 - ^C
+				;  2 - sector read error
+				;  3 - sector write error
+badsec:	ds	1		; sector in error
+
+mark:	ds	2		; heap mark
+heap:	ds	2		; top of heap
+$memry:	ds	2		; end of program address (supplied by linker)
+
+	end
+or
+
+mark:	ds	2		; heap mark
+heap:	ds	2		; top of heap
+$memry:	ds	2		; end of pro

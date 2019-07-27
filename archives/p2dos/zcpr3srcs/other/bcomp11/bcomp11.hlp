@@ -1,0 +1,207 @@
+;
+BCOMP 1.1: VISUAL BINARY FILE COMPARISON             (Z - General Information)
+  ---
+ |ESC| Edit  (X for help info)
+  ---
+    Quick          Echo                Auto    Set           Set
+    To Rec         Mode   Read        Compare Address       Offset             
+     ---    ---    ---    ---    ---    ---    ---    ---    ---    ---
+    | Q |  | W |  | E |  | R |  | T |  | Y |  | U |  | I |  | O |  | P |
+     ---    ---    ---    ---    ---    ---    ---    ---    ---    ---
+     ---    ---    ---    ---    ---    ---    ---    ---    ---    ---
+    | A |  | S |  | D |  | F |  | G |  | H |  | J |  | K |  | L |  | ; |
+     ---    ---    ---    ---    ---    ---    ---    ---    ---    ---
+     End   Next   Next   Next   Find    Rpt    Back   Back   Back   Top
+           Byte   Line   Block         Find    Block  Line   Byte
+
+X - Exit  C - Calc  V - Video  <sp>  - Switch  <cr> - Next X 2  <?,/> - Help
+:z
+		  BCOMP - VISUAL BINARY FILE COMPARISON
+
+PURPOSE:
+  Screen oriented binary file comparison (or file and memory comparison)
+with patching function.
+
+SYNTAX:	BCOMP [DIR:]FILE1 [DIR:][FILE2] [/]
+   If no FILE2, then FILE1 name is used again.  If no DIR:FILE2, then second
+window is memory.  For convenience, file names are automatically wild-carded
+unless the "/" option is used to force exact command line interpretation.
+
+Z3CPR TOOL:
+   Requires 80 x 24 CRT (minimum) with TCAP support for EREOL, CLS, cursor.
+
+USAGE:
+	1) Find the differences between two similar files.
+	   Example:  BCOMP VERS1.COM VERS2.COM 
+		     
+	2) Compare disk file to memory image.
+	   Example:  BCOMP SYS.RCP
+
+
+POSSIBLE PROBLEMS:
+
+    The memory window has access to all of memory.  With the patching commands,
+it is therefore no problem to destroy some vital part of the operating system.
+
+    This program is intended for executable binary files.  Files larger
+than 64k (.LBRs ?) can be compared with BCOMP, but as the addresses wrap past
+FFFFh they become meaningless.  The record number display remains correct.
+:y v
+			    COMPARING FILES 
+
+
+     The display shows 128 bytes of the current file.  The alternate file
+displays a ** for identical bytes, a la COMP.  When switching to the alternate,
+the display scheme reverses.
+
+
+Y - AUTO-COMPARE:
+     Find the next byte in which the files differ.  Display both files at
+that byte.  If the display did not start with the files in sync, then the
+command will only move a single byte ahead.  If no difference is found, an
+EOF message shows on the status line.
+
+
+V - VIDEO TOGGLE:
+     Toggle highlighting of bytes in active window that are different from
+those in the alternate window.  When only a few bytes differ, it is much easier
+to see them this way.  Default is OFF.  
+:e  
+			MOVING BETWEEN FILES
+
+
+
+
+<sp> - SWITCH FILES:  Toggle
+	Cursor moves from one file to the other.
+
+E - ECHO MODE:  Toggle
+	Echo mode repeats a command for both files so you can move through
+them in tandem.  The right upper corner shows a reminder when in echo mode.
+:r
+
+
+				READ
+
+R - READ:
+	If BCOMP printed a "memory full" message, more of the file may be
+read in.  The new read replaces data currently in memory.  If there is no more
+to read, you may start again at the beginning of the file.
+	If the MEMORY window is used instead of a second file, twice the
+buffer space is available.
+:a s d f j k l ;
+			MOVING THROUGH FILE
+
+    Left Hand                           Right Hand
+    ---------                           ----------
+A  End of file                      ;  Start of file 
+
+S  Next byte                        L  Previous byte
+and
+.   "    "                          ,      "     "
+
+D  Next line                        K  Previous line
+
+F  Next block                       J  Previous block
+and
+=   "     "                         -      "      "
+
+<cr>  Next block, both files.  (Same as [ECHO] F)
+
+If ECHO is on, all of these commands repeat in the alternate window.
+:o u q c
+
+                          ADDRESS AND OFFSET
+
+
+U - SET ADDRESS:
+     A hex (or decimal preceded by #) address is entered.  The display
+then goes to that address relative to the current offset.  An address beyond
+what is currently in memory will go to either the start or end of the buffer.
+     If the offset is 100h, address 100 is the beginning of the file.  The
+address disply is OK until 64k of file is read in, then it wraps to 0.  The
+24 bit math needed to go beyond address FFFFh has not been implemented.
+     
+O - SET OFFSET:
+     Input a new hex offset.  The address display for the file will change
+but the location in memory will not.  Default offset for files is taken from
+the file type (e.g. COM, RCP, ENV) after the manner of ZPATCH.  Type 3 
+environment files will be displayed at their load address offsets.
+
+Q - QUICK TO RECORD:
+     Input a decimal (or hex with # trigger) record number to jump to.  It is
+up to you to pick a record currently in memory.  BCOMP does not random read the
+file looking for your record.  Record count display is OK to 8 meg file max.
+
+
+
+C - CALCULATE:
+     The hex calculator from MU3 is included.  It displays sums and differences
+as well as decimal-hex conversion.
+:f g
+
+
+G - FIND:
+     Find the series of hex bytes entered.  
+Syntax (taken from POKE):   <val1> <val2> .. <valn> <"text string...>
+No further hex bytes may follow the string trigger.  Note there is NO
+terminating ".  The hex input routine (from MU3) will accept decimal bytes with
+the # preface.
+
+
+H - REPEAT FIND:
+     Look for the same series again.  The string is maintained when switching
+to the alternate file.
+:/ ?
+
+
+The help screen version will show the commands available, as in the main
+menu for this file, and then refresh the screen.
+
+The "expert" version will just refresh the screen.  You may need to do this
+if the read string function of BDOS has caused some linefeeds.
+:x
+                              PATCHING
+
+<ESC> - EDIT:
+     Enter patching mode in the current window.  To exit, type <ESC> again.
+
+Cursor Movement:
+     Use the WordStar(tm) diamond or the arrow keys.
+
+          ^E		     ^A - Switch between hex and ascii fields
+           ^
+ <bs>,^S < $ > ^D,<sp>
+           v
+          ^X
+
+Patching:
+     In the HEX field, enter hex bytes directly.
+     In the ASCII field, enter text directly.  <Sp> enters space.
+
+Saving:
+     On exit, if any editing has been done, you get a prompt to 
+"Save Changes? (y/N)"  On a "Y" response, the disk file (or memory) is updated.
+[There is no need to edit on a CP/M record boundary.]
+
+
+
+^B - BLOCK COMMANDS:
+
+     ^B is the block command trigger    [ ^K conflicts with arrow keys  ]
+
+     B - Mark:	Set a marker for the block.  The marker is ONE end of the
+		block.  It is shown on screen as a ">".
+
+     V - Yank:	Save the data between the marker and the cursor into a buffer.
+		The cursor can be before, after, or on the Marked byte. 
+ Error - Set Marker First:  Can't Yank until the Mark has been set in the
+ current screen.  Hence, no more than 128 bytes can be Yanked.
+
+     C - Copy:	Replace the data at the cursor with whatever is in the block
+		buffer.
+ Error - Ovfl:	The copy operation cannot overflow the current screen.  All
+ of the data in the block buffer must fit, or the copy is aborted.
+
+copy operation cannot overflow the current screen.  All
+ of the data in the block buffer must fit, or the copy is abor

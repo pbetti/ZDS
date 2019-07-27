@@ -1,0 +1,150 @@
+ Introduction
+ Arithmetic      - Add, Subtract, Multiply, Divide
+ Complement      - Negate (2's Comp) and Complement (1's)
+ Logical         - And, Or, Xor
+ Rotate / Shift  - Left and Right
+:Introduction
+
+These routines are for 16-bit unsigned arithmetic.  All use HL
+as the accumulator or the result, and HL and DE contain the
+operands required (if only one operand is needed, HL is used).
+
+The available routines are:
+
+	ADDHD  -- HL = HL + DE     SUBHD -- HL = HL - DE
+	MULHD  -- HL = HL * DE     DIVHD -- HL = HL / DE
+	NEGH   -- HL = 2's Complement of HL
+	CMPH   -- HL = 1's Complement of HL
+	ROTLH  -- HL is rotated left one bit position
+	ROTRH  -- HL is rotated right one bit position
+	SHFTLH -- HL is shifted left one bit position
+	SHFTRH -- HL is shifted right one bit position
+	ANDHD  -- HL = HL AND DE
+	ORHD   -- HL = HL OR DE
+	XORHD  -- HL = HL XOR DE
+
+:                  Arithmetic Functions 
+
+All of these routines operate on HL and DE, placing the result
+in HL.  The Carry Flag is frequently used to indicate overflow.
+
+ADDHD - 16-bit Addition
+
+  ENTER: HL = Operand #1
+	 DE = Operand #2
+  EXIT : HL = Operand #1 + Operand #2
+	  Carry Set (C) if Overflow, otherwise Clear (NC)
+  USES : F,HL
+
+ Usage:  This routine is not really needed since a simple
+  "ADD  HL,DE" one-byte instruction accomplishes the same
+  thing with only one byte instead of a 3-byte call.
+
+SUBHD - 16-bit Subtraction
+
+  ENTER: HL = Minuend
+	 DE = Subtrahend
+  EXIT : HL = Minuend - Subtrahend
+	  Carry Set (C) if DE > HL, otherwise Clear (NC)
+  USES : F,HL
+
+ Usage:  This routine is no longer needed with Z80 processors
+  since the "SBC  HL,DE" operation accomplishes the same
+  function without resorting to a function call.
+
+MULHD - 16-bit Multiplication
+
+  ENTER: HL = Operand #1
+	 DE = Operand #2
+  EXIT : HL = Operand #1 times Operand #2
+	  Carry Set (C) if result is > 65535
+  USES : F,HL
+
+ Usage:  This general-purpose routine may be used at any time
+  to multiply two numbers.  It is optimized for speed, with a
+  minor sacrifice on size, and it always takes 16 loops to
+  perform any multiplication.
+
+DIVHD - 16-bit Division
+
+  ENTER: HL = Dividend
+	 DE = Divisor
+  EXIT : HL = HL / DE
+  USES : HL
+
+ Usage:  This routine may be used at any time to divide two
+  numbers.  It is optimized for speed, with a minor sacrifice
+  on size, and always takes 16 loops to perform any division.
+
+:NEGH - Two's Complement (Negate) a 16-bit Number
+
+  ENTER: HL = 16-bit Operand
+  EXIT : HL = Two's Complement of Operand
+  USES : HL
+
+ Usage:  This routine simply used to return the 2's
+	 Complement of a 16-bit number.
+
+
+CMPH - One's Complement a 16-bit Number
+
+  ENTER: HL = 16-bit Operand
+  EXIT : HL = One's Complement of Operand
+  USES : HL
+
+ Usage:  This routine simply used to return the 1's
+	 Complement of a 16-bit number.
+
+:ANDHD - Logically AND two 16-bit values
+ ORHD  - Logically OR two 16-bit values
+ XORHD - Logically XOR two 16-bit values
+
+  ENTER: HL = Operand #1
+	 DE = Operand #2
+  EXIT : HL = Bitwise Logical AND of two Operands (ANDHD)
+	      Bitwise Logical OR of two Operands  (ORHD)
+	      Bitwise Logical XOR of two Operands (XORHD)
+  USES : HL
+
+ Usage: These routines simply perform the specified Boolean
+	operation on the two supplied 16-bit values, and
+	return the result.
+
+:              Rotate and Shift Operations 
+
+ROTLH - One bit Right Rotation of 16-bit value
+ROTRH - One bit Left Rotation of 16-bit value
+
+  ENTER: HL = 16-bit operand to rotate
+  EXIT : HL = Rotated operand Left (ROTLH) or Right (ROTRH)
+  USES : HL
+
+ Usage:  These routines simply rotate the furnished 16-bit
+  value left (ROTLH) or right (ROTRH) one bit position.  These
+  are circular rotates, in which the most significant bit of H
+  is rotated into the least significant bit position of L
+  (ROTLH), and least significant bit of L is rotated into the
+  most significant bit position of H (ROTRH).
+
+
+SHFTLH - One bit Right Shift of 16-bit value, Zero Fill
+SHFTRH - One bit Left Shift of 16-bit value, Zero Fill
+
+  ENTER: HL = 16-bit operand to shift
+  EXIT : HL = Shifted operand Left (SHFTLH) or Right (SHFTRH)
+  USES : HL
+
+ Usage:  These routines simply shift the furnished 16-bit
+  value left (SHFTLH) or right (SHFTRH) one bit position filling
+  the cleared position with a Zero.  In SHFTLH, HL is shifted
+  left one bit position with the least significant bit of L
+  filled with a Zero.  In SHFTRH, HL is shifted right one bit
+  position with the most significant bit of H filled with a Zero.
+
+  Note that SHFTLH is equivalent to the more efficient single
+  byte "ADD  HL,HL" operation and SHFTRH is equivalent to the
+  four byte Z80 sequence:
+
+		SRL	H
+		RR	L
+

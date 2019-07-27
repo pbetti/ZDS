@@ -1,0 +1,99 @@
+;	TITLE	"SALLOC - Syslib 4.0"
+	NAME	('ALLOC')
+;================================================================
+; Author  : Harold F. Bower
+;		Derived from SALLOC.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.3
+; Module  : SALLOC
+; Abstract: This module contains the routines IALLOC and ALLOC
+;	which support dynamic memory allocation.  IALLOC is used
+;	to initialize the system, specifying where the first byte
+;	and last bytes of the dynamic buffer are.  The user may
+;	explicitly give zero, one, or both of these values, and,
+;	for those values omitted, IALLOC selects the area just
+;	after the user program for the beginning of the buffer,
+;	and the bottom of the CCP for the end of the buffer.
+;	ALLOC, then, is used to obtain buffers from this area.
+;	ALLOC is called with the desired space in DE, and it
+;	returns a pointer to the first byte of the allocated buf-
+;	fer in HL with a flag to show overflow. 
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		IALLOC, ALLOC
+
+; From SYSLIB Get..
+
+	EXT		CODEND, COMPHD, GETMTOP
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - IALLOC
+; Entry: HL - Starting address of Buffer Area
+;	 DE - End Address of Buffer Area
+;	  A - Flag:
+;		  Bit 0 - =1 - Set start address from HL
+;			  =0 - Set start address from CODEND
+;		  Bit 1 - =1 - Set ending address from DE
+;			  =0 - Set ending address from CCP
+; Exit : - Nothing returned, the buffers are initialized
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+IALLOC:	PUSH	AF		; Save regs
+	PUSH	HL
+	PUSH	DE
+	PUSH	BC
+	LD	B,A		; Save Code
+	RR	B		; Set from HL?
+	CALL	NC,CODEND	; Get starting address from CODEND
+	LD	(NXTBYT),HL	; Set ptr to next byte
+	EX	DE,HL		; Use DE now
+	RR	B		; Set from HL?
+	JR	C,IAL2
+	CALL	GETMTOP		; Get top available address in HL
+	DEC	HL		; One byte lower
+IAL2:	LD	(LSTBYT),HL	; Set ptr to last byte
+	POP	BC		; Restore regs
+	POP	DE
+	POP	HL
+	POP	AF
+	RET
+
+;===============================================================
+; NAME - ALLOC
+; Entry: DE - Number of bytes requested
+; Exit : HL - Address of first byte of buffer
+;	  A - A = 0 and Zero Flag Set (Z) if Overflow (HL invalid)
+;		 A <> 0 and Zero Flag Clear (NZ) if Ok
+; Uses : AF,HL
+; Special Requirements: None
+;===============================================================
+
+ALLOC:	PUSH	DE
+	LD	HL,(NXTBYT)	; Set next byte
+	ADD	HL,DE		; Pt to after last byte
+	EX	DE,HL
+	LD	HL,(LSTBYT)
+	CALL	COMPHD		; Overflow?
+	JR	C,ALERR		; Allocation error
+	LD	HL,(NXTBYT)	; Get ptr to next byte
+	LD	(NXTBYT),DE	; New next byte
+	DEFB	0F6H		; Set Ok flag w/"OR 0AFH"
+ALERR:	XOR	A		; Set Error Code if entered here
+	POP	DE		; Restore DE
+	RET
+
+;  Storage Area/Buffers
+
+	DSEG			; Put in Data Segment
+
+NXTBYT:	DEFS	2		; Address of next byte in dynamic buffer
+LSTBYT:	DEFS	2		; Address of last byte in dynamic buffer
+
+	END
+

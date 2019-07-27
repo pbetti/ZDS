@@ -1,0 +1,74 @@
+	TITLE	"Z3PZNC - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3PZNC.Z80 Ver 1.1 by Richard Conn
+; Date    : 15 Mar 87
+; Version : 1.2
+; Module  : Z3PZNC
+; Abstract: This module contains the routine PUTZNC which sets
+;	the address for the next character to be returned by ZEX
+;	to a specified value
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		PUTZNC
+
+;  External References
+
+	EXT		ENVPTR
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - PUTZNC
+; Entry: HL - Contains the address to insert for ZEX next char
+; Exit :  A = 0, Carry Clear (NC) if Data IS Available
+;	      Carry Set (C) if Data NOT available
+; Uses : AF
+; Special Requirements: None
+;===============================================================
+
+PUTZNC:	PUSH	HL
+	LD	HL,(ENVPTR)	;pt to environment
+	LD	A,H		;any environment?
+	OR	L
+	JR	Z,ERROR
+	PUSH	DE		;pt to message byte
+	LD	DE,34		;offset to message ptr
+	ADD	HL,DE
+	LD	A,(HL)		;get address of messages
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		;HL pts to message
+	OR	H		;any messages?
+	JR	Z,ERROR0
+	LD	DE,9		;pt to Zex Next Char Address
+	ADD	HL,DE
+	POP	DE		;restore DE
+	LD	(TEMP),DE	;save DE
+	POP	DE		;get ptr to next char
+	LD	(HL),E		;get address
+	INC	HL
+	LD	(HL),D
+	LD	HL,(TEMP)
+	EX	DE,HL		;restore DE
+	XOR	A		;set Z and Clear Carry
+	RET
+
+ERROR0:	POP	DE		; Restore DE
+ERROR:	POP	HL		;restore HL
+	SCF			;set carry
+	RET
+
+; Data Storage/Buffers
+
+	DSEG			; Put in Data Segment
+
+TEMP:	DEFS	2
+
+	END
+

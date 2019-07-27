@@ -1,0 +1,156 @@
+; ZFILER HISTORY
+;
+; New program ZFILER created based on previous developments in VFILER41.
+; The following changes have been made since VFILER version 4.1.
+;
+; Version 1.0h		September 16, 1987	Jay Sage
+;
+;   ---	Fixed bug in the code for logging in the displayed directory when the
+;	Z command is executed.  It was not working correctly under standard
+;	ZCPR30 or backgrounder.
+;   ---	Added options to control how the ZFILER.CMD macro file is located.  A
+;	choice on the option menu allows one to turn on or off searching of
+;	the entire path (including current directory).  If that option is off,
+;	either the root directory or a specified directory will be used,
+;	depending on the configuration of the program.
+;   ---	ZFILER can now be reexecuted using the GO command.  I borrowed a trick
+;	from Al Hawley.  When invoked originally, ZFILER checks the name used
+;	to invoke it.  If the name is 'GO', then a default name stored in an
+;	internal buffer is used.  Otherwise, if the name is copied to that
+;	buffer from the external FCB.  I believe this change will allow ZFILER
+;	to be reconfigured using the 'O' command and then cloned using SAVE.
+;   ---	A more extensive user configuration file has been provided which
+;	comprises sections of ZFHDR.Z80 (the definitions file) and ZFMAIN.Z80
+;	(the beginning of the main code).  As before, reconfiguration can be
+;	carried out by editing ZFCNFH.Z80 and assembling it to a HEX file.
+;	Then "MLOAD ZFNEW=ZF0LD.COM,ZFCNFH" will install the changes.
+;
+;
+; Version 1.0g		August 23, 1987		Carson Wilson
+;
+;   ---	Reverse video, dim, or '_' are now used on the status line to display 
+;	all current file attributes.  'r' read-only tags were interfering with 
+;	the tagging commands and are no longer used.
+;   --- Corrected bug preventing view/unsqueeze of squeezed system files.
+;   --- Corrected bug causing squeezed read-only files to be unsqueezed as 
+;	system files when copying attributes.
+;   ---	Made invalid command display show actual command.
+;   --- Removed ZFILER command on exit to avoid confusion between system and 
+;	ZFILER's 'Z' command.
+;   --- Fixed initial help screen from command line.
+;   --- Added space before 'OK' after copy/unsqueeze.
+;
+; Version 1.0f		June 12, 1987		Jay Sage
+;
+;   ---	Added rudimentary group macro capability by having ZFILER construct
+;	and invoke a ZEX script.
+;
+; Version 1.0c		April 27, 1987		Jay Sage
+;
+;   ---	Made changes for compatibility with ZCPR33.  Now on manual invocation
+;	ZFILER returns to the command processor if ZEX is running so that ZEX
+;	can continue to supply commands even if there are no more commands on
+;	the current command line.
+;
+; Version 1.0b		January 13, 1987	Jay Sage
+;
+;   ---	Added DateStamper support.  Now on file copies and moves, the
+;	time and date stamp of the source file is carried to the destination.
+;
+;   --- Modified handling of directories with 'L' (or 'N') command.  The
+;	code now respects the DUOK flag in the environment.  If it is set,
+;	then any attempt to log in a directory is checked against the maxdrive
+;	and maxuser values in the environment.  If the request passes that
+;	test, then the directory is logged in even if it had been specified
+;	using a DIR form and even if a password is associated with it.  If the
+;	requested directory is beyond the maxdrive/maxuser range or if DUOK is
+;	not set, then the named directory register is checked.  Passwords are
+;	checked as needed using improved code (shorter and more accurate).
+;
+;   --- Added small bit of code to the ZFILER initialization to change the JP
+;	opcode at 100H to RET so that ZFILER cannot be rerun using the "GO"
+;	command (this has bad consequences, since the shell stack entry then
+;	would have the command "GO" stored in it!).
+;
+;
+; Version 1.0a		January 1, 1987		Jay Sage
+;
+;   --- IMPORTANT CHANGE: To make ZFILER consistent with other script
+;	processing programs, the default parameter designation character
+;	has been changed from '%' to '$'.  The parameter '$', an alternate
+;	for 'P' (completed Pointed-to-file spec: du:name.typ) was therefore
+;	eliminated.  These changes will require editing of any VFILER.CMD
+;	file when converting to ZFILER.CMD (the macro file used by ZFILER).
+;   --- Modified the way the shell stack entry is used.  It now keeps
+;	both the original directory and the requested directory on the
+;	stack.  This has two major advantages.  By keeping the original
+;	directory on the stack, on exit with the 'X' command ZFILER can
+;	return to the directory from which it was originally invoked no
+;	matter how many other directories have been logged in by use of
+;	the 'Z' command or a macro.  Keeping the requested (displayed)
+;	directory on the shell stack avoids the problem with a passworded
+;	directory of having to reenter the password every time ZFILER
+;	returned from a macro or 'Z' operation.
+;   --- Added feature with 'Z' command to allow avoidance of the "Strike
+;	any Key" message on return to ZFILER.  If the command line entered
+;	with the 'Z' command begins with a space, then shell waiting will
+;	be disabled.
+;   --- Fixed a bug caused by the GA command.  Once that command was used,
+;	an archiving flag was set and never cleared.  A later GC command
+;	then used the group-archive prompting options instead of the
+;	group-copy options.  This flag is now reset before all group
+;	operations.
+;   --- Added option on file copy and unsqueeze functions to allow
+;	the destination file attributes to be set to those of a file
+;	that is being overwritten.  If there is no such file and the
+;	attribute setting option is engaged, then the source file
+;	attributes will be used.
+;   --- Changed code for file viewing so that scrolling will stop
+;	at the end of a file (carriage return and space will not
+;	cause the next file to start).  Only control-X or control-C
+;	will be effective at the end of file.  Also added control-Z
+;	option to go straight to the end of file without paging.
+;   --- Changed the code that allows interruption of group operations
+;	so that a carriage return will not cause an abort (many users
+;	answer some prompts that require no return with a return and
+;	found that group operations worked only on the first file).
+;	Any character other than carriage return will abort mass
+;	operations.
+;   --- Made it possible to get the macro help screen by pressing
+;	the leadin character a second time in response to the 'Macro'
+;	prompt (this is much easier and more natural than entering
+;	the '#' command).
+;   --- Fixed a bug in the macro help display that was echoing control
+;	characters to the screen.  These are now filtered.  One can now
+;	enter ESC ESC to see the macro help screen and a third ESC to
+;	return to the file display.
+;   --- Added ^J command to jump to next file that matches the last
+;	mask specified in a "J" command.  This allows one to jump
+;	easily to the second or third file that matches a simple
+;	file spec.
+;   --- Fixed bug in "M" and "GM" commands that allowed source file
+;	to be deleted even when copy had not been performed.
+;   --- Added "GR" group reverse function to reverse file tags.
+;	Tagged files become untagged; untagged files become tagged;
+;	and soft-tagged files remain soft-tagged.
+;   --- Cleaned up log command ("L" or "N").  Removed special
+;	handling of answer "x" for directory name (no longer needed)
+;	and changed error handling code.
+;   --- Added a configuration option to automatically log in the
+;	displayed directory for the "Z" command if the user number is
+;	less than 16.  If this option is configured in, then the disk
+;	system is reset before the command line is run (this is the
+;	disadvantage of using this option).
+;   --- Made rename command preserve all file attributes.
+;   --- Added options to copy attributes with files and to always set
+;	the archive attribute in the destination file.  If the file
+;	is being moved, the attributes are always copied and the
+;	archive bit is left as it was; if the file is being
+;	unsqueezed, the attributes are not copied and the archive bit
+;	is set according to its option setting.
+;
+;-----------------------------------------------------------------------------
+;
+; See the VFHIST.DOC file in VFILER Version 4.1 for the history of the
+; development of VFILER.
+                                       

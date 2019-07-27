@@ -1,0 +1,1810 @@
+;		      COPYFAST.ASM Version 4.3
+;
+;REVISED	11/03/87
+;
+;	IN ADDITION TO MAKING RAPID COPIES OF A DISK, COPYFAST
+;	IS USEFUL FOR MAKING BACKUP COPIES OF A DISK THAT HAS
+;	HAD A FILE DAMAGED IN SOME WAY. YOU CAN THEN USE THE
+;	COPY WHEN TRYING TO RECOVER THE FILE WITH A DISK UTILITY.
+;	(ASSUMING YOUR CONTROLLER CAN STILL READ THE SECTORS)
+;
+;	AS IT IS CURRENTLY CONFIGURED COPYFAST WILL CORRECTLY
+;	COPY SYSTEM TRACKS OTHER THAN TRACK 0 ONLY IF THEY
+;	ARE OF THE SAME FORMAT AND SECTOR COUNT AS THE DATA TRACKS.
+;
+;	Note: to save people time, don't bother to change
+;	the DOC file just to update the change history.
+;
+	ORG	0100H
+;
+;
+;	Equates
+;
+FALSE	EQU	0	; define false
+TRUE	EQU	NOT FALSE;  define true
+;
+EXITCP	EQU	0	; warm start return to CP/M
+FCB	EQU	5CH	; default FCB address
+;
+CR	EQU	0DH	; ASCII Carriage return
+LF	EQU	0AH	; ASCII line feed
+CTRLC	EQU	3	; ASCII control-C
+;
+NOLOG	EQU	01	;CALL SELDSK WITH NO LOGON
+LOGON	EQU	00	;CALL SELDSK WITH LOGON
+;
+;	User-modifiable switches
+;
+SINGLE	EQU	FALSE	; TRUE for single drive copy program
+;
+NOCOMP	EQU	FALSE	; TRUE if no read checking at all
+;			;   (DOCOMP MUST BE FALSE)
+;			; FALSE if read checking is done,
+;			;   check DOCOMP 
+DOCOMP	EQU	TRUE	; TRUE if byte-by-byte comparison
+;			; desired on read-after-write check
+;			; Must be FALSE if NOCOMP is TRUE
+	 IF	NOCOMP AND DOCOMP
+DOCOMP	SET	FALSE	; cause error
+	 ENDIF
+;
+NUMERR	EQU	2	; number of error retries done
+;
+BUFFNU  EQU	0	; the number of full track buffers
+;	that will fit in your system. This figure includes
+;	the space used by the read-back buffers, if used
+;	(minimum 2). If zero, the number of buffers will
+;	be automatically computed at execution.
+;
+;	The next two values specify the copy range, and the program
+;	can be run in other ways by the parameter (first character
+;	of the first filename) given when COPYFAST is first invoked:
+;			(Note: only complete tracks are copied)
+;
+;	All	0-(Lastrk-1)	   ***	Entire disk
+;	Data	Firstrk-(Lastrk-1)	CP/M data area
+;	First	Firstrk			CP/M directory track 
+;	Last	(Lastrk-1)		Last track on disk
+;	One	1			Track one, UCSD directory
+;	Pascal	1-(Lastrk-1)		UCSD Pascal data area
+;	System	0-(Firstrk-1)	   ***	CP/M bootstrap
+;	Zero	0		   ***	Track zero, UCSD bootstrap
+;	nn	nn			One track, as specified
+;	n1-n2	n1-n2			A specified range
+;			***	NOTE: this option parameter is
+;				functional only if CPM is TRUE.
+;
+;	The default range, currently Firstrk to Lastrk-1, is given
+;	in the two values at TRKSRT.
+;
+FIRSTRK EQU	2		; the first data track copied.
+;				; The bootstrap is assumed to be
+;				; on tracks 0 to Firstrk-1
+LASTRK	EQU	76 + 1		; the last track copied plus one
+;
+DIFFTRK	EQU	0		; difference between first source
+;				; track and the first object track.
+;				; (applies only when default range
+;				; is used)
+;
+; THE NEXT EQUATE MUST BE TRUE. IT WAS LEFT IN TO FACILITATE
+; COMPARISON WITH THE ORIGINAL COPYFAST CODE.
+CPM	EQU	TRUE	; TRUE for CP/M copy (thru BIOS)
+;
+BXTBL	EQU	TRUE 	;TRUE TO USE BIOS SECTOR XLATE TABLE
+;
+; IF BXTBL IS TRUE THEN CHANGING THE VALUES FOR 'RSKEW', 'SLOW',
+;AND 'TSKEW' WILL NOT MAKE A SIGNIFICANT DIFFERENCE IN PERFORMANCE
+;BECAUSE THE ENTRIES IN THE SKEW TABLES 'WRITAB' AND 'READTAB'
+;ARE NOT USED. (GIVING A MORE UNIVERSAL PROGRAM).
+; ALSO, THE COPY TIME FOR A STANDARD IBM 3740 DISK MAY BE QUITE A
+;BIT LONGER THAN A SEPARATE CUSTOM VERSION OF THE PROGRAM CONTAINING
+;OPTIMIZED ENTRIES IN 'WRITAB' AND 'READTAB' (WITH BXTBL SET FALSE).
+;
+;
+	 IF	CPM
+;
+SDLAST  EQU	26	; the number of sectors per track
+;			; Also determines the lengths of
+;			; WRTAB, READTAB, and WRITAB
+;			; CP/M 2 users: this must be the
+;			; value in the first byte of the
+;			; disk parameter block.
+SDZERO	EQU	26	; the number of 128-byte sectors on
+;			; track zero. This is usually 26
+;			; even on double-density disks,
+;			; per the IBM standard.
+;			; SHOULD BE NO LARGER THAN SDLAST.
+WRSWCH	EQU	FALSE	; TRUE if CP/M 2.2 block/deblock
+;			; routines need various values in
+;			; reg. C during writes. See WRTAB
+WRCODE	EQU	2	; value passed to sector write rtn
+;			; in reg. C if WRSWCH is FALSE
+SECSIZ	EQU	128	; Note: 128 if CP/M BIOS is used
+	 ENDIF
+;
+	 IF	CPM AND (NOT BXTBL)
+RSKEW	EQU	TRUE 	; TRUE if read interleaving needed
+;			; Note: change READTAB if TRUE
+SLOW	EQU	FALSE	; TRUE if slower interleaving wanted
+TSKEW	EQU	5	; Amount of track-to-track skew
+;			; (if RSKEW is FALSE)
+;			; Should be less than SDLAST
+	 ENDIF
+;
+	 IF	CPM AND BXTBL
+RSKEW	EQU	FALSE
+SLOW	EQU	FALSE
+TSKEW	EQU	0
+	 ENDIF
+;
+;
+;	the following shennanigans are because ASM does not
+;	have an EQ operator for comparisons, and neither ASM
+;	nor MAC will perform an IF exactly as described in
+;	the manual. Therefor, a TRUE value is constructed
+;	with AND's and shift's and OR's.
+;
+;
+XXXSKW	EQU	(0-TSKEW) AND 0FF00H
+TRSKW	EQU	((XXXSKW) OR (XXXSKW SHR 8)) AND (NOT RSKEW)
+;
+;
+;
+START:
+	JMP	VECT1		; go initialize the branches
+;
+;
+;	Useful constants placed here for finding easily
+;	These can be changed using DDT to alter some of
+;	the characteristics of the program to suit your
+;	taste.
+;
+TRKSRT:				; default first and last+1 track numbers
+;				; Can be changed at run time
+	DB	FIRSTRK
+	DB	LASTRK
+BUFFNMB:			; max. number of buffers
+	DB	BUFFNU
+SRCTRAK:			; source track - object track
+	DB	DIFFTRK
+;
+SPT0:	DB	SDZERO		;SECTORS PER TRACK 0
+;
+SPT:	DB	SDLAST		;128 BYTE SECTORS PER DATA TRACK
+;
+OFFSET	DB	2		;NUMBER OF RESERVED (SYSTEM) TRACKS
+;
+;SET THE FOLLOWING NON-ZERO IF YOU DO NOT WANT THE PROGRAM
+;TO OVERWRITE THE BDOS (e.g. USING CACHE22 OR OTHER CP/M MODIFICATION)
+;
+BDOSFG	DB	01
+;
+;	A set of dummy branch points to the CBIOS that are
+;	filled in by the VECTOR routine.
+;
+WBOOT:
+	JMP	$-$		; not used
+CONST:
+	JMP	$-$
+CONIN:
+	JMP	$-$
+CONOUT:
+	JMP	$-$
+LIST:
+	JMP	$-$		; not used
+PUNCH:
+	JMP	$-$		; not used
+READER:
+	JMP	$-$		; not used
+HOME:
+	JMP	$-$
+SELDIS:
+	JMP	$-$
+SETRAK:
+	JMP	$-$
+SETSCT:
+	JMP	$-$
+SETDMA:
+	JMP	$-$
+READ:
+	JMP	$-$
+WRITE:
+	JMP	$-$
+LISTST:
+	JMP	$-$		; not used
+SECTRAN:
+	JMP	$-$		; only CPM 2.2
+;
+;
+;
+;	This  is the point where the program returns to repeat  the
+;	copy. Everything is re-initialized.
+;
+REPEAT:
+	LXI	SP,STKTOP	; se-initialize stack
+	LXI	D,SOURCE
+	CALL	PRINT		; ask for source drive
+SRCELU:
+	CALL	CONIN		; read response (upper case)
+	CPI	CTRLC
+	JZ	EXIT		; CTRL-C means abort
+	ANI	5FH
+	CPI	'A'	;41H
+	JC	SRCELU		; bad value - less than A
+	CPI	'F'	;46H
+	JZ	SETSOU
+	JC	SETSOU
+	JMP	SRCELU		; cad value - greater than F
+SETSOU:
+	STA	SRCEME		; save the source drive
+	 IF	SINGLE
+	STA	OBJMES
+	 ENDIF
+	SUI	'A'	;41H
+	STA	SRCEDR		; convert value to CP/M number
+	LDA	SRCEME
+	MOV	C,A
+	CALL	CONOUT		; echo value to console
+	 IF	NOT SINGLE
+	LXI	D,OBJECT	; prompt for destination disk
+	CALL	PRINT
+OBJLUP:				; read response
+	CALL	CONIN
+	CPI	CTRLC		; CTRL-C means abort
+	JZ	EXIT
+	ANI	5FH		; convert to upper case
+	CPI	'A'	;41H
+	JC	OBJLUP		; bad value - less than A
+	CPI	'F'	;46H
+	JZ	SETOBJ
+	JC	SETOBJ
+	JMP	OBJLUP		; bad value - greater than F
+SETOBJ:
+	LXI	H,SRCEME	; Cannot have a one drive copy
+	CMP	M
+	JZ	OBJLUP
+	STA	OBJMES		; save the destination drive
+	SUI	'A'	;41H
+	STA	OBJDRI		; convert value to CP/M number
+	LDA	OBJMES
+	MOV	C,A
+	CALL	CONOUT		; echo object drive
+	 ENDIF
+	 IF	SINGLE
+	LXI	D,WPMSG
+	CALL	PRINT
+	 ENDIF
+	LXI	D,SIGNON
+	CALL	PRINT		; now give chance to change disks
+;				; or give up
+AGIN:
+	CALL	CONIN		; read response from keyboard
+	CPI	CTRLC
+	JZ	EXIT		; ctrl-C means quit
+	CPI	CR
+	JNZ	AGIN 		; CR means go. Ignore anything else
+;
+;	now go do it !
+;
+	LXI	D,CRLF
+	CALL	PRINT		; now start actual copy
+	CALL	COPY
+	LXI	D,DONMSG
+	CALL	PRINT		; copy is now done, say so
+;
+;	end of this copy
+;
+EXIT:
+	LXI	SP,STKTOP	; re-initialize stack
+	LXI	H,0FFFFH	; and maybe flush buffers (MP/M)
+	CALL	SETDMA
+	LDA	SRCEDR		; first, select source drive
+	MOV	C,A
+	CALL	SELDSK
+	CALL	HOME		; home the disk in case
+	 IF	NOT SINGLE
+	LDA	OBJDRI
+	MOV	C,A		; now, select destination drive
+	CALL	SELDSK
+	CALL	HOME		; and home that disk, in case
+	 ENDIF
+EXIT1:	LXI	D,REPMES	; ask if another copy is desired
+	CALL	PRINT
+	CALL	CONIN		; read response, upper case
+	ANI	5FH
+	CPI	'R'		; R means repeat
+	JZ	REPEAT
+	CPI	CR		; carriage return means back to CP/M
+	JNZ	EXIT1
+	MVI	C,0		; set default disk back to A
+	MVI	E,NOLOG
+	CALL	SELDSK
+	JMP	EXITCP		; and warmstart back to CP/M
+;
+;	this is the main copy routine
+;
+COPY:
+	LDA	SRCEDR		; first, select source drive
+	MOV	C,A
+	 IF	CPM
+	MVI	E,LOGON		; logon request (2.2 deblocking)
+	 ENDIF
+	CALL	SELDSK
+	 IF	NOT BXTBL
+	LXI	H,0000
+	SHLD	XLT		;SET NO SECTOR TRANSLATION
+	 ENDIF
+	 IF	BXTBL
+	MOV	E,M
+	INX	H
+	MOV	D,M
+	XCHG
+	SHLD	XLT		;SAVE BIOS XLATE TABLE ADDRESS
+;
+	XCHG
+	DCX	H		;POINT TO DPH AGAIN
+	LXI	D,10		;INDEX TO...
+	DAD	D		;...DPB ADDRESS IN DPH
+	MOV	E,M		;GET DPB...
+	INX	H
+	MOV	D,M
+	XCHG			;...ADDRESS TO HL
+	PUSH	H		;SAVE FOR LATER
+	LXI	D,2		;INDEX TO BSH
+	DAD	D
+	MOV	A,M		;GET BSH
+	STA	BSH		;AND SAVE.
+	POP	H		;GET DPB ADDRESS
+	PUSH	H		;SAVE AGAIN
+	LXI	D,5		;INDEX TO DSM
+	DAD	D
+	MOV	E,M		;GET LOW BYTE
+	INX	H
+	MOV	D,M		;NOW GET HIGH BYTE
+	XCHG			;DSM TO HL
+	SHLD	DSM		;AND SAVE.
+	POP	H		;DPB ADDRESS
+	PUSH	H
+	MOV	A,M		;GET SECTORS PER TRACK
+	STA	SPT		;AND SAVE.
+	INX	H
+	MOV	A,M		;CHECK HIGH BYTE
+	POP	H		;GET BACK DPB ADDRESS
+	ORA	A		;MORE THAN 255 SPT?
+	LXI	D,SPTERR
+	JNZ	COPY3		;YES, QUIT
+;
+	LXI	D,13		;INDEX TO RESERVED
+	DAD	D		;TRACK COUNT IN DPB.
+	MOV	A,M		;GET LOW BYTE
+	STA	OFFSET		;AND SAVE.
+	LDA	OPTFLG		;CHECK COMMAND LINE OPTION
+	CPI	'D'		;COPY ONLY DATA TRACKS?
+	MOV	A,M
+	JNZ	COPY1
+	STA	TRKSRT		;YES, UPDATE START TRACK
+COPY1:	CPI	6		;CHECK LOW BYTE
+	JNC	COPY2		;QUIT IF TOO MANY
+	INX	H
+	MOV	A,M		;CHECK HIGH BYTE
+	ORA	A		;QUIT IF NON-ZERO
+	JZ	COPY4
+COPY2:	LXI	H,OFFSET	;BUT QUIT ONLY
+	LDA	TRKSRT		;IF ATTEMPTING
+	CMP	M		;TO COPY
+	JNC	COPY4		;A SYSTEM TRACK.
+	LXI	D,OFFERR
+COPY3:	CALL	PRINT		;NOTIFY USER
+	JMP	EXIT1		;AND BAIL OUT
+;
+;THE FOLLOWING LIFTED FROM FBAD.ASM V60
+; Convert block number to track
+;
+COPY4:		;CALCULATE TRACKS/DISK IF 'ALL' OR 'DATA' OPTION
+	LDA	OPTFLG
+	CPI	'A'
+	JZ	COPY5
+	CPI	'D'
+	JNZ	COPY6
+COPY5:	LHLD	DSM		;GET MAXIMUM GROUP
+	LDA	BSH		; Dpb value that tells how to
+;
+SHIFTL:	DAD	H		; Shift group number to get
+	DCR	A		; Disk-data-area relative
+	JNZ	SHIFTL		; Record number
+	XCHG			; Rel record # into 'DE'
+	LDA	SPT		; Records per track from DPB
+	MOV	L,A
+	MVI	H,0
+;
+; Negate HL
+	MOV	A,L
+	CMA
+	MOV	L,A
+	MOV	A,H
+	CMA
+	MOV	H,A
+	INX	H
+;
+	XCHG
+	LXI	B,0		; Initialize quotient
+;
+; Divide by number of records
+;	quotient = track
+;	     mod = record
+;
+DIVLP:	INX	B		; Dirty division
+	DAD	D
+	JC	DIVLP
+	DCX	B		; Fixup last
+	LDA	OFFSET		; But before we have track #,
+	MOV	L,A		; We have to add system track offset
+	MVI	H,0
+	DAD	B
+	MOV	A,H
+	ORA	A		;MORE THAN 255 TRACKS ON DISK?
+	LXI	D,TRKERR
+	JNZ	COPY3		;YES, ERROR
+	MOV	A,L
+	INR	A		;LASTRK+1
+	STA	TRKSRT+1	;UDATE LAST TRACK
+;
+COPY6:	CALL	RANGE		;DISPLAY COPY RANGE
+	CALL	INITBF		;SETUP COPY BUFFERS
+	 ENDIF	;BXTBL
+;
+	CALL	VECTOR		;INITIALIZE BUFFER COUNT
+;
+	LDA	BUFFNMB		; load desired buffer number
+	ORA	A
+	JZ	VECT3		; if no autosize, put in
+	 IF	DOCOMP
+	DCR	A		; subtract one for compare buffer
+	STA	BUFFNMB
+	 ENDIF
+	LXI	H,BUFTMP
+	CMP	M		; compare against number found
+	JZ	VECT2
+	JC	VECT2		; branch if smaller
+	LXI	D,BUFERR
+	CALL	PRINT		; print out error msg
+	LDA	BUFTMP
+	CALL	PRTDEC		; print out buffer number
+VECT3:
+	LDA	BUFTMP
+	STA	BUFFNMB		; put in smaller buffer number
+VECT2:
+	CALL	HOME		; home the disk first, in case
+;				; the controller requires it.
+;				; (this might be the first time
+;				; the drive has been used)
+	LDA	TRKSRT
+	CALL	SETTRK		; now start with first track
+	 IF	NOT SINGLE
+	LDA	OBJDRI
+	MOV	C,A		; now, select destination drive
+	 ENDIF
+	 IF	CPM AND (NOT SINGLE)
+	MVI	E,LOGON		; logon request (2.2 deblocking)
+	 ENDIF
+	 IF	NOT SINGLE
+	CALL	SELDSK
+	CALL	HOME		; and home that disk, in case
+	 ENDIF
+;
+;	return here to continue copy
+;
+RDLOOP:
+	LDA	TRK		; note current track
+	STA	TRKSAV
+	XRA	A		; reset error counter
+	STA	CMPERR
+	LXI	D,TRKM		; print the current starting track
+	CALL	PRINT		; being copied
+	LDA	TRKSAV
+	CALL	PRTDEC
+TRYRDA:
+	 IF	SINGLE
+	LXI	D,SIGNON	; now give operator chance to change disk
+	 ENDIF
+	LDA	SRCEDR		; select source drive
+;
+;	read  loop
+;
+	CALL	STARTL		; start the copy loop (reading source)
+LOOP1:
+	CALL	READT		; read one track
+	JZ	LOOP4		; if all tracks read, go check errors
+	LDA	ERR1
+	ORA	A		; not all done, but see if error already
+	JNZ	LOOP1		; and go try another track
+;
+;	now see if any errors in the previous operations
+;
+LOOP4:
+	LDA	ERR1		; now check if any errors
+	ORA	A
+	JNZ	RDSKIP		; jump if no errors at all
+	MVI	A,10H
+	STA	ERR1		; reset error flag
+;
+;	allow NUMERR errors before giving up
+;
+	LDA	CMPERR		; check the retry counter
+	INR	A
+	STA	CMPERR
+	CPI	NUMERR		; normally ten retries max
+	JNZ	LOOP1	; WAS TRYRDA
+	LXI	D,MESGC		; if maximum error count,
+	CALL	PRINT		;   print message
+	XRA	A
+	STA	CMPERR		; full track error, reset error counter
+	CALL	ENDLUP
+	JNZ	LOOP1		; now bump up track and see if done
+;
+;	write loop
+;
+RDSKIP:
+	XRA	A		; reset error counter
+	STA	CMPERR
+TRYAGA:
+	 IF	SINGLE
+	LXI	D,OBJMSG	; give chance to put in object disk
+	 ENDIF
+	LDA	OBJDRI		; now select destination disk
+	CALL	STARTL		; start the write loop
+LOOP2:
+	CALL	WRITET		; write one track (and readback check)
+	JZ	LOOP3		; if all tracks written, go check errors
+	LDA	ERR1
+	ORA	A		; not all done, but see if error already
+	JNZ	LOOP2
+;
+;	now see if any errors in the previous operations
+;
+LOOP3:
+	LDA	ERR1		; now check if any errors
+	ORA	A
+	JNZ	SKIP		; jump if no errors at all
+;
+;	allow NUMERR errors before giving up
+;
+	LDA	CMPERR		; check the retry counter
+	INR	A
+	STA	CMPERR
+	CPI	NUMERR		; normally ten retries max
+	JNZ	TRYAGA
+	LXI	D,MESGC		; if maximum error count,
+	CALL	PRINT		;   print message
+	LDA	BUFFNMB
+	MOV	H,A
+	LDA	TRK		;   and set next track
+	INR	A		;   past track in error
+	SUB	H
+	STA	TRKSAV
+;
+;	copied all tracks correctly (or NUMERR errors)
+;
+SKIP:
+	LDA	BUFFNMB		; get number of buffers
+	MOV	H,A
+	LDA	TRKSAV		; bump up track counter
+	ADD	H
+	STA	TRK
+	LXI	H,TRKSRT+1	; see if copy operation is done
+	CMP	M		; TRK < LASTRK+1
+	RNC
+	JNZ	RDLOOP		; go back and do more
+	RET
+;
+;	This routine selects the disk,  and initializes the  buffer
+;	address,  buffer counter, and track counter,and seeks to the
+;	right track.
+;
+STARTL:
+	 IF	SINGLE
+	PUSH	D		; Preserve register
+	LXI	H,0FFFFH	; and maybe flush buffers (MP/M)
+	CALL	SETDMA
+	CALL	HOME		; Home the disk for a deblocking CBIOS
+;				; to get a chance to flush the buffer
+	POP	D		; Restore register
+	CALL	PRINT		; now give chance to change disks
+;				; or give up
+AGIN1:
+	CALL	CONIN		; read response from keyboard
+	CPI	CTRLC
+	JZ	EXIT		; CTRL-C means quit
+	CPI	CR
+	JNZ	AGIN1 		; CR means go. Ignore anything else
+	 ENDIF
+	 IF	NOT SINGLE
+	MOV	C,A		; select the disk first
+	 ENDIF
+	 IF	CPM AND NOT SINGLE
+	MVI	E,NOLOG		; no logon here (2.2 deblocking)
+	 ENDIF
+	 IF	NOT SINGLE
+	CALL	SELDSK
+	 ENDIF
+	 IF	TRSKW
+	XRA	A		; zero out track sector skew
+	STA	TSECT
+	STA	TBUFF		; zero out coresponding buffer addr
+	STA	TBUFF+1
+	 ENDIF
+	LHLD	BUF0		; load address of first buffer
+	SHLD	BUF0SA
+	MVI	A,10H		; reset error flag
+	STA	ERR1
+	LDA	BUFFNMB		; load number of buffers
+	STA	BUFFCO
+	LDA	TRKSAV		; load first track copied
+;
+;	set the track to be used, and add offset if source
+;	drive. Save track number for error routine.
+;
+SETTRK:
+	STA	TRK		; save current track
+	 IF	(NOT SINGLE)
+	LDA	CURRDI		; check drive
+	MOV	C,A
+	LDA	SRCEDR		; is it source
+	CMP	C
+	LDA	TRK		; if object, skip
+	JNZ	SETTR0
+	MOV	C,A		; now get difference
+	LDA	SRCTRAK
+	ADD	C		; and do correction
+SETTR0:
+	 ENDIF
+	MOV	C,A		; now go set track
+	JMP	SETRAK
+;
+;	set the DMA address (in HL)
+;
+DMASET:
+	MOV	C,L		; move HL to BC
+	MOV	B,H
+	PUSH	B		; save result and call CBIOS
+	CALL	SETDMA
+	POP	B
+	RET
+;
+;	these are the disk error handling routines
+;
+FAILR:
+	LXI	D,MESGD		; read error message
+	JMP	DIE
+FAILW:
+	LXI	D,MESGE		; write error message
+DIE:
+	CALL	PRINT		; print the main error message
+	LXI	D,ERM
+	CALL	PRINT
+	LDA	TRK  		; print the track number
+	CALL	PRTDEC
+	LXI	D,MESGB		; print sector message
+	CALL	PRINT
+	LDA	SECTOR		; and print sector
+	CALL	PRTDEC
+	LXI	D,DRIVE		; print drive message
+	CALL	PRINT
+	LDA	CURRDI
+	ADI	'A'		; convert drive number to ASCII
+	MOV	C,A
+	CALL	CONOUT		; and finally print drive
+	XRA	A
+	STA	ERR1 		; note the error so this track is retried
+	CALL	CONST
+	ORA	A		; see if any console input present
+	JZ	ENDLUP
+	CALL	CONIN		; yes, see if aborting
+	CPI	CTRLC
+	JZ	EXIT		; die if CTRL-C was hit
+	JMP	ENDLUP
+;
+;	read the full track now, no interleaving
+;
+READT:
+	CALL	CONST
+	ORA	A		; see if any console input present
+	JZ	READT0
+	CALL	CONIN		; yes, see if aborting
+	CPI	CTRLC
+	JZ	EXIT		; die if CTRL-C was hit
+READT0:
+	 IF	(NOT RSKEW) AND (NOT TRSKW)
+	LHLD	BUF0SA		; first, get beginning of buffer
+	SHLD	DMAAD
+	 ENDIF
+	 IF	TRSKW
+	LHLD	BUF0SA		; first, get beginning of buffer
+	XCHG
+	LHLD	TBUFF		; and correct for skew
+	DAD	D
+	SHLD	DMAAD
+	LDA	TSECT		; initialize first sector
+	MOV	C,A
+	 ENDIF
+	 IF	(NOT TRSKW)
+	MVI	C,0		; initialize first sector
+	 ENDIF
+	LDA	SPT		; initialize sector count
+	MOV	B,A
+RT3:
+	 IF	TRSKW
+	MOV	A,C		; check for skew too big
+	LXI	H,SPT
+	CMP	M
+	JC	RT4		; jump if sector within range
+	XRA	A
+	MOV	C,A		; out of range, back to sector 1
+	LHLD	BUF0SA
+	SHLD	DMAAD
+RT4:
+	 ENDIF
+	 IF	RSKEW
+	INR	C		; increment sector counter
+	PUSH	B
+	LXI	H,READTAB-1	; find the interleaved sector number
+	CALL	XLATE		; using the READTAB
+	CALL	SETSEC		; and set the sector
+	MVI	H,0
+	DCR	C		; now compute the buffer location
+	MOV	L,C
+	CALL	SHIFT		; and multiply by sector size
+	XCHG
+	LHLD	BUF0SA		; and then adding to the buffer start
+	DAD	D
+	CALL	DMASET		; set the DMA and do the read
+	 ENDIF
+	 IF	(NOT RSKEW)
+	INR	C		; increment sector counter
+	PUSH	B
+	CALL	SETSEC		; set the sector
+	LHLD	DMAAD
+	CALL	DMASET		; set the DMA
+	LXI	H,SECSIZ
+	DAD	B		; bump up the DMA for next time
+	SHLD	DMAAD
+	 ENDIF
+	 IF	CPM
+	LDA	TRK		; see if track 0
+	ORA	A
+	JNZ	ZER2		; jump if not
+	LDA	SPT0
+	LXI	H,SECTOR
+	CMP	M		; see if sector is on track
+	JC	ZER28
+ZER2:
+	 ENDIF
+	CALL	READ		; now read one sector
+	RAR
+	CC	FAILR		; if returned 01, read error
+ZER28:	POP	B
+	DCR	B		; see if all sectors read
+	JNZ	RT3
+	 IF	TRSKW
+	LHLD	TBUFF		; bump up skewed buffer
+	LXI	D,SECSIZ*TSKEW
+	DAD	D		; add the skew
+	SHLD	TBUFF
+	LDA	TSECT		; now bump starting sector
+	ADI	TSKEW
+	STA	TSECT		; and put it back
+	LXI	H,SPT
+	SBB	M		; SUB M  ?
+	JC	ENDLUP		; jump if sector within range
+	STA	TSECT
+	LHLD	TKSIZC		; correct sector start and
+	XCHG
+	LHLD	TBUFF
+	DAD	D
+	SHLD	TBUFF		;  buffer skew address
+	 ENDIF
+	JMP	ENDLUP		; return with complete track read
+;
+;	Write the full track,  with interleaving,  and then check it
+;	by reading it all back in.
+;
+WRITET:
+	CALL	CONST
+	ORA	A		; see if any console input present
+	JZ	WRITE0
+	CALL	CONIN		; yes, see if aborting
+	CPI	CTRLC
+	JZ	EXIT		; die if CTRL-C was hit
+WRITE0:
+	LHLD	BUF0SA		; first, get the beginning of buffer
+	SHLD	DMAAD
+	MVI	C,0
+	LDA	SPT		; initialize sector counter
+	MOV	B,A
+WT3:
+	PUSH	B
+	LXI	H,WRITAB	; find the interleaved sector number
+	CALL	XLATE1		; using the WRITAB
+	CALL	SETSEC		; and set the sector
+	MVI	H,0
+	DCR	C		; now compute the buffer location
+	MOV	L,C
+	CALL	SHIFT		; and multiply by sector size
+	XCHG
+	LHLD	DMAAD		; and then adding to the buffer start
+	DAD	D
+	CALL	DMASET		; set the DMA and do the write
+	 IF	(NOT WRSWCH) AND CPM
+	MVI	C,WRCODE	; value for CP/M 2.2 routine
+	 ENDIF
+	 IF	WRSWCH AND CPM
+	POP	B		; get sector number
+	PUSH	B
+	LXI	H,WRTAB-1	; find the C reg. value for this
+	MVI	B,0
+	DAD	B		; sector using the WRTAB
+	MOV	C,M
+	 ENDIF
+	 IF	CPM
+	LDA	TRK		; see if track 0
+	ORA	A
+	JNZ	ZER1		; jump if not
+	LDA	SPT0
+	LXI	H,SECTOR
+	CMP	M		; see if sector is on track
+	JC	ZER18
+ZER1:
+	 ENDIF
+	CALL	WRITE
+	RAR			; if 01 returned, write error
+	CC	FAILW
+ZER18:	POP	B
+	INR	C		; increment sector count
+	DCR	B
+	JNZ	WT3		; and loop back if not done
+	 IF	DOCOMP AND (NOT RSKEW)
+	LXI	H,BUF1		; first, get beginning of buffer
+	SHLD	DMAAD
+	 ENDIF
+	MVI	C,0
+	LDA	SPT		; reinitialize sector counts for read
+	MOV	B,A
+WT4:
+	INR	C		; bump up sector counter
+	PUSH	B
+	 IF	RSKEW
+	LXI	H,READTAB-1	; find the interleaved sector number
+	CALL	XLATE		; using the READTAB
+	CALL	SETSEC		; and set the sector
+	 ENDIF
+	 IF	RSKEW AND DOCOMP
+	MVI	H,0
+	DCR	C		; now compute the buffer location
+	MOV	L,C
+	CALL	SHIFT		; and multiply by sector size
+	XCHG
+	LXI	H,BUF1		; and then adding to the buffer start
+	DAD	D
+	CALL	DMASET		; now set the read buffer
+	 ENDIF
+	 IF	(NOT RSKEW) AND DOCOMP
+	CALL	SETSEC		; set the sector
+	LHLD	DMAAD
+	CALL	DMASET		; set the DMA
+	LXI	H,SECSIZ
+	DAD	B		; bump up the DMA for next time
+	SHLD	DMAAD
+	 ENDIF
+	 IF	RSKEW AND (NOT DOCOMP)
+	LXI	H,BUF1		; load the buffer address
+	CALL	DMASET		; and set the read buffer
+	 ENDIF
+	 IF	(NOT RSKEW) AND (NOT DOCOMP)
+	CALL	SETSEC		; now set the sector
+	LXI	H,BUF1
+	CALL	DMASET		; and set the read buffer
+	 ENDIF
+	 IF	CPM
+	LDA	TRK		; see if track 0
+	ORA	A
+	JNZ	ZER3		; jump if not
+	LDA	SPT0
+	LXI	H,SECTOR
+	CMP	M		; see if sector is on track
+	JC	ZER4
+ZER3:
+	 ENDIF
+	 IF	NOT NOCOMP
+	CALL	READ
+	RAR			; was bit 0 set by disk error?
+	CC	FAILR
+	 ENDIF
+	 IF	CPM
+ZER4:
+	 ENDIF
+	POP	B		; no error, see if all sectors read
+	DCR	B
+	JNZ	WT4		; if not all done, go back
+	 IF	DOCOMP
+	PUSH	H
+	LHLD	TKSIZ
+	MOV	B,H
+	MOV	C,L		; now, compare the track read in
+	POP	H
+	 ENDIF
+	 IF	CPM AND DOCOMP
+	LDA	TRK		; see if track 0
+	ORA	A
+	JNZ	ZER5		; jump if not
+	PUSH	H
+	LHLD	TK0SIZ
+	MOV	B,H
+	MOV	C,L
+	POP	H
+ZER5:
+	 ENDIF
+	 IF	DOCOMP
+	LHLD	BUF0SA
+	LXI	D,BUF1
+CMPLP:	LDAX	D		; get read data
+	CMP	M
+	JNZ	CERR		; and if not what was written, error
+	INX	H
+	INX	D		; bump counters
+	DCX	B
+	MOV	A,C		; and count BC down to zero
+	ORA	B
+	JNZ	CMPLP		; if all done, return
+	JMP	ENDLUP
+;
+;	print read verify compare error
+;
+CERR:	PUSH	H		; save the goodies
+	PUSH	D
+	PUSH	B
+	LXI	D,MESGA		; start the error message
+	CALL	PRINT
+	LDA	TRK		; print the track number
+	CALL	PRTDEC
+	LXI	D,MESGB		; print more
+	CALL	PRINT
+	POP	H		; pop the down counter
+	DCX	H
+	 ENDIF
+	 IF	DOCOMP
+	DAD	H		; multiply by 2 to get sectors left
+;
+	LDA	SPT
+	SUB	H		; subtract from total number of sectors
+	CALL	PRTDEC		; to get sector number, and print it
+	LXI	D,MEM
+	CALL	PRINT		; print second line
+	POP	H
+	MOV	A,M		; get byte read
+	STA	DATA1		; and save it
+	CALL	HLOUT		;PRINT HEX ADDRESS
+	MVI	C,','
+	CALL	CONOUT		; comma
+	POP	H
+	MOV	A,M		; get byte written
+	STA	DATA2		; and save it
+	CALL	HLOUT		;PRINT HEX ADDRESS
+	LXI	D,DATAM		; print data header
+	CALL	PRINT
+	LDA	DATA1		; print byte read
+	CALL	PRTHEX
+	MVI	C,','		; comma
+	CALL	CONOUT
+	LDA	DATA2		; print byte written
+	CALL	PRTHEX
+	XRA	A
+	STA	ERR1		; note the error so this track is retried
+	 ENDIF
+;
+;	This  routine  is  used to check if another track is  to  be
+;	read/written:   it   increments  buffer  address  and  track
+;	counter,   and  decrements  the  buffer  counter.  Then,  it
+;	terminates  the  loop if all buffers are full  or  the  last
+;	track has been processed (Z flag set).
+;
+ENDLUP:
+	LDA	ERR1		; now check if any errors
+	ORA	A		; and return if so
+	RZ
+	LDA	TRK		; increment track
+	INR	A
+	LXI	H,TRKSRT+1	; check if last track
+	CMP	M
+	RZ			; return if last track
+	CALL	SETTRK
+	LXI	H,BUFFCO	; decrement buffer counter
+	DCR	M
+	RZ			; return if all buffers full/empty
+	LHLD	TKSIZ
+	XCHG
+	LHLD	BUF0SA		; increment buffer address
+	DAD	D
+	SHLD	BUF0SA
+	ORI	0FFH		; non-zero to indicate more
+	RET	
+;
+;	this  routine  writes  messages  to  the  console.  Message
+;	address  is in DE,  and terminates on a $.  The BDOS call is
+;	not  used  here because BDOS may be destroyed by  the  track
+;	buffers
+;
+PRINT:
+	LDAX	D		; get the character
+	CPI	'$'	;24H
+	RZ			; quit if $
+	PUSH	D
+	MOV	C,A		; send it to the console
+	CALL	CONOUT
+	POP	D		; go check next character
+	INX	D
+	JMP	PRINT
+;
+;	set the next sector to be used, and save that
+;	number for the error routine, in case.
+;	THE FOLLOWING HIDES ANY BIOS SECTOR TRANSLATION
+;	FROM THE PROGRAM.
+;
+SETSEC:
+	MOV	A,C		; save the sector number
+	STA	SECTOR
+	PUSH	B
+	LXI	H,OFFSET
+	LDA	TRK
+	CMP	M		;SEE IF SYSTEM TRACK
+	JC	SETS1		;SKIP IF SO.
+	 IF	CPM
+	LHLD	XLT		;GET XLATE TABLE ADDRESS
+	XCHG			;IN DE
+	MVI	B,0		;CLEAR B
+	DCR	C		; 1 TO N ==> 0 TO N-1
+	CALL	SECTRAN
+	POP	B		;GET BACK SECTOR NUMBER
+	PUSH	B		;AND SAVE IT AGAIN
+	 ENDIF
+	 IF	BXTBL
+	MOV	B,H		;GET TRANSLATED
+	MOV	C,L		;SECTOR NUMBER
+	 ENDIF
+SETS1:	CALL	SETSCT		; now go set the sector
+	POP	B		;RETURN WITH ORIGINAL SECTOR
+	RET
+;
+;	set the disk to be used, and save that
+;	for the error routine, in case
+;
+SELDSK:
+	MOV	A,C		; save the disk number
+	STA	CURRDI
+	JMP	SELDIS		; now select the disk
+;
+;	Routine to multiple value in HL by SECSIZ
+;
+SHIFT:
+	DAD	H
+	DAD	H		; The number of DAD H instructions
+	DAD	H
+	DAD	H		; MUST correspond to the buffer size
+	DAD	H
+	DAD	H		; i.e. 7 DADs means 128 byte (2^7)
+	DAD	H
+	RET
+;
+; (XLATE1)  WRITAB USAGE:	0 TO N-1 ==> 1 TO N
+; (XLATE )  READTAB USAGE:	1 TO N   ==> 1 TO N
+;
+XLATE1:
+	 IF	BXTBL
+	INR	C
+	 ENDIF
+	 IF	NOT BXTBL
+	LDA	TRK	;SEE IF TRACK 0
+	ORA	A
+	JNZ	XLATE	;JUMP IF NOT
+	INR	C	;ADJUST COUNT
+	 ENDIF
+;
+XLATE:
+	MVI	B,0
+	 IF	NOT BXTBL	;USE BUILT-IN SKEW TABLE
+	LDA	TRK	;SEE IF TRACK 0
+	ORA	A
+	JZ	SKIPX	;JUMP IF YES
+	DAD	B
+	MOV	C,M
+SKIPX:
+	 ENDIF
+	RET			;ELSE,USE BIOS SECTRAN ROUTINE
+;
+;CONVERT VALUE IN HL TO ASCII HEX AND PRINT IT
+;
+HLOUT:	MOV	A,H		;DISPLAY H
+	PUSH	H
+	CALL	HEXOUT
+	POP	H
+	MOV	A,L		;DISPLAY L
+PRTHEX:	CALL	HEXOUT
+	MVI	C,'H'		;DENOTES HEX VALUE
+	JMP	CONOUT
+;
+;	convert value in A reg. to ASCII hex and print it
+;
+HEXOUT:
+	PUSH	PSW		; save for LSN
+	RAR
+	RAR			; shift MSN nibble to LSN
+	RAR
+	RAR
+	CALL	PRTNBL		; now print it
+	POP	PSW		; and then do LSN
+PRTNBL:
+	ANI	0FH
+	ADI	'0'		;convert to ASCII value
+	CPI	'0'+10		; over 9 ?
+	JC	SML
+	ADI	7		; convert 10 to A, etc.
+SML:
+	MOV	C,A		; move to C for BIOS call
+	CALL	CONOUT
+	RET
+;
+;
+;
+;CONVERT BINARY IN (A) TO ASCII DECIMAL
+;
+PRTDEC:	LXI	D,3030H		;INITIALIZE TO ASCII ZEROS
+	MVI	C,30H
+SUB100:	SUI	100
+	JC	ADD100
+	INR	E	;HUNDREDS DIGIT
+	JMP	SUB100
+ADD100:	ADI	100
+SUB10:	SUI	10
+	JC	UNITS
+	INR	D	;TENS DIGIT
+	JMP	SUB10
+UNITS:	ADI	10
+	ADD	C
+	MOV	C,A	;UNITS DIGIT
+;
+	PUSH	B
+	PUSH	D
+	MOV	A,E
+	CPI	'0'	;LEADING ZERO?
+	JZ	PD1	;YES, SKIP
+	MOV	C,A
+	CALL	CONOUT
+PD1:	POP	D
+	MOV	C,D
+	CALL	CONOUT
+	POP	B
+	JMP	CONOUT
+;
+;INITIALIZE COPY BUFFERS
+;
+	 IF	BXTBL
+INITBF:	LDA	SPT0
+	MOV	L,A
+	MVI	H,0
+	CALL	SHIFT		;CALC. SPT0*SECSIZ
+	SHLD	TK0SIZ		;AND SAVE
+;
+	LDA	SPT
+	MOV	L,A
+	MVI	H,0
+	CALL	SHIFT		;CALC. SDLAST*SECSIZ
+	SHLD	TKSIZ		;AND SAVE
+	XRA	A		;NOW GET -(SDLAST*SECSIZ)
+	SUB	L
+	MOV	L,A
+	MVI	A,0
+	SBB	H
+	MOV	H,A
+	SHLD	TKSIZC		;AND SAVE
+	 ENDIF	;BXTBL
+;
+	 IF	DOCOMP AND BXTBL
+	LHLD	TKSIZ
+	LXI	D,BUF1
+	DAD	D
+	SHLD	BUF1END
+	 ENDIF
+	 IF	(NOT DOCOMP) AND (NOT NOCOMP) AND BXTBL
+	LXI	H,SECSIZ
+	LXI	D,BUF1
+	DAD	D
+	SHLD	BUF1END
+	 ENDIF
+	 IF	NOCOMP AND BXTBL
+	LXI	H,BUF1
+	SHLD	BUF1END
+	 ENDIF
+;
+	 IF	BXTBL
+	LHLD	BUF1END
+	SHLD	BUF0
+	XCHG
+	LHLD	TKSIZ
+	DAD	D
+	SHLD	BUFEND
+	 ENDIF
+	RET
+;
+;
+RANGE:	LXI	D,BGMES1	; Now print message giving copy range
+	CALL	PRINT
+	LDA	TRKSRT
+	CALL	PRTDEC		; print first track
+	LXI	D,BGMES2
+	CALL	PRINT
+	LDA	TRKSRT+1	; print last track
+	DCR	A
+	JMP	PRTDEC
+;
+BGMES1:
+	DB	CR,LF,'Copying from track $'
+BGMES2:
+	DB	' to track $'
+;
+;	all messages here for convenience in disassembling
+;
+DONMSG:
+	DB	CR,LF,'*** COPY COMPLETE ***$'
+DRIVE:
+	DB	', drive $'
+ERM:
+	DB	CR,LF,'+ ERROR on track $'
+MESGB:
+	DB	' sector $'
+MESGC:
+	DB	CR,LF,'++PERMANENT $'
+MESGD:
+	DB	CR,LF,'+ READ ERROR $'
+MESGE:
+	DB	CR,LF,'+ WRITE ERROR $'
+	 IF	SINGLE
+WPMSG:	DB	CR,LF,CR,LF,'WRITE PROTECT source disk $'
+	 ENDIF
+SIGNON:
+	DB	CR,LF,'Source on '
+SRCEME:
+	DB	0			; will be filled in later
+	DB	':   '
+	 IF	NOT SINGLE
+	DB	' Object on '
+OBJMES:
+	DB	0			; will be filled in later
+	DB	':'
+	 ENDIF
+SINOFF:
+	 IF	NOT SINGLE
+	DB	CR,LF
+	 ENDIF
+	DB	'Hit <RETURN> to continue, or <CONTROL-C> to exit: $'
+	 IF	SINGLE
+OBJMSG:
+	DB	CR,LF,'Object on '
+OBJMES:
+	DB	0			; will be filled in later
+	DB	':   '
+	DB	'Hit <RETURN> to continue, or <CONTROL-C> to exit: $'
+	 ENDIF
+REPMES:
+	DB	CR,LF,'<RETURN> to CP/M, or <R>epeat COPY: $'
+CRLF:
+	DB	CR,LF,'$'
+SOURCE:
+	DB	CR,LF,'SOURCE drive (A thru F): $'
+	 IF	NOT SINGLE
+OBJECT:
+	DB	CR,LF,'OBJECT drive (A thru F): $'
+	 ENDIF
+TRKM:
+	DB	CR,LF,'Copying track $'
+;
+	 IF	DOCOMP
+MESGA:
+	DB	CR,LF,'+ Memory Compare ERROR on track $'
+MEM:
+	DB	CR,LF,'+ Memory Address $'
+DATAM:
+	DB	' (obj,src)   data: $'
+	 ENDIF	;DOCOMP
+	 IF	BXTBL
+SPTERR:
+	DB	CR,LF,'>255 SECTORS PER TRACK',CR,LF,'$'
+OFFERR:
+	DB	CR,LF,'>5 RESERVED (SYSTEM) TRACKS',CR,LF,'$'
+TRKERR:
+	DB	CR,LF,'>255 TRACKS ON DISK',CR,LF,'$'
+	 ENDIF	;BXTBL
+;
+BUFERR:
+	DB	CR,LF,'TPA is too small - BUFFER SPACE REDUCED: $'
+;
+BUFTMP:	DB	0		; temporary storage for buffer counter
+;
+;	 This  is  the  sector interleave table.  If  you  want  the
+;	program to work,  all sector numbers must be here somewhere.
+;
+WRITAB:
+;
+;THE FOLLOWING ARE FOR STANDARD IBM 3740 26 SPT FORMAT
+	 IF	CPM AND (NOT RSKEW) AND (NOT SLOW) AND (NOT BXTBL)
+;	Interleave table for very fast controllers
+;	gives time to switch between write and read.
+	DB	25,26,1,2,3,4,5,6,7,8,9,10,11,12
+	DB	13,14,15,16,17,18,19,20,21,22,23,24
+	 ENDIF
+	 IF	CPM AND (NOT RSKEW) AND SLOW AND (NOT BXTBL)
+;	Interleave table for slower controllers
+	DB	25,1,3,5,7,9,11,13,15,17,19,21,23
+	DB	26,2,4,6,8,10,12,14,16,18,20,22,24
+	 ENDIF
+	 IF	CPM AND RSKEW AND (NOT SLOW) AND (NOT BXTBL)
+;	Interleave table for slower controllers
+	DB	25,1,3,5,7,9,11,13,15,17,19,21,23
+	DB	26,2,4,6,8,10,12,14,16,18,20,22,24
+	 ENDIF
+	 IF	CPM AND RSKEW AND SLOW AND (NOT BXTBL)
+;	Interleave table for very slow controllers
+	DB	1,4,7,10,13,16,19,22,25,2,5,8,11
+	DB	14,17,20,23,26,3,6,9,12,15,18,21,24
+	 ENDIF
+;
+;
+;	 This  is the read skew table,  if needed.  The same general
+;	considerations as the write skew table apply here also,  but
+;	the table should start with sector 1.  Both the read and the
+;	read-after write use this table.  As you can see,  the write
+;	and read interleaving doesn't have to be the same.
+;
+READTAB:
+;
+	 IF	RSKEW AND CPM AND (NOT BXTBL)
+;THE FOLLOWING ARE FOR STANDARD IBM 3740 26 SPT FORMAT
+	DB	1,3,5,7,9,11,13,15,17,19,21,23,25
+	DB	2,4,6,8,10,12,14,16,18,20,22,24,26
+	 ENDIF
+;
+;
+;	This is the write switch table. The values in this table
+;	are passed to the sector write routine of CP/M 2.2 in
+;	reg. C when each write occurs. This table is modified if
+;	and only if some particular pattern is needed for your
+;	blocking routine to work as fast or as well as possible.
+;	Refer to the CP/M 2.2 Alteration Guide for more details.
+;
+	 IF	WRSWCH AND CPM
+WRTAB:
+;
+;THE FOLLOWING ARE FOR STANDARD IBM 3740 26 SPT FORMAT
+	DB	2,2,2,2,2,2,2,2,2,2,2,2,2
+	DB	2,2,2,2,2,2,2,2,2,2,2,2,2
+	 ENDIF
+;
+;	This is the initialization code, and occupies the lowest area
+;	of the stack.
+;	(The stack is about 40 bytes long)
+;
+VECTOR:
+	MVI	A,BUFFNU
+	STA	BUFFNMB		;INITIALIZE DEFAULT COUNT
+	XRA	A
+	STA	BUFTMP		;CLEAR BUFTMP
+;
+	LHLD	1		; get bottom of CBIOS
+	LDA	BDOSFG		;SEE IF
+	ORA	A		;WE DO NOT WANT
+	JZ	VECT		;TO OVERWRITE THE BDOS.
+	LHLD	6		;GET BOTTOM OF BDOS
+VECT:	MOV	B,H
+	LHLD	TKSIZ
+	XCHG			; get size of buffers
+	LHLD	BUF0		; start checking where buffer starts
+VECT0:
+	DAD	D		; add buffer size to buffer addr
+	RC			; stop if at end of core
+	MOV	A,H
+	CMP	B		; check hi order byte if high
+	RZ			; or equal
+	RNC
+	MOV	A,M		; gonna see if got memory
+	CMA
+	MOV	M,A		; store complement in memory
+	CMP	M		; and see if it is a good spot
+	RNZ
+	LDA	BUFTMP		; buffer fits, add one to count
+	INR	A
+	STA	BUFTMP		; and store
+	JMP	VECT0
+;
+;	the stack
+;
+	DS	64
+STKTOP:
+	DB	0
+	DS	2	;EXTRA SPACE
+;
+;	variables
+;
+BUF0SA:				; buffer address
+	DB	0,0
+TRKSAV:				; track save area during read and write
+	DB	0
+BUFFCO:				; buffer counter
+	DB	0
+CMPERR:				; number of disk errors
+	DB	0
+TRK:				; current track
+	DB	0
+SRCEDR:				; source drive
+	 IF	NOT SINGLE
+	DB	0
+	 ENDIF
+OBJDRI:				; destination drive
+	DB	0
+CURRDI:				; drive for current operation
+	DB	0
+DMAAD:				; DMA address for current operation
+	DB	0,0
+ERR1:				; error flag (0 = error)
+	DB	0
+SECTOR:				; sector number for current operation
+	DB	0
+;
+	 IF	TRSKW
+TSECT:
+	DB	0		; skewed sector start for track
+TBUFF:
+	DB	0,0		; skewed buffer address
+	 ENDIF
+;
+BUF1END: DW	D$BUF1END
+;
+BUF0:	DW	D$BUF0
+;
+BUFEND:	DW	D$BUFEND
+;
+XLT:	DW	00		;ADDRESS OF BIOS SECTOR XLATE TABLE
+;
+BSH:	DB	0		;BLOCK SHIFT FROM BIOS DPB
+;
+DSM:	DW	00		;DRIVE SIZE FROM BIOS DPB
+;
+TK0SIZ:	DW	SDZERO*SECSIZ	;TRACK ZERO SIZE
+;
+TKSIZ:	DW	SDLAST*SECSIZ	;DATA TRACK SIZE
+;
+TKSIZC:	DW	-(SDLAST*SECSIZ) ; 0 - DATA TRACK SIZE
+;
+OPTFLG:	DB	0	;COMMAND LINE OPTION LETTER
+;
+;	the track buffers. BUFEND must not overlay the BIOS !
+;
+;	BUF1 is where the read-after-write is performed
+;
+	 IF	DOCOMP
+DATA1:
+	DS	1		; used in compare
+DATA2:
+	DS	1
+	 ENDIF
+;
+BUF1	EQU	$
+;
+	 IF	DOCOMP
+D$BUF1END	EQU	BUF1+(SECSIZ*SDLAST)	; space for a full track read
+	 ENDIF
+;
+	 IF	(NOT DOCOMP) AND (NOT NOCOMP)
+D$BUF1END	EQU	BUF1+SECSIZ	; just one sector for CRC only
+	 ENDIF
+	 IF	NOCOMP
+D$BUF1END	EQU	$
+	 ENDIF
+;
+;	BUF0 is where all input tracks are read
+;	Tho space for only one track is allocated here,
+;	the program will use BUFFNU track buffers, or
+;	up to the CBIOS, whichever is smaller
+;
+D$BUF0	EQU	D$BUF1END
+D$BUFEND	EQU	D$BUF0+(SECSIZ*SDLAST)
+;
+;	This is one-time code to initialize the branch table to
+;	the CBIOS vectors. Only those vectors used are initialized.
+;	Placed here so that it wont get clobbered by the stack
+;
+VECT1:
+	LHLD	1		; get warm boot address
+	SPHL			; and save it in SP for DAD
+	LXI	H,3
+	DAD	SP
+	SHLD	CONST+1
+;
+	LXI	H,6
+	DAD	SP
+	SHLD	CONIN+1
+;
+	LXI	H,9
+	DAD	SP
+	SHLD	CONOUT+1
+;
+	 IF	CPM
+	LXI	H,15H		; home disk
+	DAD	SP
+	SHLD	HOME+1
+;
+	LXI	H,18H		; select disk
+	DAD	SP
+	SHLD	SELDIS+1
+;
+	LXI	H,1BH		; set track
+	DAD	SP
+	SHLD	SETRAK+1
+;
+	LXI	H,1EH		; set sector
+	DAD	SP
+	SHLD	SETSCT+1
+;
+	LXI	H,21H		; set dma
+	DAD	SP
+	SHLD	SETDMA+1
+;
+	LXI	H,24H		; read disk
+	DAD	SP
+	SHLD	READ+1
+;
+	LXI	H,27H		; write disk
+	DAD	SP
+	SHLD	WRITE+1
+;
+	MVI	C,12		; see if got CP/M 2.2
+	CALL	5
+	MOV	A,H		; check for non-zero
+	ORA	L
+	JNZ	GRUNJ1
+	MVI	A,RET		; no SECTRAN for CP/M 1.4
+	STA	SECTRAN
+	JMP	GRUNJ2
+GRUNJ1:	
+	LXI	H,2DH		; sector translate
+	DAD	SP
+	SHLD	SECTRAN+1
+GRUNJ2:
+	 ENDIF
+;
+;
+;
+;	Now check what kind of copy is wanted
+;
+	LXI	SP,STKTOP	; initial stack
+	LXI	D,INIT
+	CALL	PRINT		; start program
+	LHLD	TRKSRT
+;
+	LDA	FCB+1		; get character of parameter
+	CPI	' '		; check for default
+	MVI	A,'D'		;DEFAULT OPTION- DATA TRACKS
+	STA	OPTFLG		;SAVE OPTION
+	JZ	COPYDEF
+	LDA	FCB+1		;GET CHARACTER AGAIN
+	CPI	'$'		;OPTION DESIGNATOR
+	JNZ	COPYERR		;GIVE HELP
+	MVI	A,' '		;initl end of FCB
+	STA	FCB+8
+	LXI	H,FCB+2
+	MOV	A,M		;GET CHARACTER OF PARAMETER
+	INX	H
+	ANI	5FH		;UPPER CASE
+	STA	OPTFLG		;SAVE OPTION
+	MOV	B,A
+	XRA	A		; no track shift
+	STA	SRCTRAK
+	MOV	A,B
+	CPI	'D'		; check for Data
+	JZ	COPYDAT
+	CPI	'F'		; check for First
+	JZ	COPYFIR
+	CPI	'L'		; check for Last
+	JZ	COPYLAS
+	CPI	'O'		; check for One
+	JZ	COPYONE
+	CPI	'P'		; check for Pascal
+	JZ	COPYPAS
+	 IF	CPM
+	CPI	'A'		; check for All
+	JZ	COPYALL
+	CPI	'S'		; check for System
+	JZ	COPYSYS
+	CPI	'Z'		; check for Zero
+	JZ	COPYZER
+	 ENDIF
+	DCX	H		;BACK UP POINTER
+	CALL	GETNUM		; go check for number
+	JNC	COPYNUM
+COPYERR:
+	LXI	D,CALLERR	; got a bad value
+	CALL	PRINT
+	JMP	EXITCP
+;
+;	routine to decode a numeric value or range
+;
+COPYNUM:
+	MOV	D,A		; put in lastrk+1
+	DCR	A
+	MOV	E,A		; put in first track
+	MOV	A,M
+	XCHG
+	CPI	' '		; check if only one parameter
+	JZ	COPYDEF
+	XCHG
+	CPI	','		; ALLOW A COMMA OR DASH
+	JZ	CN1
+	CPI	'-'		; check for minus
+	JNZ	COPYERR
+CN1:	INX	H		; get another number
+	CALL	GETNUM
+	JC	COPYERR
+	MOV	D,A		; put in last track
+	CMP	E
+	JC	COPYERR
+	MVI	A,' '		; check for last character
+	CMP	M
+	JNZ	COPYERR
+	XCHG			; all OK, go do it
+	JMP	COPYDEF
+;
+GETNUM:
+	CALL	GETNM
+	RC			;BAD VALUE
+GETDUN:
+	INR	B		; add 1 (for last track)
+	MVI	A,LASTRK
+	CMP	B		; check for valid range
+	JC	GETER
+	MOV	A,B		; all done OK
+	RET
+;
+GETNM:	MOV	A,M		; valid digit ?
+	CPI	'0'
+	RC			; Carry flag if No
+	CPI	'9'+1
+	CMC
+	RC
+	SUB	A		; initial the number
+	MOV	B,A
+GETLUP:
+	MOV	A,B
+	ADD	A		; * 2
+	JC	GETER
+	ADD	A		; * 4
+	JC	GETER
+	ADD	B		; * 5
+	JC	GETER
+	ADD	A		; * 10
+	JC	GETER
+	MOV	B,A
+	MOV	A,M		; get digit
+	SUI	'0'
+	ADD	B		; add to shifted number
+	JC	GETER
+	MOV	B,A
+	INX	H		; get next character
+	MOV	A,M
+	CPI	'0'		; check if digit
+	CMC
+	RNC
+	CPI	'9'+1
+	JC	GETLUP
+GETER:
+	POP	H		; gonna leave abnormally
+	JMP	COPYERR
+;
+;	implement the alphabetic abbreviations for range
+;
+COPYDAT:
+	MVI	H,LASTRK	; Data
+	MVI	L,FIRSTRK
+	JMP	COPYDEF
+COPYFIR:
+	MVI	H,FIRSTRK+1	; First
+	MVI	L,FIRSTRK
+	JMP	COPYDEF
+COPYLAS:
+	MVI	H,LASTRK	; Last
+	MVI	L,LASTRK-1
+	JMP	COPYDEF
+COPYONE:
+	MVI	H,2		; One
+	MVI	L,1
+	JMP	COPYDEF
+COPYPAS:
+	MVI	H,LASTRK	; Pascal
+	MVI	L,1
+	JMP	COPYDEF
+COPYALL:
+	 IF	BXTBL
+	CALL	GETNM	;CHECK FOR OPTIONAL TRACK 0 SECTOR COUNT
+	JC	CPYALL
+	MOV	A,B
+	STA	SPT0
+	 ENDIF
+CPYALL:	MVI	H,LASTRK	; All
+	MVI	L,0
+	JMP	COPYDEF
+COPYSYS:
+	 IF	BXTBL
+	CALL	GETNM	;CHECK FOR OPTIONAL TRACK 0 SECTOR COUNT
+	JC	CPYSYS
+	MOV	A,B
+	STA	SPT0
+	 ENDIF
+CPYSYS:	MVI	H,FIRSTRK	; System
+	MVI	L,0
+	JMP	COPYDEF
+COPYZER:
+	MVI	H,1		; Zero
+	MVI	L,0
+;
+;	The one time finish - up routine
+;
+COPYDEF:
+	SHLD	TRKSRT
+	 IF	NOT BXTBL	;GIVE COPY RANGE NOW
+	CALL	RANGE
+	 ENDIF
+;
+	LXI	H,REPEAT	; go to mainline code now
+	SHLD	START+1
+	PCHL
+;
+INIT:
+	DB	CR,LF,'COPYFAST '
+	DB	'v4.3R '
+	 IF	BXTBL
+	DB	'    (Universal'
+	 ENDIF
+;
+	 IF	NOT BXTBL
+	DB	'    (Custom'		;e.g. IBM 3740 SS/SD
+	 ENDIF
+	 IF	SINGLE
+	DB	' Single Drive'
+	 ENDIF
+	DB	' Version)'
+	DB	CR,LF
+	DB	'Sector-for-Sector Disk Duplication Utility'
+	DB	CR,LF,'$'
+;
+CALLERR:
+	DB	CR,LF,'INVALID PARAMETER'
+	DB	CR,LF,CR,LF
+	DB	'       Usage:   [d:]COPYFAST ['
+	DB	'$' OR 80H	;ALLOWS DOLLAR SIGN IN MESSAGE
+	DB	'option]',CR,LF,CR,LF
+	DB	'       Options are:  (first letter only)',CR,LF
+	DB	'All     Entire disk',CR,LF
+	DB	'Data    CP/M data area',CR,LF
+;;	DB	'First   CP/M directory track',CR,LF
+;;	DB	'Last    Last track on disk',CR,LF
+;;	DB	'One     Track one, UCSD directory',CR,LF
+;;	DB	'Pascal  UCSD Pascal data area',CR,LF
+	DB	'System  CP/M bootstrap',CR,LF
+;;	DB	'Zero    Track zero, UCSD bootstrap',CR,LF
+	DB	'nn      One track, as specified',CR,LF
+	DB	'n1-n2   A specified range',CR,LF,CR,LF
+	 IF	BXTBL
+	DB	'An1 or Sn1 changes track 0 default SPT to n1',CR,LF
+	 ENDIF
+	DB	'$'
+;
+;
+	END
+

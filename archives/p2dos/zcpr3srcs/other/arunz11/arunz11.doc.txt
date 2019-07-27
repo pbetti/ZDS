@@ -1,0 +1,386 @@
+
+               Summary of ARUNZ Parameters as of Version 1.1
+
+                                  Jay Sage
+                              October 23, 1993
+
+
+     The information about the ARUNZ parameters is covered in four sections
+below.  Section A has a summary of the parameters and directives with no
+explanation.  Sections B through D explain the parameters in greater detail. 
+Section B defines some qualifier symbols that are used with a number of
+parameter forms.  Section C defines the actual parameter expressions
+supported by ARUNZ version 1.1.  Finally, Section D covers the special
+directives recognized by ARUNZ.
+
+
+=============================================================================
+
+A. Parameter Summary
+--------------------
+
+format	'f'	=	H   hex			D   3 decimal
+			F   floating decimal	T   two decimal
+			A   ASCII		O   one decimal
+
+module	'm'	=	B   BIOS		M   MSG
+			C   CCP/CPR		N   NDR
+			D   DOS			P   PATH
+			E   ENV			R   RCP
+			F   FCP			S   SHL
+			I   IOP			X   XFCB
+			L   MCL
+
+component  'c'	=	N   FN			D   drive or default
+			T   FT			U   user or default
+			F   FN[.FT]		P   prefix (with colon)
+			Z   Crunched Type	S   short prefix
+			Q   Squeezed Type	C   converted token (to DU:)
+
+units	'u'	=	Y  year			H  hour (mil)
+			M  month		C  hour (civ)
+			D  day			N  minute
+						A  AM/PM
+
+
+parameter forms:	number of tokens	$#     ('#' is actual char)
+			full token		$#     (# = digit 0..9 )
+			parsed token		$Tc#   (# = 0..9 )
+			home directory		$HD  $HU  $HB
+			full command line	$!
+			full command tail	$*
+			tail less tokens	$-#    (# = 0..9 )
+			memory contents		$Mf####
+			register contents	$Rf##
+			system file		$Sc#
+			get prompted input	$"prompt"
+			use prompted input	$'c#  ( c: "L" ";" "E" )
+			ENV address		$Am
+			offset ENV address	$+m####
+			ENV address content	$@fAm
+			offset ENV content	$@f+m####
+			date/time		$Du
+
+=============================================================================
+
+B. Definitions
+--------------
+
+     A line in the ALIAS.CMD file takes the following form:
+
+	alias_name_form   alias_script
+
+The alias script is the prototype command line.  It contains normal characters
+and parameter expressions, as discussed in detail in this DOC file.  It is
+separated from the alias_name_form by any number of tabs and spaces.  Thus the
+scripts can be formatted neatly to make the file easier to read.
+
+     The alias_name_form consists of any number of individual alias name
+expressions connected by equal signs.  There must be no imbedded spaces or
+tabs.  An individual alias name expression can be of any length.  It is not
+limited to the eight characters of file names, and it can contain control
+characters, unlike file names.  The alias name may contain several special
+symbols which qualify comparisons with the command verb passed to ARUNZ. 
+These are as follows:
+
+underscore (_)	This character in the alias name will match any character.
+		Thus the alias name "_DIR" will match the commands LDIR,
+		XDIR, and so on.  There must be a character present.
+
+comma (,)	Characters that appear after this character are optional.
+		If characters are present in the command, they must match.
+		However, the characters need not be present.  For example,
+		"ZP,ATCH" will respond to ZP or ZPATCH but not to ZPTCH.
+
+greater (>)	This special character represents any name followed by a
+		period.  It is used with ZCPR34, which can accept a command
+		like "PROG.Z80" and pass it to the extended command processor.
+		An example alias definition would be
+
+			>Z80  z80asm $tn0
+
+		Just entering the name with its file type of Z80 would invoke
+		the Z80ASM assembler on the file name.
+
+colon (:)	An alias name that begins with this character will match
+		any command and is thus the default alias definition.  If used
+		at all, it should be the last alias defined.  A common use is
+		to make ARUNZ chain to LX or another extended command
+		processor.  For example:
+
+			:DEFAULT LX / $!
+    
+     Several parameters use qualifiers to further define the data returned 
+by that parameter.  Since a number of parameters share some of these 
+qualifiers, we would like to list them here at the beginning.
+
+1. Conversion formats (f):
+
+     When byte values are returned by parameters, the values can be 
+converted to various formats.  These formats are indicated by a format 
+qualifier in the parameter expression as follows.
+
+	 format qualifier		meaning
+	 ----------------		-------
+
+		A		ASCII, uses the value AS IS
+		H		return two hexadecimal characters
+		F		return value as floating decimal
+				(leading 0s suppressed)
+		D		return three decimal characters
+		T		return value as two decimal characters
+		O		return value as one decimal character
+
+2. System memory module (m):
+
+     For parameters that obtain the value of a memory module from the
+environment descriptor, the module is specified by one of the following
+letters:
+
+	 module qualifier		memory module
+	 ----------------		-------------
+		B			BIOS	(basic i/o system)
+		C			CCP/CPR	(command processor)
+		D			DOS	(disk operating system)
+		E			ENV	(environment descriptor)
+		F			FCP	(flow command package)
+		I			IOP	(input/output package)
+		L			MCL	(multiple command line)
+		M			MSG	(message buffer)
+		N			NDR	(named directory register)
+		P			PATH	(command search path)
+		R			RCP	(resident command package)
+		S			SHL	(shell stack)
+		X			XFCB	(external command FCB)
+
+
+3. File specification components (c):
+
+     Several parameters return various information about file 
+specifications.  The following parts of the file specification token can 
+be returned.  The first five letters can be used with all such 
+parameters. The remaining letters can be used with those parameters that 
+refer to tokens that can have directory prefixes as well as file names.
+
+	    file part		meaning
+	    ---------		-------
+
+	 	N	FN (file name)
+		T	FT (file type)
+		F	FN[.FT] (complete file name -- name and type)
+
+		Z	the file type as it would be when file is crunched
+		Q	the file type as it would be when file is squeezed
+
+		D	drive (or logged drive if no explicit value)
+		U	user (or logged user if no explicit value)
+		P	directory prefix (including the colon)
+		S	short prefix (without the colon)
+		C	converted file specification (DIR: form, if
+			present, changed to equivalent DU: -- if invalid
+			name, then no conversion is performed)
+
+=============================================================================
+
+C. Parameter Expressions
+------------------------
+
+1. Number of command-line tokens: $#
+
+     The parameter expression '$#', where '#' is the actual character,
+returns the number of tokens on the command line as a one- or two-digit
+decimal number as required.
+
+
+2. Command line token parameters: $#
+
+     The parameter expression $#, where '#' is a number between 0 and 9,
+returns a complete token from the command line.  $0 returns the command verb
+(alias name) exactly as it was entered on the command line, including any
+directory prefix and/or file type.  Parameters numbered from 1 to 9 return
+the corresponding token from the command line tail.  Tokens are defined as
+contiguous strings of characters.  ARUNZ is normally configured to take only
+spaces as delimiters between tokens, but it can be configured to allow tabs
+as delimiters as well.
+
+
+3. Command line token parsing parameter: $T
+
+     The command line tokens are returned whole, as is, by the $# parameter
+described above but can be parsed as file specification expressions using
+the parameter form $Tc#, where 'c' is the component part of the file
+specification to use (see definition 3 in Section B above) and where '#' is
+a number from 0 to 9.  The value 0 refers to the command verb; the values
+1..9 refer to the corresponding token in the command line tail.
+
+     Under ZCPR33 and earlier, if the command verb contained an explicit
+directory prefix or if it included a file type, the extended command
+processor could not be invoked.  Thus $TT0, the file type of the command
+verb, would always be null.  The expressions $TD0 and $TU0 would always
+return the logged-in drive and user, respectively.  With ZCPR34 this is no
+longer true.  All the parameters can take on more general values.
+
+
+4. Home directory parameter: $H
+
+     Since $TD0 and $TU0 cannot be counted on to return the currently logged
+directory values, special parameters have been provided for this purpose. 
+They are:
+
+		$HD		the home (logged) drive
+		$HU		the home (logged) user
+		$HB		the home (logged) drive and user together
+
+
+5. Command tail parameters: $!  $*  $-#
+
+     The parameter $! represents the entire command line as entered,
+including the command verb (alias name) and the tail.  It is useful in
+aliases whose only purpose is to put an explicit DU: or DIR: directory
+prefix on the command.
+
+     The parameter $* represents the entire command tail (after the command
+verb), not including any leading space characters.  It is useful in aliases
+which substitute another command verb for the one actually given but which
+leave the command tail as it was.
+
+     The parameter expression $-#, where '#' is a number between 0 and 9,
+returns the command line tail with the designated number of leading tokens
+removed.  Thus $-0 is the same as $*.  These parameters are useful when some
+number of leading tokens are given some special treatment using the token
+parsing parameters and the rest of the command line is to be passed intact.
+
+
+6. Memory contents parameters: $M
+
+     A parameter expression of the form $Mf#### returns the contents of the
+memory address given by ####, a four digit hexadecimal address.  Note that
+there must be exactly four hex digits, even if the value has leading zeros. 
+The 'f' term is the conversion format (see definition 1 in Section B above).
+
+
+7. Register value parameters: $R
+
+     The byte contained in any of the 32 user registers is returned by a
+parameter expression of the form $Rf##.  The register number must be given
+as exactly two hex digits.  The value must be in the range 00 to 1F.  The
+'f' term is the conversion format (see definition 1 in Section B above).
+
+
+8. System file parameters: $S
+
+     Parameters can return values based on the four system file names stored
+in the environment.  The general expression is $Sc#, where '#' is a digit
+from 1 to 4 and where 'c' is the component of the file.  Since these files
+have no associated directory, only the first five values usually allowed for
+'c' (see definition 3 in Section B above) can be used (N, T, F, Z, and Q)
+
+
+9. Prompted input parameters: $"  $'
+
+     The double-quote parameter is used to prompt for user input.  If the
+parameter expression $"..." appears, where the dots refer to any string of
+characters, that string of characters will be sent to the screen as a
+prompt, and one line of user input will be read into a buffer.  In the
+normal configuration of ARUNZ there can be up to four such prompts and
+responses.
+
+     The prompt is sent without case conversion.  A character preceded by a
+caret is converted to a control character (^M for return, ^J for linefeed). 
+The dollar sign acts as an escape character.  Any character after it is sent
+as is.  Thus $$ produces '$' in the prompt; $^ produces '^'; $" produces
+'"'; and so on.
+
+     The single-quote parameter is used to process the user's response to
+prompts.  The parameter expression $'c# is used in the script to retrieve
+all or part of the user's response.  The number '#' is in the range 1 to 4
+but must not be larger than the number of prompts up to that point.  (It is
+recommended that all the prompts be placed at the very beginning of the
+script.)  The term 'c' indicates the component to be extracted from the
+user's response.  The usual values described under definition 3 in Section B
+above can be specified.  In addition, the following values are also allowed:
+
+	L	the entire line of user input
+	;	one complete command (i.e., the input is terminated either
+		by the end of the input or by a semicolon)
+	E	exactly the first token from the user's input
+
+The user's input can be used repeatedly and in different ways throughout the
+script.  Here is an example:
+
+  TEST  $"Enter a file spec: "echo directory prefix is $'p1;echo file name
+	is $'f1
+
+
+10. Environment data parameters: $A  $+  $@
+
+     Several parameter expressions can return information related to data
+extracted from the Z-System environment descriptor.  In this way, aliases
+can determine information independent of system configuration.  This is
+particularly important in the new dynamic systems (NZCOM and Z3PLUS) where
+the operating system configuration can change at any time.
+
+     The $A parameter returns the address of various system modules.  The
+parameter expression is $Am, where 'm' designates the module (see definition
+2 in Section B of this document).
+
+     The $+ parameter is similar but allows one to compute an offset from
+the address that would be returned by a $A parameter.  The form is $+m####,
+where #### is an exactly four hex digit offset value and 'm' is the memory
+module to use as the base address.  The expression $+m0000 is equivalent to
+$Am.
+
+     The $@ parameter expression is $@fam or $@f+m####.  It performs the
+same calculation as the parameter expression following the '@f' except that
+instead of returning the calculated address it returns the value of the byte
+stored at that address converted according to the format specified by 'f'.
+
+
+11. Date and time parameters: $D
+
+     The parameter expression $Du returns a unit of the date/time supplied
+by DateStamper or ZSDOS.  The unit 'u' can be any of the following:
+
+	Y	Year (YY)
+	M	Month (MM)
+	D	Day (DD)
+	H	Hour in military form 00-23 (HH)
+	C	hour in Civil form 01-12 (HH)
+	N	miNute (MM)
+	A	Am/pm flag (AM or PM)
+
+Two characters are returned for each unit if DateStamper or a ZSDOS stamper
+is running; null strings are returned if not.  Note that 'M', having been
+used for 'month', could not be used for 'minute'; 'N' was used instead.
+
+=============================================================================
+
+D. ARUNZ Directives
+-------------------
+
+     There are two expressions that look like parameters but are actually
+directives that tell ARUNZ how to work (and not parameters that return
+character strings).
+
+1. ZEX input redirection control: $I
+
+     Whenever user input is requested (as with the $" parameter), one must
+consider whether or not ZEX should be allowed to supply the input from its
+character stream.  ARUNZ normally turns ZEX redirection off.  If the
+directive $I is placed before one occurrence of prompted input requested by
+$"prompt", then ZEX input redirection will be turned on, but for that prompt
+only.  If there are two prompts and you want ZEX to answer both of them,
+then you must put a $I before each prompt.
+
+2. Recursive alias mode: $Z
+
+     Normally, after a script is interpreted and converted into a command
+line, any commands still pending in the multiple command line buffer are
+appended to the alias command line (separated by a semicolon).  This
+complete command is then copied into the multiple command line buffer.
+
+     The $Z directive tells ZEX to discard any pending commands and to load
+the multiple command line buffer with the alias command line only.  This
+capability was developed to allow recursive aliases.  However, better
+techniques are now available.
+                                               

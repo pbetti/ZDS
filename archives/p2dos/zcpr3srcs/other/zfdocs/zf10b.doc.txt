@@ -1,0 +1,325 @@
+                                 ZFILER Notes
+
+
+PLEASE READ THE PROGRAM NOTES BELOW.  MANY PEOPLE ARE COMPLAINING TO ME
+ABOUT THINGS THAT ARE EXPLAINED IN THE DOCUMENTATION.
+
+As usual, I am eager to get bug reports and suggestions from users.  I can be
+reached in the following ways:
+
+	in writing:		1435 Centre Street
+				Newton Centre, MA 02159
+
+	voice telephone:	work: 617-863-5500 x4704
+				home: 617-965-3552
+
+	modem:			Z-Node #3 (mine) at 617-965-7259
+				Lillipute Z-Node #2 (Chicago)
+
+My Z-Node in Boston is accessible via PC-PURSUIT.  It is possible that the
+sysop of a Z-Node near you is a PCP subscriber and can forward messages to my
+node for you.
+
+				Jay Sage
+
+
+-----------------------------------------------------------------------------
+
+ZFILER Version 1.0b Notes -- January 13, 1987
+
+BIGGEST NEWS: ZFILER now supports DateStamper.  On file copies (and moves)
+the time and date stamp of the source file is carried to the destination
+file!
+
+I have now rewritten the directory logging ('L' and 'N' commands) code to
+properly respect the environment with respect to allowing access by drive and
+user number.  The code should now work properly and conveniently in a system
+that enforces security by not allowing drive/user access to areas that are
+not accessible using a named directory reference.
+
+ZFILER always translates a requested directory -- whether entered using DU or
+DIR form -- into a drive and user.  If the DUOK flag in the environment is
+set, then these values are checked against the maximum values allowed by the
+environment.  If they pass, all is well and the directory is logged in.  If
+they fail or if DUOK is not set, then the drive/user value is converted into a
+named directory and checked against the NDR buffer.  If the directory is found
+there, it will be logged in after appropriate password checking.
+
+Steven Mendelson discovered an interesting problem that occurs when a shell
+like ZFILER is rerun from the command line using GO.  Because ZFILER derives
+its own name from the external file control block, it thinks its name is "GO"
+and stores that in the shell stack entry.  This can cause grave problems
+later.  To protect against this, ZFILER now replaces its initial JP opcode at
+100H with a RET opcode so that an attempt to use "GO" will simply return one
+to the command processor.  I recommend that this technique, which costs only 5
+bytes, be used in all programs which are not designed to work correctly when
+rerun by "GO".  NOTE: this means that ZFILER cannot be cloned by using the
+SAVE command as I have suggested in the past.  I will eventually either add
+a 'clone' command (as in MEX) or produce a full configuration source file.
+
+A small, but significant, bug was corrected in the macro script expansion code.
+The script '$c', where 'c' is any non-parameter character, should have been
+expanded to 'c' but was not for the lack of an INC HL instruction!
+
+-----------------------------------------------------------------------------
+
+ZFILER Version 1.0a Notes -- January 1, 1987
+
+Since the changes I have been introducing into VFILER have taken that program
+way beyond what it used to be, I have decided to release it as a new program
+through the ZSIG organization (which I strongly encourage all Z-System
+hobbyists to join).  This will relieve Echelon of any responsibility to
+support it and will allow us hobbyists to follow our own goals.  As with
+VFILER41 and the first stages of the now abandoned VFILER42, I will be
+releasing a series of test versions of the program with letter subversion
+designations.  This first one is version 1.0a.  When a final version is
+released with the source, the letter subversion will be dropped.  The main
+changes since VFILER version 4.2b are as follows:
+
+MAJOR COMPATIBILITY CHANGES - PLEASE TAKE NOTE.  I have changed the macro
+parameter designator character from '%' to '$' to be consistent with all the
+other script-building programs.  Besides renaming your VFILER.CMD macro file
+to ZFILER.CMD, you will have to edit the macro scripts.  You will have to
+change all '%' characters to '$'.  You will also have to change any resulting
+'$$' to '$P'.  I have eliminated the old '%$' alternate to '%P' for the
+complete file specification for the currently pointed-to file.  Since '$$' is
+now needed for a dollar sign, only the '$P' form can be used for the file.
+
+I have made major changes to the way the 'V' command pages in response to a
+suggestion from Carson Wilson.  He noted that he often wanted to get to the
+end of a file.  Hitting repeated carriage returns would not only carry one to
+the end, it would carry one past the end and on to the next file or back to
+the files display.  Now, after one reaches the end of a file, only the
+commands ^x (continue with next file) and ^c (abort 'V' command) will be
+recognized.  In addition, I added a ^z option that can be used at any page
+break to turn off paging and scroll continuously to the end of the file.  I
+have not yet implemented ^s pausing but plan to.
+
+Charlie Kestner complained about having to use a shifted key ('#') to get the
+macro menu screen, and right he was!  Of course, it was always an assembly
+option.  Now you can use the macro lead-in character.  When the lead-in
+(default ESC) is pressed once, you get the 'Macro: ' prompt.  Press it again
+and you get the help screen (it fakes a '#' key).  Press it a third time and
+you are back to the files display (there had been a bug in the code that I
+discovered when I tried this).
+
+A very important change has been made in the way the shell stack has been
+used.  I have been trying for some time to promote a new viewpoint on the use
+of the shell stack, and I have now carried it to its logical conclusion. 
+Basically, the shell stack should not be viewed only as a command line for the
+command processor.  It must, indeed, have such a command line, but information
+need not (and should not) be passed to the shell as part of that command line. 
+Instead, parameters needed by the program should be kept in whatever form is
+convenient and efficient in the part of the shell stack entry after the
+command-line null.  Remember that a program know whether it has been invoked
+as a shell by the command processor or manually by the user.  In the latter
+case, it must parse information from the command line, but in the former case
+it can get that information in an entirely different way.
+
+ZFILER pushes only the name of the program (default ZFILER) followed by a null
+as the command.  By not prefacing it with a DUU: or DIR: but instead relying
+on the path to find it, it avoid problems with systems that do not recognize
+either or both of those forms.  All other parameters are derived from other
+data on the shell stack or from the system file names in the environment.
+
+When ZFILER is first invoked by the user, the current directory and any
+requested directory and file mask included as a parameter on the command line
+are stored in the shell stack entry.  The two directories are stored in binary
+form as used by the SYSLIB routines.  This saves code and avoids any problems
+with recognizing DU and DIR forms.  It also avoids problems with returning to
+a directory with a password.  Once one has been admitted to a directory,
+subsequent accesses are automatic.  (The 'L' command still needs some work,
+and that is next on my list.  It presently cannot deal properly with systems
+that do not allow the DU form or with logins to named directories beyond the
+maxdu/maxuser values specified in the environment.  These fixes should be
+fairly easy to code.)
+
+By keeping the original DU on the shell stack, ZFILER can return to the
+directory from which the user invoked it no matter how many other directories
+were subsequently logged in as the result of macro executions or 'Z' commands.
+
+In the past, after executing a command line from the 'Z' command, the shell
+wait flag was always set and one was always greeted by a "strike any key"
+prompt before returning to VFILER.  With ZFILER if you enter a command line
+starting with a space, then shell waiting will be disabled and you will return
+directly to ZFILER without any delay.
+
+Terry Carroll, I believe, made the following suggestion about the handling of
+file attributes on copies: if the file already exists in the destination
+directory, then use its attributes for the new file; otherwise use the source
+file attributes.  A new option has been added in ZFILER to implement this (use
+the 'O' command).
+
+I have not yet added an automatic skip option in file copying to bypass a file
+if it exists in the destination (like the /N option in MCOPY).  It is still on
+my list.
+
+Two changes in group operations have been made.  Many people complained to me
+that VFILER group operations often did not work but acted on the first tagged
+file only.  It turned out that they were answering a prompt (such as the
+verify prompt) with a 'Y' or 'N' followed by a carriage return.  The carriage
+return was not needed by the prompt but caused the group operation to be
+aborted before the next file.  I changed the group-abort code so that any key
+EXCEPT CR will cause an abort.
+
+I also found a bug connected with the GA (group archive) operation.  I
+frequently use the GA command to tag unarchived files.  When asked for a
+destination directory for the copy, I just hit carriage return.  This leaves
+only unarchived files tagged and I can proceed to do whatever I want with them
+(for example, GV or GC -- the latter if I want to copy them somewhere without
+setting the archive bit on the source file).  I discovered that the file-
+replace query option for GC was not being honored.  An archive flag, once set
+by the GA command was never being cleared.  Now it is cleared on entry of the
+'G' command.
+
+-----------------------------------------------------------------------------
+
+VFILER Version 4.2b Notes -- September 29, 1986
+
+Many people requested that the "Z" command be made to log into the displayed
+directory before running the command line.  This cannot be done if the user
+number is greater than 15, so I made a compromise.  The code checks the user
+number, and if it is less than 16 the directory is logged in; otherwise the
+directory is left unchanged.  The first configuration byte after the string
+'CONFIG' in the first page of the code controls this function.  Set it to 0 if
+you prefer the old way.  As distributed, the files have this option enabled.
+
+You should note two significant drawbacks to logging in the current area.  If
+you run a VFILER.COM file that is in the current directory and not on the
+search path, after you select another display directory and execute a command
+with "Z", the shell will abort because the VFILER.COM file will not be found
+(you have changed the default directory).  With the old system, you actually
+stayed in the original directory, and so there was no problem.  The second
+drawback is that the disk system has to be reset in order to change the logged
+in directory (unless someone can tell me how to get around this).  The trouble
+is that VFILER is running as a subroutine under the CPR and normally
+terminates by returning to the CPR with a RET instruction.  Even if the BDOS
+has logged in a new area, the CPR still remembers the original one and
+restores it.  There is nothing VFILER can do about it.  One must do a warm
+boot to get around that.  This slows down any operations run from the "Z"
+command.
+
+I have made some significant changes to the rename, copy, move, and unsqueeze
+commands.  The rename command now preserves all file attributes, as I think it
+should (any views to the contrary?).  So does the move command.  The way the
+copy command treats file attributes is controlled by two new options under the
+"O" command.  One option (default is on) causes all attributes of the source
+file to be carried to the destination file.  Another option (default on) is in
+addition to the first and causes the archive attribute to be set in the
+destination file (Joe Wright's arguments convinced me, but I made it a user
+option here).  With unsqueezing, the attributes are always turned off, except
+that the archive attribute is controlled by the same option flag that applies
+to copied files.
+
+These changes were precipitated by a bug report that renaming a file twice in
+succession would give a BDOS error.  I tried that on my BigBoard system, and
+sure enough, it gave a ZRDOS error #2.  When I tried it on the Ampro system at
+work, however, there was no problem.  Now for the weird part -- the problem no
+longer appears on the BigBoard either (with the same VF42A that I tried this
+morning)!  I can no longer reproduce the error, so I cannot tell if I fixed
+it.  I did make some changes to the rename code to correct what I thought
+might be a problem (the disk number byte in the ring is normally 1, 2, 3, and
+so on, but after renaming in previous versions of VFILER, the drive was
+changed to 0.  I don't see why that would matter, but I modified the code to
+leave that byte unchanged.  If anyone sees the error again, please try to
+document it very carefully and precisely so I can track it down.
+
+For those who are trying to make patches to VFILER, a section of the source
+code is reproduced below.  Note the pointers to the three command tables.  If
+the control-j I used for the new 'jump again' command is not convenient for
+you, you can go to CTAB1, the table for commands that can be used only when
+the display is not empty.  Its structure is quite clear (if not, see the full
+source to VFCMDS1.Z80 in the VFILER41 release), and you can find the entry
+with control-j and patch in a value of your choice.
+
+;---------------------------------------------------------------------------
+
+; Configuration and reference data
+
+	dw	ctab1		; Addresses of command tables for reference
+	dw	ctab2
+	dw	gtable
+
+	db	'CONFIG'	; Marker in code
+
+logfladr:
+	db	logfl		; Login current directory with "Z" command
+leadadr:
+	db	mleadin		; Macro leadin character here
+npause:
+	db	tdelay		; Delay time on screen refresh after macro error
+macfladr:
+	db	macflag		; Allow immediate execution of macros 0..9
+
+
+OPTIONS:			; Begin options configurable with 'O' cmd
+				; DO NOT CHANGE ORDER
+
+qryrepa:			; #1
+	db	qryrep		; Single file replace query option
+qrygrpa:			; #2
+	db	qrygrp		; Multiple file replace query option
+qryarca:			; #3
+	db	qryarc		; Query on archive replacement
+qryvfya:			; #4
+	db	qryvfy		; Verify query option
+vflag:				; #5
+	db	vfydflt		; Verify default if no query or no answer
+nosysa:				; #6
+	db	nosys		; Supress display of SYS files
+defalfa:			; #7
+	db	defalpha	; Initial file sorting mode (FF for name)
+attrfla:			; #8
+	db	attrfl		; Copy attributes with files
+arcfla:				; #9
+	db	arcfl		; Set ARC attribute in destination file
+
+shwait:				; Flag also saved on stack with options
+	db	0
+
+nopt	equ	$ - options	; Number of option flags to save/restore
+
+;---------------------------------------------------------------------------
+
+
+VFILER Version 4.2a Notes -- September 19, 1986
+
+Added "^J" (control-J) command to jump to next file that matches the last mask
+specified in a previous "J" command.  This allows one to jump easily to the
+second or third file that matches a simple file spec.  For example, suppose
+the directory has just a few files of type DOC and you want to find one called
+"ZCPR3NEW.DOC".  You could give this exact name in reponse to the prompt from
+the "J" command, but it would be much faster to answer the prompt with a
+simple ".D" or ".DOC".  If that left you on an earlier DOC file in the
+display, just press control-J (linefeed) and you will move to the next
+matching file.  The command "^J" is the same as "J" except that you are not
+prompted for the file mask and the file pointer is not initialized to the
+first file on the screen before the search starts.  Instead it uses whatever
+mask is left over in the mask buffer, and it works its way in circles through
+the file ring.
+
+
+Fixed bug in "M" and "GM" commands that allowed source file to be deleted even
+when copy had not been performed.  Now if you answer "N" in response to a
+prompt about overwriting the destination file (or if the disk fills up or if
+the copy verification shows an error), the source file will not be erased.
+
+
+Added "GR" group reverse function to reverse file tags.  Tagged files become
+untagged; untagged files become tagged; and soft-tagged files remain soft-
+tagged.  [I have gotten no comments on my question about what to do with soft-
+tagged files under the "GR" command.  The other reasonable possibility is to
+untag them also.  What do you think?]
+
+
+Cleaned up log command ("L" or "N").  Removed special handling of answer "x"
+for directory name (no longer needed) and changed error handling code.  I hope
+I got all this correct.  I eliminated some things that appeared not to be
+necessary (to shorten code and speed execution), and there is always a chance
+that I overlooked some situation that required that code.  One thing I did
+leave in that I think could possibly be eliminated is the resetting of the
+drive when only the file mask is changed.  I guess that that is there for when
+one swaps diskettes and logs the new one in with a simple ":" response to the
+log prompt.  Without it one would have to name the drive in the login prompt
+(might be just as easy).
+                                                                 

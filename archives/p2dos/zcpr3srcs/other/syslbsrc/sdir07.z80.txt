@@ -1,0 +1,105 @@
+;	TITLE	"SDIR07 - Syslib 4.0"
+	NAME	('DIRSEL')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SDIR07.Z80 Ver 1.5 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.6
+; Module  : SDIR07
+; Abstract: This module contains the routine DIRSEL which tags
+;	all entries in the Buffer table which match the specified
+;	select criteria.  If selected, the MSB of the User field
+;	(first byte) is set, otherwise it is reset.  The search
+;	criteria is a byte configured as:
+;		Bit 7 - Select Non-System Files
+;		Bit 6 - Select System Files
+;		Bit 5 - Select All Users
+;		Bits 4-0 - User Number
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		DIRSEL
+
+; From SYSLIB Get..
+
+	EXT		@AFNCMP, SDFCHK, SELFLG
+
+; Definitions
+
+ESIZE	EQU	16		; Entry size in bytes
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - DIRSEL
+; Entry: HL - Points to a Directory entry in the Buffer
+;	 DE - Points to an FCB
+;	 BC - Number of files in the Buffer
+;	  A - Selection Flag
+; Exit : - Nothing returned.  The MSB of selected entries is set
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+DIRSEL:	PUSH	HL		; Save regs
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+	LD	(SELFLG),A	; Save Select Flag
+	PUSH	BC		; Save count
+
+;  Check for match
+
+DSMAT:	POP	BC		; Get count
+	LD	A,B		; Check for No entries
+	OR	C
+	JR	Z,DSDONE	; Done if none
+	DEC	BC		; Count down
+	PUSH	BC		; Save count
+	PUSH	HL		; Save ptrs
+	PUSH	DE
+	INC	HL		; Pt to FN
+	INC	DE
+	LD	B,8		; Check 8 chars
+	EX	DE,HL		; Let HL pt to FCB
+	CALL	@AFNCMP		; Compare with '?' match
+	POP	DE		; Get ptrs
+	POP	HL
+	JR	NZ,DSMATNX	; Advance to next entry if no match
+	PUSH	HL		; Save ptrs
+	PUSH	DE
+	LD	BC,9		; Check R/O flag, Sys flag, Last byte
+	ADD	HL,BC
+	EX	DE,HL
+	ADD	HL,BC		; Don't exchange -- HL pts to FCB, DE pts to Dir
+	LD	B,3		; Check 3 bytes
+	CALL	@AFNCMP		; Compare with '?' match
+	POP	DE		; Restore ptrs
+	POP	HL
+	JR	NZ,DSMATNX	; No match?
+	CALL	SDFCHK		; Check flags
+	JR	NZ,DSMATNX	; No match?
+
+;  We have a match -- Mark Entry
+
+DSMARK:	SET	7,(HL)		; Set MSB
+
+;  Advance to next entry
+
+DSMATNX: LD	BC,ESIZE	; Number of Bytes/Entry
+	ADD	HL,BC		; Pt to next entry
+	JR	DSMAT		; Continue
+
+;  Done with scan
+
+DSDONE:	POP	AF		; Restore Regs
+	POP	BC
+	POP	DE
+	POP	HL
+	RET
+
+	END
+

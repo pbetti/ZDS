@@ -1,0 +1,338 @@
+  Introduction 
+ Close a File               - F$CLOSE
+ Delete a File              - F$DELETE
+ Test File Existence        - F$EXIST
+ Create a File              - F$MAKE
+ Open a File                - F$OPEN, F$MOPEN
+ Append to a File           - F$APPEND, F$APPL
+  Usage Example for F$APPEND and F$APPL
+ Read Block from File       - F$READ
+ Rename a File              - F$RENAME
+ Compute File Size          - F$SIZE
+ Write a Block to a File    - F$WRITE
+ Return Random Record Num   - GETRR, GETRR1
+ Return File Size           - GETFS, GETFS1
+ Get File Attributes        - GFA
+ Read File Block Random     - R$READ
+ Write File Block Random    - R$WRITE
+ Set/Clear File Attributes  - SCFA, SFA
+  Library (LBR) File Manipulation
+:            CP/M File Input/Output Routines 
+
+The following routines are general-purpose file I/O routines
+which interface to CP/M through the Entry Point at location 5.
+They preserve BC, DE, and HL, and return with the standard CP/M
+error codes for the corresponding routines.  These routines are:
+
+     F$CLOSE   F$DELETE  F$EXIST   F$MAKE    F$OPEN
+     F$MOPEN   F$READ    F$RENAME  F$SIZE    F$WRITE
+     R$READ    R$WRITE
+
+The routines GFA, SCFA, and SFA all deal with getting (GFA) and
+setting (SCFA and SFA) the attributes of files whose FCBs are
+addressed by DE.
+
+The following files allow you to append to the end of an existing
+file conveniently.  They return unique error codes.
+
+     F$APPEND  F$APPL    GETRR     GETRR1    GETFS     GETFS1
+
+:F$CLOSE - Close a File
+
+  ENTER: DE = Points to FCB for desired file
+  EXIT :  A = 0, Zero Flag Set (Z) if Close Ok
+              A <> 0, Zero Clear (NZ) if Error in Closing
+  USES : AF
+
+ Usage:  This routine is used to close a specified file in the
+  current Drive/User area.
+
+:F$DELETE - Delete a File
+
+  ENTER: DE = Points to FCB for file to delete
+  EXIT :  A = 0, Zero Flag Set (Z) if Delete Ok
+              A <> 0, Zero Clear (NZ) if File Not Found
+  USES : AF
+
+ Usage:  This routine is used to delete a specified file from
+  current Drive/User area.
+
+:F$EXIST - Test of Existence of a File
+
+  ENTER: DE = Address of an FCB for file to test
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if File Exists
+              A = 0, Zero Flag Set (Z) if File Not Found
+  USES : AF
+
+ Usage:  This routine tests for the presence of a specified file
+  in the current disk/user area.  Status is returned showing the
+  results of the search.
+
+:F$MAKE - Create a File
+
+  ENTER: DE = Points to an FCB for the desired file
+  EXIT :  A = Directory Code [0..3] if File Created Ok
+              A <> 0 if No Directory Space Available
+  USES : AF
+
+ Usage:  This routine is used to Create (Make) a specified file
+  in the current Drive/User Area.
+
+:F$OPEN - Open a File
+
+  ENTER: DE = Pointer to FCB for desired file
+  EXIT :  A = 0, Zero Flag Set (Z) if File Opened Ok
+              A <> 0, Zero Flag Clear (NZ) if NOT Opened
+  USES : AF
+
+ Usage:  This routine is used to Open a specified file in the
+  Current Drive/User Area.
+
+F$MOPEN - Open a File with Creation
+
+  ENTER: DE = Pointer to FCB for file to Open
+  EXIT :  A = 0, Zero Flag Set (Z) if File Opened Ok
+              A <> 0, Zero Clear (NZ) if No Dir Space (Error)
+  USES : AF
+
+ Usage:  This routine is used to Open a specified file.  If the
+  file is not found, F$MOPEN tries to create one.  NOTE: This
+  routine should NOT be used as a substitute for existence
+  testing with F$EXIST.
+
+:F$APPEND - Append to a File
+
+  ENTER: DE = Pointer to an FCB for the Desired File
+  EXIT :  A = 0, Zero Flag Set (Z) if File Opened Ok
+              A = Error Code, Zero Flag Clear (NZ) if Error as:
+                   1    --> File Not Found
+                   2    --> File is Full (no more room)
+                   3    --> File Found but Empty
+  USES : AF
+  SIDE EFFECTS: Current DMA buffer has last file record if A=0
+
+ Usage:  This routine is used to Open a file for appending.  The
+  results of the operation are reported.  Various  error condi-
+  tions can occur, and are reported.  Error 3 is a note that the
+  file is empty and is not fatal (processing can continue).
+
+  If the APPEND is successful, the current DMA buffer contains
+  the last record in the file.  The next sequential write will
+  write to the record after the last one in the file.  (See
+  F$APPL which starts writing on the last record of the file).
+
+F$APPL
+
+  ENTER: DE = pointer to FCB for desired file
+  EXIT :  A = 0, Zero Flag Set (Z) if File Opened Ok
+              A = Error Code, Zero Flag Clear (NZ) if Error
+                   1    --> File Not Found
+                   2    --> File is Full (no more room)
+                   3    --> File Found but Empty
+  USES : AF
+  SIDE EFFECTS: Current DMA buffer has last record if A=0
+
+ Usage:  This routine is used to Open a file for appending.  The
+  results of the operation are reported.  Various  error condi-
+  tions can occur, and are reported.  Error 3 is a note that the
+  file is empty and is not fatal (processing can continue).
+
+  If the APPL is successful, the last record in the file is in
+  the current DMA buffer.  The next sequential write (F$WRITE)
+  will write back over the last record in the file.  
+
+:                        Append Use 
+
+The following code segment illustrates the intended usage for
+the two file append routines.
+
+With F$APPEND:                  With F$APPL:
+
+     ...                             ...
+     LD    DE,FCB                    LD    DE,FCB
+     CALL  F$APPEND                  CALL  F$APPL
+     ...                             ...
+     <Prepare next record>           <Modify last record>
+     ...                             ...
+     LD    DE,FCB                    LD    DE,FCB
+     CALL  F$WRITE   ;after last     CALL  F$WRITE   ;on last
+     ...                             ...
+     LD    DE,FCB                    LD    DE,FCB
+     CALL  F$CLOSE   ;close file     CALL  F$CLOSE   ;close
+     ...                             ...
+
+:F$READ - Read a Block from a File
+
+  ENTER: DE = Pointer to FCB for desired file
+  EXIT : A = 0, Zero Flag Set (Z) if Read Ok
+             A = Error Code, Zero Flag Clear (NZ) if Error
+                   1 --> Read past end of file
+                   2 --> Reading unwritten data in random access
+
+ Usage:  This routine is used to Read the next block (128 bytes)
+  of data from an Open file in the Current Drive/User Area.  The
+  data is loaded into the current DMA buffer.
+
+:F$RENAME - Rename a File
+
+  ENTER: HL = Pointer to first 12 bytes of new FCB
+         DE = Pointer to first 12 bytes of old FCB
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if Rename Ok
+              A = 0, Zero Flag Set (Z) if File Not Found Error
+  USES : AF
+
+ Usage:  This routine is used to rename a file in the current
+  Drive/User Area.  Only the FN and FT fields are significant in
+  the FCBs, so the rest of the FCB need not be present for this
+  function to work.
+
+:F$SIZE - Compute File Size
+
+  ENTER: DE = Pointer to the 1st 12 bytes of an FCB
+  EXIT : HL = File Size in kiloBytes
+  USES : AF
+
+ Usage:  This routine is used to obtain the computed size of a
+  file (in K) based on its record count.  This routine gives the
+  file size correct to the next 1K, but does not take into
+  account the grouping factor.
+
+:F$WRITE - Write a Block to a File
+
+  ENTER: DE = Pointer to FCB for open file
+  EXIT :  A = 0, Zero Flag Set (Z) if Write Ok
+              A = Error Code, Zero Clear (NZ) if Error
+                   1    --> Error in extending file
+                   2    --> End of disk data
+                   0FFH --> No more directory space
+  USES : AF
+
+ Usage:  This routine is used to Write the next 128 byte block
+  of data from the current DMA Buffer to a specified open file in
+  the Current Drive/User Area.
+
+:GETRR, GETRR1 - Get Random Record Number
+
+  ENTER: DE = pointer to FCB
+  EXIT : HL = Random Record Number
+	  A = 0, Zero Flag Set (Z) if No Error
+              A <> 0, Zero Flag Clear (NZ) ifRandom Record Overflow
+			(value in A is Error Code)
+  USES : AF,HL
+
+ Usage:  Return the random record number of the last record read
+  or written sequentially from the specified file.  These routines
+  are convenient in determining the current position in a file.
+
+  NOTE:  GETRR does not affect the random record number field of
+  the FCB and is larger in size.  GETRR1 is smaller and DOES
+  affect the random record number field of the FCB.
+
+:GETFS, GETFS1 - Get File Size in Records
+
+  ENTER: DE = pointer to FCB
+  EXIT : HL = Number of Records in File (File Size)
+	  A = 0, Zero Flag Set (Z) if No Error
+	      A <> 0, Zero Flag Clear (NZ) if Random Record Overflow
+			(Value in A is Error Code)
+  USES : AF,HL
+
+ Usage:  Return the file size (in terms of records) of the file
+  whose FCB is pointed to by DE.  These routines are convenient
+  in determining the number of records in a file.
+
+  NOTE:  GETFS does not affect the random record number field
+  of the FCB and is larger in size.  GETFS1 is smaller and
+  affects the random record number field of the FCB.
+
+:GFA - Get File Attributes
+
+  ENTER: DE = pointer to FCB
+  EXIT :  A = Attribute Code
+		A0 = Read-Only Attr (1 = R/O, 0 = R/W)
+		A7 = SYStem Attr    (1 = SYS, 0 = Dir)
+  USES : AF
+
+ Usage:  This routine is used to return the attributes of the
+  file whose FCB is pointed to by DE.  On return, A contains a
+  code indicating the R/O and SYS attributes, where the 8th bit
+  of A (A7) is 1 if the file is a SYStem file and 0 if the file
+  is a DIRectory (Non-SYStem) file and the 1st bit of A (A0) is
+  1 if the file is Read/Only and 0 if the file is Read/Write.
+
+  As a side effect, the MSBs of all bytes in the File Name and
+  File Type fields of the original FCB (bytes 1-11, where byte 0
+  is first) are set equal to the MSBs of the corresponding
+  directory entry.
+
+:R$READ - Random Read a Block from a File
+
+  ENTER: DE = Pointer to FCB
+         HL = Random Record Number
+  EXIT :  A = 0, Zero Flag Set (Z) if NO Error
+              A = Error Code, Zero Clear (NZ) if Error where:
+		1 --> Attempt to Read Unwritten Record
+		3 --> CP/M could not Close Current Extent
+		4 --> Attempt to Read Unwritten Extent
+		6 --> Attempt to Read Beyond End of Disk
+  USES : AF
+
+ Usage:  This routine is used to read a block from the specified
+  file in Random mode.  It is assumed that the file has already
+  been opened by the F$OPEN routine or equivalent.
+
+:R$WRITE - Random Write of a Block to a File
+
+  ENTER: DE = Pointer to FCB
+	 HL = Random Record Number
+  EXIT :  A = 0, Zero Flag Set (Z) if No Error
+	      A = Error Code, Zero Flag Clear (NZ) if Error as:
+		0 --> No Error (Z Flag Set)
+		1 --> Attempt to Read Unwritten Record
+		3 --> CP/M could not Close Current Extent
+		4 --> Attempt to Read Unwritten Extent
+		5 --> Directory Full
+		6 --> Attempt to Read Beyond End of Disk
+  USES : AF
+
+ Usage:  This routine is used to write data at the current DMA
+  position to the designated file in a specific Record Number.
+  This file should have been previously opened by a call to
+  F$OPEN or equivalent.
+
+:SCFA - Set and Clear File Attributes
+
+  ENTER: DE = pointer to FCB
+	  A = Attribute Code as:
+		A0 = Read-Only (1=Set to R/O, 0=Set to R/W)
+		A7 = SYStem    (1=Set to SYStem, 0=Set to Dir)
+  EXIT :  A = 0, Zero Flag Set (Z) if Operation Ok
+	      A <> 0, Zero Clear (NZ) if Ambiguous file/Not found
+  USES : AF
+  SIDE EFFECT: All attribute bits other then Read-Only and SYStem
+	are cleared to Zero.
+
+ Usage:  Set/Clear Read-Only and SYStem attributes of the specified
+  file and clear all other attributes to 0 (the MSBs of bytes 1-8
+  and 11 are set to 0).  Bits 0 and 7 of the A register are set to
+  signify how the Read-Only and SYStem bits are to be set in the
+  file.
+
+SFA - Set File Attributes
+
+  ENTER: DE = pointer to FCB
+	  A = Attribute Code where:
+		A0 = Read-Only (1 = Set to R/O, 0 = Set to R/W)
+		A7 = SYStem    (1 = Set SYStem, 0 = Set Non-SYS)
+  EXIT :  A = 0, Zero Flag Set (Z) if Operation Ok
+	      A <> 0, Zero Clear (NZ) if Ambiguous file/Not found
+  USES : AF
+  SIDE EFFECT: All attributes in the FCB are set to those of the
+	Directory entry except for Read-Only and SYStem
+
+ Usage:  This routine is used to Set or Clear the Read-Only and/or
+  SYStem attributes of the specified file while not affecting the
+  other attribute bits (bytes 1-11, where byte 0 is first).
+
+::SYSLIBJ.HLP
+

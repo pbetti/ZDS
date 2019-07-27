@@ -1,0 +1,514 @@
+Introduction                  ZCPR3 Messages
+Command Status Message        GETCST PUTCST QERROR QSHELL
+Erroò Flaç anä Erroò Commanä  ERRADR GETER1 PUTER1 GETERC PUTERC
+Inter-Transient Error Code    GETER2 PUTER2
+Register Access               GETREG PUTREG
+:Introduction to ZCPR3 Messages
+
+     ZCPR³ offeró manù featureó noô founä undeò CP/M¬ ZCPR1¬ 
+oò ZCPR2®   Onå sucè very¬  verù speciaì featurå ió thaô  oæ 
+ZCPR³ Commanä Processoò Messages.
+
+     ZCPR³  supportó  thå  abilitù tï havå á  ZCPR³  Messagå 
+Buffeò  whicè  containó á numbeò oæ messageó  whicè  caî  bå 
+passeä  froí  onå  transienô prograí tï anotheò  oò  betweeî 
+ZCPR³  itselæ  anä alì transienô programó  whicè  ruî  undeò 
+ZCPR3®   Commandó  caî  bå giveî directlù tï  ZCPR3¬  statuó 
+informatioî caî bå passeä froí ZCPR³ tï thå transients¬  anä 
+botè statuó anä commandó caî bå passeä froí onå transienô tï 
+anotheò througè theså messages.
+
+
+     These message can be divided into six basic classes:
+
+          . messages which command ZCPR3
+          . status messages sent by ZCPR3
+          . ZEX command messages
+          . status and command messages sent by one program
+               to another which are ignored by ZCPR3
+          . user-defined messages
+          . reserved messages
+
+
+     Beforå  usinç anù oæ thå Z3LIÂ routineó tï accesó theså 
+messages¬  thå prograí shoulä checë tï ensurå thaô thå ZCPR³ 
+Messagå Buffeò ió availablå tï it®   Thió caî bå easilù donå 
+bù  callinç thå GETMSÇ routinå (seå thå seconä oî thå  ZCPR³ 
+environment)®   GETMSÇ returnó witè Zerï Flaç Seô (Z© iæ  nï 
+ZCPR3 Message Buffer exists.  Hence:
+
+          ext  getmsg    ;reference
+          ...
+          call getmsg    ;get message buffer status
+          jz   noZ3msgs  ;no messages to read
+          ...
+
+     Thå   followinç   screenó  summarizå   thå   facilitieó 
+availablå througè thå ZCPR³ Messagå Buffer.
+
+
+                Messages which Command ZCPR3
+                -------- ----- ------- -----
+
+     Somå  oæ  thå messageó iî thå ZCPR³ Messagå Buffeò  arå 
+seô  bù externaì programó (transientó oò  commanä  packages© 
+and are read and interpreted by ZCPR3.  These messages are:
+
+          . current IF level and active (T/F) status of
+               all IF levels
+          . whether an error handler is available and what
+               the command line to invoke it is
+
+
+
+               Status Messages Sent by ZCPR3
+               ------ -------- ---- -- -----
+
+     Somå  oæ  thå messageó iî thå ZCPR³ Messagå Buffeò  arå 
+seô  onlù bù ZCPR³ oò á ZCPR³ Shelì anä arå intendeä  tï  bå 
+useä aó R/Ï messageó bù transients®  Theså messageó are:
+
+          . ZCPR3 Command Status
+               - the transient loaded is/is not a shell
+               - the transient loaded is/is not an error
+                    handler
+          . Error Address
+               - iæ thå transienô loadeä ió aî erroò
+                    handler, this is the address of the
+                    firsô characteò oæ thå commanä linå
+                    which was in error
+
+
+                    ZEX Command Messages
+                    --- ------- --------
+
+     Onå messagå iî thå ZCPR³ Messagå Bufferó ió intendeä tï 
+directlù senä commandó tï thå ZEØ memory-baseä commanä  filå 
+processor®   Thió  messagå  bytå telló ZEØ  threå  differenô 
+things:
+
+          . to run normally - ZEX is to intercept the
+               Input calls and provide characters in place
+               of console input
+          . ZCPR3 is prompting - ZEX is providing input
+               directly to the Command Processor ZCPR3
+          . suspend intercept - ZEX is to stop intercepting
+               console input and to allow input from the
+               console until normal execution or the ZCPR3
+               prompt message appears
+
+
+                 Messages Ignored by ZCPR3
+                 -------- ------- -- -----
+
+     Twï  pre-defineä  messageó arå ignoreä bù  ZCPR3®   Thå 
+firsô messagå ió thå Prograí Erroò Code®   Thió bytå caî  bå 
+seô  bù anù prograí undeò ZCPR³ tï indicatå á returî  statuó 
+tï  thå nexô program®   Thå conventioî haó beeî adopteä thaô 
+iæ thió bytå ió 0¬  theî thå prograí completeä successfully®  
+Iæ  iô  ió non-zero¬  thå prograí faileä foò onå  reasoî  oò 
+anotheò anä thå valuå oæ thió codå indicateó thaô reasoî  tï 
+á followinç program.
+
+     Thå seconä messagå ió thå registeò buffer®   Teî 1-bytå 
+registeró  arå  availablå  anä  caî bå testeä  bù  thå  flo÷ 
+commanä package®   Conditionó likå "IÆ ° 5¢ (IÆ Registeò ° ½ 
+5©  caî  bå  testeä foò anä processeä bù  thå  flo÷  commanä 
+package¬  anä otheò programs¬  eitheò transientó oò residenô 
+command packages, can manipulate these register values.
+
+                   User-Defined Messages
+                   ------------ --------
+
+     Á seô oæ 1¶ messageó arå availablå foò useò definition®  
+Eacè  messagå ió onå bytå long¬  anä routineó iî  Z3LIÂ  arå 
+provided to place values into these messages and query them.
+
+
+                     Reserved Messages
+                     -------- --------
+
+     Á  seô  oæ 1¶ one-bytå messageó ió reserveä foò  futurå 
+uså  iî  thå  ZCPR³  systeí  anä  shoulä  noô  bå  useä   bù 
+applicationó programmers®   Z3LIÂ doeó noô providå accesó tï 
+these messages.
+
+:Command Status Message        GETCST PUTCST QERROR QSHELL
+
+     Theså   messageó  returî  thå  statuó  oæ  thå  currenô 
+transienô aó seô bù ZCPR3®   Anù transienô haó beeî  invokeä 
+in one of three possible states:
+
+          . as a "normal" transient, executed at the
+               request of the user or another program
+          . as a "shell", invoked by ZCPR3 itself
+          . as an "error handler", invoked by ZCPR3 itself
+               when it cannot process the current command
+               line (cannot find a matching COM file or
+               CMDRUN facility)
+
+
+Z3LIB Routine: GETCST
+
+Function:
+     Returî thå ZCPR³ Commanä Statuó Message®   Thió messagå 
+is one byte long and can have one of three values:
+
+          0 - this is a "normal" transient
+          1 - this is a "shell"
+          2 - this is an "error handler"
+
+     Thió messagå ió alwayó seô bù ZCPR³ anä noô intendeä tï 
+be set by any program.
+
+Inputs: None
+
+Outputs: A = message code (Zero Flag set accordingly)
+
+
+Registers Affected: PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: PUTCST
+
+Function:
+     Seô thå ZCPR³ Commanä Statuó Message®   Thió messagå ió 
+onå bytå lonç anä caî havå onå oæ threå values:
+
+          0 - this is a "normal" transient
+          1 - this is a "shell"
+          2 - this is an "error handler"
+
+     Thió messagå ió alwayó seô bù ZCPR³ anä noô intendeä tï 
+bå seô bù anù program¬  witè thå exceptioî oæ á ZCPR³ Shell®  
+PUTCSÔ ió provideä tï allo÷ á ZCPR³ Shelì easù accesó tï seô 
+this message byte.
+
+Inputs: A = ZCPR3 Command Status Message value (0, 1, or 2)
+
+Outputs: None
+
+
+Registers Affected: None
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: QERROR
+
+Function:
+     Tesô  tï  seå  iæ  thå  ZCPR³  Commanä  Statuó  Messagå 
+indicateó  thaô  thå currenô transienô ió aî erroò  handler®  
+Thå ZCPR³ Commanä Statuó Messagå ió reaä anä testeä  againsô 
+thå  Erroò  Handleò  codå value®   Zerï Flaç ió Seô  iæ  thå 
+current transient is an Error Handler®
+
+Inputs: None
+
+Outputs: A = message code
+          Zero Flag is Set if transient is an Error Handler
+
+
+Registers Affected: PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: QSHELL
+
+Function:
+     Tesô  tï  seå  iæ  thå  ZCPR³  Commanä  Statuó  Messagå 
+indicateó thaô thå currenô transienô ió á shell®   Thå ZCPR³ 
+Commanä Statuó Messagå ió reaä anä testeä againsô thå  Shelì 
+codå value®   Zerï Flaç ió Seô iæ thå currenô transienô ió á 
+Shell.
+
+Inputs: None
+
+Outputs: A = message code
+          Zero Flag is Set if transient is a Shell
+
+
+Registers Affected: PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+:Error Flag and Error Command  ERRADR GETER1 PUTER1 GETERC PUTERC
+
+     This set of routines performs the following functions:
+
+          ERRADÒ - returnó thå addresó oæ thå firsô
+               character of the command line in error
+          GETER1 - returns the error flag
+          PUTER1 - sets the error flag
+          GETERC - returns the address of the first
+               character of the error handler command line
+          PUTERC - set the error handler command line
+
+
+Z3LIB Routine: ERRADR
+
+Function:
+     Assuminç thaô thå currenô transienô ió aî erroò handleò 
+(á calì tï QERROÒ returnó witè Zerï Flaç Set)¬  thió routinå 
+returnó  thå addresó oæ thå firsô characteò oæ  thå  commanä 
+line which was in error.  For example, if the command:
+
+          XXX params;DIR
+
+waó  issueä anä XXX.COÍ coulä noô bå found¬  ERRADÒ  returnó 
+thå addresó oæ thå firsô characteò oæ thå string:
+
+          db   'XXX params;DIR',0
+
+Inputs: None
+
+Outputs: HL = address of first character of error line
+
+
+Registers Affected: HL
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: GETER1
+
+Function:
+     Returî thå erroò flaç iî A®   GETER± allowó thå prograí 
+tï finä ouô iæ aî erroò handleò ió currentlù installed®  A=° 
+anä  Zerï  Flaç  ió  Seô (Z© iæ therå ió  nï  erroò  handleò 
+installed.
+
+Inputs: None
+
+Outputs: A=0 and Z if no error handler installed
+          A<>0 and NZ if error handler installed
+
+Registers Affected: PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: PUTER1
+
+Function:
+     Seô  thå erroò handleò installeä flag®   PUTER±  allowó 
+thå  prograí  tï explictlù seô thå erroò  handleò  installeä 
+flag®   Iæ thió flaç ió seô tï 0¬  thå currenô erroò handleò 
+(iæ any© ió disabled®   Iæ thió flaç ió seô tï non-zero¬ thå 
+currenô  erroò handleò (defineä bù thå erroò handleò commanä 
+linå messagå - seå GETERC/PUTERC© ió enableä foò lateò use.
+
+Inputs: A = error handler engaged flag
+          (A=0 if error handler is to be disabled, A<>0
+          if error hander is to be enabled)
+
+Outputs: None
+
+
+Registers Affected: None
+
+Side Effects: Error Handler Enable Message is Set
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: GETERC
+
+Function:
+     Returî  thå  addresó  oæ thå  firsô  characteò  oæ  thå 
+command line used to invoke the current error handler.
+
+     If the error handler is to be invoked by the command:
+
+          ERROR params
+
+then the address of the first character of this string:
+
+          db   'ERROR params',0
+
+is returned.
+
+     Iæ therå ió nï erroò string¬  oî exiô A=° anä Zerï Flaç 
+ió  Seô (Z)®   Otherwise¬  A=firsô characteò oæ erroò strinç 
+and NZ.
+
+Inputs: None
+
+Outputs: HL = address of first char
+          A=0 and Zero Flag Set if string is empty
+
+Registers Affected: HL, PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: PUTERC
+
+Function:
+     Seô  thå  erroò handleò commanä  line®   Oî  input¬  HÌ 
+pointó tï á strinç whicè ió tï bå thå commanä linå  executeä 
+to invoke an error handler.  For example:
+
+          ext  puterc
+          ...
+          lxi  h,erstr   ;pt to string
+          call puterc
+          jnz  OK        ;string was accepted
+          ...
+     erstr:
+          db   'ERROR NOOPT',0
+
+     Thå  erroò string¬  includinç thå endinç 0¬  musô bå 3² 
+byteó  lonç  oò less®   Iæ iô ió morå thaî  3²  byteó  long¬ 
+PUTERC returns with A=0 and Zero Flag Set (Z).
+
+Inputs: HL = address of first character of error handler
+          command line
+
+Outputs: A=0 and Zero Flag Set (Z) if command line too long
+          (more than 32 bytes)
+
+Registers Affected: PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+:Inter-Transient Error Code    GETER2 PUTER2
+
+     Thå  inter-transienô  erroò codå ió á one-bytå  messagå 
+whicè  anù  prograí  caî  seô  tï  indicatå  itó  completioî 
+success®   Thå  conventioî ió adopteä thaô iæ  thió  messagå 
+bytå  ió seô tï 0¬  theî thå prograí completeä successfully®  
+Iæ thió messagå bytå ió noô 0¬ theî thå prograí haä aî erroò 
+iî  onå forí oò anotheò anä thå valuå oæ thió  messagå  bytå 
+indicateó thå error.
+
+     GETER²  allowó á prograí tï determinå thå valuå oæ thió 
+inter-transienô  erroò codå anä PUTER² allowó á  prograí  tï 
+seô thå valuå oæ thå inter-transienô erroò code.
+
+
+Z3LIB Routine: GETER2
+
+Function:
+     Returî  thå valuå oæ thå inter-transienô erroò codå  iî 
+A.  A=0 and Zero Flag Set (Z) if no error.
+
+Inputs: None
+
+Outputs: A=error code and Zero Flag set accordingly
+          A=0 and Zero Flag Set (Z) if no error
+
+Registers Affected: PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: PUTER2
+
+Function:
+     Seô  thå valuå oæ thå inter-transienô erroò  code®   Iæ 
+A=0, the program is indicating that no error occurred.
+
+Inputs: A=error code (A=0 if no error)
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: Error Code Message is Set
+
+Special Error Conditions: None
+
+:Register Access               GETREG PUTREG
+
+     Thå ZCPR³ Messagå Buffeò provideó teî one-bytå messageó 
+whicè arå useä aó one-bytå registers®  Thå GETREÇ anä PUTREÇ 
+routineó  allo÷  á prograí tï obtaiî anä seô á valuå iî  anù 
+one of the ten registers.
+
+
+Z3LIB Routine: GETREG
+
+Function:
+     Obtaiî thå valuå (iî A© oæ thå registeò whoså numbeò ió 
+iî Â (B=° tï 9)®   Oî entry¬ B=registeò number¬ anä oî exit¬ 
+A=value in register.
+
+     Noteº   GETREÇ performó nï checë oî thå validitù oæ thå 
+valuå iî B¬  usinç iô aó aî offseô intï thå registeò buffer®  
+Iô ió thå responsibilitù oæ thå programmeò tï ensurå thaô  Â 
+contains a valid register number (0 to 9).
+
+     Example of use:
+
+          ext  getreg
+          ...
+          mvi  b,5       ;get the value of Register 5
+          call getreg
+          jz   r5eq0     ;process special case of reg 5 = 0
+
+Inputs: B = register number of register to access
+
+Outputsº Á ½ valuå oæ registeò anä Zerï Flaç ió set
+          accordingly
+
+Registers Affected: PSW
+
+Side Effects: None
+
+Special Error Conditions: None
+
+
+Z3LIB Routine: PUTREG
+
+Function:
+     Seô  thå valuå (containeä iî A© intï á registeò  (whoså 
+number is contained in B).
+
+     Noteº  nï  checë  ió madå tï ensurå thaô Â  containó  á 
+valiä  registeò  number®   Iô ió thå responsibilitù  oæ  thå 
+programmer to ensure that B contains a value from 0 to 9.
+
+     Example of use:
+
+          ext  putreg
+          ...
+          mvi  b,9       ;set register 9
+          mvi  a,20      ;to 20
+          call putreg
+          ...
+
+Inputs: B = register number (0 to 9)
+          A = register value (0 to 255)
+
+Outputs: None
+
+Registers Affected: None
+
+Side Effects: Register Value is Set
+
+Special Error Conditions: None
+
+

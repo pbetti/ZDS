@@ -1,0 +1,49 @@
+	TITLE	"Z3GVID - Z3lib 4.0"
+;================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from Z3GVID.Z80 Ver 1.1 by Richard Conn
+; Date    : 7 Mar 87
+; Version : 1.2
+; Module  : Z3GVID
+; Abstract: This module contains the routine GETVID which
+;	returns the address of the TCAP terminal table
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+;  Module Entry Points
+
+	PUBLIC		GETVID
+
+;  External References
+
+	EXT		ENVPTR
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - GETVID
+; Entry: - None
+; Exit : HL - Points to the ZCPR3 TCAP buffer if present
+;	  A <> 0, Zero Flag Reset (NZ) if OK
+;	      A = 0, Zero Flag Set (Z) if No TCAP
+; Uses AF,HL
+; Special Requirements: None
+;===============================================================
+
+GETVID:	PUSH	DE		;save DE
+	LD	HL,(ENVPTR)	;get it
+	LD	DE,80H		;pt to Z3TCAP
+	ADD	HL,DE
+	POP	DE		; Restore DE
+	LD	A,(HL)		; Get first char
+	CP	' '+1		; Is an entry present?
+	JR	C,NOENTRY	; ..jump if Not to Error return
+
+	DEFB	0F6H		; Prepare Ok Return of "OR  0AFH"
+NOENTRY: XOR	A		; Return Zero Set for Error
+	RET
+
+	END
+

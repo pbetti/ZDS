@@ -1,0 +1,78 @@
+; Patch:	NSWPPAT
+; Version:	1.0
+; Date: 	January 8, 1988
+; Author:	Bruce Morgen
+; Assembler:	Echelon's ZAS or any of SLR's Zilog-convention
+;		assemblers.  Z80MR or ASMB (ZASM) will probably
+;		work too, but were not tested.	NiteOwl's MLOAD
+;		(version 2.1 or later) recommended for the
+;		patching operation.
+;
+; Sample
+; Installation: 	ZAS NSWPPAT H
+;			MLOAD NSWP.COM,NSWPPAT
+
+; Purpose:	To modify Dave Rand's NSWP version 2.07 for use
+;		in 32-user-area environments like ZCPR 3.3 with
+;		the "HIGHUSER" option.	This patch obviously
+;		does not make NSWP into a true "Z-Tool" - but it
+;		does make it somewhat more useful, at least for
+;		me.  Not tested under TurboDOS, CP/M 3.x or MP/M.
+;		New code resides just before the copyright
+;		notice.  A Z80-compatible CPU is now required.
+
+	ORG	112H
+PATCH:	XOR	A
+LOOP:	ADD	0AH
+	DEC	C
+	JR	NZ,LOOP
+	LD	C,A
+	RET
+
+PATCH2:	PUSH	AF
+	XOR	A
+QLOOP:	ADD	0AH
+	DJNZ	QLOOP
+	LD	B,A
+	POP	AF
+	ADD	B
+	RET
+
+	ORG	811H
+	SUB	'0'
+	LD	B,A
+	INC	HL
+	LD	A,(HL)
+	CP	':'
+	JR	Z,DONE
+	OR	A
+	JR	Z,DONE
+	CP	'0'
+	JR	C,DONE
+	CP	'@'
+	JR	NC,DONE
+	SUB	'0'
+	INC	B
+	DEC	B
+	CALL	NZ,PATCH2
+DONE:	CP	32
+	RET	NC
+	LD	(2E3BH),A
+	RET
+
+	ORG	1A25H
+	CP	32
+
+	ORG	1BB5H
+	CP	32
+
+	ORG	1E17H
+	INC	C
+	DEC	C
+	CALL	NZ,PATCH
+
+	ORG	1E43H
+	CP	32
+
+	END
+

@@ -1,0 +1,408 @@
+;===========================================================================
+;
+; VFSUBS2.Z80 - General Purpose Subroutines
+;
+;===========================================================================
+
+
+; SETUP - Initialization: Set up VFILER buffers, pointers, CRT information.
+
+setup:
+	call	codend		; Start of free space
+	ld	de,100h		; 256 bytes/unit
+	add	hl,de		; Allow room for stack.
+	ld	(crctbl),hl	; Table for crc list.
+	add	hl,de
+	ld	(cmdbuf),hl	; Command line buffer
+	add	hl,de
+	ld	(dum$fcb),hl	; Dummy fcb
+	inc	h
+	ld	l,0		; Next page
+	ld	(bufentry),hl	; Free space to end of tpa
+
+; Set CRT Data
+
+	call	getcrt		; Get cpsel info for current crt
+	ld	a,(hl)
+	sub	[cpadr mod 256]-1
+	ld	(cpecnt),a	; Set # chars for command line simulated eol
+	ld	a,(hl)
+	sub	[eradr mod 256]-1
+	ld	(erecnt),a	; Set # chars for error line simulated eol
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	ld	a,(hl)
+	ld	(ctpp),a	; Text
+
+; Set Printer Data
+
+	call	getprt		; Printer data
+	inc	hl
+	ld	a,(hl)		; Total lines per physical page
+	ld	(lppp),a
+	inc	hl
+	ld	a,(hl)		; Lines of text per page
+	ld	(ltpp),a
+	inc	hl
+	ld	a,(hl)
+	ld	(lffeed),a	; Can form feed?
+
+; Get Cursor Key definitions from the Environment
+
+	ld	hl,(envptr)	; Pt to zcpr3 env desc
+	ld	de,80h+10h	; Pt to cursor commands
+	add	hl,de
+	ld	de,ctable	; Pt to area
+	ld	b,4		; 4 commands
+
+curinit:
+	ld	a,(hl)		; Get command
+	ld	(de),a		; Put it
+	inc	hl		; Pt to next
+	inc	de
+	inc	de
+	inc	de
+	inc	de
+	djnz	curinit
+
+; Begin Further Inits
+
+	xor	a
+	ld	(helpdisp),a	; No help display yet
+
+	ld	hl,(bufentry)	; Base address
+	ld	(ring),hl	; Beginning of ring
+
+	ld	hl,curhome	; Home address for cursor
+	ld	(curat),hl
+
+	call	getmdisk	; Get max disk number (1-n)
+	ld	(maxdr),a	; Save it.
+
+	ld	a,(bdos+2)	; Get bdos page
+	 if	warmboot
+	dec	a		; Next page below bdos
+	 else
+	sub	10		; 10 pages below bdos is the limit.
+	 endif			; Warmboot
+	ld	(maxpage),a	; Set page limit.
+	ret
+
+;---------------------------------------------------------------------------
+
+; PUBLIC - Test the ZRDOS public status of the requested DU:
+;   Return NZ if public, Z if not.
+
+public:
+	ld	bc,(du$req)
+	ld	hl,(pubyts)	; Get ZRDOS public bytes
+	ld	a,h
+	or	l
+	jr	z,nopub		; Nothing is public
+	ld	a,b		; Get drive number
+	cp	8
+	jr	nc,nopub	; Out of range
+	ld	a,c		; Get user number
+	or	a
+	jr	z,nopub		; User 0 cannot be public
+	cp	9
+	jr	nc,nopub	; Out of range
+	ld	d,c		; User byte to d (minimum 1)
+	xor	a		; Clear A
+	scf			; Set the carry
+pubul:
+	rla			; Shift user bit into A
+	dec	d
+	jr	nz,pubul	; Shift until D is zero
+	and	h		; And it with A
+	jr	z,nopub		; Not public
+	ld	d,b		; Drive byte to D
+	xor	a		; Get a zero
+	scf			; Set carry
+pubdl:
+	rla
+	dec	d
+	jp	p,pubdl		; Loop till D is negative
+	and	l		; And it with A
+	jr	z,nopub		; Not public
+	xor	a
+	dec	a
+	ret
+nopub:
+	xor	a
+	ret
+
+;---------------------------------------------------------------------------
+
+; STACKSET - Set Stack Pointer
+
+stackset:
+	pop	de		; Get return address
+	ld	hl,(crctbl)	; Top of stack
+	ld	sp,hl		; Start local stack
+	push	de		; Return address on new stack
+	ret
+
+;---------------------------------------------------------------------------
+
+; IDU - Set initial disk/user
+
+idu:
+	call	retud		; Get original du in bc.
+	ld	(du$orig),bc	; Save for exit
+
+	ld	de,fcb		; Log into du specification
+	call	z3log		; Perform login
+	call	retud		; Get current du in bc
+	ld	(du$req),bc	; Save as requested du
+	ret
+
+;---------------------------------------------------------------------------
+
+; RESET - Disk system reset (log in requested DU)
+
+reset:
+	push	bc		; Save regs
+	push	de
+	push	hl
+	ld	c,resetdk	; Reset system
+	call	bdos
+	ld	bc,(du$req)	; Get current du
+	call	logud		; And set it up.
+	pop	hl		; Restore regs
+	pop	de
+	pop	bc
+	ret
+
+;---------------------------------------------------------------------------
+
+; GETDPB - Determine Disk Parameter values for current drive.
+
+getdpb:
+	ld	c,inqdisk	; Determine current drive
+	call	bdos		; Returns 0 as a:, 1 as b:, etc.
+	inc	a		; Make 1 --> a:, 2 --> b:, etc.
+	ld	(fcb),a
+	ld	c,getparm	; Current disk parameter block
+	call	bdos
+	inc	hl		; Bump to..
+	inc	hl
+	ld	a,(hl)		; Block shift factor.
+	ld	(bshiftf),a	; 'bsh'
+	inc	hl		; Bump to..
+	ld	a,(hl)		; Block mask.
+	ld	(b$mask),a	; 'blm'
+	inc	hl		; Bump to..
+	inc	hl		; Get..
+	ld	e,(hl)		; Maximum block number..
+	inc	hl		; Double..
+	ld	d,(hl)		; Byte.
+	ex	de,hl
+	ld	(b$max),hl	; 'dsm'
+	ret
+
+;---------------------------------------------------------------------------
+
+; FRESTOR - Determine free storage remaining on selected drive
+;	    - GETDPB ***MUST*** be called first to set current DPB values.
+
+frestor:
+	ld	c,inqalc	; Address of allocation vector
+	call	bdos
+	ex	de,hl		; Get its length
+	ld	hl,(b$max)
+	inc	hl
+
+	ld	bc,0		; Initialize block count to zero
+gspbyt:
+	push	de		; Save allocation address
+	ld	a,(de)
+	ld	e,8		; Set to process 8 bits (blocks)
+
+gsplup:
+	rla			; Test bit
+	jr	c,not$fre
+	inc	bc
+not$fre:
+	ld	d,a		; Save bits
+	dec	hl
+	ld	a,l
+	or	h
+	jr	z,end$alc	; Quit if out of blocks
+	ld	a,d		; Restore bits
+	dec	e		; Count down 8 bits
+	jr	nz,gsplup	; Branch to do another bit
+	pop	de		; Bump to next count..
+	inc	de		; Of allocation vector.
+	jr	gspbyt		; Process it
+
+end$alc:
+	pop	de		; Clear alloc vector pointer from stack
+	ld	l,c		; Copy # blocks to hl
+	ld	h,b
+	ld	a,(bshiftf)	; Get block shift factor
+	sub	3		; Convert from sectors to thousands (k)
+	jr	z,prt$fre	; Skip shifts if 1k blocks
+frek$lp:
+	add	hl,hl		; Multiply blocks by k-bytes per block
+	dec	a		; Multiply by 2, 4, 8, or 16.
+	jr	nz,frek$lp
+prt$fre:
+	ld	(disksp),hl	; Save disk space
+	ret
+
+;---------------------------------------------------------------------------
+
+; General Utility Subroutines -- filling, moving, comparing, shifting
+
+
+; FILL - Fill buffer with 'spaces' with count in b-reg
+
+fill:
+	ld	(hl),' '	; Put in space character
+	inc	hl
+	djnz	fill		; No, branch.
+	ret
+
+
+; MOVE - move subroutine -- move B-reg # of bytes from HL to DE
+
+movea:
+	ld	a,(hl)		; Get hl referenced source byte
+	and	7fh		; Strip attributes
+	ld	(de),a		; Put to de referenced destination
+	inc	hl		; Fix pointers for next search
+	inc	de
+	djnz	movea
+	ret
+
+
+; MOVEB - Move subroutine (DE, HL not altered)
+
+moveb:
+	push	hl		; Save hl, de
+	push	de
+	call	movea
+	pop	de		; Restore de, hl
+	pop	hl
+	ret
+
+
+; MOVEC - As movea but without stripping attributes
+
+movec:
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	movec
+	ret
+
+
+; CMPDEHL - Compare DE to HL (DE - HL) and set flags accordingly
+
+cmpdehl:
+	ld	a,d		; See if high bytes set flags
+	cp	h
+	ret	nz		; Return if not equal, cy if h > d
+	ld	a,e
+	cp	l		; Low bytes set flags instead
+	ret			; Cy if l > e
+
+
+; SHIFTLP - Shift HL b-reg bits (-1) to right (divider routine)
+
+shiftlp:
+	dec	b
+	ret	z
+	ld	a,h
+	or	a
+	rra
+	ld	h,a
+	ld	a,l
+	rra
+	ld	l,a
+	jr	shiftlp
+
+;---------------------------------------------------------------------------
+
+; Prompting Routines and Keyboard Input
+
+; VFYREQ - Ask user whether to verify
+
+vfyreq:
+	call	cprmpt		; Print the following at the command prompt
+	db	'Verify (Y/N)? ',0
+	call	keyin		; Get user's response
+	cp	ctrlc
+	jp	z,loop		; Restart if Control C
+	ld	b,255		; Set verify flag
+	cp	'Y'		; ..if 'Y'
+	jr	z,vfyset
+	inc	b		; Clear verify flag
+	cp	'N'		; ..if 'N'
+	jr	z,vfyset
+	ld	a,(vflag)	; Use default verify flag
+	ld	b,a		; ..if neither 'Y' nor 'N'
+vfyset:
+	ld	a,b
+	ld	(vflag),a
+	ret
+
+
+; BOTTOM - Position at Bottom of Screen and Prompt for Continuation
+
+bottom:
+	ld	hl,botadr	; Position cursor
+	call	gotoxy
+
+; SAK - Prompt for Continuation
+
+sak:
+	call	vprint
+	db	dim,' Strike Any Key --',bright,' ',0
+
+
+; DKEYIN - direct console input w/o echo (waits for input)
+
+dkeyin:
+	call	cin		; Get char from bios
+	jp	caps		; Capitalize
+
+
+; KEYIN - Conin routine (waits for response)
+
+keyin:
+	call	dkeyin		; Get input and capitalize.
+	jp	cout		; Echo
+
+;---------------------------------------------------------------------------
+
+; RESDMA - Reset DMA Address
+
+resdma:
+	ld	de,tbuff	; Pt to temporary buffer
+	ld	c,setdma
+	jp	bdos
+
+;---------------------------------------------------------------------------
+
+; CPYBITS - Copy old file status bits ($r/o or $sys) to new filename
+; Enter with DE pointing to old fcb and HL pointing to new one.
+
+cpybits:
+	ld	b,11		; # of bytes with tag bits
+cbits1:
+	ld	a,(de)		; Fetch bit of old name character
+	and	128		; Strip upper bit and..
+	ld	c,a		; Save in b-reg.
+	ld	a,7fh		; Mask for character only
+	and	(hl)		; Put masked character into a-reg
+	or	c		; Add old bit
+	ld	(hl),a		; Copy new byte back
+	inc	hl		; Bump copy pointers
+	inc	de
+	djnz	cbits1
+	ret
+                                                                                 

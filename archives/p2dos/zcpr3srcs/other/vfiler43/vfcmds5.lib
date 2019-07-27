@@ -1,0 +1,714 @@
+;===========================================================================
+;
+; VFCMDS5.Z80 - Copy/Unsqueeze Commands and Code (C, Q)
+;
+;===========================================================================
+
+
+; * * * COMMAND: C
+
+; Copy source file at current 'ring' position to another drive.
+; Set-up FCB's and buffer area and check for correct keyboard inputs.
+; Contains auto-CRC file copy verification.
+
+fcopy:
+
+; Set Flags for First Time Thru and No Mass Copy
+
+	xor	a		; A=0
+	ld	(first$m),a	; Set for prompt for destination
+	ld	(mflag),a	; Not a mass copy
+
+; Do Copy
+
+	call	copy		; Do copy of file at ringpos
+
+; Advance to Next File
+
+	jp	forward		; Advance to next file
+
+; Copy File at RINGPOS
+
+	 if	usedseg
+	dseg
+	 endif
+cflag:
+	ds	1		; Copy-success flag (ff = good copy)
+	 if	usedseg
+	cseg
+	 endif
+
+copy:
+	xor	a		; Initialize copy flag
+	ld	(cflag),a
+	ld	hl,0		; Initialize storage for..
+	ld	(crcval),hl	; 'crc' working value.
+	call	ringfcb		; Move from 'ring' to 'sfcb' with attributes
+	ld	b,32		; Copy source 'fcb' to destination 'fcb'
+	ld	hl,s$fcb+1	; From point..
+	ld	de,d$fcb+1	; To point..
+	call	movea		; Move across, stripping attributes
+	ld	de,s$fcb	; Open file for reading
+	ld	c,open		; Open function
+	call	bdos
+	inc	a		; 0ffh --> 00h if bad open
+	jp	z,fnf		; File not found
+
+; Source File is Open -- If first time thru, get dest dir
+
+copy2:
+	ld	a,(first$m)	; By-pass prompt, drive/user compatibility..
+	or	a		; Test, and disk reset after..
+	jr	nz,copy3m	; 1st time thru in mass-copy mode.
+	dec	a		; A=0ffh
+	ld	(first$m),a	; Set not first time any more
+	call	cprmpt		; Prompt for drive selection
+	db	'Copy to DIR: ',0
+	call	cpy$d$u
+	ld	a,(qryvfya)	; See if verify option is set
+	or	a
+	call	nz,vfyreq
+
+; Check to ensure that either drives or user areas are different
+
+	ld	hl,(du$req)	; Get requested du
+	ld	de,(du$dest)	; And destination du
+	call	cmpdehl		; Compare..
+	jr	nz,copy3	; Branch if different
+	call	ermsg		; If not, show error condition:
+	db	'Src DIR = Dest DIR',bel,0
+	jp	loop		; Try again?
+
+; First File Copy - Reset System
+
+copy3:
+	call	reset		; Make sure disk is read/write
+				; And return to source du:
+
+; Nth File Copy - Copy without Resetting System
+
+copy3m:
+	call	cufile		; Make new file, erase old if required.
+
+; Perform Copy
+
+copy6:
+	call	cprmpt
+	db	'Copying ',0
+	ld	hl,d$fcb+1	; Print file name
+	call	prfnsx
+	call	vprint
+	db	' to ',0
+	ld	a,(du$dest+1)	; Print dest du
+	add	a,'A'
+	call	cout		; Print disk
+	ld	a,(du$dest)	; Get user
+	call	pafdc		; Print user
+	ld	a,':'
+	call	cout
+	xor	a		; Clear 'eof' flag
+	ld	(eoflag),a
+
+copy6a:
+	ld	bc,(du$req)	; Get current du
+	call	logud		; And set it up.
+	ld	hl,0		; Clear current-record..
+	ld	(rec$cnt),hl	; Counter.
+	ld	hl,(bufstart)	; Set buffer start pointer..
+	ld	(buf$pt),hl	; To begin pointer.
+
+; read source file -- fill buffer memory or stop on 'EOF'
+;		   -- update 'CRC' on-the-fly
+
+copy7:
+	ld	hl,(buf$pt)	; Set dma address to buffer pointer
+	ex	de,hl		; De --> dma address
+	ld	c,setdma
+	call	bdos
+	ld	de,s$fcb	; Source 'fcb' for reading
+	ld	c,read		; Record read function
+	call	bdos
+	or	a		; 00h --> read okay
+	jr	z,s$rd$ok
+	dec	a		; Eof?
+	jr	z,copy8		; Yes, end-of-file, set 'eof' flag.
+	call	resdma		; Reset dma address.
+	call	ermsg
+	db	'Read Error',bel,0
+	jp	loop
+
+; Read OK - Update CRC
+
+s$rd$ok:
+	ld	a,(vflag)
+	or	a
+	jr	z,copy7b	; Don't bother if no verify
+
+	ld	hl,(buf$pt)
+	ld	b,128
+copy7a:
+	ld	a,(hl)		; Get character and..
+	call	updcrc		; Add to 'crc' value.
+	inc	hl
+	djnz	copy7a		; Loop 'till record read finished
+copy7b:
+
+; Update Buffer Ptr and Record Count
+
+	ld	hl,(buf$pt)	; Bump buffer pointer..
+	ld	de,128		; By..
+	add	hl,de		; One..
+	ld	(buf$pt),hl	; Record.
+	ld	hl,(rec$cnt)	; Bump buffer..
+	inc	hl		; Record count and..
+	ld	(rec$cnt),hl	; Store.
+	ex	de,hl		; Ready to compare to..
+
+; Check for Full Buffer
+
+	ld	hl,(rec$max)	; Maximum record count (full-buffer).
+	call	cmpdehl		; Compare
+	jr	nz,copy7	; If not full, get next record.
+	jr	copy9		; Full, start first write session.
+
+; Indicate end-of-file read
+
+copy8:
+	ld	a,true		; Set 'eof' flag
+	ld	(eoflag),a
+
+; Write source file from memory buffer to destination
+
+copy9:
+	ld	hl,(bufstart)	; Adjust buffer pointer..
+	ld	(buf$pt),hl	; To start address.
+	call	cuwrite		; Write buffer to disk.
+	jr	z,copy6a	; Branch to read next buffer full
+	ld	a,(vflag)	; Verify?
+	or	a
+	jp	z,cua$log	; No verify
+	jp	crc$cmp		; Compare file crc's and return
+
+
+; * * * COMMAND: Q
+
+; Usq source file at current 'ring' position (potentially to another drive).
+; Set-up FCB's and buffer area and check for correct keyboard inputs.
+; Contains auto-CRC file file write verification.
+
+fusq:
+
+; Set Flags for First Time Thru and No Mass Usq
+
+	xor	a		; A=0
+	ld	(first$m),a	; Set for prompt for destination
+	ld	(mflag),a	; Not a mass usq
+
+; Do Usqueeze
+
+	call	usq		; Do usq of file at ringpos
+
+; Advance to Next File
+
+	jp	runsh2		; Reload files to show new one
+
+; Usq File at RINGPOS
+
+usq:
+	ld	hl,0		; Initialize storage for..
+	ld	(crcval),hl	; 'crc' working value,..
+	ld	(cksumval),hl	; And 'sq checksum' working value.
+	call	ringfcb		; Move from 'ring' to s$fcb
+	call	fi0$close	; Close input file if previously opened.
+	ld	de,s$fcb	; Get fcb with file id.
+	call	fi0$open	; Open file for byte i/o.
+	jr	z,usq1		; Br if file opened ok.
+
+	cp	4		; See if fi0$open end-of-file.
+	jp	nz,fnf		; Br if not. assume file not found.
+	call	ermsg		; Bypass empty file.
+	db	'Empty File skipped.',0
+	ret
+
+
+; Source File is Open -- If first time thru, get dest dir
+
+usq1:
+	ld	a,(first$m)	; By-pass prompt, drive/user compatibility..
+	or	a		; Test, and disk reset after..
+	jr	nz,usq2m	; 1st time thru in mass-usq mode.
+	dec	a		; A=0ffh
+	ld	(first$m),a	; Set not first time any more
+	call	cprmpt		; Prompt for drive selection
+	db	'Usq to DIR: ',0
+	call	cpy$d$u
+	ld	a,(qryvfya)	; See if verify option is set
+	or	a
+	call	nz,vfyreq
+
+; First File USQ - Reset System
+
+usq2:
+	call	reset		; Make sure disk is read/write
+				; And return to source du:
+
+; Nth File USQ - USQ without Resetting System
+
+usq2m:
+	call	usqhdr		; Check for squeezed file.
+	ld	a,(usqflg)	; Squeezed file?
+	or	a
+	jr	z,usq3		; Br if ok.
+	cp	1		; Not '*.?q?' ?
+	ret	z		; Quiet return if so.
+	call	ermsg
+	db	'USQ error, File skipped.',bel,0
+	ret
+
+; Perform USQ
+
+usq3:
+	call	cufile		; Make new file, erase old if required.
+	call	cprmpt
+	db	'USQ ',0
+	call	prfns		; Print source file name.
+
+	call	vprint
+	db	' to ',0
+
+	ld	a,(du$dest+1)	; Print dest du
+	add	a,'A'
+	call	cout		; Print disk
+	ld	a,(du$dest)	; Get user
+	call	pafdc		; Print user
+	ld	a,':'
+	call	cout
+	ld	hl,d$fcb+1	; Print destination file name
+	call	prfnsx
+
+	xor	a		; Clear 'eof'flag.
+	ld	(eoflag),a
+usq4:
+	call	resdma		; Reset dma address.
+	ld	bc,(du$req)	; Get current du
+	call	logud		; And set it up.
+	ld	hl,0		; Clear current-record..
+	ld	(rec$cnt),hl	; Counter.
+	ld	hl,(usqbuff@)	; Set buffer start pointer..
+	ld	(buf$pt),hl	; To begin pointer.
+
+; Unsqueeze source file
+;	-- fill buffer memory or stop on 'EOF'
+;	-- update 'SQ Checksum' on-the-fly
+;	-- update 'CRC' on-the-fly
+
+usq5:
+	ld	hl,(buf$pt)	; Set dma address to buffer pointer
+	ld	b,128		; Get # bytes per record.
+usq6:
+	push	hl		; Save regs
+	push	bc
+	call	usqnxt		; Usq next character from file.
+	pop	bc		; Restore regs
+	pop	hl
+	jr	nz,usq7
+	ld	(hl),a		; Save character and..
+	call	updcrc		; Add to 'crc' value,..
+	call	updcksum	; As well as 'sq checksum'value.
+	inc	hl
+	djnz	usq6		; Loop 'till record read finished
+
+; Update Buffer Ptr and Record Count
+
+	ld	(buf$pt),hl	; Bump buffer pointer by one record.
+	ld	hl,(rec$cnt)	; Bump buffer..
+	inc	hl		; Record count and..
+	ld	(rec$cnt),hl	; Store.
+	ex	de,hl		; Ready to compare to..
+
+; Check for Full Buffer
+
+	ld	hl,(urecmax)	; Maximum record count (full-buffer).
+	call	cmpdehl		; Compare
+	jr	nz,usq5		; If not full, get next record.
+	jr	usq9		; Full, start first write session.
+
+; Indicate end-of-file read
+
+usq7:
+	ld	a,true		; Set 'eof' flag
+	ld	(eoflag),a
+	ld	a,b		; Get # bytes remaining free in 'record'.
+	cp	80h
+	jr	z,usq9		; Br if empty buffer
+
+usq8:
+	ld	a,eof		; Add eof to text file
+	ld	(hl),a		; Save character and..
+	call	updcrc		; Add to 'crc' value.
+	inc	hl
+	djnz	usq8		; Until 'record' is complete.
+
+	ld	hl,(rec$cnt)	; Bump buffer..
+	inc	hl		; Record count and..
+	ld	(rec$cnt),hl	; Store.
+
+; Write source file from memory buffer to destination
+
+usq9:
+	ld	hl,(usqbuff@)	; Adjust buffer pointer..
+	ld	(buf$pt),hl	; To start address.
+	call	cuwrite		; Write buffer to disk.
+	jr	z,usq4		; Branch to read next buffer full
+	ld	a,(vflag)
+	or	a
+	jp	z,cua$log
+	call	crc$cmp		; Read destination file and compare crc's.
+
+; File write verified (now verifiy USQ Checksum is also OK)
+
+	ld	de,(sqcksum)	; Get sq checksum from file header
+	ld	hl,(cksumval)	; Get decoded file checksum..
+	call	cmpdehl		; Must be equal.
+	ret	z		; Done if ok.
+
+	call	cua$log		; Return to current user
+	call	ermsg
+	db	' -- USQ Checksum Error',bel,0
+	jp	loop		; Abort
+
+
+; Get Destination drive and user for Copy/Usq (full check of drive/user)
+
+cpy$d$u:
+	call	getfspec	; Get file specification from user
+	jr	z,nullin	; Exit on null input line.
+	call	vfy$d$u		; Resolve, verify du or dir access.
+	jr	z,edef_dir	; Not defined?
+	jr	c,eacc_dir	; Access error?
+	ld	(du$dest),bc	; Return destination du
+	ret
+nullin:
+	call	erclr
+	jp	loop
+
+edef_dir:
+	call	ermsg
+	db	'Destination Dir Entry Invalid',0
+	jp	loop
+
+eacc_dir:
+	call	ermsg
+	db	'Destination Dir Access Denied',0
+	jp	loop
+
+
+; Create New Destination Copy/Usq File
+
+cufile:
+	ld	bc,(du$dest)	; Get destination du
+	call	logud		; And set it up.
+	ld	de,d$fcb	; Search for duplicate
+	xor	a		; Clear destination drive id.
+	ld	(de),a
+	ld	c,srchf		; 'search first' function
+	call	bdos
+	inc	a		; If not found, 0ffh --> 00h.  then..
+	jr	z,cufile2	; Go to 'make' function for new file.
+
+		; Check all the query possibilities
+
+	ld	a,(mflag)	; See if single or multiple file operation
+	or	a
+	jr	z,single	; Jump if single
+	ld	a,(massop)	; Is it an archive copy
+	cp	'A'
+	jr	nz,multiple	; If not, go to multiple file case
+	ld	a,(qryarca)	; Check archive query flag
+	or	a
+	jr	z,cufile1	; If not, get on with it
+	jr	query		; Else query
+multiple:
+	ld	a,(qrygrpa)	; Is group query option set
+	or	a
+	jr	z,cufile1	; If not, get on with it
+	jr	query		; Else, query for overwrite
+single:
+	ld	a,(qryrepa)	; Is single file replace query option set
+	or	a
+	jr	z,cufile1	; If not, get on with it
+query:
+	call	atcmd		; Position cursor at command prompt
+
+	ld	hl,(du$dest)	; Destination drive/user
+	ld	a,h		; Drive
+	add	a,'A'
+	call	cout
+	ld	a,l
+	call	pafdc
+	ld	a,':'
+	call	cout
+	ld	hl,d$fcb+1
+	call	prfnskip
+	call	vprint
+	db	' Exists. Erase (Y/N)? ',bel,0
+	call	keyin		; Get answer
+	cp	ctrlc
+	jp	z,loop		; Restart if Control C
+	cp	'Y'		; If yes,
+	jr	nz,cufile3	; Then delete and copy/usq ...
+
+; Erase destination file and proceed
+
+cufile1:
+
+; Set File Attributes
+
+	ld	hl,d$fcb	; Pt to fcb
+	call	attrib		; Clear bytes in fcb and set attr of file
+	jr	z,cufile3	; Return to caller if r/w not permitted
+
+; Delete old file at dest
+
+	ld	de,d$fcb	; Delete file already existing
+	ld	c,erase		; Erase function
+	call	bdos
+
+; Create new file at dest
+
+cufile2:
+	ld	de,d$fcb	; Create new file and open for writing
+	ld	c,make		; Make function
+	call	bdos
+	inc	a		; If directory full, 0ffh --> 00h.
+	ret	nz		; If not, return.
+	call	ermsg
+	db	'Dest Dir Full',bel,0
+	jp	loop		; If error, back to ring processor.
+
+; Existing file not deleted - return.
+
+cufile3:
+	ld	bc,(du$req)	; Else get current du
+	call	logud		; And set it up.
+	pop	hl		; And return 1 level higher.
+	ret
+
+
+; Write Copy/Usq Memory buffer to Destination File
+;
+;	Parm:	BUFF$PT = start of buffer to be written
+;		REC$CNT = # records to write.
+;
+;	Returns  Z if EOFLAG reset,
+;		 NZ if	 "   set, file closed OK.
+
+cuwrite:
+	ld	bc,(du$dest)	; Get destination du
+	call	logud		; And set it up.
+cuwrt1:
+	ld	hl,(rec$cnt)	; Buffer empty?
+	ld	a,h
+	or	l
+	jr	z,cuwrt2	; Buffer empty, check 'eof' flag.
+	dec	hl		; Dec buffer record count for each write
+	ld	(rec$cnt),hl
+	ld	hl,(buf$pt)	; Set up dma address
+	push	hl		; Save for size bump
+	ex	de,hl		; Pointer in de
+	ld	c,setdma
+	call	bdos
+	pop	hl
+	ld	de,128		; Bump pointer one record length
+	add	hl,de
+	ld	(buf$pt),hl
+	ld	de,d$fcb	; Destination file 'fcb'
+	ld	c,write		; Write record function
+	call	bdos
+	or	a		; 00h --> write okay
+	jr	z,cuwrt1	; Okay, do next record.  else..
+	call	ermsg		; Say disk write error.
+	db	'Disk Full',bel,0
+
+; Error in Write -- Delete Destination File and Abort
+
+c$era:
+	call	resdma		; Reset dma address.
+	ld	de,d$fcb	; Delete..
+	ld	c,erase		; Partial..
+	call	bdos		; From directory.
+	ld	bc,(du$req)	; Source du:
+	call	logud		; Log it in
+	jp	loop		; Back to ring
+
+; Destination Buffer Written - Check for End
+
+cuwrt2:
+	ld	a,(eoflag)	; Buffer all written, check for 'eof'.
+	or	a
+	ret	z		; Return to read next buffer full
+	ld	de,d$fcb	; Point at 'fcb' for file closure
+	ld	c,close
+	call	bdos
+	inc	a		; If no-close-error then..
+	jr	nz,cuwrt3	; Check R/O status
+	call	ermsg
+	db	'Close Error',bel,0
+	jr	c$era
+
+; Set R/O attribute if necessary
+
+cuwrt3:
+	ld	hl,s$fcb+9
+	ld	a,128
+	and	(hl)		; Zero flag if R/W
+	ld	a,(hl)		; Get it just in case
+	jr	z,cuwrt4	; File is R/W, quit
+
+	ld	hl,d$fcb+9
+	ld	(hl),a		; Plug in the attribute
+	ld	de,d$fcb
+	ld	c,attr
+	call	bdos		; Set the attribute, return to caller
+
+cuwrt4:
+	or	255		; Flag no error
+	ret
+
+; Read Destination File and Compare CRCs
+
+crc$cmp:
+	ld	hl,(crcval)	; Transfer 'crc' value to..
+	ld	(crcval2),hl	; New storage area.
+	ld	hl,0		; Clear working storage..
+	ld	(crcval),hl	; To continue.
+	call	resdma		; Reset dma address
+	ld	de,d$fcb
+	call	initfcb
+	ld	c,open
+	call	bdos
+	inc	a		; 0ffh --> 00h if bad open
+	jr	z,badcrc	; If bad open, just say 'bad-crc'.
+	xor	a		; Zero 'fcb'..
+	ld	(d$fcb+32),a	; 'cr' field.
+	call	vprint
+	db	'  Verifying ',0
+
+crcwf1:
+	ld	de,d$fcb
+	ld	c,read
+	call	bdos
+	or	a		; Read okay?
+	jr	z,d$rd$ok	; Yes, read more.
+	dec	a		; Eof?
+	jr	z,fincrc	; Yes, finish up and make 'crc' comparison.
+	call	ermsg
+	db	'Verify Read Error',bel,0
+	jp	loop
+
+; Block Read OK - Update CRC
+
+d$rd$ok:
+	ld	hl,tbuff
+	ld	b,128
+crcwf2:
+	ld	a,(hl)		; Get character to..
+	call	updcrc		; Add to 'crc' value.
+	inc	hl
+	djnz	crcwf2
+	jr	crcwf1
+
+; Read Complete - Check CRCs
+
+fincrc:
+	ld	de,(crcval)	; Put written-file 'crc' into de
+	ld	hl,(crcval2)	; Put read-file 'crc' and..
+	call	cmpdehl		; Compare 'de/hl' for equality.
+	jr	nz,badcrc	; If not zero, show copy-error message.
+
+; Log into Current User Area, Return to caller
+
+cua$log:
+	call	vprint
+	db	' Done.',0
+	ld	a,0ffh		; Show successful copy
+	ld	(cflag),a
+	call	resdma		; Set default dmaadr
+	ld	bc,(du$req)	; Get current du
+	jp	logud		; Set it up, and return to caller.
+
+; Error on Copy
+
+badcrc:
+	call	cua$log		; Return to current user
+	call	ermsg
+	db	' -- CRC Error',bel,0
+	jp	loop		; Abort
+
+
+; ATTRIB - Clear attributes of file (HL) and set attributes on disk
+;	Return code:	0FFH (NZ) indicates OK to proceed
+;			0    (Z)  indicates abort
+
+attrib:
+	push	hl		; Save pointer to fcb
+	ld	de,(dum$fcb)	; Pt to dummy fcb
+	call	initfcb		; Clear it
+	ld	b,12		; Copy
+	push	de
+	call	movea		; Move filename to dummy
+	pop	de		; Pt to dummy fcb
+	ld	c,srchf		; Look for file
+	call	bdos
+	inc	a		; File not found = 0
+	pop	hl		; Point to original fcb
+	ret	z		; Abort if no file
+	push	hl		; Save ptr again
+	dec	a		; Adjust to directory code (0-3)
+	rrca			; Right 3 bits to indicate offset into buff
+	rrca			; Effectively multiply by 32
+	rrca
+	ld	hl,tbuff	; Pt to buffer
+	add	a,l		; Pt to fcb of file
+	add	a,9		; Pt to r/o byte
+	ld	l,a
+	ld	a,(hl)		; Get byte
+	and	80h		; Extract r/o bit
+	jr	z,attrib0	; File is R/W
+	call	erclr		; Position cursor to error line
+	pop	hl		; Get the fcb ptr again
+	push	hl		; And save it again
+	inc	hl		; Pt to file name
+	call	prfnskip	; Print file name
+	call	vprint		; And query
+	db	' is R/O. Erase (Y/N)? ',bel,0
+	call	keyin		; Get response
+	push	af
+	call	erclr		; Clear error line
+	pop	af
+	cp	ctrlc
+	jp	z,loop		; Restart if Control C
+	cp	'Y'
+	jr	z,attrib0
+	pop	hl
+	xor	a		; Error return
+	ret
+
+attrib0:
+	pop	hl		; Get ptr
+	push	hl		; Save ptr
+	inc	hl		; Point to first character
+	ld	b,11		; 11 Bytes
+attrib1:
+	ld	a,(hl)		; Get byte
+	and	7fh		; Mask it
+	ld	(hl),a		; Put byte
+	inc	hl		; Pt to next
+	djnz	attrib1		; Count down
+	pop	de		; Pt to fcb
+	ld	c,attr
+	call	bdos
+	xor	a
+	dec	a		; No error return
+	ret
+                                           

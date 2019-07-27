@@ -1,0 +1,478 @@
+ Introduction to the ZCPR3 Environment
+ Command Line  -- APPCL, CLRCL, GETCL1, GETCL2, PUTCL
+ CRT/PRT Data  -- GETCRT, GETPRT, PUTCRT, PUTPRT
+ External FCB  -- GETEFCB
+ Environment   -- GETENV, GETVID
+ FCP Address   -- GETFCP
+ Filenames     -- GETFN1, GETFN2, GETFNX, PUTFNX
+ Initialize    -- WHRENV, Z3INIT
+ System Data   -- ZSYSCHK, Z33CHK, GETBDOS, GETCCP, GETECP
+:	 Introduction to the ZCPR3 Environment 
+
+Any program running under ZCPR3 is within a ZCPR3 environment.
+Many facilities and data are available to this program which
+to not exist for normal CP/M programs.  For instance, a program
+running under the ZCPR3 environment can:
+
+  o  Find out what name it was invoked by
+  o  Access a set of messages from ZCPR3 which tell it a number
+	of things about how it was invoked
+  o  Send messages to ZCPR3 and programs which run after it
+	completes
+  o  Find out many things about its environment, such as the
+	processor speed, CRT and printer characteristics,
+	maximum number of disks
+  o  Determine the your terminal characteristics and use them
+	to enhance the display with visual attributes such as
+	Cursor Addressing and Highlighted text.
+
+The information outlined above and more is available to any
+program thru the ZCPR3 Environment Descriptor.  This is a 256-
+byte block of memory containing addresses and other data in a
+precisely-defined format.  ZCPR3 utilities may be written with
+an internal Environment Descriptor or they may access an
+Environment Descriptor residing at some fixed memory location
+(this is the preferred approach).  When executed, programs can
+extract specific information from the Descriptor for use.
+
+
+The following information is contained within a ZCPR3
+Environment Descriptor:
+
+   - address of External Path    - size of External Path
+   - address of RCP              - size of RCP
+   - address of FCP              - size of FCP
+   - address of IOP              - size of IOP
+   - address of Named Dir        - size of Named Dir
+   - address of Command Line     - size of Command Line
+   - address of Env Descriptor   - size of Env Descriptor
+   - address of Shell Stack      - size of Shell Stack
+   - address of Z3 Messages      - size of Stack Entries
+   - address of External FCB     - address of External Stk
+   - address of Wheel Byte       - quiet flag
+   - processor speed             - DU approval flag
+   - maximum disk allowed        - maximum user allowed
+   - data on CRT                 - data on Printer
+   - two reserved file names     - ZCPR3 TERMCAP (Z3TCAP)
+
+
+The purpose of Z3LIB is to provide you with easy access to
+information in the ZCPR3 Environment Descriptor and to allow
+you to easily use this information.  To illustrate, some of the
+Z3LIB routines are:
+
+     o  GETPRT  - return data on the width, number of lines,
+		  and form feed ability of the printer
+     o  GETCL2  - return the address of the first char of the
+		  next command to be run, if any
+     o  GETEFCB - return the address of the external FCB so
+		  the program can determine its name
+     o  SHPUSH  - push a command line on the shell stack
+     o  SHPOP   - pop a command line from the shell stk
+     o  IFT     - invoke the next IF level and make it T
+     o  IFEND   - back up to previous IF level
+
+
+This HLP file describes those Z3LIB routines which provide
+access to the ZCPR3 Environment Descriptor data.  All of these
+routines are of the general name:
+
+          GETxxxxx
+
+where the mnemonic following the GET prefix alludes to what 
+information is being obtained.
+
+:Command Line   APPCL  CLRCL  GETCL1  GETCL2  PUTCL 
+
+APPCL - Append Command String to Command Line Buffer
+
+  ENTER: HL = address of command string to append
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if Append Complete
+	      A = 0, Zero Flag Set (Z) if buffer overflows or
+		No Command Line Buff (No change to Comnd Line)
+  USES : AF
+  SIDE EFFECTS: Command Line Buffer is changed
+
+ Usage: APPCL appends the specified Null-terminated Command
+  String to the end of the ZCPR3 Command Line Buffer for
+  execution.  A leading semicolon is prepended to allow this
+  line to execute after the last line in the buffer.  The
+  command line buffer contents are repacked to avert overflow
+  in most cases.  PUTCL is a complementary function in which
+  the Command String is added to the beginning of the Command
+  Line Buffer as the first command.
+
+CLRCL - Clear the Command Line Buffer
+
+  ENTER: None
+  EXIT : A <> 0, Zero Flag Clear (NZ) if Command Line Cleared
+	     A = 0 Zero Flag Set (Z) if No Command Line Buffer
+  USES : AF
+
+ Usage: CLRCL clears the Command Line Buffer by setting it to 
+  empty.  Any remaining commands in the buffer will not be
+  executed when control is returned to ZCPR3.
+
+GETCL1 - Return pointer to Command Line Buffer
+
+  ENTER: None
+  EXIT : HL = Address of Command Line Buffer (0 if nonexistent)
+	  A = Size of Buffer
+  USES : AF,HL
+
+ Usage: This routine is used to locate and return Command Line
+  Buffer parameters.  The Command Line Buffer is structured as:
+
+	CMDLIN:	DEFW	Address of next character to process
+		DEFB	Size of Buffer in Bytes
+		DEFB	<dummy used for BDOS READLN function>
+		DEFB	....(chars in command line)
+		DEFB	0		; End of Comnd String
+
+GETCL2 - Return Next Command Info from Command Line Buffer
+
+  ENTER: None
+  EXIT : HL = Addr of Next Command.  (0 if No Comnd Line Buff)
+	  A = First char of Command, Zero Clear (NZ) if valid
+	      A = 0, Zero Flag Set (Z) if No characters in line
+  USES : AF,HL
+
+ Usage: This routine is used in applications where you need to
+  directly access characters in the next command stored in the
+  Command Line Buffer.
+
+PUTCL - Store Command line at beginning of Command Line Buff
+
+  ENTER: HL = Address of Null-Terminated Command Line
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if Ok
+	      A = 0 Zero Set (Z) if Overflow (No Buffer change)
+  USES : AF
+
+ Usage: This routine adds a Command Line as a prefix in the
+  ZCPR3 Command Line Buffer as opposed to APPCL which appends
+  to the end of the Command Line Buffer.  Buffer contents are
+  repacked so that an overflow is averted in most cases.  If a
+  Command already exists in the Buffer, the new line is post-
+  fixed with a semicolon so continuation is enabled.
+
+:CRT/PRT Data   GETCRT  GETPRT  PUTCRT  PUTPRT 
+
+GETCRT - Return Address of CRT data record from ENV
+
+  ENTER: None
+  EXIT : HL = Address of CRT Record
+  USES : HL
+
+ Usage: This routine is used to determine the parameters of
+  the installed terminal. The CRT record is structured as:
+
+    CRTDAT: DEFB    80     ; Width of CRT in characters
+            DEFB    24     ; Number of lines on the screen
+            DEFB    22     ; Number of text lines on screen
+
+  The number of text lines should be two less than the total
+  number of lines.  You may provide more overlap by making it
+  3 or 4 less.  This record element tells utilities like PAGE
+  how many lines to output before pausing to allow you to read
+  the screen.  This can be reduced (go to 20 or 18 lines) to
+  allow you to see more of the last screen.
+
+GETPRT - Return the address of the Printer Data Record
+
+  ENTER: None
+  EXIT : HL = Address of Printer Data Record
+  USES : HL
+
+ Usage: This routine provides data on some of the printer
+  characteristics for use in formatting routines, or other
+  uses.  The returned pointer is to a Printer Data Record as:
+
+     PRTDAT: DEFB    80    ; Width of Printer in characters
+             DEFB    66    ; Number of Lines on Printer page
+             DEFB    58    ; Number of Text Lines per page
+             DEFB     1    ; Form Feed Flag (0=Can't FF, 1=Can)
+
+  Programs such as PRINT may use the difference between the
+  third and second entries to determine top and bottom margins,
+  and test the last byte to determine whether to issue a Form
+  Feed or count Line Feed chars to advance to the next page.
+
+PUTCRT - Stores Terminal select byte  (* No real function *)
+
+  ENTER: A = Selection value (0)
+  EXIT : A <> 0, Zero Flag Clear (NZ) if Entry was 0
+	     A = 0, Zero Flag Set (Z) if invalid (Not 0)
+  USES : AF
+
+ Usage: This routine performs no actual function in the
+  Extended Environment which supports only one defined CRT
+  Data Block.  For compatibility, it senses the Select
+  value and simply returns status based on it.
+
+PUTPRT - Store Printer Selection byte (0..1) in Environment
+
+  ENTER: A = Printer Selection value (0 or 1)
+  EXIT : A <> 0, Zero Flag Clear (NZ) if Ok
+	     A = 0, Zero Flag Set (Z) if invalid (not 0 or 1)
+  USES : AF
+
+ Usage: PUTPRT stores the selection (0 or 1) in the PRT
+  selection buffer of the ZCPR3 Environment Descriptor
+  showing that it is the currently active printer. Under
+  the Extended Environment, only two printers may be
+  defined instead of the four originally supported.
+
+:GETEFCB - Return the address of the ZCPR3 External FCB
+
+  ENTER: None
+  EXIT : HL = Address of External FCB
+          A <> 0, Zero Flag Clear (NZ) if Ok
+	      A = 0, Zero Flag Set (Z) if Not Found
+  USES : AF,HL
+
+ Usage: Under ZCPR3, a program can find out by what name it was
+  invoked through the External FCB.  Bytes 1-8 of the External
+  FCB (first byte is 0) contain the name of the program just
+  executed by ZCPR3.
+
+  This feature is particularly useful for programs like Shells
+  which have to push their name and operational parameters onto
+  the Shell Stack in order to be reinvoked when a command line
+  completes.  A Shell can use the data in the External FCB to
+  determine what its name is without having to assume that it
+  has a particular name at all times.
+
+:Environment   GETENV  GETVID 
+
+GETENV - Return address of the ZCPR3 Environment Descriptor
+
+  ENTER: None
+  EXIT : HL = Address of Encironment Descriptor
+  USES : HL
+
+ Usage:  This function is useful for those programs which need
+  to modify the ZCPR3 Environment Descriptor.  Most of the
+  routines in Z3LIB which access the environment descriptor do
+  so in a R/O mode (they do not allow the program to change
+  data in it).  Some programs may need to do this, so GENENV is
+  provided.  Z3LDR, for example, loads a new Environment
+  Descriptor from a file on disk, and it uses GETENV to find
+  out where to load the file.
+
+GETVID - Return Address of the ZCPR3 TCAP (Z3TCAP)
+
+  ENTER: None
+  EXIT : HL = Address of Z3TCAP Buffer
+          A <> 0, Zero Flag Clear (NZ) if Ok
+	      A = 0, Zero Flag Set (Z) if No entry in Buffer
+  USES : AF,HL
+
+ Usage:  This function is useful for those programs which need
+  to modify the ZCPR3 TCAP Buffer and those programs which need
+  to determine if the TCAP is loaded.  It may be desirable to
+  call this routine before a screen-oriented utility is
+  executed to insure that a TCAP is available.
+
+:GETFCP - Return Address of the Flow Command Package buffer
+
+  ENTER: None
+  EXIT : HL = Address of FCB Buffer
+          A = # of 128-byte FCP Blocks, Zero Clear (NZ) if Ok
+              A = 0, Zero Flag Set (Z) if No buffer
+  USES : AF,HL
+
+ Usage:  This routine is used to simply return the FCB parms
+  from the Environment Descriptor.  The starting address and
+  size of the FCP Buffer in terms of 128-byte blocks are
+  returned.  To find out if an FCP is installed, look at the
+  first byte of the FCP buffer.  If it is zero, then no FCP is
+  present.  
+
+Example:
+	EXT	GETFCP		; Declare the routine
+	...			; ..preliminary code
+	CALL	GETFCP		; Get addr/size from ENV
+	JR	Z,NOFCP		; ..jump if No FCB buffer avail
+	LD	A,(HL)		; Examine the first buffer byte
+	OR	A		; Anything installed?
+	JR	Z,LODFCP	; ..jump to load an FCP if not
+	...			; Else use existing one
+
+:Filenames     GETFN1  GETFN2  GETFNX  PUTFNX 
+
+GETFN1 - Return Address of Shell Variable File Name
+GETFN2 - Return Address of 1st Filename of System File Names
+
+  ENTER: None
+  EXIT : HL = Address of the respective 11-char Filename entry
+  USES : HL
+
+ Usage:  These routines return the address in HL of the shell
+  variable filename (GETFN1) and the first filename of the four
+  System File Names (GETFN2) in the ZCPR3 Environment
+  Descriptor.  Each filename entry is 11 bytes long, matching
+  the filename and filetype fields of the CP/M FCB.
+
+  These names are used to pass names of special files to
+  programs for later use.  Their exact definition is not
+  presented and left to you.  One application of these is
+  to allow GETFN1 to return the name of the master HLP file
+  (HELP.HLP) to be used as an index into the Help System.
+
+GETFNX - Return Address of nth Filename of System File Names
+
+  ENTER:  A = File Name Number (1..4) in ENV File Name Buffer
+  EXIT : HL = Addr of first byte of indicated file (11 chars)
+          A <> 0, Zero Flag Clear (NZ) if Ok
+              A = 0, Zero Flag Set (Z) if Input Not in 1..4
+  USES : AF,HL
+
+ Usage:  GETFNX returns the address of the nth file name in the
+  ZCPR3 Environment Descriptor.  There are four system files,
+  numbered 1 to 4, and they are structured like the FN.FT
+  fields of an FCB (11 bytes each).
+
+  On input, A=1..4 to indicate the file name.  On output, HL
+  points to the first byte.  A validity check is done on the
+  value of A which MUST be 1..4.
+
+PUTFNX - Set nth (1..4) File Name in Environment Descriptor
+
+  ENTER:  A = File Name Number (1..4)
+         HL = Address of FCB+1 of New File Name value
+  EXIT :  A <> 0, Zero Flag Clear (NZ) if Ok
+              A = 0, Zero Flag Set (Z) if A not in 1..4
+  USES : AF
+
+ Usage:  PUTFNX sets the nth (1..4) file name in the ZCPR3
+  Environment Descriptor to the FCB-entry pointed to by HL
+  (FCB+1, or the FN field, is pointed to by HL).  A is used
+  to identify the file name.
+
+:Initialize    WHRENV  Z3INIT 
+
+WHRENV - Return installed ZCPR3 Environment Descriptor Addr
+
+  ENTER: HL = Candidate address of Environment Descriptor
+  EXIT : HL = Points to start addr of ENV (0 if Not Found)
+          A <> 0, Zero Flag Clear (NZ) if ENV Validated
+              A = 0, Zero Flag Set (Z) if Not Found
+  USES : AF,BC,DE,HL
+
+ Usage:  This routine provides a means of locating a ZCPR3
+  Environment Descriptor without the assistance of ZCPR 3.3 or
+  later Command Processors.  Calling WHRENV with a candidate
+  address of the DOS Entry address loaded from locations 6 and
+  7 will cause a search for an Environment from that address up
+  through FEFFH.  Calling it with a parameter of 0 precludes a
+  search to signify that the auto-search is to be disabled.
+
+Example:
+	EXT	WHRENV,Z3INIT	; Declare routines
+	...			; ..any header info here
+	LD	HL,(6)		; Load candidate location
+	CALL	WHRENV		; ..and test it
+	LD	(Z3EADR),HL	; Save any returned value
+	JR	Z,NOENV		; ..jump if No ENV validated
+	CALL	Z3INIT		; Else set Globals (or Z3VINIT)
+
+Z3INIT - Set Global Bufr to arbitrary address for ZCPR3 ENV
+
+  ENTER: HL = Address of ZCPR3 Environment Descriptor
+  EXIT : None
+  USES : None
+
+ Usage:  This routine is used to set a Global Variable to the
+  ZCPR3 pointer value installed in the program header.  This
+  Global variable is used by other Z3LIB routines.
+
+Example:
+	EXT	Z3INIT		; Declare the routine
+	...			; ..Header code
+	LD	HL,Z3ENV	; Load the Env Desc address
+	CALL	Z3INIT		; ..and install!
+	...			; Carry on!
+
+:ZSYSCHK - Validate ZCPR3 Environment Descriptor Address       (*)
+
+  ENTER: HL = Points to candidate Z3 Environment
+  EXIT :  A = 0, Zero Set (Z) if valid Environment
+	      A <> 0, Zero Clear (NZ) if environment NOT valid
+  USES : AF
+
+ Usage: This routine checks various parameters in an Environment
+  Descriptor predicated on the specified address to see if it is
+  valid.  It will print a message if the Environment is invalid.
+  NOTE: For best results on ZCPR 3.3 or later, pass the value
+        in HL when program started.  This will NOT work on ZCPR
+        3.0, but will detect BG ii and versions since ZCPR 3.3.
+
+Example:
+	EXT	ZSYSCHK		; Declare the routine
+	...
+	LD	HL,(ENVADR)	; Load candidate environment
+	CALL	ZSYSCHK		; Is it valid? (message if not)
+	RET	NZ		; ..quit if invalid
+	...			; Else continue with valid ENV
+
+Z33CHK - Check for presence of ZCPR 3.3 or later              (*)
+
+  ENTER: None
+  EXIT : A = 0, Zero Set (Z) if CCP is ZCPR 3.3 or later
+	     A <> 0, Zero Clear (NZ) if not ZCPR >= 3.3
+  USES : AF
+
+ Usage: This routine should be used in the initial setup portion
+  of a program if many of the new Z3LIB routines are to be used.
+  Routines such as Z33FNAME rely on specific entry points in the
+  Command Processor which only exist in ZCPR 3.3 or later.  If
+  such calls are made under other Command Processors, or if the
+  CP is overwritten, your program will be unable to function.
+
+Example:
+	EXT	Z33CHK		; Declare the routine
+	...
+	CALL	Z33CHK		; Is CP ZCPR 3.3 or later?
+	JR	NZ,NOTZ3	; ..jump if Not
+	...			; Else we can use it
+
+GETBDOS - Return Basic Disk Operating System Start Address    (*)
+
+  ENTER: None
+  EXIT : HL = Calculated or Loaded BDOS starting address
+  USES : HL
+
+ Usage:  This routine will return the starting address of the
+  Basic Disk Operating System (BDOS) from an Extended ENV if
+  present, else it will calculate the starting address from the
+  BIOS Warm Boot vector assuming a 3.5k BDOS size.  You should
+  NOT use this address as the top of available memory, but only
+  to locate the DOS.  Use the address at locations 6 & 7 or
+  GZMTOP to find the highest usable memory location depending
+  on whether or not the CCP is to be retained.
+
+GETCCP - Return Command Processor Starting Address            (*)
+
+  ENTER: None
+  EXIT : HL = Calculated or Loaded CCP starting address
+  USES : HL
+
+ Usage:  This routine will return the starting address of the
+  Command Processor for use in calculating addresses of entry
+  points, and in locating ZCPR 3 configuration bytes.  This
+  routine first attempts to locate the CCP address from an
+  Extended ENV if present, otherwise it will calculate the
+  starting address from the BIOS Warm Boot vector assuming a
+  3.5k BDOS and a 2k CCP.
+
+GETECP - Return Address of Extended Command Processor Name    (*)
+
+  ENTER: None
+  EXIT : HL = Address of ECP Name
+  USES : HL
+  REQUIREMENTS: The ZCPR 3.3 or later Command Processor
+
+ Usage:  This routine is used to locate the name of the ZCPR
+  Version 3.3 or later Extended Command Processor.
+  NOTE: The Command Processor must NOT have been overwritten.
+

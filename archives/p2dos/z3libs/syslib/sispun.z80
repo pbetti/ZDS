@@ -1,0 +1,47 @@
+;	TITLE	"SISPUN - Syslib 4.0"
+	NAME	('ISPUN')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SISPUN.Z80 Ver 1.1 by Richard Conn
+; Date    : 28 Jul 89
+; Version : 1.3
+; Module  : SISPUN
+; Abstract: This module contains only the routine ISPUN which
+;	evaluates the character in register A to determine if
+;	it is a punctuation character within the printable range
+;	of 20H-7EH.  If so, the routine returns with the Zero
+;	Flag Set (Z), otherwise the Zero Flag is Reset (NZ).
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points:
+
+	PUBLIC		ISPUN
+
+; From SYSLIB Get..
+
+	EXT		ISGRAPH, ISALNUM
+
+	.Z80
+	CSEG
+;=========================================================================
+; NAME - ISPUN
+; Entry: A = Character to be evaluated
+; Exit : A = Char, Zero Flag Set (Z) if punctuation, else Zero Reset (NZ)
+; Uses : F
+; Special Requirements:  None
+;=========================================================================
+
+ISPUN:	CALL	ISGRAPH		; Is char in printable range?
+	RET	NZ		; ..return Zero clear if not
+	CALL	ISALNUM		; Is it a letter or number?
+	JR	NZ,YES		; ..jump if so to reverse Zero Flag
+	OR	A		; Reset Zero Flag
+	RET
+
+YES:	CP	A		; Set Zero Flag retaining Char
+	RET
+
+	END
+

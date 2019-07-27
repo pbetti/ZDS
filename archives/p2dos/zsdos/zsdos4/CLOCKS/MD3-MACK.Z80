@@ -1,0 +1,186 @@
+	TITLE	"MACK Driver for Morrow MD3 - (MD3-MACK)"
+	SUBTTL	"Description of Clock Module"
+;----------------------------------------------------------
+; Derived from MACK Clock Driver V 1.0 by Carson Wilson
+;	and XCLK5832 by Bridger Mitchell
+;----------------------------------------------------------
+; This Clock Driver reads the MM 5832 clock chip via an 8255
+; PPI.  Time strings in DS format are also copied to 50-54H.
+;
+;	Adapted to ZSDOS Clock by Harold F. Bower
+;
+; Version 0.4 - Fixed minor bug in NOT24.	13 Sep 88, CRW
+; Version 0.3 - Modified end conditions to correct to proper
+;		termination conditions.		 1 Aug 88, CRW
+;----------------------------------------------------------
+
+VERS	EQU	04		; Version number in BCD
+	.Z80
+	NAME	MACK
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; Ptr to STATYR, not used
+
+CLKNAM:	DEFB	'Morrow MD3 Mack Clock   '	;exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10+'0',0
+
+DESCR:	DEFB	'Mack clock for Morrow MD3',CR,LF
+	DEFB	'MM5832 / 8255 at 30-33H',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+	DEFW	0
+	DEFW	0		; NO USER PARAMS
+
+	PAGE
+	SUBTTL	"Clock Code - MACK Clock for Morrow MD-3"
+
+SPEED	EQU	40		; Set to 4 MHz times 10
+
+WRBIT	EQU	01000000B	; Write bit
+RDBIT	EQU	00100000B	; Read bit
+HLDBIT	EQU	00010000B	; Hold bit
+YEARRG	EQU	12		; Register for Year * 10
+MODE0	EQU	90H		; 8255 Mode 0 command
+MODEW	EQU	80H		; 8255 Write mode command
+
+; 8255 port addresses
+
+CLKDAT	EQU	30H		; Data port for clock    (8255 port A)
+CLKADR	EQU	31H		; Address port for clock (8255 port B)
+CLKCTL	EQU	32H		; Control port for clock (8255 port C)
+MPORT	EQU	33H		; 8255 control port
+
+	CSEG
+;------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A = 1 on Success, A = FFH if error
+;	 HL points to last char in buffer
+
+	JP	RDCLK		; Jump to Read the clock
+	JP	WRCLK		; Jump to Set the clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    t h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+RDCLK:	LD	A,MODE0		; Set direction and mode
+	OUT	(MPORT),A
+	LD	A,HLDBIT+RDBIT	; Hold the clock and set read
+	OUT	(CLKCTL),A
+	LD	B,SPEED		; Wait a while til stable
+WAIT:	DJNZ	WAIT
+	LD	D,B		; Put a Zero in D for odd/even count
+	LD	BC,256*YEARRG+CLKADR
+
+	LD	A,B
+
+LOOP:	CP	6		; <Day of week>
+	JR	NZ,NOTDY
+	DEC	B		; Skip day of week
+NOTDY:	OUT	(C),B		; Send Hold and Port addr to BPORT
+	EX	(SP),HL		; >= 6 Microsecond delay
+	EX	(SP),HL
+	LD	A,B
+	CP	8		; <crw>
+	JR	Z,LEAP		; Mask leap year flag <crw>
+	CP	5		; <Hour, D2=AM/PM, D3=12/24>
+LEAP:	IN	A,(CLKDAT)	; Get a byte from the data port
+	JR	NZ,NOT24
+	AND	03H		; Remove AM/PM and 24 hr bits
+NOT24:	RLD			; Rotate the nybble to memory
+	DEC	B		; Address the next lower port
+	DEC	D		; ..and adjust odd/even count of nybbles
+	BIT	0,D
+	LD	A,B		; <crw)
+	JR	NZ,LOOP
+	CP	0FFH		; <below seconds (Lo)> <crw>
+	JR	Z,OKEXIT	; All done, so quit <crw>
+	INC	HL
+	LD	E,(HL)
+	JR	LOOP		; ..and go back for more
+
+OKEXIT:	XOR	A		; Disable clock hold
+	OUT	(CLKCTL),A	; ..and let it run again
+	INC	A		; Set Ok return code of 1
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    t h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+WRCLK:	LD	A,MODEW		; Set 8255 command to write data
+	OUT	(MPORT),A
+	LD	E,YEARRG	; Set port address
+	LD	C,CLKADR	; Point C reg to address port
+	LD	A,HLDBIT	; Stop the clock while we write
+	OUT	(CLKCTL),A
+	LD	B,SPEED		; Pause a while and let it settle
+LOOP0:	DJNZ	LOOP0
+	LD	B,6		; Write 6 bytes
+WLOOP:	LD	A,E		; Check for register skip
+	CP	6		; Is it pointing to Day of Week?
+	JR	NZ,NOTDYW	; ..jump if not
+	DEC	E		; Decrement register value if so
+	SET	7,(HL)		; Always 24-hour for ZSDOS <crw>
+NOTDYW:	OUT	(C),E		; Point clock to next address <crw>
+	CALL	WRTNIB		; Write high nybble..
+	OUT	(C),E		; Point clock to next address <crw>
+	CALL	WRTNIB		; ..and low half
+	INC	HL		; Advance to next memory location
+	DJNZ	WLOOP		; ..decrement counter and loop if not done
+
+	LD	A,MODE0		; ..and put 8255 in read mode
+	OUT	(MPORT),A
+	JR	OKEXIT		; Jump to exit with OK status
+
+;.....
+; Write high nybble of memory address to 5832 register
+; Enter: HL points to memory to write
+;	  C Points to 8255 Address port
+;	  E Contains 5832 register number
+
+WRTNIB:	XOR	A		; Clear high nybble A <crw>
+	RLD			; Load nybble to A
+	OUT	(CLKDAT),A	; ..and send nybble
+	LD	A,HLDBIT+WRBIT	; Strobe the write line
+	OUT	(CLKCTL),A	; .high..
+	LD	A,HLDBIT	; ..clear write bit
+	OUT	(CLKCTL),A	; ...and back low again
+	DEC	E		; Decrement register address
+	RET
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; Clock address patching
+
+	COMMON	/_POST_/
+
+	RET			; Nothing to configure
+
+	DEFB	0,0,0		; Filler
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks (check for ticking)"
+
+; Clock test code
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

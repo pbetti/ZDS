@@ -1,0 +1,194 @@
+	TITLE	"Epson QX-10 Clock - (EPSON-QX10)"
+	SUBTTL	"Description of Clock Module"
+;=========================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from ver of 4/12/85
+; Vers 0.3 current as of 18 Oct 88
+;=========================================================
+
+VERS	EQU	03
+	.Z80
+	NAME	QX10
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID/
+
+DESCST:	DEFW	0		; Ptr to statyr
+
+CLKNAM:	DEFB	'Epson QX-10             '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'   Epson QX-10  46818',CR,LF
+	DEFB	'   ()',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	NPARAMS		; # of parameters
+	DEFW	STRS
+NP0:
+XMHZ	EQU	$+1
+	DEFB	BYTE
+	DEFW	MHZ
+XADPORT	EQU $+1
+	DEFB	BYTE
+	DEFW	CLKADD
+XDTPORT	EQU $+1
+	DEFB	BYTE
+	DEFW	CLKDAT
+
+NPARAMS	EQU	($-NP0)/3
+
+STRS:	DEFB	'MHz CPU Speed      ',0
+	DEFB	'Clock Address Port ',0
+	DEFB	'Clock Data Port    ',0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Epson QX-10"
+
+CLKADD	EQU	3DH
+CLKDAT	EQU	3EH
+REGMSK	EQU	00011010B	; Year,mon,day,day-wk,alarm-hr,hr,alarm-min,min
+				; Alarm-sec,sec
+	CSEG
+;------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+PRGBAS:
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	PUSH	HL
+RETRY:	POP	HL
+	PUSH	HL
+	XOR	A		; Seconds reg.
+	DI			; Prevent reading by os...
+YOUT1	EQU	$+1
+	OUT	(CLKADD),A
+YIN1	EQU	$+1
+	IN	A,(CLKDAT)
+	PUSH	AF		; Save seconds on stack
+YIN2	EQU	$+1
+	LD	BC,8*256 + CLKDAT ; B equ count, (b)+1 equ reg
+	LD	D,REGMSK
+
+LOOP:	RLC	D
+	JR	C,SKIP
+	LD	A,B
+	INC	A		; Set register, 9 equ yr...
+YOUT2	EQU	$+1
+	OUT	(CLKADD),A
+	INI			; Read port to buffer
+	INC	B		; Undo auto-dcr b
+SKIP:	DJNZ	LOOP
+	LD	E,(HL)		; Save entering 'seconds' in e
+	XOR	A		; Read the seconds
+YOUT3	EQU	$+1
+	OUT	(CLKADD),A
+	IN	A,(C)
+	EI
+	LD	(HL),A		; Install in buffer
+	POP	AF		; Compare to old secs
+	CP	(HL)
+	POP	BC
+	LD	A,01		;== Set Ok status return
+	RET	Z		; ..and exit if Ok
+
+	PUSH	BC
+	LD	(HL),E
+	JR	RETRY
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	LD	A,(XMHZ)
+	LD	(YMHZ),A
+
+	SETBYT	XADPORT,YOUT1
+	SETBYT	,YOUT2
+	SETBYT	,YOUT3
+	LD	(YOUT4),A
+	LD	(YOUT5),A
+
+	SETBYT	XDTPORT,YIN1
+	SETBYT	,YIN2
+	LD	(YIN3),A
+	LD	(YIN4),A
+	RET
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present.
+
+	COMMON	/_PRE_/
+
+TSTRD:	JR	TSTRD0		; Jump around address store
+	DEFW	TSTRD		; Org location of the code
+
+TSTRD0:	XOR	A		; Seconds reg
+	DI
+YOUT4	EQU	$+1
+	OUT	(CLKADD),A
+YIN3	EQU	$+1
+	IN	A,(CLKDAT)
+	PUSH	AF
+	CALL	DELAY
+	XOR	A		; Seconds reg$
+YOUT5	EQU	$+1
+	OUT	(CLKADD),A
+YIN4	EQU	$+1
+	IN	A,(CLKDAT)
+	EI
+	POP	BC		; Compare to prev$ seconds
+	CP	B
+	SCF
+	RET	NZ
+	CCF
+	RET
+
+; delay 1.25 Sec at configured cpu speed
+
+YMHZ	EQU	$+1
+DELAY:	LD	B,MHZ
+$$0:	LD	HL,40000+10000	; Constant with slop
+$$1:	DEC	HL		; 6
+	LD	A,H		; 4
+	OR	L		; 4
+	JR	NZ,$$1		; 12 equ 26 cycles/loop
+	DJNZ	$$0
+	RET
+
+	END
+

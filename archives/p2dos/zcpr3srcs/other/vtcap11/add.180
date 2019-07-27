@@ -1,0 +1,171 @@
+; ADD
+;
+; This subroutine handles both the ADD and UPDATE records functions.
+; The ADD function takes the information from TBUF and writes it to 
+; BUF2. The terminal name used for the index file is copied to the 
+; end of BUF1 along with the new record number and the terminal index
+; number. When the ADD function is completed, the records are compiled
+; using the MERGE function and written to disk. The disk write is 
+; done when you exit the ADD function or when the buffer is filled. 
+; This will only occur if you intend to add more than sixteen terminals 
+; in one session. The ADD buffer is 2k in size. The UPDATE function will 
+; write directly to the disk in the random write mode.
+
+add:	ld	de,fcb4		; open TCAP.ADD
+	call	initfcb
+	call	f$mopen
+	jp	nz,f?mopen
+
+	ld	hl,buf1		; point to BUF1
+	ld	de,buf2		; point to BUF2
+	ld	bc,2048		; length of buffer
+	ldir			; move BUF1 to BUF2
+
+	ld	hl,buf4		; point to empty buffer
+	ld	de,buf1		; point to original buffer
+	ld	bc,2048		; length of buffer
+	ldir			; clear BUF1
+
+	ld	de,buf1		; get BUF1 address
+	ld	(buf),de	; initialize BUF
+ 
+; Clear TBUF
+
+	ld	hl,0		; initialize record number
+	ld	(rec),hl	; save record number
+
+addrec:	call	cdata		; clear data from screen
+ 	call	clrtbuf		; clear TBUF
+
+; Increment record number
+
+update:	ld	hl,cursor	; base address of cursor table
+	ld	de,0		; initialize offset into cursor table
+
+	ld	a,0		; put 0 in A
+	ld	(vslf),a	; reset binary terminator flag
+	call	poscur		; call position cursor routine
+	call	gotoxy		; terminal name input
+	ld	a,' '		; space to clear tname
+	ld	b,16		; number of spaces to send
+	ld	hl,tname	; point to buffer
+	ld	b,16		; number of characters to accept
+	ld	hl,tname	; point to storage buffer
+
+getf1:	call	gfld		; get terminal name
+	ld	b,1
+	ld	hl,curup
+
+getf2:	call	gfld		; get cursor up character
+	ld	b,1
+	ld	hl,curdn
+
+getf3:	call	gfld		; get cursor down character
+	ld	b,1
+	ld	hl,currt
+
+getf4:	call	gfld		; get cursor right character
+	ld	b,1
+	ld	hl,curlt
+
+getf5:	call	gfld		; get cursor left character
+	ld	b,1
+	ld	hl,delcls
+
+getf6:	call	gfld		; get clear screen delay
+	ld	b,1
+	ld	hl,deldca
+
+getf7:	call	gfld		; get direct cursor address delay
+	ld	b,1
+	ld	hl,deleol
+
+getf8: 	call	gfld		; get erase to end of line delay
+	ld	b,15
+	ld 	hl,strcls
+
+getf9:	call	gfld		; get clear screen sequence
+	ld	b,15
+	ld	hl,strdca
+
+getf10:	call	gfld		; get direct cursor address sequence
+	ld	b,15
+	ld	hl,streol
+
+getf11:	call	gfld		; get erase to end of line
+	ld	b,15
+	ld	hl,strsb
+
+getf12:	call	gfld		; get begin standout sequence
+	ld	b,15
+	ld	hl,strse
+
+getf13:	call	gfld		; get end standout sequence
+	ld	b,15
+	ld	hl,strti
+
+getf14:	call	gfld		; get terminal initialization sequence
+	ld	b,15
+	ld	hl,strtd
+
+getf15:	call	gfld		; get terminal de-initialization sequence
+
+	ld	a,(obuf)
+	cp	'A'
+	jp	z,write
+	jp	update
+
+; Position cursor routine. Used for dynamic positioning of cursor during
+; field input. Cursor addresses are returned in HL in the proper order
+; for use with the SYSLIB routine GOTOXY.
+;
+; ENTRY  HL = a(table entry)
+;
+; EXIT	 H = Row
+;	 L = Column
+
+poscur: inc	hl		; move to x,y
+	inc	hl
+	inc	hl
+	push	de		; save DE
+	ld	e,(hl)		; get column in E
+	inc	hl		; increment pointer
+	ld	d,(hl)		; get row in D
+	ex	de,hl		; put DE into HL
+	pop	de		; load DE
+	ret
+
+aexit:	ld	de,fcb4		; close TCAP.ADD
+	call	f$close
+	jp	nz,f?close
+	jp	prev
+
+upexit:	ld	de,fcb1		; point to FCB of current file
+	ld	hl,tbuf		; point to DMA address
+	call	setdma		; set DMA address
+	ld	hl,(rec)	; get record number
+	ld	bc,(recof)	; get record offset
+	add	hl,bc		; add offset to record number
+	ld	de,fcb1		; point to FCB
+	call	r$write		; write record 
+	jp	nz,r?write	; error routines
+	call	r$read		; read record back
+	jp	nz,r?read	; error routines
+	call	data		; display data
+	jp	exopt		; get option
+
+clrtbuf:
+	ld	b,128		; length of TBUF
+	ld	a,0		; byte to fill with
+	ld	hl,tbuf		; point to TBUF
+
+aloop:	ld	(hl),a		; put character in TBUF
+ 	inc	hl		; point to next character
+	djnz	aloop		; loop until 128 characters moved
+	ret
+
+zcnt:	ld	a,0
+	ld	(byte),a
+	ret
+
+

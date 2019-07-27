@@ -1,0 +1,783 @@
+;  PROGRAM:  LDR
+;  AUTHOR:  RICHARD CONN
+;  VERSION:  1.0
+;  DATE:  27 FEB 84
+;  PREVIOUS VERSIONS:  0.1 (3 Feb 84), 0.2 (22 Feb 84), 1.1 (28 Sep 84)
+;
+;    8080 code for z80asm
+;
+VERSION		EQU	16	; Use LBR files
+				; Idea -- Jay Sage
+				; Implementation -- Paul Pomerleau -- 3/6/87
+
+;VERSION	EQU	15	; Search the path for file to load.
+				; Joe Wright  2 June 86
+;
+;VERSION	EQU	14	; V1.4 by steve a. kitahata -- 17-mar-86
+
+				; This version modified to correct problem in
+				; The 'load:' routine when loading a package
+				; That is too large, specifically the tcap.
+				; Previous versions cleared the first 128 bytes
+				; Of the memory buffer, and appended a 3-byte
+				; Error code routine, resulting in whatever
+				; Resided after the tcap buffer to be zapped.
+
+;version	equ	13	; This version responds to the quiet flag.
+				; 11 march 85  joe wright
+
+;VERSION	EQU	12	; Version 1.2 by Dave Lucky  31 Dec 84
+
+				; This version modified to correct exit regs from
+				; Sdload subroutine.  the source and destination
+				; Registers on entry were hl and de, respectively.
+				; On exit, they were de and hl.  the calling routine
+				; (setdata) went amuck when calculating number of ndr
+				; Records using bogus de.  also, corrected the setdata
+				; Routine from using the incorrect address of the ndr
+				; Entry size field as well as its contents acquired
+				; From the getndr routine.
+
+;VERSION	EQU	11	; Version 1.1 by Joe Wright  28 Sept 84
+
+				; This version modified to allow loading the .env
+				; File the first time, when there is no environment
+				; Descriptor in memory.  the program now takes
+				; The environment address from the .env file so
+				; That subsequent files are also loaded correctly.
+				; Ie. ldr sys.env,sys.rcp,etc.	note that .env must
+				; Be the first declared file until ldr is installed
+				; To your environment.	jww
+
+;VERSION	EQU	10	; Release version
+
+EXTENV	EQU	1		; 1 for external environ, 0 for internal environ
+
+;
+;	LDR is a general-purpose package loader for ZCPR3.  It is
+; invoked by the following form:
+;
+;		LDR <list of packages>
+;
+; For example:
+;		LDR DEFAULT.RCP,SYSIO.IOP
+;
+;	No default file types are assumed on the list of packages, and
+; each package specified must be unambigous and have a type of RCP or IOP
+; (for Resident Command Package or Input/Output Package).  LDR
+; checks to make sure that the files are valid packages and then loads
+; them into memory at the correct locations, checking for package boundary
+; overflow.
+;
+;
+
+;
+;  ZCPR3 Header
+;
+	MACLIB	Z3BASE.LIB
+
+;
+;  System Equates
+;
+BDOS	EQU	5
+FCB	EQU	5CH
+TBUFF	EQU	80H
+RCPFLG	EQU	1		; Package type is rcp
+IOPFLG	EQU	2		; Package type is iop
+FCPFLG	EQU	3		; Package type is fcp
+NDRFLG	EQU	4		; Package type is ndr
+ENVFLG	EQU	5		; Package type is env
+TCAPFLG	EQU	6		; Package type is z3t
+CR	EQU	0DH
+LF	EQU	0AH
+
+	EXT	Z3INIT,ENVPTR,GETQUIET
+	EXT	PFIND,RETUD,GETUD,PUTUD,LOGUD
+	EXT	GETRCP,GETFCP,GETIOP,GETNDR
+	EXT	F$OPEN,F$CLOSE,F$READ
+	EXT	PRINT,PFN2
+	EXT	HMOVB,MOVEB,FILLB
+	EXT	CLINE,SKSP,ZFNAME,z3log,luopen,luread,luinit
+
+;
+;  Environments
+;
+ORIGIN:
+;
+	 IF	EXTENV		; If external environment ...
+;
+;  External Environment Definition
+;
+	JP	Z3LDR
+	DB	'Z3ENV'		; This is an environment
+	DB	1		; Class 1 environment (external)
+ENVLOC:
+	DW	Z3ENV		; Ptr to environment
+Z3LDR:
+	LD	HL,(ENVLOC)	; Hl pts to environment
+
+	 ELSE			; If internal environment ...
+;
+;  Internal Environment Definition
+;
+	MACLIB	SYSENV.LIB
+ENVLOC:
+	JP	Z3LDR
+	SYSENV			; Define environment
+Z3LDR:
+	LD	HL,ENVLOC	; Hl pts to environment
+
+	 ENDIF
+
+;
+;  Beginning of LDR
+;
+	CALL	Z3INIT		; Initialize environment pointer
+	CALL	PUTUD
+	CALL	BANNER		; Print banner
+	LD	HL,TBUFF	; Pt to command line
+	CALL	CLINE		; Save command line as string
+	CALL	SKSP		; Skip over spaces
+	XOR	A
+	ld	(LBRFLG),a	; Not a library, yet.
+	LD	A,(HL)		; Get offending char
+	CP	'/'		; Help?
+	JP	Z,HELP
+	OR	A		; Help?
+	JP	Z,HELP
+;
+;  Main Loop - HL pts to next file name in list
+;
+	PUSH	HL
+	LD	DE,FCB+9
+	LD	HL,LBRTYP
+	LD	A,(DE)
+	CP	' '
+	JP	NZ,NOMOV	; If it has no type, it must be a LBR.
+	LD	BC,3
+	LDIR
+	JP	NOCMP
+NOMOV:	CALL	COMPTYP		; Is it .LBR?
+	POP	HL
+	JP	NZ,Z3LDR1	; No, loop.
+	PUSH	HL
+NOCMP:
+	CALL	GETQUIET
+	JP	NZ,PQ0
+	CALL	PRINT
+	DB	cr,lf,' Reading from ',0
+	LD	DE,FCB+1
+	CALL	PFN2
+PQ0:	LD	DE,LUFCB1
+	POP	HL
+	CALL	ZFNAME		; Skip over the name.
+	CALL	LBRSETUP
+	JP	LQ1		; Skip over comma.
+Z3LDR1:
+	LD	DE,FCB		; Pt to fcb
+	CALL	ZFNAME		; Extract file name and data
+
+NOTLBR:	INC	DE		; Pt to file name
+;
+	CALL	GETQUIET
+	JP	NZ,Q0
+	CALL	PRINT
+	DB	CR,LF,' Loading ',0
+	CALL	PFN2		; Print file name
+
+Q0:	PUSH	HL		; Save ptr
+	CALL	PKLOAD		; Load file
+	POP	HL		; Get ptr
+LQ1:	LD	A,(HL)		; Get char
+	INC	HL		; Pt to next char
+	CP	','		; Another file in list?
+	JP	Z,Z3LDR1
+	LD	A,(LBRFLG)
+	OR	A
+	RET	Z
+	DEC	A
+	LD	(LBRFLG),A
+	LD	DE,LUFCB1
+	JP	F$CLOSE
+
+;
+;  Print Help Message
+;
+HELP:
+	CALL	GETQUIET
+	RET	NZ
+	CALL	PRINT
+	DB	CR,LF,' LDR Syntax:'
+	DB	CR,LF,'   LDR [Library,]<list of packages/data files>'
+	DB	CR,LF,' where entries in the list may be any of these types:'
+	DB	CR,LF
+	DB	CR,LF,'   FCP - Flow Cmnd Package         ENV - Z3 Environ'
+	DB	CR,LF,'   IOP - Input/Output Package      NDR - Z3 Named Dir'
+	DB	CR,LF,'   RCP - Resident Cmnd Package     Z3T - Z3TCAP Entry'
+	DB	CR,LF,LF,' The package list may have DU: or DIR: references.'
+	DB	CR,LF,' If they do not, the path is searched for the package.'
+	DB	CR,LF,LF,' The ENV file must be first if LDR is not installed.'
+	DB	CR,LF,0
+	RET
+;
+;  Load package named in FCB
+;
+PKLOAD:
+	CALL	SETDATA		; Load data buffers from environment in case of change
+	CALL	CKTYPE		; Check for valid file type
+	JP	Z,TYPERR	; Abort if error
+	CALL	OPEN		; Open file, read in first block, check for valid
+	JP	Z,LGETUD	; Abort if error
+
+; Check if ENV.  If so, get Z3ENV and call z3init
+
+	PUSH	HL		; Save package pointer from cktype
+	LD	DE,FCB+9	; Fcb type
+	LD	HL,ENVTYP	; Env?
+	CALL	COMPTYP		; Compare types
+	POP	HL		; Get package pointer
+	JP	NZ,PKLD		; Not env, proceed normally
+;
+; File type is ENV.  Get Z3ENV address from file and re-initialize
+;
+	LD	HL,TBUFF	; First sector in tbuff
+	LD	DE,1BH		; Offset to z3env
+	ADD	HL,DE		; Point hl to it
+	LD	E,(HL)		; Get z3env
+	INC	HL
+	LD	D,(HL)		; Got it
+	EX	DE,HL		; In hl
+	CALL	Z3INIT		; Set new environment
+
+PKLD:	CALL	LOAD		; Load package into memory at correct location
+	CALL	CLOSE		; Close up process
+	CALL	LGETUD		; Return home
+;
+;  Check for IOP and return if not
+;
+	LD	A,(PKTYPE)	; Init package if iop
+	CP	IOPFLG
+	RET	NZ
+;
+;  Init IOP
+;
+	LD	HL,(PACKADR)	; Get address
+	LD	DE,9		; 4th jmp into it
+	ADD	HL,DE
+	PUSH	HL		; Address on stack
+	RET			; "call" routine and return to OS
+;
+;  Load Data Buffers from Environment
+;
+SETDATA:
+	LD	HL,(ENVPTR)	; Get environment descriptor address
+	LD	(ENVADR),HL
+	LD	DE,80H		; Pt to z3tcap
+	ADD	HL,DE
+	LD	(TCAPADR),HL
+	CALL	GETRCP		; Get rcp data
+	LD	DE,RCPDATA	; Load
+	CALL	SDLOAD
+	CALL	GETIOP		; Get iop data
+	LD	DE,IOPDATA	; Load
+	CALL	SDLOAD
+	CALL	GETFCP		; Get fcp data
+	LD	DE,FCPDATA	; Load
+	CALL	SDLOAD
+	LD	HL,NDRIDAT	; Init ndr data in case no entry
+	LD	DE,NDRDATA
+	LD	B,9		; 9 bytes (1-jmp, 5-id, 2-adr, 1-size)
+	CALL	MOVEB
+	CALL	GETNDR		; Get ndr data
+	LD	B,A		; Save entry count				;1284dl
+	LD	A,H		; No ndr data?
+	OR	L
+	RET	Z
+	LD	A,B		; Restore entry count				;1284dl
+	CALL	SDLOAD		; With de -> ndrdata				;1284dl
+	PUSH	DE		; Save ptr to entry count			;1284dl
+	LD	H,0		; Hl = value
+	LD	L,A		; A  = entry count
+	ADD	HL,HL		; *2
+	LD	D,H		; De = value * 2
+	LD	E,L
+	ADD	HL,HL		; *4
+	ADD	HL,HL		; *8
+	ADD	HL,HL		; *16
+	ADD	HL,DE		; *18
+	LD	A,H		; /128
+	RLCA
+	AND	0FEH
+	LD	H,A
+	LD	A,L
+	RLCA
+	AND	1
+	OR	H		; A = value * 18 / 128
+	INC	A		; +1
+	POP	DE		; Get ptr
+	LD	(DE),A		; Save value
+	RET
+;
+;  Load 3 bytes pted to by HL into memory pted to by DE+6
+;
+;	Input Regs:							;1284DL
+;		HL = Source						;1284DL
+;		DE = Destination					;1284DL
+;									;1284DL
+;	Output Regs:							;1284DL
+;		HL = Source						;1284DL
+;		DE = Destination+8					;1284DL
+;									;1284DL
+SDLOAD:
+	PUSH	HL		; Save ptr to data
+	LD	HL,6		; Add 6 to de to pt to proper buffer
+	ADD	HL,DE		; Hl pts to buffer
+	POP	DE		; De contains address
+	LD	(HL),E		; Store address
+	INC	HL
+	LD	(HL),D
+	INC	HL
+	LD	(HL),A		; Store size data
+	EX	DE,HL		; Swap source / destination regs		;1284dl
+	RET
+;
+;  Print Banner
+;
+BANNER:
+	CALL	GETQUIET
+	RET	NZ
+	CALL	PRINT
+	DB	CR,LF,'ZCPR3 LDR, Version '
+	DB	(VERSION/10)+'0','.',(VERSION MOD 10)+'0',0
+	RET
+;
+;  Check for Valid Package File Type
+;	Return with Zero Flag Set if error
+;	If validated, PKTYPE contains package type and HL pts to data
+;
+CKTYPE:
+	LD	DE,FCB+9	; Pt to file type
+	LD	HL,RCPTYP	; See if rcp
+	LD	B,RCPFLG	; Rcp code
+	CALL	COMPTYP		; Compare
+	JP	Z,CKTOK		; Ok if match
+	LD	HL,IOPTYP	; See if iop
+	LD	B,IOPFLG	; Iop code
+	CALL	COMPTYP		; Compare
+	JP	Z,CKTOK		; Ok if match
+	LD	HL,FCPTYP	; See if fcp
+	LD	B,FCPFLG	; Fcp code
+	CALL	COMPTYP		; Compare
+	JP	Z,CKTOK		; Ok if match
+	LD	HL,NDRTYP	; See if ndr
+	LD	B,NDRFLG	; Ndr code
+	CALL	COMPTYP		; Compare
+	JP	Z,CKTOK		; Ok if match
+	LD	HL,ENVTYP	; See if env
+	LD	B,ENVFLG	; Env code
+	CALL	COMPTYP		; Compare
+	JP	Z,CKTOK		; Ok if match
+	LD	HL,TCAPTYP	; See if z3tcap
+	LD	B,TCAPFLG	; Z3t code
+	CALL	COMPTYP		; Compare
+	JP	Z,CKTOK
+	LD	B,0		; Invalid type
+CKTOK:
+	LD	A,B		; Set package type
+	LD	(PKTYPE),A
+	OR	A		; Set nz if no error
+	RET
+COMPTYP:
+	PUSH	DE		; Save regs
+	PUSH	BC
+	LD	B,3		; 3 bytes
+COMPT1:
+	LD	A,(DE)		; Get fcb char
+	AND	7FH		; Mask
+	CP	(HL)		; Compare
+	JP	NZ,COMPT2
+	INC	HL		; Pt to next
+	INC	DE
+	DEC	B		; Count down
+	JP	NZ,COMPT1
+COMPT2:
+	POP	BC		; Restore regs
+	POP	DE
+	RET
+TYPERR:
+	CALL	GETQUIET
+	RET	NZ
+	CALL	PRF		; Print file name and string
+	DB	' is not a Valid Type',0
+	RET
+;
+;	If DU reference is explicit, log into it.  If not, search path.
+;	Open File and Load First Block into TBUFF
+;	Validate Package Structure and Return with Zero Flag Set if Error
+;	On input, HL pts to data buffer
+;	If no error, HL points to load address and B is number of 128-byte
+;		pages allowed in buffer
+;
+OPEN:
+	LD	A,(LBRFLG)
+	OR	A
+	JP	NZ,AMC
+	CALL	PUTUD		; Save current DU
+	CALL	RETUD		; Get current DU in BC
+	LD	A,(FCB)		; Get disk
+	OR	A		; Default?
+	JP	NZ,EXPLICIT	; Explicit reference, do it.
+	LD	DE,FCB
+	DEC	A		; A non-zero
+	CALL	PFIND		; Search current DU, then along path
+	JP	Z,FNFERR	; Can't find it
+	JP	LOGIT
+EXPLICIT:
+	LD	B,A		; Disk in b (a=1)
+	DEC	B		; Adjust to a=0
+OPEN0:
+	LD	A,(FCB+13)	; Get user
+	LD	C,A		; User in c
+LOGIT:
+	CALL	LOGUD		; Log into ud
+	XOR	A		; Clear disk
+	LD	(FCB),A
+
+;
+;  Disallow Ambiguous File Name
+;
+AMC:	CALL	AMBCHK		; Check for ambiguous file name
+	JP	Z,AMBERR	; Abort if any ambiguity
+;
+;  Open File
+;
+	LD	DE,FCB		; Pt to fcb
+	LD	A,(LBRFLG)
+	OR	A
+	JP	Z,O1
+	PUSH	HL
+	PUSH	DE
+	INC	DE
+	EX	DE,HL
+	LD	DE,LUFCB
+	CALL	LUOPEN		; Get file from within LBR.
+	POP	DE
+	POP	HL
+	JP	O2
+O1:	CALL	F$OPEN		; Open file
+O2:	JP	NZ,FNFERR	; Abort if file not found
+;
+;  Read First 128-byte Block
+;
+	PUSH	HL
+	CALL	LREAD		; Read in first block
+	POP	HL
+	JP	NZ,FEMPTY	; Abort if file empty
+;
+;  Validate Package
+;	Package Data Area is structured as follows:
+;		DB	numjmps ; number of jumps at beginning of package
+;		DB	'Z3xxx' ; package ID (always 5 chars)
+;		DW	address ; address of memory buffer
+;		DB	size	; number of 128-byte blocks in memory buffer
+;
+	EX	DE,HL		; De pts to package data
+	LD	A,(DE)		; Get number of jumps
+	INC	DE		; Pt to package id
+	LD	B,A		; Jump count in b
+;
+;  Validate Package - MUST have proper number of JMPs
+;
+	LD	HL,TBUFF	; Check jumps
+OPEN1:
+	LD	A,B		; At limit of jumps?
+	OR	A
+	JP	Z,OPEN2
+	DEC	B		; Count down
+	LD	A,(HL)		; Check for jmp
+	CP	0C3H		; Jmp?
+	JP	NZ,STRERR	; Structure error
+	INC	HL		; Pt to next
+	INC	HL
+	INC	HL
+	JP	OPEN1
+;
+;  Check Package ID - must match
+;
+OPEN2:
+	LD	B,5		; Check package id
+OPEN3:
+	LD	A,(DE)		; Get byte
+	CP	' '		; No id if space
+	JP	Z,OPEN4
+	CP	(HL)		; Check
+	JP	NZ,STRERR	; Structure error
+OPEN4:
+	INC	DE		; Pt to next
+	INC	HL
+	DEC	B		; Count down
+	JP	NZ,OPEN3
+;
+;  Extract Package Address
+;
+	LD	A,(DE)		; Get low-order address
+	LD	L,A		; Put in hl
+	INC	DE
+	LD	A,(DE)		; Get high-order address
+	LD	H,A
+	INC	DE
+;
+;  Check for Valid Package Address
+;
+	LD	A,H		; Must not be zero
+	OR	L
+	JP	Z,ADRERR
+;
+;  Extract 128-byte Block Count
+;
+	LD	A,(DE)		; Get block count
+	LD	B,A		; Put in b
+	XOR	A		; Set flags
+	DEC	A		; Nz
+	RET
+;
+;  Ambiguous File Name Check
+;	Returns with Z Set if Ambiguous
+;
+AMBCHK:
+	LD	DE,FCB+1	; Check for ambiguous file name
+	LD	B,11		; 11 chars
+AMBCHK1:
+	LD	A,(DE)		; Get char
+	AND	7FH		; Mask
+	CP	'?'
+	RET	Z
+	INC	DE		; Pt to next
+	DEC	B		; Count down
+	JP	NZ,AMBCHK1
+	DEC	B		; Set nz flag
+	RET
+
+;
+;  Error Messages
+;
+AMBERR:
+	CALL	GETQUIET
+	JP	NZ,ERRET
+	CALL	PRF		; Print file name and message
+	DB	' is Ambiguous',0
+ERRET:
+	XOR	A		; Set error code
+	RET
+ADRERR:
+	CALL	GETQUIET
+	JP	NZ,ERRET
+	CALL	PRF		; Print file name and message
+	DB	' Not Known to Environ',0
+	JP	ERRET
+FNFERR:
+	CALL	GETQUIET
+	JP	NZ,ERRET
+	CALL	PRF		; Print file name and message
+	DB	' Not Found',0
+	JP	ERRET
+FEMPTY:
+	CALL	GETQUIET
+	JP	NZ,ERRET
+	CALL	PRF		; Print file name and message
+	DB	' Empty',0
+	JP	ERRET
+STRERR:
+	CALL	GETQUIET
+	JP	NZ,ERRET
+	CALL	PRF		; Print file name and message
+	DB	' Contains a Format Flaw',0
+	JP	ERRET
+PRF:
+	CALL	PRINT
+	DB	CR,LF,' File ',0
+	LD	DE,FCB+1
+	CALL	PFN2
+	JP	PRINT
+
+;
+; Open a LBR for reading
+;
+LBRSETUP:
+	PUSH	HL
+	XOR	A
+	DEC	A
+	LD	(LBRFLG),A	; Yes we are running from a LBR.
+	LD	DE,FCB
+	CALL	Z3LOG		; Log onto LBR's DU:
+	LD	DE,LUFCB1
+	LD	HL,FCB
+	LD	BC,14
+	LDIR			; Move the LBR to LU's FCB.
+	LD	DE,LUFCB
+	CALL	LUINIT		; Do the Conn routine.
+	JP	Z,FOUND1
+	LD	DE,LUFCB1
+	XOR	A
+	LD	(DE),a
+	DEC	A		; A non-zero
+	CALL	PFIND		; Search current DU, then along path
+	JP	Z,FOUND2
+	CALL	LOGUD		; Log into ud
+	XOR	A		; Clear disk
+	LD	(LUFCB),A
+FOUND2:	LD	DE,LUFCB
+	CALL	LUINIT
+FOUND1:	POP	HL
+	RET	Z
+	POP	HL		; Swallow the CALL's return.
+	DEC	A
+	JP	Z,FNFERR	; Not found.
+	DEC	A
+	JP	Z,FEMPTY	; Empty.
+	JP	STRERR		; Bad form.
+
+;
+;  Close File
+;
+CLOSE:
+	LD	A,(LBRFLG)
+	OR	A
+	RET	NZ		; No close necessary
+	LD	DE,FCB		; Pt to fcb
+	JP	F$CLOSE		; Close file
+
+;
+; Don't restore if we're using a library.
+;
+LGETUD:	ld	a,(LBRFLG)
+	or	a
+	ret	nz
+	jp	GETUD
+
+;
+; LBR or file read
+;
+LREAD:	LD	A,(LBRFLG)
+	OR	A
+	JP	Z,LREAD2	; Normal read unless a LBR.
+	PUSH	DE
+	LD	DE,LUFCB
+	CALL	LUREAD		; Conn's routine.
+	POP	DE
+	RET
+LREAD2:
+	JP	F$READ
+
+;
+;  Load File Into Buffer
+;
+LOAD:
+	LD	(PACKADR),HL	; Save package address in case of error
+	EX	DE,HL		; De pts to buffer, b = max blocks
+LOAD1:
+	PUSH	BC		; Save count
+	LD	HL,TBUFF	; Pt to buffer
+	LD	B,128
+	CALL	HMOVB		; Copy tbuff into buffer
+	PUSH	DE		; Save ptr to next block in buffer
+	LD	DE,FCB		; Pt to fcb
+	CALL	LREAD		; Read next block
+	POP	DE		; Get ptr
+	POP	BC		; Get count
+	RET	NZ		; Done if nz
+	DEC	B		; Count down
+	JP	NZ,LOAD1
+;
+;  Buffer Full
+;
+	CALL	GETQUIET
+	JP	NZ,Q1
+	CALL	PRF
+	DB	' is too Large',0
+Q1:	LD	HL,(PACKADR)	; Clear package
+	LD	B,128		; Nops
+	XOR	A
+	CALL	FILLB
+;	lxi	b,128	; pt to after last NOP		[sak]
+	LD	BC,128-ERCSIZ	; [sak]
+	ADD	HL,BC
+	LD	B,3		; Copy 3 bytes
+	EX	DE,HL		; De pts to empty space
+	LD	HL,ERCODE	; Store error code
+	JP	MOVEB
+;
+;  Error Code to be Stored if Package Load Fails
+;
+ERCODE:
+	XOR	A		; 3 bytes
+	DEC	A		; A=0ffh and nz flag set
+	RET
+
+ERCSIZ	EQU	$-ERCODE	; [sak]
+;
+;  Buffers
+;
+LUFCB:	db	0,0,0,0,0,0	; For Conn's Library utilities.
+	db	'filenametyp'
+LUFCB1:	db	0,'filenametyp'
+	ds	26,0
+LBRTYP:	db	'LBR'		; Filename.LBR
+LBRFLG:	db	0		; Was first file a LBR?
+
+NDRIDAT:
+	DB	0		; No jmps
+	DB	'     '		; No id stored
+	DW	0		; Address
+	DB	0		; (z3ndirs*18)/128+1 size
+RCPTYP:
+	DB	'RCP'		; File type of rcp file
+RCPDATA:
+	DB	0		; 0 jmps
+	DB	'Z3RCP'		; Id
+	DW	0		; Address
+	DB	0		; Size
+IOPTYP:
+	DB	'IOP'		; File type of iop file
+IOPDATA:
+	DB	16		; 16 jmps
+	DB	'Z3IOP'		; Id
+	DW	0		; Address
+	DB	0		; Size
+FCPTYP:
+	DB	'FCP'		; File type of fcp file
+FCPDATA:
+	DB	0		; 0 jmps
+	DB	'Z3FCP'		; Id
+	DW	0		; Address
+	DB	0		; Size
+NDRTYP:
+	DB	'NDR'		; File type of ndr file
+NDRDATA:
+	DB	0		; No jmps
+	DB	'     '		; No id stored
+	DW	0		; Address
+	DB	0		; (z3ndirs*18)/128+1 size
+ENVTYP:
+	DB	'ENV'		; File type of env file
+ENVDATA:
+	DB	1		; 1 jmp
+	DB	'Z3ENV'		; Id
+ENVADR:
+	DW	0		; Address
+	DB	2		; 2 128-byte blocks max
+TCAPTYP:
+	DB	'Z3T'		; File type of z3tcap file
+TCAPDATA:
+	DB	0		; No jmps
+	DB	'     '		; No id stored
+TCAPADR:
+	DW	0		; Address
+	DB	1		; 1 128-byte block max
+PKTYPE:
+	DS	1		; Package type (0=error)
+PACKADR:
+	DS	2		; Package address
+
+	END
+ Address

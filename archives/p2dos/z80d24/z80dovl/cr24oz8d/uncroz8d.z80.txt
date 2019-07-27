@@ -1,0 +1,51 @@
+;************************************************
+;
+;	UNCROZ8D.Z80
+;	7/18/88
+;	Gene Nolan
+;
+;	This is an overlay file for UNCR.COM as distributed
+;	in the CRUNCH24.LBR that adds support for Z80DOS
+;	time-stamping. It will carry the create date of the
+;	source file(s) to the unsqueezed/uncrunched destination
+;	file(s).
+;
+;	Assemble to a .HEX file and use MLOAD:
+;
+;	MLOAD UNCR=UNCR.COM,UNCROZ8D
+;
+;***********************************************
+
+	org	0c68h
+	call	openem
+
+	org	0d59h
+	call	makem
+
+	org	1B00h		; Patch above to here
+
+openem:
+	call	0f12h		; Call BDOS
+	cp	0ffh		; Open ok?
+	ret	z		; Z=no
+	push	bc
+	push	hl
+	ld	hl,(1a6ch)
+	ld	(hlhold),hl
+	ld	c,54		; Z80DOS call GETSTAMP
+	call	0f12h
+	ld	hl,(hlhold)
+	ld	(1a6ch),hl
+	pop	hl
+	pop	bc
+	ret
+makem:
+	push	bc
+	ld	c,55		; Z80DOS call for use stamp
+	call	0f12h
+	pop	bc
+	jp	0f12h		; And do requested function
+
+hlhold:	dw	0		; Hold value returned by BDOS call
+
+	end

@@ -1,0 +1,74 @@
+;	TITLE	"SSFN3 - Syslib 4.0"
+	NAME	('SFN3')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SFN3.Z80 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SSFN3
+; Abstract: This module contains the routine SFN3 which prints an
+;	FCB-type fixed-field filename and type in compressed mode
+;	in a 12-character field, left justified, to the CON:/LST:
+;	(switched) device.  If the name is less than eight char-
+;	acters, and/or the type is less than 3 characters, spaces
+;	are added to the end of the printed field to fill the field.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		SFN3
+
+; From SYSLIB Get..
+
+	EXT		SOUT
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - SFN3
+; Entry: DE - Points to an FCB filename
+; Exit : - No value returned, the file name is printed on the
+;	    CON: and/or LST: (switched) device(s)
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+SFN3:	PUSH	BC		; Save the BC register
+	PUSH	DE		; save regs
+	PUSH	AF
+	LD	C,11		; 11 chars total
+	LD	B,8		; 8 chars first
+	CALL	PRFNX
+	LD	A,'.'		; dot
+	CALL	SOUT		; Print to right destination
+	LD	B,3		; 3 more chars
+	CALL	PRFNX
+	LD	A,C		; get count of spaces
+	OR	A		; 0=none
+	CALL	NZ,SPACER
+	POP	AF		; restore regs
+	POP	DE
+	POP	BC
+	RET
+
+PRFNX:	LD	A,(DE)		; get char
+	AND	7FH		; mask out msb
+	CP	' '		; skip space
+	CALL	NZ,PROUT	; print it
+	INC	DE		; pt to next
+	DJNZ	PRFNX		; count down
+	RET
+
+PROUT:	DEC	C		; Count down char
+	JP	SOUT		; ..Print on right dev if not
+
+SPACER:	LD	A,' '		; space over
+	CALL	SOUT		; Print to appropriate device
+	DEC	C
+	JR	NZ,SPACER
+	RET
+
+	END
+

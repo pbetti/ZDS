@@ -1,0 +1,82 @@
+	TITLE	"VIDE - Vlib 4.3"
+	NAME	('VIDE')
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+; Date    : 3 Mar 89
+; Version : 1.0
+; Module  : VIDE
+; Abstract:  This module contains the routines GRXON and GRXOFF
+;	which change the terminal mode to graphics (GRXON) and
+;	and back to alphanumeric (GRXOFF).
+; Revision:
+;	1.1  13 Dec 89  Joe Wright
+;	Add CUROFF and CURON cursor controls.
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		GRXON, GRXOFF, CURON, CUROFF
+
+;  External References
+
+	EXT		@SETV0, @GE, @GO, @GOELD, @CDE, @CDO
+
+	.Z80
+	CSEG
+;===============================================================
+; GRXON - Enter Graphics Mode
+;  Entry: - None
+;  Exit :  A = 0 and Zero Flag Set (Z) if Error
+;	   A = FFH and Zero flag Reset (NZ) if Operation OK
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+GRXON:	PUSH	HL		; Save regs
+	LD	HL,(@GO)	; Get address for Graphics ON string
+	JR	GRXO0		; ..and continue below
+
+;===============================================================
+; GRXOFF - Exit Graphics mode
+;  Entry: - None
+;  Exit :  A = 0 and Zero Flag Set (Z) if Error
+;	   A = FFH and Zero flag Reset (NZ) if Operation OK
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+GRXOFF:	PUSH	HL		; Save regs
+	LD	HL,(@GE)	; Get address for Graphics OFF string
+GRXO0:	LD	A,(@GOELD)	; ..and delay value
+	JP	@SETV0		; Finish off in other module
+
+;===============================================================
+; CUROFF - Turn Cursor Off
+;  Entry: - None
+;  Exit :  A = 0 and Zero Flag Set (Z) if Error
+;	   A = FFH and Zero flag Reset (NZ) if Operation OK
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+CUROFF:	PUSH	HL
+	LD	HL,(@CDO)
+	JR	GRXO0
+
+;===============================================================
+; CURON - Turn Cursor On
+;  Entry: - None
+;  Exit :  A = 0 and Zero Flag Set (Z) if Error
+;	   A = FFH and Zero flag Reset (NZ) if Operation OK
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+CURON:	PUSH	HL
+	LD	HL,(@CDE)
+	JR	GRXO0
+
+	END
+

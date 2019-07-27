@@ -1,0 +1,207 @@
+;Program: POKE
+;Version: 1.0
+;Date: September 11, 1988
+;Author: Bruce Morgen
+;
+;Purpose: Transient replacement for the RCP-based command of the
+;same name, for Z33/Z34/NZCOM/Z3PLUS systems where the RCP space
+;has been omitted to maximize TPA.  In addition to emulating its
+;model's syntax, POKE.COM observes the host system's quiet flag
+;for all displays other than the help screen and error messages,
+;unless the local quiet byte at ENTRY+2 (102h under DDT) is
+;patched to a non-zero value, in which case it is "quiet"
+;regardless of the system's edicts.  Only Type 3 (@9800h) and
+;Type 4 versions are in the distribution LBR - a Type 3 at 100h
+;doesn't seem terribly useful, but it would work as expected.
+
+z3env	equ	00
+fcb1	equ	5ch
+fcb2	equ	6ch
+tbuff	equ	80h
+cr	equ	13
+lf	equ	10
+bel	equ	7
+
+	public	$memry,cout
+	extrn	eval16,phl4hc,sksp,sknsp,ishex,eprint,bout
+	extrn	z3init,puter2,getquiet,getefcb
+
+; TYPE 3 HEADER
+
+; Code modified as suggested by Charles Irvine to function correctly with
+; interrupts enabled.  Program will abort with an error message when not
+; loaded to the correct address (attempt to run it under CP/M or Z30).
+
+entry:
+	jr	start0		; Must use relative jump
+lqflg:	db	0		; Patchable local quiet flag
+	db	'Z3ENV',3	; Type-3 environment
+z3eadr:
+	dw	z3env		; Filled in by Z33
+	dw	entry		; Intended load address
+
+start0:
+	ld	hl,0		; Point to warmboot entry
+	ld	a,(hl)		; Save the byte there
+	di			; Protect against interrupts
+	ld	(hl),0c9h	; Replace warmboot with a return opcode
+	rst	0		; Call address 0, pushing RETADDR
+				; Onto stack
+retaddr:
+	ld	(hl),a		; Restore byte at 0
+	dec	sp		; Get stack pointer to point
+	dec	sp		; To the value of RETADDR
+	pop	hl		; Get it into HL and restore stack
+	ei			; We can allow interrupts again
+	ld	de,retaddr	; This is where we should be
+	xor	a		; Clear carry flag
+	push	hl		; Save address again
+	sbc	hl,de		; Subtract -- we should have 0 now
+	pop	hl		; Restore value of RETADDR
+	jr	z,start		; If addresses matched, begin real code
+
+	ld	de,notz33msg-retaddr; Offset to message
+	add	hl,de
+	ex	de,hl		; Switch pointer to message into DE
+	ld	c,9
+	jp	0005h		; Return via BDOS print string function
+notz33msg:
+	db	'Not Z33+$'	; Abort message if not Z33-compatible
+
+start:	ld	hl,(z3eadr)	; Get environment pointer
+	call	z3init		; Pass for Z3LIB
+	xor	a		; Clear Program Error Flag
+	call	puter2		; Via Z3LIB
+	ld	hl,fcb1+1	; Point 1st char. of 1st DFCB
+	ld	a,(hl)		; Into A
+	cp	'/'		; Explicit help query?
+	jr	z,help		; We honor them
+	cp	' '		; Invoked sans tail?
+	jr	z,help		; Education required if so
+	ld	b,h		; Save pointer to BC
+	ld	c,l
+	call	eval16		; Evaluate requested address
+	or	a		; Clear carry
+	sbc	hl,bc		; Subtract, see if pointer moved
+	jp	z,error		; If it didn't, not a good value
+	ld	hl,($memry)	; Get first free memory above us
+	dec	hl		; Adjust to last byte of program
+	sbc	hl,de		; See if pointer is above us
+	jr	c,okpoke	; If so, we're OK, proceed
+	ld	hl,entry	; Get start of our code
+	sbc	hl,de		; Make sure we're no self-poking
+	jp	c,addrer	; Report the error if we are
+okpoke:	ld	hl,tbuff+1	; Command tail start
+	call	sksp		; Skip leading blank(s)
+	call	sknsp		; & the 1st token
+	call	sksp		; & the blank(s) after it
+	ld	a,(fcb2+1)	; Is 1st char. is printable?
+	cp	' '+1
+	jp	c,error		; If not, report error
+	cp	'"'		; ASCII mode delimiter?
+	jr	nz,hex		; If not, do hex mode
+	call	lquiet		; See if we're muzzled
+	call	z,disply	; If not, display poke address
+ascilp:	inc	hl		; Bump to start of ascii string
+	ld	a,(hl)		; Get the character
+	or	a		; Terminating null?
+	ret	z		; All done if so
+	ld	(de),a		; Otherwise do the poke
+	inc	de		; Bump the target pointer
+	jr	ascilp		; & loop until finished
+hex:	ld	b,d		; Save DE to BC
+	ld	c,e
+	call	lquiet		; Are we muzzled?
+	call	z,disply	; If not display poke address
+hexlp:	ld	a,(hl)		; Get the byte at (HL)
+	or	a		; Test for null terminator
+	ret	z		; All done if so
+	call	ishex		; Legal hexadecimal digit?
+	jp	nz,error	; Give up & report error if not
+	call	eval16		; Evaluate to binary
+	inc	d		; Test for 16-bit value
+	dec	d
+	jp	nz,error	; Must be FFh or less
+	ld	(bc),a		; Do the poke
+	inc	bc		; Bump target pointer
+	call	sknsp		; Skip trailing nonsense
+	call	sksp		; & blanks
+	jr	hexlp		; Loop until finished
+
+
+; AI (Allegedly Intelligent) help screen routine
+
+help:	call	eprint
+	db	'POKE, Version 1.0 (Type ',0
+	ld	a,(z3eadr-1)
+	add	a,'0'
+	call	bout
+	call	eprint
+	db	' at ',0
+	ld	hl,entry
+	call	phl4hc
+	call	eprint
+	db	'h)',cr,lf
+	db	'Syntax:',cr,lf,' ',0
+	call	comnam
+	call	eprint
+	db	' nn[ nn nn nn....] (or)',cr,lf,' ',0
+	call	comnam
+	call	eprint
+	db	' "Any ASCII characters',cr,lf
+	db	' where "nn" is any hex byte value',0
+	ret
+
+; Error exit routines
+
+error:	call	eprint
+	db	bel,' Invalid address or byte value!',0
+erexit:	ld	a,0ffh
+	jp	puter2
+
+addrer:	call	eprint
+	db	bel,'Address error, within this program!',0
+	jr	erexit
+
+; Subroutines
+; ===========
+
+; Display program function and the target address passed in DE
+
+disply:	call	eprint
+	db	'Poke at ',0
+	ex	de,hl
+	call	phl4hc
+	ex	de,hl
+	ld	a,'h'
+cout:	jp	bout		; PUBLIC label for SYSLIB
+
+; See if local or system quiet bytes are set
+
+lquiet:	ld	a,(lqflg)	; Get local quiet flag
+	or	a
+	jp	z,getquiet	; Consult system if zero
+	ret			; Otherwise return NZ
+
+; Display actual invoked name of this program if Z3 knows it
+; 		(otherwise assume "POKE")
+
+comnam:	call	getefcb
+	jr	z,noefcb
+	ld	b,8
+cmnmlp:	inc	hl
+	ld	a,(hl)
+	and	7fh
+	cp	' '
+	call	nz,bout
+	djnz	cmnmlp
+	ret
+;
+noefcb:	call	eprint
+	db	'POKE',0
+	ret
+
+$memry:	ds	2		; Filled in by linker
+
+	end
+

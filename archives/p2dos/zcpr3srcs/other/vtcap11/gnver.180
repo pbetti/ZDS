@@ -1,0 +1,35 @@
+; GNVER
+;
+; The following routine takes care of the renaming of the different
+; files on exit from the various functions in VTCAP. The MERGE function
+; creates file called MERGE.TCP, the ADD function creates a file called
+; ADD.TCP and a scratch file called TCAP.ADD. Durring ADD or MERGE, the 
+; version number is obtained from VERBUF (decimal omitted) and a new 
+; filename called Z3TCAPxx is created where xx is the version number. 
+; Before creating the file, the default directory is searched for the 
+; existance of the file. If it exists, it is renamed to Z3TCAPxx.BAK 
+; and then either MERGE.TCP (from MERGE) or ADD.TCP (from ADD) is renamed
+; to Z3TCAPxx.TCP. After all of this, the scratch file (TCAP.ADD) is then
+; erased from the disk. 
+;
+; NOTE: The DELETE function also uses the code from this routine.
+; 	When exiting from the delete function, all non-deleted
+;	records are written to a file called MERGE.TCP. The procedure
+;	is the same for this file.
+ 
+gnver:	ld	de,zdef+6	; point to default filename
+	ld	hl,verbuf+1	; point to version number - 1st digit
+	ld	a,(hl)		; put in A
+	ld	(de),a		; save in buffer
+	inc	de		; advance buffer pointer
+	ld	hl,verbuf+3	; point to 2nd digit of version number
+	ld	a,(hl)		; put in A
+	ld	(de),a		; save in buffer
+
+	ld	hl,zdef		; point to default filename
+	ld	de,fcbn2	; point to FCB
+	ld	bc,8		; length of filename
+	ldir			; move new filename to FCB
+	ret
+
+

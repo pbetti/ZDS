@@ -1,0 +1,338 @@
+; Program:	Z33TRCP
+; Version:	1.1
+; Description:	Temporary Resident Command Package maker (RCP) for ZCPR33
+; Author:	Cameron W. Cotrill
+; Date: 	August 30, 1987
+; Derivation:	NONE
+; Assemble:	ZAS Z33TRCP
+; Link: 	ZLINK Z33TRCP
+; REVISIONS:
+; 09/17/87	Fixed minor bug in RSX header that didn't affect
+; v1.1		operation but caused removal problems with Plu*Perfect
+;		REMOVE and with transient version of RCPX.  Updated
+;		docs and header to reflect new transient version of RCPX
+;		command.  Thanks to Jay Sage for the suggestion to make 
+;		RCPX a transient so folks wouldn't have to fiddle with
+;		editing RCP source.  Also added type 3 header.
+;				- Cameron W. Cotrill
+
+; Z33TRCP creates a RCP buffer below ZCPR33 as an RSX, patches the environment
+; to show its presence as an RCP, patches the bdos jump at 0005h to protect
+; itself, and then exits to ZCPR33.  Z33TRCP has a Plu*Perfect RSX header and
+; all the proper RSX support, including a remove routine.  It may be removed
+; via the RCPX program.  Z33TRCP is not relocatable and must be the highest
+; RSX in memory.
+
+; Z33TRCP is designed to address the situation where TPA hungry programs
+; such as WS4 are going to be run on the system and defining a 2k block for
+; the RCP makes the difference between such programs running and not running.
+; Because Z33TRCP exists at the top of TPA and can be removed quickly (using
+; an alias for example), it can get out of the way of such programs in a way
+; that is impossible to do with a 'normal' ZCPR33 system.  This allows
+; dynamic re-sizing of the TPA.  This concept could be extended to other
+; optional system segments such as NDR and FCP, although the gains in space
+; in these cases probably won't justify the 80H the RSX header uses.
+
+; To use Z33TRCP, ZCPR33 must be configured to obtain the RCP address from
+; the environment.  Z3BASE must contain the information of where the RCP
+; will exist when loaded, however, the loaded .ENV should not have it.
+;
+; If you wish to have the RCPX command in your RCP and don't mind
+; editing, add the following line to the command macro in Z33RCP.LIB:
+;
+;	command RCPX,true,true,rcp-7ah
+;
+; Z33TRCP is copyright 1987 by Cameron W. Cotrill.  All rights reserved.
+; End-user distribution and duplication permitted for non-commercial
+; purposes only without prior written permission from the author.  
+; Permission to use routines from Z33TRCP in other programs subject to 
+; the above mentioned distribution and duplication restrictions is 
+; automatically granted provided the source of the routines is noted 
+; in both the source code and documentation and the copyright notice 
+; is retained.
+
+VERSION	EQU	1
+SUBVER	EQU	1		; Version
+
+;=============================================================================
+;
+;		D E F I N I T I O N S	 S E C T I O N
+;
+;=============================================================================
+
+
+	MACLIB	SYSDEF.LIB	; Common logic, sys, ascii defines
+	MACLIB	Z3BASE.LIB	; Defines zcpr system addresses
+
+RSXLER	EQU	20		; Error code for bad rsx load
+RSXRER	EQU	21		; Error code for rsx removal error
+; these 2 new error codes approved by Jay Sage 09/01/87
+BEL	EQU	07H		; Ascii bell
+
+;=============================================================================
+;
+;	E N T R Y    C O D E	S E C T I O N
+;
+;=============================================================================
+;
+RSXORG	EQU	RCP-80H		; Base address of rsx
+;
+TRCP:
+	JP	START
+	DB	'Z3ENV'
+	DB	3
+ENVADR:	DW	0		; Address of environment
+	DW	TRCP		; Load address
+START:				; Hl has env address
+	LD	DE,22H		; Offset to message pointer
+	ADD	HL,DE
+	LD	C,(HL)
+	INC	HL
+	LD	B,(HL)		; Message buffer addr in bc
+	LD	(RSXBASE+MSGADR-RSX),BC ; Save address in rsx 
+
+	LD	E,05H		; Point to quiet flag
+	ADD	HL,DE
+	LD	A,(HL)		; Get quiet flag
+	LD	(NOMSG),A	; Save it
+	OR	A
+	JR	NZ,START1	; If quiet, don't sign on
+	LD	C,PRBUFF
+	LD	DE,SIGNON
+	CALL	BDOS		; Signon
+START1:
+	LD	A,(FCB1+1)
+	CP	'/'
+	JR	Z,DSPHLP	; If help requested
+;
+	LD	HL,(BDOS+1)	; Where is bdos jp pointing?
+	LD	DE,CCP+806H	; Where it should be
+	AND	A
+	SBC	HL,DE		; See if same
+	JR	NZ,RSXERR	; If not, then don't load
+;
+	LD	HL,RSXBASE
+	LD	DE,RSXORG
+	LD	BC,MOVLEN
+	LDIR			; Move trcp into position
+	LD	HL,RCP
+	LD	D,H
+	LD	E,L
+	INC	DE
+	LD	(HL),0
+	LD	BC,RCPS*128-1	; Number of bytes to clear
+	LDIR			; Go clear it
+;
+	LD	DE,(ENVADR)
+	LD	A,D
+	OR	E
+	JP	Z,NOENV
+	LD	HL,ENVSAV	; Environment pointer save in rsx
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; Stash it for module remove
+;
+; WITH Z33TRCP CODE IN POSITION, INITIALIZE THE RSX HEADER
+;
+	LD	HL,(BDOS+1)	; Get bdos entry address
+	LD	(RSX+1),HL
+	LD	HL,(OS$BASE+1)	; Get bios warm boot
+	PUSH	HL
+	LD	(WBBIOS),HL	; Save in header
+	INC	HL
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		; Where is bios warm boot pointing?
+	LD	(NEXTWBS),HL	; Make it next in the chain
+	POP	HL
+;
+; NOW PATCH BIOS WARM BOOT TO POINT TO RSX
+;
+	INC	HL		; Point to target of bios wb jump
+	LD	DE,MODWB	; Get warm boot of rsx
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; Patch it into bios
+;
+; NOW INSTALL TRCP IN THE ENVIRONMENT
+;
+	LD	HL,(ENVADR)
+	LD	DE,0CH		; Offset to rcp in env
+	ADD	HL,DE
+	LD	DE,RCP		; Start of module so far as zcpr33 knows
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; Install address
+	INC	HL
+	LD	(HL),RCPS	; And size
+;
+	LD	A,(NOMSG)
+	OR	A
+	JR	NZ,START2	; If quiet
+	LD	DE,SIGNOFF
+	LD	C,PRBUFF
+	CALL	BDOS		; Show installed
+START2:
+	JP	MODWB		; This will set the protect address at bdos+1
+;
+DSPHLP:
+	LD	DE,HELPM
+PMEXIT:
+	LD	C,PRBUFF
+	JP	BDOS		; One way trip...
+;
+NOENV:
+	LD	DE,NOENVM	; No environment error
+	JR	PMEXIT		; Don't know where env is, so can't set
+				; Error flag
+;
+RSXERR:
+	LD	DE,MRSXER
+ERRXT:
+	LD	HL,(ENVADR)
+	LD	BC,22H		; Offset to message buffer pointer
+	ADD	HL,BC
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		; Message pointer in hl
+	LD	(HL),RSXLER	; Set rsx load error
+	INC	HL
+	INC	HL
+	INC	HL		; POINT TO ZCPR33 COMMAND STATUS FLAGS
+	LD	A,1110B		; TRANSIENT, ERROR, ECP FLAGS SET
+	OR	(HL)
+	LD	(HL),A
+	JR	PMEXIT
+
+SIGNON:
+	DB	CR,LF,'Z33TRCP loader V',VERSION+'0','.',SUBVER+'0',CR,LF
+	DB	'Copyright (c) 1987 Cameron W. Cotrill',CR,LF,LF,'$'
+
+SIGNOFF:
+	DB	'RCP buffer installed.  Use LDR to load RCP.',CR,LF,'$'
+
+HELPM:
+	DB	'ZCPR33 Temporary Resident Command Package RSX.  Z33TRCP installs',CR,LF
+	DB	'a buffer for the RCP below ZCPR33, and protects both the RCP',CR,LF
+	DB	'and itself.  The command RCPX will remove the RCP, allowing a',CR,LF
+	DB	'larger TPA than would be possible with a normal RCP.',CR,LF
+	DB	'Use LDR to load the RCP once Z33TRCP has created the buffer.',CR,LF,LF,'$'
+
+NOENVM:
+	DB	BEL,'Not installed!',CR,LF,'$'
+
+MRSXER:
+	DB	BEL,'Can''t load!  Other RSX''s present!',CR,LF,'$'
+
+NOMSG:	DB	0		; Storage for quiet flag
+;
+RSXBASE:
+	.PHASE	RSXORG
+;
+; RSX Header
+;
+RSX:
+	JP	0		; Jump to bdos entry
+MODWB:	JP	MODWARM		; Module warm boot
+	JP	REMOVE		; Module remove routine
+WBBIOS:	DW	0		; Bios warm boot address
+RSXPTA:	DW	RSX		; First byte of module to protect
+	DW	MODID		; Address of module name
+WBNEXT:
+NEXTWBS	EQU	$+1		; Pointer for in code storage
+	JP	0		; Jump to next rsx warm boot
+MODID:
+	DB	'Z33TRCP V',VERSION+'0','.',SUBVER+'0',0 ; Id string
+;
+MODWARM:
+	CALL	CKWARM		; Restore wb, check we are lowest rsx
+	JR	NZ,MODWARM1	; If not lowest
+	LD	HL,(RSXPTA)
+	LD	(BDOS+1),HL	; Protect address
+MODWARM1:
+;
+; MOST BIOSES WILL RESET THE VECTORS AT 0000H AND 0005H IF WE EVER
+; EXIT TO THEIR WARM BOOT.  THIS WILL WIPE THE PROTECTION FOR THE RSX.
+; SINCE THIS MODULE IS AT THE TOP OF THE RSX CHAIN, WE GET AROUND THIS
+; PROBLEM BY NEVER GIVING BIOS WARM BOOT A CHANCE TO REGAIN CONTROL.
+; THIS MEANS WE EXIT DIRECTLY TO ZCPR33, WHICH IS PROTECTED ALSO.
+;
+	LD	HL,TBUF
+	LD	SP,HL		; Set stack
+	EX	DE,HL
+	LD	C,SETDMAF
+	CALL	BDOS		; Reset default dma
+	LD	A,(OS$BASE+4)	; Get logged du
+	LD	C,A
+	JP	CCP
+;
+; ROUTINE TO REMOVE Z33TRCP.  ENTER THIS ROUTINE THROUGH THE JUMP TABLE
+; AT THE BEGINNING OF THE RSX (RSX+6).
+;
+; THE REMOVE ROUTINE MUST FIRST CHECK TO SEE IF IT IS SAFE TO REMOVE
+; ITSELF.  IN ORDER TO PREVENT SYSTEM CRASHES, IT MUST NOT BE REMOVED IF:
+;	1. ZEX IS RUNNING
+;	2. OTHER RSX'S ARE PRESENT
+; IF THE REMOVAL REQUEST CANNOT BE SATISFIED, THE ERROR FLAG IN THE
+; MESSAGE BUFFER WILL BE SET TO THE RSX REMOVAL ERROR CODE.
+;
+REMOVE:
+	CALL	CKWARM		; See if we're lowest rsx - includes zex
+	JR	NZ,REMOV1	; Don't allow removal if there are
+	LD	HL,(RSX+1)	; Get prior bdos vector
+	LD	(BDOS+1),HL	; Restore it
+ENVSAV	EQU	$+1		; Pointer for in code modification
+	LD	HL,0		; Environment address
+	LD	DE,0CH		; Offset to rcp in env
+	ADD	HL,DE
+	XOR	A		; Set rcp addr to 0
+	LD	(HL),A
+	INC	HL
+	LD	(HL),A		; Install address
+	INC	HL
+	LD	(HL),A		; And size
+	LD	HL,(WBBIOS)	; Get bios entry address
+	INC	HL
+	LD	DE,(NEXTWBS)	; Get warm boot of next rsx up
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D		; Patch it into bios
+	SCF			; Set carry to indicate success
+	RET
+;
+REMOV1:
+MSGADR	EQU	$+1		; POINTER FOR IN CODE MODIFICATION
+	LD	HL,0		; Offset to message buffer pointer
+	LD	(HL),RSXRER	; Set rsx remove error
+	INC	HL
+	INC	HL
+	INC	HL
+	LD	A,1110B		; TRANSIENT, ERROR, ECP FLAGS SET
+	OR	(HL)
+	LD	(HL),A
+	XOR	A		; Clear carry to show error
+	RET			; And exit
+;
+; ROUTINE TO CHECK IF Z33TRCP IS LOWEST RSX IN MEMORY,	RESTORES
+; WARM BOOT ADDRESS AT OS$BASE+1
+;
+CKWARM:
+	LD	HL,(WBBIOS)
+	LD	(OS$BASE+1),HL	; Restore warm boot
+	INC	HL
+	LD	A,(HL)
+	INC	HL
+	LD	H,(HL)
+	LD	L,A		; Where is bios warm boot pointing?
+	LD	DE,MODWB
+	AND	A
+	SBC	HL,DE		; See if lowest module
+	RET
+MOVLEN	EQU	$-RSX
+	.DEPHASE
+; End of Z33RCP.Z80
+
+	END
+

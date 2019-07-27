@@ -1,0 +1,150 @@
+	TITLE	"Holmes Clock - Kaypro - (K83-HOLMES)"
+	SUBTTL	"Description of Clock Module"
+;=========================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from ver of 7/06/85
+; Vers 0.2 current as of 17 Oct 88
+;=========================================================
+
+VERS	EQU	02
+	.Z80
+	NAME HOLMESK
+
+	MACLIB	CLOCK.LIB
+
+	COMMON	/_CLKID_/
+
+DESCST:	DEFW	0		; Year
+
+CLKNAM:	DEFB	'Kaypro 83-Holmes        '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 + '0',0
+
+DESCR:	DEFB	'   Kaypro 83 Holmes board clock',CR,LF
+	DEFB	'   ()',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	0		; Dummy parameters
+	DEFW	0
+
+
+	PAGE
+	SUBTTL	"Clock Code - Holmes Clock for Kaypro-83"
+
+CMDP	EQU	01FH
+DATAP	EQU	01EH
+OUTCLK	EQU	00FH
+INCLK	EQU	04FH
+
+YEARRG	EQU	0CH
+DAYWK	EQU	06H
+
+	CSEG
+;-----------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-----------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set Time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+;== Commented out til Set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	PUSH	HL		; Save entry buffer for retry
+RETRY:	POP	HL
+	PUSH	HL
+	LD	A,OUTCLK
+	OUT	(CMDP),A
+	XOR	A		; Seconds register
+	CALL	RDREG
+	AND	0FH
+	LD	D,A		; Save in d register
+	LD	B,YEARRG
+	LD	C,B		; Use auxil counter
+
+LOOP:	LD	A,OUTCLK
+	OUT	(CMDP),A
+	LD	A,B
+	CP	DAYWK
+	JR	NZ,NOTDWK		; Jump if not day of week
+	DEC	B		; Switch odd/even
+	LD	A,B
+NOTDWK:	CALL	RDREG
+	JR	NZ,NOT24
+	AND	003H		; Mask 24hour bit
+NOT24:	RLD			; Move nibble into buffer
+	LD	A,B
+	OR	A
+	JR	Z,TSTROL		; Finished
+	DEC	B
+	DEC	C
+	BIT	0,C			; Test for odd/even
+	JR	NZ,LOOP
+	INC	HL
+	LD	E,(HL)		; Pick up old contents in case
+	JR 	LOOP
+
+TSTROL:	LD	A,(HL)		; Get back seconds just read
+	AND	0FH		; Mask to units digit
+	CP	D		; Changed?
+	POP	BC		; Fix stack in case ok
+	LD	A,01		; Set Ok return status in case good
+	RET	Z
+	PUSH	BC
+	LD	(HL),E		; Put back original
+	JR 	RETRY
+
+RDREG:	OUT	(DATAP),A	; Select register
+	CP	5		; Test for 24 hour bit
+	LD	A,INCLK
+	OUT	(CMDP),A	; Switch to read
+	IN	A,(DATAP)
+	IN	A,(DATAP)
+	IN	A,(DATAP)
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;== Commented out til written
+;==WRCLK:
+;==	RET
+
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	RET			; Just return if come here
+
+	DEFB	0,0,0		; Filler
+
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+
+	COMMON	/_PRE_/
+
+	INCLUDE	PRECLOCK.LIB
+
+	END
+

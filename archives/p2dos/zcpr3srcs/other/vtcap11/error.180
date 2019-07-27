@@ -1,0 +1,463 @@
+; ERROR Handler Routines
+;
+; Subroutine to include the error handler routines for the
+; routines call from syslib, vlib and z3lib. Other error
+; routines have been added to accomidate the calling program.
+; The following equate MUST be defined in the calling program:
+;
+;	BELL	EQU	xxh		; xx = HEX notation of bell character
+;
+;	ENTRY:	 A=Error code returned from library routine
+;	       PSW=Z if no error  NZ if error
+;
+;		All VLIB calls may exit to the error handler
+;		by performing a  jp  nz,v$err after the call 
+;		to the VLIB routine.
+;
+;		None of the Z3LIB routines return any error
+;		conditions.
+;
+;		All SYSLIB routines may exit to the error  
+;		handler by performing a  jp  nz,x?xx after
+;		the call to the SYSLIB routine.
+;
+;		example:        
+;				call	f$append
+;				jp	nz,f?append
+;
+;		The '?' replaces the '$' in the error routines.
+;
+;		If no '$' exists in name, append the '?' to the 
+;		end of the routine name.
+;
+;	EXIT:	Error message is printed on CRT, at row 23 column 5,
+;		in the following format:
+;
+;		ERROR - Error Message
+;
+;		ERROR is printed in full intensity whereas the error
+;		message itself is printed in half intensity. When
+;		the error message is printed, the console bell sounds.
+;
+;		On exit, a  jp  exit  is performed. It is the programmers
+;		responsibility to insure that the exit routine closes all
+;		files, restores the system stack pointer and any other
+;		necessary housekeeping chores.
+;
+;		ALL ERRORS ABORT YOUR PROGRAM
+;
+; Syslib routines used:	GXYMSG, STNDOUT, STNDEND, VPRINT, PHL5DC
+
+opt?:	cp	0
+	ret	z 
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Invalid Option'
+	db	0
+	call	wait1s
+	call	wait1s
+	ret
+
+; ALL error report function not available
+
+v$err:	cp	0		
+	ret	nz
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - VLIB Function Not Available'
+	db	0
+	ret
+
+; NO special error conditions exist in Z3LIB
+
+z$err:
+
+; handles ALL known error conditions in SYSLIB
+	
+s$err:
+	
+f?append:
+f?appl:	cp	0
+	ret	z
+	cp	1
+	jp	z,app1
+	cp	2
+	jp	z,app2
+	cp	3
+	jp	z,app3
+	jp	err?
+
+app1:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - File not found'
+	db	0
+	jp 	exit
+
+app2:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - File is full'
+	db	0
+	jp	exit
+
+app3:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - File found but empty'
+	db	0
+	jp	exit
+
+f?close:
+	cp	0
+	ret	z 
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Error in closing file'
+	db	0
+	jp	exit
+
+f?make:	cp	0ffh
+	ret	nz
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - No directory space available'
+	db	0
+	jp	exit
+
+f?open:
+f?mopen:
+	cp	0
+	ret	z
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - File not opened'
+	db	0
+	jp	exit
+
+f?read:	cp	0
+	ret	z
+	cp	1
+	jp	z,rea1
+	cp	2
+	jp	z,rea2
+	jp	nz,err?
+
+rea1:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Read past end-of-file'
+	db	0
+	jp	exit
+
+rea2:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Reading unwritten data in random access'
+	db	0
+	jp	exit
+
+f?write:	
+	cp  	0
+	ret	z
+	cp 	1
+	jp	z,wri1
+	cp	2
+	jp	z,wri2
+	cp	0ffh
+	jp	z,wri3
+	jp	err?
+
+wri1:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Error in extending file'
+	db	0
+	jp	exit
+
+wri2:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - End of disk data'
+	db	0
+	jp	exit
+
+wri3:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - No more directory space'
+	db	0
+	jp	exit
+
+f?rename:
+luopen?:
+	cp	0
+	ret	nz
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - File not found'
+	db	0
+	jp	exit
+
+getrr?:
+getrr1?:
+getfs?:
+getfs1?:
+	cp	0
+	ret	z
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Random record overflow'    
+	db	0 
+
+r?read:
+r?write:
+	cp	0
+	ret	z
+	cp	1
+	jp	z,rrd1
+	cp	3
+	jp	z,rrd3
+	cp	4
+	jp	z,rrd4
+	cp	5
+	jp	z,rrd5
+	cp	6
+	jp	z,rrd6
+	jp	err?
+
+rrd1:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Attempt to read unwritten record'
+	db	0
+	jp	exit
+
+rrd3:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - CP/M could not close current extent'
+	db	0
+	jp	exit
+
+rrd4:	call	gxymsg
+	db	24,5 
+	db	bell,2,'ERROR',1
+	db	' - Attempt to read unwritten extent'
+	db	0
+	jp	exit
+
+rrd5:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Directory full'
+	db	0
+	jp	exit
+
+rrd6:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Attempt to read beyond end of disk'
+	db	0
+	jp	exit
+
+fi0?open:
+fi1?open:
+fi2?open:
+fi3?open:
+fo0?open:
+fo1?open:
+fo2?open:
+fo3?open:
+fi0?close:
+fi1?close:
+fi2?close:
+fi3?close:
+fo0?close:
+fo1?close:
+fo2?close:
+fo3?close:
+f0?get:
+f1?get:
+f2?get:
+f3?get:
+f0?put:
+f1?put:
+f2?put:
+f3?put:
+fxi?open:
+fxo?open:
+fxi?close:
+fxo?close:
+fx?get:
+fx?put:
+fyi?open:
+fyo?open:
+fyi?close:
+fyo?close:
+fy?get:
+fy?unget:
+fy?put:	cp 	0
+	ret	z
+	cp	1
+	jp	z,ff1
+	cp	2
+	jp 	z,ff2
+	cp	3
+	jp	z,ff3
+	cp	4
+	jp	z,ff4
+	cp	5
+	jp	z,ff5
+	cp	6
+	jp	z,ff6
+	cp	7
+	jp	z,ff7
+	jp	err?
+
+ff1:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - GET or PUT attempted on an unopened file'
+	db	0
+	jp	exit
+
+ff2:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Disk full'
+	db	0
+	jp	exit
+
+ff3:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Input file not found'
+	db	0
+	jp	exit
+
+ff4:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Attempt to read past EOF'
+	db	0
+	jp	exit
+
+ff5:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Directory full'
+	db	0
+	jp	exit
+
+ff6:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Error in closing a file'
+	db	0
+	jp	exit
+
+ff7:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Attempt to open a file which is already open'
+   	db	0
+	jp	exit
+
+luinit?:
+	cp	0
+	ret	z
+	cp	1
+	jp	z,lui1
+	cp	2
+	jp	z,lui2
+	cp	3
+	jp	z,lui3
+	jp	err?
+
+lui1:	call 	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Library file not found'
+	db	0
+	jp	exit
+
+lui2:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Library file empty'
+	db	0
+	jp	exit
+
+lui3:	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Library file format error'
+	db	0
+	jp	exit
+
+ludir?:	cp	0
+	ret	z
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Memory buffer overflow'
+	db	0
+	jp	exit
+
+lu?read:
+	cp	0
+	ret	z
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - End of file'
+	db 	0
+	jp	exit
+
+fname?:	cp	0	
+	ret	nz
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Invalid disk or user'
+	db	0
+	jp	exit
+	
+dbuffer?:
+	cp	0
+	ret	nz
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - CCP Overrun'
+	db 	0
+	jp	exit
+
+dirload?:
+dirsload?:
+ssbinit?:
+	cp	0
+	ret	nz
+	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - TPA Overflow'
+	db	0
+	jp	exit
+
+err?:  	call	gxymsg
+	db	24,5
+	db	bell,2,'ERROR',1
+	db	' - Unknown error'
+	db	0
+	jp	exit
+
+

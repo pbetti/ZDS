@@ -1,0 +1,40 @@
+; skeleton of a module that gets the address of the ZCPR33 
+; environmental descriptor from the command processor, and 
+; stores it away.  Also a routine to retrieve it later, 
+; accessible from Turbo-Modula2.
+;
+;	Steve Cohen
+;	June 8, 1987
+;
+	PUBLIC  GETENV
+
+	DB	'Z33ENV'		; JUST FOR FINDING THIS CODE WITH
+					; PATCHER OR DEBUGGER
+
+; this is the routine to which a program will jump (after 
+; we patch it to do so) immediately upon execution which 
+; saves the ENV address which Z33 provides us in HL.
+					
+	LD	(Z33ADR),HL		; PATCH FIRST JUMP INSTRUCTION TO
+					; JUMP TO HERE
+
+	JP	0			; PATCH THIS JUMP TO WHERE THE
+					; OLD FIRST JUMP INSTRUCTION
+					; JUMPED TO
+					
+Z33ADR:	DW	0			; STORAGE FOR Z33 ENV ADDRESS
+;
+; this routine can be called by any TM2 module that imports 
+; to return the ENV address.  The procedure is in this form:
+;
+; 	PROCEDURE GETENV():CARDINAL;
+;
+GETENV: 
+	LD	HL,(Z33ADR)		; MUST HAVE BEEN PREVIOUSLY INITIALIZED
+	EX	(SP),HL			; RETURN IT VIA STACK
+	PUSH	HL			; put return address back
+	RET
+	
+	ENDMUST HAVE BEEN PREVIOUSLY INITIALIZED
+	EX	(SP),HL			; RETURN IT VIA STACK
+	PU

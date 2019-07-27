@@ -1,0 +1,58 @@
+;	TITLE	"SMFN1 - Syslib 4.0"
+	NAME	('MFN1')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SMFN1.Z80 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SMFN1
+; Abstract: This module contains the routine MFN1 which prints the
+;	Filename and Type (in FCB fixed-field format) to a Memory
+;	location.  The format of the output is: xxxxxxxx.xxx.
+;	Most significant bits of all characters are masked off.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		MFN1
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - MFN1
+; Entry: DE = Pointer to first character of an FCB Filename.
+;	 HL - Points to 12-character memory buffer
+; Exit : - No status returned, the File name and type are stored
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+MFN1:	PUSH	BC		; Save BC register
+	PUSH	HL		; save regs
+	PUSH	DE
+	PUSH	AF
+	LD	B,8		; 8 chars first
+	CALL	PRFNX
+	LD	A,'.'
+	LD	(HL),A		; Put dot in memory
+	INC	HL		; ..and bump pointer
+	LD	B,3		; 3 more chars
+	CALL	PRFNX
+	POP	AF		; restore regs
+	POP	DE
+	POP	HL
+	POP	BC
+	RET
+
+PRFNX:	LD	A,(DE)		; get char
+	AND	7FH		; mask out msb
+	LD	(HL),A		; Store the value
+	INC	HL		; ..and bump pointer
+	INC	DE		; pt to next
+	DJNZ	PRFNX		; count down
+	RET
+
+	END
+

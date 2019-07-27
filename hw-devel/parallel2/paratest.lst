@@ -1,0 +1,1495 @@
+   1:			
+   2:			include Common.inc.asm
+**** Common.inc.asm ****
+   1:			;
+   2:			;=======================================================================
+   3:			;
+   4:			; Modular Z80 DarkStar (NE Z80) SysBios
+   5:			;
+   6:			;=======================================================================
+   7:			;
+   8:			; Original code:
+   9:			; Z80 Nuova Elettronica Monitor 390 su eprom 2532 (4k)
+  10:			;
+  11:			; Disassembled and reconstructed by
+  12:			; Piergiorgio Betti <pbetti@lpconsul.net> on 2005 01 26
+  13:			;
+  14:			; Latest non modular BIOS is DARKSTAR-MONITOR-0.9.0.asm
+  15:			; dated 20140531
+  16:			; - Following addition of MultiF-Board doing complete rewrite of the
+  17:			;   monitor/BIOS has been started.
+  18:			;   Major goals:
+  19:			;   o Modularization: Now monitor can grow up to 256kb instead of 4kb
+  20:			;     :-)
+  21:			;   o Specialized images fitted in memory page (4kb) or multiples
+  22:			;   o Full support for new hardware
+  23:			;   o I/O rewrite for MODE 2 interrupts
+  24:			;   Minor goals:
+  25:			;   o Full code clean-up & reoarganization
+  26:			; ---------------------------------------------------------------------
+  27:			; Revisions:
+  28:			; 20140905 - Modified hexadecimal constants to 0xxH format to be widely
+  29:			;            accepted by different assemblers
+  30:			; 20150714 - Modified to implement serial XON/XOFF and RTS/CTS
+  31:			; 20170331 - Fixed uart1 isr routine
+  32:			; 20180831 - v3.8.1 modifying for 4.0.0
+  33:			; 20190213 - v4.0.1 dual ide support
+  34:			; ---------------------------------------------------------------------
+  35:			
+  36:			; ---------------------------------------------------------------------
+  37:			; SYSBIOS
+  38:			;
+  39:			; This is the BIOS non-resident portion of the new (banked)
+  40:			; BIOS/Monitor for the NE Z80 (aka DarkStar)
+  41:			;
+  42:			; ---------------------------------------------------------------------
+  43:			;
+  44:			; Full BIOS memory scheme:
+  45:			;
+  46:			;	+-----------------+
+  47:			;	+    SysCommon    +   <-- Resident portion. Common to all images
+  48:			;	+   FC00 - FFFF   +
+  49:			;	+-----------------+
+  50:			;	+-----------------+   +-----------------+   +-----------------+
+  51:			;	+     SysBios     +   +   BootMonitor   +   +     [Other]     +
+  52:			;	+   F000 - FBFF   +   +   F000 - FBFF   +   +   F000 - FBFF   +
+  53:			;	+-----------------+   +-----------------+   +-----------------+
+  54:			;
+  55:			;	         ^                     ^                     ^
+  56:			;	         |                     |                     |
+  57:			;	         ---------------------------------------------
+  58:			;	                      Variable section
+  59:			;
+  60:			; The above are always assembled at ORG F000 and linked and allocated
+  61:			; in the EEPROM in this way:
+  62:			;
+  63:			;	+-----------------+
+  64:			;	+    SysCommon    +
+  65:			;	+   FC00 - FFFF   +
+  66:			;	+     SysBios     +     <-- EEPROM page 1 ($C1000)
+  67:			;	+   F000 - FBFF   +
+  68:			;	+-----------------+
+  69:			;	+-----------------+
+  70:			;	+    SysCommon    +
+  71:			;	+   FC00 - FFFF   +
+  72:			;	+   BootMonitor   +     <-- EEPROM page 0 ($C0000)
+  73:			;	+   F000 - FBFF   +
+  74:			;	+-----------------+
+  75:			;
+  76:			; ---------------------------------------------------------------------
+  77:			;
+  78:			; Define which assembler we are using
+  79:			;
+  80:			
+  81:			; PASMO	equ	1
+  82:	0001          	mzmac	equ	1
+  83:			; ZMAC	equ	1			; ZMAC Z80 assembler, not Linux/Unix version
+  84:			
+  85:			; ... only one at a time can be active (1) ...
+  86:			
+  87:			;
+  88:			; Monitor version numbers (major.minor.subrel)
+  89:			;
+  90:	0035          	monmaj		equ	'5'
+  91:	0031          	monmin		equ	'1'
+  92:	0030          	subrel		equ	'0'
+  93:			
+  94:			;
+  95:			; Buffers addresses labels
+  96:			;
+  97:			
+  98:			; -- Global --
+  99:	0003          	iobyte		equ	0003h		; byte: Intel IOBYTE (CP/M 2.2 only)
+ 100:	0004          	cdisk		equ	0004h		; byte: Last logged drive
+ 101:	0006          	btpasiz		equ	0006h		; word: size of tpa + 1
+ 102:			;
+ 103:			; -- Private --
+ 104:	000B          	hmempag		equ	000bh		; byte: highest ram page
+ 105:	000C          	bbcbank		equ	000ch		; byte: current bank
+ 106:	000D          	bbcstck		equ	000dh		; word: current stack
+ 107:					;
+ 108:	004F          	prvtop		equ	004fh		; top of private area storage
+ 109:	004F          	colbuf		equ	prvtop		; byte:
+ 110:	004E          	dselbf		equ	colbuf-1	; byte: floppy drive select status
+ 111:								; - bits: 0 = drive 0
+ 112:								; - bits: 1 = drive 1
+ 113:								; - bits: 2 = drive 2
+ 114:								; - bits: 3 = drive 3
+ 115:								; - bits: 4 = unused
+ 116:								; - bits: 5 = head select
+ 117:								; - bits: 6 = motor on (disabled by jumper)
+ 118:								; - bits: 7 = unused
+ 119:	004D          	kbdbyte		equ	dselbf-1	; byte: store keyboard input
+ 120:	004C          	miobyte		equ	kbdbyte-1	; byte:
+ 121:								; - bits: 0: 0 = floppy write		1 = floppy read
+ 122:								;         1: 0 = autorepeat on		1 = autorepeat off
+ 123:								;         2: 0 = scroll			1 = no scroll
+ 124:								;         3: 0 = accept lowercase	1 = convert to uppercase
+ 125:								;         4: 0 = destr. bkspace		1 = non destr. bkspace
+ 126:								;         5: 0 = console out		1 = serial out
+ 127:								;         6: 0 = floppy home on err	1 = no home on err
+ 128:								;         7: 0 = ctrl chr set 1		1 = ctrl chr set 2
+ 129:	004B          	tmpbyte		equ	miobyte-1	; byte: transients flags
+ 130:								; - bits: 0: 0 = high in cursor addressing
+ 131:								;         1: 0 = ESC catched by ANSI driver
+ 132:								;         2: 0 = CSI catched by ANSI driver
+ 133:								;         3: 0 = Two byte code ESC seq. from serial
+ 134:								;         4: 0 = Plain serial i/o (disable ANSI driver)
+ 135:								;         5: 0 = store interrupt status (on/off)
+ 136:								;         6: 0 = high in ansi query
+ 137:								;         7: 0 = unlock LBA free addressing (unpartitioned)
+ 138:	004A          	cursshp		equ	tmpbyte-1	; cursor shape
+ 139:	0048          	curpbuf		equ	cursshp-2	; word: cursor position
+ 140:	0046          	ftrkbuf		equ	curpbuf-2	; word: track # for i/o (0 - 65535)
+ 141:	0045          	fdrvbuf		equ	ftrkbuf-1	; byte: drive number for i/o (0 - 15)
+ 142:	0043          	fsecbuf		equ	fdrvbuf-2	; word: sector # for i/o (1 .. 65535)
+ 143:	0041          	frdpbuf		equ	fsecbuf-2	; word: dma address for i/o
+ 144:	003F          	fsekbuf		equ	frdpbuf-2	; word: current track number for drive A/B
+ 145:	003E          	ram3buf		equ	fsekbuf-1	; byte:
+ 146:	003D          	ram2buf		equ	ram3buf-1	; byte:
+ 147:	003C          	ram1buf		equ	ram2buf-1	; byte:
+ 148:	003B          	ram0buf		equ	ram1buf-1	; byte:
+ 149:	003A          	rst7sp3		equ	003ah		; keep clear area of RST38 (RST7)
+ 150:	0039          	rst7sp2		equ	0039h
+ 151:	0038          	rst7sp1		equ	0038h
+ 152:	0036          	vstabuf		equ	rst7sp1-2	; word: Display start addr
+ 153:	002F          	rsrvbuf		equ	vstabuf-7	; free 7 byte buffer
+ 154:	002D          	appbuf		equ	rsrvbuf-2	; word: generic buffer
+ 155:	002C          	copsys		equ	appbuf-1	; Op system type for partition selection
+ 156:	002B          	uart0br		equ	copsys-1	; UART 0 baudrate
+ 157:	002A          	uart1br		equ	uart0br-1	; UART 1 baudrate
+ 158:	0029          	ctc0tc		equ	uart1br-1	; CTC channel 0 time constant
+ 159:	0028          	ctc1tc		equ	ctc0tc-1	; CTC channel 1 time constant
+ 160:	0027          	timrcon		equ	ctc1tc-1	; timer buf
+ 161:	0026          	cnfbyte		equ	timrcon-1	; config byte
+ 162:								; - bits: 0: 0 = UART1 intr disabled	1 = RST8 redir UART1
+ 163:								;         1: 1 = XON/XOFF enabled on UART0
+ 164:								;         2: 1 = RTS/CTS enabled on UART0
+ 165:								;         3: 0 = unused/reserved
+ 166:								;         4: 0 = unused/reserved
+ 167:								;         5: 0 = unused/reserved
+ 168:								;         6: 1 = IDE slave failure
+ 169:								;         7: 0 = single IDE		1 = Dual IDE
+ 170:	000F          	fifosto		equ	000fh		; fifo queues storage start
+ 171:	0010          	fifsize		equ	16		; fifo queue lenght
+ 172:	0013          	fifblok		equ	fifsize+3	; fifo queue size
+ 173:	000F          	fifou0		equ	fifosto		; uart 0 queue (alternate console)
+ 174:	0022          	fifoend		equ	fifou0+fifblok	; fifo blocks end
+ 175:			;
+ 176:	0080          	iedtbuf		equ	0080h		; monitor editor buffer (internal only)
+ 177:	002D          	iedtfil		equ	'-'		; filler char
+ 178:			;
+ 179:	3000          	bldoffs		equ	3000h		; place for disk bootloader
+ 180:			
+ 181:			;
+ 182:			; Some commodity equs
+ 183:			;
+ 184:	000D          	cr		equ	0dh		; ascii cr & lf
+ 185:	000A          	lf		equ	0ah
+ 186:	000C          	ff		equ	0ch		; form feed (clear screen)
+ 187:	0008          	bs		equ	08h		; backspace
+ 188:	000F          	ceol		equ	0fh		; clear to EOL
+ 189:	000E          	ceop		equ	0eh		; clear to EOp
+ 190:	0005          	cron		equ	05h		; cursor on
+ 191:	0004          	crof		equ	04h		; cursor off
+ 192:	001B          	esc		equ	1bh		; ESCape
+ 193:	0007          	beep		equ	07h		; beep
+ 194:	0011          	xonc		equ	11h		; Xon
+ 195:	0013          	xofc		equ	13h		; Xoff
+ 196:	FFFF          	true		equ	-1
+ 197:	0000          	false		equ	0
+ 198:	0100          	tpa		equ	0100h		; TPA base address (for CP/M)
+ 199:	000A          	mondelay	equ	10		; seconds to auto monitor
+ 200:			
+ 201:			;
+ 202:			; Modules equs
+ 203:			;
+ 204:				; delay
+ 205:	00F6          	mscnt		equ	246
+ 206:				; mmu
+ 207:	000D          	mmutstpage	equ	0dh		; logical page used for sizing
+ 208:	D000          	mmutstaddr	equ	mmutstpage<<12	; logical page used for sizing
+ 209:			
+ 210:			; Conventionally all bios/monitor images start at $F000.
+ 211:			; Except for special cases all code is copied to ram @ $F000.
+ 212:			; In this case eeprom page 0 is directly mapped into logical space
+ 213:			; by hardware so we can initialize the system at cold boot.
+ 214:			;
+ 215:			; We assume to initialize MMU as follow:
+ 216:			;
+ 217:			; +--------+
+ 218:			; |  F000  |	-> $C0000  eeprom page 0
+ 219:			; +--------+
+ 220:			; +--------+
+ 221:			; |  EFFF  |
+ 222:			; +--------+
+ 223:			;     ...       -> $00000 to $0EFFF ram
+ 224:			; +--------+
+ 225:			; |  0000  |
+ 226:			; +--------+
+ 227:			;
+ 228:			
+ 229:			
+ 230:			include	config.inc.asm
+**** config.inc.asm ****
+   1:			;
+   2:			;  '########'########::'######:::
+   3:			;  ..... ##: ##.... ##'##... ##::
+   4:			;  :::: ##:: ##:::: ## ##:::..:::
+   5:			;  ::: ##::: ##:::: ##. ######:::
+   6:			;  :: ##:::: ##:::: ##:..... ##::
+   7:			;  : ##::::: ##:::: ##'##::: ##::
+   8:			;   ######## ########:. ######:::
+   9:			;  ........:........:::......::::
+  10:			;
+  11:			;  Z80 Darkstar modular SYSBIOS
+  12:			;  P.Betti  <pbetti@lpconsul.eu>
+  13:			;
+  14:			;  Module: config.inc.asm
+  15:			;
+  16:			;  HISTORY:
+  17:			;  -[Date]- -[Who]------------- -[What]---------------------------------------
+  18:			;  16.05.19 Piergiorgio Betti   Creation date
+  19:			;
+  20:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  21:			;::                                                        ::
+  22:			;::            System BIOS optional parameters             ::
+  23:			;::                                                        ::
+  24:			;::                                                        ::
+  25:			;::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+  26:			
+  27:			;:::[ GLOBAL ]:::::::::::::::::::::::::::::::::::::::::::::::
+  28:			
+  29:			;***[ Production/Testing mode ]*****°************************
+  30:	FFFF          	BBDEBUG		equ	true
+  31:			;
+  32:			;
+  33:			;:::[ HW OPTIONS ]:::::::::::::::::::::::::::::::::::::::::::
+  34:			
+  35:			;***[ Old parallel board support ]***************************
+  36:	0000          	WITH_OLD_PARA	equ	false
+  37:	0004          	PARA2_BASE	equ	04h		; parallel base address
+  38:			;
+  39:			;
+**** Common.inc.asm ****
+ 231:			; Hardware equates
+ 232:			; ---------------------------------------------------------------------
+ 233:			
+ 234:			; ---------------------------------------------------------------------
+ 235:			; LX529 VIDEO BOARD:
+ 236:			; ---------------------------------------------------------------------
+ 237:	0080          	crtbase		equ	80h
+ 238:				; RAM0 for ascii chars & semi6. Combined with RAM1 and RAM2 for graphics
+ 239:	0080          	crtram0dat	equ	crtbase		; RAM0 access: PIO0 port A data register
+ 240:	0082          	crtram0cnt	equ	crtbase+2	; RAM0 access: PIO0 port A control register
+ 241:				; Printer port
+ 242:	0081          	crtprntdat	equ	crtbase+1	; PRINTER (output): PIO0 port B data register
+ 243:	0083          	crtprntcnt	equ	crtbase+3	; PRINTER (output): PIO0 port B control register
+ 244:								; STROBE is generated by hardware
+ 245:				; RAM1 for graphics. (pixel index by RAM0+RAM1+RAM2)
+ 246:	0084          	crtram1dat	equ	crtbase+4	; RAM1 access: PIO1 port A data register
+ 247:	0086          	crtram1cnt	equ	crtbase+6	; RAM1 access: PIO1 port A control register
+ 248:				; Keyboard port (negated). Bit 7 is for strobe
+ 249:	0085          	crtkeybdat	equ	crtbase+5	; KEYBOARD (input): PIO1 port B data register
+ 250:	0087          	crtkeybcnt	equ	crtbase+7	; KEYBOARD (input): PIO1 port B control register
+ 251:	0007          	keybstrbbit	equ	7		; Strobe bit
+ 252:				; RAM2 for graphics. (pixel index by RAM0+RAM1+RAM2)
+ 253:	0088          	crtram2dat	equ	crtbase+8	; RAM2 access: PIO2 port A data register
+ 254:	008A          	crtram2cnt	equ	crtbase+10	; RAM2 access: PIO2 port A control register
+ 255:				; Service/User port
+ 256:	0089          	crtservdat	equ	crtbase+9	; Service (i/o): PIO2 port B data register
+ 257:	008B          	crtservcnt	equ	crtbase+11	; Service (i/o): PIO2 port B control register
+ 258:	0000          	prntbusybit	equ	0		; Printer BUSY bit		(in)	1
+ 259:	0001          	crtwidthbit	equ	1		; Set 40/80 chars per line	(out)	0
+ 260:	0002          	pio2bit2	equ	2		; user 1 (input)		(in)	1
+ 261:	0003          	pio2bit3	equ	3		; user 2 (input)		(in)	1
+ 262:	0004          	pio2bit4	equ	4		; user 3 (input)		(in)	1
+ 263:	0005          	clksclk		equ	5		; DS1320 clock line		(out)	0
+ 264:	0006          	clkio		equ	6		; DS1320 I/O line		(i/o)	1
+ 265:	0007          	clkrst		equ	7		; DS1320 RST line		(out)	0
+ 266:				; normal set for PIO2 (msb) 01011101 (lsb) that is hex $5D
+ 267:								; Other bits available to user
+ 268:				; RAM3 control chars/graphics attributes
+ 269:	008E          	crtram3port	equ	crtbase+14	; RAM3 port
+ 270:	0000          	crtblinkbit	equ	0		; Blink
+ 271:	0001          	crtrevrsbit	equ	1		; Reverse
+ 272:	0002          	crtunderbit	equ	2		; Underline
+ 273:	0003          	crthilitbit	equ	3		; Highlight
+ 274:	0004          	crtmodebit	equ	4		; ASCII/GRAPHIC mode
+ 275:				; Beeper port
+ 276:	008F          	crtbeepport	equ	crtbase+15	; Beeper port
+ 277:				; 6545 CRT controller ports
+ 278:	008C          	crt6545adst	equ	crtbase+12	; Address & Status register
+ 279:	008D          	crt6545data	equ	crtbase+13	; Data register
+ 280:				; Cursor modes
+ 281:	0040          	blislowblok	equ	40h		; Blink, slow, block
+ 282:	004A          	blislowline	equ	4ah		; Blink, slow, line
+ 283:	0060          	blifastblok	equ	60h		; Blink, fast, block
+ 284:	006A          	blifastline	equ	6ah		; Blink, fast, line
+ 285:	0020          	cursoroff	equ	20h		; Off
+ 286:	0000          	fixblock	equ	00h		; Fixed, block
+ 287:	006A          	cursoron	equ	6ah		; On
+ 288:				; 6545 register index
+ 289:	0000          	vr0.hrtot	equ	0		; Total horizontal chars
+ 290:	0001          	vr1.hrdis	equ	1		; Total horizontal displayed ch.
+ 291:	0002          	vr2.hrsyncpos	equ	2		; Horizontal sync position
+ 292:	0003          	vr3.hrvrsyncw	equ	3		; Hsync and vsync width
+ 293:								; (bit 0-3 hsync, bit 4-7 vsync)
+ 294:	0004          	vr4.vrchrow	equ	4		; Total ch. rows in a frame
+ 295:	0005          	vr5.vradj	equ	5		; Vertical additional scan lines
+ 296:	0006          	vr6.vrdisrows	equ	6		; Displayed char rows
+ 297:	0007          	vr7.vrsyncpos	equ	7		; Vertical sync position
+ 298:	0008          	vr8.crtmode	equ	8		; Operating mode
+ 299:								; 76543210
+ 300:								; ||||||++ Interlace
+ 301:								; |||||+-- Addressing bin/rowcol
+ 302:								; ||||+--- Memory shared/transp.
+ 303:								; |||+---- Display delay no/yes
+ 304:								; ||+----- Cursor delay no/yes
+ 305:								; |+------ Pin 34 addr/strobe
+ 306:								; |------- Access blank/interl.
+ 307:	0009          	vr9.scanlines	equ	9		; Scan lines per char row
+ 308:	000A          	vr10.crstart	equ	10		; Cursor start line bit 0-4
+ 309:								; bit 6-5
+ 310:								;     0 0 = No blink
+ 311:								;     0 1 = No cursor
+ 312:								;     1 0 = Blink 1/16 rate
+ 313:								;     1 1 = Blink 1/32 rate
+ 314:	000B          	vr11.crend	equ	11		; Cursor end line bit 0-4
+ 315:	000C          	vr12.dstarth	equ	12		; Display start address high
+ 316:	000D          	vr13.dstartl	equ	13		; Display start address low
+ 317:	000E          	vr14.curposh	equ	14		; Cursor position high
+ 318:	000F          	vr15.curposl	equ	15		; Cursor position low
+ 319:	0010          	vr16.lpenh	equ	16		; LPEN position high
+ 320:	0011          	vr17.lpenl	equ	17		; LPEN position low
+ 321:	0012          	vr18.updaddrh	equ	18		; Update (next char) address H
+ 322:	0013          	vr19.updaddrl	equ	19		; Update (next char) address L
+ 323:	001F          	vr31.dummy	equ	31		; Dummy register for transparent
+ 324:								; addressing update checkin
+ 325:	07CF          	endvid		equ	07cfh		; end video cursor (25*80)
+ 326:			; ---------------------------------------------------------------------
+ 327:			; LX390 FDC CONTROLLER:
+ 328:			; ---------------------------------------------------------------------
+ 329:	00D0          	fdcbase		equ	0d0h
+ 330:	00D0          	fdccmdstatr	equ	fdcbase		; Command and status register
+ 331:	00D1          	fdctrakreg	equ	fdcbase+1	; Track register
+ 332:	00D2          	fdcsectreg	equ	fdcbase+2	; Sector register
+ 333:	00D7          	fdcdatareg	equ	fdcbase+7	; Data register *** Verificare che sia $d7
+ 334:	00D6          	fdcdrvrcnt	equ	fdcbase+6	; Driver select/control register
+ 335:			;
+ 336:	0007          	fdcrestc	equ	00000111b	; 1771 restore (seek to trak 0) cmd
+ 337:	0016          	fdcseekc	equ	00010110b	; seek cmd
+ 338:	0088          	fdcreadc	equ	10001000b	; read cmd
+ 339:	00A8          	fdcwritc	equ	10101000b	; write cmd
+ 340:	00D0          	fdcreset	equ	11010000b	; fdc reset immediate cmd
+ 341:			;
+ 342:	0000          	if	WITH_OLD_PARA
+ 363:			else
+ 364:			; ---------------------------------------------------------------------
+ 365:			; PARALLEL 2.0 INTERFACE
+ 366:			; ---------------------------------------------------------------------
+ 367:			; alternate printer port
+ 368:	00FF          	altprnprt	equ	0ffh
+ 369:			;
+ 370:			; parallel port PC link
+ 371:	0006          	ppdatctr	equ	PARA2_BASE+02h	; Data port control
+ 372:	0004          	ppdatdat	equ	PARA2_BASE+00h	; Data port data
+ 373:	0007          	pphndctr	equ	PARA2_BASE+03h	; Handshake port control
+ 374:	0005          	pphnddat	equ	PARA2_BASE+01h	; Handshake port data
+ 375:	0000          	PB_INIT		equ	0
+ 376:	0001          	PB_BUSY		equ	1
+ 377:	0002          	PB_STRB		equ	2
+ 378:	0003          	PB_ACK		equ	3
+ 379:	0004          	PB_TXRX		equ	4
+ 380:	0005          	PL_TX		equ	5
+ 381:	0006          	PL_RX		equ	6
+ 382:			endif
+ 383:			;
+ 384:			; virtual disks (PC-linked over parallel port)
+ 385:	0000          	vdrdsec		equ	0		; read sector command
+ 386:	0001          	vdwrsec		equ	1		; write sector command
+ 387:	000A          	vdbufsz		equ	10		; 10 bytes block
+ 388:			; ---------------------------------------------------------------------
+ 389:			; MULTF-BOARD: MMU, IDE, SERIAL, CTC
+ 390:			; ---------------------------------------------------------------------
+ 391:			; -- I/O --
+ 392:	0020          	mmuport		equ	20h
+ 393:	0021          	menaprt		equ	21h
+ 394:			; -- Map --
+ 395:	00C0          	eepage0		equ	0c0h		; page 0 of eeprom
+ 396:	F000          	eepsta		equ	0f000h		; eeprom location after MMU reset
+ 397:	00EF          	mmtpapag	equ	(eepsta>>8)-1	; TPA top page (256 bytes pages)
+ 398:	00FF          	imtpag		equ	0ffh		; eeprom page with image table
+ 399:	0800          	imtsiz		equ	2048		; size
+ 400:	E000          	ramtbl		equ	0e000h		; ram table location
+ 401:	0028          	tblblk		equ	40		; block size
+ 402:	0028          	maxblk		equ	40		; max images
+ 403:	0640          	rtbsiz		equ	tblblk * maxblk	; real table size
+ 404:								; A table block is:
+ 405:	0009          	tnamelen	equ	9		;	name		: 8 bytes
+ 406:	0003          	tpagelen	equ	3		;	page offset	: 2 bytes
+ 407:	0005          	tiaddrlen	equ	5		;	image address	: 4 bytes
+ 408:	0002          	tsizelen	equ	2		;	image size	: 2 bytes (integer)
+ 409:	0015          	tdesclen	equ	21		;	description	: 20 bytes
+ 410:			; -- IDE --
+ 411:	00E0          	ideporta	equ	0e0h		; lower 8 bits of IDE interface
+ 412:	00E1          	ideportb	equ	0e1h		; upper 8 bits of IDE interface
+ 413:	00E2          	ideportc	equ	0e2h		; control lines for IDE interface
+ 414:	00E3          	ideportctrl	equ	0e3h		; 8255 configuration port
+ 415:			
+ 416:	0092          	readcfg8255	equ	10010010b	; Set 8255 IDEportC to output, IDEportA/B input
+ 417:	0080          	writecfg8255	equ	10000000b	; Set all three 8255 ports to output mode
+ 418:			;IDE control lines for use with IDEportC.
+ 419:	0001          	idea0line	equ	01h		; direct from 8255 to IDE interface
+ 420:	0002          	idea1line	equ	02h		; direct from 8255 to IDE interface
+ 421:	0004          	idea2line	equ	04h		; direct from 8255 to IDE interface
+ 422:	0008          	idecs0line	equ	08h		; inverter between 8255 and IDE interface
+ 423:	0010          	idecs1line	equ	10h		; inverter between 8255 and IDE interface
+ 424:	0020          	idewrline	equ	20h		; inverter between 8255 and IDE interface
+ 425:	0040          	iderdline	equ	40h		; inverter between 8255 and IDE interface
+ 426:	0080          	iderstline	equ	80h		; inverter between 8255 and IDE interface
+ 427:			;Symbolic constants for the IDE Drive registers
+ 428:	0008          	regdata		equ	idecs0line
+ 429:	0009          	regerr		equ	idecs0line + idea0line
+ 430:	000A          	regseccnt	equ	idecs0line + idea1line
+ 431:	000B          	regsector	equ	idecs0line + idea1line + idea0line
+ 432:	000C          	regcyllsb	equ	idecs0line + idea2line
+ 433:	000D          	regcylmsb	equ	idecs0line + idea2line + idea0line
+ 434:	000E          	regshd		equ	idecs0line + idea2line + idea1line		;(0EH)
+ 435:	000F          	regcommand	equ	idecs0line + idea2line + idea1line + idea0line	;(0FH)
+ 436:	000F          	regstatus	equ	idecs0line + idea2line + idea1line + idea0line
+ 437:	0016          	regcontrol	equ	idecs1line + idea2line + idea1line
+ 438:	0016          	regastatus	equ	idecs1line + idea2line + idea1line
+ 439:			;IDE Command Constants.
+ 440:	0010          	cmdrecal	equ	010h
+ 441:	0020          	cmdread		equ	020h
+ 442:	0030          	cmdwrite	equ	030h
+ 443:	0091          	cmdinit		equ	091h
+ 444:	00EC          	cmdid		equ	0ech
+ 445:	00E0          	cmdspindown	equ	0e0h
+ 446:	00E1          	cmdspinup	equ	0e1h
+ 447:			;IDE init status (hdinit)
+ 448:	00FF          	idemserror	equ	0ffh
+ 449:	0000          	ideready	equ	000h
+ 450:	0002          	idenone		equ	002h
+ 451:			; -- 16C550 UARTS --
+ 452:	00C0          	uart0base	equ	0c0h		; Port base address for 0
+ 453:	00C8          	uart1base	equ	0c8h		; Port base address for 1
+ 454:	00C0          	uart0		equ	uart0base	; Select UART 0
+ 455:	00C8          	uart1		equ	uart1base	; Select UART 1
+ 456:	0000          	r0rxtx		equ	0		; (r/w) RXD/TXD Transmit/Receive Buffer
+ 457:	0000          	r0brdl		equ	0		; (r/w) DLL  if bit 7 of LCR is set: Baud Rate Divisor LSB
+ 458:	0001          	r1ier		equ	1		; (r/w) IER - Interrupt Enable Register
+ 459:	0001          	r1brdm		equ	1		; (r/w) DLM if bit 7 of LCR is set: Baud Rate Divisor MSB
+ 460:	0002          	r2iir		equ	2		; (r)   IIR - Interrupt Identification Register
+ 461:	0002          	r2fcr		equ	2		; (w)   FCR - FIFO Control Register
+ 462:	0003          	r3lcr		equ	3		; (r/w) LCR - Line Control Register
+ 463:	0004          	r4mcr		equ	4		; (r/w) MCR - Modem Control Register
+ 464:	0005          	r5lsr		equ	5		; (r)   LSR - Line Status Register
+ 465:	0006          	r6msr		equ	6		; (r)   MSR - Modem Status Register
+ 466:	0007          	r7spr		equ	7		; (r/w) SPR - Scratch Pad Register
+ 467:				; fifo
+ 468:	0007          	ufifo1		equ	00000111b	; 1 char
+ 469:	0047          	ufifo4		equ	01000111b	; 4 char
+ 470:	0087          	ufifo8		equ	10000111b	; 8 char
+ 471:	00C7          	ufifo14		equ	11000111b	; 14 char
+ 472:				; speeds:
+ 473:	0060          	uart1200	equ	96		; = 1,843,200 / ( 16 x 1200 )
+ 474:	0030          	uart2400	equ	48		; = 1,843,200 / ( 16 x 2400 )
+ 475:	0018          	uart4800	equ	24		; = 1,843,200 / ( 16 x 4800 )
+ 476:	000C          	uart9600	equ	12		; = 1,843,200 / ( 16 x 9600 )
+ 477:	0006          	uart19k2	equ	06		; = 1,843,200 / ( 16 x 19,200 )
+ 478:	0003          	uart38k4	equ	03		; = 1,843,200 / ( 16 x 38,400 )
+ 479:	0002          	uart57k6	equ	02		; = 1,843,200 / ( 16 x 57,600 )
+ 480:	0001          	uart115k2	equ	01		; = 1,843,200 / ( 16 x 115,200 )
+ 481:			
+ 482:	0006          	u0defspeed	equ	uart19k2	; UART 0 default speed
+ 483:	000C          	u1defspeed	equ	uart9600	; UART 1 default speed
+ 484:			; -- Z80CTC --
+ 485:	00E8          	ctcbase		equ	0e8h
+ 486:	00E8          	ctcchan0	equ	ctcbase+0	; Channel 1 - Free
+ 487:	00E9          	ctcchan1	equ	ctcbase+1	; Channel 2 - System Timer
+ 488:	00EA          	ctcchan2	equ	ctcbase+2	; Channel 3 - UART 1 Interrupt
+ 489:	00EB          	ctcchan3	equ	ctcbase+3	; Channel 4 - UART 0 Interrupt
+ 490:	0020          	ctc0tchi	equ	32		; hi speed chan. 0 tc: 4Mhz / 256 / 32 = 488.28 Hz
+ 491:	0005          	ctc1tc100hz	equ	5		; lo speed chan. 1 tc: 488.28 Hz / 5 = ~ 97.6 Hz
+ 492:	000A          	ctc1tc50hz	equ	10		; lo speed chan. 1 tc: 488.28 Hz / 10 = ~ 48.8 Hz
+ 493:	0013          	ctc1tc25hz	equ	19		; lo speed chan. 1 tc: 488.28 Hz / 19 = ~ 25 Hz
+ 494:	0030          	ctc1tc10hz	equ	48		; lo speed chan. 1 tc: 488.28 Hz / 48 = ~ 10 Hz
+ 495:	00F4          	ctc1tc2hz	equ	244		; lo speed chan. 1 tc: 488.28 Hz / 244 = ~ 2 Hz
+ 496:	0013          	syshertz	equ	ctc1tc25hz	; System timer hertz
+ 497:			; -- EEPROM --
+ 498:	0001          	eep29ee		equ	01h		; type 29EE020
+ 499:	0002          	eep29xe		equ	02h		; type 29LE020 or 29VE020
+ 500:	0004          	eep29c		equ	04h		; type 29C020
+ 501:	0008          	eepunsupp	equ	08h		; unsupported
+ 502:	0010          	eeproglock	equ	10h		; programming locked
+ 503:				;
+ 504:	0080          	eerineprom	equ	80h		; tried to program eeprom running inside it
+ 505:			
+ 506:			;
+ 507:			; MMU organization
+ 508:			;
+ 509:			; MMU manage 16 4kb pages in Z80 address space (logical)
+ 510:			; It can assign any of 256 4k pages (physical) from its
+ 511:			; 1Mb address space.
+ 512:			;
+ 513:			; To load phisycal page XXh to logical page (in CPU address space) Y,
+ 514:			; you should consider that MMU is at a fixed address 20h and that
+ 515:			; logical 4K page Y is derived in the MMU by the usage of A12,A13,A14
+ 516:			; and A15 address lines during an I/O instruction.
+ 517:			;
+ 518:			; So to address phys. ram page 00h at the top of logical space page Fh
+ 519:			; you need to have Fh * on top address lines * because this address
+ 520:			; is the index to MMU page.
+ 521:			;
+ 522:			; So:
+ 523:			;
+ 524:			; 	LD	A,00h		<--- phis. page number	00xxxh (4k page)
+ 525:			; 	LD	B,F0h		<--- log. page number 	 Fxxxh (cpu page)
+ 526:			; 	LD	C,20h		<--- MMU I/O address
+ 527:			; 	OUT	(C),A
+ 528:			; 	RET
+ 529:			;
+ 530:			; The OUT instruction place:
+ 531:			; A on data lines D0-D7
+ 532:			; Fh (from B register) on A12-A15
+ 533:			; on port 20h (C register)
+ 534:			;
+ 535:			;
+ 536:			; Memory is organized as follow:
+ 537:			;
+ 538:			;	Slot 1	-> RAM	  -> 512k from 00000h to 7ffffh (mandatory)
+ 539:			;	Slot 2	-> RAM    -> 256k from 80000h to bffffh (option)
+ 540:			;	Slot 3	-> EEPROM -> 256k from c0000h to fffffh (mandatory)
+ 541:			;
+ 542:			;-------------------------------------
+ 543:			; Segments, pages locations
+ 544:			
+ 545:	FFFF          	if	bbdebug
+ 546:			
+ 547:	0004          	bbimgp		equ	04h		; Image location (DEBUG)
+ 548:	000E          	bbappp		equ	0eh		; Temporary page/bank
+ 549:	000F          	bbpag		equ	0fh		; Base page location
+ 550:			
+ 551:			else
+ 557:			endif
+ 558:			
+ 559:	000D          	trnpag		equ	0dh		; Page used for transient MMU ops
+ 560:	F000          	bbbase		equ	bbpag << 12	; non resident base address (60K tpa)
+ 561:	FC00          	bbcomn		equ	bbbase + 0c00h	; resident portion address  (63K tpa)
+ 562:	0008          	bbnpages	equ	8		; 8 4kB pages. 32kB monitor size
+ 563:			
+ 564:			;-------------------------------------
+**** paratest.asm ****
+   3:			;-------------------------------------
+   4:			; Symbols from parent sub-pages
+   5:			include darkstar.mac
+**** darkstar.mac ****
+   1:			;****** Equ's file autogenerated by genequs ver: 1.0
+   2:			;****** Input files:
+   3:			;****** SysCommon.lst
+   4:	FFF0          	VI0            	EQU	$FFF0
+   5:	FFF2          	VI1            	EQU	$FFF2
+   6:	FFF4          	VI2            	EQU	$FFF4
+   7:	FFF6          	VI3            	EQU	$FFF6
+   8:	FFF8          	VI4            	EQU	$FFF8
+   9:	FFFA          	VI5            	EQU	$FFFA
+  10:	FFFC          	VI6            	EQU	$FFFC
+  11:	FFFE          	VI7            	EQU	$FFFE
+  12:	FF38          	TX0            	EQU	$FF38
+  13:	FE81          	FIN            	EQU	$FE81
+  14:	FDEE          	VC00           	EQU	$FDEE
+  15:	FDF2          	VC01           	EQU	$FDF2
+  16:	FDAA          	DLY1           	EQU	$FDAA
+  17:	FDA8          	DLY2           	EQU	$FDA8
+  18:	FE6C          	RPCH           	EQU	$FE6C
+  19:	FEA2          	FOUT           	EQU	$FEA2
+  20:	FF26          	U1NUL          	EQU	$FF26
+  21:	FEEA          	U0ISR          	EQU	$FEEA
+  22:	FF1D          	U1ISR          	EQU	$FF1D
+  23:	FDA6          	DELAY          	EQU	$FDA6
+  24:	FF12          	UISRE          	EQU	$FF12
+  25:	FE72          	FSTAT          	EQU	$FE72
+  26:	FEFC          	UISRI          	EQU	$FEFC
+  27:	FE05          	COUT00         	EQU	$FE05
+  28:	FE52          	PRINT          	EQU	$FE52
+  29:	FF0F          	UISRS          	EQU	$FF0F
+  30:	FF30          	DOSTX          	EQU	$FF30
+  31:	FE12          	DGCLP0         	EQU	$FE12
+  32:	FE54          	PRINT0         	EQU	$FE54
+  33:	FE63          	PRINT1         	EQU	$FE63
+  34:	FC3A          	BBU1ST         	EQU	$FC3A
+  35:	FC35          	BBU1RX         	EQU	$FC35
+  36:	FC30          	BBU1TX         	EQU	$FC30
+  37:	FD4B          	BBEXEC         	EQU	$FD4B
+  38:	FCE9          	BBHDRD         	EQU	$FCE9
+  39:	FD8B          	BBVOID         	EQU	$FD8B
+  40:	FE11          	DISPCH         	EQU	$FE11
+  41:	FE66          	INLINE         	EQU	$FE66
+  42:	FF51          	UASTKB         	EQU	$FF51
+  43:	FD8C          	MMPMAP         	EQU	$FD8C
+  44:	FED4          	INTRDI         	EQU	$FED4
+  45:	FC62          	BBDBOX         	EQU	$FC62
+  46:	FC21          	SCONIN         	EQU	$FC21
+  47:	FC0D          	VCONIN         	EQU	$FC0D
+  48:	FCC1          	BBDIV16        	EQU	$FCC1
+  49:	FCE4          	BBHDWR         	EQU	$FCE4
+  50:	FD99          	MMGETP         	EQU	$FD99
+  51:	FEC3          	INTREN         	EQU	$FEC3
+  52:	FF44          	RLDROM         	EQU	$FF44
+  53:	FCC6          	BBMUL16        	EQU	$FCC6
+  54:	FF4F          	UASTAV         	EQU	$FF4F
+  55:	FDF5          	MOVRGT         	EQU	$FDF5
+  56:	FEDE          	SYTIMR         	EQU	$FEDE
+  57:	FC26          	SCONST         	EQU	$FC26
+  58:	FC12          	VCONST         	EQU	$FC12
+  59:	FF2E          	SRXRSM         	EQU	$FF2E
+  60:	FE24          	SCRTST         	EQU	$FE24
+  61:	FF2A          	SRXSTP         	EQU	$FF2A
+  62:	FD48          	BBEXEC1        	EQU	$FD48
+  63:	FD43          	BBEXEC2        	EQU	$FD43
+  64:	FD3E          	BBEXEC3        	EQU	$FD3E
+  65:	FD39          	BBEXEC4        	EQU	$FD39
+  66:	FD34          	BBEXEC5        	EQU	$FD34
+  67:	FD2F          	BBEXEC6        	EQU	$FD2F
+  68:	FD2A          	BBEXEC7        	EQU	$FD2A
+  69:	FC2B          	BBU0INI        	EQU	$FC2B
+  70:	FC3F          	BBU1INI        	EQU	$FC3F
+  71:	FC85          	BBFREAD        	EQU	$FC85
+  72:	FCFD          	BBEIDCK        	EQU	$FCFD
+  73:	FCEE          	BBHDGEO        	EQU	$FCEE
+  74:	FF81          	BBSTACK        	EQU	$FF81
+  75:	FC80          	BBFHOME        	EQU	$FC80
+  76:	FDB5          	BBCONIN        	EQU	$FDB5
+  77:	FFF0          	SINTVEC        	EQU	$FFF0
+  78:	FE2C          	UPDVIDP        	EQU	$FE2C
+  79:	FE0C          	VBCEXIT        	EQU	$FE0C
+  80:	FF81          	SYSCMLO        	EQU	$FF81
+  81:	FEE7          	VOIDISR        	EQU	$FEE7
+  82:	FDCB          	BBCONST        	EQU	$FDCB
+  83:	FDF9          	EOSTEST        	EQU	$FDF9
+  84:	FE31          	SCRSPOS        	EQU	$FE31
+  85:	FC1C          	SCONOUT        	EQU	$FC1C
+  86:	FDD6          	VCONOUT        	EQU	$FDD6
+  87:	FC1E          	BBJBNK_2       	EQU	$FC1E
+  88:	FC3C          	BBJBNK_3       	EQU	$FC3C
+  89:	FC5A          	BBJBNK_4       	EQU	$FC5A
+  90:	FC78          	BBJBNK_5       	EQU	$FC78
+  91:	FC96          	BBJBNK_6       	EQU	$FC96
+  92:	FCB4          	BBJBNK_7       	EQU	$FCB4
+  93:	FC53          	BBCONOU2       	EQU	$FC53
+  94:	FD20          	BBSYSFN1       	EQU	$FD20
+  95:	FD25          	BBSYSFN2       	EQU	$FD25
+  96:	FCCB          	BBOFFCAL       	EQU	$FCCB
+  97:	FC44          	BBINICTC       	EQU	$FC44
+  98:	FF5D          	BBSTBASE       	EQU	$FF5D
+  99:	FC49          	BBRESCTC       	EQU	$FC49
+ 100:	FC9E          	BBRDTIME       	EQU	$FC9E
+ 101:	FD7B          	BBCALRET       	EQU	$FD7B
+ 102:	FCAD          	BBDMASET       	EQU	$FCAD
+ 103:	FCB2          	BBDSKSEL       	EQU	$FCB2
+ 104:	FCDA          	BBHDINIT       	EQU	$FCDA
+ 105:	FCA8          	BBSECSET       	EQU	$FCA8
+ 106:	FC6C          	BBUPLCHR       	EQU	$FC6C
+ 107:	FC94          	BBPRNCHR       	EQU	$FC94
+ 108:	FC8F          	BBFLOPIO       	EQU	$FC8F
+ 109:	FCB7          	BBSIDSET       	EQU	$FCB7
+ 110:	FCF3          	BBLDPART       	EQU	$FCF3
+ 111:	FC76          	BBRDVDSK       	EQU	$FC76
+ 112:	FC99          	BBWRTIME       	EQU	$FC99
+ 113:	FC4E          	BBSCROLL       	EQU	$FC4E
+ 114:	FC8A          	BBFWRITE       	EQU	$FC8A
+ 115:	FC58          	BBGETCRS       	EQU	$FC58
+ 116:	FD07          	BBGETDSR       	EQU	$FD07
+ 117:	FE3F          	UPDTUREG       	EQU	$FE3F
+ 118:	FC5D          	BBSETCRS       	EQU	$FC5D
+ 119:	FD02          	BBSETDSR       	EQU	$FD02
+ 120:	FC17          	BBCURSET       	EQU	$FC17
+ 121:	FCA3          	BBTRKSET       	EQU	$FCA3
+ 122:	FC7B          	BBWRVDSK       	EQU	$FC7B
+ 123:	FD0C          	BBMVPART       	EQU	$FD0C
+ 124:	FDC0          	BBCONOUT       	EQU	$FDC0
+ 125:	FD16          	BBSYSMON       	EQU	$FD16
+ 126:	FD11          	BBSYSINT       	EQU	$FD11
+ 127:	FD1B          	BBSYSEXT       	EQU	$FD1B
+ 128:	FCDF          	BBDRIVEID      	EQU	$FCDF
+ 129:	FC67          	BBPSNDBLK      	EQU	$FC67
+ 130:	FC03          	BBCRTCINI      	EQU	$FC03
+ 131:	FC71          	BBPRCVBLK      	EQU	$FC71
+ 132:	FC08          	BBCRTFILL      	EQU	$FC08
+ 133:	FCBC          	BBFDRVSEL      	EQU	$FCBC
+ 134:	FCD0          	BBLOGHDRV      	EQU	$FCD0
+ 135:	FCF8          	BBDPRMSET      	EQU	$FCF8
+ 136:	FCD5          	BBCURHDRV      	EQU	$FCD5
+ 137:			;****** EOF ***
+ 138:			
+**** paratest.asm ****
+   6:			
+   7:			
+   8:	0100          		org	$0100
+   9:			
+  10:	0100  AF      		xor	a			; parallel 2 PIO
+  11:	0101  D306    		out	(ppdatctr),a		; chip reset
+  12:	0103  D307    		out	(pphndctr),a		; chip reset
+  13:	0105  3ECF    		ld	a,$cf			; 11-00-1111 mode ctrl word
+  14:	0107  D306    		out	(ppdatctr),a		; data port mode 3
+  15:	0109  08      		ex	af,af'
+  16:	010A  3EFF    		ld	a,$ff			; load bit mask 11111111 (all inputs)
+  17:	010C  D306    		out	(ppdatctr),a		; data port in RX
+  18:	010E  08      		ex	af,af'
+  19:	010F  D307    		out	(pphndctr),a		; resend mode 3 ctrl word to handshake port
+  20:	0111  3E85    		ld	a,10000101b		; bit mask 76543210
+  21:								;          ||||||||- b0 in  (reset_init)
+  22:								;          |||||||-- b1 out (busy)
+  23:								;          ||||||--- b2 in  (strobe)
+  24:								;          |||||---- b3 out (ack)
+  25:								;          ||||----- b4 out (TXRX)
+  26:								;          ||------- b5 out (TX led)
+  27:								;          ||------- b6 out (RX led)
+  28:								;          |-------- b7 in  (unassigned)
+  29:	0113  D307    		out	(pphndctr),a
+  30:	0115  DB05    		in	a,(pphnddat)
+  31:	0117  E685    		and	10000101b		; RX mode and reset handhake and mode leds
+  32:	0119  F660    		or	01100000b
+  33:	011B  D305    		out	(pphnddat),a
+  34:			
+  35:			; ask:
+  36:			; 	call	inline
+  37:			; 	defb	"1 upload, 2 download ",0
+  38:			; 	call	bbconin
+  39:			; 	cp	'1'
+  40:			; 	jr	z,doupl
+  41:			; 	cp	'2'
+  42:			; 	jr	nz,ask
+  43:			; 	jr	ask
+  44:			;
+  45:			; doupl:
+  46:			; 	call	outcrlf
+  47:	011D  21BC02  		ld	hl, tstrwait
+  48:			; 	call	print
+  49:			
+  50:	0000          	if	WITH_OLD_PARA
+  52:			else
+  53:	0120  CD6901  		call	fpp_clr
+  54:	0123  CD7201  		call	fpp_set_rx
+  55:			endif
+  56:	0126  CD8C01  		call	tuplchr		; in hi byte of upload offset
+  57:	0129  67      		ld	h,a
+  58:	012A  CD8C01  		call	tuplchr		; in lo byte of upload offset
+  59:	012D  6F      		ld	l,a
+  60:	012E  CD8C01  		call	tuplchr		; in hi byte of data size
+  61:	0131  47      		ld	b,a
+  62:	0132  CD8C01  		call	tuplchr		; in lo byte of data size
+  63:	0135  4F      		ld	c,a
+  64:			
+  65:	0136  C5      		push	bc
+  66:	0137  E5      		push	hl
+  67:	0138  21CE02  		ld	hl, tstrload
+  68:	013B  CD52FE  		call	print
+  69:	013E  E1      		pop	hl
+  70:			; 	call	h2a
+  71:	013F  CD66FE  		call	inline
+  72:	0142  0D0A0A00		defb	cr,lf,lf,0
+  73:	0146  C1      		pop	bc
+  74:			
+  75:	0147  EB      		ex	de,hl			; put offset in DE
+  76:	0148  CDE301  		call	tprcvblk			; upload data block
+  77:	014B  C5      		push	bc			; save result
+  78:	014C  21DB02  		ld	hl,tmrx
+  79:	014F  CD52FE  		call	print
+  80:	0152  C1      		pop	bc
+  81:	0153  79      		ld	a,c
+  82:	0154  B7      		or	a
+  83:	0155  2809    		jr	z,tpuplok
+  84:	0157  21DF02  		ld	hl, tmnot		; error
+  85:	015A  CD52FE  		call	print
+  86:	015D  C30000  		jp	0
+  87:	0160          	tpuplok:
+  88:	0160  21E402  		ld	hl,tmrdy			; success
+  89:	0163  CD52FE  		call	print
+  90:	0166  C30000  		jp	0
+  91:			
+  92:	0000          	if	WITH_OLD_PARA
+  94:			else
+  95:			;;
+  96:			;; parallel 2 modes
+  97:			;;
+  98:	0169          	fpp_clr:
+  99:	0169  DB05    		in	a,(pphnddat)
+ 100:	016B  E685    		and	10000101b		; RX mode and reset handhake and mode leds
+ 101:	016D  F660    		or	01100000b
+ 102:	016F  D305    		out	(pphnddat),a
+ 103:	0171  C9      		ret
+ 104:			
+ 105:	0172          	fpp_set_rx:
+ 106:	0172  DB05    		in	a,(pphnddat)
+ 107:	0174  CBA7    		res	PB_TXRX,a
+ 108:	0176  CBB7    		res	PL_RX,a
+ 109:	0178  D305    		out	(pphnddat),a
+ 110:	017A  C9      		ret
+ 111:			
+ 112:			
+ 113:			
+ 114:			;
+ 115:			;=======================================================================
+ 116:			;
+ 117:			; Modular Z80 DarkStar (NE Z80) Monitor
+ 118:			;
+ 119:			;=======================================================================
+ 120:			;
+ 121:			; Parallel communication - parallel 2
+ 122:			; ---------------------------------------------------------------------
+ 123:			
+ 124:	017B          	tvdskbuf:
+ 125:	017B .. 0184 00		defs	vdbufsz			; i/o command buffer
+ 126:	0185 .. 0186 00	tszbuf:	defs	2
+ 127:	0187  00      	tcksum:	defb	0
+ 128:	0188  40494F40	ts_vhdr:	defb	"@IO@"
+ 129:			
+ 130:			tPP_SET_RX macro
+ 131:				ld	a,$cf			; 11-00-1111 mode ctrl word
+ 132:				out	(ppdatctr),a		; data port mode 3
+ 133:				ld	a,$ff			; load bit mask 11111111 (all inputs)
+ 134:				out	(ppdatctr),a		; data port in RX
+ 135:				in	a,(pphnddat)
+ 136:				res	PB_TXRX,a
+ 137:				res	PL_RX,a
+ 138:				out	(pphnddat),a
+ 139:				endm
+ 140:			
+ 141:			tPP_SET_TX macro
+ 142:				in	a,(pphnddat)
+ 143:				set	PB_TXRX,a
+ 144:				res	PL_TX,a
+ 145:				out	(pphnddat),a
+ 146:				ld	a,$cf			; 11-00-1111 mode ctrl word
+ 147:				out	(ppdatctr),a		; data port mode 3
+ 148:				ld	a,$00			; load bit mask 00000000 (all outputs)
+ 149:				out	(ppdatctr),a		; data port in RX
+ 150:				endm
+ 151:			
+ 152:			tPP_RDY	macro
+ 153:				in	a,(pphnddat)
+ 154:				set	PB_BUSY,a
+ 155:				res	PB_ACK,a
+ 156:				out	(pphnddat),a
+ 157:				endm
+ 158:			
+ 159:			tPP_NACK	macro
+ 160:				in	a,(pphnddat)
+ 161:				or	00001010b
+ 162:				out	(pphnddat),a
+ 163:				endm
+ 164:			
+ 165:			tPP_STOP	macro
+ 166:				in	a,(pphnddat)
+ 167:				or	00001010b
+ 168:				out	(pphnddat),a
+ 169:				endm
+ 170:			
+ 171:			tPP_OKGO	macro
+ 172:				in	a,(pphnddat)
+ 173:				res	PB_BUSY,a
+ 174:				set	PB_ACK,a
+ 175:				out	(pphnddat),a
+ 176:				endm
+ 177:			
+ 178:			tPP_CLR	macro
+ 179:				in	a,(pphnddat)
+ 180:				and	10000101b		; RX mode and reset handhake and mode leds
+ 181:				or	01100000b
+ 182:				out	(pphnddat),a
+ 183:				endm
+ 184:			
+ 185:			;;
+ 186:			;; get a byte from remote
+ 187:			;;
+ 188:			;; use:
+ 189:			;;	none
+ 190:			;; return:
+ 191:			;;	A  - received byte
+ 192:			
+ 193:	018C          	tuplchr:
+ 194:	018C  DB05    		in	a, (pphnddat)		; wait for remote ready to tx
+ 195:	018E  CB47    		bit	PB_INIT, a
+ 196:	0190  C0      		ret	nz
+ 197:	0191  CB57    		bit	PB_STRB, a
+ 198:	0193  20F7    		jr	nz, tuplchr
+ 199:			
+ 200:	0195  C5      		push	bc
+ 201:			; 	ld	a, ppurdy		; signal ready to receive
+ 202:			; 	out	(pphnddat), a
+ 203:	0196          		tPP_RDY
+ 203:	0196  DB05    		in	a,(pphnddat)
+ 203:	0198  CBCF    		set	pb_busy,a
+ 203:	019A  CB9F    		res	pb_ack,a
+ 203:	019C  D305    		out	(pphnddat),a
+ 203:	019E          		endm
+ 203:			
+ 204:	019E          	tupwstrb:
+ 205:	019E  DB05    		in	a, (pphnddat)		; wait for data
+ 206:	01A0  CB57    		bit	PB_STRB, a
+ 207:	01A2  28FA    		jr	z, tupwstrb
+ 208:			
+ 209:	01A4  DB04    		in	a,(ppdatdat)
+ 210:	01A6  4F      		ld	c, a			; copy on C (return value)
+ 211:			
+ 212:			; 	ld	a, ppuokg		; let's remote run...
+ 213:			; 	out	(pphnddat), a
+ 214:	01A7          		tPP_OKGO
+ 214:	01A7  DB05    		in	a,(pphnddat)
+ 214:	01A9  CB8F    		res	pb_busy,a
+ 214:	01AB  CBDF    		set	pb_ack,a
+ 214:	01AD  D305    		out	(pphnddat),a
+ 214:	01AF          		endm
+ 214:			
+ 215:	01AF  0620    		ld	b,$20			; <---- tunable
+ 216:	01B1  00      	tupwdly:	nop
+ 217:	01B2  10FD    		djnz	tupwdly
+ 218:	01B4  DB05    		in	a, (pphnddat)		; in remote answer
+ 219:	01B6  CB47    		bit	PB_INIT, a		; check for stop requests
+ 220:	01B8  79      		ld	a,c
+ 221:	01B9  C1      		pop	bc
+ 222:	01BA  C9      		ret
+ 223:			
+ 224:			;--------------------
+ 225:			;; Routines to manage data send (download) over parallel port
+ 226:			;;
+ 227:			;; PSNDCH - send a byte over parallel
+ 228:			;;
+ 229:			;; use:
+ 230:			;; HL - point to byte to transfer (updated after exec)
+ 231:			;; unclean register usage: A, DE
+ 232:	01BB          	tpsndch:
+ 233:	01BB  DB05    		in	a, (pphnddat)		; wait synchro strobe from remote
+ 234:	01BD  CB57    		bit	PB_STRB, a
+ 235:	01BF  20FA    		jr	nz, tpsndch
+ 236:			
+ 237:	01C1  7E      		ld	a, (hl)
+ 238:	01C2  D304    		out	(ppdatdat), a		; out data and then emit ready signal
+ 239:	01C4  23      		inc	hl
+ 240:			; 	ld	a, ppdrdy
+ 241:			; 	out	(pphnddat), a
+ 242:	01C5          		tPP_RDY
+ 242:	01C5  DB05    		in	a,(pphnddat)
+ 242:	01C7  CBCF    		set	pb_busy,a
+ 242:	01C9  CB9F    		res	pb_ack,a
+ 242:	01CB  D305    		out	(pphnddat),a
+ 242:	01CD          		endm
+ 242:			
+ 243:								;; remote should reset strobe when PPDRDY is get...
+ 244:	01CD          	tpwackb:
+ 245:	01CD  DB05    		in	a, (pphnddat)		; wait ack from remote
+ 246:	01CF  CB47    		bit	PB_INIT, a
+ 247:	01D1  28FA    		jr	z, tpwackb
+ 248:			
+ 249:			; 	ld	a, ppdokg		; reset ready bit and let remote run waiting 1 msec.
+ 250:			; 	out	(pphnddat), a
+ 251:	01D3          		tPP_OKGO
+ 251:	01D3  DB05    		in	a,(pphnddat)
+ 251:	01D5  CB8F    		res	pb_busy,a
+ 251:	01D7  CBDF    		set	pb_ack,a
+ 251:	01D9  D305    		out	(pphnddat),a
+ 251:	01DB          		endm
+ 251:			
+ 252:								;; remote should reset ack when PPDOKG is get...
+ 253:	01DB  C5      		push	bc
+ 254:	01DC  0620    		ld	b,$20			; <---- tunable
+ 255:	01DE  00      	tpswdly:	nop
+ 256:	01DF  10FD    		djnz	tpswdly
+ 257:	01E1  C1      		pop	bc
+ 258:	01E2  C9      		ret
+ 259:			
+ 260:			;
+ 261:			;; PRCVBLK - upload a block through parallel link
+ 262:			;;
+ 263:			;; use:
+ 264:			;;	DE - offset of storage area
+ 265:			;;	BC - block size
+ 266:			;; unclean register usage: A, HL, IY
+ 267:			;; return:
+ 268:			;; C: Rx status 0 = ok >0 = error
+ 269:	01E3          	tprcvblk:
+ 270:	01E3  F5      		push	af
+ 271:	01E4  EB      		ex	de,hl			; offset in HL
+ 272:			; 	ld	a, ppuini		; init parallel port for rx
+ 273:			; 	out	(pphnddat),a
+ 274:	01E5          		tPP_CLR
+ 274:	01E5  DB05    		in	a,(pphnddat)
+ 274:	01E7  E685    		and	10000101b		; rx mode and reset handhake and mode leds
+ 274:	01E9  F660    		or	01100000b
+ 274:	01EB  D305    		out	(pphnddat),a
+ 274:	01ED          		endm
+ 274:			
+ 275:	01ED          		tPP_SET_RX
+ 275:	01ED  3ECF    		ld	a,$cf			; 11-00-1111 mode ctrl word
+ 275:	01EF  D306    		out	(ppdatctr),a		; data port mode 3
+ 275:	01F1  3EFF    		ld	a,$ff			; load bit mask 11111111 (all inputs)
+ 275:	01F3  D306    		out	(ppdatctr),a		; data port in rx
+ 275:	01F5  DB05    		in	a,(pphnddat)
+ 275:	01F7  CBA7    		res	pb_txrx,a
+ 275:	01F9  CBB7    		res	pl_rx,a
+ 275:	01FB  D305    		out	(pphnddat),a
+ 275:	01FD          		endm
+ 275:			
+ 276:	01FD  118701  		ld	de,tcksum
+ 277:	0200  AF      		xor	a			; used to calc chetcksum
+ 278:	0201  12      		ld	(de),a
+ 279:	0202  CD8C01  		call	tuplchr			; get two bytes of block size
+ 280:	0205  328501  		ld	(tszbuf),a
+ 281:	0208  CD8C01  		call	tuplchr
+ 282:	020B  328601  		ld	(tszbuf+1),a
+ 283:	020E  FD2A8501		ld	iy,(tszbuf)		; IY count from remote size
+ 284:	0212  CD8C01  	tprbloo:	call	tuplchr			; begin real transfer
+ 285:	0215  2022    		jr	nz, tprnak		; stopped here: error!
+ 286:	0217  77      		ld	(hl),a			; store data
+ 287:	0218  1A      		ld	a,(de)			; update csum
+ 288:	0219  86      		add	a,(hl)
+ 289:	021A  12      		ld	(de),a
+ 290:	021B  23      		inc	hl
+ 291:	021C  FD2B    		dec	iy
+ 292:	021E  0B      		dec	bc			; check for upload end
+ 293:	021F  78      		ld	a,b
+ 294:	0220  B1      		or	c
+ 295:	0221  20EF    		jr	nz,tprbloo		; next
+ 296:	0223  FD228501		ld	(tszbuf),iy		; receive buffer full
+ 297:	0227  ED4B8501		ld	bc,(tszbuf)
+ 298:	022B  78      		ld	a,b			; received size match?
+ 299:	022C  B1      		or	c
+ 300:	022D  200A    		jr	nz, tprnak		; no
+ 301:	022F  CD8C01  		call	tuplchr			; flush sender waiting chetcksum byte
+ 302:	0232  47      		ld	b,a
+ 303:	0233  1A      		ld	a,(de)			; block end: calc. final csum
+ 304:	0234  2F      		cpl
+ 305:	0235  3C      		inc	a
+ 306:	0236  B8      		cp	b			; match ?
+ 307:	0237  2808    		jr	z, tprbend		; yes: exit
+ 308:	0239          	tprnak:
+ 309:			; 	ld	a,ppuack		; send negative aknowledge
+ 310:			; 	out	(pphnddat),a
+ 311:	0239          		tPP_NACK
+ 311:	0239  DB05    		in	a,(pphnddat)
+ 311:	023B  F60A    		or	00001010b
+ 311:	023D  D305    		out	(pphnddat),a
+ 311:	023F          		endm
+ 311:			
+ 312:	023F  0E01    		ld	c, 1			; rx error
+ 313:	0241  110500  	tprbend:	ld	de, 5			; 5 msec wait
+ 314:	0244  CDA6FD  		call	delay
+ 315:			; 	ld	a, ppuini		; clean handshake
+ 316:			; 	out	(pphnddat), a
+ 317:	0247          		tPP_CLR
+ 317:	0247  DB05    		in	a,(pphnddat)
+ 317:	0249  E685    		and	10000101b		; rx mode and reset handhake and mode leds
+ 317:	024B  F660    		or	01100000b
+ 317:	024D  D305    		out	(pphnddat),a
+ 317:	024F          		endm
+ 317:			
+ 318:	024F  F1      		pop	af
+ 319:	0250  C9      		ret
+ 320:			
+ 321:			;;
+ 322:			;; PSNDBLK - send a block over parallel link
+ 323:			;;
+ 324:			;; use:
+ 325:			;; DE - point to the base of block to transfer
+ 326:			;; BC - block size
+ 327:			;; unclean register usage: A, HL
+ 328:			;; return:
+ 329:			;; C: Tx status 0 = ok >0 = error
+ 330:			;;
+ 331:	0251          	tpsndblk:
+ 332:	0251  F5      		push	af
+ 333:	0252  EB      		ex	de,hl			; offset in HL
+ 334:	0253  118701  		ld	de,tcksum
+ 335:	0256  AF      		xor	a			; will carry the chetcksum
+ 336:	0257  12      		ld	(de),a
+ 337:	0258  ED438501		ld	(tszbuf), bc		; store block size to send it
+ 338:			; 	ld	a, ppdini		; setup port for tx
+ 339:			; 	out	(pphnddat), a
+ 340:	025C          		tPP_CLR
+ 340:	025C  DB05    		in	a,(pphnddat)
+ 340:	025E  E685    		and	10000101b		; rx mode and reset handhake and mode leds
+ 340:	0260  F660    		or	01100000b
+ 340:	0262  D305    		out	(pphnddat),a
+ 340:	0264          		endm
+ 340:			
+ 341:	0264          		tPP_SET_TX
+ 341:	0264  DB05    		in	a,(pphnddat)
+ 341:	0266  CBE7    		set	pb_txrx,a
+ 341:	0268  CBAF    		res	pl_tx,a
+ 341:	026A  D305    		out	(pphnddat),a
+ 341:	026C  3ECF    		ld	a,$cf			; 11-00-1111 mode ctrl word
+ 341:	026E  D306    		out	(ppdatctr),a		; data port mode 3
+ 341:	0270  3E00    		ld	a,$00			; load bit mask 00000000 (all outputs)
+ 341:	0272  D306    		out	(ppdatctr),a		; data port in rx
+ 341:	0274          		endm
+ 341:			
+ 342:	0274  E5      		push	hl			; save DMA in HL
+ 343:	0275  218501  		ld	hl, tszbuf
+ 344:	0278  CDBB01  		call	tpsndch			; send len. lsb
+ 345:	027B  CDBB01  		call	tpsndch			; send len. msb
+ 346:	027E  E1      		pop	hl			; restore HL
+ 347:	027F          	tpsnxtc:
+ 348:	027F  1A      		ld	a,(de)
+ 349:	0280  86      		add	a,(hl)			; block bytes summing
+ 350:	0281  12      		ld	(de),a
+ 351:	0282  CDBB01  		call	tpsndch			; send byte
+ 352:	0285  0B      		dec	bc			; check for transfer end
+ 353:	0286  78      		ld	a, b
+ 354:	0287  B1      		or	c
+ 355:	0288  20F5    		jr	nz, tpsnxtc
+ 356:	028A  1A      		ld	a,(de)			; block end: calc. final csum
+ 357:	028B  2F      		cpl
+ 358:	028C  3C      		inc	a
+ 359:	028D  218501  		ld	hl, tszbuf		; store in first byte of SZBUF
+ 360:	0290  77      		ld	(hl),a
+ 361:	0291  CDBB01  		call	tpsndch			; send csum
+ 362:	0294  112200  		ld	de, 34			; 34 more msec. to get okgo
+ 363:	0297  CDA6FD  		call	delay
+ 364:			; 	ld	a, ppdstp
+ 365:			; 	out	(pphnddat), a
+ 366:	029A          		tPP_STOP
+ 366:	029A  DB05    		in	a,(pphnddat)
+ 366:	029C  F60A    		or	00001010b
+ 366:	029E  D305    		out	(pphnddat),a
+ 366:	02A0          		endm
+ 366:			
+ 367:	02A0  112300  		ld	de, 35			; 35 msec. to stop remote
+ 368:	02A3  CDA6FD  		call	delay
+ 369:			; 	ld	a, ppuini
+ 370:			; 	out	(pphnddat), a		; leave parallel clean
+ 371:	02A6          		tPP_CLR
+ 371:	02A6  DB05    		in	a,(pphnddat)
+ 371:	02A8  E685    		and	10000101b		; rx mode and reset handhake and mode leds
+ 371:	02AA  F660    		or	01100000b
+ 371:	02AC  D305    		out	(pphnddat),a
+ 371:	02AE          		endm
+ 371:			
+ 372:	02AE  0E00    		ld	c, 0			; ret ok (maybe)
+ 373:	02B0  DB05    		in	a, (pphnddat)		; in result code
+ 374:	02B2  E60A    		and	00001010b		; mask
+ 375:	02B4  FE0A    		cp	00001010b		; init and strobe set ?
+ 376:	02B6  2002    		jr	nz, tpsbok
+ 377:	02B8  0E01    		ld	c, 1			; ret nok on reg. C
+ 378:	02BA          	tpsbok:
+ 379:	02BA  F1      		pop	af
+ 380:	02BB  C9      		ret
+ 381:			
+ 382:			; ;----------------------------------------------------------
+ 383:			; ; PC-LINKED VIRTUAL DISK HANDLE ROUTINES
+ 384:			; ; ---------------------------------------------------------
+ 385:			; ;;
+ 386:			; ;; VDSKRD - read a sector form remote
+ 387:			; ;;
+ 388:			; ;; use:
+ 389:			; ;;	none
+ 390:			; ;; unclean register usage: A, IY
+ 391:			;
+ 392:			; vdskrd:
+ 393:			; 	push	iy
+ 394:			; 	push	de
+ 395:			; 	push	bc
+ 396:			; 	push	hl
+ 397:			; 	ld	d, 2			; retries
+ 398:			; vdrtry:	ld	iy, tvdskbuf
+ 399:			; 	ld	hl, ts_vhdr
+ 400:			; 	ld	b, 4
+ 401:			; vdrsl1: ld	c, (hl)
+ 402:			; 	ld	(iy + 0), c
+ 403:			; 	inc	iy
+ 404:			; 	inc	hl
+ 405:			; 	djnz	vdrsl1
+ 406:			;
+ 407:			; 	ld	c, vdrdsec		; read command
+ 408:			; 	ld	(iy + 0), c
+ 409:			; 	ld	hl, fdrvbuf
+ 410:			; 	ld	c, (hl)			; drive
+ 411:			; 	ld	(iy + 1), c
+ 412:			; 	ld	bc, (fsecbuf)		; sector
+ 413:			; 	dec	bc			; base sector # is zero...
+ 414:			; 	ld	(iy + 2), c
+ 415:			; 	ld	(iy + 3), b
+ 416:			; 	ld	bc, (ftrkbuf)		; track
+ 417:			; 	ld	(iy + 4), c
+ 418:			; 	ld	(iy + 5), b
+ 419:			;
+ 420:			; 	push	de
+ 421:			; 	ld	de, tvdskbuf		; command offset
+ 422:			; 	ld	bc, vdbufsz		; block size
+ 423:			; 	call	tpsndblk			; send command block
+ 424:			; 	pop	de
+ 425:			; 	ld	a, c
+ 426:			; 	or	a			; what happens ?
+ 427:			; 	jr	z, vdrok		; tx ok
+ 428:			; 	dec	d			; retry ?
+ 429:			; 	jr	nz, vdrtry
+ 430:			; 	ld	a, 1			; ret tx err
+ 431:			; 	jr	vdrnok
+ 432:			; 					; receive sector now
+ 433:			; vdrok:	push	de
+ 434:			; 	ld	de, (frdpbuf)		; set dma address
+ 435:			; 	ld	bc,(csptr+2)
+ 436:			; 	call	tprcvblk			; download sector
+ 437:			; 	pop	de
+ 438:			; 	ld	a, c
+ 439:			; 	or	a			; what happens ?
+ 440:			; 	jr	z, vdrend		; rx ok
+ 441:			; 	dec	d			; retry ?
+ 442:			; 	jr	nz, vdrtry
+ 443:			; 	ld	a, 1			; ret rx err
+ 444:			; 	jr	vdrnok
+ 445:			; vdrend:	xor	a
+ 446:			; vdrnok:	pop 	hl
+ 447:			; 	pop	bc
+ 448:			; 	pop	de
+ 449:			; 	pop	iy
+ 450:			; 	ret
+ 451:			;
+ 452:			; ;;
+ 453:			; ;; VDSKWR - write a sector to remote
+ 454:			; ;;
+ 455:			; ;; use:
+ 456:			; ;;	none
+ 457:			; ;; unclean register usage: A
+ 458:			;
+ 459:			; vdskwr:
+ 460:			; 	push	iy
+ 461:			; 	push	de
+ 462:			; 	push	bc
+ 463:			; 	push	hl
+ 464:			; 	ld	d, 2			; retries
+ 465:			; vdwtry:	ld	iy, tvdskbuf
+ 466:			; 	ld	hl, ts_vhdr
+ 467:			; 	ld	b, 4
+ 468:			; vdwsl1: ld	c, (hl)
+ 469:			; 	ld	(iy + 0), c
+ 470:			; 	inc	iy
+ 471:			; 	inc	hl
+ 472:			; 	djnz	vdwsl1
+ 473:			;
+ 474:			; 	ld	c, vdwrsec		; read command
+ 475:			; 	ld	(iy + 0), c
+ 476:			; 	ld	hl, fdrvbuf
+ 477:			; 	ld	c, (hl)			; drive
+ 478:			; 	ld	(iy + 1), c
+ 479:			; 	ld	bc, (fsecbuf)		; sector
+ 480:			; 	dec	bc			; base sector # is zero...
+ 481:			; 	ld	(iy + 2), c
+ 482:			; 	ld	(iy + 3), b
+ 483:			; 	ld	bc, (ftrkbuf)		; track
+ 484:			; 	ld	(iy + 4), c
+ 485:			; 	ld	(iy + 5), b
+ 486:			;
+ 487:			; 	push	de
+ 488:			; 	ld	de, tvdskbuf		; command offset
+ 489:			; 	ld	bc, vdbufsz		; block size
+ 490:			; 	call	tpsndblk			; send command block
+ 491:			; 	pop	de
+ 492:			; 	ld	a, c
+ 493:			; 	or	a			; what happens ?
+ 494:			; 	jr	z, vdwok		; tx ok
+ 495:			; 	dec	d			; retry ?
+ 496:			; 	jr	nz, vdwtry
+ 497:			; 	ld	a, 1			; ret tx err
+ 498:			; 	jr	vdwnok
+ 499:			; 					; receive sector now
+ 500:			; vdwok:	push	de
+ 501:			; 	ld	de, (frdpbuf)		; set dma address
+ 502:			; 	ld	bc, (csptr+2)		; vdisk sector length
+ 503:			; 	call	tpsndblk			; upload sector
+ 504:			; 	pop	de
+ 505:			; 	ld	a, c
+ 506:			; 	or	a			; what happens ?
+ 507:			; 	jr	z, vdwend		; tx ok
+ 508:			; 	dec	d			; retry ?
+ 509:			; 	jr	nz, vdwtry
+ 510:			; 	ld	a, 1			; ret tx err
+ 511:			; 	jr	vdwnok
+ 512:			; vdwend:	ld	a, 0
+ 513:			; vdwnok:	pop 	hl
+ 514:			; 	pop	bc
+ 515:			; 	pop	de
+ 516:			; 	pop	iy
+ 517:			; 	ret
+ 518:			
+ 519:	02BC          	tstrwait:
+ 520:	02BC  57616974		defb	"Waiting host...  ",0
+	      696E6720
+	      686F7374
+	      2E2E2E20
+	      2000
+ 521:	02CE          	tstrload:
+ 522:	02CE  6C6F6164		defb	"loading at: ",0
+	      696E6720
+	      61743A20
+	      00
+ 523:			
+ 524:	02DB  52782000	tmrx:	defb	"Rx",' ',0
+ 525:			
+ 526:	02DF  6661696C	tmnot:	defb	"fail",0
+	      00
+ 527:	02E4  6F6B2000	tmrdy:	defb	"ok",' ',0
+ 528:			
+ 529:			
+
+
+
+Statistics:
+
+     5	passes
+     0	jr promotions
+   438	symbols
+     0	bytes
+
+    12	macro calls
+   847	macro bytes
+     0	invented symbols
+
+
+
+Symbol Table:
+
+altprnprt      =  ff+    ctc1tc25hz     =  13+    regcylmsb      =   d+    
+appbuf         =  2d+    ctc1tc2hz      =  f4+    regdata        =   8+    
+bbappp         =   e+    ctc1tc50hz     =   a+    regerr         =   9+    
+bbbase         =f000+    ctcbase        =  e8+    regseccnt      =   a+    
+bbcalret       =fd7b+    ctcchan0       =  e8+    regsector      =   b+    
+bbcbank        =   c+    ctcchan1       =  e9+    regshd         =   e+    
+bbcomn         =fc00+    ctcchan2       =  ea+    regstatus      =   f+    
+bbconin        =fdb5+    ctcchan3       =  eb+    rldrom         =ff44+    
+bbconou2       =fc53+    curpbuf        =  48+    rpch           =fe6c+    
+bbconout       =fdc0+    cursoroff      =  20+    rsrvbuf        =  2f+    
+bbconst        =fdcb+    cursoron       =  6a+    rst7sp1        =  38+    
+bbcrtcini      =fc03+    cursshp        =  4a+    rst7sp2        =  39+    
+bbcrtfill      =fc08+    delay          =fda6+    rst7sp3        =  3a+    
+bbcstck        =   d+    dgclp0         =fe12+    rtbsiz         = 640+    
+bbcurhdrv      =fcd5+    dispch         =fe11+    sconin         =fc21+    
+bbcurset       =fc17+    dly1           =fdaa+    sconout        =fc1c+    
+bbdbox         =fc62+    dly2           =fda8+    sconst         =fc26+    
+bbdebug        =ffff+    dostx          =ff30+    scrspos        =fe31+    
+bbdiv16        =fcc1+    dselbf         =  4e+    scrtst         =fe24+    
+bbdmaset       =fcad+    eep29c         =   4+    sintvec        =fff0+    
+bbdprmset      =fcf8+    eep29ee        =   1+    srxrsm         =ff2e+    
+bbdriveid      =fcdf+    eep29xe        =   2+    srxstp         =ff2a+    
+bbdsksel       =fcb2+    eepage0        =  c0+    subrel         =  30+    
+bbeidck        =fcfd+    eeproglock     =  10+    syscmlo        =ff81+    
+bbexec         =fd4b+    eepsta         =f000+    syshertz       =  13+    
+bbexec1        =fd48+    eepunsupp      =   8+    sytimr         =fede+    
+bbexec2        =fd43+    eerineprom     =  80+    tblblk         =  28+    
+bbexec3        =fd3e+    endvid         = 7cf+    tcksum           187     
+bbexec4        =fd39+    eostest        =fdf9+    tdesclen       =  15+    
+bbexec5        =fd34+    esc            =  1b+    tiaddrlen      =   5+    
+bbexec6        =fd2f+    false          =   0+    timrcon        =  27+    
+bbexec7        =fd2a+    fdcbase        =  d0+    tmnot            2df     
+bbfdrvsel      =fcbc+    fdccmdstatr    =  d0+    tmpbyte        =  4b+    
+bbfhome        =fc80+    fdcdatareg     =  d7+    tmrdy            2e4     
+bbflopio       =fc8f+    fdcdrvrcnt     =  d6+    tmrx             2db     
+bbfread        =fc85+    fdcreadc       =  88+    tnamelen       =   9+    
+bbfwrite       =fc8a+    fdcreset       =  d0+    tpa            = 100+    
+bbgetcrs       =fc58+    fdcrestc       =   7+    tpagelen       =   3+    
+bbgetdsr       =fd07+    fdcsectreg     =  d2+    tpp_clr          2db     
+bbhdgeo        =fcee+    fdcseekc       =  16+    tpp_nack         221     
+bbhdinit       =fcda+    fdctrakreg     =  d1+    tpp_okgo         293     
+bbhdrd         =fce9+    fdcwritc       =  a8+    tpp_rdy          1d9     
+bbhdwr         =fce4+    fdrvbuf        =  45+    tpp_set_rx         0     
+bbimgp         =   4+    ff             =   c+    tpp_set_tx        ec     
+bbinictc       =fc44+    fifblok        =  13+    tpp_stop         25a     
+bbjbnk_2       =fc1e+    fifoend        =  22+    tprbend          241     
+bbjbnk_3       =fc3c+    fifosto        =   f+    tprbloo          212     
+bbjbnk_4       =fc5a+    fifou0         =   f+    tprcvblk         1e3     
+bbjbnk_5       =fc78+    fifsize        =  10+    tprnak           239     
+bbjbnk_6       =fc96+    fin            =fe81+    tpsbok           2ba     
+bbjbnk_7       =fcb4+    fixblock       =   0+    tpsndblk         251+    
+bbldpart       =fcf3+    fout           =fea2+    tpsndch          1bb     
+bbloghdrv      =fcd0+    fpp_clr          169     tpsnxtc          27f     
+bbmul16        =fcc6+    fpp_set_rx       172     tpswdly          1de     
+bbmvpart       =fd0c+    frdpbuf        =  41+    tpuplok          160     
+bbnpages       =   8+    fsecbuf        =  43+    tpwackb          1cd     
+bboffcal       =fccb+    fsekbuf        =  3f+    trnpag         =   d+    
+bbpag          =   f+    fstat          =fe72+    true           =ffff+    
+bbprcvblk      =fc71+    ftrkbuf        =  46+    ts_vhdr          188+    
+bbprnchr       =fc94+    hmempag        =   b+    tsizelen       =   2+    
+bbpsndblk      =fc67+    idea0line      =   1+    tstrload         2ce     
+bbrdtime       =fc9e+    idea1line      =   2+    tstrwait         2bc     
+bbrdvdsk       =fc76+    idea2line      =   4+    tszbuf           185     
+bbresctc       =fc49+    idecs0line     =   8+    tuplchr          18c     
+bbscroll       =fc4e+    idecs1line     =  10+    tupwdly          1b1     
+bbsecset       =fca8+    idemserror     =  ff+    tupwstrb         19e     
+bbsetcrs       =fc5d+    idenone        =   2+    tvdskbuf         17b+    
+bbsetdsr       =fd02+    ideporta       =  e0+    tx0            =ff38+    
+bbsidset       =fcb7+    ideportb       =  e1+    u0defspeed     =   6+    
+bbstack        =ff81+    ideportc       =  e2+    u0isr          =feea+    
+bbstbase       =ff5d+    ideportctrl    =  e3+    u1defspeed     =   c+    
+bbsysext       =fd1b+    iderdline      =  40+    u1isr          =ff1d+    
+bbsysfn1       =fd20+    ideready       =   0+    u1nul          =ff26+    
+bbsysfn2       =fd25+    iderstline     =  80+    uart0          =  c0+    
+bbsysint       =fd11+    idewrline      =  20+    uart0base      =  c0+    
+bbsysmon       =fd16+    iedtbuf        =  80+    uart0br        =  2b+    
+bbtrkset       =fca3+    iedtfil        =  2d+    uart1          =  c8+    
+bbu0ini        =fc2b+    imtpag         =  ff+    uart115k2      =   1+    
+bbu1ini        =fc3f+    imtsiz         = 800+    uart1200       =  60+    
+bbu1rx         =fc35+    inline         =fe66+    uart19k2       =   6+    
+bbu1st         =fc3a+    intrdi         =fed4+    uart1base      =  c8+    
+bbu1tx         =fc30+    intren         =fec3+    uart1br        =  2a+    
+bbuplchr       =fc6c+    iobyte         =   3+    uart2400       =  30+    
+bbvoid         =fd8b+    kbdbyte        =  4d+    uart38k4       =   3+    
+bbwrtime       =fc99+    keybstrbbit    =   7+    uart4800       =  18+    
+bbwrvdsk       =fc7b+    lf             =   a+    uart57k6       =   2+    
+beep           =   7+    maxblk         =  28+    uart9600       =   c+    
+bldoffs        =3000+    menaprt        =  21+    uastav         =ff4f+    
+blifastblok    =  60+    miobyte        =  4c+    uastkb         =ff51+    
+blifastline    =  6a+    mmgetp         =fd99+    ufifo1         =   7+    
+blislowblok    =  40+    mmpmap         =fd8c+    ufifo14        =  c7+    
+blislowline    =  4a+    mmtpapag       =  ef+    ufifo4         =  47+    
+bs             =   8+    mmuport        =  20+    ufifo8         =  87+    
+btpasiz        =   6+    mmutstaddr     =d000+    uisre          =ff12+    
+cdisk          =   4+    mmutstpage     =   d+    uisri          =fefc+    
+ceol           =   f+    mondelay       =   a+    uisrs          =ff0f+    
+ceop           =   e+    monmaj         =  35+    updtureg       =fe3f+    
+clkio          =   6+    monmin         =  31+    updvidp        =fe2c+    
+clkrst         =   7+    movrgt         =fdf5+    vbcexit        =fe0c+    
+clksclk        =   5+    mscnt          =  f6+    vc00           =fdee+    
+cmdid          =  ec+    mzmac          =   1+    vc01           =fdf2+    
+cmdinit        =  91+    para2_base     =   4+    vconin         =fc0d+    
+cmdread        =  20+    pb_ack         =   3+    vconout        =fdd6+    
+cmdrecal       =  10+    pb_busy        =   1+    vconst         =fc12+    
+cmdspindown    =  e0+    pb_init        =   0+    vdbufsz        =   a+    
+cmdspinup      =  e1+    pb_strb        =   2+    vdrdsec        =   0+    
+cmdwrite       =  30+    pb_txrx        =   4+    vdwrsec        =   1+    
+cnfbyte        =  26+    pio2bit2       =   2+    vi0            =fff0+    
+colbuf         =  4f+    pio2bit3       =   3+    vi1            =fff2+    
+copsys         =  2c+    pio2bit4       =   4+    vi2            =fff4+    
+cout00         =fe05+    pl_rx          =   6+    vi3            =fff6+    
+cr             =   d+    pl_tx          =   5+    vi4            =fff8+    
+crof           =   4+    ppdatctr       =   6+    vi5            =fffa+    
+cron           =   5+    ppdatdat       =   4+    vi6            =fffc+    
+crt6545adst    =  8c+    pphndctr       =   7+    vi7            =fffe+    
+crt6545data    =  8d+    pphnddat       =   5+    voidisr        =fee7+    
+crtbase        =  80+    print          =fe52+    vr0.hrtot      =   0+    
+crtbeepport    =  8f+    print0         =fe54+    vr1.hrdis      =   1+    
+crtblinkbit    =   0+    print1         =fe63+    vr10.crstart   =   a+    
+crthilitbit    =   3+    prntbusybit    =   0+    vr11.crend     =   b+    
+crtkeybcnt     =  87+    prvtop         =  4f+    vr12.dstarth   =   c+    
+crtkeybdat     =  85+    r0brdl         =   0+    vr13.dstartl   =   d+    
+crtmodebit     =   4+    r0rxtx         =   0+    vr14.curposh   =   e+    
+crtprntcnt     =  83+    r1brdm         =   1+    vr15.curposl   =   f+    
+crtprntdat     =  81+    r1ier          =   1+    vr16.lpenh     =  10+    
+crtram0cnt     =  82+    r2fcr          =   2+    vr17.lpenl     =  11+    
+crtram0dat     =  80+    r2iir          =   2+    vr18.updaddrh  =  12+    
+crtram1cnt     =  86+    r3lcr          =   3+    vr19.updaddrl  =  13+    
+crtram1dat     =  84+    r4mcr          =   4+    vr2.hrsyncpos  =   2+    
+crtram2cnt     =  8a+    r5lsr          =   5+    vr3.hrvrsyncw  =   3+    
+crtram2dat     =  88+    r6msr          =   6+    vr31.dummy     =  1f+    
+crtram3port    =  8e+    r7spr          =   7+    vr4.vrchrow    =   4+    
+crtrevrsbit    =   1+    ram0buf        =  3b+    vr5.vradj      =   5+    
+crtservcnt     =  8b+    ram1buf        =  3c+    vr6.vrdisrows  =   6+    
+crtservdat     =  89+    ram2buf        =  3d+    vr7.vrsyncpos  =   7+    
+crtunderbit    =   2+    ram3buf        =  3e+    vr8.crtmode    =   8+    
+crtwidthbit    =   1+    ramtbl         =e000+    vr9.scanlines  =   9+    
+ctc0tc         =  29+    readcfg8255    =  92+    vstabuf        =  36+    
+ctc0tchi       =  20+    regastatus     =  16+    with_old_para  =   0+    
+ctc1tc         =  28+    regcommand     =   f+    writecfg8255   =  80+    
+ctc1tc100hz    =   5+    regcontrol     =  16+    xofc           =  13+    
+ctc1tc10hz     =  30+    regcyllsb      =   c+    xonc           =  11+    

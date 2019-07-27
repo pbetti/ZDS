@@ -1,0 +1,1111 @@
+   1:			;	NAME	'Dallas DS-1302 Clock Set/Read Utility'
+   2:			
+   3:			; Original copyright follows
+   4:			;=======================================================================;
+   5:			;									;
+   6:			;  Written by Harold F Bower <HalBower@msn.com>, and contributed to	;
+   7:			;  the P112 software pool.						;
+   8:			;                                                                       ;
+   9:			;  Modified by Hector Peraza to allow setting MP/M system clock from	;
+  10:			;  CMOS clock, and to allow both mm/dd/yy and dd.mm.yy date formats.	;
+  11:			;  The program now also sets the DOW properly, instead of forcing it	;
+  12:			;  to 1.								;
+  13:			;									;
+  14:			;  This program is free software; you can redistribute it and/or	;
+  15:			;  modify it under the terms of the GNU General Public License		;
+  16:			;  as published by the Free Software Foundation; either version 2	;
+  17:			;  of the License, or (at your option) any later version.		;
+  18:			;									;
+  19:			;  This program is distributed in the hope that it will be useful,	;
+  20:			;  but WITHOUT ANY WARRANTY; without even the implied warranty of	;
+  21:			;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the	;
+  22:			;  GNU General Public License for more details.				;
+  23:			;									;
+  24:			;  You should have received a copy of the GNU General Public License	;
+  25:			;  along with this program; if not, write to the Free Software		;
+  26:			;  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.		;
+  27:			;									;
+  28:			;=======================================================================;
+  29:			
+  30:			; link to DarkStar Monitor symbols...
+  31:			rsym bios.sym
+  32:			
+  33:			
+  34:	000D          	CR	EQU	0DH
+  35:	000A          	LF	EQU	0AH
+  36:	0080          	CMDLN	EQU	$0080		;
+  37:			
+  38:	0100          		ORG TPA
+  39:			
+  40:	0100  ED730E08	BEGIN:	LD	(STACK),SP
+  41:	0104  310E08  		LD	SP,STACK
+  42:	0107  219103  		LD	HL,EXIT
+  43:	010A  E5      		PUSH	HL		; Push Exit address on stack
+  44:	010B  3A8000  		LD	A,(CMDLN)	; Parse command line
+  45:	010E  B7      		OR	A		; Check for empty console buffer
+  46:	010F  CA6204  		JP	Z,RTCREAD	; empty: jump to read
+  47:	0112  218100  		LD	HL,CMDLN+1	; go on...
+  48:	0115  CD5B04  		CALL	SKIP		; Skip leading spaces
+  49:	0118  B7      		OR	A		; Anything entered?
+  50:	0119  CA6204  		JP	Z,RTCREAD	; ..jump to read and display if Not
+  51:	011C  FE2F    		CP	'/'		; Option Entered?
+  52:	011E  C29603  		JP	NZ,SETIT	; ..jump if Not to Parse and Set
+  53:	0121  23      		INC	HL
+  54:	0122  7E      		LD	A,(HL)
+  55:	0123  FE52    		CP	'R'		; Set system time from CMOS clock?
+  56:	0125  CA1805  		JP	Z,SETTOD	; ..jump if yes
+  57:	0128  FE57    		CP	'W'		; Set CMOS clock from system time?
+  58:	012A  CA5A06  		JP	Z,SETRTC	; ..jump if yes, otherwise display help
+  59:	012D  CD8A03  		CALL	PRHELP		; Else "Call" to transfer String Addr
+  60:	0130  0D0A4453		DB	CR,LF,'DS-1302 Clock Utility for Z80 DarkStar',CR,LF,LF
+	      2D313330
+	      3220436C
+	      6F636B20
+	      5574696C
+	      69747920
+	      666F7220
+	      5A383020
+	      4461726B
+	      53746172
+	      0D0A0A
+  61:	015B  53796E74		DB	'Syntax:',CR,LF,LF
+	      61783A0D
+	      0A0A
+  62:	0165  2020434C		DB	'  CLOCK //                 '
+	      4F434B20
+	      2F2F2020
+	      20202020
+	      20202020
+	      20202020
+	      202020
+  63:	0180  2D2D3E20		DB		'--> shows this help',CR,LF
+	      73686F77
+	      73207468
+	      69732068
+	      656C700D
+	      0A
+  64:	0195  2020434C		DB	'  CLOCK                    '
+	      4F434B20
+	      20202020
+	      20202020
+	      20202020
+	      20202020
+	      202020
+  65:	01B0  2D2D3E20		DB		'--> displays the CMOS date and time',CR,LF
+	      64697370
+	      6C617973
+	      20746865
+	      20434D4F
+	      53206461
+	      74652061
+	      6E642074
+	      696D650D
+	      0A
+  66:	01D5  2020434C		DB	'  CLOCK dd.mm.yy hh:mm     '
+	      4F434B20
+	      64642E6D
+	      6D2E7979
+	      2068683A
+	      6D6D2020
+	      202020
+  67:	01F0  2D2D3E20		DB		'--> sets the date and time (EU format)',CR,LF
+	      73657473
+	      20746865
+	      20646174
+	      6520616E
+	      64207469
+	      6D652028
+	      45552066
+	      6F726D61
+	      74290D0A
+  68:	0218  2020434C		DB	'  CLOCK mm/dd/yy hh:mm     '
+	      4F434B20
+	      6D6D2F64
+	      642F7979
+	      2068683A
+	      6D6D2020
+	      202020
+  69:	0233  2D2D3E20		DB		'--> sets the date and time (US format)',CR,LF
+	      73657473
+	      20746865
+	      20646174
+	      6520616E
+	      64207469
+	      6D652028
+	      55532066
+	      6F726D61
+	      74290D0A
+  70:	025B  2020434C		DB	'  CLOCK /R                 '
+	      4F434B20
+	      2F522020
+	      20202020
+	      20202020
+	      20202020
+	      202020
+  71:	0276  2D2D3E20		DB		'--> sets the system time from the CMOS clock',CR,LF
+	      73657473
+	      20746865
+	      20737973
+	      74656D20
+	      74696D65
+	      2066726F
+	      6D207468
+	      6520434D
+	      4F532063
+	      6C6F636B
+	      0D0A
+  72:	02A4  2020434C		DB	'  CLOCK /W                 '
+	      4F434B20
+	      2F572020
+	      20202020
+	      20202020
+	      20202020
+	      202020
+  73:	02BF  2D2D3E20		DB		'--> sets the CMOS clock from the system time',CR,LF
+	      73657473
+	      20746865
+	      20434D4F
+	      5320636C
+	      6F636B20
+	      66726F6D
+	      20746865
+	      20737973
+	      74656D20
+	      74696D65
+	      0D0A
+  74:	02ED  2020434C		DB	'  CLOCK /W dd.mm.yy hh:mm  '
+	      4F434B20
+	      2F572064
+	      642E6D6D
+	      2E797920
+	      68683A6D
+	      6D2020
+  75:	0308  2D2D3E20		DB		'--> sets both the CMOS clock and system time (EU)',CR,LF
+	      73657473
+	      20626F74
+	      68207468
+	      6520434D
+	      4F532063
+	      6C6F636B
+	      20616E64
+	      20737973
+	      74656D20
+	      74696D65
+	      20284555
+	      290D0A
+  76:	033B  2020434C		DB	'  CLOCK /W mm/dd/yy hh:mm  '
+	      4F434B20
+	      2F57206D
+	      6D2F6464
+	      2F797920
+	      68683A6D
+	      6D2020
+  77:	0356  2D2D3E20		DB		'--> sets both the CMOS clock and system time (US)',CR,LF
+	      73657473
+	      20626F74
+	      68207468
+	      6520434D
+	      4F532063
+	      6C6F636B
+	      20616E64
+	      20737973
+	      74656D20
+	      74696D65
+	      20285553
+	      290D0A
+  78:	0389  24      		DB	'$'
+  79:	038A  D1      	PRHELP:	POP	DE		; String Addr to DE
+  80:	038B  0E09    		LD	C,9
+  81:	038D  CD06CA  		CALL	BDOS		;  print
+  82:	0390  24      		DB	'$'
+  83:	0391  ED7B0E08	EXIT:	LD	SP,(STACK)	;   restore Stack Pointer
+  84:	0395  C9      		RET			;    and back to OS
+  85:			
+  86:			;-----------------------------------------------------------------------
+  87:			; Parse the Command Line into the Clock Buffer, activate and Set the Clock.
+  88:			
+  89:	0396  CD5B04  	SETIT:	CALL	SKIP
+  90:	0399  CD9407  		CALL	GETBCD		; get bcd month or day
+  91:	039C  3866    		JR	C,BADDAT	; ..ERR if Invalid
+  92:	039E  32CA07  		LD	(TIMSTR+4),A
+  93:	03A1  7E      		LD	A,(HL)
+  94:	03A2  FE2E    		CP	'.'		; valid separator?
+  95:	03A4  2804    		JR	Z,VALID
+  96:	03A6  FE2F    		CP	'/'		; valid separator?
+  97:	03A8  205A    		JR	NZ,BADDAT	; ..err if not
+  98:	03AA  47      	VALID:	LD	B,A		; keep separator in b
+  99:	03AB  23      		INC	HL
+ 100:	03AC  CD9407  		CALL	GETBCD		; get bcd day
+ 101:	03AF  3853    		JR	C,BADDAT	; ..err if invalid
+ 102:	03B1  32C907  		LD	(TIMSTR+3),A
+ 103:	03B4  7E      		LD	A,(HL)
+ 104:	03B5  B8      		CP	B		; separator must be the same
+ 105:	03B6  204C    		JR	NZ,BADDAT
+ 106:	03B8  23      		INC	HL
+ 107:	03B9  CD9407  		CALL	GETBCD		; get bcd year
+ 108:	03BC  3846    		JR	C,BADDAT	; ..err if Invalid
+ 109:	03BE  32CC07  		LD	(TIMSTR+6),A
+ 110:	03C1  78      		LD	A,B
+ 111:	03C2  FE2E    		CP	'.'		; DD.MM.YY format?
+ 112:	03C4  200E    		JR	NZ,SET1
+ 113:	03C6  3AC907  		LD	A,(TIMSTR+3)	; ..swap Day and Month if yes
+ 114:	03C9  47      		LD	B,A
+ 115:	03CA  3ACA07  		LD	A,(TIMSTR+4)
+ 116:	03CD  32C907  		LD	(TIMSTR+3),A
+ 117:	03D0  78      		LD	A,B
+ 118:	03D1  32CA07  		LD	(TIMSTR+4),A
+ 119:	03D4  CD5B04  	SET1:	CALL	SKIP		; Point to Time String
+ 120:	03D7  CD9407  		CALL	GETBCD		; get bcd Hours
+ 121:	03DA  3828    		JR	C,BADDAT	; ..ERR if Invalid
+ 122:	03DC  32C807  		LD	(TIMSTR+2),A
+ 123:	03DF  7E      		LD	A,(HL)
+ 124:	03E0  FE3A    		CP	':'
+ 125:	03E2  2047    		JR	NZ,BADTIM
+ 126:	03E4  23      		INC	HL
+ 127:	03E5  CD9407  		CALL	GETBCD		; get bcd minutes
+ 128:	03E8  3841    		JR	C,BADTIM	; ..Err if Invalid
+ 129:	03EA  32C707  		LD	(TIMSTR+1),A
+ 130:	03ED  AF      		XOR	A
+ 131:	03EE  32C607  		LD	(TIMSTR),A
+ 132:	03F1  CDAD05  		CALL	CDAYS		; Compute DOW
+ 133:	03F4  CD2507  		CALL	CDOW		; ..from number of days since 1/1/78
+ 134:	03F7  3C      		INC	A		; base 1
+ 135:	03F8  32CB07  		LD	(TIMSTR+5),A
+ 136:	03FB  21C607  		LD	HL,TIMSTR
+ 137:	03FE  F3      		DI
+ 138:	03FF  CD9FFC  		CALL	BBSTTIM		;  Activate and Set the Clock
+ 139:	0402  FB      		EI
+ 140:	0403  C9      		RET			; ..and Quit
+ 141:			
+ 142:	0404  CD5204  	BADDAT:	CALL	BADDA0
+ 143:	0407  070D0A2B		DB	7,CR,LF,'+++ Invalid Date specification',CR,LF,'$'
+	      2B2B2049
+	      6E76616C
+	      69642044
+	      61746520
+	      73706563
+	      69666963
+	      6174696F
+	      6E0D0A24
+ 144:	042B  CD5204  	BADTIM:	CALL	BADDA0
+ 145:	042E  070D0A2B		DB	7,CR,LF,'+++ Invalid Time specification',CR,LF,'$'
+	      2B2B2049
+	      6E76616C
+	      69642054
+	      696D6520
+	      73706563
+	      69666963
+	      6174696F
+	      6E0D0A24
+ 146:	0452  D1      	BADDA0:	POP	DE
+ 147:	0453  0E09    		LD	C,9
+ 148:	0455  CD06CA  		CALL	BDOS
+ 149:	0458  C39103  		JP	EXIT
+ 150:			
+ 151:			;.....
+ 152:			; Skip spaces in the Command Line
+ 153:	045B  7E      	SKIP:	LD	A,(HL)
+ 154:	045C  FE20    		CP	' '
+ 155:	045E  C0      		RET	NZ
+ 156:	045F  23      		INC	HL
+ 157:	0460  18F9    		JR	SKIP
+ 158:			
+ 159:			;----------------------------------------------------------------------
+ 160:			; Read the Clock and Display Results
+ 161:			
+ 162:	0462          	RTCREAD:
+ 163:	0462  21C607  		LD	HL,TIMSTR	; point to the destination time string
+ 164:	0465  F3      		DI
+ 165:	0466  CDA5FC  		CALL	BBRDTIME		;  read
+ 166:	0469  FB      		EI
+ 167:	046A  CD7F04  		CALL	RTCREAD0
+ 168:	046D  0D0A436C		DB	CR,LF,'Clock reports: $'
+	      6F636B20
+	      7265706F
+	      7274733A
+	      2024
+ 169:	047F          	RTCREAD0:
+ 170:	047F  D1      		POP	DE
+ 171:	0480  0E09    		LD	C,9
+ 172:	0482  CD06CA  		CALL	BDOS
+ 173:	0485  CD8904  		CALL	DTIME		; Display Date and Time
+ 174:	0488  C9      		RET			; ..and quit
+ 175:			
+ 176:			;.....
+ 177:			; Display Date and Time
+ 178:			
+ 179:	0489  21CB07  	DTIME:	LD	HL,TIMSTR+5
+ 180:	048C  7E      		LD	A,(HL)		; Fetch DOW
+ 181:	048D  B7      		OR	A		;  Ensure is Valid
+ 182:	048E  281B    		JR	Z,DTIME0
+ 183:	0490  FE08    		CP	8
+ 184:	0492  3017    		JR	NC,DTIME0
+ 185:	0494  3D      		DEC	A
+ 186:	0495  87      		ADD	A,A
+ 187:	0496  87      		ADD	A,A
+ 188:	0497  5F      		LD	E,A
+ 189:	0498  1600    		LD	D,0
+ 190:	049A  E5      		PUSH	HL
+ 191:	049B  21FC04  		LD	HL,DOWSTR
+ 192:	049E  19      		ADD	HL,DE
+ 193:	049F  EB      		EX	DE,HL
+ 194:	04A0  0E09    		LD	C,9
+ 195:	04A2  CD06CA  		CALL	BDOS		;   Print
+ 196:	04A5  3E20    		LD	A,' '
+ 197:	04A7  CDBD07  		CALL	COUT
+ 198:	04AA  E1      		POP	HL
+ 199:	04AB  2B      	DTIME0:	DEC	HL
+ 200:	04AC  7E      		LD	A,(HL)		; Fetch Month
+ 201:	04AD  CDAC07  		CALL	PR2HEX		;  Print
+ 202:	04B0  3E2F    		LD	A,'/'
+ 203:	04B2  CDBD07  		CALL	COUT
+ 204:	04B5  2B      		DEC	HL
+ 205:	04B6  7E      		LD	A,(HL)		; Fetch Day
+ 206:	04B7  CDAC07  		CALL	PR2HEX		;  Print
+ 207:	04BA  3E2F    		LD	A,'/'
+ 208:	04BC  CDBD07  		CALL	COUT
+ 209:	04BF  23      		INC	HL
+ 210:	04C0  23      		INC	HL
+ 211:	04C1  23      		INC	HL
+ 212:	04C2  7E      		LD	A,(HL)		; Fetch Year
+ 213:	04C3  CDAC07  		CALL	PR2HEX		;  Print
+ 214:	04C6  CDCB04  		CALL	DTIME1
+ 215:	04C9  2024    		DB	' $'
+ 216:	04CB  D1      	DTIME1:	POP	DE
+ 217:	04CC  0E09    		LD	C,9
+ 218:	04CE  CD06CA  		CALL	BDOS
+ 219:	04D1  21C807  		LD	HL,TIMSTR+2
+ 220:	04D4  7E      		LD	A,(HL)		; Fetch Hours
+ 221:	04D5  CD1307  		CALL	CVHOUR		;  Convert to 24-hours format as necessary
+ 222:	04D8  CDAC07  		CALL	PR2HEX		;   Print
+ 223:	04DB  3E3A    		LD	A,':'
+ 224:	04DD  CDBD07  		CALL	COUT
+ 225:	04E0  2B      		DEC	HL
+ 226:	04E1  7E      		LD	A,(HL)		; Fetch Minutes
+ 227:	04E2  CDAC07  		CALL	PR2HEX		;  Print
+ 228:	04E5  3E3A    		LD	A,':'
+ 229:	04E7  CDBD07  		CALL	COUT
+ 230:	04EA  2B      		DEC	HL
+ 231:	04EB  7E      		LD	A,(HL)		; Fetch Seconds
+ 232:	04EC  CDAC07  		CALL	PR2HEX		;  Print
+ 233:	04EF  CDF504  		CALL	DTIME2
+ 234:	04F2  0D0A24  		DB	CR,LF,'$'
+ 235:	04F5  D1      	DTIME2:	POP	DE
+ 236:	04F6  0E09    		LD	C,9
+ 237:	04F8  CD06CA  		CALL	BDOS
+ 238:	04FB  C9      		RET
+ 239:			
+ 240:	04FC  53756E24	DOWSTR:	DB	'Sun$Mon$Tue$Wed$Thu$Fri$Sat$'
+	      4D6F6E24
+	      54756524
+	      57656424
+	      54687524
+	      46726924
+	      53617424
+ 241:			
+ 242:			;----------------------------------------------------------------------
+ 243:			; Read CMOS clock and set MP/M time-of-day
+ 244:			
+ 245:	0518  21C607  	SETTOD:	LD	HL,TIMSTR	; Point to the Destination Time String
+ 246:	051B  CDA5FC  		CALL	BBRDTIME	;  Read
+ 247:	051E  CD4905  		CALL	ST0
+ 248:	0521  0D0A5365		DB	CR,LF,'Setting system time from CMOS clock: $'
+	      7474696E
+	      67207379
+	      7374656D
+	      2074696D
+	      65206672
+	      6F6D2043
+	      4D4F5320
+	      636C6F63
+	      6B3A2024
+ 249:	0549  D1      	ST0:	POP	DE
+ 250:	054A  0E09    		LD	C,9
+ 251:	054C  CD06CA  		CALL	BDOS
+ 252:	054F  CD8904  		CALL	DTIME		; Display Date and Time
+ 253:	0552  0E9A    	STTOD:	LD	C,154
+ 254:	0554  CD06CA  		CALL	BDOS		; Get system data page
+ 255:	0557  2EFC    		LD	L,$FC		; Offset to TOD structure address
+ 256:	0559  5E      		LD	E,(HL)
+ 257:	055A  23      		INC	HL
+ 258:	055B  56      		LD	D,(HL)
+ 259:	055C  D5      		PUSH	DE		; Save pointer to MP/M TOD buffer
+ 260:	055D  CDAD05  		CALL	CDays		; Compute Number of days
+ 261:	0560  D1      		POP	DE		; Restore MP/M TOD address
+ 262:	0561  EB      		EX	DE,HL
+ 263:	0562  F3      		DI			; Disable interrupts
+ 264:	0563  73      		LD	(HL),E		; Store Date
+ 265:	0564  23      		INC	HL
+ 266:	0565  72      		LD	(HL),D
+ 267:	0566  23      		INC	HL
+ 268:	0567  11C807  		LD	DE,TIMSTR+2	; Store Time
+ 269:	056A  1A      		LD	A,(DE)		; Get Hours
+ 270:	056B  CD1307  		CALL	CVHOUR		; Convert to 24-hours format as necessary
+ 271:	056E  77      		LD	(HL),A		;  Hours
+ 272:	056F  1B      		DEC	DE
+ 273:	0570  23      		INC	HL
+ 274:	0571  1A      		LD	A,(DE)
+ 275:	0572  77      		LD	(HL),A		;   Minutes
+ 276:	0573  1B      		DEC	DE
+ 277:	0574  23      		INC	HL
+ 278:	0575  1A      		LD	A,(DE)
+ 279:	0576  77      		LD	(HL),A		;    Seconds
+ 280:	0577  FB      		EI			; Enable interrupts
+ 281:	0578  C9      		RET			; .. and quit
+ 282:			
+ 283:	0579          	MLTHL:
+ 284:	0579  F5      		PUSH	AF
+ 285:	057A  C5      		PUSH	BC
+ 286:	057B  D5      		PUSH	DE
+ 287:	057C  5D      		LD	E,L
+ 288:	057D  1600    		LD	D,0
+ 289:	057F  4C      		LD	C,H
+ 290:	0580  0600    		LD	B,0
+ 291:	0582  CD9A05  		CALL	MUL16
+ 292:	0585  D1      		POP	DE
+ 293:	0586  C1      		POP	BC
+ 294:	0587  F1      		POP	AF
+ 295:	0588  C9      		RET
+ 296:			
+ 297:	0589          	MLTDE:
+ 298:	0589  F5      		PUSH	AF
+ 299:	058A  C5      		PUSH	BC
+ 300:	058B  E5      		PUSH	HL
+ 301:	058C  7A      		LD	A,D
+ 302:	058D  1600    		LD	D,0
+ 303:	058F  4F      		LD	C,A
+ 304:	0590  0600    		LD	B,0
+ 305:	0592  CD9A05  		CALL	MUL16
+ 306:	0595  EB      		EX	DE,HL
+ 307:	0596  E1      		POP	HL
+ 308:	0597  C1      		POP	BC
+ 309:	0598  F1      		POP	AF
+ 310:	0599  C9      		RET
+ 311:			
+ 312:			;
+ 313:			;;	MUL16 - 16x16 bit multiplication
+ 314:			;;
+ 315:			;; 	in  DE = multiplicand
+ 316:			;;	    BC = multiplier
+ 317:			;;	out DE = result
+ 318:	059A  79      	MUL16:	LD	A,C		; A = low mpler
+ 319:	059B  48      		LD	C,B		; C = high mpler
+ 320:	059C  0610    		LD	B,16		; counter
+ 321:	059E  210000  		LD	HL,0
+ 322:	05A1  CB39    	ML1601:	SRL	C		; right shift mpr high
+ 323:	05A3  1F      		RRA			; rot. right mpr low
+ 324:	05A4  3001    		JR	NC,ML1602	; test carry
+ 325:	05A6  19      		ADD	HL,DE		; add mpd to result
+ 326:	05A7  EB      	ML1602:	EX	DE,HL
+ 327:	05A8  29      		ADD	HL,HL		; double shift mpd
+ 328:	05A9  EB      		EX	DE,HL
+ 329:	05AA  10F5    		DJNZ	ML1601
+ 330:	05AC  C9      		RET
+ 331:			
+ 332:			; Compute number of days since 1/1/78.
+ 333:			; The algorithm was taken from the MP/M TOD program.
+ 334:			; Entry: TIMSTR containing Date in DS1202 format (BCD)
+ 335:			; Exit:  HL = number of days
+ 336:			
+ 337:	05AD  3ACA07  	CDAYS:	LD	A,(TIMSTR+4)	; FETCH MONTH
+ 338:	05B0  CD3306  		CALL	BCD2BIN
+ 339:	05B3  3D      		DEC	A		; MONTH = 0...11
+ 340:	05B4  87      		ADD	A,A
+ 341:	05B5  5F      		LD	E,A
+ 342:	05B6  1600    		LD	D,0
+ 343:	05B8  216E07  		LD	HL,MDAYS
+ 344:	05BB  19      		ADD	HL,DE
+ 345:	05BC  4E      		LD	C,(HL)
+ 346:	05BD  23      		INC	HL
+ 347:	05BE  46      		LD	B,(HL)		; MONTH_DAYS[MONTH]
+ 348:	05BF  3ACC07  		LD	A,(TIMSTR+6)	; FETCH YEAR
+ 349:	05C2  CD3306  		CALL	BCD2BIN
+ 350:	05C5  D64E    		SUB	78		; 1978
+ 351:	05C7  3002    		JR	NC,CD1
+ 352:	05C9  C664    		ADD	A,100		; IF YEAR WAS < 78, CONSIDER IT AS >= 2000
+ 353:	05CB  116D01  	CD1:	LD	DE,365
+ 354:	05CE  6F      		LD	L,A
+ 355:	05CF  62      		LD	H,D
+ 356:	05D0  CD7905  		CALL	MLTHL
+ 357:	05D3  65      		LD	H,L
+ 358:	05D4  2E00    		LD	L,0
+ 359:	05D6  57      		LD	D,A
+ 360:	05D7  CD8905  		CALL	MLTDE
+ 361:	05DA  19      		ADD	HL,DE		; HL = A * 365
+ 362:	05DB  09      		ADD	HL,BC		; + MONTH_DAYS[MONTH]
+ 363:	05DC  3AC907  		LD	A,(TIMSTR+3)	; FETCH DAY
+ 364:	05DF  CD3306  		CALL	BCD2BIN
+ 365:	05E2  4F      		LD	C,A		; DAY = 1...29,30, OR 31
+ 366:	05E3  0600    		LD	B,0
+ 367:	05E5  09      		ADD	HL,BC		; + DAY
+ 368:	05E6  E5      		PUSH	HL
+ 369:	05E7  214E00  		LD	HL,78		; 1978
+ 370:	05EA  110000  		LD	DE,0
+ 371:	05ED  CD1506  		CALL	LEAPDAYS
+ 372:	05F0  EB      		EX	DE,HL
+ 373:	05F1  E1      		POP	HL
+ 374:	05F2  B7      		OR	A
+ 375:	05F3  ED52    		SBC	HL,DE		; - LEAP_DAYS(78, 0)
+ 376:	05F5  E5      		PUSH	HL
+ 377:	05F6  3ACC07  		LD	A,(TIMSTR+6)	; YEAR
+ 378:	05F9  CD3306  		CALL	BCD2BIN
+ 379:	05FC  FE4E    		CP	78
+ 380:	05FE  3002    		JR	NC,CD2
+ 381:	0600  C664    		ADD	A,100
+ 382:	0602  6F      	CD2:	LD	L,A
+ 383:	0603  2600    		LD	H,0
+ 384:	0605  3ACA07  		LD	A,(TIMSTR+4)	; MONTH
+ 385:	0608  CD3306  		CALL	BCD2BIN
+ 386:	060B  3D      		DEC	A		; MONTH = 0...11
+ 387:	060C  5F      		LD	E,A
+ 388:	060D  1600    		LD	D,0
+ 389:	060F  CD1506  		CALL	LEAPDAYS
+ 390:	0612  D1      		POP	DE
+ 391:	0613  19      		ADD	HL,DE		; + LEAP_DAYS(YEAR, MONTH)
+ 392:	0614  C9      		RET
+ 393:			
+ 394:	0615          	LEAPDAYS:
+ 395:	0615  2600    		LD	H,0		; JUST IN CASE... (H SHOULD BE ALREADY 0)
+ 396:	0617  7D      		LD	A,L
+ 397:	0618  0F      		RRCA
+ 398:	0619  0F      		RRCA
+ 399:	061A  E63F    		AND	3FH
+ 400:	061C  6F      		LD	L,A		; HL = YEAR / 4
+ 401:	061D  E603    		AND	3
+ 402:	061F  C0      		RET	NZ
+ 403:	0620  E5      		PUSH	HL
+ 404:	0621  216E07  		LD	HL,MDAYS
+ 405:	0624  19      		ADD	HL,DE
+ 406:	0625  19      		ADD	HL,DE
+ 407:	0626  5E      		LD	E,(HL)
+ 408:	0627  23      		INC	HL
+ 409:	0628  56      		LD	D,(HL)		; MONTH_DAYS[MONTH]
+ 410:	0629  E1      		POP	HL
+ 411:	062A  7A      		LD	A,D
+ 412:	062B  B7      		OR	A
+ 413:	062C  C0      		RET	NZ
+ 414:	062D  3E3B    		LD	A,59
+ 415:	062F  BA      		CP	D
+ 416:	0630  D0      		RET	NC
+ 417:	0631  2B      		DEC	HL
+ 418:	0632  C9      		RET
+ 419:			
+ 420:			;.....
+ 421:			; CONVERT 2-DIGIT BCD VALUE TO 8-BIT BINARY.
+ 422:			; ENTRY: A = BCD VALUE
+ 423:			; EXIT:  A = BINARY VALUE
+ 424:			
+ 425:	0633          	BCD2BIN:
+ 426:	0633  D5      		PUSH	DE
+ 427:	0634  57      		LD	D,A
+ 428:	0635  E6F0    		AND	0F0H
+ 429:	0637  5F      		LD	E,A
+ 430:	0638  7A      		LD	A,D
+ 431:	0639  E60F    		AND	0FH
+ 432:	063B  CB3B    		SRL	E
+ 433:	063D  83      		ADD	A,E
+ 434:	063E  CB3B    		SRL	E
+ 435:	0640  CB3B    		SRL	E
+ 436:	0642  83      		ADD	A,E
+ 437:	0643  D1      		POP	DE
+ 438:	0644  C9      		RET
+ 439:			
+ 440:			;.....
+ 441:			; CONVERT 8-BIT BINARY VALUE TO 2-DIGIT BCD.
+ 442:			; ENTRY: A = BINARY VALUE
+ 443:			; EXIT:  A = BCD VALUE
+ 444:			
+ 445:	0645          	BIN2BCD:
+ 446:	0645  C5      		PUSH	BC
+ 447:	0646  060A    		LD	B,10
+ 448:	0648  0EFF    		LD	C,-1
+ 449:	064A  0C      	AD1:	INC	C
+ 450:	064B  90      		SUB	B
+ 451:	064C  30FC    		JR	NC,AD1
+ 452:	064E  80      		ADD	A,B
+ 453:	064F  CB21    		SLA	C
+ 454:	0651  CB21    		SLA	C
+ 455:	0653  CB21    		SLA	C
+ 456:	0655  CB21    		SLA	C
+ 457:	0657  B1      		OR	C
+ 458:	0658  C1      		POP	BC
+ 459:	0659  C9      		RET
+ 460:			
+ 461:			;----------------------------------------------------------------------
+ 462:			; Read MP/M time-of-day and set CMOS clock
+ 463:			
+ 464:	065A  23      	SETRTC:	INC	HL		; SKIP OVER OPTION CHARACTER
+ 465:	065B  CD5B04  		CALL	SKIP		; CHECK COMMAND LINE TAIL
+ 466:	065E  B7      		OR	A		;  FOR A POSSIBLE DATE/TIME SPEC
+ 467:	065F  2807    		JR	Z,SR1
+ 468:			
+ 469:			; Parse command line and set both MP/M and CMOS clock
+ 470:			
+ 471:	0661  CD9603  		CALL	SETIT		; PARSE COMMAND AND SET CMOS CLOCK
+ 472:	0664  CD5205  		CALL	STTOD		; SET MP/M TIME
+ 473:	0667  C9      		RET			; ..AND QUIT
+ 474:			
+ 475:			; Read MP/M time and set CMOS clock
+ 476:			
+ 477:	0668  CD9306  	SR1:	CALL	SR0
+ 478:	066B  0D0A5365		DB	CR,LF,'Setting CMOS clock from system time: $'
+	      7474696E
+	      6720434D
+	      4F532063
+	      6C6F636B
+	      2066726F
+	      6D207379
+	      7374656D
+	      2074696D
+	      653A2024
+ 479:	0693  D1      	SR0:	POP	DE
+ 480:	0694  0E09    		LD	C,9
+ 481:	0696  CD06CA  		CALL	BDOS
+ 482:	0699  0E9A    		LD	C,154
+ 483:	069B  CD06CA  		CALL	BDOS		; Get system data page
+ 484:	069E  2EFC    		LD	L,$FC		; Offset to TOD structure
+ 485:	06A0  7E      		LD	A,(HL)
+ 486:	06A1  23      		INC	HL
+ 487:	06A2  66      		LD	H,(HL)
+ 488:	06A3  6F      		LD	L,A		; HL now points to MP/M TOD buffer
+ 489:	06A4  5E      		LD	E,(HL)		; First word is the date
+ 490:	06A5  23      		INC	HL		;  (number of days since 1/1/78)
+ 491:	06A6  56      		LD	D,(HL)
+ 492:	06A7  23      		INC	HL
+ 493:	06A8  E5      		PUSH	HL
+ 494:	06A9  EB      		EX	DE,HL
+ 495:	06AA  CDC306  		CALL	GETDATE		; Convert Date to DS1202 format
+ 496:	06AD  E1      		POP	HL
+ 497:	06AE  11C807  		LD	DE,TIMSTR+2	; Store Time
+ 498:	06B1  7E      		LD	A,(HL)		;  Hours
+ 499:	06B2  12      		LD	(DE),A
+ 500:	06B3  23      		INC	HL
+ 501:	06B4  1B      		DEC	DE
+ 502:	06B5  7E      		LD	A,(HL)		;     Minutes
+ 503:	06B6  12      		LD	(DE),A
+ 504:	06B7  23      		INC	HL
+ 505:	06B8  1B      		DEC	DE
+ 506:	06B9  7E      		LD	A,(HL)		;      Seconds
+ 507:	06BA  12      		LD	(DE),A
+ 508:	06BB  EB      		EX	DE,HL		; HL = TIMSTR
+ 509:	06BC  CD9FFC  		CALL	BBSTTIM		; Activate and Set the Clock
+ 510:	06BF  CD8904  		CALL	DTIME		; Display Time
+ 511:	06C2  C9      		RET			; ..and Quit
+ 512:			
+ 513:			;.....
+ 514:			; Convert MP/M Time-Of-Day value to DS1202 format.
+ 515:			; Entry: HL = TOD (number of days since 1/1/78)
+ 516:			; Exit:  TIMSTR buffer updated accordingly.
+ 517:			
+ 518:	06C3          	GETDATE:
+ 519:	06C3  CD2507  		CALL	CDOW		; COMPUTE DAY OF WEEK
+ 520:	06C6  3C      		INC	A		; BASE 1
+ 521:	06C7  32CB07  		LD	(TIMSTR+5),A
+ 522:	06CA  E1      		POP	HL
+ 523:	06CB  CD2E07  		CALL	CYEAR		; COMPUTE YEAR, RETURNS REM_DAYS REMAINDER
+ 524:	06CE  79      		LD	A,C
+ 525:	06CF  FE64    		CP	100		; ABOVE YEAR 2000?
+ 526:	06D1  3802    		JR	C,GD0
+ 527:	06D3  D664    		SUB	100		; CORRECT IF YES
+ 528:	06D5  CD4506  	GD0:	CALL	BIN2BCD		; CONVERT TO BCD
+ 529:	06D8  32CC07  		LD	(TIMSTR+6),A
+ 530:	06DB  1E00    		LD	E,0		; LEAP_BIAS = 0
+ 531:	06DD  79      		LD	A,C
+ 532:	06DE  E603    		AND	3		; (YEAR & 3) == 0 ?
+ 533:	06E0  2009    		JR	NZ,GD1
+ 534:	06E2  7D      		LD	A,L
+ 535:	06E3  D63C    		SUB	59+1		; ..AND (REM_DAYS > 59) ?
+ 536:	06E5  7C      		LD	A,H
+ 537:	06E6  DE00    		SBC	A,0
+ 538:	06E8  3801    		JR	C,GD1
+ 539:	06EA  1C      		INC	E		; ..THEN LEAP_BIAS = 1;
+ 540:	06EB  4B      	GD1:	LD	C,E
+ 541:	06EC  CD4807  		CALL	CMONTH		; COMPUTE MONTH
+ 542:	06EF  D5      		PUSH	DE
+ 543:	06F0  E5      		PUSH	HL
+ 544:	06F1  216E07  		LD	HL,MDAYS
+ 545:	06F4  19      		ADD	HL,DE
+ 546:	06F5  19      		ADD	HL,DE
+ 547:	06F6  7E      		LD	A,(HL)
+ 548:	06F7  23      		INC	HL
+ 549:	06F8  66      		LD	H,(HL)
+ 550:	06F9  6F      		LD	L,A		; HL = MONTH_DAYS[MONTH]
+ 551:	06FA  0600    		LD	B,0
+ 552:	06FC  09      		ADD	HL,BC		;      + LEAP_BIAS;
+ 553:	06FD  EB      		EX	DE,HL
+ 554:	06FE  E1      		POP	HL
+ 555:	06FF  B7      		OR	A
+ 556:	0700  ED52    		SBC	HL,DE		; DAY = REM_DAYS - HL;
+ 557:	0702  7D      		LD	A,L
+ 558:	0703  CD4506  		CALL	BIN2BCD
+ 559:	0706  32C907  		LD	(TIMSTR+3),A
+ 560:	0709  D1      		POP	DE
+ 561:	070A  13      		INC	DE		; MONTH++
+ 562:	070B  7B      		LD	A,E
+ 563:	070C  CD4506  		CALL	BIN2BCD
+ 564:	070F  32CA07  		LD	(TIMSTR+4),A
+ 565:	0712  C9      		RET
+ 566:			
+ 567:			;.....
+ 568:			; Convert DS1202 Hour byte from 12-hour format to 24.
+ 569:			; Entry: A = Hour in DS1202 12-hour or 24-hour format
+ 570:			; Exit:  A = Hour in 24-hour BCD format (00..23)
+ 571:			
+ 572:	0713  CB7F    	CVHOUR:	BIT	7,A		; Check 12/24-hours bit
+ 573:	0715  C8      		RET	Z		; Return if already in 24-hour format
+ 574:	0716  E67F    		AND	7Fh
+ 575:	0718  CB6F    		BIT	5,A		; Check AM/PM bit
+ 576:	071A  C8      		RET	Z		; Return if AM
+ 577:	071B  E61F    		AND	1Fh
+ 578:	071D  C612    		ADD	A,12h		; Correct if PM
+ 579:	071F  FE24    		CP	24h		; Hour >= 24?
+ 580:	0721  D8      		RET	C		; Return if Not
+ 581:	0722  D624    		SUB	24h		; Otherwise correct.
+ 582:	0724  C9      		RET
+ 583:			
+ 584:			;.....
+ 585:			; Compute Day of Week from number of days in rem_days
+ 586:			; Entry: HL = rem_days
+ 587:			; Exit:  A = DOW (0 = Sunday)
+ 588:			
+ 589:	0725  E5      	CDOW:	PUSH	HL
+ 590:	0726  2B      		DEC	HL
+ 591:	0727  1E07    		LD	E,7
+ 592:	0729  CD8607  		CALL	MYDIV16		; DAY OF WEEK = (REM_DAYS - 1) MOD 7
+ 593:	072C  E1      		POP	HL
+ 594:	072D  C9      		RET
+ 595:			
+ 596:			;.....
+ 597:			; Compute year from number of days in rem_days
+ 598:			; Entry: HL = rem_days
+ 599:			; Exit:  BC = year
+ 600:			
+ 601:	072E  014E00  	CYEAR:	LD	BC,78		; BASE YEAR
+ 602:	0731  116D01  	CY1:	LD	DE,365		; YEAR LENGTH
+ 603:	0734  79      		LD	A,C
+ 604:	0735  E603    		AND	3		; LEAP YEAR?
+ 605:	0737  2001    		JR	NZ,CY2
+ 606:	0739  13      		INC	DE		; YEAR LENGTH = 366
+ 607:	073A  E5      	CY2:	PUSH	HL
+ 608:	073B  1B      		DEC	DE
+ 609:	073C  B7      		OR	A
+ 610:	073D  ED52    		SBC	HL,DE		; REM_DAYS - YEAR_LENGTH
+ 611:	073F  3805    		JR	C,CY3		; RETURN IF <= 0
+ 612:	0741  F1      		POP	AF
+ 613:	0742  2B      		DEC	HL
+ 614:	0743  03      		INC	BC		; YEAR++
+ 615:	0744  18EB    		JR	CY1
+ 616:	0746  E1      	CY3:	POP	HL
+ 617:	0747  C9      		RET
+ 618:			
+ 619:			;.....
+ 620:			; Compute month
+ 621:			; Entry: HL = rem_days, C = leap_bias
+ 622:			; Exit:  DE = month, C = leap_bias
+ 623:			
+ 624:	0748  E5      	CMONTH:	PUSH	HL
+ 625:	0749  110B00  		LD	DE,11		; E = MONTH, D = 0
+ 626:	074C  42      		LD	B,D		; B = 0
+ 627:	074D  7B      	CM1:	LD	A,E
+ 628:	074E  FE02    		CP	2		; IF MONTH < 2 (JAN OR FEB)
+ 629:	0750  3002    		JR	NC,CM2
+ 630:	0752  0E00    		LD	C,0		; ..LEAP_BIAS = 0
+ 631:	0754  216E07  	CM2:	LD	HL,MDAYS
+ 632:	0757  19      		ADD	HL,DE
+ 633:	0758  19      		ADD	HL,DE
+ 634:	0759  7E      		LD	A,(HL)
+ 635:	075A  23      		INC	HL
+ 636:	075B  66      		LD	H,(HL)
+ 637:	075C  6F      		LD	L,A		; HL = MONTH_DAYS[MONTH]
+ 638:	075D  09      		ADD	HL,BC		; MONTH_DAYS[MONTH] + LEAP_BIAS
+ 639:	075E  EB      		EX	DE,HL
+ 640:	075F  E3      		EX	(SP),HL		; HL = WORD VALUE
+ 641:	0760  7B      		LD	A,E
+ 642:	0761  95      		SUB	L
+ 643:	0762  7A      		LD	A,D
+ 644:	0763  9C      		SBC	A,H
+ 645:	0764  E3      		EX	(SP),HL
+ 646:	0765  EB      		EX	DE,HL
+ 647:	0766  3804    		JR	C,CM3
+ 648:	0768  1D      		DEC	E
+ 649:	0769  F24D07  		JP	P,CM1
+ 650:	076C  E1      	CM3:	POP	HL
+ 651:	076D  C9      		RET
+ 652:			
+ 653:	076E          	MDAYS:
+ 654:			;		jan feb mar apr may jun jul aug sep oct nov dec
+ 655:	076E  00001F00		DW	000,031,059,090,120,151,181,212,243,273,304,334
+	      3B005A00
+	      78009700
+	      B500D400
+	      F3001101
+	      30014E01
+ 656:			
+ 657:			;.....
+ 658:			; Divide 16-bit number in HL by 8-bit number in E.
+ 659:			; Returns 16-bit quotient in HL, 8-bit remainder in A.
+ 660:			
+ 661:	0786          	MYDIV16:
+ 662:	0786  0611    		LD	B,16+1		; 17 TIMES THRU LOOP
+ 663:	0788  AF      		XOR	A		; CLEAR REMAINDER AND CARRY
+ 664:	0789  8F      	MYDIV:	ADC	A,A		; SHIFT ACCUM LEFT + CARRY
+ 665:	078A  9B      		SBC	A,E		;  SUBTRACT DIVISOR
+ 666:	078B  3001    		JR	NC,MYDIV0	; ..JUMP IF IT WORKED
+ 667:	078D  83      		ADD	A,E		; ELSE RESTORE ACCUM AND CARRY
+ 668:	078E  3F      	MYDIV0:	CCF			; FLIP CARRY BIT
+ 669:	078F  ED6A    		ADC	HL,HL		;  SHIFT AND CARRY INTO DIVIDEND/QUOTIENT
+ 670:	0791  10F6    		DJNZ	MYDIV		;   ..LOOP UNTIL DONE
+ 671:	0793  C9      		RET
+ 672:			
+ 673:			;----------------------------------------------------------------------
+ 674:			; Attempt to convert two bytes addressed by HL to a Packed BCD Byte
+ 675:			; Carry Set if Invalid
+ 676:			
+ 677:	0794  CDA307  	GETBCD:	CALL	CKDIG
+ 678:	0797  D8      		RET	C		; RETURN IF INVALID
+ 679:	0798  87      		ADD	A,A
+ 680:	0799  87      		ADD	A,A
+ 681:	079A  87      		ADD	A,A
+ 682:	079B  87      		ADD	A,A
+ 683:	079C  4F      		LD	C,A
+ 684:	079D  CDA307  		CALL	CKDIG
+ 685:	07A0  D8      		RET	C
+ 686:	07A1  B1      		OR	C
+ 687:	07A2  C9      		RET
+ 688:			
+ 689:	07A3  7E      	CKDIG:	LD	A,(HL)
+ 690:	07A4  23      		INC	HL
+ 691:	07A5  D630    		SUB	'0'
+ 692:	07A7  D8      		RET	C
+ 693:	07A8  FE0A    		CP	9+1
+ 694:	07AA  3F      		CCF
+ 695:	07AB  C9      		RET
+ 696:			
+ 697:			;.....
+ 698:	07AC  F5      	PR2HEX:	PUSH	AF
+ 699:	07AD  0F      		RRCA
+ 700:	07AE  0F      		RRCA
+ 701:	07AF  0F      		RRCA
+ 702:	07B0  0F      		RRCA
+ 703:	07B1  CDB507  		CALL	PRHEX
+ 704:	07B4  F1      		POP	AF
+ 705:	07B5  E60F    	PRHEX:	AND	0FH
+ 706:	07B7  C690    		ADD	A,90H
+ 707:	07B9  27      		DAA
+ 708:	07BA  CE40    		ADC	A,40H
+ 709:	07BC  27      		DAA
+ 710:	07BD  5F      	COUT:	LD	E,A
+ 711:	07BE  0E02    		LD	C,2
+ 712:	07C0  E5      		PUSH	HL
+ 713:	07C1  CD06CA  		CALL	BDOS
+ 714:	07C4  E1      		POP	HL
+ 715:	07C5  C9      		RET
+ 716:			
+ 717:			
+ 718:	07C6 .. 07CD 00	TIMSTR:	DS	8			; String for Reading/Setting Date/Time
+ 719:	07CE .. 080D 00		DS	64			; Stack Space
+ 720:	080E .. 080F 00	STACK:	DS	2
+ 721:			
+
+
+
+Statistics:
+
+     5	passes
+     0	jr promotions
+   566	symbols
+     0	bytes
+
+
+
+Symbol Table:
+
+ad1              64a     curpbuf           48+    pr2hex           7ac     
+aftrio          dca3+    cursoroff         20+    prhelp           38a     
+all00           dff7+    cursoron           a+    prhex            7b5     
+all01           e02e+    cursshp           4a+    prntbusybit        0+    
+all02           e0e5+    cvhour           713     prvtop            4f+    
+all03           e11c+    cwflg           da3d+    r0brdl             0+    
+alloc           dbfb+    cy1              731     r0rxtx             0+    
+altprnprt          3+    cy2              73a     r1brdm             1+    
+appbuf            2e+    cy3              746     r1ier              1+    
+badda0           452     cyear            72e     r2fcr              2+    
+baddat           404     datsiz           475+    r2iir              2+    
+badtim           42b     delay           fd85+    r3lcr              3+    
+base               0+    dfmt128            0+    r4mcr              4+    
+bbappp             e+    dfmt256            0+    r5lsr              5+    
+bbbase          f000+    dfmt512         ffff+    r6msr              6+    
+bbcalret        fd5a+    diff16          dd01+    r7spr              7+    
+bbcbank            c+    dirbf           df77+    ram0buf           3b+    
+bbcomn          fc00+    dly1            fd89+    ram1buf           3c+    
+bbconin         fd94+    dly2            fd87+    ram2buf           3d+    
+bbconout        fd9f+    dmaadr          dd75+    ram3buf           3e+    
+bbconst         fdaa+    dowstr           4fc     ramtbl          e000+    
+bbcpboot        fcc9+    dpbase          d837+    rcp             e200+    
+bbcptime        fcc3+    dpbnds          d882+    rcps              10+    
+bbcrtcini       fc03+    dpbvrt          d857+    rdflo           db13+    
+bbcrtfill       fc09+    dreadh          db00+    rdvrt           db22+    
+bbcstck            d+    dselbf            4e+    readcfg8255       92+    
+bbcurset        fc21+    dtime            489     readhst         dafd+    
+bbdebug         ffff+    dtime0           4ab     regastatus        16+    
+bbdiv16         fce1+    dtime1           4cb     regcommand         f+    
+bbdmaset        fcb7+    dtime2           4f5     regcontrol        16+    
+bbdriveid       fcf9+    dwrith          db30+    regcyllsb          c+    
+bbdsksel        fcbd+    eep29c             4+    regcylmsb          d+    
+bbeidck         fd23+    eep29ee            1+    regdata            8+    
+bbepmngr        fd1d+    eep29xe            2+    regerr             9+    
+bbexec          fd29+    eepage0           c0+    regseccnt          a+    
+bbfdrvsel       fcdb+    eeproglock        10+    regsector          b+    
+bbfhome         fc81+    eepsta          f000+    regshd             e+    
+bbflopio        fc93+    eepunsupp          8+    regstatus          f+    
+bbfread         fc87+    eerineprom        80+    resroom          400+    
+bbfwrite        fc8d+    enddat          e1d3+    rhstfi          dc66+    
+bbhdboot        fd11+    erflag          dd5f+    rldrom          fe79+    
+bbhdgeo         fd0b+    esc               1b+    rst7sp1           38+    
+bbhdinit        fcf3+    exit             391     rst7sp2           39+    
+bbhdrd          fd05+    expath          edf4+    rst7sp3           3a+    
+bbhdwr          fcff+    expaths            5+    rtbsiz           3c0+    
+bbimgp             4+    extfcb          edd0+    rtcbuf          da5b+    
+bbinictc        fc57+    extrabias       1200+    rtcread          462     
+bbjtobnk        fc00+    extstk          efd0+    rtcread0         47f     
+bbldpart        fd17+    false              0+    rwmove          dcef+    
+bbmul16         fce7+    fcp             ea00+    rwoper          dc02+    
+bboffcal        fced+    fcps               4+    rwoshf          dc09+    
+bbpag              f+    fdcbase           d0+    sconin          fc2d+    
+bbprcvblk       fc6f+    fdccmdstatr       d0+    sconout         fc27+    
+bbprnchr        fc99+    fdcdatareg        d7+    sconst          fc33+    
+bbpsndblk       fc63+    fdcdrvrcnt        d6+    sectran         dade+    
+bbrdtime        fca5+    fdcreadc          88+    seg1            e200+    
+bbrdvdsk        fc75+    fdcrestc           7+    seg10           ec00+    
+bbresctc        fc5d+    fdcsectreg        d2+    seg11           ef00+    
+bbsecset        fcb1+    fdcseekc          17+    seg12           efd0+    
+bbsidset        fcd5+    fdctrakreg        d1+    seg2            ea00+    
+bbstack         feb4+    fdcwritc          a8+    seg3            ea00+    
+bbstbase        fe90+    fdrvbuf           45+    seg4            ed00+    
+bbsttim         fc9f+    ff                 c+    seg5            ed80+    
+bbtrkset        fcab+    fifblok            b+    seg6            edd0+    
+bbu0ini         fc39+    fifoend           25+    seg7            edf4+    
+bbu1ini         fc51+    fifokb            1a+    seg8            edff+    
+bbu1rx          fc45+    fifosto            f+    seg9            ee00+    
+bbu1st          fc4b+    fifou0             f+    sekdsk          dd65+    
+bbu1tx          fc3f+    fifsize            8+    sekhst          dd74+    
+bbuplchr        fc69+    fin             fdc4+    seksec          dd68+    
+bbvcpmbt        fccf+    fixblock           0+    sektrk          dd66+    
+bbvoid          fd6a+    fout            fde1+    selact          da98+    
+bbwrvdsk        fc7b+    frdpbuf           41+    seldsk          da7d+    
+bcd2bin          633     fsecbuf           43+    selflp          dac0+    
+bdos            ca06+    fsekbuf           3f+    selhdd          dac6+    
+bdosb           ca00+    fstat           fdb5+    selndb          dabb+    
+bdwtyp          dd62+    ftrkbuf           46+    selvrt          dac7+    
+begdat          dd5e+    gd0              6d5     set1             3d4     
+begin            100+    gd1              6eb     setdma          dad9+    
+bfailmsg        d902+    getbcd           794     setit            396     
+bias            8e00+    getdate          6c3     setrtc           65a     
+bin2bcd          645     gocpm           d9f1+    setsec          dad4+    
+biohby            d8+    haseds          ffff+    settod           518     
+bioreas          a00+    hmempag            b+    settrk          dacf+    
+bios            d800+    home            da65+    shsize            20+    
+biosiz           55e+    homflo          da73+    shstk           ed00+    
+biostds          600+    hstact          dd5e+    shstks             4+    
+bldoffs         3000+    hstbsz           200+    signon          d8a8+    
+blifastblok       60+    hstbuf          dd77+    sintvec         fff0+    
+blifastline       6a+    hstdsk          dd6f+    sk2hst          dcb2+    
+blislowblok       40+    hstfil          dc6e+    skip             45b     
+blislowline       4a+    hstfrd          dca0+    sr0              693     
+bootfail        d9e9+    hstful          dc48+    sr1              668     
+botdsk          d836+    hstlgs          dd6d+    st0              549     
+botok           d93f+    hstloa          dc37+    stack            80e     
+bseldsk         dd16+    hstrdd          dc3a+    stmpp2          ffff+    
+bsetdma         dd11+    hstrsf          dcc5+    stmpzs             0+    
+bsetsec         dd0c+    hstsec          dd72+    sttod            552     
+bsettrk         dd07+    hstsyn          dc45+    synpnd          dcf2+    
+btpasiz            6+    hsttmp          dd6e+    sysbase         f000+    
+cbboot          d914+    hsttrk          dd70+    syscmlo         feb4+    
+cbread          db7b+    hstwrt          dd60+    syscom          fc00+    
+cbrev              f+    idea0line          1+    syshertz          13+    
+ccp             c200+    idea1line          2+    sytimr          fe19+    
+cd1              5cb     idea2line          4+    tblblk            30+    
+cd2              602     idecs0line         8+    tdesclen          14+    
+cdays            5ad     idecs1line        10+    tiaddrlen          4+    
+cdisk              4+    ideporta          e0+    time            da54+    
+cdow             725     ideportb          e1+    timrcon           28+    
+chk00           e065+    ideportc          e2+    timstr           7c6     
+chk01           e0a5+    ideportctrl       e3+    tmpbyte           4b+    
+chk02           e153+    iderdline         40+    tnamelen           8+    
+chk03           e193+    iderstline        80+    tpa              100+    
+chksid          db61+    idewrline         20+    tpagelen           2+    
+chkuna          dbb6+    idisk1            24+    trans           d877+    
+ckdig            7a3     idisk2            24+    trnpag             d+    
+cldcmnd         da28+    idisk3             1+    true            ffff+    
+clkday          da5e+    idisk4             1+    tsizelen           4+    
+clkdow          da60+    imtpag            ff+    u0defspeed         6+    
+clkhr           da5d+    imtsiz           400+    u0isr           fe25+    
+clkio              6+    intrdi          fe0f+    u1defspeed         c+    
+clkmm           da5c+    intren          fdfe+    u1isr           fe59+    
+clkmon          da5f+    intron             0+    u1nul           fe70+    
+clkrst             7+    iobval            95+    uart0             c0+    
+clksclk            5+    iobyte             3+    uart0base         c0+    
+clkse           da5b+    ioflag          dd61+    uart0br           2c+    
+clkyea          da61+    iop                0+    uart1             c8+    
+cloisr          da62+    iops               0+    uart115k2          1+    
+cm1              74d     iuser1            24+    uart1200          60+    
+cm2              754     iuser2             f+    uart19k2           6+    
+cm3              76c     iuser3            24+    uart1base         c8+    
+cmdid             ec+    iuser4             f+    uart1br           2b+    
+cmdinit           91+    kbdbyte           4d+    uart2400          30+    
+cmdln          =  80+    keybstrbbit        7+    uart38k4           3+    
+cmdread           20+    leapdays         615     uart4800          18+    
+cmdrecal          10+    lf             =   a+    uart57k6           2+    
+cmdset          da4f+    lsect           d9c1+    uart9600           c+    
+cmdspindown       e0+    maxblk            14+    uastav          fe84+    
+cmdspinup         e1+    mconin          dd1b+    uastkb          fe86+    
+cmdwrite          30+    mconout         dd2c+    uisre           fe4e+    
+cmonth           748     mconst          dd3b+    uisri           fe32+    
+cnfbyte           27+    mdays            76e     unacnt          dd64+    
+colbuf            4f+    menaprt           21+    unadsk          dd69+    
+coldbeg         da3e+    miobyte           4c+    unasec          dd6c+    
+coldend         da45+    ml1601           5a1     unatrk          dd6a+    
+constr          dd4f+    ml1602           5a7     usenodeblock       0+    
+cont            d9d1+    mltde            589     valid            3aa     
+copsys            2d+    mlthl            579     vconin          fc15+    
+cout             7bd     mmgetp          fd78+    vconout         fc0f+    
+cpmsiz          1bde+    mmpmap          fd6b+    vconst          fc1b+    
+cr             =   d+    mmtpapag          ef+    vdbufsz            a+    
+crdureg         fc27+    mmuport           20+    vdrdsec            0+    
+crt6545adst       8c+    mmutstaddr      d000+    vdskbuf           30+    
+crt6545data       8d+    mmutstpage         d+    vdwrsec            1+    
+crtbase           80+    mnodev          dd4a+    vers              16+    
+crtbeepport       8f+    monmaj            33+    voidisr         fe22+    
+crtblinkbit        0+    monmin            32+    wboot           d986+    
+crthilitbit        3+    mscnt             f6+    wboote          d803+    
+crtkeybcnt        87+    msize             3c+    whstfi          dc5f+    
+crtkeybdat        85+    mul16            59a     wrall              0+    
+crtmodebit         4+    mydiv            789     wrdir              1+    
+crtprntcnt        83+    mydiv0           78e     wrfl2           db53+    
+crtprntdat        81+    mydiv16          786     wrflo           db43+    
+crtram0cnt        82+    mzmac              1+    wrflt           db47+    
+crtram0dat        80+    nextop          d9d4+    write           db8e+    
+crtram1cnt        86+    noovf           dbf4+    writecfg8255      80+    
+crtram1dat        84+    noprow          dd63+    writehst        db2d+    
+crtram2cnt        8a+    path            da46+    wrttmp          dd73+    
+crtram2dat        88+    phydpt          d8a6+    wrual              2+    
+crtram3port       8e+    phylen             a+    wrvrt           db56+    
+crtrevrsbit        1+    phyoff             f+    z3cl            ef00+    
+crtservcnt        8b+    phyprm          d89b+    z3cls             d0+    
+crtservdat        89+    physpt          d8a5+    z3env           ec00+    
+crtunderbit        2+    phystr          dae1+    z3envs             2+    
+crtwidthbit        1+    pio2bit2           2+    z3msg           ed80+    
+cslp0           dd50+    pio2bit3           3+    z3ndir          ee00+    
+ctc0tc            2a+    pio2bit4           4+    z3ndirs           1c+    
+ctc0tchi          20+    ppakstb            1+    z3rev             21+    
+ctc1tc            29+    ppcntrp            2+    z3whl           edff+    
+ctc1tc100hz        5+    ppdatap            3+    zbufbas         e200+    
+ctc1tc10hz        30+    ppdini             0+    zdsstpr         e838+    
+ctc1tc25hz        13+    ppdokg             2+    zdsstsz          1c8+    
+ctc1tc2hz         f4+    ppdrdy             4+    zero128         da35+    
+ctc1tc50hz         a+    ppdstp             6+    zerom           da37+    
+ctcbase           e8+    ppstrob            0+    zflopkg          200+    
+ctcchan0          e8+    ppuack             7+    ziopkg             0+    
+ctcchan1          e9+    ppuini             1+    zrespkg          800+    
+ctcchan2          ea+    ppuokg             3+    zstdovr          400+    
+ctcchan3          eb+    ppurdy             5+    

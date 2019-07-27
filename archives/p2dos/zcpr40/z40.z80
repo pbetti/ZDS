@@ -1,0 +1,423 @@
+; PROGRAM:	Z2CP40
+; VERSION:	4.0
+; DERIVATION:	From ZCPR34 by Jay Sage (October 23, 1988)
+; AUTHOR:	Harold F. Bower
+; DATE:		30 March 1992
+
+; ZCPR34 is copyright (C) 1988 by Jay Sage, all rights reserved.  End-user
+; distribution and duplication, even for non-commercial purposes, is
+; expressly prohibited unless authorized in writing by Jay Sage.
+;
+; Jay Sage specifically disclaims any warranties, expressed or implied,
+; including but not limited to implied warranties of  merchantability and
+; fitness for a particular purpose.  In no event will Jay Sage be liable for
+; any loss of profit or any other commercial damage, including but not
+; limited to special, incidental, consequential, or other damages.
+
+;-----------------------------------------------------------------------------
+;		   A C K N O W L E D G M E N T S
+;-----------------------------------------------------------------------------
+; Update notes:
+;    Version 4.0E: Source released for Non-Commercial Use with permission of
+;	Jay Sage.						HFB
+;    Version 4.0: Banked sections of code using B/P Bios features.  Revised
+;	syntax for REName and CoPy to accept either CP/M Syntax (dst=src)
+;	or DOS syntax (src dst).  Reduced number of Named Commons to permit
+;	linkage with remainder of ZSDOS2/B/P system.
+;    Version 3.5: Removed dependancies on DOS and CCP sizes in preparation
+;	for banking of system.  Added many RCP features.  Added ZSDOS2 hooks
+;	and code for taking advantage of new features.
+;    Version 3.4D: Fixed mistake in conditional associated with the PRFN
+;	routine in module 5.  It needs to be included in the code if ERAON
+;	also.  Made a macro in Z34HDR.LIB to define which of the characters
+;	<, >, and _ are to be excluded from file names.  DRI CP/M excludes
+;	all three, but we now allow the underscore for compatibility with
+;	MSDOS (and because we can see no reason not to).
+;    Version 3.4C: Added the SUBZERO option suggested by Lindsay Haisley
+;	so that one can disable the standard feature (SUBZERO EQU YES) of
+;	searching for $$$.SUB in A0:.
+;    Version 3.4B: Joe Wright discovered mistake in placement of ZEX
+;	control code at label COM:.  That code has been moved to after
+;	CALLPROG: so that it will work for resident as well as transient
+;	commands.  Support for the ID common has been added.
+;    Version 3.4A: David Johnson cleaned up the code to an enormous
+;	extent, saving close to 100 bytes.
+
+; The following special contributions to ZCPR version 3.4 are acknowledged.
+; Joe Wright and Bridger Mitchell were partners through most of the development
+; of ZCPR34.  Joe Wright provided the basic code for the type-4 programs and
+; for support for the drive vector.  Bridger Mitchell provided the COMMON
+; technique to make a universal version of the command processor.  David
+; Johnson went over the ZCPR33 code with a fine-tooth comb and found many
+; places where the code could be improved and shortened.  Jim Lill provided
+; the macros that display the size messages.
+
+; The following acknowledgments were made with respect to ZCPR version 3.3.
+
+; Many people have played a role in the development of ZCPR in general and
+; ZCPR33 in particular.  It all started when "The CCP Group," including
+; Richard Conn, Ron Fowler, Keith Petersen, Frank Wancho, Charlie Strom, and
+; Bob Mathias decided that by rewriting the CP/M command processor to take
+; advantage of Zilog-specific opcodes they could save enough code to enhance
+; some of the features.   Richard Conn then extended that development through
+; ZCPR2 to ZCPR3 (3.0).  Just a little over two years ago, I took the first
+; step to enhance ZCPR3 by making it get the maximum drive and user values
+; from the environment instead of hard coding them in.   This version was
+; distributed privately as ZCPR31.  Along the way to what is now ZCPR
+; version 3.3 a number of others have made valuable contributions: Steve
+; Kitahata, Michael Bate, Bruce Morgen, Roger Warren, Dreas Nielsen, Bob Freed,
+; Al Hawley, Howard Goldstein, and many others who have stimulated developments
+; by pointing out problems or asking questions.
+
+; I would like particularly to acknowledge two people who have played a very
+; significant role in these developments.  One is Al Hawley.  He introduced
+; the idea of having the DUOK flag in the environment control how the CPR
+; would respond to the DU: form of directory reference.  He also originated
+; the idea of using the high bit of the first character of each command name
+; to control whether or not it would be wheel restricted.  Finally, he
+; contributed the basic structure of the highly efficient, elegant, and more
+; general number evaluation routines in the code.
+
+; My biggest debt of gratitude is to Howard Goldstein.  His role in the
+; development of ZCPR33 goes back about a year, when he contributed the first
+; correct implementation of the minpath feature.  More recently, during the
+; period of intense development since Echelon expressed its interest in my
+; writing the official 3.3 version, he and I have shared an especially
+; enjoyable and fruitful relationship.  Most of the newest ideas have been
+; worked out jointly, and Howard has done a great deal to keep my code and
+; concepts on track.  He discovered many ways to pare the code down and, more
+; importantly, uncovered numerous subtle bugs.  He recoded the SAVE command
+; to make it more compact and reliable.
+
+;						Jay Sage
+;						May 5, 1988
+
+;-----------------------------------------------------------------------------
+;		U S E R    C O N F I G U R A T I O N
+;-----------------------------------------------------------------------------
+
+	NAME	('CCP')
+
+; The following MACLIB statements load all the user-selected equates
+; which are used to customize ZCPR34 for the user's working environment.
+; NOTE -- TRUE & FALSE are defined in Z34CMN.
+
+	INCLUDE	Z40CMN.LIB		; Named COMMON definitions
+	MACLIB	Z40HDR.LIB		; Customization options
+
+; PRTVAL macro(s) to print text and value during assembly
+
+PRTVAL2	  MACRO M1,V1,M2		; \
+	.PRINTX M1 V1 M2		;  +- this is the print value macro
+	  ENDM				; /
+
+PRTVAL	  MACRO R,MSG1,VAL,MSG2		; \
+	.RADIX R			;   passing the radix value
+	PRTVAL2 <MSG1>,%VAL,<MSG2>	;   requires the uses of 2 macros
+	  ENDM				; /
+
+
+; Check that the configuration includes the required facilities
+
+; A ZCPR34 system is assumed to include certain minimal features, including
+; an external file control block, external path, shell stack, message buffer,
+; external environment descriptor, multiple command line, and external stack.
+; If wheel checking is enabled in the Z34HDR.LIB file, then there must be
+; an address defined for the wheel byte in the Z3BASE.LIB file.
+
+ERRFLAG	DEFL	EXTFCBS EQ 0			; External command FCB
+ERRFLAG	DEFL	ERRFLAG OR [ EXPATHS EQ 0 ]	; Symbolic path
+ERRFLAG	DEFL	ERRFLAG OR [ SHSTKS  EQ 0 ]	; Shell stack
+ERRFLAG	DEFL	ERRFLAG OR [ Z3MSGS  EQ 0 ]	; Message buffer
+ERRFLAG	DEFL	ERRFLAG OR [ Z3ENVS  EQ 0 ]	; Environment descriptor
+ERRFLAG	DEFL	ERRFLAG OR [ Z3CLS   EQ 0 ]	; Multiple command line
+ERRFLAG	DEFL	ERRFLAG OR [ EXTSTKS EQ 0 ]	; External stack
+	  IF  WHEEL OR WDU OR WPASS OR WPREFIX OR WHLDIR
+ERRFLAG	DEFL	ERRFLAG OR [ Z3WHLS  EQ 0 ]	; Wheel byte
+	  ENDIF	;wheel or wdu or wpass or wprefix or whldir
+
+	   IF  ERRFLAG
+	.PRINTX	*** NOT ALL REQUIRED ZCPR3 FACILITIES ARE SUPPORTED ***
+	   ELSE		; go ahead with the assembly
+
+;-----------------------------------------------------------------------------
+;		D E F I N I T I O N S    S E C T I O N
+;-----------------------------------------------------------------------------
+; ----------   Macro definitions
+
+	MACLIB	Z34MAC.LIB		; Library of macros for ZCPR34
+
+; ----------   ASCII definitions
+
+CTRLC	EQU	03H
+BELL	EQU	07H
+TAB	EQU	09H
+LF	EQU	0AH
+FF	EQU	0CH
+CR	EQU	0DH
+
+; ----------   Operating system addresses
+
+WBOOT	EQU	BASE+0000H	; CP/M warm boot address
+UDFLAG	EQU	BASE+0004H	; User number in high nybble, disk in low
+BDOS	EQU	BASE+0005H	; BDOS function call entry point
+TFCB	EQU	BASE+005CH	; Default FCB buffer
+TFCB2	EQU	TFCB+16		; 2nd FCB
+TBUFF	EQU	BASE+0080H	; Default disk I/O buffer
+TPA	EQU	BASE+0100H	; Base of TPA
+CCPSIZE	EQU	0800H		; Size of CCP
+
+; ----------   Error codes
+; ZCPR34 uses the error byte at the beginning of the message buffer as a flag
+; to show what kind of error occurred.  Advanced error handlers will be able
+; to help the user further by suggesting the possible cause of the error.
+; Error code 6 for an ECP error is determined by the code and cannot be
+; changed (without increasing code length).
+
+ECDUCHG		EQU	1	; Directory change error -- attempt to change
+				; ..logged directory when under control of
+				; ..wheel byte and wheel is off
+
+ECBADDIR	EQU	2	; Bad directory specification -- logging of
+				; ..user number beyond legal range,
+				; ..nonexistent named directory
+
+ECBADPASS	EQU	3	; Bad password -- incorrect password entered
+
+ECBADCMD	EQU	5	; Bad command form -- wildcard or file type
+				; ..present in command verb
+
+ECECPERR	EQU	6	; ECP error --  command could not be executed
+				; ..by ECP, error handling was forced by a
+				; ..transient for its own reasons
+				; (DO NOT CHANGE FROM 6)
+
+ECNOCMD		EQU	7	; Command file not found -- command that skips
+				; ..ECP could not be executed, GET could not
+				; ..find file to load
+
+ECAMBIG		EQU	8	; Ambiguous file specification where not
+				; ..allowed (SAVE, GET, REN)
+
+ECBADNUM	EQU	9	; Bad numerical value -- not a number where
+				; ..number expected, number out of range
+
+ECNOFILE	EQU	10	; File not found -- REN, TYPE, LIST could not
+				; ..find a specified file
+
+ECDISKFULL	EQU	11	; Disk directory or data area full
+
+ECTPAFULL	EQU	12	; TPA overflow error
+
+; ----------   Multiple command line equates
+; The multiple command line buffer is located in a protected area in memory so
+; that it is not overwritten during warm boots.  It includes some pointers so
+; that when ZCPR34 starts it can tell where to start reading the command line.
+; BUFSIZ and CHRCNT are not used by ZCPR34 but are provided so that the BDOS
+; line input function can be used to read in a command line.
+
+NXTCHR	EQU	Z3CL		; Address where pointer to next command to
+				; ..process is kept
+BUFSIZ	EQU	Z3CL+2		; Address where size of buffer is kept
+CHRCNT	EQU	Z3CL+3		; Address where length of string actually in
+				; ..the buffer is kept (not always reliable)
+CMDLIN	EQU	Z3CL+4		; Address of beginning of command line buffer
+
+;BUFLEN	EQU	Z3CLS		; Length of command line buffer
+
+; ----------   Command file control block
+; In ZCPR34 the file control block for commands must be located in protected
+; memory.  This not only frees up valuable space in the command processor for
+; code but also makes it possible for programs to determine by what name they
+; were invoked.
+
+CMDFCB	EQU	EXTFCB
+
+; ----------   External CPR stack
+
+XSTKSZ	EQU	48		;4.0E Set External Stack Size
+;4.0E STACK	EQU	EXTSTK+48	; Set top-of-stack address
+;4.0E PWLIN	EQU	EXTSTK		; Place line at bottom of stack
+
+; ----------  Environment
+
+QUIETFL	EQU	Z3ENV+28H	; Quiet flag
+MAXDRENV EQU	Z3ENV+2CH	; Maximum drive value
+MAXUSRENV EQU	Z3ENV+2DH	; Maximum user value
+DUOKFL	EQU	Z3ENV+2EH	; Flag indicating acceptance of DU: form
+CRTTXT0	EQU	Z3ENV+33H	; Address of number of lines of text on the
+				; ..screen of CRT0
+DRVEC	EQU	Z3ENV+34H	; Drive vector
+
+; ----------  Message buffer
+
+ECFLAG		EQU	Z3MSG		; Error return code flag
+IFPTRFL		EQU	Z3MSG+1		; Pointer to current IF level
+IFSTATFL	EQU	Z3MSG+2		; Flow control status byte
+CMDSTATFL	EQU	Z3MSG+3		; Command status flag
+CMDPTR		EQU	Z3MSG+4		; Pointer to currently running command
+ZEXINPFL	EQU	Z3MSG+7		; ZEX input status/control flag
+ZEXRUNFL	EQU	Z3MSG+8		; ZEX running flag
+ERRCMD		EQU	Z3MSG+10H	; Error handling command line
+XSUBFLAG	EQU	Z3MSG+2CH	; XSUB input redirection flag
+SUBFLAG		EQU	Z3MSG+2DH	; Submit running flag
+CURUSR		EQU	Z3MSG+2EH	; Currently logged user
+CURDR		EQU	Z3MSG+2FH	; Currently logged drive
+
+;-----------------------------------------------------------------------------
+;		C O D E    I N C L U D E S    S E C T I O N
+;-----------------------------------------------------------------------------
+
+	PAGE
+	INCLUDE	Z40-1.Z80
+
+	PAGE
+	INCLUDE	Z40-2.Z80
+
+	PAGE
+	INCLUDE	Z40-3.Z80
+
+	PAGE
+	INCLUDE	Z40-4.Z80
+
+	PAGE
+	INCLUDE	Z40-5.Z80
+
+	PAGE
+	INCLUDE	Z40-6.Z80
+
+	PAGE			;4.0E
+	INCLUDE	Z40-7.Z80	;4.0E
+
+	PAGE			;4.0E
+	INCLUDE	Z40-8.Z80	;4.0E
+
+	PAGE			;4.0E
+	INCLUDE	Z40-9.Z80	;4.0E
+	PAGE
+;-----------------------------------------------------------------------------
+;		D A T A    A R E A    D E F I N I T I O N S
+;-----------------------------------------------------------------------------
+; ---------- Page line count buffer
+
+	  IF  lton		; Needed only if TYPE command included
+PAGCNT:	DEFS	1		; Lines left on page (filled in by code)
+PRFLG:	DEFS	1		;4.0E Flag for TYPE or LIST functions
+	  ENDIF		;lton
+
+; ---------- Minpath/Rootpth buffers
+
+	  IF  extmpath
+	   IF  expaths LE 10	;4.0E
+MPATH	EQU	Z3ENV+26H	;4.0E
+	   ELSE			;4.0E
+MPATH	EQU	EXTMPATHADR	; Assign external minpath address
+	   ENDIF		;4.0E
+	  ELSE
+MPATH:
+	   IF  drvprefix
+	DEFS	2		; Two bytes for specified DU
+	   ENDIF
+	   IF  scancur
+	DEFS	2		; Two bytes for current DU
+	   ENDIF
+	DEFS	2 * EXPATHS	; Space for path from path buffer
+	DEFS	1		; One byte for ending null
+	  ENDIF		; not extmpath
+
+	  IF  rootonly
+ROOTPTH: DEFS	2		; Special path for root dir only
+	 DEFB	0		; End of path
+	  ENDIF		; rootonly
+
+;4.0E Variables removed from In-line code
+
+PARSPTR: DEFS	2		;4.0E Pointer to Command line to parse next
+TMPCOLN: DEFS	1		;4.0E Temporary Colon Flag
+COLON:	 DEFS	1		;4.0E Flag for Explicit DU declared
+FIRSTCH: DEFS	1		;4.0E First character of a Command Line
+TAILSV:	 DEFS	2		;4.0E Pointer to current Command Tail location
+TMPUSR:	 DEFS	1		;4.0E Temporary User Number
+TMPDRV:	 DEFS	1		;4.0E Temporary Drive Number
+DUERFLG: DEFS	1		;4.0E Error Flag from DU/DIR Parse
+QMCNT:	 DEFS	1		;4.0E Question Mark count from Parse
+SYSTST:	 DEFS	1		;4.0E Flag for directory Load
+	  IF  ZSDOS2		;4.0E
+DELIMT:	DEFS	1		;4.0E Temporary Delimiter storage
+DELIM2:	DEFS	1		;4.0E Delimiter char between 2 file names
+	  ENDIF			;4.0E
+
+; ---------- Copy Command Buffers
+
+	   IF  COPYON
+CBUFF:	 DEFS	2		; Pointer to Base of Copy Buffer
+USRDST:	 DEFS	1		; User of Dest file
+USRSRC:	 DEFS	1		; User of Source file
+STATUS:	 DEFS	1		; Status of File Stamp Read
+	    IF  CPTIM
+FSTAMP:	 DEFS	2		; Storage for pointer to stamp
+	    ENDIF	; cptim
+	   ENDIF	; copyon
+
+; --------- PEEK Command Buffer
+
+	  IF  peekon
+NXPEEK:	 DEFW	TPA		; Start default Peek at TPA Base
+	  ENDIF		; peekon
+
+	  IF  eraon OR lton OR proton
+INSPECT: DEFS	1		; Flag for Inspect/page
+	  ENDIF
+
+	  IF  proton
+FATT:	 DEFS	2		; Storage for two attribute bytes
+NXTFIL:	 DEFS	2		; Ptr to Next file in Dir Array
+	  ENDIF
+
+	  IF  diron OR eraon OR lton OR renon OR saveon
+DVVAL:	DEFS	1		; Drive number for LOG function
+	  ENDIF
+
+;-----------------------------------------------------------------------------
+; The following will cause a warning message to appear if the size of ZCPR34 is
+; over 2K bytes.  It will also fill out the module to the full size.
+
+CODESIZE DEFL	$ - ENTRY
+
+	.PRINTX
+	PRTVAL	10,<SIZE OF CCP...>,CODESIZE,<BYTES>
+
+	  IF  CODESIZE GT CCPSIZE
+
+OVERRUN	DEFL	CODESIZE - CCPSIZE
+SECTORS	DEFL	[CODESIZE + 7FH] / 80H
+	PRTVAL	10,<*** WARNING! ZCPR34 is >,overrun,<bytes over 2k nominal length ***>
+	PRTVAL	10,<Size of this incarnation is >,sectors,<sectors.>
+
+	  ELSE		;CCP size is OK
+
+FREESPACE DEFL	CCPSIZE - CODESIZE
+	DEFS	FREESPACE		; Fill out to full size
+
+	  IF  FREESPACE > 999
+	PRTVAL	10,<Free space....>,FREESPACE,<bytes>
+	  ELSE		;freespace < 1000
+	  IF  FREESPACE > 99
+	PRTVAL	10,<Free space.....>,FREESPACE,<bytes>
+	  ELSE		;freespace < 100
+	  IF  FREESPACE > 9
+	PRTVAL	10,<Free space......>,FREESPACE,<bytes>
+	  ELSE		;freespace <10
+	PRTVAL	10,<Free space.......>,FREESPACE,<bytes>
+	  ENDIF		;freespace > 9
+	  ENDIF		;freespace > 99
+	  ENDIF		;freespace > 999
+
+	  ENDIF		;CCP size OK
+
+	.PRINTX
+
+	  ENDIF		;errflag
+
+	END	; Z2CP40
+

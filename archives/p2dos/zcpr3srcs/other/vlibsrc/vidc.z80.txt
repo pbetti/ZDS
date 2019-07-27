@@ -1,0 +1,58 @@
+	TITLE	"VIDC - Vlib 4.1"
+	NAME	('VIDC')
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+; Date    : 12 Jan 89
+; Version : 1.0
+; Module  : VIDC
+; Abstract:  This module contains the routines DELLIN and INSLIN.
+;	DELLIN deletes the line on which the cursor is positioned,
+;	leaving the cursor on the same physical line.  INSLIN
+;	inserts a line on the screen immediately before the one on
+;	which the cursor is positioned, and re-positions the cursor
+;	at the beginning of the new clear line.  These control
+;	sequences must be defined in the ZCPR3 TERMCAP in the ENV.
+; Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;  Module Entry Points
+
+	PUBLIC		DELLIN, INSLIN
+
+;  External References
+
+	EXT		@SETV0, @LD, @LI
+
+	.Z80
+	CSEG
+;===============================================================
+; DELLIN
+;  Entry: - None
+;  Exit :  A = 0 and Zero Flag Set (Z) if Error
+;	   A = FFH and Zero flag Reset (NZ) if Operation OK
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+DELLIN:	PUSH	HL		; Save regs
+	LD	HL,(@LD)	; Get address of Delete Line string
+	JR	DOIT		; ..and vector to finish up elsewhere
+
+;===============================================================
+; INSLIN
+;  Entry: - None
+;  Exit :  A = 0 and Zero Flag Set (Z) if Error
+;	   A = FFH and Zero flag Reset (NZ) if Operation OK
+;  Uses : AF
+; Special Requirements: None
+;===============================================================
+
+INSLIN:	PUSH	HL		; Save regs
+	LD	HL,(@LI)	; Get address of Line Insert string
+DOIT:	XOR	A		; Set for No delay
+	JP	@SETV0		; Finish up elsewhere (in VID1)
+
+	END
+

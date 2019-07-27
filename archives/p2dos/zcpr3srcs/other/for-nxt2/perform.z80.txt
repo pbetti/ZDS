@@ -1,0 +1,659 @@
+; PERFORM.Z80
+; A ZCPR3 Utility to be used in concert with FOR.COM.
+;
+; Syntax:
+;	( FOR <args> )
+;	PERFORM <command line>
+;
+; See the documentation for FOR.COM to review its arguments.
+; The command line passed to PERFORM will be executed once for every line
+; in FORFILES.SYS (which is created by FOR.COM).  The "$" character is an
+; escape flag which begins two special symbols recognized by PERFORM.
+; The special symbols and their meanings are:
+;	$X	-- the current line from FORFILES.SYS
+;	$|	-- a substitute multiple-command separator (";").
+;
+; Any pending commands in the multiple-command-line buffer will
+; be saved when PERFORM is invoked and restored when it is completed.
+;
+; Author: Dreas Nielsen
+; History:
+;	 Date	 Version	 Comments
+;	------	---------	----------
+;	5/16/87	  1.0		Created.  RDN.
+;	6/3/87	  1.1		Added call to PUTCST to allow flow control
+;				processing under normal ZCPR3.
+;
+;
+VERS	EQU	11
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+;
+DEBUG	EQU	FALSE
+;
+CR	EQU	0DH
+LF	EQU	0AH
+BELL	EQU	7
+CTRLZ	EQU	1AH
+EOF	EQU	1AH
+BDOS	EQU	5
+INFERR	EQU	1	;error code for "can't open input file"
+OFERR	EQU	2	;error code for "can't open output file"
+RDERR	EQU	3	;error code for "can't read input file"
+WRTERR	EQU	4	;error code for "can't write output file"
+CLZERR	EQU	5	;error code for "can't close output file"
+PARMFL	EQU	'/'
+CMDLIN	EQU	080H
+SYSFCB	EQU	05CH
+BUFSIZ	EQU	16	;16 128-byte sectors (2k) for I/O buffers
+FCBLEN	EQU	36
+BSZOFF	EQU	0	;offset of buffer size indicator from I/O ctl block
+BADOFF	EQU	6	;offset of buffer addr indic. from I/O ctl block start
+FCBOFF	EQU	8	;offset of fcb from I/O ctl block start
+SYSFLG	EQU	'$'	;Command-line escape character
+LINFLG	EQU	'X'	;Escape argument for current FOR line.
+SUBSEP	EQU	'|'	;Escape argument -- substitute command separator.
+CMDSEP	EQU	';'	;Real command separator.
+;
+;
+; External Z3LIB and SYSLIB Routines
+;
+	EXT	Z3INIT,GETSH2,SHPUSH,SHPOP,QSHELL,GETEFCB,PUTCL,PUTER2
+	EXT	GETCL2,RETUD,F$DELETE,PUTCST
+	EXT	CODEND,QPRINT,PRINT,SKSP,FXI$OPEN,FXO$OPEN
+	EXT	FX$GET,FX$PUT,FXI$CLOSE,FXO$CLOSE,F$RENAME
+;
+	IF	DEBUG
+	EXT	PHL4HC
+	ENDIF
+;
+;
+;----------------  Code  ----------------
+;
+	db	'Z3ENV'		;This is a ZCPR3 Utility
+	db	1		;External Environment Descriptor
+z3eadr:
+	dw	00
+START:
+	ld	hl,(z3eadr)	;pt to ZCPR3 environment
+	call	z3init		;initialize the ZCPR3 Environment
+;
+; Save stack pointer and set a new one
+;
+	LD	(SAVESP),SP
+	LD	HL,(6)		;BDOS jump address
+	LD	DE,2056		;size of ZCPR3
+	OR	A
+	SBC	HL,DE
+	LD	SP,HL
+;
+; Allocate buffers for byte-oriented file I/O, first line of file.
+;
+SETBUFS:
+	CALL	CODEND
+	LD	(FIRSTLIN),HL
+	LD	DE,300H		;For 1st line of FORFILES.SYS
+	ADD	HL,DE
+	LD	(INTLINE),HL	;For skeleton command line.
+	LD	DE,200H
+	ADD	HL,DE
+	LD	(EXPLINE),HL	;For expanded command line.
+	LD	DE,200H
+	ADD	HL,DE
+	LD	(INPLOC),HL
+	LD	B,BUFSIZ
+	CALL	FBINIT		;allocate I/O ctl buffer for input
+	LD	(OUTPLOC),HL
+	CALL	FBINIT		;allocate I/O ctl buffer for output
+;
+; Check for Shell Stack
+;
+	CALL	GETSH2			;get shell status
+	JR	NZ,START0		;skip over shell init
+	CALL	PRINT
+	DB	'No Shell Stack',0
+	JP	EXIT
+;
+; See if this program was invoked as a shell
+;
+START0:
+	CALL	QSHELL		;find out from ZCPR3 environment
+	JP	Z,ISHELL	;do not push onto stack if invoked as a shell
+;
+	CALL	QPRINT
+	DB	'PERFORM v.',[VERS / 10]+'0','.',[VERS mod 10]+'0',CR,LF,0
+;
+; Store a null at end of command line.
+	LD	HL,CMDLIN
+	LD	A,(HL)
+	INC	HL
+	LD	E,A
+	XOR	A
+	LD	D,A
+	ADD	HL,DE
+	LD	(HL),A
+;
+; Now parse command line.
+; First look for option character.  Only option is help, which is exclusive.
+	LD	HL,CMDLIN+1
+	CALL	SKSP
+	LD	A,(HL)
+	OR	A
+	JP	Z,HELP
+	CP	PARMFL
+	JP	Z,HELP
+	CP	'?'
+	JP	Z,HELP
+;
+; Set Name of Shell from External FCB if Possible or From Default if Not
+;
+SETSHN:
+	CALL	SETDIR		;set name of current directory.
+	CALL	GETEFCB		;get ptr to external fcb
+	JR	Z,START2	;no external FCB, so use default name
+	INC	HL		;pt to program name
+	LD	DE,SHNAME	;pt to string
+	LD	BC,8		;8 chars
+	LDIR			;copy into buffer
+;
+; Push Name of Shell onto Stack
+;
+START2:
+	LD	HL,SHDISK	;pt to name of shell
+	CALL	SHPUSH		;push shell onto stack
+	JR	NZ,START3
+;
+; Save arguments and remaining commands from MCL buffer in PERFORM$.$$$
+;
+	LD	HL,(OUTPLOC)
+	LD	DE,CTLFIL
+	CALL	INITNAM
+	LD	DE,(OUTPLOC)
+	CALL	FXO$OPEN
+	LD	HL,CMDLIN+1
+	CALL	SKSP
+	CALL	WRITLN
+	CALL	GETCL2
+	CALL	WRITLN
+	LD	A,EOF
+	CALL	FX$PUT
+	XOR	A		;Truncate CL in memory
+	LD	(HL),A
+	CALL	FXO$CLOSE	;Close PERFORM$.$$$
+	JR	ISHELL		;Go init shell cmdline processing.
+;
+; Shell Stack Push Error
+;
+START3:
+	CP	2		;shell stack full?
+	JR	NZ,START4
+;
+; Shell Stack is Full
+;
+	CALL	PRINT
+	DB	'Shell Stack Full',0
+	JR	EXIT
+;
+; Shell Stack Entry Size is too small for command line
+;
+START4:
+	CALL	PRINT
+	DB	'Shell Stack Entry Size is too Small',0
+;
+EXIT:	LD	HL,(SAVESP)
+	LD	SP,HL
+	RET
+;
+;
+;----------------
+; Program invoked as shell--
+;
+ISHELL:
+;
+; Look for PERFORM$.$$$; open if available or pop shell if not.
+;
+	XOR	A
+	CALL	PUTCST
+	LD	HL,(INPLOC)
+	LD	DE,CTLFIL
+	CALL	INITNAM
+	LD	DE,(INPLOC)
+	CALL	FXI$OPEN
+	JR	Z,SHEXIT
+	LD	HL,(INTLINE)
+	CALL	READLN
+	JR	NZ,SHELL1
+	CALL	PRINT
+	DB	'Temporary file empty.',CR,LF,0
+	JR	SHEXIT
+SHELL1:	CALL	FXI$CLOSE
+;
+; Get next line from FORFILES.SYS if it exists.
+;
+	CALL	READNAM
+	JR	Z,SHEXIT
+;
+; Expand skeleton command line read from PERFORM$.$$$.
+;
+	LD	HL,(INTLINE)
+	LD	DE,(EXPLINE)
+EXPAND:	LD	A,(HL)
+	CP	SYSFLG
+	JR	NZ,EXP2
+	CALL	SYSFIL		;Do expansion
+	JR	EXPAND
+EXP2:	LD	(DE),A
+	INC	HL
+	INC	DE
+	OR	A
+	JR	NZ,EXPAND
+;
+; Now store command line in MCL buffer and exit without popping shell.
+;
+	LD	HL,(EXPLINE)
+	CALL	PUTCL
+	JP	EXIT
+;
+;----------------
+;
+; Pop shell and restore command line.
+;
+SHEXIT:
+	CALL	RESTORE
+	JP	EXIT
+;
+; Restore command line and erase temporary file.
+;
+RESTORE:
+	CALL	SHPOP
+	LD	HL,(INPLOC)	;Get command line from temporary file.
+	LD	DE,CTLFIL
+	CALL	INITNAM
+	LD	DE,(INPLOC)
+	CALL	FXI$OPEN
+	JR	NZ,RSTR1
+	CALL	PRINT
+	DB	CR,LF,'Can''t restore command line.',CR,LF,0
+	JR	RSTR3
+RSTR1:	LD	HL,(EXPLINE)
+	CALL	READLN
+	JR	Z,RSTR4
+	CALL	READLN
+	JR	Z,RSTR4
+	CALL	PUTCL
+	JR	RSTR2
+RSTR4:	CALL	PRINT
+	DB	'Temporary file empty or damaged.',CR,LF,0
+RSTR2:	LD	DE,(INPLOC)
+	CALL	FXI$CLOSE
+	CALL	DELINF
+RSTR3:	CALL	SETDIR		;Make sure we always get back where we started
+	LD	HL,SHNAME-1
+	XOR	A
+	LD	(HL),A
+	LD	HL,SHDISK
+	CALL	PUTCL
+	LD	A,0C9H		;RET instruction
+	LD	(RESTORE),A	;So this routine is called only once.
+	RET
+;
+;----------------
+;
+; Print help message and exit.
+;
+HELP:
+	CALL	PRINT
+	DB	'Performs a command line once for every item specified with FOR.COM',CR,LF
+	DB	'Syntax:',CR,LF
+	DB	'    PERFORM <cmd_line>',CR,LF
+	DB	'Two special symbols may be used in the command line:',CR,LF
+	DB	'    $X - Substitute the current "FOR" item',CR,LF
+	DB	'    $| - Substitute a command separator (;)',CR,LF
+	DB	0
+	JP	EXIT
+;
+;
+;========================  SUBROUTINES  =============================
+;
+; Set DU of current directory at SHDISK.
+;
+SETDIR:
+	CALL	RETUD		;Shell always returns to current directory.
+	LD	HL,SHDISK	;pt to shell disk
+	LD	A,B		;get disk
+	ADD	'A'		;convert to letter
+	LD	(HL),A		;set disk letter
+	INC	HL		;pt to user 10's
+	LD	A,C		;get user number
+	LD	B,10		;subtract 10's
+	LD	D,'0'		;set char
+SETDIR1:
+	SUB	B		;subtract
+	JR	C,SETDIR2
+	INC	D		;increment digit
+	JR	SETDIR1
+SETDIR2:
+	ADD	A,B		;get 1's
+	LD	(HL),D		;set 10's digit for user
+	INC	HL		;pt to 1's digit
+	ADD	'0'		;compute 1's digit
+	LD	(HL),A		;set 1's digit
+	RET
+;
+;----------------
+;
+; Read first line of FORFILES.SYS into FIRSTLIN buffer.
+; If file doesn't exist or is empty, return A=0 and Z; else return A<>0 & NZ.
+;
+READNAM:
+;
+; Initialize the I/O control buffers with names for R/W of FORFILES.SYS.
+;
+	LD	HL,(INPLOC)
+	LD	DE,INFNAM
+	CALL	INITNAM
+	LD	HL,(OUTPLOC)
+	LD	DE,OFNAM
+	CALL	INITNAM
+;
+; Open the files.
+;
+	LD	DE,(INPLOC)
+	CALL	FXI$OPEN
+	RET	Z
+	LD	DE,(OUTPLOC)
+	CALL	FXO$OPEN
+;
+; Read line.
+;
+	LD	HL,(FIRSTLIN)	;place to put characters
+	CALL	READLN
+	RET	Z
+;
+; Copy remainder of input file to output file.
+;  First flush any remaining eoln chars from input file.
+COPY:	CALL	FX$GET
+	JR	Z,NOCHARS	;no more chars
+	CP	EOF
+	JR	Z,NOCHARS
+	CALL	EOLN
+	JR	Z,COPY
+;				;there's a legit char in A
+	LD	HL,(OUTPLOC)	;write it out
+	EX	DE,HL		;swap buffer pointers
+	CALL	FX$PUT
+	JR	Z,OUTERR	;can't write output file
+;				;now write the rest of the chars
+COPY1:	EX	DE,HL		;input ptr in DE
+	CALL	FX$GET
+	JR	Z,CLOSEM	;done
+	EX	DE,HL		;output ptr in DE
+	CALL	FX$PUT
+	JR	NZ,COPY1
+;
+OUTERR:	LD	A,WRTERR	;do this if error in writing
+	CALL	PUTER2
+	IF	DEBUG
+	CALL	ERRADR
+	ENDIF
+	CALL	PRINT
+	DB	'Can''t write output file',CR,LF,0
+;
+CLOSEM:	LD	DE,(INPLOC)	;do this if any chars written to output
+	CALL	FXI$CLOSE
+	LD	DE,(OUTPLOC)
+	CALL	FXO$CLOSE
+	JR	NZ,CHGNAM	;continue if no error
+	LD	A,CLZERR
+	CALL	PUTER2		;if can't close output file, set flag...
+	IF	DEBUG
+	CALL	ERRADR
+	ENDIF
+	CALL	PRINT		;...print err msg...
+	DB	'Can''t close output file',CR,LF,0
+	CALL	DELINF		;...delete input file,
+GOTLIN:	XOR	A
+	DEC	A		;Signal that a line has been read.
+	RET
+;
+; If no chars written to output file, close and erase the files and pop
+; the shell.
+;
+NOCHARS:
+	LD	DE,(INPLOC)
+	CALL	FXI$CLOSE
+	CALL	DELINF
+	LD	DE,(OUTPLOC)
+	CALL	FXO$CLOSE
+	LD	HL,FCBOFF
+	ADD	HL,DE
+	EX	DE,HL
+	CALL	F$DELETE
+	CALL	RESTORE
+	JR	GOTLIN		;Return with OK flag.
+;
+; Delete input file and rename output file to infilename
+CHGNAM:	CALL	DELINF
+	PUSH	DE		;save input fcb addr
+	LD	HL,(OUTPLOC)
+	LD	DE,FCBOFF
+	ADD	HL,DE
+	POP	DE
+	EX	DE,HL
+	CALL	F$RENAME
+	JR	GOTLIN		;Return with OK flag.
+;
+;----------------
+;
+; Write line pointed to by HL to output file.  Terminating null is translated
+; to CR/LF pair.
+;
+WRITLN:
+	PUSH	DE
+	PUSH	HL
+	LD	DE,(OUTPLOC)
+WRTLN1:	LD	A,(HL)
+	OR	A
+	JR	Z,WRTLN2
+	CALL	FX$PUT
+	INC	HL
+	JR	WRTLN1
+WRTLN2:	LD	A,CR
+	CALL	FX$PUT
+	LD	A,LF
+	CALL	FX$PUT
+	POP	HL
+	POP	DE
+	RET
+;
+;----------------
+;
+; Read line from input file into buffer pointed to by HL.
+; Return A=00 and Z if file empty or no more input (file will also be deleted
+; in this case).
+;
+READLN:
+	PUSH	HL
+	LD	DE,(INPLOC)
+RD3:	CALL	FX$GET		;see if file empty or leading eoln chars
+	JR	Z,RD5		;read error must be physical eof
+	CP	EOF		;if it's the end of the file...
+	JR	Z,RD5		;...quit and clean up
+	CP	CR
+	JR	Z,RD4
+	LD	(HL),A
+	INC	HL
+RD1:	CALL	FX$GET		;now get rest of line
+	JR	Z,RD2		;physical eof, but we've gotten at least 1 char
+	CP	CR
+	JR	Z,RD4
+	CP	EOF		;...or EOF?
+	JR	Z,RD2		;if so, quit
+	LD	(HL),A
+	INC	HL		;else point to addr for next char
+	JR	RD1		;and get it
+;
+RD4:	CALL	FX$GET		;Get 2nd EOLN char (LF).
+RD2:	XOR	A		;Return with line read.
+	LD	(HL),A		;terminate the line
+	DEC	A		;Signal OK -- line read.
+	POP	HL
+	RET
+;
+RD5:	CALL	FXI$CLOSE	;Return without line read.
+	CALL	DELINF		;delete the input file
+	XOR	A		;signal no more input
+	POP	HL
+	LD	(HL),A
+	RET
+;
+;----------------
+;
+; Initialize file I/O control buffers.
+; Enter with  HL = first free address in memory
+;             B  = number of 128-byte sectors for the file buffer
+; Return:     HL = first free address after buffer
+;
+FBINIT:
+	PUSH	DE
+	PUSH	BC
+	LD	(HL),B
+	LD	DE,BADOFF	;loc of buf addr in I/O ctl block
+	ADD	HL,DE
+	PUSH	HL
+	LD	DE,[FCBLEN + FCBOFF - BADOFF]
+	ADD	HL,DE
+	EX	DE,HL
+	POP	HL
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D
+	EX	DE,HL		;get buf start addr in HL
+	LD	DE,128		;incr HL by buf len in bytes
+FBINI1:	ADD	HL,DE
+	DJNZ	FBINI1
+	POP	BC
+	POP	DE
+	RET
+;
+;----------------
+; Move filename into fcb of I/O ctl block.  Enter with HL = I/O ctl blk addr,
+; DE = addr of string to move.  Drive is set to current.
+INITNAM:
+	PUSH	BC
+	PUSH	DE		;save while adding fcb offset
+	LD	DE,FCBOFF
+	ADD	HL,DE		;point to input fcb
+	XOR	A		;set current drive
+	LD	(HL),A
+	INC	HL		;point to name field of fcb
+	POP	DE		;get source addr
+	EX	DE,HL		;put dest addr in DE, source in HL
+	LD	BC,11
+	LDIR
+	POP	BC		;restore original contents
+	RET
+;
+;----------------
+; Delete input file (file pointed to by INPLOC)
+DELINF:	LD	HL,(INPLOC)
+	LD	DE,FCBOFF
+	ADD	HL,DE
+	EX	DE,HL
+	CALL	F$DELETE
+	RET
+;
+;----------------
+;
+; Check for end of line -- CR or LF.  Return Z if true.
+EOLN:	CP	CR
+	RET	Z
+	CP	LF
+	RET
+;
+;----------------
+	IF	DEBUG
+;
+; Write the return address on the console
+;
+ERRADR:	CALL	PRINT
+	DB	CR,LF,'Error at ',0
+	EX	(SP),HL
+	CALL	PHL4HC
+	EX	(SP),HL
+	RET
+;
+	ENDIF
+;
+;----------------
+;
+; The following routine expands "$X" and "$|" references.
+; Inputs : HL contains a pointer to the command line being interpreted;
+;	   DE points to the string being built.
+; Outputs: HL points to the next char in the CL to interpret.
+;	   DE points to the next location to fill in the CL being built
+; If the next character in the line is not one of the recognized flags, it
+; is passed through unchanged (but the "$" will not be).
+;
+SYSFIL:
+	INC	HL		;point to next character
+	LD	A,(HL)		;get character
+	OR	A		;end of line?
+	RET	Z
+	CP	SUBSEP
+	JR	NZ,SYSFIL1
+	LD	A,CMDSEP
+	LD	(DE),A
+	INC	DE
+	INC	HL
+	RET
+SYSFIL1:
+	CP	LINFLG
+	JR	NZ,SYSFIL4
+	INC	HL
+	PUSH	HL
+	LD	HL,(FIRSTLIN)
+SYSFIL2:
+	LD	A,(HL)
+	OR	A
+	JR	Z,SYSFIL3
+	INC	HL
+	LD	(DE),A
+	INC	DE
+	JR	SYSFIL2
+SYSFIL3:
+	POP	HL
+	RET
+SYSFIL4:
+	LD	(DE),A
+	INC	HL
+	INC	DE
+	RET
+;
+;
+;================[  Buffers  ]================
+;
+SAVESP:	DS	2
+FIRSTLIN:
+	DS	2		;Ptr to 1st line from FORFILES.SYS.
+INTLINE:
+	DS	2		;Ptr to skeleton command line from PERFORM$.$$
+EXPLINE:
+	DS	2		;Ptr to expanded command line.
+INPLOC:
+	DS	2		;Ptr to file buffer for reading.
+OUTPLOC:
+	DS	2		;Ptr to file buffer for writing.
+INFNAM:	DB	'FORFILESS','Y'+80H,'S'		;file should be system
+OFNAM:	DB	'FORFILES'
+OUTTYP:	DB	'$$$'
+CTLFIL:	DB	'PERFORM$$','$'+80H,'$'		;Control file.
+SHDISK:
+	db	'A'		;disk letter
+	db	'00'		;user number
+	db	':;'		;separator
+SHNAME:
+	db	'PERFORM ',0	;name of shell to go onto stack
+;
+	END	START
+

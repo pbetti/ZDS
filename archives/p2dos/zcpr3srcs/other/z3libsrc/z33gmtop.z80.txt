@@ -1,0 +1,52 @@
+	TITLE	"Z33GMTOP - Z3lib 4.1"
+;=================================================================
+;  Copyright (C) 1989 by Harold F. Bower.  Permission granted to
+; Alpha Systems Corp. to distribute with The Libraries, Version 4
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+; Date    : 27 Jan 91
+; Version : 1.0
+; Module  : Z33GMTOP
+; Abstract: This module contains the routine GZMTOP which returns
+;	the base of unusable high memory (Base of CCP or start of
+;	RSX if present).  It senses an extended Environment, and
+;	starts with the CCP addr if so, else it calculates CCP base
+;	from the BIOS WB vector.  It then returns the base of CCP,
+;	or the DOS service vector from locations 6 and 7, whichever
+;	is lesser, thereby accomodating installed RSXes.
+; Revisions:
+;  1.0 - 19 Mar 89.  Initial release
+;  1.1 - 27 Jan 91.  Revised to return first UNusable byte instead
+;		of machinations to calculate last USable.  HFB
+;================================================================
+;  Module Entry Points
+	PUBLIC		GZMTOP
+; ..from Z3LIB Get..
+	EXT		GETCCP
+; Definitions
+BDOS	EQU	5	; DOS Entry vector jump
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - GZMTOP
+; Entry: - None
+; Exit : HL = First Unusable byte in high memory (CCP or RSX)
+; Uses : HL
+; Special Requirements : None
+;===============================================================
+
+GZMTOP:	PUSH	DE		; Save regs
+	PUSH	AF
+	CALL	GETCCP		; Get base of Comnd Processor
+	LD	DE,(BDOS+1)	; ..and BDOS vector target
+	LD	A,D
+	SUB	H		; Is CCP Lower?
+	JR	NC,USECCP	; ..jump if lower, use CCP addr
+	EX	DE,HL		; Else have RSX, use BDOS vector
+USECCP:	POP	AF		; Restore regs
+	POP	DE
+	RET
+
+	END
+

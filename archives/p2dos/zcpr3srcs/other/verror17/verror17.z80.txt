@@ -1,0 +1,1125 @@
+;  PROGRAM:  VERROR (Video Error Handler)
+;  AUTHOR:  Paul Pomerleau
+;  VERSION:  1.7
+;  DATE:  24 April 86
+;  PREVIOUS VERSIONS:  1.6 (1 Jan 86) 1.5 (17 Nov 85), 1.4 (16 Sept 85)
+;	1.3 (30 Aug 85), 1.2 (24 Aug 85), 1.1 (11 Aug 85), 1.0 (10 Aug 85)
+;
+VERS	equ	17
+Z3ENV	aset	0f300h
+
+;   VERROR is an editing utility for the ZCPR3 command line.  It is
+; called when a program in the line cannot be found.  VERROR uses a
+; subset of the WordStar commands.
+
+;   VERROR is installed by Z3INS.
+
+;   VERROR works with all Z80 CP/M systems with ZCPR3.
+
+;   Z80ASM is required for assembly of this file.
+;    !!!  IGNORE All String Syntax Errors  !!!
+
+;   Usage: VERROR<RET> to install error handler.
+
+;   Routines here need VLIB, Z3LIB and SYSLIB
+
+	ext	z3vini, stndou, stnden		; VLIB
+	ext	cls, tinit, ereol, gotoxy
+	ext	z3init, dutdir, getpath		; Z3LIB
+	ext	getcl1, erradr, puter1		; Error Handler Routines
+	ext	getmsg, puterc, qerror
+	ext	pafdc, ma3dc, caps		; SYSLIB
+;
+; Customization Equates
+;
+FALSE	equ	0
+TRUE	equ	not FALSE
+HELP	equ	TRUE		; Include help information?
+INVERSE	equ	FALSE
+;
+; Basic Definitions
+;
+BDOS	equ	5
+QUOFFS	equ	28h		; Quiet byte offset
+CA	equ	'A'-'@'
+CC	equ	'C'-'@'
+CD	equ	'D'-'@'
+CE	equ	'E'-'@'
+CF	equ	'F'-'@'
+CG	equ	'G'-'@'
+CH	equ	'H'-'@'
+CJ	equ	'J'-'@'
+CK	equ	'K'-'@'
+CL	equ	'L'-'@'
+CM	equ	'M'-'@'
+CP	equ	'P'-'@'
+CQ	equ	'Q'-'@'
+CR	equ	'R'-'@'
+CS	equ	'S'-'@'
+CT	equ	'T'-'@'
+CU	equ	'U'-'@'
+CV	equ	'V'-'@'
+CX	equ	'X'-'@'
+CY	equ	'Y'-'@'
+DEL	equ	7fh
+LF	equ	'J'-'@'
+BELL	equ	'G'-'@'
+
+;
+; Environment Definition
+;
+	if	Z3ENV ne 0
+;
+; External ZCPR3 Environment Descriptor
+;
+	jp	START
+	db	'Z3ENV'		;This is a ZCPR3 Utility
+	db	1		;External Environment Descriptor
+Z3EADR:
+	dw	Z3ENV
+START:
+	ld	hl,(Z3EADR)	;pt to ZCPR3 environment
+;
+	else
+;
+; Internal ZCPR3 Environment Descriptor
+;
+	MACLIB	Z3BASE.LIB
+	MACLIB	SYSENV.LIB
+Z3EADR:
+	jp	START
+	SYSENV
+START:
+	ld	hl,Z3EADR	;pt to ZCPR3 environment
+	endif
+
+;
+; Start of Program -- Initialize ZCPR3 Environment
+;
+	ld	(QSPOT),hl
+	call	Z3INIT
+	call	Z3VINI		; Initialize VLIB
+	call	TINIT		; Initialize the terminal
+
+;
+; Determine whether to install handler or edit command
+;
+	call	QERROR		; Is this an error?
+	jr	z,ERROR		; Yes, go to the Handler
+
+;
+; Install error handler
+;
+	ld	de,NAME
+	call	GETPATH
+	jr	z,NOPATH	; Is there a path at all?
+	dec	hl
+	dec	hl
+PATHLOOP:
+	inc	hl
+	inc	hl
+	ld	a,(hl)		; Get drive of first entry in path
+	or	a
+	jr	nz,PATHLOOP	; Is it there no more path left?
+	dec	hl		; Go to the previous one
+	push	de
+	ld	a,(hl)
+	call	MA3DC		; Make user number into decimal one
+	ld	a,':'
+	ld	(de),a		; Put in ':'
+	dec	hl
+	ld	a,(hl)		; Get drive number
+	add	a,'A'-1
+	pop	de
+	ld	(de),a		; Put that drive name in
+	jr	PATHDONE
+NOPATH:	ld	a,' '		; Blank out the DU:
+	ld	(de),a
+	inc	de
+	ld	(de),a
+	inc	de
+	ld	(de),a
+	inc	de
+	ld	(de),a
+	inc	de
+PATHDONE:
+	ld	hl,NAME		; Make name in buffer the error handler
+	call	PUTERC		; Set command
+	ld	a,0ffh		; Set error code
+	call	PUTER1		; Set message
+
+QSPOT	equ	$ + 1
+	ld	hl,0000		; Get base of Z3
+	ld	de,QUOFFS
+	add	hl,de		; Add quiet byte offset
+	ld	a,(HL)		; Store quiet byte in A.
+	or	a		; If its not zero then it is on
+	ret	nz		; In which case we don't print
+	ld	de,INSTR	;  to output
+	call	STRING
+	ld	de,INSTR2
+	jp	STRING		; And then we leave
+
+;
+; Process faulty command buffer
+;
+ERROR:
+
+;
+; Initialize command buffer
+;
+	call	GETCL1
+	push	hl
+	ld	de,BUFFER
+	ld	bc,04h
+	ldir			; Move the first 4 bytes of the command
+				;  buffer to our copy of it.
+	call	ERRADR		; Get address of faulty command
+	ex	de,hl		; Put it into DE
+	pop	hl		; Old buffer
+	push	de
+	ld	de,5
+	add	hl,de
+	pop	de
+	ex	de,hl
+	or	a
+	sbc	hl,de		; Get difference of new and old pointer
+	ld	c,l
+	ld	b,h		; Put it into BC
+	call	GETCL1
+	ld	de,5h
+	add	hl,de		; Beginning of actual command in buffer
+	ld	de,TEXT + 1	; Our beginning of buffer
+	add	hl,bc
+	ld	bc,0ffh		; We can over shoot.  Won't hurt anything
+	ldir			; Move Z3's to ours
+	call	GETMSG		; Load HL with base of msg buffer
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	a,(hl)		; Get msg buffer + 3
+	and	11111101b	; Mask out error
+	ld	(hl),a		; Replace the byte
+
+;
+; Give options and process
+;
+	ld	de,INSTR
+	call	STRING		; Tell 'em what they're using
+	ld	de,BADLINE
+	call	STRING		; Tell 'em they screwed up
+	ld	b,0		; Tell 'em how
+	ld	hl,TEXT + 1	; Consider the cmd line
+ELOOP:	ld 	a,(hl)
+	or	a		; Is it a null?
+	jr	z,LASTCHAR
+	cp	';'		; Or a ';'?
+	jr	z,NTOLCHAR	; If so, done
+	push	bc
+	push	hl
+	ld	c,a
+	call	WRITE		; Print the character
+	pop	hl
+	pop	bc
+	inc	hl
+	inc	b
+	jr	ELOOP		; And repeat
+NTOLCHAR:
+	inc	hl
+	inc	b		; Skip the semi-colon
+LASTCHAR:
+	push	bc
+	push	hl
+	ld	de,OPTIONS
+	call	STRING		; Print that they can D or E
+INPUT:	ld	c,1		; BDOS char in.  This echos the key, but gets
+	call	BDOS		;  keys hit before execution: GETKEY won't.
+	call	CAPS
+	cp	'Y'
+	jr	z,EDIT		; (Y)es -- Edit the line (No 'Y')
+	cp	'N'
+	jr	z,DISCARD	; (N)o  -- Return to CCP
+	ld	de,RETOPTIONS	; Reprint the line
+	call	STRING
+	jr	INPUT
+DISCARD:
+	pop	hl
+	ld	de,TEXT + 1
+	ld	bc,0ffh
+	ldir			; Move the command line down to cover error
+	pop	bc
+	ld	a,(LENGTH)	; Get the length
+	sub	b		; Calculate it
+	inc	a		; Add one for the null
+	ld	(LENGTH),a	; Store that
+	push	hl		; Garbage.  Done expects it
+	ld	h,0
+	jp	DONE		; Stuf the line
+
+EDIT:	pop	hl
+	pop	bc
+
+;
+; Initialize kill buffer
+;
+	ld	a,0
+	ld	(KILL),a
+
+;
+; Set up screen for editing
+;
+	call	CLS		; Clear the screen
+	jp	z,NOTCAP	; If it's not covered, we can't do it
+	ld	hl,101h		; Top of screen
+	call	GOTOXY		; Position cusor so we can check for function
+	jp	z,NOTCAP	; Bomb out if not covered
+	call	EREOL		; Blast line so we can check for function
+	jp	z,NOTCAP	; Bomb out if not covered
+	call	STNDOU		; Make dim
+	ld	de,INSTR
+	call	STRING		; Tell 'em what they're using
+	ld	e,':'
+	ld	c,2
+	call	BDOS		; Put a colon at the end of it
+	ld	hl,012Ah
+	call	GOTOXY
+	ld	c,25
+	call	BDOS		; Get the drive
+	push	af
+	add	a,'A'		; Make it a letter
+	ld	c,a
+	call	WRITE		; Write it
+	ld	e,0ffh
+	ld	c,32
+	call	BDOS		; Get the user
+	call	PAFDC		; Write it as a number
+	ld	c,a
+	pop	af		; Get drive
+	ld	b,a
+	call	DUTDIR		; Get the NDR
+	jr	z,NAMEDONE
+	push	hl
+	ld	c,':'
+	call	WRITE		; And the colon to seperate
+	pop	hl
+	ld	b,8		; Eight chars max
+NAMELOOP:
+	ld	a,(hl)		; Get the first char
+	cp	' '		; Is it the last
+	jr	z,NAMEDONE	; YUP.  done
+	push	hl
+	ld	c,a
+	call	WRITE		; Write it
+	pop	hl
+	inc	hl
+	djnz	NAMELOOP	; Repeat
+NAMEDONE:
+	ld	c,'>'		; Print a '>'
+	call	WRITE
+;
+	if	HELP
+	call	SHOWHELP
+	endif
+;
+	call	STNDEN		; Make normal
+
+;
+; Initialize buffer for editing
+;
+	xor	a		; A := 0
+	ld	bc,0ffh
+	ld	hl,TEXT + 1
+	cpir			; Find the zero at the end of the line
+	ld	a,c
+	cpl			; A := 255 - A
+	ld	(LENGTH),a	; Store that in LENGTH
+	ld	hl,POINT
+	ld	(hl),1		; Put us at the start of the buffer
+	call	DRAW		; Write the buffer to screen
+
+;
+; Main program: Keep calling LOOP
+;
+DOLOOP:	call	LOOP		; Execute the editing
+	jr	DOLOOP		; Continue this
+
+;
+; Get input and determine what action results
+;
+LOOP:
+	xor	a
+	ld	(BEEPER),a
+	call	GETKEY		; Bring in a character
+	ld	hl,CMDSTR
+	ld	bc,CMDLST - CMDSTR
+	cpir			; Compare to CMDSTR
+	jr	nz,NOTCMD	; No match, check for insertion
+	ld	a,CMDLST - CMDSTR - 1
+	sub	c		; Get difference (how far in the command is)
+	add	a,a		; Double it (compensation for DWs)
+	ld	c,a		; Put that offset in BC
+	ld	hl,CMDLST
+	add	hl,bc		; Add it to CMDLST
+	ld	e,(hl)		; Get low byte
+	inc	hl
+	ld	d,(hl)		; Get high byte
+	ex	de,hl		; Put location in HL
+	jp	(hl)		; And go to that location
+CMDSTR:
+	db	CS,CH,CD,CL,CE,CK,CX,CJ,CA,CF
+	db	CC,CG,DEL,CT,CR,CU,CV,CP,CY,CM
+
+	if	help
+	db	CQ
+	endif	; help
+
+CMDLST:
+	dw	LEFT
+	dw	LEFT
+	dw	RIGHT
+	dw	RIGHT
+	dw	UP
+	dw	UP
+	dw	DOWN
+	dw	DOWN
+	dw	WLEFT
+	dw	WRIGHT
+	dw	CRIGHT
+	dw	DELRT
+	dw	DELLFT
+	dw	DELWRD
+	dw	DELCMD
+	dw	UNDO
+	dw	FLMODE
+	dw	PRINT
+	dw	QUIT
+	dw	DONE
+
+	if	help
+	dw	NEEDHELP
+	endif	; help
+
+NOTCMD:
+	cp	' '		; Is it a control char that is unallocated?
+	ret	c		; If so, return
+	cp	'{'		; Is it lower-case?
+	jr	nc,NOTLOW	; No
+	cp	'a'
+	jr	c,NOTLOW	; No
+	sub	' '		; Yes.  So up-case it
+NOTLOW:
+	jr	PUTCHAR		; And enter it
+
+;
+; Get next key for entry no matter what it is.
+;
+PRINT:
+	call	GETKEY		; Bring in a key
+				; Don't strip control or lower-case chars
+
+;
+; Put a character (in A) into current position
+;
+PUTCHAR:
+	ld	(CHAR),a	; Save the character
+	ld	a,(MODE)	; Consider MODE
+	or	a
+	jr	z,INSERT	; If MODE is 0 then Insert, else OverWrite
+PUT:
+	ld	a,(POINT)
+	ld	hl,LENGTH
+	cp	(hl)		; Find out if this is the null
+	jr	z,INSERT	; We're at the end so INSERT
+	ld	de,TEXT
+	ld	l,a
+	ld	h,0
+	add	hl,de		; Find the place where the cursor is
+	ld	a,(CHAR)
+	ld	(hl),a		; Put the character there
+	call	VWRITE		; Print it
+	jp	RIGHT		; Bump the cursor
+INSERT:
+	ld	hl,LENGTH
+	ld	a,(MAXLEN)
+	cp	(hl)
+	jp	z,BEEP		; If line would be too long then Signal
+	ld	a,(hl)		; A := LENGTH
+	ld	l,a
+	ld	h,0
+	ld	de,TEXT
+	add	hl,de		; Last character in HL
+	ld	e,l
+	ld	d,h
+	inc	de		; Last character + 1 in DE
+	push	hl
+	ld	hl,POINT
+	sub	(hl)		; A := LENGTH - POINT
+	inc	a		; A := A + 1
+	ld	c,a
+	ld	b,0
+	pop	hl
+	lddr			; Move everything over one
+	ld	hl,LENGTH
+	inc	(hl)		; Add one to the length
+	ld	a,0ffh
+	ld	(INS),a
+	ld	a,(SILENT)
+	or	a
+	call	z,DRAW		; Refresh the display
+	xor	a
+	ld	(INS),a
+	jr	PUT		; Now toss in the character
+
+;
+; Put buffer into multi command buffer and reset values
+;
+DONE:
+	ld	a,h		; Get whether indexed or not
+	push	af
+	ld	hl,POINT
+	ld	(hl),4		; Move pointer to beginning
+	ld	hl,BUFFER + 1
+	call	GETCL1		; Get location of command line
+	push	hl
+	ld	de,BUFFER
+	ex	de,hl
+	ld	a,(LENGTH)
+	add	a,4		; Move LENGTH + 4 bytes
+	ld	c,a
+	ld	b,0
+	ldir			; Move our buffer to Z3's
+	pop	hl		; Consider command line location
+	push	hl
+	ld	de,4
+	add	hl,de		; Calculate first character (cmd line + 4)
+	pop	de
+	ex	de,hl		; Put it in DE and 
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d		; And store that to Z3's pointer
+	pop	af		; Get whether to do position or not
+	pop	hl		; Remove LOOP's return location
+	or	a
+	ret	z		; If HL was not used for index, H = 0
+;
+	if	help
+	ld	hl,1701h
+	ld	a,(HLPFLG)
+	or	a
+	jr	nz,DOGOXY
+	endif	; help
+;
+	ld	hl,701h
+DOGOXY:	jp	GOTOXY		; Move cursor to clear and EXIT
+
+;
+; Abort editing
+;
+QUIT:
+	pop	hl		; Remove LOOP's return location
+	ld	hl,301h
+	call	GOTOXY		; Move cursor to beginning of line
+	call	DRCLR
+;
+	if	help
+	ld	hl,1701h
+	ld	a,(HLPFLG)
+	or	a
+	jr	nz,QUGOXY
+	endif	; help
+;
+	ld	hl,701h
+QUGOXY:	jp	GOTOXY		; Move cursor to clear and EXIT
+
+;
+; Provide list of commands
+;
+;
+	if	help
+NEEDHELP:
+	ld	a,0ffh
+	ld	(HLPFLG),a
+	call	SHOWHELP
+	call	STNDEN
+	jp	GOPOS
+	endif	; help
+;
+
+;
+; Bring back text from last delete word
+;
+UNDO:
+	ld	a,0ffh
+	ld	(SILENT),a
+	ld	hl,KILL
+UDLOOP:	ld	a,(hl)
+	or	a
+	jr	z,UNDONE
+	push	hl
+	call	PUTCHAR
+	pop	hl
+	inc	hl
+	jr	UDLOOP
+UNDONE:
+	xor	a
+	ld	(SILENT),a
+	jp	DRAW
+
+;
+; Flip between Insert and OverWrite mode
+;
+FLMODE:
+
+	ld	hl,140h
+	call	GOTOXY		; Goto approx center of screen
+	ld	hl,MODE		; Consider MODE
+	ld	a,(hl)
+	cpl			; Make  (255 := 0)  or  (0 := 255)
+	ld	(hl),a		; Save that to MODE
+	or	a
+	jr	z,INSHED	; If insert mode then EREOL to rid us of OVER
+	ld	de,OVER
+	call	STRING		; Else print OVER and fall through
+INSHED:	call	EREOL		; Delete OVER
+	jp	GOPOS		; Reposition cursor
+
+OVER:	db	'Insert is OFF$'
+
+;
+; Ring console bell
+;
+BEEP:
+	ld	hl,BEEPER
+	ld	a,(hl)		; Consider boolean BEEPER
+	or	a
+	ret	nz		; If we already beeped, don't do it again
+	cpl
+	ld	(hl),a		; Make beep false
+	ld	c,BELL
+	jp	WRITE		; Ring bell
+
+;
+; Delete command (from cursor to semicolon)
+;
+DELCMD:
+	ld	a,0ffh
+	ld	(CMD),a		; Set boolean value to true
+	call	DELWRD		; Pretend to delete a word
+	xor	a		; A := 0
+	ld	(CMD),a		; Make CMD false again
+	ret
+
+;
+; Move right to end of command (from cursor to semicolon)
+;
+CRIGHT:
+	ld	a,0ffh
+	ld	(CMD),a		; Set boolean value to true
+	call	WRIGHT		; Pretend to move right a word
+	xor	a		; A := 0
+	ld	(CMD),a		; Make CMD false again
+	ret
+
+;
+; Move one word to left
+;
+WLEFT:
+	xor	a
+	ld	hl,ENDCHR
+	ld	(hl),a		; ENDCHR := 0
+WLLOOP:
+	exx			; Swap HL with HL'
+	ld	hl,POINT
+	dec	(hl)		; Move one to the left
+	ld	a,(hl)
+	cp	1		; Are we at position #1?
+	jr	z,STOP		; If so, STOP
+	or	a		; Are we at position #zero?
+	jr	nz,LNZERO	; If not, check for word end
+	ld	a,(LENGTH)
+	ld	(hl),a		; Else move pointer to the end of the buffer
+	jr	STOP		; And STOP
+LNZERO:
+	call	CHECK		; Check for word end
+	exx			; Swap HL with HL'
+	jr	nz,LNEND	; No, check to repeat
+	ld	(hl),a		; Make value non-zero
+	jr	WLLOOP		; And repeat
+LNEND:	ld	a,(hl)
+	or	a		; Have we already got a word end character?
+	jr	z,WLLOOP	; No, so continue
+	jr	STOP		; Else STOP
+
+;
+; Move one word to right
+;
+WRIGHT:
+	xor	a		; A := 0
+	ld	(RIGHTC),a	; RIGHTC := 0
+	ld	hl,ENDCHR
+	ld	(hl),a		; ENDCHR := 0
+WRTLOOP:
+	exx			; Swap HL with HL'
+	ld	hl,RIGHTC
+	inc	(hl)		; RIGHTC := RIGHTC + 1
+	ld	hl,POINT
+	inc	(hl)		; Move one to right
+	ld	a,(LENGTH)
+	cp	(hl)		; Are we at the end of the buffer?
+	jr	z,STOP		; If so, STOP
+	jr	nc,RNZERO	; If not, proceed
+	ld	(hl),1		; If past the end, go to the beginning
+	jr	STOP		;  and STOP
+RNZERO:
+	call	CHECK		; Is it word end?
+	exx			; Swap HL with HL'
+	jr	nz,RNEND	; No, check to repeat
+	ld	(hl),a		; Make value non-zero
+	jr	WRTLOOP		; And repeat
+RNEND:	ld	a,(hl)
+	or	a		; Have we already got a word end character?
+	jr	z,WRTLOOP	; No, so continue
+STOP:
+	jp	GOPOS		; Reposition cursor and return
+
+;
+; Determine whether character ends word
+;
+CHECK:
+	ld	d,0
+	ld	e,(hl)		; Move position to DE
+	ld	hl,TEXT
+	add	hl,de		; Get position in memory
+	ld	a,(hl)		; Consider that character
+	ex	af,af'
+	ld	a,(CMD)		; Are we just checking for a semicolon?
+	or	a
+	jr	z,WORD		; No, check vs. the whole string
+	ex	af,af'
+	cp	';'		; Is it a semicolon?
+	ret			; Send the answer back
+WORD:	ex	af,af'
+	ld	hl,WORDCS
+	ld	bc,WCLAST-WORDCS
+	cpir			; Go through WORDCS looking for the character
+	ret			; FLAG: Zero set if match found
+WORDCS:
+db	' ;,_/\|'''
+WCLAST:
+
+;
+; Delete word right
+;
+DELWRD:
+	ld	a,(POINT)
+	push	af
+	call	WRIGHT		; Find length of word
+	pop	af
+	ld	(POINT),a	; Return to original position
+	ld	a,(RIGHTC)	; RIGHTC = length of word
+	ld	hl,KILL
+DELLOOP:
+	ex	af,af'
+	exx			; Swap HL and HL'
+	call	DELCHAR		; Delete the character we're sitting on
+	exx			; Swap HL and HL'
+	ld	a,(DELCHR)	; Consider deleted character
+	ld	(hl),a		; Save deleted character
+	inc	hl		; Go to next character in kill buffer
+	ex	af,af'
+	dec	a		; Is this the last character?
+	jr	nz,DELLOOP	; No, do it again
+	xor	a
+	ld	(hl),a		; End string with a null
+	jp	DRAW		; Yes, refresh the screen
+
+;
+; Move character left
+;
+LEFT:
+	ld	hl,POINT
+	dec	(hl)		; Move to left
+	jp	nz,GOPOS	; If (position > zero) then show it
+	ld	a,(LENGTH)
+	ld	(hl),a		; Else put cursor at end of buffer
+	jp	GOPOS		; Then show it
+
+;
+; Move character right
+;
+RIGHT:
+	ld	hl,POINT
+	inc	(hl)		; Move to right
+	ld	a,(LENGTH)
+	cp	(hl)
+	jp	nc,GOPOS	; If (LENGTH > position) then show it
+	ld	(hl),1		; Else put us at the beginning
+	jp	GOPOS		; And show it
+
+;
+; Move line up
+;
+UP:
+	ld	a,(POINT)
+	cp	81
+	ret	c
+	sub	80
+	ld	(POINT),a
+	jp	GOPOS
+
+;
+; Move line down
+;
+DOWN:
+	ld	hl,POINT
+	ld	a,(LENGTH)
+	sub	(hl)		; Find difference between end and cursor
+	cp	81		; If (diff <= 80) then no char below 
+	jr	c,TOEND		; Should we put him at the end?
+	ld	a,(hl)
+	add	a,80		; Else add 80
+	ld	(HL),a		; And store it
+	jp	GOPOS		; And return
+TOEND:	ld	a,(LENGTH)	; Consider LENGTH
+	ld	c,(hl)
+	cp	161		; Is there a third line?
+	jr	c,NOTHRD	; No, don't subtract a line
+	sub	80		; Subtract a line
+	push	af
+	ld	a,c		; Consider POINT
+	sub	80		; Subtract a line
+	ld	c,a		; Store POINT
+	pop	af
+NOTHRD:	cp	81		; Is there a second line?
+	ret	c		; No, return
+	ld	a,c		; Consider the POINT
+	cp	81		; Is cursor is on the last line?
+	ret	nc		; Yes, return
+	ld	a,(LENGTH)
+	ld	(hl),a		; Go to end
+	jp	GOPOS		; Position and return
+
+;
+; Delete character left
+;
+DELLFT:
+	call	LEFT		; Move to the left
+	call	DELCHAR		; Then delete the character we're on
+	jp	DRAW		; And refresh the screen
+
+;
+; Delete character right
+;
+DELRT:
+	call	DELCHAR		; Delete the character at our position
+	jp	DRAW		; And refresh the screen
+
+;
+; Delete character at cursor position
+;
+DELCHAR:
+	ld	a,(POINT)
+	ld	l,a
+	ld	h,0
+	ld	de,TEXT
+	add	hl,de		; Get memory location of cursor
+	ld	d,h
+	ld	e,l		; Copy it to DE
+	ld	a,(hl)		; Consider current character
+	ld	(DELCHR),a	; Save it for possible later use
+	or	a
+	ret	z		; If the character is a null, then abort
+	inc	hl
+	push	hl
+	ld	a,(LENGTH)
+	ld	hl,POINT
+	sub	(hl)		; A := LENGTH - POINT
+	inc	a		; A := A + 1
+	ld	c,a
+	ld	b,0		; BC := A
+	pop	hl
+	ldir			; Move the buffer down one (Over character
+				;  to delete, thus erasing it)
+	ld	a,(LENGTH)
+	dec	a
+	ld	(LENGTH),a	; Subtract one from the LENGTH
+	ret			; And return
+
+;
+; Write command line to screen
+;
+DRAW:
+	call	GOPOS		; Go to the cursor position
+	ld	hl,POINT
+	ld	e,(hl)
+ALDRAW:	ld	d,0
+	ld	hl,TEXT
+	add	hl,de		; Get the memory location of the cursor
+DRAWL:	ld	a,(hl)		; Move current character to A
+	or	a
+	jr	z,DRCLR		; If it's a null then we're done
+	push	hl
+	call	VWRITE		; Else write it
+	pop	hl
+	inc	hl		; Point to next character
+	jr	DRAWL		; And repeat
+DRCLR:
+	ld	a,(INS)		; If the calling routine was INSERT
+	or	a
+	jr	nz,GOPOS	; Then we don't need to EREOL
+CLRLOOP:
+	call	EREOL		; Clear to end of line
+	ld	c,CM
+	call	WRITE		; Write a ^M (Carriage Return)
+	ld	c,LF
+	call	WRITE		; Write a ^J (Line Feed)
+	call	EREOL		; Clear to end of line, again
+				; fall through to GOPOS
+
+;
+; Position cursor as dictated by value of POINT
+;
+GOPOS:
+	ld	a,(POINT)
+	ld	h,3		; Start at 3rd line
+CALC:
+	cp	81
+	jr	c,CALCEND	; If (LENGTH <= 80) then we're done
+	inc	h		; Else go down a line
+	sub	80		; And subtract 1 line from our number
+	jr	CALC		; And check again
+CALCEND:
+	ld	l,a		; Make the remainder the X coordinate
+	jp	GOTOXY		; And position the cursor
+
+;
+; Get key from console -- return in A
+;
+GETKEY:
+	ld	c,6		; Select Direct console I/O
+	ld	e,0ffh		; Select get a key in
+	call	BDOS		; Do the function
+	or	a
+	jr	z,GETKEY	; If zero keep checking for key
+	ret			; -- Note that this will never return a NULL
+
+;
+; Write characters:  Control characters are highlighted
+;
+VWRITE:
+	cp	' '
+	jr	c,CCHAR		; If it's < ' ' then it's a control character
+	ld	c,a
+	jr	WRITE		; Else print it
+CCHAR:				; It's a control char, so turn on 
+				;  highlight, then it off again
+	push	af
+	call	STNDOU		; Turn on highlight
+	pop	af
+	add	a,'@'		; Make control character a normal character
+	ld	c,a
+	call	WRITE		; Print the character
+	jp	STNDEN		; Turn off highlight
+
+;
+; Abort program because of insufficient TCAP
+;
+NOTCAP:
+	ld	de,TCAPSTR
+	jp	STRING
+TCAPSTR:
+	db	'Terminal definition insufficient.$'
+
+;
+; Write character through BIOS or BDOS
+;
+WRITE:
+	ld	hl,(1)		; Get base of BIOS
+	ld	de,09		; Add offset for Console Out
+	add	hl,de
+	jp	(hl)		; Jump to that location
+
+;
+; Write help msg
+;
+	if	HELP
+SHOWHELP:
+	ld	hl,601h
+	call	GOTOXY
+;
+	call	STNDOU
+	ld	a,(HLPFLG)
+	or	a
+	jr	nz,BIGHLP
+	ld	de,LILHLP
+	jr	STRING
+BIGHLP:
+	if	INVERSE
+	ld	de,HELPMSG
+	jr	STRING		; Print older message
+
+	else	; INVERSE	( if not INVERSE )
+
+	ld	hl,HELPMSG
+SHLOOP:	ld	a,(hl)
+	or	a
+	ret	z		; End on a NULL
+	cp	'~'
+	jr	z,DOLINE	; Do line function
+	push	hl
+	call	BWRITE		; Write through BDOS
+	pop	hl
+	inc	hl
+	jr	SHLOOP		; Repeat
+DOLINE:
+	inc	hl
+	push	hl
+	call	STNDOU		; Make text dim
+	ld	b,(hl)
+	ld	e,'-'
+	ld	c,2		; Set up to write '-'
+LINELOOP:
+	push	bc
+	push	de
+	call	BDOS		; Do the BDOS call (for print)
+	pop	de
+	pop	bc
+	djnz	LINELOOP	; Repeat
+	call	STNDEN		; make normal again
+	pop	hl
+	inc	hl
+	jr	SHLOOP		; Repeat
+
+;
+; Write character through BDOS (there must be TABS)
+;
+BWRITE:	push	af
+	ld	a,(CONTRL)	; Are we in the middle of a ^char?
+	or	a
+	jr	z,SKIPSTND	; No, skip routine
+	dec	a
+	ld	(CONTRL),a	; Count down one
+	call	z,STNDOU	; If it's zero, make dim
+SKIPSTND:
+	pop	af
+	cp	1
+	jp	z,STNDEN	; ^A = normal video
+	cp	2
+	jp	z,STNDOU	; ^B = dim video
+	cp	'|'
+	jr	nz,CHKCTRL	; So we can print '^'
+	ld	a,'^'
+	jr	NOTCTRL
+CHKCTRL:
+	cp	'^'		; Is it a '^'?
+	jr	nz,NOTCTRL	; No, skip
+	push	af
+	ld	a,2
+	ld	(CONTRL),a	; Normal video for two chars
+	call	STNDEN		; Call normal video
+	pop	af
+NOTCTRL:
+	ld	e,a
+	ld	c,2
+	jp	BDOS		; Write the character
+
+	endif	; INVERSE
+	endif	; HELP
+
+;
+; Write string through BDOS
+;
+STRING:
+	ld	c,9
+	jp	5
+
+;
+; Misc. buffers
+;
+MODE:	db	0
+ENDCHR:	db	0
+RIGHTC:	db	0
+INS:	db	0
+CMD:	db	0
+CHAR:	db	0
+BEEPER:	db	0
+DELCHR:	db	0
+CONTRL:	db	0
+SILENT:	db	0
+HLPFLG:	db	0
+
+;
+; Name for Z3 error command buffer and sign on string
+;
+NAME:
+	db	'A15:VERROR  ',0
+INSTR:	db	'VERROR Vers ',(vers / 10) + '0','.'
+	db	(vers mod 10) + '0',' -- Error Handler$'
+INSTR2:	db	' Installed$'
+BADLINE:
+	db	':',13,10,'	ERROR -> $'
+OPTIONS:
+	db	10
+RETOPTIONS:
+	db	13,'Do you want to edit this line?  ',8,'$'
+
+;
+	if	HELP
+LILHLP:	db	'^Q for Help$'
+HELPMSG:
+	if	INVERSE
+
+db 13,10
+db 'Movement Commands | Deletion Commands |   Miscellaneous Commands	'
+db 13,10,13,10
+db ' ^D - Char Right  | ^G - Char Right   |'
+db ' ^P - Insert Control-Char	',13,10
+db ' ^S - Char Left	  | <DEL> - Char Left |'
+db ' ^V - Toggle Insert/OverWrite	',13,10
+db ' ^E - Line Up	  | ^T - Word Right   |'
+db ' ^U - Undelete Last ^T or ^R	',13,10
+db ' ^X - Line Down	  | ^R - Cmd Right    |'
+db ' ^Y - Abort Entire Line		',13,10
+db ' ^F - Word Right  |		      |'
+db ' <RET> - Execute			',13,10
+db ' ^A - Word Left	  |		'
+db '					',13,10
+db ' ^C - Cmd Right   |			'
+db '				$'
+	else	; INVERSE 	( if	not INVERSE )
+
+db '      ~',20,' Movement ~',18,13,10,10
+db '	    ^E		~',2,' Word ~',2,'	~',2,' Command ~',2,2,13,10
+db '	     |',13,10
+db '	^S <-+-> ^D	^A <-+-> ^F	    <-+-> ^C',13,10
+db '	     v',13,10
+db '	    ^X',13,10,10
+db '~',26,' Deletion ~',25,13,10,10
+db ' ~',2,' Character ~',2,'   ~',2,' Word ~',2,'	 ~',2,' Command ~',2,'	  ~',2,' Line ~',2,13,10
+db '  DEL',2,' <-+-> ^G	      <-+-> ^T	     <-+-> ^R	   <- ^Y ->',13,10,10
+db '~',24,' Miscellaneous ~',22,13,10,10
+db '^U Undelete Word or Cmd		     ^V Toggle Insert Mode',13,10
+db '^P Insert Control-Char		 ',1,'RETURN',2,' Execute Command Line',13,10,0
+	endif	; INVERSE
+	endif	; HELP
+
+;
+LAST:
+KILL	equ	LAST + (5 * 1024)
+				; By assuming the ext code will never be more
+				;  than 5K and we can save considerable space:
+				; Be sure to change if more 
+				;  externals are added!
+BUFFER	equ	KILL + 0ffh
+POINT	equ	BUFFER
+MAXLEN	equ	BUFFER + 2
+LENGTH	equ	BUFFER + 3
+TEXT	equ	BUFFER + 3
+
+	end
+e added!
+BUFFER	equ	KILL + 0ffh
+POINT	equ	BUFFER
+MAXLEN	equ	BUFFER + 2
+LENGTH	equ	BUFFER + 3
+TE

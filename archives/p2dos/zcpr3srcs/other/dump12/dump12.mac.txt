@@ -1,0 +1,430 @@
+; DUMP.MAC    Version 1.2
+;
+VERS	equ	12		; current version
+SubVers	equ	' '		; current revision level
+;
+; Displays disk file on console in hexadecimal and ASCII.  For ZCPR3 only.
+;
+; USAGE:
+;
+;	DUMP {dir:}<fn.ft> {/}{<option>}
+;
+; A filename is required.  If a DIR or DU specification is not given
+; then the current drive/user is assumed.
+;
+; OPTIONS:  A slash before the options is not required.  The only option
+; currently recognized is
+;
+;	A   Display ASCII, even if high bit is set
+;
+; Two slashes give a brief help message.  Invalid options are ignored.
+;
+; Version 1.2 -- October 2, 1989 -- Gene Pizzetta
+;	Modified for ZCPR3.  Added help message.  Added highlighting
+;	from TCAP.  Added automatic paging every two sectors.  Added
+;	option to display ASCII with high bit set.
+; Version 1.1 -- September 16, 1987 -- Gene Pizzetta
+;	Modified screen display slightly.  Added sign-on.
+; Version 1.0 -- August 15, 1987 -- Gene Pizzetta
+;	Original version.
+;
+; Suggestions and, especially, bug reports are welcome:
+	Gene Pizzetta
+	481 Revere Street
+	Revere, MA 02151
+	Voice:  (617) 284-0891
+	Newton Centre Z-Node:  (617) 965-7259
+	Lilliput Z-Node:  (312) 649-1730
+	GEnie:  E.PIZZETTA
+;
+Bdos	equ	0005h		; BDOS entry
+MemTop	equ	0006h		; top of memory vector
+CpmFcb	equ	005Ch		; default FCB
+FcbTyp	equ	CpmFcb+9	; filetype in FCB
+FcbUsr	equ	CpmFcb+13	; user in FCB (ZCPR3)
+CpmDma	equ	080h		; default DMA buffer
+TPA	equ	100h		; program load address
+;
+ConOut	equ	2		; print character
+DirIO	equ	6		; direct console I/O
+PrtStr	equ	9		; print string
+ConSt	equ	11		; console status
+FOpen	equ	15		; file open
+FRead	equ	20		; file read sequential
+CurUsr	equ	32		; get/set user
+;
+LF	equ	0Ah
+CR	equ	0Dh
+;
+	MACLIB	Z80
+;
+	org	TPA
+;
+	jmp	Main
+;
+	db	'Z3ENV'
+	db	1
+Z3EAdr:	dw	0FE00h
+;
+; Messages ...
+;
+MsgUse:	db	'DUMP    Version '
+	db	VERS/10+'0','.',VERS mod 10+'0',SubVers,CR,LF
+	db	'Usage:',CR,LF
+	db	'   DUMP {dir:}<fn.ft> {/}{<option>}',CR,LF
+	db	'Option:',CR,LF
+	db	'   A   Display ASCII with high bit set',0
+;
+MsgOpn:	db	'File not found.',0
+MsgMor:	db	CR,'[more]',0
+MsgEra:	db	CR,'      ',CR,0
+MsgSec:	db	CR,'Sector Number ',0
+MsgHdr:	db	CR,LF,'      00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F'
+	db	'   0123456789ABCDEF',0
+;
+Main:	sspd	OldStk		; save old stack
+	lhld	MemTop		; ..and set up new one
+	mov	a,h
+	sui	16		; preserving CCP
+	mov	h,a
+	sphl
+;
+	xra	a		; initialize flags
+	sta	OpAFlg
+;
+	call	GetOpt
+	jz	ShoHlp
+;
+GoToIt:	call	GetTCP		; get TCAP info
+	lxi	h,0		; initialize offset address
+	shld	OffAdr		; ..to zero
+	lxi	h,FcbTyp	; point to filetype
+	mov	a,m		; do we have a COM file?
+	cpi	'C'
+	jrnz	GetUsr		; (no)
+	inx	h
+	mov	a,m
+	cpi	'O'
+	jrnz	GetUsr		; (no)
+	inx	h
+	mov	a,m
+	cpi	'M'
+	jrnz	GetUsr		; (no)
+	lxi	h,TPA		; yes, so re-set offset at 100h
+	shld	OffAdr
+;
+GetUsr:	lda	FcbUsr		; get user number
+	mov	e,a		; ..and set it
+	mvi	c,CurUsr
+	call	Bdos
+;
+	lxi	d,CpmFcb	; open file
+	mvi	c,FOpen
+	call	Bdos
+	inr	a
+	jrnz	NxtPag		; (okay)
+	lxi	h,MsgOpn	; no file
+	call	PrtNSt
+	jmp	Exit
+;	
+NxtPag:	mvi	a,2
+	sta	PagCnt
+;
+NxtSec:	lxi	d,CpmFcb
+	mvi	c,FRead
+	call	Bdos
+	ora	a
+	jnz	Exit
+	lxi	h,DimStr
+	call	PrtNSt
+	lxi	h,MsgHdr
+	call	PrtNSt
+	lxi	h,NorStr
+	call	PrtNSt
+	mvi	a,8
+	sta	LinCnt
+	lxi	h,128
+	shld	BufPtr
+;
+NxtLin:	lxi	h,OutBuf
+	mvi	m,CR
+	inx	h
+	mvi	m,LF
+	inx	h
+	lded	OffAdr
+	mov	a,d
+	call	HexOut
+	mov	a,e
+	call	HexOut
+	mvi	m,' '
+	inx	h
+	mvi	m,' '
+	inx	h
+	mvi	m,0
+	xchg
+	lxi	b,16
+	dad	b
+	shld	OffAdr
+;
+	lxi	h,DimStr
+	call	PrtNSt
+	lxi	h,OutBuf
+	call	PrtNSt
+	lxi	h,NorStr
+	call	PrtNSt
+;
+	lxi	h,OutBuf
+	lded	BufPtr
+	mvi	b,16
+;
+NxtByt:	ldax	d
+	inx	d
+	call	HexOut
+	mvi	m,' '
+	inx	h
+	djnz	NxtByt
+	mvi	m,' '
+	inx	h
+	mvi	m,' '
+	inx	h
+	mvi	m,0
+	lxi	h,OutBuf
+	call	PrtNSt
+	lhld	BufPtr
+	mvi	b,16
+;
+NxtAsc:	lda	OpAFlg		; extended ASCII option?
+	ora	a
+	jrnz	ExtAsc		; (yes)
+	mov	a,m		; here we display real ASCII only
+	inx	h
+	cpi	7Fh
+	jp	Ctrl
+	cpi	' '
+	jrc	Ctrl
+	cpi	0FFh
+	jrnz	NotCtl
+	jr	Ctrl
+;
+ExtAsc:	mov	a,m		; here we display ASCII with or
+	inx	h		; ..without high bit set
+	ani	7Fh		; mask high bit
+	cpi	' '
+	jrc	Ctrl
+	cpi	7Fh
+	jrnz	NotCtl
+;
+Ctrl:	mvi	a,'.'
+;
+NotCtl:	mov	e,a
+	mvi	c,ConOut
+	push	b
+	push	h
+	call	Bdos
+	pop	h
+	pop	b
+	djnz	NxtAsc
+	shld	BufPtr
+	lxi	h,LinCnt
+	dcr	m
+	jnz	NxtLin
+	mvi	e,LF
+	mvi	c,ConOut
+	call	Bdos
+	lxi	h,PagCnt
+	dcr	m
+	jnz	NxtSec
+;
+	lxi	h,DimStr
+	call	PrtNSt
+	lxi	h,MsgMor	; say there's more
+	call	PrtNSt
+	lxi	h,NorStr
+	call	PrtNSt
+WaitLp:	mvi	c,DirIO		; wait for response
+	mvi	e,0FFh
+	call	Bdos
+	ora	a
+	jrz	WaitLp
+	push	psw
+	lxi	h,MsgEra
+	call	PrtNSt
+	pop	psw
+	cpi	3		; ^C ?
+	jrz	Exit		; (yes)
+	jmp	NxtPag
+;
+ShoHlp:	lxi	h,MsgUse	; print usage message
+	call	PrtNSt
+;
+Exit:	lspd	OldStk		; restore old stack pointer
+	ret			; ..and call it a day!
+;
+; subroutines . . .
+;
+; GetOpt -- gets options from command line
+;
+GetOpt:	lxi	h,CpmDma+1	; point to command tail
+	lda	CpmDma		; anything there?
+	ora	a
+	rz			; (no)
+	mov	b,a		; yes, put number of chars in B
+	mvi	c,0
+	call	EatSpc		; gobble spaces
+	cpi	'/'		; is it a slash?
+	rz			; (yes, no filename)
+	mvi	a,' '		; no, get past filename
+	ccir
+	rnz			; (no options)
+	call	EatSpc
+	ora	a
+	jrz	RetOK		; (no options)
+	mov	a,m		; get first character of second token
+	cpi	'/'		; a slash?
+	jrnz	ScnOpt		; (no, so get options)
+	inx	h		; yes, move past it
+	dcx	b		; ..and get options
+;
+ScnOpt:	call	ScnTbl
+	xchg			; point back to options
+	inx	h
+	djnz	ScnOpt		; loop through options
+;
+RetOK:	mvi	a,1		; okay, must return NZ
+	ora	a
+	ret
+;
+ScnTbl:	mov	c,m		; put option in C
+	lxi	d,OptTbl	; point DE to option table
+ScnTLp:	ldax	d		; get table option
+	ora	a		; end of table?
+	jz	NoMat		; (yes, no match)
+	inx	d		; no, keep looking
+	cmp	c		; match?
+	jz	TMatch		; (yes)
+	inx	d		; move pointer to next entry
+	inx	d
+	jmp	ScnTLp		; ..and keep looking
+;
+NoMat:	xchg
+	ret
+;
+TMatch:	push	h		; save option pointer
+	ldax	d		; put address from table into HL
+	mov	l,a
+	inx	d
+	ldax	d
+	mov	h,a
+	pop	d		; recover option pointer in DE
+	mvi	a,1		; set option flag by jumping to
+	pchl			; ..table routine and returning
+;
+; Option Jump Table
+;
+OptTbl:	db	'A'		; A = display ASCII with hi-bit set
+	dw	OptA
+	db	'/'		; / = help
+	dw	OptH
+	db	0		; end of option table
+;
+; Option routines
+;
+OptA:	sta	OpAFlg
+	ret
+OptH:	jmp	ShoHlp
+;
+; EatSpc -- gobbles up spaces.  Address of string in HL, length in B
+;
+EatSpc:	mov	a,m		; get character
+	inx	h		; increment pointer
+	dcx	b		; decrement counter
+	cpi	' '		; a space?
+	jrz	EatSpc		; (yes, eat it)
+	dcx	h		; no, back up pointer
+	inx	b		; ..and counter, and
+	ret			; ..return with character
+;
+; HexOut -- outputs a binary number as hexadecimal
+;
+HexOut:	push	a
+	rar
+	rar
+	rar
+	rar
+	ani	15
+	adi	'0'
+	cpi	':'
+	jrc	Hex1
+	adi	7
+;
+Hex1:	mov	m,a
+	inx	h
+	pop	psw
+	ani	15
+	adi	'0'
+	cpi	':'
+	jrc	Hex2
+	adi	7
+;
+Hex2:	mov	m,a
+	inx	h
+	ret
+;
+; PrtNSt -- print null-terminated string, address in HL
+;
+PrtNSt:	xra	a
+	add	m
+	rz
+	mov	e,a
+	mvi	c,ConOut
+	push	h
+	call	Bdos
+	pop	h
+	inx	h
+	jr	PrtNSt
+;
+; GetTCP -- get highlight strings from TCAP
+;
+GetTCP:	lhld	Z3EAdr
+	lxi	d,97h		; offset to terminal table
+	dad	d
+	mvi	b,3		; set for 3 iterations
+TCPLp:	mov	a,m		; look for a null
+	inx	h
+	ora	a
+	jnz	TCPLp		; (not yet)
+	dcr	b		; yep!
+	mov	a,b
+	ora	a		; three yet?
+	jnz	TCPLp		; (nope!)
+	lxi	d,DimStr
+DimLp:	mov	a,m		; move dim string to us
+	inx	h
+	stax	d
+	inx	d
+	ora	a
+	jnz	DimLp
+	lxi	d,NorStr
+NorLp:	mov	a,m		; move normal string too
+	inx	h
+	stax	d
+	inx	d
+	ora	a
+	jnz	NorLp
+	ret			; we're through
+;
+; Uninitialized data ...
+;
+OpAFlg:	ds	1
+DimStr:	ds	10
+NorStr:	ds	10
+SecCnt:	ds	2
+LinCnt:	ds	1
+OffAdr:	ds	2
+BufPtr:	ds	2
+PagCnt:	ds	1
+OldStk:	ds	2
+OutBuf:	ds	4
+;
+	end
+

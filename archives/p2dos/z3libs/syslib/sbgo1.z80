@@ -1,0 +1,72 @@
+;	TITLE	"SBGO1 - Syslib 4.0"
+	NAME	('BGOTO1')
+;=================================================================
+;   The Libraries, Version 4, (C) 1989 by Alpha Systems Corp.
+;-----------------------------------------------------------------
+; Author  : Harold F. Bower
+;		Derived from SBGO1.Z80 Ver 1.1 by Richard Conn
+; Date    : 17 Sep 89
+; Version : 1.2
+; Module  : SBGO1
+; Abstract:  This module contains the routine BGOTO1 which is a
+;	computed GOTO.  It uses a table of DEFW xx addresses and
+;	selects the proper address to execute based on the con-
+;	tents of an 8-bit register.  A control value is also set
+;	by the user who is responsible for range and error
+;	checking.  Is is used as:
+;
+;	  LD	A,INDEX		; zero-relative
+;	  LD	B,2		; max value allowed
+;	  CALL	BGOTO1
+;	  DEFW	ADDR0		; IF A=0
+;	  DEFW	ADDR1		; IF A=1
+;	  DEFW	ADDR2		; IF A=2
+;	  <error instructions>	; IF A>B
+;	  ...
+;	ADDR0:			; COME HERE IF A=0
+;	  ...
+;	ADDR1:			; COME HERE IF A=1
+;	  ...
+;	ADDR2:			; COME HERE IF A=2
+;	  ...
+;  Revision:
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Module Entry Points
+
+	PUBLIC		BGOTO1
+
+	.Z80
+	CSEG
+;===============================================================
+; NAME - BGOTO1
+; Entry:  A - Contains the Zero-based index into address table
+;	  B - Contains the maximum value allowed in A
+; Exit : - N/A
+; Uses : - None
+; Special Requirements: None
+;===============================================================
+
+BGOTO1:	EX	(SP),HL		; get address of routines, save HL
+	PUSH	DE		; save regs
+	PUSH	AF
+	CP	B		; test for range error
+	JR	C,GOTO		; OK if A < B
+	JR	Z,GOTO		; OK if A = B
+	LD	A,B		; set A = error offset (B+1)
+	INC	A
+GOTO:	LD	D,0
+	LD	E,A		; index in DE
+	EX	DE,HL		; index in HL, return address in DE
+	ADD	HL,HL		; double index to compute offset
+	ADD	HL,DE		; point to jump in HL
+	LD	A,(HL)		; get low
+	INC	HL
+	LD	H,(HL)		; get high
+	LD	L,A		; HL = address to return to
+	POP	AF		; get regs
+	POP	DE
+	EX	(SP),HL		; restore HL, set address of routine
+	RET
+
+	END
+

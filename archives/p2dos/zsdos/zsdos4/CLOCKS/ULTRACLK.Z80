@@ -1,0 +1,264 @@
+	TITLE	"Heath 19 Ultra ROM Clock - (H19-ULTRA)"
+	SUBTTL	"Description of Clock Module:
+;==============================================================
+; WATZCLOCK.
+;  UltraRom Serial Clock interface for the Heath-19.  The Ultra
+;  ROM returns a single 7-character ASCII String:  hhmmss<CR>
+;
+; Version of 07/10/88				HFB
+;==============================================================
+; Translated for Z80ASM/ZSDOS 06/11/88 from ver of 3/17/85
+; Vers 0.6 current as of 20 Oct 88
+;==============================================================
+
+VERS	EQU	06
+	.Z80
+	NAME ULTRA
+
+	MACLIB	CLOCK.LIB
+
+; Terminal Clocks read via CONIN MUST NOT read the clock if there is
+; pending CONIN input.  If CONSTAT is true, this routine returns the
+; previously-read clock value.
+
+	COMMON	/_CLKID/
+
+DESCST:	DEFW	THISYR-PRGBAS	; Ptr to statyr
+
+CLKNAM:	DEFB	'Heath Z80 UltraRom      '	; Exactly 24 chars
+	DEFB	VERS/10+'0','.',VERS MOD 10 +'0',0
+
+DESCR:	DEFB	'   Heath/Zenith 19/89/90 with UltraRom',CR,LF
+	DEFB	'   (Software Wizardry, W. G. Parrott)',0
+
+	  IF  [$-DESCST] > 256
+	OVER2
+	  ENDIF
+
+	PAGE
+	SUBTTL	"Configurable Clock Hardware Parameters"
+
+	COMMON	/_PARM_/
+
+PARBAS:	DEFW	NPARAMS		; # of parameters
+	DEFW	STRS
+NP0:
+XMHZ	EQU	$+1
+	DEFB	BYTE
+	DEFW	MHZ
+XYR	EQU	$+1
+	DEFB	BYTE
+	DEFW	01
+XMO	EQU	$+1
+	DEFB	BYTE
+	DEFW	01
+XDA	EQU	$+1
+	DEFB	BYTE
+	DEFW	01
+NPARAMS	EQU	($-NP0)/3
+
+; Descriptions of configurable parameters
+
+STRS:	DEFB	'MHz CPU Speed ',0
+	DEFB	'Enter Year    ',0
+	DEFB	'Enter Month   ',0
+	DEFB	'Enter Day     ',0
+
+	PAGE
+	SUBTTL	"Clock Code - UltraRom Clock for Heath-19"
+
+RDTIM	EQU	'e'		; Read-time command
+
+; System-specific BIOS addresses set at runtime.  (reference only)
+
+ICONST	EQU	0EA64H
+ICONIN	EQU	0EA6AH
+ICONOUT	EQU	0EA70H
+
+	CSEG
+;-------------------------------------------------------------
+;	    Z S D O S    C L O C K    H E A D E R
+;-------------------------------------------------------------
+; Enter: HL points to a 6-byte buffer to Get/Set time
+; Exit :  A=1 on Success, A=FFH if error
+;	 HL points to last char in buffer
+
+PRGBAS:
+;== Commented out til set code written
+;==	JP	GETTIM		; Jump to Read Clock
+;==	JP	WRCLK		; Jump to Set Clock
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		R e a d    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+GETTIM:	JP	AROUND
+
+; Put buffer here so initialization utilities can find it
+
+THISYR	EQU	$
+CLKBUF:
+BUFYR:	DEFB	01		; Static year/mo/da
+BUFMO:	DEFB	01
+BUFDA:	DEFB	01
+BUFHR:	DEFB	0
+BUFMI:	DEFB	0
+BUFSEC:	DEFB	0
+
+AROUND:	PUSH	HL		; Holds seconds during routine, patched back
+				; On exit
+	LD	DE,5		; Save entering buffer 'seconds' value
+	ADD	HL,DE
+	LD	A,(HL)
+	PUSH	AF
+YSTAT1	EQU	$+1
+	CALL	ICONST		; If input char waiting
+	OR	A		; Return previous time string
+	JR	NZ,COPY
+	LD	C,ESC
+YOUT1	EQU	$+1
+	CALL	ICONOUT		; Conout
+	LD	C,RDTIM
+YOUT2	EQU	$+1
+	CALL	ICONOUT		; Send type of read
+	LD	HL,BUFHR	; Put returned char sequence into buffer
+
+	LD	B,6		; Read 6 ascii bytes
+
+RDLP:	PUSH	BC
+	PUSH	HL
+YIN1	EQU	$+1
+	CALL	ICONIN		; Conin
+	POP	HL
+	POP	BC
+	RLD			; Store bcd nybble
+	BIT	0,B		; Even for 1st nybble
+	JR	Z,$$1A
+	INC	HL		; Bump ptr
+$$1A:	DJNZ	RDLP		; Count down
+YIN2	EQU	$+1
+	CALL	ICONIN		; Flush <cr>
+
+COPY:	POP	AF		; Preserved 'seconds' byte
+	POP	DE		; (+0)caller's destination ptr
+	LD	HL,CLKBUF	; Set ptr
+	LD	BC,6		; Move data from buffer to caller
+	LDIR
+	DEC	DE		; Point at seconds
+	EX	DE,HL		; Hl equ entry HL+5
+	LD	E,A		; E equ 'seconds' byte
+	LD	A,01		;== Set OK return status
+	RET
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+;		S e t    T h e    C l o c k
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+; Set not implemented.  Return error code
+;== Commented out til written
+;==WRCLK:	OR	0FFH		; Set Error Code
+;==	RET
+
+	PAGE
+	SUBTTL	"Run-Time Configuration of Ports and Masks"
+
+; This code installs configurable items into the clock module
+; Enter with DE pointing to the physical address of the relocatable module
+
+	COMMON	/_POST_/
+
+	LD	A,(XMHZ)
+	LD	(YMHZ),A
+
+	SETBYT	XYR,BUFYR
+	SETBYT	XMO,BUFMO
+	SETBYT	XDA,BUFDA
+
+	LD	HL,(1)
+	INC	HL
+	INC	HL
+	INC	HL
+	INC	HL		; Point at internal constat addr
+	GETBC	,
+	INC	HL
+	INC	HL
+	PUSH	HL		; Save point at int$conin
+	PUTBC	YSTAT1		; Install constat addr
+	LD	(YSTAT2),BC
+
+	POP	HL		; Get internal conin
+	GETBC	,
+	INC	HL
+	INC	HL
+	PUSH	HL		; Save point at internal conout
+	PUTBC	YIN1		; Install  conin's
+	PUTBC	YIN2
+	LD	(YIN4),BC
+	LD	(YIN5),BC
+	LD	(YIN6),BC
+	POP	HL		; Get internal conout
+	GETBC	,
+	PUTBC	YOUT1
+	PUTBC	YOUT2
+	LD	(YOUT3),BC
+	LD	(YOUT4),BC
+	RET
+
+	PAGE
+	SUBTTL	"Pre-Execution Clock Checks (check for ticking)"
+
+; This module is executed just prior to installing the module to insure
+; that a valid clock is present
+
+	COMMON	/_PRE_/
+YSTAT2	EQU	$+1
+TEST:	CALL	ICONST		; If input char waiting
+	OR	A
+	JR	Z,TEST1
+YIN4	EQU	$+1
+	CALL	ICONIN		; Flush char
+	JR	TEST
+
+TEST1:	CALL	RD7		; Read hr,min,sec
+	PUSH	AF		; Save seconds
+	CALL	DELAY
+	CALL	RD7		; Again
+	POP	BC		; Compare to prev$ seconds
+	CP	B
+	SCF
+	RET	NZ
+	CCF
+	RET
+
+RD7:	LD	C,ESC
+YOUT3	EQU	$+1
+	CALL	ICONOUT
+	LD	C,RDTIM
+YOUT4	EQU	$+1
+	CALL	ICONOUT
+	LD	B,6		; Skip 2 hrs, 2 mins, get 2nd nybble
+RD7A:	PUSH	BC		; Of seconds
+YIN5	EQU	$+1
+	CALL	ICONIN		; Conin
+	POP	BC
+	DEC	B
+	JR	NZ,RD7A
+	PUSH	AF
+YIN6	EQU	$+1
+	CALL	ICONIN		; Flush cr
+	POP	AF		; Return low nybble of sec
+	RET
+
+; delay 1.25 Sec at configured cpu speed
+
+YMHZ	EQU	$+1
+DELAY:	LD	B,MHZ
+$$0:	LD	HL,40000+10000	; Constant adjusted with slop
+$$1:	DEC	HL		; 6
+	LD	A,H		; 4
+	OR	L		; 4
+	JR	NZ,$$1		; 10 equ 24 cycles/loop
+	DJNZ	$$0
+	RET
+
+	END
+

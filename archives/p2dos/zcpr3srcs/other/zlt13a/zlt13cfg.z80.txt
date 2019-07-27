@@ -1,0 +1,460 @@
+
+; Module:	ZLTCFG - Configuration file for Z Library Typer (ZLT)
+; Author:	Carson Wilson
+; Date:		5 Nov 89
+; Version:	1.3
+; Notes:	Adapted from Al Hawley's MODELCFG.SRC.  See ZCNFG.WS for
+;		 a full explanation of .CFG file format.
+
+; DATA DEFINITION
+
+; Offsets to option data locations in TARGET program
+;
+MAXLIN	equ	00Bh		; Max lines to type, 0 = unlimited
+TYPFLG	equ	00Ch		; 0 for all file types, else selective
+CTLFLG	equ	00Dh		; 0 allows control char print
+QDEF	equ	00Eh		; Quiet default, 0ffh = quiet
+PDEF	equ	00Fh		; Page default, 0ffh = page
+DDEF	equ	010h		; Delay default, 00h..09h
+BADTBL	equ	011h		; Begin 20x3-byte table of file exclusion types
+
+; ZCNFG function definitions
+;
+Switch	equ	0	; Toggle bit n in a byte (n is specified)
+Text	equ	1	; Replace a text string of specified length
+DUSpec	equ	2	; Replace a ZCPR style DU specification (NOT DIR:!)
+HexRad	equ	3	; Edit byte/word using HEX radix
+DecRad	equ	4	; Edit byte/word using DECIMAL radix
+Togl3	equ	7	; Toggle to one of three options: 001B, 010B, 100B
+ToglTF	equ	8	; Toggle a byte between 0ffh and 0
+
+; ASCII definitions
+
+tab	equ	9		;horizontal tab
+lf	equ	10		;line feed
+cr	equ	13		;carriage return
+
+; ===================================
+;
+;	BEGIN OVERLAY CODE
+;
+; ===================================
+;
+; The next 13 bytes must remain in this location.
+
+	rst	0	; For safety - file won't execute
+
+	dw	AMenu	; For relocation of addresses, this
+			; ..points to the NEXT location.
+; MENU list.
+
+AMenu:	dw	BMenu, BMenu, AScrn, ACase, AHelp	; Menu A
+BMenu:	dw	AMenu, AMenu, BScrn, BCase, BHelp	; Menu B
+
+; -------------------------------------
+;
+;	Case Tables
+;
+
+;
+; Case table for Menu A.
+;
+
+ACase:	db	(ACaseX-ACase1)/(ACase2-ACase1)	; Number of cases
+	db	ACase2-ACase1			; Length of each record
+
+ACase1:			; Label for calculation of case table entry length
+	db	'M'	; Unique selector
+	dw	DecRad	; ZCNFG function selector
+	dw	MAXLIN	; Offset in ZLT.COM
+	db	1	; Number of bytes for ZCNFG to change
+	dw	AScrnM	; Location of screen to change
+	dw	AC1MM	; 0 or address of min/max data words or strings
+
+ACase2:			; Label for calculation of case table length
+	db	'T'	; Unique selector
+	dw	ToglTF	; ZCNFG function selector
+	dw	TYPFLG	; Offset in ZLT.COM
+	db	1	; Number of bytes for ZCNFG to change
+	dw	AScrnT	; Location of screen to change
+	dw	YNData	; 0 or address of min/max data words or strings
+
+	db	'C'	; Unique selector
+	dw	ToglTF	; ZCNFG function selector
+	dw	CTLFLG	; Offset in ZLT.COM
+	db	1	; Number of bytes for ZCNFG to change
+	dw	AScrnC	; Location of screen to change
+	dw	YNData	; 0 or address of min/max data words or strings
+
+	db	'Q'
+	dw	ToglTF
+	dw	QDEF
+	db	1
+	dw	AScrnQ
+	dw	YNData
+
+	db	'P'
+	dw	ToglTF
+	dw	PDEF
+	db	1
+	dw	AScrnP
+	dw	YNData
+
+	db	'D'
+	dw	Text
+	dw	DDEF
+	db	1
+	dw	AScrnD
+	dw	0
+
+ACaseX:			; Label for calculation of list length
+
+;
+; Case table for Menu B.
+;
+
+BCase:	db	(BCaseX-BCase1)/(BCase2-BCase1)	; Number of cases
+	db	BCase2-BCase1			; Length of each record
+
+BCase1:			; Label for calculation of case table entry length
+	db	'A'	; Unique selector
+	dw	Text	; ZCNFG function selector
+	dw BADTBL+0	; Offset in ZLT.COM
+	db	3	; Number of bytes for ZCNFG to change
+	dw	BScrnA	; Location of screen to change
+	dw	0	; 0 or address of min/max data words or strings
+
+BCase2:			; Label for calculation of case table entry length
+	db	'B'	; Unique selector
+	dw	Text	; ZCNFG function selector
+	dw BADTBL+3	; Offset in ZLT.COM
+	db	3	; Number of bytes for ZCNFG to change
+	dw	BScrnB	; Location of screen to change
+	dw	0	; 0 or address of min/max data words or strings
+
+	db	'C'
+	dw	Text
+	dw BADTBL+6
+	db	3
+	dw	BScrnC
+	dw	0
+
+	db	'D'
+	dw	Text
+	dw BADTBL+9
+	db	3
+	dw	BScrnD
+	dw	0
+
+	db	'E'
+	dw	Text
+	dw BADTBL+12
+	db	3
+	dw	BScrnE
+	dw	0
+
+	db	'F'
+	dw	Text
+	dw BADTBL+15
+	db	3
+	dw	BScrnF
+	dw	0
+
+	db	'G'
+	dw	Text
+	dw BADTBL+18
+	db	3
+	dw	BScrnG
+	dw	0
+
+	db	'H'
+	dw	Text
+	dw BADTBL+21
+	db	3
+	dw	BScrnH
+	dw	0
+
+	db	'I'
+	dw	Text
+	dw BADTBL+24
+	db	3
+	dw	BScrnI
+	dw	0
+
+	db	'J'
+	dw	Text
+	dw BADTBL+27
+	db	3
+	dw	BScrnJ
+	dw	0
+
+	db	'K'
+	dw	Text
+	dw BADTBL+30
+	db	3
+	dw	BScrnK
+	dw	0
+
+	db	'L'
+	dw	Text
+	dw BADTBL+33
+	db	3
+	dw	BScrnL
+	dw	0
+
+	db	'M'
+	dw	Text
+	dw BADTBL+36
+	db	3
+	dw	BScrnM
+	dw	0
+
+	db	'N'
+	dw	Text
+	dw BADTBL+39
+	db	3
+	dw	BScrnN
+	dw	0
+
+	db	'O'
+	dw	Text
+	dw BADTBL+42
+	db	3
+	dw	BScrnO
+	dw	0
+
+	db	'P'
+	dw	Text
+	dw BADTBL+45
+	db	3
+	dw	BScrnP
+	dw	0
+
+	db	'Q'
+	dw	Text
+	dw BADTBL+48
+	db	3
+	dw	BScrnQ
+	dw	0
+
+	db	'R'
+	dw	Text
+	dw BADTBL+51
+	db	3
+	dw	BScrnR
+	dw	0
+
+	db	'S'
+	dw	Text
+	dw BADTBL+54
+	db	3
+	dw	BScrnS
+	dw	0
+
+	db	'T'
+	dw	Text
+	dw BADTBL+57
+	db	3
+	dw	BScrnT
+	dw	0
+
+BCaseX:			; Label for calculation of list length
+
+; Case table support data structures
+
+AC1MM:			; Min/Max for ACase1
+	dw	0	; Min
+	dw	255	; Max
+
+YNData:			; Null-terminated data pair for ZCNFG's ToglTF function
+	db	'YES',0	; Displayed if current value is 0FFh
+	db	' NO',0	; Displayed if current value is 000h
+
+
+; ------------------------------------------
+;
+;	Screen Images
+
+; Screen image for Menu A.
+
+AScrn:
+	db	cr,lf,lf,tab,tab,tab,'  ZLT Installation Menu One'
+	db	cr,lf,lf,cr
+
+	db	tab,'M) Max. lines to type for nonwheel ........... '
+AScrnM:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	tab,'T) Restrict file types ....................... '
+AScrnT:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	tab,'C) Restrict control character print .......... '
+AScrnC:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	tab,'Q) Default to Quiet output ................... '
+AScrnQ:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	tab,'P) Default to paged output ................... '
+AScrnP:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	tab,'D) Default typing delay (0..9 or "X" for none)   '
+AScrnD:	db	' '			; Display current value here
+	db	cr,lf
+
+	db	lf,lf,lf,lf,lf,lf,lf
+	db	0			; Terminator
+
+; Screen image for Menu B.
+
+BScrn:
+	db	cr,lf,lf,tab,tab,tab,'  ZLT Installation Menu Two'
+	db	cr,lf,lf,cr
+
+	db	' A) Exclude filetype A ..... '
+BScrnA:	db	'   '			; Display current value here
+	db	tab
+	db	' B) Exclude filetype B ..... '
+BScrnB:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' C) Exclude filetype C ..... '
+BScrnC:	db	'   '			; Display current value here
+	db	tab
+	db	' D) Exclude filetype D ..... '
+BScrnD:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' E) Exclude filetype E ..... '
+BScrnE:	db	'   '			; Display current value here
+	db	tab
+	db	' F) Exclude filetype F ..... '
+BScrnF:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' G) Exclude filetype G ..... '
+BScrnG:	db	'   '			; Display current value here
+	db	tab
+	db	' H) Exclude filetype H ..... '
+BScrnH:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' I) Exclude filetype I ..... '
+BScrnI:	db	'   '			; Display current value here
+	db	tab
+	db	' J) Exclude filetype J ..... '
+BScrnJ:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' K) Exclude filetype K ..... '
+BScrnK:	db	'   '			; Display current value here
+	db	tab
+	db	' L) Exclude filetype L ..... '
+BScrnL:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' M) Exclude filetype M ..... '
+BScrnM:	db	'   '			; Display current value here
+	db	tab
+	db	' N) Exclude filetype N ..... '
+BScrnN:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' O) Exclude filetype O ..... '
+BScrnO:	db	'   '			; Display current value here
+	db	tab
+	db	' P) Exclude filetype P ..... '
+BScrnP:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' Q) Exclude filetype Q ..... '
+BScrnQ:	db	'   '			; Display current value here
+	db	tab
+	db	' R) Exclude filetype R ..... '
+BScrnR:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	' S) Exclude filetype S ..... '
+BScrnS:	db	'   '			; Display current value here
+	db	tab
+	db	' T) Exclude filetype T ..... '
+BScrnT:	db	'   '			; Display current value here
+	db	cr,lf
+
+	db	lf,lf,lf
+	db	0			; Terminator
+
+; ---------------------------------------------------
+;
+;	Help screens
+;
+
+AHelp:			; Help screen for menu A
+
+	db	cr,lf,cr,lf,tab,tab,tab,'ZLT Installation Menu One Help'
+	db	cr,lf,lf
+
+	db	tab,'M) Max. lines to type for nonwheel.'
+	db	cr,lf,tab,tab
+	db	'The number of lines ZLT will display when the wheel byte'
+	db	cr,lf,tab,tab
+	db	'is off.  Set to zero for no limit.',cr,lf,lf
+
+	db	tab,'T) Restrict file types.'
+	db	cr,lf,tab,tab
+	db	'Set to YES to restrict viewing of files with the types'
+	db	cr,lf,tab,tab
+	db	'shown in Menu Two.',cr,lf,lf
+
+	db	tab,'C) Restrict control character print.'
+	db	cr,lf,tab,tab
+	db	'Set to NO to allow ZLT to display all control characters.'
+	db	cr,lf,lf
+
+	db	tab,'Q) Default to Quiet output.'
+	db	cr,lf,tab,tab
+	db	'Set to YES to tell ZLT to display quietly by default.'
+	db	cr,lf,tab,tab
+	db	'The "Q" option will now result in verbose display.'
+	db	cr,lf,lf
+
+	db	tab,'P) Default to paged output.'
+	db	cr,lf,tab,tab
+	db	'Set to NO to tell ZLT not to page the display.'
+	db	cr,lf,tab,tab
+	db	'The "P" option will now result in paging.'
+	db	cr,lf,lf,lf,lf,lf
+
+	db	tab,'D) Default typing delay.'
+	db	cr,lf,tab,tab
+	db	'The speed at which ZLT sends characters to the screen.'
+	db	cr,lf,tab,tab
+	db	'"9" is slowest, "0" is fastest, "X" disables delay.'
+	db	cr,lf
+
+	db 0		; Terminator
+
+BHelp:			; Help screen for menu B
+
+	db	cr,lf,lf,tab,tab,tab,'ZLT Installation Menu Two Help'
+	db	cr,lf,lf
+
+	db tab
+	db 'You may install up to 20 file types for ZLT to exclude.  ZLT will'
+	db cr,lf,tab
+	db 'not display files with these types.  You may use "?" to match any'
+	db cr,lf,tab
+	db 'character at this position, e.g., "C?M" matches files with type'
+	db cr,lf,tab
+	db '"COM" and "CQM".  To use less than 20 entries, simply copy the'
+	db cr,lf,tab
+	db 'last type to be excluded to the remaining entries.'
+	db	cr,lf
+
+	db	0
+
+	end
+

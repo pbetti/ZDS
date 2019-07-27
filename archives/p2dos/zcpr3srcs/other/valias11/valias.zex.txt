@@ -1,0 +1,65 @@
+;
+; Command File to Assemble the VALIAS Program by Richard Conn
+;
+
+;
+; 1. Check for Needed Files
+;    These files are listed below in the IF EXIST tests
+;    The availability of PIP.COM, M80.COM, and L80.COM is assumed
+;
+if exist valias0.mac
+if exist valias1.mac
+if exist vlib.rel
+if exist z3lib.rel
+if exist syslib.rel
+if exist z3base.lib
+if exist sysenv.lib
+
+;
+; 2. Perform Assemblies of VALIAS0.MAC and VALIAS1.MAC
+;
+m80 =valias0
+m80 =valias1
+
+;
+; 3. Allow User to Abort if Errors Occurred
+;
+if input
+
+;
+; 4. Cleanup Files
+;
+era valias0.bak
+era valias1.bak
+era valias.com
+
+;
+; 5. Link
+;
+l80 /p:100,valias0,z3lib/s,syslib/s,valias0/n,/u,/e
+l80 /p:100,valias1,vlib/s,z3lib/s,syslib/s,valias1/n,/u,/e
+
+;
+; 6. Combine VALIAS0.COM and VALIAS1.COM to Form VALIAS.COM
+;
+pip valias.com=valias0.com,valias1.com
+
+;
+; 7. Clean Up Some Files
+;
+era valias0.com
+era valias1.com
+
+;
+; 8. Exit IF INPUT (1 Level) and Remove REL Files
+;
+fi
+era valias0.rel
+era valias1.rel
+
+;
+; 9. Exit IFs (6 Levels)
+;
+fi;fi;fi;fi;fi;fi
+
+
